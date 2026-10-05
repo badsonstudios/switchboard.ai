@@ -49,7 +49,13 @@ time you open it, so going back is the same two clicks.
 Because it replaces what the session is doing, **it will not interrupt a session
 that is in the middle of something**. If Claude is working, or is waiting for
 you to answer a permission request or a question, the list stays open and says
-so. Let it finish, or answer it, and pick again.
+so. Let it finish, or answer it, and pick again. Whatever you had typed in the
+search box is still there, so the conversation you wanted is still in front of
+you.
+
+The list also stays open if another session card opened that same conversation
+in the moment since the list was drawn — a conversation can only be open in one
+place at a time. Pick a different one, or go to the card that has it.
 
 To look further afield, click **This folder** at the top of the list and it
 becomes **All projects**: every conversation on your machine, with the folder

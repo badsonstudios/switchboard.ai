@@ -70,6 +70,12 @@
 >   un-warned; an unread toplevel falls back to the folder comparison. A test
 >   asks REAL git. Review made the sentence say "a different path", not "not
 >   yours" — git resolves a junction, so one folder under two names lands here.
+>   **Merged as PR #1106.**
+> * ✅ **#1099 — a refused history pick keeps the search.** Done on
+>   `feature/1099-refused-pick`. `pick()` cleared the search before main had
+>   answered; it is now cleared when the dialog closes. The "held by another
+>   card" refusal has its own sentence. **Left alone, and said on the issue:**
+>   after a "held" refusal the row still looks pickable until the list reopens.
 > * **Filed, at the owner's request:** **#1098** (the `@Name` shared-folder
 >   warning compares folders, not git working trees) and **#1099** (a refused
 >   history pick clears the search box; the "held" refusal reuses a tooltip).

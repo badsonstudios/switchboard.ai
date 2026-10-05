@@ -426,7 +426,8 @@ describe('a pick from a card\'s own history (#1090)', () => {
 
   it('every refusal has a sentence, and they are three different ones', () => {
     expect(switchRefusalKey('busy')).toBe('sessionHistory.switchBusy');
-    expect(switchRefusalKey('held')).toBe('sessionHistory.claimedHint');
+    // its own sentence, not the greyed-out row's hover text (#1099)
+    expect(switchRefusalKey('held')).toBe('sessionHistory.switchHeld');
     for (const reason of ['unavailable', 'no-card', 'bad-request'] as const) {
       expect(switchRefusalKey(reason)).toBe('sessionHistory.openFailed');
     }

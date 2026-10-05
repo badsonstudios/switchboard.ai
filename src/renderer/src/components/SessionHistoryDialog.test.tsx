@@ -203,6 +203,33 @@ describe('SessionHistoryDialog', () => {
     expect(h.picked).toEqual([{ nativeId: 'conv-9', folder: 'D:/elsewhere/api' }]);
   });
 
+  it('a REFUSED pick keeps the search — it is forgotten when the dialog closes, not before (#1099)', async () => {
+    answer = {
+      status: 'ok',
+      truncated: false,
+      rows: [
+        row({ nativeId: 'a', description: 'Fix the login redirect' }),
+        row({ nativeId: 'b', description: 'Rewrite the migration' }),
+      ],
+    } satisfies ConversationHistory;
+    const search = (): string => host.querySelector<HTMLInputElement>('[data-history-search]')!.value;
+    const h = await mount();
+    await type('migra');
+    await click(rows()[0]);
+    expect(h.picked).toEqual([{ nativeId: 'b', folder: 'C:/work/app' }]);
+    // The parent did not close it — main refused — and says why. The search and
+    // the one row it left are exactly where they were.
+    await mount({ notice: 'This session is in the middle of something.' });
+    expect(host.querySelector('[data-history-notice]')?.textContent).toContain('in the middle of something');
+    expect(search()).toBe('migra');
+    expect(rows()).toHaveLength(1);
+    // …and a pick that DID close it leaves nothing behind for the next opening.
+    await mount({ open: false });
+    await mount();
+    expect(search()).toBe('');
+    expect(rows()).toHaveLength(2);
+  });
+
   it('an unreadable or over-large directory REPORTS ITSELF rather than looking empty', async () => {
     // §5.33: a list that quietly omits what you wanted is worse than one that
     // admits its limit.
