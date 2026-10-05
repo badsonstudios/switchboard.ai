@@ -89,11 +89,15 @@ which is exactly why S-10 probe A had to be run instead of assumed.
 
 Tracker: **GitHub issues** at `badsonstudios/switchboard.ai`, filed per-milestone
 just-in-time from the plan files (see `docs/plans/00-process.md`). Milestones
-mirror phases; the current one is **Phase 2 - The Switchboard**
-(`docs/plans/04-phase-2-switchboard.md`). Spike 01 closed at 8/8; Phase 1 is
-done. **Check `PROGRESS.md`, not this line, for where work actually is** — this
-one went stale for months and nobody noticed until a `gh issue list` against the
-dead milestone silently returned nothing.
+mirror phases. **Ask GitHub which are open rather than reading a name off this
+page** (`gh api repos/badsonstudios/switchboard.ai/milestones --jq '.[].title'`):
+on 2026-10-04 they were **Phase 3 - The IDE** and **Flakes & CI health**, and
+the "Phase 2 - The Switchboard" milestone this line used to name had been
+CLOSED since 2026-09-28. Spike 01 closed at 8/8; Phase 1 is done. **Check
+`PROGRESS.md`, not this line, for where work actually is** — this one has now
+gone stale TWICE, and both times it was found the same way: a `gh issue list`
+against a dead milestone silently returned nothing, and `gh issue create
+--milestone` against it refused outright.
 
 1. Dan says **"do the next item"** (or `/next-item`, or `/next-item S-03` /
    `/next-item 3`).
