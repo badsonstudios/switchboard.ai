@@ -1548,13 +1548,31 @@ export function streamPrompter(
   a: LaunchedApp
 ): (title: string, text: string) => Promise<void> {
   return async (title, text) => {
-    const liveId = await pollAsync(async () => {
-      const cards = (await a.window.evaluate(() => window.switchboard.sessions.cards())) as Array<{
-        title: string;
-        liveId?: string;
-      }>;
-      return cards.find((c) => c.title === title)?.liveId ?? null;
-    }, `no live session for card "${title}"`);
+    const send = await preparedStreamPrompt(a, title);
+    await send(text);
+  };
+}
+
+/**
+ * `streamPrompter` with the session lookup done AHEAD of time (#1079).
+ *
+ * For the spec whose prompt has to land inside a time window. `streamPrompter`
+ * spends a round trip finding the card's live session before it sends anything;
+ * a caller racing a 500ms window resolves that first, and what is left is ONE
+ * round trip between its stimulus and the prompt reaching main.
+ */
+export async function preparedStreamPrompt(
+  a: LaunchedApp,
+  title: string
+): Promise<(text: string) => Promise<void>> {
+  const liveId = await pollAsync(async () => {
+    const cards = (await a.window.evaluate(() => window.switchboard.sessions.cards())) as Array<{
+      title: string;
+      liveId?: string;
+    }>;
+    return cards.find((c) => c.title === title)?.liveId ?? null;
+  }, `no live session for card "${title}"`);
+  return async (text) => {
     const accepted = await a.window.evaluate(
       ([id, t]) => window.switchboard.sessions.submitPrompt(id, t),
       [liveId, text]

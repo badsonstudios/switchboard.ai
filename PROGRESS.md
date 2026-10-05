@@ -3,6 +3,28 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 2026-10-04 (later): **the flake batch, then the rough edges — owner's list**
+>
+> The owner's order for this session: the three flaky tests first (#1079,
+> #1025, #835), then #1083, #1084, two issues still to be filed (the `@Name`
+> shared-folder warning compares folders rather than git working trees; a
+> refused history pick clears the search box and reuses a tooltip sentence),
+> then the remaining 15 manual pages' pictures. **No release unless he asks.**
+> The three owner decisions listed under v0.8.113 below are STILL OPEN — he was
+> asked again at the start of this session.
+>
+> * ✅ **#1079 — the `feed-tail-pin` flake.** Done on
+>   `feature/1079-tail-pin-flake`. The guard was timing the wrong thing: its
+>   stopwatch ran in the TEST process from before the click returned to after
+>   Playwright had seen block 200 of 200, with a session lookup in between. Now
+>   the lookup happens first, the prompt goes out between mouse-down and
+>   mouse-up, and the premise is measured in the renderer on `FeedView`'s own
+>   clock, at the first scroll after the reply's first block (the instant the
+>   window is actually read). **The limit is still 500 ms.** Measured on the
+>   desktop: ~170-220 ms before, **23-99 ms after** over 30 runs, and 32-184 ms
+>   over 16 more with four apps running at once. Review caught the first cut
+>   timing the echo of the prompt rather than the reply; fixed before it shipped.
+
 > # ✅ RELEASED: v0.8.113, 2026-10-04 (`d519734`, PR #1094)
 >
 > The owner, once #1090 and #1092 were in: *"Yeah, let's cut a release."* A
