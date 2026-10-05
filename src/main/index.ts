@@ -96,7 +96,7 @@ import { type GitWriteResult, asPathList } from './git/git-write';
 import { BusHost } from './bus/host-channel';
 import { SessionQueries, summariesFrom } from './sessions/queries';
 import { mentionedSessions, resolveMentions } from './sessions/mention-resolve';
-import { createMentionGitLookup } from './sessions/mention-git';
+import { createMentionGitLookup, createMentionTreeLookup, MENTION_GIT_BUDGET_MS } from './sessions/mention-git';
 import { buildContextOffer } from './sessions/context-drop';
 import { quoted, renderOutput } from './bus/bus-tools';
 import { SiblingDelivery } from './sessions/delivery';
@@ -2313,6 +2313,7 @@ app
     const gitService = new GitService();
     // the branch a mentioned session's folder is on, for its brief (#1092)
     const mentionGit = createMentionGitLookup((folder) => gitService.status(folder));
+    const mentionTree = createMentionTreeLookup((folder) => gitService.root(folder, MENTION_GIT_BUDGET_MS));
 
     // ── the Session Bus (§5.4; #761 built the answers, #762 the channel, #763
     //    is the first wiring of either) ──────────────────────────────────────
@@ -2860,14 +2861,24 @@ app
       // read per folder, a short budget, and a folder that does not answer in
       // time is simply not described. Only mentioned sessions are asked about,
       // so a draft with no `@` costs nothing.
+      //
+      // …and which WORKING TREE each one is in (#1098), the reader's included:
+      // "it shares your working tree" is true of `repo/packages/a` and `repo`,
+      // and comparing the two folder names cannot see it. Both lookups run side
+      // by side under the one budget, so this adds no wait of its own.
       resolveMentions: async (text, ownSessionId) => {
-        const git = await mentionGit.lookup(
-          mentionedSessions(sessionQueries, text, ownSessionId).map((s) => s.folder)
-        );
+        const folders = mentionedSessions(sessionQueries, text, ownSessionId).map((s) => s.folder);
+        const listed = folders.length > 0 ? sessionQueries.listSessions() : undefined;
+        const own = listed?.ok ? listed.value.find((s) => s.id === ownSessionId)?.folder : undefined;
+        const [git, tree] = await Promise.all([
+          mentionGit.lookup(folders),
+          mentionTree.lookup(own && folders.length > 0 ? [...folders, own] : []),
+        ]);
         return resolveMentions(sessionQueries, renderOutput, text, ownSessionId, {
           mint: () => contextRefs.mint(ownSessionId),
           fence: quoted,
           git: (folder) => git.get(folder),
+          tree: (folder) => tree.get(folder),
         });
       },
       // The context chip's drop dialog (P2-E11-10) — the SAME `sessionQueries`

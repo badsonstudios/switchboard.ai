@@ -106,6 +106,11 @@ on the floor, and say so in your PR.
 - **The bar at the bottom of the window no longer counts an open document as
   a session.** One session with one document open beside it said "2 sessions"
   there while the Sessions list said 1. Both now count sessions.
+- **Naming another session with `@` now warns when the two of you share a git
+  checkout, not only when you share a folder.** A session at the top of a
+  project and one working in a subfolder of it are on one branch and see each
+  other's uncommitted changes; the handoff said nothing about it because the
+  two folder names were different. It now says "It shares your working tree".
 
 ## 0.8.113 — 2026-10-04
 
