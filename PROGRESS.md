@@ -3,6 +3,33 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ RELEASED: v0.8.113, 2026-10-04 (`d519734`, PR #1094)
+>
+> The owner, once #1090 and #1092 were in: *"Yeah, let's cut a release."* A
+> plain patch step. Installer and `.sha256` sidecar both published, and the
+> published pair downloaded and verified to match by hand. `0.8.114 —
+> unreleased` is open and empty.
+>
+> **In it:** a pick from a session's history opens in that session (#1090), and
+> `@Name` hands over a structured brief (#1092). Both have rows in the tracker's
+> Untested table.
+>
+> **Next up — nothing is claimed. THREE THINGS ARE WAITING ON THE OWNER:**
+>
+> 1. **#1088 / draft PR #1089.** When he said "History shows every tool call as
+>    a separate line", did he mean the conversation view or the 🕘 picker? The
+>    answer decides whether #1089 is rebuilt or closed. Details are in the
+>    #1090 entry below. **Do not merge #1089.**
+> 2. **A self-written handoff** (#1092's sixth point): asking the source session
+>    to summarise itself. It is the one option where a model authors the text.
+> 3. Whether a busy session should offer "stop it and switch" on a history pick
+>    instead of refusing.
+>
+> Unclaimed and worth doing: pictures for the remaining 15 manual pages.
+> ⚠️ **Three flaky tests cost four CI re-runs across 2026-10-03/04** — #1079
+> (feed tail-pin e2e), #1025 and #835 (both `git-service.test.ts`, Windows).
+> Every release since 0.8.111 has needed at least one re-run.
+
 > # ✅ 2026-10-04: **#1092 — `@Name` hands over a brief, not the tail of a screen**
 >
 > **Owner, after his first cross-session handoff:** *"Is there any way to make
