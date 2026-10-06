@@ -71,8 +71,8 @@
 >    released.** The engine is now told which scheme the theme is (app-wide, so
 >    native checkboxes and drop-downs follow too), and the Files rows stop
 >    short of the tab. The manual's 24 pictures are regenerated.
-> 7. 🚧 **#1088 — the 🕘 history list is full of things that are not
->    conversations. IN CI 2026-10-06** on `feature/1088-history-picker-noise`.
+> 7. ✅ **#1088 — the 🕘 history list is full of things that are not
+>    conversations. DONE 2026-10-06, PR #1128, merged, NOT released.**
 >    Measured on this repo's folder: 60 of the 70 newest rows were the app's OWN
 >    task-label one-shots, saved by the CLI as conversations; 32 more read just
 >    `/clear`. One-shots now pass `--no-session-persistence` (measured: nothing
@@ -81,7 +81,10 @@
 >    ones. Draft PR #1089 (the wrong surface) is CLOSED on the owner's word.
 >
 > **WHERE THE LIST STANDS, 2026-10-06:** 1, 2, 3 and 6 are merged. 4 is closed.
-> 5 has its first step merged and is not finished. 7 is in CI.
+> 5 has its first step merged and is not finished. 7 is merged.
+> **So the list is done except the rest of 5.** Next up: nothing is claimed —
+> the owner decides between cutting 0.8.115, more of item 5, and the two
+> approved features (#1126, #1127).
 >
 > **THE OWNER'S ANSWERS, 2026-10-06:** (a) #1088 meant the **history picker**
 > — "the previous conversations clock icon … lists all sorts of crap in
