@@ -53,8 +53,10 @@
 >    still loading. The issue is open ON PURPOSE, waiting for one thing only
 >    the owner can do: press Clear on a freshly resumed card **on the laptop**.
 >    Nothing to build.
-> 5. 🚧 **#716 and #1013 — sluggishness** (typing lag; many sessions). **FIRST
->    MEASURED STEP IN CI 2026-10-06** on `feature/716-streaming-render-cost`. Every streamed
+> 5. ⏳ **#716 and #1013 — sluggishness** (typing lag; many sessions). **FIRST
+>    MEASURED STEP DONE 2026-10-06, PR #1123 (`201bd8f`), merged, NOT
+>    released. BOTH ISSUES STAY OPEN.** Next: the owner's laptop, on a build
+>    with this in it, with detailed capture on. Every streamed
 >    chunk of a reply was re-rendering EVERY block in the conversation. In the
 >    real app at 980 blocks, one reply streaming, 4x throttle, 12 s: **86 long
 >    tasks / 7,648 ms before, 16 / 931 ms after.** Unthrottled on the desktop it
@@ -67,9 +69,16 @@
 >    re-parsing the growing reply, and plain layout and paint. The findings
 >    note lists three next steps, each worth 100–300 ms of a 12 s window. Nothing is known yet about
 >    Tanner's machine.
-> 6. **#1104 and #1105** (white scrollbar in dark dialogs; the Events edge tab
+> 6. ❓ **#1104 and #1105** (white scrollbar in dark dialogs; the Events edge tab
 >    over the Files tab's git letter) — ONLY if Tanner is not about to rework
->    those surfaces. Ask before starting.
+>    those surfaces. **ASKED 2026-10-06 at the start of the session; no answer
+>    yet. Not started.**
+>
+> **WHERE THE LIST STANDS, 2026-10-06:** 1, 2 and 3 are merged. 4 was already
+> fixed and waits on a laptop re-test. 5 has its first step merged and is not
+> finished. 6 waits on an answer. **Nothing is released — 0.8.115 is not cut;
+> the owner said he will say when.** Five rows are in the tracker's Re-test
+> table for it.
 >
 > **THEN cut 0.8.115 — when the owner asks, not before.** Only after that, a
 > feature.
