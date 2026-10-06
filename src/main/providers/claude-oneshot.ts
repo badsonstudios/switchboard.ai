@@ -79,6 +79,19 @@ export const CONTAINED_ARGS: readonly string[] = [
   '--strict-mcp-config',
   '--permission-mode',
   'default',
+  // …and it is NOT A CONVERSATION, so it must not be saved as one (#1088).
+  //
+  // Without this every one-shot wrote a transcript into the project's own
+  // history, beside the user's real conversations. The owner, opening the
+  // history picker: "It lists all sorts of crap in there." Measured on this
+  // repo's folder: 60 of the 70 newest rows were task-label requests, each
+  // reading "Below is the recent transcript of a coding session…". The CLI's
+  // own `--resume` picker was showing them too.
+  //
+  // MEASURED, CLI 2.1.288, with every other flag in this array: with it, no
+  // project directory is created at all; without it, one transcript. The
+  // flag "only works with --print", which is the only way this is ever run.
+  '--no-session-persistence',
 ];
 
 /** Small model, because a six-word label does not need a large one. */

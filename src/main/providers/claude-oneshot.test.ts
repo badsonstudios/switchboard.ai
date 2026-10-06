@@ -110,6 +110,10 @@ describe('the containment posture (CONTAINED_ARGS)', () => {
       '--strict-mcp-config',
       '--permission-mode',
       'default',
+      // #1088 — not part of the containment, and pinned here anyway: without
+      // it every label request is saved into the project's own history as a
+      // conversation. Measured on 2.1.288 beside every flag above.
+      '--no-session-persistence',
     ]);
   });
 

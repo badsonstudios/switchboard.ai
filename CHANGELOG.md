@@ -103,6 +103,13 @@ on the floor, and say so in your PR.
 - **The Files tab's git letters are no longer hidden behind the Events tab.**
   The M and U at the end of each row sat under the Events tab on the window's
   edge; they now stop short of it.
+- **The list of previous conversations shows your conversations.** It was
+  mostly filled with requests switchboard itself makes in the background to
+  write task labels — rows beginning "Below is the recent transcript of a
+  coding session" — and with rows that said only `/clear`. Those background
+  requests are no longer saved as conversations at all, the old ones are left
+  out of the list, and a session you cleared and then worked in is named for
+  what you did next.
 - **Typing while Claude is replying is smoother in a long conversation.** Each
   piece of a reply as it arrived made the app redraw the whole conversation —
   every entry, up to a thousand — to add a few words to the last one. It now

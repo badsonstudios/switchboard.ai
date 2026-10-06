@@ -66,22 +66,31 @@
 >    re-parsing the growing reply, and plain layout and paint. The findings
 >    note lists three next steps, each worth 100–300 ms of a 12 s window. Nothing is known yet about
 >    Tanner's machine.
-> 6. 🚧 **#1104 and #1105** (white scrollbar in dark dialogs; the Events edge tab
->    over the Files tab's git letter) — the owner, 2026-10-06: *"Tanner's not
->    doing anything yet. He's just testing around."* **IN CI** on
->    `feature/1104-1105-dark-scrollbar-events-tab`: the engine is now told
->    which scheme the theme is, and the Files rows stop short of the tab.
->    The manual's 24 pictures are regenerated from the fixed build.
+> 6. ✅ **#1104 and #1105** (white scrollbar in dark dialogs; the Events edge tab
+>    over the Files tab's git letter) — **DONE 2026-10-06, PR #1125, merged, NOT
+>    released.** The engine is now told which scheme the theme is (app-wide, so
+>    native checkboxes and drop-downs follow too), and the Files rows stop
+>    short of the tab. The manual's 24 pictures are regenerated.
+> 7. 🚧 **#1088 — the 🕘 history list is full of things that are not
+>    conversations. IN CI 2026-10-06** on `feature/1088-history-picker-noise`.
+>    Measured on this repo's folder: 60 of the 70 newest rows were the app's OWN
+>    task-label one-shots, saved by the CLI as conversations; 32 more read just
+>    `/clear`. One-shots now pass `--no-session-persistence` (measured: nothing
+>    saved), the old ones and empty `/clear` stubs are left out, and a
+>    cleared-then-driven session is named for what it did. 300 rows → 118 real
+>    ones. Draft PR #1089 (the wrong surface) is CLOSED on the owner's word.
 >
-> **WHERE THE LIST STANDS, 2026-10-06:** 1, 2 and 3 are merged. 4 is closed.
-> 5 has its first step merged and is not finished. 6 is in CI.
+> **WHERE THE LIST STANDS, 2026-10-06:** 1, 2, 3 and 6 are merged. 4 is closed.
+> 5 has its first step merged and is not finished. 7 is in CI.
 >
 > **THE OWNER'S ANSWERS, 2026-10-06:** (a) #1088 meant the **history picker**
 > — "the previous conversations clock icon … lists all sorts of crap in
 > there" — so draft PR #1089 changed the wrong surface; closing it and looking
-> at the picker waits on his go. Zoom is app-wide: confirmed. (b) a
-> self-written handoff and (c) "stop it and switch" were explained again and
-> are STILL OPEN, as is whether Allow all should come back on the plan bar. **Nothing is released — 0.8.115 is not cut;
+> at the picker — he said go, and that is item 7. Zoom is app-wide: confirmed.
+> Allow all stays OFF the plan bar: confirmed. (b) a self-written handoff:
+> APPROVED, filed as #1126. (c) "stop it and open that conversation" on a busy
+> history pick: APPROVED, filed as #1127. Both are features and NOT started —
+> they wait for him to say build. **Nothing is released — 0.8.115 is not cut;
 > the owner said he will say when.** Five rows are in the tracker's Re-test
 > table for it.
 >
