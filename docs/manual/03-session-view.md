@@ -70,7 +70,14 @@ a session you'd left. Scroll up freely; it won't yank you back.
 box, pressing a **Copy** button, clicking to put the keyboard focus there — leaves the
 view following, even while Claude is writing flat out. That used to be the one case
 where a busy session quietly stopped keeping up: a click while output was pouring in
-could be mistaken for scrolling away.
+could be mistaken for scrolling away. The same goes for scrolling *down*, and for
+pressing a key like `Shift` or `Ctrl+C` — none of them can take you away from the
+newest message, so none of them stops the view following it, however long the
+conversation has grown.
+
+If a conversation ever does stop following and you didn't scroll up, that's a
+bug worth reporting: **Help ▸ Report a problem…** sends the app's log, and the
+log records what the view thought you did.
 
 That holds across the things that move a card around, too: quitting and
 reopening switchboard, clicking a session in the sidebar, and dragging cards

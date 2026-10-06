@@ -86,7 +86,15 @@ import {
   type ComposerBounds,
 } from '../lib/composer-size';
 import { argumentSummary } from '../lib/permission-batches';
-import { nextPin, TAIL_SLACK } from '../lib/feed-pin';
+import {
+  canScrollUp,
+  DRAG_SLOP_PX,
+  keyGesture,
+  nextPin,
+  TAIL_SLACK,
+  wheelGesture,
+  type FeedGesture,
+} from '../lib/feed-pin';
 import { ApprovalPreview } from './ApprovalPreview';
 import { DenyFeedbackField } from './DenyFeedback';
 import { targetPath } from '../../../shared/tool-paths';
@@ -518,8 +526,42 @@ export function FeedView(props: {
   // change the pin now.
   const lastGesture = React.useRef(0);
   const GESTURE_MS = 500;
-  const markGesture = React.useCallback(() => {
+  /**
+   * WHAT that touch was (#1111) — `lib/feed-pin.ts` decides what each kind can do.
+   *
+   * The clock alone was the bug: a click opened the same window a wheel did, and
+   * at the 1,000-block cap `scrollTop` goes DOWN on every arriving block (the
+   * oldest is evicted and scroll anchoring compensates), so "something was
+   * touched, and the number went down" was true after every click in a long
+   * session. Reproduced, 23 unpins in 44 clicks — the probe is `spike/probes/1111/`.
+   */
+  const lastGestureKind = React.useRef<FeedGesture | null>(null);
+  /** where the button went down, so a click can be told from a drag */
+  const pressAt = React.useRef<{ x: number; y: number } | null>(null);
+  /**
+   * `kind` omitted means "the same gesture, still going" — the scroll handler's
+   * way of keeping a scrollbar drag or a momentum scroll alive without claiming
+   * to know it became something else.
+   */
+  const markGesture = React.useCallback((kind?: FeedGesture) => {
     lastGesture.current = Date.now();
+    if (kind !== undefined) lastGestureKind.current = kind;
+  }, []);
+  /**
+   * Say so, every time the conversation stops following (#1111).
+   *
+   * One line per unpin, with what caused it and the numbers the rule saw. The
+   * main window's console is already copied into the app log, so the next
+   * "it stopped scrolling" report arrives with its own explanation — rounds one
+   * and two of this bug were both argued from the code because there was nothing
+   * to read. Not behind a switch: this fires when somebody scrolls away, not per
+   * block, so there is nothing to make cheap.
+   */
+  const noteUnpin = React.useCallback((cause: string, delta: number, away: number): void => {
+    console.info(
+      `[feed-pin] stopped following: cause=${cause} delta=${Math.round(delta)} ` +
+        `away=${Math.round(away)} blocks=${blocksRef.current.length}`
+    );
   }, []);
   /**
    * The way back (#442).
@@ -571,6 +613,9 @@ export function FeedView(props: {
    */
   const jumpToLatest = React.useCallback((): void => {
     pinned.current = true;
+    // whatever took them away is over (#1111): a wheel-up half a second ago must
+    // not be believed about the first block evicted after they came back
+    lastGestureKind.current = null;
     owesRestore.current = false;
     // `pin()` records where it actually landed (#967), so there is nothing to
     // guess at here any more — this used to set `lastTop` to `scrollHeight`, which
@@ -755,7 +800,6 @@ export function FeedView(props: {
   // we kept would be a second copy to get wrong.
   const [inFeed, setInFeed] = React.useState(false);
   const onFeedKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLDivElement>): void => {
-    markGesture();
     const root = scroller.current;
     if (!root) return;
     const els = Array.from(root.querySelectorAll<HTMLElement>(FEED_STOP_SELECTOR));
@@ -764,6 +808,10 @@ export function FeedView(props: {
       count: els.length,
       current: active ? els.indexOf(active) : -1,
     });
+    // AFTER the walk has had its say (#1111): Shift, Ctrl+C and a letter cannot
+    // scroll anything, and only a key that can may be believed about an upward
+    // movement that follows it.
+    markGesture(keyGesture(e.key, e.shiftKey, action !== null));
     if (!action) return; // not ours: the button or the scroller gets it
     e.preventDefault();
     if (action.kind === 'exit') root.focus();
@@ -807,12 +855,13 @@ export function FeedView(props: {
       // onScroll). Both halves are needed â€” the gesture claims the scroll as
       // the user's, and unpinning stops the next streamed block dragging them
       // away from the hit they just asked for.
-      markGesture();
+      markGesture('jump');
+      if (pinned.current) noteUnpin('jump', 0, 0);
       pinned.current = false;
       // The SCROLL is not done here â€” see the layout effect below.
       return true;
     },
-    [markGesture],
+    [markGesture, noteUnpin],
   );
   /**
    * Take the view to the revealed block, after React has committed it.
@@ -1003,10 +1052,79 @@ export function FeedView(props: {
         // mouse works is noise. It appears for the people it is for.
         onFocus={(e) => setInFeed(!!(e.target as HTMLElement).matches?.(':focus-visible'))}
         onBlur={() => setInFeed(false)}
-        onWheel={markGesture}
-        onTouchStart={markGesture}
-        onTouchMove={markGesture}
-        onPointerDown={markGesture}
+        // WHICH gesture, not merely that there was one (#1111) — a wheel toward
+        // the tail and a click cannot scroll the conversation upward, and are
+        // not believed about an upward movement that follows them.
+        onWheel={(e) => {
+          // A wheel with no vertical part (a sideways swipe's drift) and
+          // Ctrl+wheel (zoom) scroll nothing here — and recording one would
+          // ERASE a wheel-up still in flight, yanking its owner back (review).
+          if (e.deltaY === 0 || e.ctrlKey) return;
+          markGesture(wheelGesture(e.deltaY));
+        }}
+        onTouchStart={() => markGesture('touch')}
+        onTouchMove={() => markGesture('touch')}
+        onPointerDown={(e) => {
+          const el = e.currentTarget;
+          pressAt.current = { x: e.clientX, y: e.clientY };
+          // ⚠️ THE RELEASE ENDS IT, wherever it happens (review). Without this a
+          // `drag` or a `scrollbar` outlived its own button: dragging the thumb
+          // back to the bottom left the gesture armed, and the next evicted
+          // block unpinned the conversation the user had just come home to. On
+          // the document, because a drag is released wherever the pointer is.
+          const doc = el.ownerDocument;
+          const release = (): void => {
+            doc.removeEventListener('pointerup', release, true);
+            doc.removeEventListener('pointercancel', release, true);
+            pressAt.current = null;
+            const kind = lastGestureKind.current;
+            if (kind === 'drag' || kind === 'scrollbar') lastGestureKind.current = 'press';
+          };
+          doc.addEventListener('pointerup', release, true);
+          doc.addEventListener('pointercancel', release, true);
+          if (e.button === 1) return markGesture('middle-button');
+          // On the scrollbar: the press landed on the scroller itself, outside
+          // the box its content is laid out in. `e.target` FIRST — a click on
+          // content then measures nothing, where the rect would force a layout
+          // of a thousand blocks mid-stream. `clientLeft` rather than an assumed
+          // side, because a right-to-left locale draws the bar on the left; the
+          // 1px is the rounding between a fractional rect and an integer width.
+          // (An overlay scrollbar would never satisfy this. There is none: the
+          // app ships on Windows and Linux, and the feed styles no scrollbar.)
+          let onBar = false;
+          if (e.target === el) {
+            const x = e.clientX - el.getBoundingClientRect().left - el.clientLeft;
+            onBar = x < 0 || x >= el.clientWidth - 1;
+          }
+          markGesture(onBar ? 'scrollbar' : 'press');
+        }}
+        onPointerMove={(e) => {
+          // Only ever promotes a press that began HERE and is STILL HELD:
+          // hovering costs one comparison, a released click stays a click, and a
+          // drag that started somewhere else and merely crosses the conversation
+          // is not ours (`pressAt` is cleared on release).
+          const from = pressAt.current;
+          const kind = lastGestureKind.current;
+          if (e.buttons === 0) {
+            // the belt to `release` above: a scrollbar press need not deliver a
+            // `pointerup` to the page, but a move with nothing held says the same
+            if (kind === 'drag' || kind === 'scrollbar') lastGestureKind.current = 'press';
+            pressAt.current = null;
+            return;
+          }
+          if (!from) return;
+          if (kind === 'drag') return markGesture('drag');
+          if (kind !== 'press') return;
+          if (Math.hypot(e.clientX - from.x, e.clientY - from.y) > DRAG_SLOP_PX) markGesture('drag');
+        }}
+        onPointerLeave={(e) => {
+          // A fast flick upward to select can leave before a single move is
+          // delivered inside — moves are coalesced per frame — and a held press
+          // that has LEFT is a drag by any measure (review).
+          if (e.buttons !== 0 && pressAt.current && lastGestureKind.current === 'press') {
+            markGesture('drag');
+          }
+        }}
         onKeyDown={onFeedKeyDown}
         onScroll={() => {
           const el = scroller.current;
@@ -1020,8 +1138,11 @@ export function FeedView(props: {
           // from a unit test while it lived here. What stays in the component is the
           // three things only the component can do: read the DOM, move the scroller,
           // and remember where it put it.
+          const was = pinned.current;
+          const delta = el.scrollTop - knownTop.current;
+          const away = el.scrollHeight - el.scrollTop - el.clientHeight;
           const decision = nextPin({
-            pinned: pinned.current,
+            pinned: was,
             auto: autoPin.current,
             // THE question (#967): did the VIEWPORT move, or did the content move
             // under it? A user scroll changes `scrollTop`; blocks arriving below the
@@ -1030,11 +1151,13 @@ export function FeedView(props: {
             // rule, which only knew how long ago something had been touched, read it
             // as the first whenever the user had clicked anything in the conversation
             // within the last half second.
-            delta: el.scrollTop - knownTop.current,
-            away: el.scrollHeight - el.scrollTop - el.clientHeight,
+            delta,
+            away,
             gestureRecent: Date.now() - lastGesture.current <= GESTURE_MS,
+            canScrollUp: canScrollUp(lastGestureKind.current),
           });
           pinned.current = decision.pinned;
+          if (was && !decision.pinned) noteUnpin(lastGestureKind.current ?? 'none', delta, away);
           // Bookkeeping, unconditionally: the scroller IS where it now says it is, and
           // the next event's `delta` is measured from here. (`pin()` below overwrites
           // it with where it actually landed.)
@@ -1044,6 +1167,15 @@ export function FeedView(props: {
             // a continuing gesture keeps the window alive, so a scrollbar drag or a
             // momentum scroll does not decay mid-movement
             markGesture();
+            // HOME, and on the way DOWN: the gesture that brought them here is
+            // over, and must not be believed about the next evicted block
+            // (review — a touch or a walk that ended on the tail stayed armed).
+            // `delta > 0` is load-bearing: the first frames of a wheel-UP are
+            // also inside the slack, and disarming there would repin somebody who
+            // is leaving. A held scrollbar is left alone; its release disarms it.
+            if (decision.pinned && delta > 0 && lastGestureKind.current !== 'scrollbar') {
+              lastGestureKind.current = null;
+            }
             // THE READING POSITION, and the only place it is written from an event.
             // A layout scroll or a clamp must never be saved as somewhere the user
             // chose to be — see `knownTop`'s docblock.
