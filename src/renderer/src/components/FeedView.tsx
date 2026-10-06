@@ -146,7 +146,55 @@ function agentCaption(t: (k: string, o?: Record<string, string>) => string, h: A
     : t('feedView.subagent.marker', { name: h.name });
 }
 
-function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
+/**
+ * Blocks in the middle of a render-failure retry streak (#716) — see `sameBlock`.
+ *
+ * Keyed on the block OBJECT, so it needs no session id and cannot leak: an
+ * evicted or replaced block takes its entry with it.
+ */
+const retrying = new WeakSet<FeedBlockDto>();
+
+/**
+ * May `Block` skip this render?
+ *
+ * Yes when it is handed the very same block object — which is every block but
+ * one, on every streamed chunk: `upsertBlock` copies the ARRAY and keeps each
+ * untouched element's identity.
+ *
+ * Except while that block is mid-retry. #463's self-healing fires when the
+ * boundary is handed NEW children, and a skipped render hands it nothing, so a
+ * block that threw once would otherwise never be tried again. The boundary
+ * says when a streak starts and ends (`onStreak`), and for exactly that long
+ * this answers "no" and the block is offered a render on each feed update, as
+ * it was before it was memoised.
+ */
+function sameBlock(prev: { b: FeedBlockDto }, next: { b: FeedBlockDto }): boolean {
+  return prev.b === next.b && !retrying.has(next.b);
+}
+
+/**
+ * ⚠️ MEMOISED, AND THE NUMBERS ARE WHY (#716, #1013).
+ *
+ * The owner, on the desktop: *"if I have a session going and Claude is busy,
+ * typing into the prompt can be sluggish."* A streaming reply re-emits its
+ * block every 50ms, each one is a `setBlocks`, and `FeedView` then rendered
+ * EVERY block — up to 1,000 — to change one.
+ *
+ * MEASURED in the real app (`spike/probes/716/`: a conversation of real blocks,
+ * one reply streaming, a key typed every 100ms, 4x CPU throttle, 12s):
+ *
+ *                                long tasks        frames   key->paint p95
+ *     980 blocks, nothing streaming   0 /    0 ms     746        88 ms
+ *     100 blocks, streaming           0 /    0 ms     752        72 ms
+ *     980 blocks, streaming          86 / 7648 ms     154       152 ms
+ *     980 blocks, streaming, THIS    16 /  958 ms     534       112 ms
+ *
+ * So the cost of a chunk scaled with the length of the conversation, and this
+ * removes about seven eighths of it. What is left is in the findings note
+ * (`spike/findings/716-streaming-render-cost.md`) with what was tried and did
+ * not move it — memoising the composer and rendering in groups, for two.
+ */
+const Block = React.memo(function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // Resolved, not switched (Â§5.23): this used to be a seven-branch ternary
   // naming every renderer. A new block shape is now a contribution plus a
   // bootstrap line, and this file is not touched.
@@ -218,12 +266,14 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
           contribution failed, and retries it on the next update until it has
           failed `CONTRIBUTION_RETRY_LIMIT` times in a row (#463).
 
-          RETRY REACHES THE FEED: every built-in renderer's `render(b)` returns
-          a fresh element, `resolveFeedBlock` runs in this component's render
-          body, and `Block` is not memoised â€” so a new `children` identity
-          arrives on every feed re-render, which is what the boundary keys its
-          retry on. The bound is what keeps that from spinning: a block that
-          always throws costs three attempts, not one per streamed chunk.
+          RETRY REACHES THE FEED, and since #716 that takes one deliberate
+          step. The boundary retries when it is handed new `children`, and
+          `Block` is memoised — so a block that is not itself changing would
+          never be offered another render. `onStreak` below is the boundary
+          saying "this one is mid-retry", and `sameBlock` stops skipping it for
+          exactly that long. The bound is what keeps that from spinning: a
+          block that always throws costs three attempts, not one per streamed
+          chunk, and once the bound is spent the block is skipped again.
 
           INSIDE the row, not around it: the gutter, the dot and the find
           anchors (`data-feed-block`, FEED_SEQ_ATTR) are the FEED's markup and
@@ -231,11 +281,23 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
           also leaves the boundary's identity tied to this row, whose key
           (`b.seq`, in the list below) is unchanged by any of this. */}
       <div style={{ flex: 1, minInlineSize: 0 }}>
-        {id === null ? inner : <ContributionBoundary id={id}>{inner}</ContributionBoundary>}
+        {id === null ? (
+          inner
+        ) : (
+          <ContributionBoundary
+            id={id}
+            onStreak={(on) => {
+              if (on) retrying.add(b);
+              else retrying.delete(b);
+            }}
+          >
+            {inner}
+          </ContributionBoundary>
+        )}
       </div>
     </div>
   );
-}
+}, sameBlock);
 
 /**
  * What an empty Session view says (P2-E15-10, Â§5.26). It used to say one thing

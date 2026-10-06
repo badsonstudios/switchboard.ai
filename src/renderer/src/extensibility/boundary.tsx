@@ -65,6 +65,25 @@ interface Props {
    * is better than absence, and inventing one would be a placeholder.
    */
   fallback?: React.ReactNode;
+  /**
+   * Told whether this slot is in the middle of a retry streak (#716).
+   *
+   * `true` when a render threw and another attempt is still allowed; `false`
+   * when a later render survived, or when the bound is spent and nothing more
+   * will be tried.
+   *
+   * For a caller that MEMOISES what it puts in here. The retry below fires when
+   * `children` changes identity, and a memoised parent stops producing new
+   * children — so without this a block that threw once would never be offered
+   * a second render, and #463's self-healing would quietly stop reaching it.
+   * The caller uses the answer to keep re-rendering that one slot while it is
+   * worth it, and not a moment longer.
+   *
+   * ⚠️ Called from `componentDidCatch` and `componentDidUpdate`. It must not
+   * set state: the one thing a crash barrier may never do is generate renders
+   * of its own.
+   */
+  onStreak?: (retrying: boolean) => void;
 }
 
 export class ContributionBoundary extends React.Component<Props, { failed: boolean }> {
@@ -87,6 +106,7 @@ export class ContributionBoundary extends React.Component<Props, { failed: boole
 
   componentDidCatch(error: Error): void {
     this.failures += 1;
+    this.props.onStreak?.(this.failures < CONTRIBUTION_RETRY_LIMIT);
     // The log line NAMES THE CONTRIBUTION (the existing pattern) and now also
     // says what happens next, because "it threw" and "it threw and will never
     // be tried again" are different bug reports.
@@ -110,6 +130,7 @@ export class ContributionBoundary extends React.Component<Props, { failed: boole
     if (!this.state.failed) {
       // A render that survived. The streak is over — see the header on why
       // this is consecutive and not lifetime.
+      if (this.failures > 0) this.props.onStreak?.(false);
       this.failures = 0;
       return;
     }

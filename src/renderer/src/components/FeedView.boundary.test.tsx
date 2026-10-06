@@ -226,8 +226,10 @@ describe('a feed block whose renderer output throws (#594)', () => {
   it('comes back on the next streamed update, without the app restarting', async () => {
     // #463's retry has to actually REACH the feed: the boundary retries only
     // when its `children` identity changes, so this is the claim that a feed
-    // re-render produces a new element for the block (it does — `render(b)`
-    // builds a fresh one and `Block` is not memoised).
+    // re-render produces a new element for the block. Since #716 `Block` is
+    // memoised and an unchanged block is normally SKIPPED — so this is now the
+    // claim that the skip stands down for a block that is mid-retry
+    // (`onStreak` / `sameBlock` in `FeedView`).
     const host = await mountFeed();
     expect(host.textContent).not.toContain(HEALED);
 
@@ -254,5 +256,51 @@ describe('a feed block whose renderer output throws (#594)', () => {
     // and the feed is still a feed
     expect(host.textContent).toContain(BEFORE);
     expect(host.textContent).toContain(AFTER);
+  });
+});
+
+describe('a streamed chunk renders the block it changed, and no other (#716)', () => {
+  // The owner: *"if I have a session going and Claude is busy, typing into the
+  // prompt can be sluggish."* Every 50ms of a streaming reply used to render
+  // every block in the conversation — measured at 7.6s of long tasks in a 12s
+  // window on a 980-block conversation under 4x throttle
+  // (`spike/findings/716-streaming-render-cost.md`).
+  //
+  // `Exploder` counts its own renders, so with the explosion switched off it is
+  // an ordinary block with a render counter on it.
+  it('does not render a block again because a DIFFERENT block streamed', async () => {
+    explode = false;
+    const host = await mountFeed();
+    expect(host.textContent).toContain(HEALED);
+    const afterMount = attempts;
+    expect(afterMount).toBeGreaterThan(0);
+
+    for (let i = 0; i < 20; i++) await stream(50, `a reply, ${i} chunks in`);
+
+    expect(host.textContent).toContain('a reply, 19 chunks in');
+    expect(attempts).toBe(afterMount);
+  });
+
+  it('still renders a block when THAT block is the one that changed', async () => {
+    explode = false;
+    await mountFeed();
+    const afterMount = attempts;
+
+    await stream(BAD_SEQ, 'the same seq, new contents');
+
+    expect(attempts).toBeGreaterThan(afterMount);
+  });
+
+  it('goes back to skipping a block once it has healed', async () => {
+    const host = await mountFeed(); // exploding
+    explode = false;
+    await stream(60, 'the chunk it heals on');
+    expect(host.textContent).toContain(HEALED);
+    await stream(61, 'one more, to let the streak close');
+    const healed = attempts;
+
+    for (let i = 0; i < 10; i++) await stream(62, `later ${i}`);
+
+    expect(attempts).toBe(healed);
   });
 });

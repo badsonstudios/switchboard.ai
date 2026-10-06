@@ -98,6 +98,11 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **Typing while Claude is replying is smoother in a long conversation.** Each
+  piece of a reply as it arrived made the app redraw the whole conversation —
+  every entry, up to a thousand — to add a few words to the last one. It now
+  redraws only the entry that changed. On a slow machine that was most of the
+  stutter; some remains, and is being measured.
 - **A long, busy session keeps following its newest message.** Once a
   conversation had grown past a thousand entries, a single click anywhere in it
   — or scrolling *down* — could make it stop keeping up, as though you had
