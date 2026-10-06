@@ -103,6 +103,10 @@ on the floor, and say so in your PR.
   — or scrolling *down* — could make it stop keeping up, as though you had
   scrolled away. Now only scrolling up does that. If it ever does stop
   following, the reason is written to the app log.
+- **`Ctrl+=` zooms in.** Only `Ctrl+Shift+=` did before, which is not the key
+  anyone presses. `Ctrl+-` zooms out and `Ctrl+0` goes back to normal, from
+  anywhere in the app, including while you are typing a prompt. The **View**
+  menu now shows those keys.
 
 ## 0.8.114 — 2026-10-05
 

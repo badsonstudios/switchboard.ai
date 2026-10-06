@@ -165,9 +165,13 @@ export function buildMenuTemplate(
       // NO Reload / Force Reload: a reload kills every hosted session's view.
       { role: 'toggleDevTools' },
       { type: 'separator' },
-      { role: 'resetZoom' },
-      { role: 'zoomIn' },
-      { role: 'zoomOut' },
+      // The accelerators are LABELS for what `window-zoom.ts` claims in
+      // `before-input-event` (#1114): the stock `zoomIn` role shows and answers
+      // Ctrl+Plus, a shifted key, which is why Ctrl+= did nothing. The claim
+      // prevents the default, so the menu's own shortcut never also fires.
+      { role: 'resetZoom', accelerator: 'CommandOrControl+0' },
+      { role: 'zoomIn', accelerator: 'CommandOrControl+=' },
+      { role: 'zoomOut', accelerator: 'CommandOrControl+-' },
       { type: 'separator' },
       { role: 'togglefullscreen' },
     ],

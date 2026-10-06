@@ -185,6 +185,11 @@ Turn it off and the spending stops at once. The full walk-through is in
 
 ## Task label size
 
+*This changes one thing: how big each session's task label is. To make
+**everything** bigger or smaller, zoom the window instead — `Ctrl+=`, `Ctrl+-`
+and `Ctrl+0`, described under [keyboard shortcuts](06-keyboard.md). The two
+add up: zoom multiplies whatever label size you pick here.*
+
 **Settings ▸ Appearance.** How much of each label you see.
 
 | Setting | What you get |
