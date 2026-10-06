@@ -107,6 +107,9 @@ async function mountFeed(): Promise<{ host: HTMLElement; s: Scroller }> {
   });
   Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => 2_000 });
   Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => 300 });
+  // …and a width, so a press at x=0 is inside the content box rather than on a
+  // scrollbar: the scrollbar test is `x >= clientWidth`, and jsdom's 0 fails it (#1111)
+  Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => 800 });
   return {
     host,
     s: {
@@ -141,10 +144,15 @@ const settle = async (): Promise<void> => {
   });
 };
 
-/** a wheel on the scroller, which is what opens the gesture window */
-const wheel = async (s: Scroller): Promise<void> => {
+/**
+ * A wheel on the scroller, which is what opens the gesture window.
+ *
+ * TOWARD THE TOP unless told otherwise (#1111): the direction is now part of what
+ * the gesture means, and a wheel with no `deltaY` at all cannot scroll up.
+ */
+const wheel = async (s: Scroller, deltaY = -120): Promise<void> => {
   await act(async () => {
-    s.el.dispatchEvent(new WheelEvent('wheel', { bubbles: true }));
+    s.el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY }));
   });
 };
 
@@ -272,7 +280,7 @@ describe('#442 — the slack is one number', () => {
     await s.scrollTo(400); // up and away: unpin
     await settle();
     s.writes.length = 0;
-    await wheel(s);
+    await wheel(s, 120); // toward the tail
     // 1700 is the clamped tail; land inside the slack of it
     await s.scrollTo(1_700 - (TAIL_SLACK - 1));
     await settle();
@@ -281,6 +289,184 @@ describe('#442 — the slack is one number', () => {
     await act(async () => {
       s.el.dispatchEvent(new Event('scroll'));
     });
+    expect(s.writes[s.writes.length - 1]).toBe(1_700);
+  });
+});
+
+describe('#1111 — `scrollTop` going down is only a scroll if the gesture could scroll', () => {
+  // At the 1,000-block cap every arriving block evicts one from the top, and
+  // scroll anchoring lowers `scrollTop` by its height. 1,700 -> 1,622 with the
+  // tail still at 1,700 is that event, exactly as the probe recorded it.
+  it('keeps following when the number drops after a CLICK', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await clickInFeed(s);
+    await s.scrollTo(1_622);
+    // put back on the tail, not left 78px short of it with the pin gone
+    expect(s.writes[s.writes.length - 1]).toBe(1_700);
+  });
+
+  it('keeps following when it drops after a wheel TOWARD the tail', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await wheel(s, 120);
+    await s.scrollTo(1_622);
+    expect(s.writes[s.writes.length - 1]).toBe(1_700);
+  });
+
+  it('keeps following when it drops after a key that scrolls nothing', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await act(async () => {
+      s.el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Shift' }));
+    });
+    await s.scrollTo(1_622);
+    expect(s.writes[s.writes.length - 1]).toBe(1_700);
+  });
+
+  it('lets go for a wheel toward the top — the same numbers, and a person leaving', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await wheel(s);
+    await s.scrollTo(1_622);
+    expect(s.writes).toEqual([]);
+    expect(s.top()).toBe(1_622);
+  });
+
+  it('lets go for a press that TRAVELLED with the button held — a drag can scroll', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await act(async () => {
+      s.el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 50, clientY: 50 }));
+      s.el.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, clientX: 50, clientY: 20, buttons: 1 })
+      );
+    });
+    await s.scrollTo(1_622);
+    expect(s.writes).toEqual([]);
+  });
+
+  it('does not promote a click whose pointer twitched', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await act(async () => {
+      s.el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 50, clientY: 50 }));
+      s.el.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, clientX: 52, clientY: 51, buttons: 1 })
+      );
+    });
+    await s.scrollTo(1_622);
+    expect(s.writes[s.writes.length - 1]).toBe(1_700);
+  });
+
+  it('lets go for a press on the scrollbar itself', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await act(async () => {
+      // past the content box's 800px: the thumb or the track
+      s.el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 806, clientY: 50 }));
+    });
+    await s.scrollTo(1_622);
+    expect(s.writes).toEqual([]);
+  });
+
+  it('does not let a hover after the release turn a click into a drag', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await act(async () => {
+      s.el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 50, clientY: 50 }));
+      // no button held: the mouse is merely passing over the conversation
+      s.el.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, clientX: 300, clientY: 300, buttons: 0 })
+      );
+    });
+    await s.scrollTo(1_622);
+    expect(s.writes[s.writes.length - 1]).toBe(1_700);
+  });
+
+  // ── found in review: gestures that end, and gestures that are not ours ──────
+  it('lets go for PageUp with focus on the conversation itself', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await act(async () => {
+      s.el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'PageUp' }));
+    });
+    await s.scrollTo(1_400);
+    expect(s.writes).toEqual([]);
+  });
+
+  it('does not let a sideways wheel erase a wheel-up that is still in flight', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await wheel(s);
+    await wheel(s, 0); // a trackpad swipe's horizontal drift
+    await s.scrollTo(1_622);
+    expect(s.writes).toEqual([]);
+  });
+
+  it('ends a drag at its release — the next drop in `scrollTop` is not the user', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await act(async () => {
+      s.el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 50, clientY: 50 }));
+      s.el.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, clientX: 50, clientY: 20, buttons: 1 })
+      );
+      document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    });
+    await s.scrollTo(1_622);
+    expect(s.writes[s.writes.length - 1]).toBe(1_700);
+  });
+
+  it('ends a scrollbar press at its release too', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await act(async () => {
+      s.el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 806, clientY: 50 }));
+      document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+    });
+    await s.scrollTo(1_622);
+    expect(s.writes[s.writes.length - 1]).toBe(1_700);
+  });
+
+  it('does not adopt a drag that began somewhere else and crosses the conversation', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    // an old click here, long released…
+    await clickInFeed(s);
+    await act(async () => {
+      document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      // …then a button held from OUTSIDE (a composer selection, a panel divider)
+      s.el.dispatchEvent(
+        new PointerEvent('pointermove', { bubbles: true, clientX: 400, clientY: 200, buttons: 1 })
+      );
+    });
+    await s.scrollTo(1_622);
+    expect(s.writes[s.writes.length - 1]).toBe(1_700);
+  });
+
+  it('counts a held press that LEFT the conversation as a drag', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await act(async () => {
+      s.el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX: 50, clientY: 50 }));
+      // a fast flick: no move was ever delivered inside
+      s.el.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, buttons: 1 }));
+    });
+    await s.scrollTo(1_622);
+    expect(s.writes).toEqual([]);
+  });
+
+  it('disarms a wheel-up once the user has wheeled back home', async () => {
+    const { s } = await mountFeed();
+    await onTheTail(s);
+    await wheel(s);
+    await s.scrollTo(1_400); // away
+    await s.scrollTo(1_690); // …and back inside the slack, still the same wheel
+    await settle();
+    s.writes.length = 0;
+    // the next evicted block: down by its height, with a new one below the fold
+    await s.scrollTo(1_622);
     expect(s.writes[s.writes.length - 1]).toBe(1_700);
   });
 });

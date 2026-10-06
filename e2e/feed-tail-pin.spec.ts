@@ -420,6 +420,130 @@ test.describe('the feed has a way back to the tail — with a conversation (#442
     await expect(w.getByPlaceholder(/Prompt this session/)).toBeFocused();
   });
 
+  // #1111 — round two of #967, and the first round that was REPRODUCED before it
+  // was fixed. The owner, on v0.8.113: *"The session window is not scrolling down
+  // all the time. I thought we fixed that."*
+  //
+  // WHAT IT NEEDS, and why nothing above could see it: a conversation AT THE
+  // 1,000-BLOCK CAP. There, every new block evicts the oldest one from the top,
+  // and the browser's scroll anchoring holds the view still by moving `scrollTop`
+  // down by the evicted block's height. Nothing moved on screen, but the number
+  // went down — and inside the half second after any click, a `scrollTop` that
+  // went down used to be read as the user scrolling up.
+  //
+  // MEASURED on the build before the fix (`spike/probes/1111/`, real blocks
+  // replayed over this same channel): 23 false unpins in 44 clicks at the cap,
+  // 0 in 169 below it, 0 with no input at all.
+  //
+  // So this fills the view to the cap, keeps blocks arriving OVER TICKS, and
+  // clicks on nothing. It injects on `sessions:feedBlock` rather than through the
+  // fake because the fake emits a whole turn synchronously — the limitation the
+  // #967 test above records about itself — and because 1,000 blocks is five
+  // `!bulk` turns that would then also be in every later assertion's way.
+  //
+  // LAST IN THE FILE ON PURPOSE: it leaves 1,000 blocks behind it.
+  test('at the block cap, clicking in the conversation does not stop it following (#1111)', async () => {
+    test.setTimeout(120_000);
+    const w = a.window;
+    await wheelToBottom(w);
+    await expect(jump(w)).toHaveCount(0);
+
+    const liveId = await w.evaluate(async (title) => {
+      const cards = await window.switchboard.sessions.cards();
+      return cards.find((c) => c.title === title)?.liveId ?? null;
+    }, path.basename(folder));
+    if (!liveId) throw new Error('no live session to stream into');
+
+    /** three short paragraphs: every block is taller than the 40px slack */
+    const block = (i: number): { seq: number; kind: 'assistant'; text: string } => ({
+      seq: 500_000 + i,
+      kind: 'assistant',
+      text: `CAP1111_${i}\n\nsecond paragraph of block ${i}\n\nthird paragraph`,
+    });
+    const inject = (from: number, count: number, everyMs: number): Promise<void> =>
+      a.app.evaluate(
+        ({ BrowserWindow }, { id, blocks, gap }) =>
+          new Promise<void>((done) => {
+            const wc = BrowserWindow.getAllWindows()[0].webContents;
+            let i = 0;
+            const step = (): void => {
+              // everything at once when there is no gap, else one per tick
+              do {
+                wc.send('sessions:feedBlock', { sessionId: id, block: blocks[i] });
+                i += 1;
+              } while (gap === 0 && i < blocks.length);
+              if (i >= blocks.length) done();
+              else setTimeout(step, gap);
+            };
+            step();
+          }),
+        { id: liveId, blocks: Array.from({ length: count }, (_, n) => block(from + n)), gap: everyMs }
+      );
+
+    await inject(0, 1_000, 0);
+    // THE PREMISE: the view is at its cap, so the next block evicts one.
+    await expect(w.locator('[data-perf-blocks="1000"]')).toBeAttached({ timeout: 60_000 });
+    await w.waitForTimeout(1_500);
+    expect(await tailGap(w)).toBeLessThan(40);
+    await expect(jump(w)).toHaveCount(0);
+
+    const region = await w.locator('[data-feed-region]').boundingBox();
+    if (!region) throw new Error('the conversation region has no box to click in');
+    // ⚠️ THE STREAM RUNS UNTIL THE CLICKS ARE DONE, not for a fixed time (review).
+    // A fixed 140 blocks is 8.4s on main's clock whatever the renderer is doing,
+    // and a slow runner that fits only a dozen clicks into it would fail on the
+    // premise below instead of on the bug. So main keeps sending, one block every
+    // 60ms, until the test has landed its clicks and says stop.
+    await a.app.evaluate(
+      ({ BrowserWindow }, { id, text }) => {
+        const wc = BrowserWindow.getAllWindows()[0].webContents;
+        const state = { sent: 0, timer: undefined as ReturnType<typeof setInterval> | undefined };
+        (globalThis as unknown as { __cap1111?: typeof state }).__cap1111 = state;
+        state.timer = setInterval(() => {
+          // bounded, so a test that dies mid-loop cannot stream for ever
+          if (state.sent >= 2_000) return clearInterval(state.timer);
+          state.sent += 1;
+          const n = 1_000 + state.sent;
+          wc.send('sessions:feedBlock', {
+            sessionId: id,
+            block: { seq: 500_000 + n, kind: 'assistant', text: text.replace(/#/g, String(n)) },
+          });
+        }, 60);
+      },
+      { id: liveId, text: 'CAP1111_#\n\nsecond paragraph of block #\n\nthird paragraph' }
+    );
+    // Clicks on NOTHING — the gutter, at a fixed spot. One cached rectangle and a
+    // real mouse: nothing in this loop reads geometry, because a forced layout
+    // from the test would itself be a way to provoke the bug.
+    const CLICKS = 40;
+    let sent = 0;
+    try {
+      for (let i = 0; i < CLICKS; i++) {
+        await w.mouse.click(region.x + 4, region.y + region.height / 2);
+        await w.waitForTimeout(150);
+      }
+    } finally {
+      // one app for the whole serial file: never leave it streaming
+      sent = await a.app.evaluate(() => {
+        const state = (globalThis as unknown as { __cap1111?: { sent: number; timer?: ReturnType<typeof setInterval> } })
+          .__cap1111;
+        clearInterval(state?.timer);
+        return state?.sent ?? 0;
+      });
+    }
+    await expect(w.getByText(`CAP1111_${1_000 + sent}`, { exact: true })).toBeAttached({ timeout: 30_000 });
+    await w.waitForTimeout(700); // the pin lands on the next frame; give it several
+
+    // ⚠️ THE PREMISE AGAIN, or this can pass for the wrong reason: blocks have to
+    // have been arriving — and evicting — WHILE the clicks landed.
+    expect(sent, 'too few blocks arrived during the clicks to mean anything').toBeGreaterThan(CLICKS);
+    console.log(`#1111: ${CLICKS} clicks across ${sent} evicting blocks`);
+
+    // it never offered a way back, because it never left
+    await expect(jump(w)).toHaveCount(0);
+    expect(await tailGap(w)).toBeLessThan(40);
+  });
+
   test.afterAll(async () => {
     registerTempDir(folder);
     await a?.cleanup();

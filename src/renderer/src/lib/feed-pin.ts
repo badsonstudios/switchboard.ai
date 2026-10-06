@@ -46,11 +46,131 @@
 // scroll that DID move the viewport, with no gesture behind it, is the layout
 // moving it, and a pinned feed is put back on the tail rather than stranded.
 //
+// ── #1111: AN UPWARD NUMBER IS NOT AN UPWARD SCROLL ─────────────────────────
+//
+// The owner again, on a build with all of the above: *"The session window is not
+// scrolling down all the time. I thought we fixed that."*
+//
+// Rule 2 was right that only upward movement may unpin, and wrong about who can
+// produce it. REPRODUCED before anything was changed (`spike/probes/1111/`: real
+// blocks replayed into the running app, with a fuzzer that never scrolls up):
+//
+//     input while streaming            conversation         false unpins
+//     none                             at the 1,000 cap     0
+//     clicks on empty gutter           at the 1,000 cap     23 of 44, 28 of 74
+//     clicks on empty gutter           ~470 blocks          0 of 169, 0 of 246
+//     wheel DOWN only                  at the 1,000 cap     11 of 109
+//
+// `upsertBlock` caps the view at 1,000 blocks, so in a long session every new
+// block EVICTS the oldest one from the top. Scroll anchoring holds the view still
+// by moving `scrollTop` down by the evicted block's height: nothing moves on
+// screen, and `delta` is negative. A click or a wheel-down opened the gesture
+// window, and the next evicting block closed the pin. It needs 1,000 blocks, which
+// is why two rounds of tests on 260 could not see it — and it is exactly "Claude
+// is working constantly".
+//
+// So the question is no longer only "did it move up" but **could THAT gesture
+// have moved it up**. A wheel toward the top can. A drag, a press on the
+// scrollbar, a touch, an upward key can. A click cannot, a wheel toward the tail
+// cannot, Shift cannot — and upward movement behind one of those is the layout's,
+// whatever the clock says. `FeedGesture` is the vocabulary; `canScrollUp` is the
+// one place it is decided.
+//
+// What was NOT done, each because it trades this report for another one:
+// `overflow-anchor: none` (a reader parked mid-history at the cap would have the
+// text slide under them on every block); re-reading `scrollTop` after each
+// evicting commit (a forced layout per block, in the long sessions #716 and #1013
+// are about); a "content shifted" flag (it swallows real upward scrolls while
+// blocks arrive every frame).
+//
+// ⚠️ KNOWN RESIDUAL: a drag with the button held — selecting text — at the cap can
+// still be read as scrolling up, because a drag genuinely can scroll.
+//
 // ── COST ────────────────────────────────────────────────────────────────────
 //
 // One subtraction and two comparisons per scroll event, and nothing per appended
 // block. The feed is already the typing-lag suspect (#716, #740), so a fix that
 // added work to the append path would be trading one report for another.
+
+/**
+ * What the user last did to the conversation (#1111).
+ *
+ * Named for the PHYSICAL gesture rather than for an intent, because the intent is
+ * what is being inferred: the component reports what it saw, and `canScrollUp`
+ * below is the single place that says what each one is capable of.
+ */
+export type FeedGesture =
+  /** a wheel toward the top of the conversation */
+  | 'wheel-up'
+  /** a wheel toward the tail, or one with no vertical component at all */
+  | 'wheel-down'
+  /** a finger on the conversation — direction is not worth the per-move cost */
+  | 'touch'
+  /** a button went down on the conversation and has not travelled: a click */
+  | 'press'
+  /** a button went down on the scrollbar itself — the thumb or the track */
+  | 'scrollbar'
+  /** a press that travelled with the button held: a selection, an autoscroll */
+  | 'drag'
+  /** the middle button, which starts an autoscroll that outlives the release */
+  | 'middle-button'
+  /** a key that scrolls the region toward the top by itself */
+  | 'key-up'
+  /** any other key with focus in the conversation */
+  | 'key'
+  /** the #174 keyboard walk moved focus, and the browser scrolls focus into view */
+  | 'walk'
+  /** a find jump, which unpins on purpose */
+  | 'jump';
+
+const CAN_SCROLL_UP: ReadonlySet<FeedGesture> = new Set<FeedGesture>([
+  'wheel-up',
+  'touch',
+  'scrollbar',
+  'drag',
+  'middle-button',
+  'key-up',
+  'walk',
+  'jump',
+]);
+
+/**
+ * Could this gesture have moved the view AWAY from the tail?
+ *
+ * `null` — nothing has touched the conversation yet — cannot.
+ */
+export function canScrollUp(gesture: FeedGesture | null): boolean {
+  return gesture !== null && CAN_SCROLL_UP.has(gesture);
+}
+
+/** Which way a wheel event points. Zero is horizontal, and horizontal is not up. */
+export function wheelGesture(deltaY: number): FeedGesture {
+  return deltaY < 0 ? 'wheel-up' : 'wheel-down';
+}
+
+/**
+ * What a key press in the conversation is.
+ *
+ * `walked` is "the #174 walk took this key and moved focus": the browser scrolls
+ * the newly focused control into view, in either direction, so every walk step
+ * counts — `End` goes to the last EXPANDER, which can be far above the tail.
+ * Otherwise only the keys that scroll a focused region upward by themselves do.
+ */
+export function keyGesture(key: string, shiftKey: boolean, walked: boolean): FeedGesture {
+  if (walked) return 'walk';
+  if (key === 'ArrowUp' || key === 'PageUp' || key === 'Home') return 'key-up';
+  if (key === ' ' && shiftKey) return 'key-up';
+  return 'key';
+}
+
+/**
+ * How far a press must travel, button held, before it is a drag.
+ *
+ * A click is rarely perfectly still — a pixel or two of travel between down and
+ * up is ordinary — and a click must never be promoted to something that can
+ * scroll, or #1111 is back for anyone with a twitchy mouse.
+ */
+export const DRAG_SLOP_PX = 6;
 
 /** What the scroller looks like right now, and what we know about how it got here. */
 export interface PinInput {
@@ -72,6 +192,15 @@ export interface PinInput {
   away: number;
   /** the user touched this scroller within the gesture window */
   gestureRecent: boolean;
+  /**
+   * That touch was one that can move the view away from the tail (#1111) —
+   * `canScrollUp` of the last gesture.
+   *
+   * ⚠️ WITHOUT THIS, `delta < 0` IS NOT EVIDENCE OF ANYTHING. At the 1,000-block
+   * cap every arriving block evicts one from the top and scroll anchoring lowers
+   * `scrollTop` to compensate, so a negative delta arrives after every click.
+   */
+  canScrollUp: boolean;
 }
 
 export interface PinDecision {
@@ -99,7 +228,7 @@ export interface PinDecision {
 export const TAIL_SLACK = 40;
 
 export function nextPin(input: PinInput): PinDecision {
-  const { pinned, auto, delta, away, gestureRecent } = input;
+  const { pinned, auto, delta, away, gestureRecent, canScrollUp: upward } = input;
 
   // ── our own pin landing ────────────────────────────────────────────────────
   //
@@ -115,7 +244,9 @@ export function nextPin(input: PinInput): PinDecision {
   if (auto) {
     return {
       pinned,
-      repin: pinned && away >= TAIL_SLACK && !gestureRecent,
+      // "mid-gesture" means one that can take them away (#1111): a click must not
+      // switch this repair off for half a second
+      repin: pinned && away >= TAIL_SLACK && !(gestureRecent && upward),
       userDriven: false,
     };
   }
@@ -145,6 +276,20 @@ export function nextPin(input: PinInput): PinDecision {
   // It must never change what the user wants — and if they were following the
   // tail, put them back on it rather than leaving output below the fold.
   if (!gestureRecent) {
+    return { pinned, repin: pinned, userDriven: false };
+  }
+
+  // ── it moved UP, behind a gesture that cannot move it up (#1111) ───────────
+  //
+  // A click, a wheel toward the tail, a modifier key. The window is open and the
+  // number went down, and until #1111 that was enough to stop following — but
+  // none of those can scroll a conversation upward, so something else did: an
+  // evicted block and the anchoring that compensated for it, most of the time.
+  //
+  // Handled exactly like the no-gesture case above, because it IS that case with
+  // an irrelevant timestamp attached. Only beyond the slack: a few pixels inside
+  // it is still the user arriving home, below.
+  if (delta < 0 && !upward && away >= TAIL_SLACK) {
     return { pinned, repin: pinned, userDriven: false };
   }
 

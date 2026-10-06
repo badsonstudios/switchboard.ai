@@ -96,6 +96,14 @@ on the floor, and say so in your PR.
 
 ## 0.8.115 — unreleased
 
+### Fixed
+
+- **A long, busy session keeps following its newest message.** Once a
+  conversation had grown past a thousand entries, a single click anywhere in it
+  — or scrolling *down* — could make it stop keeping up, as though you had
+  scrolled away. Now only scrolling up does that. If it ever does stop
+  following, the reason is written to the app log.
+
 ## 0.8.114 — 2026-10-05
 
 ### Added
