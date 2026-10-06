@@ -108,6 +108,26 @@ describe('the Files tree', () => {
     }
   });
 
+  it('leaves the room at the end of each row that its host asks for (#1105)', async () => {
+    // The git letter is the last thing on a row, and the session card has the
+    // Events tab drawn over its edge. The host says how much room; the tree
+    // still does not know why.
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        <FileTree root={ROOT} listDir={() => Promise.resolve({ ok: true, entries: [{ name: 'a.ts', kind: 'file' }], truncated: false } as never)} onOpenFile={() => {}} rowEndInset={26} />
+      );
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const rows = [...host.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.some((r) => r.style.paddingInlineEnd === '26px' || r.querySelector<HTMLElement>('[style*="padding-inline-end: 26px"]') !== null)).toBe(true);
+  });
+
   it('lists the folder it was given, and names it', async () => {
     const { list, asked } = recorder({ [ROOT]: ok([entry('src', 'dir'), entry('a.txt', 'file')]) });
     await mount(list);

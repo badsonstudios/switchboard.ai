@@ -98,6 +98,11 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **Dark themes have dark scrollbars.** Settings and the command palette drew
+  a white scrollbar down the side of a dark window.
+- **The Files tab's git letters are no longer hidden behind the Events tab.**
+  The M and U at the end of each row sat under the Events tab on the window's
+  edge; they now stop short of it.
 - **Typing while Claude is replying is smoother in a long conversation.** Each
   piece of a reply as it arrived made the app redraw the whole conversation —
   every entry, up to a thousand — to add a few words to the last one. It now
