@@ -172,6 +172,13 @@ export interface PanelContext {
    */
   controlsLock: SessionControlLock;
   autonomy?: string;
+  /**
+   * The mode the session SAYS it is in right now, when the CLI has announced
+   * one (#1072) — it leaves plan mode by itself when a plan is approved.
+   * `autonomy` above is the card's SETTING, which applies at the next start;
+   * the two legitimately differ, and the chip has to say so.
+   */
+  liveAutonomy?: string;
   model?: string;
   /** transcript binding state and what the watcher observed getting there
    *  (P2-E15-10). On the context rather than inside the Session panel because

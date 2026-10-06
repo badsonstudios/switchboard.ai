@@ -456,6 +456,8 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:listModels': 'sessions.read',
   // Pure app-side state: what the last `system:init` reported (#721).
   'sessions:currentModel': 'sessions.read',
+  // Pure app-side state too: the mode the session last announced (#1072).
+  'sessions:currentMode': 'sessions.read',
   'sessions:setModel': 'sessions.write',
   'sessions:dropLive': 'sessions.spawn',
   // Move a card to a past conversation picked from ITS OWN history (#1090).
@@ -632,6 +634,8 @@ export const CHANNEL_CAPABILITIES = {
   // source, and the same capability as the pull it complements
   // (`sessions:currentModel`)
   'sessions:model': 'sessions.read',
+  // which MODE a session says it is in, the moment the CLI changes it (#1072)
+  'sessions:mode': 'sessions.read',
   // how far the download/verify/install has got (E19-04). Same capability as
   // starting one: a window that may not install may not watch one either.
   'update:installStatus': 'update.install',

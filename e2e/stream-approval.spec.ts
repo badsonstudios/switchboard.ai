@@ -147,6 +147,15 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     await expect(w.getByText('Allow ExitPlanMode?')).toHaveCount(0);
     await expect(railRow(w, 'needs-permission')).toHaveCount(0, { timeout: 15_000 });
 
+    // #1072. Set this card to **plan**, so there is something for the session to
+    // have LEFT: the chip is the card's setting, and until this item it was the
+    // only thing on screen that named a mode at all.
+    const chip = w.getByTestId('composer-autonomy');
+    await expect(chip).toContainText('ask');
+    await chip.click(); // -> plan
+    await expect(chip).toContainText('plan');
+    await expect(chip).not.toHaveAttribute('data-live-mode', /.+/);
+
     // ALLOW: approving the plan is what lets the work start.
     await box.click();
     await box.fill('!permplan PLAN-MARKER-TWO');
@@ -156,6 +165,20 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     await expect(w.getByText(/PLAN APPROVED/)).toBeVisible({ timeout: 30_000 });
     await expect(railRow(w, 'needs-permission')).toHaveCount(0, { timeout: 15_000 });
     expect(await heldIds(w)).toEqual([]);
+
+    // …and the CLI SAID it left plan mode (#1072): a `status` message with
+    // `permissionMode: default`, which nothing used to read. The chip now says
+    // where the session is as well as what it is set to — "plan" alone, over a
+    // session about to start editing, was the report.
+    await expect(chip).toHaveAttribute('data-live-mode', 'ask', { timeout: 15_000 });
+    await expect(chip).toContainText('ask now');
+    await expect(chip).toContainText('plan at next start');
+    // set it to what the session is already in, and there is nothing left to say
+    await chip.click(); // plan -> auto-edit
+    await chip.click(); // -> full-auto
+    await chip.click(); // -> ask
+    await expect(chip).not.toHaveAttribute('data-live-mode', /.+/);
+    await expect(chip).not.toContainText('now');
   });
 
   // P2-E22-02 (#973). Deny ABOVE proves the verdict reaches the CLI; this proves

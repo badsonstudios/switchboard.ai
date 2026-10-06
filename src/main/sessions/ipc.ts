@@ -49,6 +49,7 @@ import type { ControlVerdict } from '../../shared/control';
 import { StreamPermissions } from './stream-permissions';
 import { StreamCommands } from './stream-commands';
 import { StreamModel } from './stream-model';
+import type { StreamMode } from './stream-mode';
 import { StreamFeed } from '../feed/stream-feed';
 import { replayResumedHistory } from '../feed/history';
 import { HookListener } from '../hooks/hook-listener';
@@ -123,6 +124,9 @@ export interface SessionIpcDeps {
   /** which model each live session is running (#721) — `system:init`'s only
    *  unique cargo, and what the model picker ticks */
   streamModel?: StreamModel;
+  /** which mode each live session SAYS it is in (#1072) — the CLI changes it
+   *  by itself when a plan is approved, and the chip has to follow */
+  streamMode?: StreamMode;
   /** The Feed, built from a stream session's typed messages (P2-E18-10).
    *  Absent for a PTY-only wiring, where the transcript is the only source. */
   streamFeed?: StreamFeed;
@@ -667,6 +671,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // corpse answering `currentModel` with its last model, which nothing
     // renders because `listModels` says `session-gone` first.
     tearDownStep(liveId, 'streamModel.forgetSession', () => streamModel?.forgetSession(liveId));
+    // …and the mode it announced (#1072). A restart is a new live id, so this
+    // is also what puts the chip back on the configured mode at the next start.
+    tearDownStep(liveId, 'streamMode.forgetSession', () => deps.streamMode?.forgetSession(liveId));
     // …and its own Feed blocks (P2-E18-10)
     tearDownStep(liveId, 'streamFeed.forgetSession', () => deps.streamFeed?.forgetSession(liveId));
     // …and anything the control channel had in flight (#721). Without this a
@@ -968,6 +975,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // `StreamModel` only emits on a real change (see its `set`), so this is not a
   // per-turn firehose despite `system:init` arriving every turn.
   streamModel?.onChange((sessionId, model) => send('sessions:model', { sessionId, model }));
+  deps.streamMode?.onChange((sessionId, mode) => send('sessions:mode', { sessionId, mode }));
   transcripts.onUpdate((snap) => {
     send('sessions:usage', snap);
     // A snapshot that has ingested nothing has nothing to SAY about usage, and
@@ -1241,6 +1249,18 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   broker.handle('sessions:currentModel', (_e, sessionId: string) => {
     if (typeof sessionId !== 'string') return null;
     return streamModel?.modelFor(sessionId) ?? null;
+  });
+  /**
+   * The mode a session last SAID it is in, or `null` (#1072).
+   *
+   * Null means the CLI has announced nothing, and the caller shows the mode
+   * the session was started at — see `stream-mode.ts`. A pull as well as the
+   * `sessions:mode` push, for the reason `currentModel` is: a card that mounts
+   * mid-session missed the announcement.
+   */
+  broker.handle('sessions:currentMode', (_e, sessionId: string) => {
+    if (typeof sessionId !== 'string') return null;
+    return deps.streamMode?.modeFor(sessionId) ?? null;
   });
   // "Allow all (this session)": answered at the SERVER — no hold, no
   // needs-permission event, no beep (review P2 #19, Dan round 4).
