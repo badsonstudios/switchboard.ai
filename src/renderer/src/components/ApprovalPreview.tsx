@@ -44,6 +44,8 @@
 import React from 'react';
 import { ContributionBoundary } from '../extensibility/boundary';
 import { APPROVAL_DIFF_BLOCK_SIZE, approvalDiff } from '../lib/approval-diff';
+import { Markdown } from '../lib/markdown';
+import { EXIT_PLAN_MODE_TOOL } from '../../../shared/plan-mode';
 import { ToolInputPreview } from './ToolInputPreview';
 
 /**
@@ -73,8 +75,53 @@ export function ApprovalPreview(props: {
    * branch is taken.
    */
   dense?: boolean;
+  /**
+   * Which tool is asking (#1071). Only ONE name changes anything here: the
+   * plan-approval request, whose input is a document and not arguments.
+   * Optional, and absent means what it always meant.
+   */
+  tool?: string;
 }): React.JSX.Element | null {
   const panes = <ToolInputPreview input={props.input} dense={props.dense} />;
+  // ── A PLAN IS A DOCUMENT (#1071) ───────────────────────────────────────────
+  //
+  // `ExitPlanMode` is Claude Code asking for its plan to be approved, and the
+  // request carries the plan as Markdown in `input.plan` (measured, #588). It
+  // fell through to the key/value dump — one line, `plan="# Plan\n\n1. …"`,
+  // line breaks written out as backslash-n — so the thing being approved was
+  // unreadable at exactly the moment it mattered.
+  //
+  // By NAME, unlike the diff below, and deliberately: a `plan` string on some
+  // other tool's input is an argument, and rendering an argument as rich text
+  // would hide what was actually sent. Same pipeline as the conversation
+  // (`Markdown` parses, sanitizes, and nothing here adds to it), and the same
+  // fail-open as the diff: if rendering throws, the panes are still the body.
+  const plan = props.tool === EXIT_PLAN_MODE_TOOL ? props.input.plan : undefined;
+  if (typeof plan === 'string' && plan.trim()) {
+    return (
+      <div
+        data-approval-plan=""
+        style={{
+          // the part of the bar that gives when the column is short — Allow
+          // and Deny never do (#972) — and scrolls rather than clips
+          flex: '0 1 auto',
+          minBlockSize: 0,
+          maxBlockSize: props.dense === true ? 160 : 320,
+          overflow: 'auto',
+          background: 'var(--panel)',
+          border: '1px solid var(--border)',
+          borderRadius: 4,
+          paddingInline: 10,
+          paddingBlock: 4,
+          color: 'var(--text)',
+        }}
+      >
+        <ContributionBoundary id="approval-plan" fallback={panes}>
+          <Markdown text={plan} />
+        </ContributionBoundary>
+      </div>
+    );
+  }
   const diff = React.useMemo(() => approvalDiff(props.input), [props.input]);
   if (!diff || !props.colorScheme) return panes;
   return (

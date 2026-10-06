@@ -110,6 +110,11 @@ on the floor, and say so in your PR.
 - **The mode chip no longer says "plan" after you approve a plan.** Approving
   one takes the session out of plan mode, and the chip now says so — **ask now
   · plan at next start** — instead of naming a mode the session had left.
+- **A plan you are asked to approve is readable.** It was shown as one long
+  line of raw text; it is now laid out with its headings and lists, and the bar
+  asks **Approve this plan?** rather than using Claude Code's internal name for
+  it. **Allow all (this session)** is no longer offered on a plan, because there
+  it approved the plan and every change after it in one press.
 
 ## 0.8.114 — 2026-10-05
 
