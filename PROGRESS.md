@@ -3,6 +3,69 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 NOW — 2026-10-06: **BUGS FIRST. No new features until this list is done and 0.8.115 is cut.**
+>
+> **The owner, 2026-10-06, after v0.8.114 went out and Tanner started testing
+> it:** *"let's just start knocking out bugs here."* He was asked whether bug
+> fixes should come before new features and agreed with the suggestion: yes.
+>
+> **WHO USES THE APP:** exactly two people — the owner and **Tanner** (a
+> designer, installed 2026-10-05). Both are dogfooding. A report that mentions
+> Tanner is second-hand, from a machine we have no logs for: ask for his
+> version, and for a Help ▸ Report a problem bundle when it matters.
+>
+> **THE ORDER. Each is its own issue-driven item through `/next-item`.**
+>
+> 1. **#1111 — the conversation still stops following the bottom** (reported
+>    again on v0.8.113, after #967 / PR #983 and the #1079 test fix). The most
+>    visible defect in the app. ⚠️ **REPRODUCE IT FIRST.** Both earlier rounds
+>    were reasoned from the code, and `feed-tail-pin.spec.ts` says of itself
+>    that it cannot tell the fix from its absence. A third fix without a
+>    reproduction is a third guess.
+> 2. **#1114 — Ctrl+= does not zoom.** Small; the likely cause is in the issue.
+> 3. **#1072** (the mode chip still says "plan" after the session left plan
+>    mode) and **#1071** (the plan approval bar shows the plan as one line of
+>    escaped text). Both mislead someone learning the app.
+> 4. **#1003 — "had to clear conversation twice".** Not yet investigated.
+> 5. **#716 and #1013 — sluggishness** (typing lag; many sessions). The biggest
+>    item here; #904 holds the measurement work already done. Nothing is known
+>    yet about Tanner's machine.
+> 6. **#1104 and #1105** (white scrollbar in dark dialogs; the Events edge tab
+>    over the Files tab's git letter) — ONLY if Tanner is not about to rework
+>    those surfaces. Ask before starting.
+>
+> **THEN cut 0.8.115 — when the owner asks, not before.** Only after that, a
+> feature.
+>
+> **NOT IN THIS LIST, ON PURPOSE:** the 15 "Flakes & CI health" tickets. The
+> three that were costing re-runs are fixed and eleven PR runs in a row have
+> gone green first time. A NEW sighting still gets its comment on the ticket.
+>
+> **STILL THE OWNER'S, AND STILL OPEN — do not touch without asking:**
+> (a) draft PR #1089 / #1088: did "History shows every tool call as a separate
+> line" mean the conversation view or the history picker? (b) may a session
+> WRITE its own `@Name` handoff? (c) should a busy session offer "stop it and
+> switch" on a history pick?
+
+> # ✅ RELEASED: v0.8.114, 2026-10-05 (`76386f1`, PR #1110)
+>
+> The owner, once the list below was reported done: *"Yep, go ahead and cut a
+> release."* A plain patch step. Installer and `.sha256` sidecar both
+> published, and the published pair downloaded and verified to match by hand.
+> `0.8.115 — unreleased` is open and empty.
+>
+> **In it:** a picture on every page of the manual (#1103); a narrow session's
+> tabs no longer overlap its readouts (#1083); the status bar counts sessions
+> (#1084); `@Name` warns about a shared git working tree (#1098); a refused
+> history pick keeps the search (#1099). All five have rows in the tracker's
+> Untested table. Three flaky tests fixed (#1079, #1025, #835) — **nine PR CI
+> runs in a row went green first time, with no re-run.**
+>
+> **Next up — nothing is claimed. THE SAME THREE THINGS ARE WAITING ON THE
+> OWNER** (listed under v0.8.113 below): #1088 / draft PR #1089, a self-written
+> handoff, and "stop it and switch" on a busy history pick. Unclaimed and filed
+> from the manual's pictures: #1104 and #1105.
+
 > # ✅ 2026-10-04 (later): **the flake batch, the rough edges, the manual's pictures — owner's list, all eight merged**
 >
 > The owner's order for this session: the three flaky tests first (#1079,
@@ -88,9 +151,8 @@
 >   milestone name in `.claude/CLAUDE.md` and the `/startup` skill.
 >
 > **THE OWNER'S LIST FOR THIS SESSION IS DONE. Next up: nothing is claimed.**
-> Still waiting on him: the three decisions under v0.8.113 below. Nothing here
-> is in a release — 0.8.114 is open with six entries and he has not asked for
-> a cut.
+> Still waiting on him: the three decisions under v0.8.113 below. **All of it
+> shipped in v0.8.114** — see the entry above.
 > * **Filed, at the owner's request:** **#1098** (the `@Name` shared-folder
 >   warning compares folders, not git working trees) and **#1099** (a refused
 >   history pick clears the search box; the "held" refusal reuses a tooltip).
