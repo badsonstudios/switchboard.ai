@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
 import { useFeedSkipping } from '../lib/use-feed-skipping';
-import { autonomyTooltip } from '../lib/autonomy';
+import { autonomyTooltip, isAutonomy } from '../lib/autonomy';
 import {
   clearConversation,
   compactConversation,
@@ -326,6 +326,13 @@ export function FeedView(props: {
   bindingDiag?: BindingDiagnostics | null;
   /** composer options row data (E10-05) */
   autonomy?: string;
+  /**
+   * The mode the session SAYS it is in right now, when the CLI has announced
+   * one (#1072) — it leaves plan mode by itself when a plan is approved.
+   * `autonomy` above is the card's SETTING, which applies at the next start;
+   * the two legitimately differ, and the chip has to say so.
+   */
+  liveAutonomy?: string;
   model?: string;
   onCycleAutonomy?: () => void;
   /** held permission (E10-04) â€” the bar renders just above the composer */
@@ -1377,6 +1384,7 @@ export function FeedView(props: {
         // the durable key the saved draft is filed under (#485)
         cardId={props.cardId}
         autonomy={props.autonomy}
+        liveAutonomy={props.liveAutonomy}
         model={props.model}
         status={props.status}
         controlsLock={props.controlsLock}
@@ -1877,6 +1885,7 @@ function Composer({
   sessionId,
   cardId,
   autonomy,
+  liveAutonomy,
   model,
   status,
   controlsLock,
@@ -1888,6 +1897,13 @@ function Composer({
   /** durable key for this card's saved draft (#485) â€” the live id churns */
   cardId?: string;
   autonomy?: string;
+  /**
+   * The mode the session SAYS it is in right now, when the CLI has announced
+   * one (#1072) — it leaves plan mode by itself when a plan is approved.
+   * `autonomy` above is the card's SETTING, which applies at the next start;
+   * the two legitimately differ, and the chip has to say so.
+   */
+  liveAutonomy?: string;
   model?: string;
   status?: string;
   /** #903: null means the Clear/Compact buttons work; otherwise it says why
@@ -1910,6 +1926,13 @@ function Composer({
   dockedChrome?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
+  // The mode the session has MOVED to, when that is not what the chip sets
+  // (#1072): approve a plan and the CLI leaves plan mode by itself. Null in
+  // every other case, so the chip reads exactly as it always has.
+  const movedTo =
+    liveAutonomy && isAutonomy(liveAutonomy) && liveAutonomy !== (autonomy ?? 'ask')
+      ? liveAutonomy
+      : null;
   // The draft OUTLIVES this component (#485). It is seeded from the workspace
   // `ui` blob on mount and written back on every change, because the component
   // dies far more often than the user's intent does: switching to the Terminal
@@ -3636,7 +3659,15 @@ function Composer({
         <button
           onClick={onCycleAutonomy}
           data-testid="composer-autonomy"
-          title={autonomyTooltip(t, autonomy, 'session')}
+          // What the session is in NOW comes first when it is not what the chip
+          // sets (#1072) — otherwise the tooltip describes a mode the session
+          // has already left.
+          title={
+            movedTo
+              ? `${t('autonomy.scope.moved', { now: t(`autonomy.${movedTo}`) })}\n\n${autonomyTooltip(t, autonomy, 'session')}`
+              : autonomyTooltip(t, autonomy, 'session')
+          }
+          data-live-mode={movedTo ?? undefined}
           className={CHIP_CLASS}
           // THE ROW'S ONE INLINE INK, and only for the one mode that is a
           // warning: the feed's copy of the grid's autonomy chip, which #221
@@ -3649,7 +3680,12 @@ function Composer({
             autonomy === 'full-auto' ? { color: 'var(--status-crashed-ink)' } : undefined
           }
         >
-          {t(`autonomy.${autonomy ?? 'ask'}`)}
+          {movedTo
+            ? t('autonomy.nowThenNext', {
+                now: t(`autonomy.${movedTo}`),
+                next: t(`autonomy.${autonomy ?? 'ask'}`),
+              })
+            : t(`autonomy.${autonomy ?? 'ask'}`)}
         </button>
         {/* WHICH MODEL, and — since #747 — the switcher for it.
 

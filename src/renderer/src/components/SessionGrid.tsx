@@ -1204,6 +1204,35 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // card that mounts mid-session missed the announcement turns ago; the pull is
   // what makes an already-running session show its model at all. Same pairing,
   // and the same reason, as the binding effect directly below.
+  // WHICH MODE THE SESSION SAYS IT IS IN (#1072). `live.autonomy` is the mode
+  // it was STARTED at, and for every change we make that is the whole story —
+  // a changed setting applies at the next start. But the CLI changes mode by
+  // itself: approve a plan and it leaves plan mode, announcing it in a status
+  // message. Until this existed nothing read that, and the badge went on
+  // saying **plan** over a session that had started asking about each write.
+  //
+  // Push plus pull, cleared first, for exactly the reasons the model effect
+  // below gives. `?.` on both calls: a window whose preload predates the
+  // channel shows the started-at mode, as it always did (fail-open).
+  const [liveMode, setLiveMode] = React.useState<AutonomyMode | null>(null);
+  React.useEffect(() => {
+    setLiveMode(null);
+    if (!live) return;
+    let alive = true;
+    void window.switchboard.sessions.currentMode?.(live.id).then((raw) => {
+      const m = answered(raw);
+      if (alive) setLiveMode((prev) => prev ?? (isAutonomy(m) ? m : null));
+    });
+    const off = window.switchboard.sessions.onMode?.((m) => {
+      if (m.sessionId === live.id && isAutonomy(m.mode)) setLiveMode(m.mode);
+    });
+    return () => {
+      alive = false;
+      off?.();
+    };
+  }, [live]);
+  /** what the header says: what the CLI announced, else what it started at */
+  const shownMode = liveMode ?? live?.autonomy;
   const [model, setModel] = React.useState<string | null>(null);
   React.useEffect(() => {
     if (!live) {
@@ -1685,6 +1714,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     controlsLock,
     transport: live?.transport,
     autonomy: cardAutonomy,
+    liveAutonomy: liveMode ?? undefined,
     // The picker's answer FIRST, the transcript's as the fallback (#746).
     //
     // Not `model` alone, and the difference is a whole transport: `StreamModel`
@@ -1919,15 +1949,16 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               </span>
             )}
             <span style={{ flex: 1, minInlineSize: 8 }} />
-            {live.autonomy && live.autonomy !== 'ask' && (
+            {shownMode && shownMode !== 'ask' && (
               <span
-                title={autonomyTooltip(t, live.autonomy, 'badge')}
+                data-testid="card-mode-badge"
+                title={autonomyTooltip(t, shownMode, 'badge')}
                 style={{
                   fontSize: 9.5,
                   fontFamily: 'var(--font-mono)',
                   // -ink, not the raw hue: this is 9.5px TEXT on --panel2, where
                   // the hue measures 3.1:1 on daylight (#221)
-                  color: live.autonomy === 'full-auto' ? 'var(--status-crashed-ink)' : 'var(--muted)',
+                  color: shownMode === 'full-auto' ? 'var(--status-crashed-ink)' : 'var(--muted)',
                   // its own field (#905): neither ink is AA on the identity wash
                   background: 'var(--panel2)',
                   border: '1px solid var(--border)',
@@ -1936,7 +1967,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   paddingBlock: 1,
                 }}
               >
-                {t(`autonomy.${live.autonomy}`)}
+                {t(`autonomy.${shownMode}`)}
               </span>
             )}
             <StatusPill status={status} label={t(`status.${status}`)} />

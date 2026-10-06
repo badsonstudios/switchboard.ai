@@ -507,6 +507,15 @@ const api = {
       ipcRenderer.on('sessions:model', h);
       return () => ipcRenderer.removeListener('sessions:model', h);
     },
+    /**
+     * The CLI changed a session's permission mode by itself (#1072) — it
+     * leaves plan mode when a plan is approved. Complements `currentMode`.
+     */
+    onMode: (cb: (e: { sessionId: string; mode: AutonomyMode }) => void): (() => void) => {
+      const h = (_e: unknown, m: { sessionId: string; mode: AutonomyMode }) => cb(m);
+      ipcRenderer.on('sessions:mode', h);
+      return () => ipcRenderer.removeListener('sessions:mode', h);
+    },
     onUsage: (cb: (snap: unknown) => void): (() => void) => {
       const h = (_e: unknown, s: unknown) => cb(s);
       ipcRenderer.on('sessions:usage', h);
@@ -601,6 +610,12 @@ const api = {
      */
     currentModel: (sessionId: string): Promise<string | null> =>
       ipcRenderer.invoke('sessions:currentModel', sessionId),
+    /**
+     * The mode this session last said it is in (#1072), or `null` when it has
+     * said nothing — in which case it is in the mode it was started at.
+     */
+    currentMode: (sessionId: string): Promise<AutonomyMode | null> =>
+      ipcRenderer.invoke('sessions:currentMode', sessionId),
     /** future gated calls for this LIVE session answer 'allow' in main (P2 #19) */
     allowAllSession: (liveId: string): Promise<void> =>
       ipcRenderer.invoke('sessions:allowAllSession', liveId),

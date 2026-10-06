@@ -29,12 +29,29 @@
 >    `spike/findings/1111-tail-pin-at-the-cap.md`. Every unpin now writes its
 >    cause to the app log. **Known residual:** drag-selecting text at the cap
 >    can still read as scrolling up. In the tracker's Re-test table.
-> 2. 🚧 **#1114 — Ctrl+= does not zoom. IN PROGRESS 2026-10-06** on
->    `feature/1114-ctrl-equals-zoom`. Small; the likely cause is in the issue.
-> 3. **#1072** (the mode chip still says "plan" after the session left plan
->    mode) and **#1071** (the plan approval bar shows the plan as one line of
->    escaped text). Both mislead someone learning the app.
-> 4. **#1003 — "had to clear conversation twice".** Not yet investigated.
+> 2. ✅ **#1114 — Ctrl+= does not zoom. DONE 2026-10-06, PR #1119 (`5a829c7`),
+>    merged, NOT released.** The issue's cause held: the stock menu role only
+>    answered Ctrl+Plus. Ctrl+=, Ctrl+- and Ctrl+0 are now claimed before the
+>    page sees them, on the main window and every popout. **Persistence and
+>    popouts needed no code** — Chromium keeps zoom per host in the profile
+>    (the owner's own profile was already sitting one step zoomed in), and an
+>    e2e pins the restart. One zoom for the whole app, bounded to about
+>    58%–207%. In the tracker's Re-test table.
+> 3. 🚧 **#1072** (the mode chip still says "plan" after the session left plan
+>    mode) — **IN CI 2026-10-06** on `feature/1072-mode-chip-follows-cli`: the
+>    CLI's own announcement is now read, the card badge follows it, and the
+>    chip under the prompt box reads "ask now · plan at next start".
+>    **#1071** (the plan approval bar shows the plan as one line of escaped
+>    text) — **done locally, stacked behind it** on
+>    `feature/1071-plan-approval-bar`: the plan is rendered as a document, the
+>    bar asks "Approve this plan?", and Allow all is not offered on a plan.
+> 4. ⏳ **#1003 — "had to clear conversation twice". ALREADY INVESTIGATED AND
+>    FIXED — this line said "not yet investigated" and was wrong.** PR #1067
+>    (2026-10-03) is in every release since **v0.8.111**: the first Clear was
+>    never lost, the card just stopped saying "working" while the CLI was
+>    still loading. The issue is open ON PURPOSE, waiting for one thing only
+>    the owner can do: press Clear on a freshly resumed card **on the laptop**.
+>    Nothing to build.
 > 5. **#716 and #1013 — sluggishness** (typing lag; many sessions). The biggest
 >    item here; #904 holds the measurement work already done. Nothing is known
 >    yet about Tanner's machine.

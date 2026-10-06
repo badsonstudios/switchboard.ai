@@ -437,8 +437,10 @@
     "scope": {
       "workspace": "Click to cycle. This sets the mode NEW sessions start at — each session keeps its own from then on.",
       "session": "Click to cycle. The change applies the next time this session starts or resumes; Claude Code cannot switch mode mid-flight.",
-      "badge": "The mode this session is running at. Change it with the shield button under the prompt box."
-    }
+      "badge": "The mode this session is running at. Change it with the shield button under the prompt box.",
+      "moved": "This session is in {now} right now. Claude Code changed it itself — approving a plan takes a session out of plan mode. The mode below is the one it goes back to."
+    },
+    "nowThenNext": "{now} now · {next} at next start"
   },
   "workspace": {
     "readOnlyTitle": "Nothing in this workspace will be saved.",

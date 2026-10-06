@@ -107,6 +107,9 @@ on the floor, and say so in your PR.
   anyone presses. `Ctrl+-` zooms out and `Ctrl+0` goes back to normal, from
   anywhere in the app, including while you are typing a prompt. The **View**
   menu now shows those keys.
+- **The mode chip no longer says "plan" after you approve a plan.** Approving
+  one takes the session out of plan mode, and the chip now says so — **ask now
+  · plan at next start** — instead of naming a mode the session had left.
 
 ## 0.8.114 — 2026-10-05
 

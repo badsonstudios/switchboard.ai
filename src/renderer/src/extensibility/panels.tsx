@@ -74,6 +74,7 @@ export const sessionPanels: PanelContribution[] = [
         binding={ctx.binding}
         bindingDiag={ctx.bindingDiag}
         autonomy={ctx.autonomy}
+        liveAutonomy={ctx.liveAutonomy}
         model={ctx.model}
         approval={ctx.approval}
         approvalQueued={ctx.approvalQueued}

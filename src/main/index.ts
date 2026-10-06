@@ -34,6 +34,7 @@ import { StreamPermissions } from './sessions/stream-permissions';
 import type { PermissionRequest } from '../shared/ipc/permissions';
 import { StreamCommands } from './sessions/stream-commands';
 import { StreamModel } from './sessions/stream-model';
+import { StreamMode } from './sessions/stream-mode';
 import { StreamFeed } from './feed/stream-feed';
 import { ContextRefs } from './feed/context-refs';
 import { SessionManager } from './sessions/session-manager';
@@ -1406,6 +1407,11 @@ app
     // for it.
     const streamModel = new StreamModel(createLogger(sink, 'sessions'));
     manager.onStreamMessage((sessionId, msg) => streamModel.offer(sessionId, msg));
+    // Which MODE each session says it is in (#1072): the CLI leaves plan mode
+    // by itself when a plan is approved, and announces it in a `status`
+    // message nothing used to read. Its own subscription, like the others.
+    const streamMode = new StreamMode(createLogger(sink, 'sessions'));
+    manager.onStreamMessage((sessionId, msg) => streamMode.offer(sessionId, msg));
     // The Feed, off the same stream (P2-E18-10). A THIRD subscription, for the
     // reason spelled out above: one listener per consumer, one blast radius
     // each. This one carries the most traffic by far — S-11 counted 719
@@ -2784,6 +2790,7 @@ app
       streamPermissions,
       streamCommands,
       streamModel,
+      streamMode,
       streamFeed,
       hooks,
       bus: busHost,
