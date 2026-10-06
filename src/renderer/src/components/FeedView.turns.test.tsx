@@ -187,6 +187,65 @@ describe('the turn boundary (#640)', () => {
     expect(ruled.getAttribute('data-feed-seq')).toBe('3');
   });
 
+  // #716 put the blocks in groups of forty by sequence number, each a wrapper
+  // element. Every fixture above fits in ONE group, so on their own they would
+  // pass with the divider at the end of the previous group, or with a rule
+  // above the first prompt of every group.
+  describe('across a group boundary (#716)', () => {
+    const groupsOf = (host: HTMLElement): HTMLElement[] => [
+      ...host.querySelectorAll<HTMLElement>('[data-feed-group]'),
+    ];
+
+    it('keeps a prompt`s rule WITH the prompt when the prompt opens a new group', async () => {
+      BLOCKS = [
+        { seq: 38, kind: 'user', text: 'first', sidechain: false },
+        { seq: 39, kind: 'assistant', text: 'answer', sidechain: false },
+        { seq: 40, kind: 'user', text: 'second', sidechain: false },
+        { seq: 41, kind: 'assistant', text: 'answer', sidechain: false },
+      ];
+      const host = await mountFeed();
+      const groups = groupsOf(host);
+      // the premise: this conversation really is in two groups
+      expect(groups.map((g) => g.getAttribute('data-feed-group'))).toEqual(['0', '1']);
+      expect(precedes(host)).toEqual(['user']);
+      const divider = host.querySelector<HTMLElement>('.turn-divider')!;
+      // in the SECOND group, as its first child, directly above seq 40
+      expect(divider.parentElement).toBe(groups[1]);
+      expect(groups[1].firstElementChild).toBe(divider);
+      expect((divider.nextElementSibling as HTMLElement).getAttribute('data-feed-seq')).toBe('40');
+    });
+
+    it('still leaves the conversation`s FIRST prompt unruled when it is not in the first group', async () => {
+      // "first" is the first block on screen, not the first block of a group
+      BLOCKS = [
+        { seq: 80, kind: 'user', text: 'first on screen', sidechain: false },
+        { seq: 81, kind: 'assistant', text: 'answer', sidechain: false },
+        { seq: 120, kind: 'user', text: 'second', sidechain: false },
+      ];
+      const host = await mountFeed();
+      expect(groupsOf(host)).toHaveLength(2);
+      expect(precedes(host)).toEqual(['user']);
+      expect(
+        (host.querySelector('.turn-divider')!.nextElementSibling as HTMLElement).getAttribute('data-feed-seq')
+      ).toBe('120');
+    });
+
+    it('marks the LAST group, and only it, as the one still being written to', async () => {
+      BLOCKS = [0, 40, 80].map((seq) => ({ seq, kind: 'assistant', text: `block ${seq}`, sidechain: false }));
+      const host = await mountFeed();
+      expect(groupsOf(host).map((g) => g.hasAttribute('data-feed-group-open'))).toEqual([false, false, true]);
+    });
+
+    it('keeps every block findable in document order, which is all a jump asks for', async () => {
+      BLOCKS = [5, 39, 40, 41, 80].map((seq) => ({ seq, kind: 'assistant', text: `block ${seq}`, sidechain: false }));
+      const host = await mountFeed();
+      const region = host.querySelector<HTMLElement>('[data-feed-region]')!;
+      expect(
+        [...region.querySelectorAll<HTMLElement>('[data-feed-seq]')].map((el) => el.getAttribute('data-feed-seq'))
+      ).toEqual(['5', '39', '40', '41', '80']);
+    });
+  });
+
   // #704. A background task reporting an event arrives with `role: user`, so it
   // WAS a `user` block and it WAS getting this divider — over raw XML nobody
   // typed, in the loud treatment #640 gave the real boundaries. The fix is in

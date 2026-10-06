@@ -30,8 +30,34 @@ import { FeedHeights, isRenderedMeasurement, skipStyleFor } from './feed-skippin
  */
 const BLOCK_SELECTOR = '[data-feed-block]';
 
+/**
+ * The wrapper around a run of blocks (#716) — see `FEED_GROUP_SIZE` for why
+ * there is one. Its value is the group's key.
+ *
+ * Inside the feed's own `data-feed` namespace, which `decorateFeedMarkdown`
+ * takes back from every reply before it reaches the page — so prose cannot
+ * write one of these onto itself and have a height pinned to it.
+ */
+export const FEED_GROUP_ATTR = 'data-feed-group';
+/**
+ * The group still being WRITTEN to — the last one. It is measured like the
+ * others and never skipped: blocks land in it continuously, a skipped subtree
+ * reports no growth, and the conversation's height would stop following the
+ * conversation for a reader who had scrolled away.
+ */
+export const FEED_GROUP_OPEN_ATTR = 'data-feed-group-open';
+const GROUP_SELECTOR = `[${FEED_GROUP_ATTR}]`;
+/** everything this hook writes a style onto */
+const SKIPPABLE_SELECTOR = `${GROUP_SELECTOR}, ${BLOCK_SELECTOR}`;
+
+/**
+ * The key a height is stored under: a block's `seq`, or `g:` and a group's key.
+ * One map for both, so a width change, a `/clear` and the eviction sweep each
+ * stay one operation.
+ */
 function keyOf(el: Element): string | null {
-  return el.getAttribute(FEED_SEQ_ATTR);
+  const group = el.getAttribute(FEED_GROUP_ATTR);
+  return group === null ? el.getAttribute(FEED_SEQ_ATTR) : `g:${group}`;
 }
 
 /**
@@ -40,13 +66,23 @@ function keyOf(el: Element): string | null {
  * `scroller` is the element whose WIDTH decides every stored height (see
  * `FeedHeights.setWidth`); `content` is the element the blocks live in. The
  * hook owns the `content-visibility` and `contain-intrinsic-size` inline styles
- * on `[data-feed-block]` elements and nothing else, so React is free to
- * re-render those blocks as often as it likes: it diffs the `style` prop it
- * owns and leaves properties it never set alone.
+ * on `[data-feed-block]` and `[data-feed-group]` elements and nothing else, so
+ * React is free to re-render them as often as it likes: it diffs the `style`
+ * prop it owns and leaves properties it never set alone.
+ *
+ * `conversation` changes when the list is REPLACED rather than added to — a
+ * different session in the same card, a transcript loading over what was
+ * there. Every height is then about a conversation that has gone, and nothing
+ * else would say so: both conversations count from the same first `seq`, so
+ * React keeps the same elements under the same keys, the eviction sweep keeps
+ * every height, and a skipped block or group whose children look the same
+ * never reports a change. (Found in review of #716; true of blocks since
+ * #740, and forty times the error once a group could carry it.)
  */
 export function useFeedSkipping(
   scroller: React.RefObject<HTMLElement | null>,
-  content: React.RefObject<HTMLElement | null>
+  content: React.RefObject<HTMLElement | null>,
+  conversation: unknown = 0
 ): void {
   /**
    * Every height we have, and the width they were measured at.
@@ -73,11 +109,36 @@ export function useFeedSkipping(
 
     const map = heights.current!;
     const seen = observed as React.RefObject<WeakSet<Element>>;
+    // Blocks arrive from the stream without this component being told which
+    // ones, and the verbosity filter and the find-reveal set both change WHICH
+    // blocks are in the DOM without changing how many. A MutationObserver on
+    // the child lists catches all three for less than re-deriving any of them.
+    //
+    // ⚠️ NOT `subtree`. Every block is a direct child of a GROUP and every
+    // group a direct child of this element — the fragments `FeedView` maps over
+    // flatten away — so those child lists are the whole question (`sync`
+    // subscribes each group as it meets it), and a subtree observer would
+    // instead fire on every streamed token rewriting text inside a block,
+    // running a full re-sync per character of a reply.
+    //
+    // Up here because `sync` subscribes to it; it is not started until the
+    // bottom of this effect, by which time everything it calls exists.
+    const mo = new MutationObserver((records) => {
+      for (const r of records) {
+        if (r.target !== host) regroup(r.target as HTMLElement);
+      }
+      sync();
+    });
+    /** groups last seen as the open one — see `sync` */
+    const wasOpen = new WeakSet<Element>();
 
     /** apply what we know about one block, and nothing when we know nothing */
     const paint = (el: HTMLElement): void => {
       const key = keyOf(el);
-      const style = skipStyleFor(key === null ? undefined : map.get(key));
+      // the open group's height is KEPT (it is what the group stands on the
+      // moment a newer one opens) and deliberately not applied — see the attribute
+      const known = key === null || el.hasAttribute(FEED_GROUP_OPEN_ATTR) ? undefined : map.get(key);
+      const style = skipStyleFor(known);
       // Written only when it differs. An unconditional assignment of the same
       // string is not free — it dirties style resolution for the subtree — and
       // this runs for every block on every observer delivery.
@@ -118,7 +179,12 @@ export function useFeedSkipping(
      * renders on every block that arrives.
      */
     const sync = (): void => {
-      const blocks = [...host.querySelectorAll<HTMLElement>(BLOCK_SELECTOR)];
+      // Groups FIRST, so that when everything is new — a conversation loading —
+      // the observer's first report for a group arrives with its blocks'.
+      const blocks = [
+        ...host.querySelectorAll<HTMLElement>(GROUP_SELECTOR),
+        ...host.querySelectorAll<HTMLElement>(BLOCK_SELECTOR),
+      ];
       const keys = new Set<string>();
       for (const el of blocks) {
         const key = keyOf(el);
@@ -129,6 +195,13 @@ export function useFeedSkipping(
       // the session had ever shown.
       map.retain(keys);
       for (const el of blocks) {
+        // A group that has just stopped being the open one. Whatever height it
+        // was last reported at may be a block short — two blocks can land
+        // inside one frame, the second opening the next group before the
+        // engine has laid out the first — and once skipped it would never be
+        // corrected. So it is measured once more, as a closed group.
+        if (el.hasAttribute(FEED_GROUP_OPEN_ATTR)) wasOpen.add(el);
+        else if (wasOpen.delete(el)) regroup(el);
         if (seen.current.has(el)) {
           // Re-asserted rather than assumed. Nothing in the app clears these
           // properties behind our back, so this is belt-and-braces — but it is
@@ -160,7 +233,37 @@ export function useFeedSkipping(
         // belonging to a different conversation.
         if (keyOf(el) !== null && map.has(keyOf(el)!)) paint(el);
         ro.observe(el, { box: 'content-box' });
+        // a group's own child list is where its blocks arrive and leave
+        if (el.hasAttribute(FEED_GROUP_ATTR)) mo.observe(el, { childList: true });
       }
+    };
+
+    /**
+     * A group's blocks changed — one arrived, was evicted, or the verbosity
+     * filter or a find-reveal added or removed some — so the height stored for
+     * it describes a group that no longer exists.
+     *
+     * ⚠️ WITHOUT THIS A SKIPPED GROUP KEEPS ITS OLD HEIGHT FOR EVER, in either
+     * direction. A skipped subtree is not laid out, so nothing reports that it
+     * changed: switching to `quiet` would leave every group as tall as it was
+     * on `firehose`, and the conversation would end in a screen of nothing.
+     *
+     * Forget the height, let the group render, and RE-SUBSCRIBE — the part that
+     * is easy to leave out. A group whose new height happens to equal its old
+     * one never fires a resize, so without a fresh first report it would sit
+     * unmeasured and unskipped. (`invalidate` below does the same for a width
+     * change, for the same reason.)
+     *
+     * The open group is left alone: it is not skipped, so the observer has been
+     * following it all along.
+     */
+    const regroup = (el: HTMLElement): void => {
+      if (el.hasAttribute(FEED_GROUP_OPEN_ATTR)) return;
+      const key = keyOf(el);
+      if (key === null || !map.forget(key)) return;
+      paint(el);
+      ro.unobserve(el);
+      ro.observe(el, { box: 'content-box' });
     };
 
     /**
@@ -186,11 +289,16 @@ export function useFeedSkipping(
     const invalidate = (): void => {
       cancelAnimationFrame(settle);
       settle = requestAnimationFrame(() => {
-        for (const el of host.querySelectorAll<HTMLElement>(BLOCK_SELECTOR)) {
+        for (const el of host.querySelectorAll<HTMLElement>(SKIPPABLE_SELECTOR)) {
           el.style.contentVisibility = '';
           el.style.containIntrinsicSize = '';
         }
         ro.disconnect();
+        // ...and the child-list watch with it, so the two observers always
+        // describe the same set of elements: `sync` re-subscribes every group
+        // it does not remember, and `seen` is about to forget all of them.
+        mo.disconnect();
+        mo.observe(host, { childList: true });
         seen.current = new WeakSet<Element>();
         sync();
       });
@@ -207,19 +315,8 @@ export function useFeedSkipping(
     });
     widthRo.observe(box, { box: 'content-box' });
 
-    sync();
-    // Blocks arrive from the stream without this component being told which
-    // ones, and the verbosity filter and the find-reveal set both change WHICH
-    // blocks are in the DOM without changing how many. A MutationObserver on
-    // the child list catches all three for less than re-deriving any of them.
-    //
-    // ⚠️ NOT `subtree`. Every block is a DIRECT child of this element — the
-    // fragments `FeedView` maps over flatten away — so the child list is the
-    // whole question, and a subtree observer would instead fire on every
-    // streamed token rewriting text inside a block, running a full re-sync per
-    // character of a reply.
-    const mo = new MutationObserver(() => sync());
     mo.observe(host, { childList: true });
+    sync();
 
     return () => {
       cancelAnimationFrame(settle);
@@ -228,10 +325,13 @@ export function useFeedSkipping(
       ro.disconnect();
       observed.current = new WeakSet<Element>();
       map.clear();
-      for (const el of host.querySelectorAll<HTMLElement>(BLOCK_SELECTOR)) {
+      for (const el of host.querySelectorAll<HTMLElement>(SKIPPABLE_SELECTOR)) {
         el.style.contentVisibility = '';
         el.style.containIntrinsicSize = '';
       }
     };
-  }, [content, scroller]);
+    // `conversation` is read by nobody in here: it is a dependency so that the
+    // cleanup above — forget everything, unstyle everything — runs when the
+    // list is replaced, and the next pass measures what is there now.
+  }, [content, scroller, conversation]);
 }

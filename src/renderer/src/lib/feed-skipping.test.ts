@@ -7,7 +7,9 @@
 // this feature failed on exactly that, on Linux CI, with no error anywhere.
 import { describe, expect, it } from 'vitest';
 import {
+  FEED_GROUP_SIZE,
   FeedHeights,
+  groupBySeq,
   HEIGHT_EPSILON_PX,
   isRenderedMeasurement,
   WIDTH_EPSILON_PX,
@@ -198,5 +200,82 @@ describe('FeedHeights — retain', () => {
     h.record('1', 32);
     expect(h.retain([])).toBe(1);
     expect(h.size).toBe(0);
+  });
+});
+
+describe('FeedHeights — forget', () => {
+  it('drops one height and leaves the rest, so only the group that changed is re-measured', () => {
+    const h = new FeedHeights();
+    h.record('g:0', 900);
+    h.record('g:1', 1200);
+    expect(h.forget('g:0')).toBe(true);
+    expect(h.has('g:0')).toBe(false);
+    expect(h.get('g:1')).toBe(1200);
+  });
+
+  it('says so when there was nothing to forget', () => {
+    expect(new FeedHeights().forget('g:7')).toBe(false);
+  });
+
+  it('makes the SAME height news again, which is what gets the group skipped a second time', () => {
+    // A group that loses a block and gains one of the same height measures
+    // exactly what it measured before. Without the forget, `record` would call
+    // that old news and the group would stay rendered for the rest of the session.
+    const h = new FeedHeights();
+    h.record('g:0', 900);
+    h.forget('g:0');
+    expect(h.record('g:0', 900)).toBe(true);
+  });
+});
+
+describe('groupBySeq', () => {
+  const seqs = (...ns: number[]): Array<{ seq: number }> => ns.map((seq) => ({ seq }));
+  const shape = (gs: Array<{ key: number; blocks: Array<{ seq: number }> }>): Array<[number, number[]]> =>
+    gs.map((g) => [g.key, g.blocks.map((b) => b.seq)]);
+
+  it('cuts by sequence number, not by position', () => {
+    expect(shape(groupBySeq(seqs(0, 1, 2, 3, 4, 5), 3))).toEqual([
+      [0, [0, 1, 2]],
+      [1, [3, 4, 5]],
+    ]);
+  });
+
+  it('keeps every surviving block in the group it was in when the oldest is evicted', () => {
+    // THE reason it is by seq. At the 1,000-block cap every new block evicts
+    // one from the front; grouped by position, all 999 others would change
+    // group — and React moves a child between parents by unmounting it.
+    const before = shape(groupBySeq(seqs(0, 1, 2, 3, 4, 5, 6), 3));
+    const after = shape(groupBySeq(seqs(1, 2, 3, 4, 5, 6, 7), 3));
+    expect(before).toEqual([
+      [0, [0, 1, 2]],
+      [1, [3, 4, 5]],
+      [2, [6]],
+    ]);
+    expect(after).toEqual([
+      [0, [1, 2]],
+      [1, [3, 4, 5]],
+      [2, [6, 7]],
+    ]);
+  });
+
+  it('does not open a group for sequence numbers nothing is showing', () => {
+    // the verbosity filter leaves gaps, and an empty wrapper is still an element
+    expect(shape(groupBySeq(seqs(1, 2, 40, 41), 10))).toEqual([
+      [0, [1, 2]],
+      [4, [40, 41]],
+    ]);
+  });
+
+  it('never hands out the same key twice, even for a list that is out of order', () => {
+    const groups = groupBySeq(seqs(0, 1, 5, 2, 6), 3);
+    const keys = groups.map((g) => g.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(groups.flatMap((g) => g.blocks.map((b) => b.seq))).toEqual([0, 1, 5, 2, 6]);
+  });
+
+  it('uses the shipped size by default, and returns nothing for an empty conversation', () => {
+    expect(groupBySeq([])).toEqual([]);
+    const groups = groupBySeq(seqs(0, FEED_GROUP_SIZE - 1, FEED_GROUP_SIZE));
+    expect(groups.map((g) => g.blocks.length)).toEqual([2, 1]);
   });
 });
