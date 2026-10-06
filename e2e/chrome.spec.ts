@@ -11,10 +11,18 @@ test.describe('titlebar chrome', () => {
     const html = window.locator('html');
     // The buttons moved into Settings (#885); what they DO is unchanged, which
     // is the whole claim of that move and the reason this test did not.
+    // …and the ENGINE is told which scheme that is (#1104). Every colour here
+    // is a token, so nothing used to tell Chromium the page was dark, and what
+    // it draws itself — a scrollbar, most visibly — stayed white in a dark
+    // dialog.
+    const scheme = (): Promise<string> =>
+      window.evaluate(() => getComputedStyle(document.documentElement).colorScheme);
     await setTheme(window, 'daylight');
     await expect(html).toHaveAttribute('data-theme', 'daylight');
+    expect(await scheme()).toBe('light');
     await setTheme(window, 'nordic');
     await expect(html).toHaveAttribute('data-theme', 'nordic');
+    expect(await scheme()).toBe('dark');
   });
 
   test('pseudo-locale mangles every UI string (E1-04)', async () => {

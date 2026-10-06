@@ -13,6 +13,7 @@ import { safely } from './boundary';
 import { DiffPane } from '../components/DiffPane';
 import { FeedView } from '../components/FeedView';
 import { FileTree } from '../components/FileTree';
+import { TAB_WIDTH as EVENTS_TAB_WIDTH } from '../components/EventsDrawer';
 import { HistoryPane } from '../components/HistoryPane';
 import { openDocument } from '../lib/document-open';
 
@@ -177,6 +178,12 @@ export const sessionPanels: PanelContribution[] = [
         <FileTree
           root={ctx.folder}
           active={ctx.visible}
+          // CLEAR OF THE EVENTS TAB (#1105). That tab is drawn over the
+          // window's edge at mid-height — over the card, not beside it — so
+          // on the rows behind it the git letter could not be read. The
+          // tab's own width, because how far it reaches into a card depends
+          // on margins nothing here can see.
+          rowEndInset={EVENTS_TAB_WIDTH + 2}
           // §5.30's placement policy, not a second opinion about it — and the
           // second argument is §5.24 attribution: the viewer wears this card's
           // accent and a `↳ session` chip.

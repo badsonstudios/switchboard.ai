@@ -68,6 +68,14 @@ export function FileTree(props: {
    * knowledge that it was away for a while.
    */
   active?: boolean;
+  /**
+   * Room to leave at the end of each row, in px (#1105).
+   *
+   * The git letter is the last thing on a row, and a host may have something
+   * drawn over its edge. This component still does not know where it lives —
+   * the host says how much room it needs and why is the host's business.
+   */
+  rowEndInset?: number;
   /** the directory lister, injected so tests need no Electron bridge */
   listDir?: ListDir;
   /**
@@ -436,7 +444,7 @@ export function FileTree(props: {
                 alignItems: 'center',
                 gap: 6,
                 paddingInlineStart: 8 + row.depth * INDENT,
-                paddingInlineEnd: 8,
+                paddingInlineEnd: props.rowEndInset ?? 8,
                 paddingBlock: 2,
                 fontSize: 12,
                 cursor: isOpenable(row.kind) || isExpandable(row.kind) ? 'pointer' : 'default',

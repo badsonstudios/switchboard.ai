@@ -46,13 +46,10 @@
 >    text) — **DONE 2026-10-06, PR #1122, merged, NOT released.** The plan is
 >    rendered as a document, the bar asks "Approve this plan?", and Allow all
 >    is not offered on a plan (a judgment call — one line to put back).
-> 4. ⏳ **#1003 — "had to clear conversation twice". ALREADY INVESTIGATED AND
->    FIXED — this line said "not yet investigated" and was wrong.** PR #1067
->    (2026-10-03) is in every release since **v0.8.111**: the first Clear was
->    never lost, the card just stopped saying "working" while the CLI was
->    still loading. The issue is open ON PURPOSE, waiting for one thing only
->    the owner can do: press Clear on a freshly resumed card **on the laptop**.
->    Nothing to build.
+> 4. ✅ **#1003 — "had to clear conversation twice". CLOSED 2026-10-06 on the
+>    owner's word:** *"I think 1003 is working. I haven't had the issue again
+>    on my laptop in a while."* The fix was PR #1067, in every release since
+>    v0.8.111.
 > 5. ⏳ **#716 and #1013 — sluggishness** (typing lag; many sessions). **FIRST
 >    MEASURED STEP DONE 2026-10-06, PR #1123 (`201bd8f`), merged, NOT
 >    released. BOTH ISSUES STAY OPEN.** Next: the owner's laptop, on a build
@@ -69,14 +66,22 @@
 >    re-parsing the growing reply, and plain layout and paint. The findings
 >    note lists three next steps, each worth 100–300 ms of a 12 s window. Nothing is known yet about
 >    Tanner's machine.
-> 6. ❓ **#1104 and #1105** (white scrollbar in dark dialogs; the Events edge tab
->    over the Files tab's git letter) — ONLY if Tanner is not about to rework
->    those surfaces. **ASKED 2026-10-06 at the start of the session; no answer
->    yet. Not started.**
+> 6. 🚧 **#1104 and #1105** (white scrollbar in dark dialogs; the Events edge tab
+>    over the Files tab's git letter) — the owner, 2026-10-06: *"Tanner's not
+>    doing anything yet. He's just testing around."* **IN CI** on
+>    `feature/1104-1105-dark-scrollbar-events-tab`: the engine is now told
+>    which scheme the theme is, and the Files rows stop short of the tab.
+>    The manual's 24 pictures are regenerated from the fixed build.
 >
-> **WHERE THE LIST STANDS, 2026-10-06:** 1, 2 and 3 are merged. 4 was already
-> fixed and waits on a laptop re-test. 5 has its first step merged and is not
-> finished. 6 waits on an answer. **Nothing is released — 0.8.115 is not cut;
+> **WHERE THE LIST STANDS, 2026-10-06:** 1, 2 and 3 are merged. 4 is closed.
+> 5 has its first step merged and is not finished. 6 is in CI.
+>
+> **THE OWNER'S ANSWERS, 2026-10-06:** (a) #1088 meant the **history picker**
+> — "the previous conversations clock icon … lists all sorts of crap in
+> there" — so draft PR #1089 changed the wrong surface; closing it and looking
+> at the picker waits on his go. Zoom is app-wide: confirmed. (b) a
+> self-written handoff and (c) "stop it and switch" were explained again and
+> are STILL OPEN, as is whether Allow all should come back on the plan bar. **Nothing is released — 0.8.115 is not cut;
 > the owner said he will say when.** Five rows are in the tracker's Re-test
 > table for it.
 >

@@ -1288,6 +1288,25 @@ mark[data-feed-match-current] {
 .rail-resize[data-dragging='true'] {
   background: var(--link);
 }
+/* Tell the ENGINE which scheme the theme is (#1104).
+ *
+ * Every colour in this app comes from a token, so nothing ever told Chromium
+ * whether the page was light or dark — and the things it draws itself took the
+ * default, which is light. In a dark theme that was a white scrollbar track
+ * and arrows down the side of Settings and the command palette, seen in the
+ * manual's own pictures.
+ *
+ * On the root, keyed on the attribute `theme.ts` already writes (and
+ * `tab-rows.ts` copies into a popout), so it follows a theme switch with no
+ * code and covers every scroller there is or will be, rather than the two
+ * that were noticed. It also flips the other things the engine draws —
+ * a native checkbox, a select's arrow, the caret — which is the same fix. */
+:root[data-color-scheme='dark'] {
+  color-scheme: dark;
+}
+:root[data-color-scheme='light'] {
+  color-scheme: light;
+}
 .rail-scroll::-webkit-scrollbar {
   inline-size: 8px;
 }

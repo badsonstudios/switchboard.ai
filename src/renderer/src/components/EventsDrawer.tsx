@@ -66,7 +66,11 @@ import type { EventDto } from '../model/types';
 const DRAWER_WIDTH = 300;
 
 /** the tab's own thickness — the ONLY chrome this surface costs while shut */
-const TAB_WIDTH = 24;
+/**
+ * Exported for the one thing that has to stay out from under it (#1105): the
+ * tab is out of flow, on the window's edge, over whatever card is there.
+ */
+export const TAB_WIDTH = 24;
 
 /**
  * Above the grid and everything it puts over itself (the maximize scrim is 30,
