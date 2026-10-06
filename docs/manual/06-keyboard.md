@@ -118,6 +118,17 @@ back to the first.
 | `Ctrl+Space` | Go to the next session that needs you |
 | `Ctrl+E` | Show or hide the Events drawer |
 | `Ctrl+O` | Open a file in a document tab (also **File › Open File…**). Works while you're typing a prompt |
+| `Ctrl+=` | Make everything bigger. `Ctrl+Shift+=` (that is, `Ctrl` and `+`) and the keypad's `+` do the same |
+| `Ctrl+-` | Make everything smaller |
+| `Ctrl+0` | Back to the normal size |
+
+**Zoom** scales the whole window — every panel, every menu, all the text —
+and it works wherever the keyboard happens to be, including while you're
+typing a prompt or reading a file. The three commands are also in the
+**View** menu. The size you choose is remembered the next time you open
+switchboard, and pop-out windows use the same size as the main one. It stops
+at roughly half size and double size, so you can't zoom the app out of reach;
+`Ctrl+0` always brings it back.
 
 `Ctrl+W` asks before it closes, because closing a session ends it and removes
 its card — the same confirmation you get from the tab's **✕**.

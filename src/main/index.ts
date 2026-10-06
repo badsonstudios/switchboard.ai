@@ -118,6 +118,7 @@ import type { UpdateHandshake, UpdateInstallStatus } from '../shared/update';
 import { ServiceHealthService } from './health/service';
 import { SERVICE_STATUS_FEED_ENV } from './health/statuspage';
 import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
+import { installWindowZoom, type ZoomDeps } from './window-zoom';
 import type { ContextMenuDeps } from './context-menu';
 import { installContextMenu, makeContextMenuDeps, sanitizeContextMenuLabels } from './context-menu';
 import type { ContextMenuLabels } from '../shared/context-menu';
@@ -403,6 +404,11 @@ function confirmCloseWithBusySessions(win: BrowserWindow): boolean {
  * the preload bridge is missing.
  */
 let acceleratorReadyFor: number | null = null;
+/** Ctrl+= / Ctrl+- / Ctrl+0 (#1114) — claimed per window, like the chords above. */
+const zoomDeps: ZoomDeps = {
+  platform: process.platform === 'darwin' ? 'darwin' : 'other',
+  onError: (err) => log.ui.warn('zoom chord failed', { error: errorText(err) }),
+};
 const acceleratorDeps = makeAcceleratorDeps({
   platform: process.platform === 'darwin' ? 'darwin' : 'other',
   renderer: () => {
@@ -634,6 +640,8 @@ function createWindow(): BrowserWindow {
   // The two chords that must survive terminal focus (#90). Installed on the
   // window's contents, so the claim ends at our own windows.
   installTerminalAccelerators(win.webContents, acceleratorDeps(false));
+  // Ctrl+= zooms (#1114): the menu's stock role only ever answered Ctrl+Plus.
+  installWindowZoom(win.webContents, zoomDeps);
   // Cut/Copy/Paste/Select All on right-click (#526). Electron provides no
   // default menu, so without this every right-click in the app does nothing.
   installContextMenu(win.webContents, contextMenuDeps);
@@ -785,6 +793,10 @@ function createWindow(): BrowserWindow {
     // must not remove capability). The claim is per-window, so this window
     // needs its own.
     installTerminalAccelerators(child.webContents, acceleratorDeps(true));
+    // …and the zoom chords (#1114). The LEVEL is shared with the main window
+    // either way — Chromium keeps it per host — so an unwired popout would
+    // change size when the main window zooms and ignore the chord itself.
+    installWindowZoom(child.webContents, zoomDeps);
     // ...and its right-click menus (#526). `context-menu` is per-webContents
     // too, so a popped-out composer would otherwise be the one text box in the
     // app you cannot paste into with the mouse.
