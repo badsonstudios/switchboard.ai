@@ -4512,6 +4512,129 @@ screen; it makes the *existing* CLI-and-folder relationship legible rather than
 adding a feature beside it; and the moment it grows a second column of
 affordances it has left the case it was built for.
 
+### 5.36 Review map — a change as a picture you can review
+
+*Added 2026-10-06 (issue #1116). **Designed and mocked up; not built, not
+scheduled.** This section is the summary that belongs in this repository. The full
+design, the research behind it, and working clickable mockups live outside it, in
+the owner's `CodeReview` folder:*
+
+| What | Where |
+|---|---|
+| Design document (20 sections, decision log of 13 rounds) | `C:\Projects\CodeReview\docs\plans\design.md` |
+| Research and evidence, with what was and was not verified | `C:\Projects\CodeReview\docs\plans\research.md` |
+| Mockups — open any `.html` in a browser | `C:\Projects\CodeReview\docs\mockups\` |
+| The main mockup, a 31-file change | `…\docs\mockups\review-large.html` |
+| The map inside this app | `…\docs\mockups\switchboard-shell.html` |
+| A plan, and plan versus actual | `…\docs\mockups\plan-map.html` |
+| Reference screenshots | `…\docs\mockups\screenshots\` |
+
+*When that design and this section disagree, that design is the newer one; amend
+this section, do not re-argue it here.*
+
+**Why it exists.** Most of the code is now written by agents, so the human job is
+review, and review today is reading a flat list of changed files (§5.7). The list
+hides how the pieces relate, gives no sense of where the risk is, and its order
+decides what gets attention. The owner's ask: *see relationships and where the
+code is, click into things, and do it visually instead of as a list of files.*
+
+**What it is.** A fifth tab on every session panel, **Review map**, after Session,
+Changes, Files and History. It shows the session's changes as a collapsible tree
+read left to right — the change, then groups, then files, then functions — with
+relationship lines drawn over it. Selecting a box shows a plain-English
+explanation, a flowchart of the function, and the code change, where the reviewer
+comments on lines. Comments are collected into a review and posted to the pull
+request, or sent to the session to fix.
+
+#### How it sits in the app
+
+- **A tab, always shown, disabled until the session has changed something.** It
+  replaces the conversation below the tab row, as Changes and History do.
+- **A review of a pull request is a session.** A review needs Claude to read the
+  change, build the map, write the explanations and answer questions, so
+  "Review a pull request…" beside "+ session" starts a review session on a
+  checkout of the PR's branch. It is one more session in the dock and the rail.
+- **Only the map pops out.** The map can move to its own window while its session
+  stays docked, and pop back in — the §5.7 diff-panel pattern, applied to a tab's
+  contents. The map's own detail panel pops out separately and stays live.
+- **Review progress is remembered** — reviewed marks, draft comments, Claude's
+  answers — which is a deliberate difference from diff panels, which are not
+  restored.
+
+#### What is on the map
+
+- Two groupings, switchable: **by purpose** (written by Claude) and **by
+  location** (folders, needing no model).
+- Each box: added / modified / removed, a faded tint and a badge for its
+  language, a **risk score from 1 to 5**, and markers for PR comments, the
+  reviewer's own drafts, and a comment that disagrees with the code.
+- **Lines** for calls, uses, covered-by-test, and unchanged code the change
+  affects. Drawn only between boxes that are both visible; a collapsed box shows
+  a count instead. Many lines into one box are drawn as one thick line with a
+  count. A line Claude inferred that analysis could not confirm is marked
+  **not verified**.
+- Trivial changes repeated in many places are **bundled** into one box, so the
+  one that differs stands out.
+- **Hover** answers "do I need to open this?": purpose, size, risk, whether a
+  test covers it, whether anything unchanged depends on it.
+
+#### Reviewing
+
+- **Three kinds of text, never styled alike:** Claude's explanations (marked
+  generated), comments from people on the PR, and the reviewer's own drafts.
+- **Line comments** by clicking a line; a comment on the item as a whole;
+  drafts with edit and delete.
+- **Ask Claude about this** — one-click questions (*What does this do? What does
+  it affect? What could go wrong? Is it tested? Why was it changed?*), a free
+  question, and a choice of short or detailed, plain English or technical.
+  Answers are private to the reviewer and never posted; each can be copied into
+  a comment.
+- **The review sheet** shows everything about to go out, each comment with its
+  file and line, and then either posts it to the PR under the reviewer's name
+  with a verdict, or sends it to the session to fix.
+- **Plans.** The same map built from a plan before code exists, and afterwards a
+  comparison: done as planned, planned but missing, done but not planned.
+
+#### Scope, and what it is not
+
+**First release is manual review** — the reviewer reads, comments, asks and
+posts. **Claude running the review first** (with a team's review skill, its
+findings shown as suggestions the reviewer accepts or dismisses) is planned for
+later, and nothing it finds is ever posted unless accepted; comments should be
+stored with an author and a state from the start so that can be added without
+rework.
+
+It is **not** a replacement for the Changes tab, not a codebase explorer, not an
+editor (the PHILOSOPHY §5 precedent holds: Monaco stays read-only and diff-only), not a standalone
+app, and it does not reply to existing PR comments.
+
+#### How the map is made
+
+Claude writes the groups, labels, explanations and plan boxes; static analysis
+supplies and checks the skeleton, and every box and line carries a status of
+verified, not verified, or contradicted. TypeScript analysis runs in-process; C#
+needs a separate helper process and is the expensive part. PR hosts sit behind
+one interface with GitHub and Azure DevOps behind it.
+
+#### The litmus (§4), and what is unproven
+
+- **Zero-config default / calm:** a tab that is quiet until opened.
+- **Fail-open:** if the map cannot be built, Changes still works.
+- **Escape hatch:** everything it does can be done from Changes and the PR host.
+- **Host check:** it renders what the agent did or proposed and asks the session's
+  own Claude its questions. Holding a plan for review must use a decision the CLI
+  delegates, never a faked one. Posting to a PR is the reviewer's own act through
+  the host's API, not an agent behaviour.
+- **Attention ROI — unproven.** Research supports diagrams helping a reviewer
+  *understand* a change; nothing found shows they help catch more defects. The
+  first build is a TypeScript-only spike on one real change, to learn whether
+  this beats the file list.
+
+Also unverified: that the CLI hands over each edit's details as documented; how
+long a plan approval can be held; the details of posting line comments on each PR
+host; the licences of the layout and drawing libraries the design names; and
+whether any parsing library can be used without native modules.
+
 ## 6. Tech Stack — Decision
 
 **Chosen: Electron + TypeScript + xterm.js + node-pty + Monaco + React.**
