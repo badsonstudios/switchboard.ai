@@ -165,7 +165,7 @@ export function BatchApprovalBar(props: {
           and this card is the one that cannot fall back to "the conversation
           is right there". `dense`, because a band above the workspace pays for
           its height in somebody's editor. */}
-      <ApprovalPreview input={batch.input} colorScheme={props.colorScheme} dense />
+      <ApprovalPreview input={batch.input} tool={batch.tool} colorScheme={props.colorScheme} dense />
       {/* One row per HELD REQUEST, not per session: a session that happens to
           be asking the same thing twice is waiting on two answers, and a card
           that listed it once would leave one of them held with nothing on

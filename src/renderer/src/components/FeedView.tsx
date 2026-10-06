@@ -28,6 +28,7 @@ import { clearFeedMarks, markFeedMatches, moveCurrentMark, sameFindQuery } from 
 import type { FindQuery } from '../extensibility/contributions';
 import { emptyStateCopy } from '../lib/binding-copy';
 import { ASK_USER_QUESTION_TOOL, parseAskUserQuestion } from '../../../shared/ask-user-question';
+import { EXIT_PLAN_MODE_TOOL } from '../../../shared/plan-mode';
 import { QuestionPanel } from './QuestionPanel';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import { rendererRegistry } from '../extensibility/registry-instance';
@@ -1460,6 +1461,8 @@ function ApprovalBar({
   // SHARED rule (`shared/tool-paths`), so the button cannot offer a path main
   // would not match a later call against.
   const filePath = targetPath(approval.input);
+  /** Claude Code asking for its PLAN to be approved, not for a tool (#1071) */
+  const isPlan = approval.tool === EXIT_PLAN_MODE_TOOL;
   // WHICH REQUEST the objection field is open for, not merely whether it is
   // open (#973). Consecutive holds in one session reuse this component — the
   // props change and nothing remounts — so a boolean would leave the field open
@@ -1532,7 +1535,10 @@ function ApprovalBar({
             same hue, where the hue measures 2.19:1 on daylight and 4.04:1 on
             nordic. The ink lands at 5.08-8.00:1 across the four themes (#246). */}
         <span style={{ fontWeight: 700, color: 'var(--status-needs-permission-ink)' }}>
-          {t('approval.title', { tool: approval.tool })}
+          {/* "ExitPlanMode" is Claude Code's internal name for a question that
+              means "approve this plan?" (#1071) — and a title is not the place
+              to teach someone the CLI's vocabulary. */}
+          {isPlan ? t('approval.planTitle') : t('approval.title', { tool: approval.tool })}
         </span>
         {queued > 0 && (
           <span style={{ fontSize: 10, color: 'var(--muted)' }}>{t('approval.more', { n: queued })}</span>
@@ -1553,7 +1559,9 @@ function ApprovalBar({
               of ONE question (Â§5.16), and a user who reads the summary on one
               and a different one on the other has been shown two things and
               told they are the same */}
-          {argumentSummary(approval.input)}
+          {/* nothing for a plan (#1071): its one argument IS the body below, and
+              the summary of it was the escaped one-liner this item removes */}
+          {isPlan ? '' : argumentSummary(approval.input)}
         </span>
       </div>
       {/* The CLI's OWN prose for why it is asking (P2-E18-07, stream transport
@@ -1585,7 +1593,7 @@ function ApprovalBar({
           the reason the summary line above is shared: §5.16 is ONE question,
           and two placements that answer "what am I agreeing to" differently
           have shown the user two things and called them the same. */}
-      <ApprovalPreview input={approval.input} colorScheme={colorScheme} />
+      <ApprovalPreview input={approval.input} tool={approval.tool} colorScheme={colorScheme} />
       {/* ABOVE the button row and BELOW the body, which is the only place it can
           go. The bar is a flex column whose body is the shrinkable part; the field
           shrinks too (see `DenyFeedbackField`), so opening it takes room from the
@@ -1643,7 +1651,14 @@ function ApprovalBar({
             what it does and not something anything can do. It is already inert
             for questions on both allow-all paths; hiding it means the button
             never makes a promise the app has deliberately refused to keep. */}
-        {approval.tool !== ASK_USER_QUESTION_TOOL && (
+        {/* NOR FOR A PLAN (#1071). The button means here what it means
+            everywhere — nothing more is asked until the session next starts —
+            so on this bar one press approved the plan AND every change after
+            it. Plan mode's promise is "changes nothing until you approve it",
+            and the plan is the one request where that promise is the point.
+            After Allow the session is an ask session, and the button is on
+            its very next bar for anyone who wants it. */}
+        {approval.tool !== ASK_USER_QUESTION_TOOL && !isPlan && (
           <button onClick={() => onDecide('allow', true)} style={btn(false)}>
             {t('approval.allowAll')}
           </button>

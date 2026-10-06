@@ -350,17 +350,20 @@ goes back to showing just that one.
 
 A session in **plan** mode reads, thinks, and then asks you whether to go ahead
 with the plan it wrote. That question arrives as an approval bar,
-like any other — it reads **Allow ExitPlanMode?** (Claude Code's own name for
-"leave plan mode"), with the plan underneath.
+like any other — it reads **Approve this plan?**, with the plan underneath, laid
+out as the document it is: headings, lists and all. A long plan scrolls inside
+the bar, so the buttons stay where they are.
 
 - **Allow approves the plan, and the session leaves plan mode.** From then on it
   behaves as an **ask** session does: it starts the work, and each file change
   or command comes to you as its own approval. Approving the plan is not
   approving the edits. The mode chip changes to say so — see above.
-- **Allow all (this session) approves the plan *and* everything after it.** The
-  button means here what it means on any bar: you will not be asked again until
-  this session next starts. On a plan, that is the plan and every change that
-  follows from it.
+- **There is no Allow all (this session) on a plan.** On any other bar that
+  button means you will not be asked again until the session next starts; on a
+  plan it would approve the plan *and* every change that follows from it in one
+  press, which is the opposite of what plan mode is for. Once the plan is
+  approved the session is an ask session, and the button is there on its very
+  next approval if that is what you want.
 - **Deny keeps it in plan mode.** Nothing is changed. Claude tells you it was
   turned down, and you can say what you want different — **Deny with
   feedback…** puts your reason in front of it.

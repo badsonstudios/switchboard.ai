@@ -130,13 +130,24 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     await box.click();
     await box.fill('!permplan PLAN-MARKER-ONE');
     await box.press('Enter');
-    await expect(w.getByText('Allow ExitPlanMode?')).toBeVisible({ timeout: 30_000 });
-    // The plan itself is on the bar, not just the tool's name. Matched on the
-    // plan's own HEADING together with the marker: the marker alone is also in
-    // the prompt that asked for it, which is echoed in the conversation, and
-    // would pass with the bar showing no plan at all.
-    await expect(w.getByText(/# Plan.*PLAN-MARKER-ONE/)).toHaveCount(1);
-    await expect(w.getByText(/# Plan.*PLAN-MARKER-ONE/)).toBeVisible();
+    await expect(w.getByText('Approve this plan?')).toBeVisible({ timeout: 30_000 });
+    // The plan itself is on the bar, not just the tool's name — and READABLE
+    // (#1071). It used to be one line of the tool's input, `plan="# Plan…"` with
+    // its line breaks written out as backslash-n; it is a document, and is now
+    // rendered as one. Scoped to the bar's own plan body: the marker alone is
+    // also in the prompt that asked for it, which is echoed in the conversation,
+    // and would pass with the bar showing no plan at all.
+    const plan = w.locator('[data-approval-plan]');
+    await expect(plan.getByRole('heading', { name: 'Plan' })).toBeVisible();
+    await expect(plan.getByRole('listitem')).toHaveText('PLAN-MARKER-ONE');
+    // …and none of the raw markup is left on screen anywhere
+    await expect(w.getByText(/# Plan/)).toHaveCount(0);
+    await expect(w.getByText(/plan=/)).toHaveCount(0);
+    // "Allow all (this session)" would approve the plan AND every change after
+    // it in one press. Not on this bar: the plan is the one thing plan mode
+    // promises to ask about.
+    await expect(w.getByRole('button', { name: 'Allow', exact: true })).toBeVisible();
+    await expect(w.getByRole('button', { name: /Allow all/ })).toHaveCount(0);
     await expect(railRow(w, 'needs-permission')).toHaveCount(1, { timeout: 15_000 });
     // a plan is not a "sensitive file", and the real request does not say so
     await expect(w.getByText(/sensitive file/)).toHaveCount(0);
@@ -144,7 +155,7 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     // DENY: the session stays in plan mode and says so.
     await w.getByRole('button', { name: 'Deny', exact: true }).click();
     await expect(w.getByText(/PLAN DENIED/)).toBeVisible({ timeout: 30_000 });
-    await expect(w.getByText('Allow ExitPlanMode?')).toHaveCount(0);
+    await expect(w.getByText('Approve this plan?')).toHaveCount(0);
     await expect(railRow(w, 'needs-permission')).toHaveCount(0, { timeout: 15_000 });
 
     // #1072. Set this card to **plan**, so there is something for the session to
@@ -160,7 +171,7 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     await box.click();
     await box.fill('!permplan PLAN-MARKER-TWO');
     await box.press('Enter');
-    await expect(w.getByText('Allow ExitPlanMode?')).toBeVisible({ timeout: 30_000 });
+    await expect(w.getByText('Approve this plan?')).toBeVisible({ timeout: 30_000 });
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
     await expect(w.getByText(/PLAN APPROVED/)).toBeVisible({ timeout: 30_000 });
     await expect(railRow(w, 'needs-permission')).toHaveCount(0, { timeout: 15_000 });

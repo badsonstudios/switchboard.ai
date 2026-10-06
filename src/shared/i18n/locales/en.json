@@ -336,6 +336,7 @@
   },
   "approval": {
     "title": "Allow {tool}?",
+    "planTitle": "Approve this plan?",
     "allow": "Allow",
     "allowFile": "Approve all in this file",
     "allowFileHint": "Allow this, and every later change this session makes to {path} — until it restarts. Revocable from the card’s ⋯ menu.",

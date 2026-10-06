@@ -71,13 +71,14 @@ let root: Root | null = null;
  */
 async function mount(
   input: Record<string, unknown>,
-  colorScheme?: 'light' | 'dark'
+  colorScheme?: 'light' | 'dark',
+  tool?: string
 ): Promise<HTMLElement> {
   const host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
   await act(async () => {
-    root!.render(<ApprovalPreview input={input} colorScheme={colorScheme} />);
+    root!.render(<ApprovalPreview input={input} colorScheme={colorScheme} tool={tool} />);
   });
   // A second flush: `React.lazy` resolves on a microtask, so the first `act` ends
   // with the Suspense fallback still on screen. Without this the diff cases would
@@ -195,5 +196,65 @@ describe('fail-open: the body may fail, the QUESTION may not', () => {
     expect(panes).not.toBeNull();
     expect(panes!.textContent).toContain('ONE_OLD');
     expect(panes!.textContent).toContain('TWO_NEW');
+  });
+});
+
+describe('a plan is shown as the document it is (#1071)', () => {
+  // `ExitPlanMode` is Claude Code asking for its plan to be approved; the request
+  // carries the plan as Markdown in `input.plan` (measured for #588). It used to
+  // fall through to the key/value dump: one line, line breaks as backslash-n.
+  const PLAN = { plan: '# Plan\n\n1. read the config\n2. **change** the port\n\nThen restart.' };
+
+  it('renders the plan as headings, a list and prose', async () => {
+    const host = await mount(PLAN, 'dark', 'ExitPlanMode');
+    const body = host.querySelector('[data-approval-plan]');
+    expect(body).not.toBeNull();
+    expect(body!.querySelector('h1')?.textContent).toBe('Plan');
+    expect([...body!.querySelectorAll('li')].map((li) => li.textContent)).toEqual([
+      'read the config',
+      'change the port',
+    ]);
+    expect(body!.querySelector('strong')?.textContent).toBe('change');
+    expect(body!.textContent).toContain('Then restart.');
+  });
+
+  it('shows none of the raw markup, and no escaped line breaks', async () => {
+    const host = await mount(PLAN, 'dark', 'ExitPlanMode');
+    expect(host.textContent).not.toContain('# Plan');
+    expect(host.textContent).not.toContain('**');
+    expect(host.textContent).not.toContain('plan=');
+    expect(host.textContent).not.toContain(String.fromCharCode(92) + 'n');
+  });
+
+  it('needs no colour scheme — a plan is not a diff', async () => {
+    const host = await mount(PLAN, undefined, 'ExitPlanMode');
+    expect(host.querySelector('[data-approval-plan] h1')).not.toBeNull();
+  });
+
+  it('is by NAME: a `plan` argument on any other tool is still an argument', async () => {
+    // Rendering some other tool's argument as rich text would hide what was sent.
+    const host = await mount(PLAN, 'dark', 'SomeOtherTool');
+    expect(host.querySelector('[data-approval-plan]')).toBeNull();
+    expect(host.textContent).toContain('# Plan');
+  });
+
+  it('falls back to the ordinary body when there is no plan to render', async () => {
+    for (const input of [{}, { plan: '' }, { plan: '   ' }, { plan: 7 }, { plan: null }]) {
+      const host = await mount(input, 'dark', 'ExitPlanMode');
+      expect(host.querySelector('[data-approval-plan]')).toBeNull();
+      root!.unmount();
+      host.remove();
+    }
+  });
+
+  it('cannot be used to put markup of the plan`s choosing on the bar', async () => {
+    const host = await mount(
+      { plan: '# Plan\n\n<img src=x onerror="window.pwned=1"><script>window.pwned=1</script>' },
+      'dark',
+      'ExitPlanMode'
+    );
+    expect(host.querySelector('script')).toBeNull();
+    expect(host.querySelector('[onerror]')).toBeNull();
+    expect((window as unknown as { pwned?: number }).pwned).toBeUndefined();
   });
 });
