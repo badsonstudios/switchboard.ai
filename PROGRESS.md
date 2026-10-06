@@ -16,13 +16,21 @@
 >
 > **THE ORDER. Each is its own issue-driven item through `/next-item`.**
 >
-> 1. **#1111 — the conversation still stops following the bottom** (reported
->    again on v0.8.113, after #967 / PR #983 and the #1079 test fix). The most
->    visible defect in the app. ⚠️ **REPRODUCE IT FIRST.** Both earlier rounds
->    were reasoned from the code, and `feed-tail-pin.spec.ts` says of itself
->    that it cannot tell the fix from its absence. A third fix without a
->    reproduction is a third guess.
-> 2. **#1114 — Ctrl+= does not zoom.** Small; the likely cause is in the issue.
+> 1. ✅ **#1111 — the conversation still stops following the bottom. DONE
+>    2026-10-06, PR #1117 (`fdae3f1`), merged, NOT released.** REPRODUCED
+>    FIRST, as asked: at the 1,000-block cap, a click on NOTHING in the
+>    conversation unpinned it 23 times in 44 clicks; below the cap, 0 in 169;
+>    with no input, never. Cause: at the cap every new block evicts the oldest
+>    from the top, the browser lowers `scrollTop` to hold the view still, and
+>    the #983 rule read "the number went down within half a second of a click"
+>    as scrolling up. Now only a gesture that CAN scroll up is believed (a
+>    click, a wheel down and Shift cannot). Same probe after: 0 in 159, 0 in
+>    209. The probe is `spike/probes/1111/`, the numbers
+>    `spike/findings/1111-tail-pin-at-the-cap.md`. Every unpin now writes its
+>    cause to the app log. **Known residual:** drag-selecting text at the cap
+>    can still read as scrolling up. In the tracker's Re-test table.
+> 2. 🚧 **#1114 — Ctrl+= does not zoom. IN PROGRESS 2026-10-06** on
+>    `feature/1114-ctrl-equals-zoom`. Small; the likely cause is in the issue.
 > 3. **#1072** (the mode chip still says "plan" after the session left plan
 >    mode) and **#1071** (the plan approval bar shows the plan as one line of
 >    escaped text). Both mislead someone learning the app.
