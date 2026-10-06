@@ -42,10 +42,10 @@
 >    announcement is now read (`StreamMode`), the card's badge follows it, and
 >    the chip under the prompt box reads "ask now · plan at next start". The
 >    record's started-at mode is NOT rewritten — it drives what gets held.
->    🚧 **#1071** (the plan approval bar shows the plan as one line of escaped
->    text) — **IN CI 2026-10-06** on `feature/1071-plan-approval-bar`: the plan
->    is rendered as a document, the bar asks "Approve this plan?", and Allow
->    all is not offered on a plan (a judgment call — one line to put back).
+>    ✅ **#1071** (the plan approval bar shows the plan as one line of escaped
+>    text) — **DONE 2026-10-06, PR #1122, merged, NOT released.** The plan is
+>    rendered as a document, the bar asks "Approve this plan?", and Allow all
+>    is not offered on a plan (a judgment call — one line to put back).
 > 4. ⏳ **#1003 — "had to clear conversation twice". ALREADY INVESTIGATED AND
 >    FIXED — this line said "not yet investigated" and was wrong.** PR #1067
 >    (2026-10-03) is in every release since **v0.8.111**: the first Clear was
@@ -54,16 +54,18 @@
 >    the owner can do: press Clear on a freshly resumed card **on the laptop**.
 >    Nothing to build.
 > 5. 🚧 **#716 and #1013 — sluggishness** (typing lag; many sessions). **FIRST
->    MEASURED STEP DONE LOCALLY 2026-10-06** on
->    `feature/716-streaming-render-cost`, queued behind #1071. Every streamed
+>    MEASURED STEP IN CI 2026-10-06** on `feature/716-streaming-render-cost`. Every streamed
 >    chunk of a reply was re-rendering EVERY block in the conversation. In the
 >    real app at 980 blocks, one reply streaming, 4x throttle, 12 s: **86 long
 >    tasks / 7,648 ms before, 16 / 931 ms after.** Unthrottled on the desktop it
 >    is invisible, which is why it was never reproduced here. Probe
 >    `spike/probes/716/`, numbers `spike/findings/716-streaming-render-cost.md`.
 >    ⚠️ **Neither issue closes.** At 6x there is still ~5.9 s of stall, and what
->    it is made of is NOT yet known: memoising the composer and rendering blocks
->    in groups were both measured and moved nothing. Nothing is known yet about
+>    there is no second single cause: memoising the composer and rendering
+>    blocks in groups were both measured and moved nothing, and a CPU profile
+>    spreads the rest across the tail pin forcing layout, React's bookkeeping,
+>    re-parsing the growing reply, and plain layout and paint. The findings
+>    note lists three next steps, each worth 100–300 ms of a 12 s window. Nothing is known yet about
 >    Tanner's machine.
 > 6. **#1104 and #1105** (white scrollbar in dark dialogs; the Events edge tab
 >    over the Files tab's git letter) — ONLY if Tanner is not about to rework
