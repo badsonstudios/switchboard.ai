@@ -207,9 +207,20 @@ export function buildExcerpt(rendered: readonly string[], maxChars = EXCERPT_MAX
  * So: the excerpt comes FIRST as quoted material, the instruction is a plain
  * summarization request, and nothing tells the model to ignore anything.
  */
+/**
+ * How every label request opens.
+ *
+ * Exported so the history picker can RECOGNISE one (#1088): until one-shots
+ * stopped being saved, each of these became a transcript in the project's own
+ * history, and the ones already on disk are still there. Changing this
+ * sentence is safe for the labeller and would un-hide those old rows —
+ * `transcripts/history.test.ts` holds the two together.
+ */
+export const LABEL_PROMPT_OPENING = 'Below is the recent transcript of a coding session.';
+
 export function buildLabelPrompt(excerpt: string): string {
   return [
-    'Below is the recent transcript of a coding session.',
+    LABEL_PROMPT_OPENING,
     '',
     excerpt,
     '',

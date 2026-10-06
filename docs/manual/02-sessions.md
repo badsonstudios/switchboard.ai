@@ -36,7 +36,14 @@ newest first.
    never gave it one, the first thing you asked, in quotes — and when you last
    worked on it. If a conversation began with a slash command, the list skips
    past it to the first real thing you asked; a conversation that was *only*
-   commands is described by the command itself, like `/clear`.
+   commands is described by the command that did something, like
+   `/next-item 818`.
+
+   **Two things are left out, because there is nothing in them to go back
+   to:** a conversation that was cleared and then never used, and the short
+   requests switchboard itself makes in the background to write each
+   session's task label. (Those used to be saved alongside your own
+   conversations, and could outnumber them.)
 2. Start typing to narrow the list down. It searches the descriptions.
 3. Click the one you want, or move to it with the arrow keys and press Enter.
 

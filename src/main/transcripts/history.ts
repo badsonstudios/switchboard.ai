@@ -62,6 +62,7 @@ import { PACKAGE_CAPS, promptText } from '../sessions/context-package';
 import { PACKAGE_HEAD_BYTES } from '../sessions/queries';
 import { readTranscriptHead } from '../feed/history';
 import { isConversationId, listConversations, MAX_LISTED_CONVERSATIONS } from './paths';
+import { LABEL_PROMPT_OPENING } from '../sessions/ai-label';
 
 /** What this module needs from the rest of the app, injected rather than imported. */
 export interface HistoryDeps {
@@ -151,11 +152,21 @@ export function listHistory(req: ConversationHistoryRequest, deps: HistoryDeps):
   if (found.status !== 'ok') return found;
   // Newest first, then capped — so the cap takes the most recent conversations
   // rather than whichever directory was enumerated first.
-  const picked = found.files.sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, limit);
+  //
+  // ⚠️ CAPPED BY ROWS KEPT, NOT BY FILES READ (#1088). This used to slice the
+  // newest `limit` files and describe those — and on the owner's machine 60 of
+  // the newest 70 were not conversations at all (see `notAConversation`), so
+  // dropping them after the slice would have left a list a fifth the length
+  // it claimed. The walk goes on until `limit` real rows are in hand.
+  const sorted = found.files.sort((a, b) => b.mtimeMs - a.mtimeMs);
   const claimed = new Set(safely(deps.claimed, []));
   const rows: ConversationRow[] = [];
-  for (const f of picked) {
+  let visited = 0;
+  for (const f of sorted) {
+    if (rows.length >= limit) break;
+    visited += 1;
     const d = describe(f.file, deps.readTitle);
+    if (notAConversation(d)) continue;
     // The FOLDER-scoped answer knows its own folder and says so even when the
     // transcript's `cwd` could not be read — the caller named it, and a row
     // that cannot say where it belongs cannot be opened. The all-projects scope
@@ -173,7 +184,32 @@ export function listHistory(req: ConversationHistoryRequest, deps: HistoryDeps):
       claimed: claimed.has(f.nativeId),
     });
   }
-  return { status: 'ok', rows, truncated: found.truncated || found.files.length > picked.length };
+  return { status: 'ok', rows, truncated: found.truncated || sorted.length > visited };
+}
+
+/**
+ * Is this transcript something nobody would ever want to reopen? (#1088)
+ *
+ * The owner, on the history picker: *"It lists all sorts of crap in there."*
+ * Measured on this repo's folder (`spike/probes/1088/`), 300 rows:
+ *
+ *   * the app's OWN task-label requests, each saved by the CLI as a
+ *     conversation of its own — 60 of the 70 newest rows. They are not saved
+ *     any more (`CONTAINED_ARGS`), but the ones already on disk are, and no
+ *     one should have to scroll past last month's to reach their own work;
+ *   * a conversation whose only content is `/clear` — what is left behind
+ *     when a session is cleared and then never prompted. There is nothing in
+ *     it to go back to.
+ *
+ * ⚠️ NARROW ON PURPOSE. Only a PROMPT-described row can match: a conversation
+ * with a title is one the CLI itself thought worth naming. And only `/clear`
+ * exactly — `/next-item 818` is a real thing somebody did, and #846 decided a
+ * row should say so rather than be blank.
+ */
+function notAConversation(d: { description: string; descriptionFrom: ConversationRow['descriptionFrom'] }): boolean {
+  if (d.descriptionFrom !== 'prompt') return false;
+  const text = d.description.trim();
+  return text.startsWith(LABEL_PROMPT_OPENING) || text === '/clear';
 }
 
 /** One folder, through the existing listing — including its refusals. */
@@ -339,8 +375,16 @@ function describe(
         // something, so it says what the user actually ran — `/clear`,
         // `/next-item 818`. The context package deliberately does NOT do this:
         // a session goal of "/clear" is worse than admitting there is none.
-        if (!command && block.kind === 'user' && !block.sidechain) {
-          command = commandInvocation(block.text ?? '') ?? undefined;
+        //
+        // A LEADING `/clear` DOES NOT GET TO BE THE NAME (#1088) when a later
+        // command can be. A session cleared and then driven by a skill —
+        // `/clear`, then `/startup …` — is a real day's work, and it was
+        // listed as "/clear", indistinguishable from a session that was
+        // cleared and abandoned. The first command that is NOT `/clear`
+        // wins; `/clear` is the answer only when it is all there is, and
+        // `notAConversation` then leaves that row out.
+        if ((!command || command === '/clear') && block.kind === 'user' && !block.sidechain) {
+          command = commandInvocation(block.text ?? '') ?? command;
         }
       }
       return command;

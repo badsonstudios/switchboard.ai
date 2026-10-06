@@ -16,6 +16,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { clearHistoryCache, listHistory, MAX_HISTORY_DIRS } from './history';
+import { buildLabelPrompt, LABEL_PROMPT_OPENING } from '../sessions/ai-label';
 import { slugForCwd, MAX_LISTED_CONVERSATIONS } from './paths';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { reportsConversationCount, reportsProjectDirs } from './test-big-dir';
@@ -152,6 +153,94 @@ describe('listHistory — one folder', () => {
     const rows = ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).rows;
     expect(rows[0]).toMatchObject({ description: '/next-item 818', descriptionFrom: 'prompt' });
     expect(rows[0].description).not.toContain('<command-name>');
+  });
+
+  // ── #1088 ─────────────────────────────────────────────────────────────────
+  // The owner, on the history picker: "It lists all sorts of crap in there."
+  // Measured on this repo's own folder: 60 of the 70 newest rows were the app's
+  // task-label requests, saved by the CLI as conversations of their own.
+  it('leaves out the app`s OWN task-label requests — they were never conversations (#1088)', () => {
+    seed('C:/work/app', 'conv-real', [...preamble, userLine('C:/work/app', 'why is the build slow')], {
+      mtimeMs: 1_000,
+    });
+    seed(
+      'C:/work/app',
+      'conv-label',
+      [...preamble, userLine('C:/work/app', buildLabelPrompt('[Bash] npm test -> 12 passed'))],
+      { mtimeMs: 2_000 }
+    );
+    const rows = ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).rows;
+    expect(rows.map((r) => r.nativeId)).toEqual(['conv-real']);
+  });
+
+  it('recognises a label request by the sentence the labeller ACTUALLY opens with (#1088)', () => {
+    // The two halves are in different modules; this is what holds them together.
+    expect(buildLabelPrompt('anything').startsWith(LABEL_PROMPT_OPENING)).toBe(true);
+  });
+
+  it('does not hide a real conversation that merely QUOTES that sentence later on (#1088)', () => {
+    seed('C:/work/app', 'conv-quote', [
+      ...preamble,
+      userLine('C:/work/app', `why do my rows say "${LABEL_PROMPT_OPENING}"`),
+    ]);
+    expect(ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).rows).toHaveLength(1);
+  });
+
+  it('fills the list with REAL rows, rather than counting hidden ones against the limit (#1088)', () => {
+    // The newest three are label requests; the cap of two must still be two.
+    for (let i = 0; i < 3; i++) {
+      seed('C:/work/app', `conv-label-${i}`, [...preamble, userLine('C:/work/app', buildLabelPrompt(`x${i}`))], {
+        mtimeMs: 9_000 + i,
+      });
+    }
+    for (let i = 0; i < 3; i++) {
+      seed('C:/work/app', `conv-real-${i}`, [...preamble, userLine('C:/work/app', `question number ${i}`)], {
+        mtimeMs: 1_000 + i,
+      });
+    }
+    const a = ok(listHistory({ scope: 'folder', folder: 'C:/work/app', limit: 2 }, deps()));
+    expect(a.rows.map((r) => r.nativeId)).toEqual(['conv-real-2', 'conv-real-1']);
+    // one real conversation was not reached, and the list says so
+    expect(a.truncated).toBe(true);
+  });
+
+  it('is not "truncated" merely because rows were hidden (#1088)', () => {
+    seed('C:/work/app', 'conv-real', [...preamble, userLine('C:/work/app', 'a real question')], { mtimeMs: 1_000 });
+    seed('C:/work/app', 'conv-label', [...preamble, userLine('C:/work/app', buildLabelPrompt('x'))], {
+      mtimeMs: 2_000,
+    });
+    expect(ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).truncated).toBe(false);
+  });
+
+  const cmd = (name: string, args = '') =>
+    `<command-name>${name}</command-name>` + (args ? `\n<command-args>${args}</command-args>` : '');
+
+  it('leaves out a conversation that is NOTHING but /clear — there is nothing in it (#1088)', () => {
+    seed('C:/work/app', 'conv-cleared', [...preamble, userLine('C:/work/app', cmd('/clear'))]);
+    expect(ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).rows).toEqual([]);
+  });
+
+  it('names a cleared-then-driven session by the command that DID something (#1088)', () => {
+    // `/clear`, then `/startup …`: a real day's work, which was being listed as
+    // "/clear" and would have been hidden with the empty ones.
+    seed('C:/work/app', 'conv-driven', [
+      ...preamble,
+      userLine('C:/work/app', cmd('/clear')),
+      userLine('C:/work/app', cmd('/next-item', '818')),
+    ]);
+    const rows = ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ description: '/next-item 818', descriptionFrom: 'prompt' });
+  });
+
+  it('keeps a TITLED conversation whatever its first prompt was (#1088)', () => {
+    // a title is the CLI itself saying this one was worth naming
+    seed('C:/work/app', 'conv-titled', [
+      ...preamble,
+      userLine('C:/work/app', cmd('/clear')),
+      titleLine('Tidy the release notes'),
+    ]);
+    expect(ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).rows).toHaveLength(1);
   });
 
   it("says 'none' rather than inventing a description", () => {
