@@ -57,6 +57,7 @@ import {
   DerivedBlock,
   DISPLAY_CAPS,
   FeedBlock,
+  HydrateOptions,
   TEXT_CAP,
   deriveIntents,
 } from './blocks';
@@ -169,6 +170,19 @@ interface StreamedSession {
    * and it is a different question from "which conversation am I in".
    */
   discarded?: string;
+  /**
+   * When this session's history was replayed, in epoch ms (#1140). Set by
+   * `hydrate` and only when its caller replayed the subagent transcripts too.
+   *
+   * A subagent line stamped at or before this instant is BACKLOG: the replay
+   * either placed it where it happened or left it out on purpose (older than
+   * the window, over the read budget). `absorbSidechain` refuses it, because
+   * the watcher reads those same files from byte 0 and would otherwise append
+   * every one of them after the newest message of the conversation.
+   */
+  sidechainBacklogBefore?: number;
+  /** the one log line about the above has been written */
+  backlogDropLogged?: boolean;
 }
 
 export class StreamFeed {
@@ -232,13 +246,22 @@ export class StreamFeed {
    * blocks: hydration is a start-of-session act, and a second one would append
    * the past onto the present.
    */
-  hydrate(sessionId: string, entries: readonly Record<string, unknown>[]): number {
+  hydrate(
+    sessionId: string,
+    entries: readonly Record<string, unknown>[],
+    opts: HydrateOptions = {}
+  ): number {
     const s = this.ensure(sessionId);
     if (s.buffer.size > 0) {
       this.log?.warn('refusing to replay history into a Feed that already has blocks', {
         sessionId,
       });
       return 0;
+    }
+    // Only once the replay is going ahead: a refused one replayed nothing, so
+    // it has no backlog to speak for.
+    if (opts.sidechainBacklogBefore !== undefined) {
+      s.sidechainBacklogBefore = opts.sidechainBacklogBefore;
     }
     let n = 0;
     // SILENTLY: the caller runs inside `sessions:create`, whose own response is
@@ -250,24 +273,26 @@ export class StreamFeed {
         // The SAME derivation the transcript watcher runs (`blocks.ts`), so a
         // replayed turn cannot look different from the one that streamed live.
         //
-        // It still reads the MAIN conversation only — and since #977 that is no
-        // longer the gap #395 recorded. The watcher's `subagentFiles()` does a
-        // `readdirSync`, so a resumed card adopts the subagent transcripts that
-        // are already on disk and derives them under `deriveFeed: 'sidechains'`.
-        // The replayed half needed no code of its own; it needed the same
-        // condition the live half needed.
+        // The entries are the main conversation AND its subagent transcripts,
+        // already merged into the order they happened (#1140, `history.ts`).
+        // Between #977 and #1140 the subagent half was left to the watcher,
+        // which adopts those files on a resumed card and drained them in AFTER
+        // this replay — under the newest message. See `absorbSidechain`.
         for (const intent of deriveIntents(e, DISPLAY_CAPS, this.ctx(sessionId))) {
           if (intent.t === 'tool-result') {
             s.buffer.attachResult(intent.toolUseId, intent.out);
             continue;
           }
-          // No `agentId` on this path, and not because it was overlooked: a
-          // replay reads the MAIN transcript only, and `agentId` was measured
-          // zero times there (#788, re-confirmed on 2.1.280 by #977). A
-          // sidechain here can only be a pre-2.1.226 line, which carries no id
-          // to group by either. The subagent files come through the watcher,
-          // with their ids intact.
-          const block = s.buffer.push(intent.block, { sidechain: e.isSidechain === true });
+          // A MAIN-transcript line gets no `agentId`, and not because it was
+          // overlooked: it was measured zero times there (#788, re-confirmed on
+          // 2.1.280 by #977), so a sidechain in the main file can only be a
+          // pre-2.1.226 line, which carries no id to group by either.
+          //
+          // A subagent FILE's line arrives with its origin already worked out
+          // (#1140): `history.ts` reads those files and is the only one that
+          // knows which entry came out of which.
+          const origin = opts.origins?.get(e) ?? { sidechain: e.isSidechain === true };
+          const block = s.buffer.push(intent.block, origin);
           if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
           n++;
         }
@@ -315,6 +340,32 @@ export class StreamFeed {
     // subagent output anybody is waiting for, and creating state for it here
     // would leak an entry per stray line.
     if (!s) return false;
+    // ⚠️ BACKLOG IS NOT LIVE (#1140). On a resumed card the watcher binds the
+    // conversation and drains every subagent file it ever wrote from byte 0 —
+    // rightly, the usage totals are in there. Pushed here, all of it lands
+    // ABOVE the replayed history in seq, i.e. BELOW the newest message on
+    // screen: the conversation ends on a subagent's old work and the last
+    // reply is somewhere up the page. That is how a session came back from an
+    // update looking as if it had "gone back".
+    //
+    // The replay has already put those lines where they happened, so anything
+    // written before it ran is taken and dropped. TRUE, not false: the line was
+    // accounted for, and the caller must not treat it as homeless.
+    //
+    // A line with no readable timestamp is let through, which is what happened
+    // to every line before this check existed.
+    if (s.sidechainBacklogBefore !== undefined) {
+      const at = typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN;
+      if (at <= s.sidechainBacklogBefore) {
+        // Said ONCE per session, so a report that subagent history went
+        // missing after a restart has a line to find.
+        if (!s.backlogDropLogged) {
+          s.backlogDropLogged = true;
+          this.log?.info('subagent backlog left to the replay, not appended', { sessionId });
+        }
+        return true;
+      }
+    }
     for (const intent of deriveIntents(entry, DISPLAY_CAPS, this.ctx(sessionId))) {
       if (intent.t === 'tool-result') {
         s.buffer.attachResult(intent.toolUseId, intent.out);

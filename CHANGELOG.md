@@ -96,6 +96,16 @@ on the floor, and say so in your PR.
 
 ## 0.8.116 — unreleased
 
+### Fixed
+
+- **A session no longer looks as if it "went back" after a restart or an
+  update.** If a conversation had used subagents, reopening the app put all of
+  their old activity at the bottom of the conversation, underneath the newest
+  reply — so the session appeared to end on work from much earlier, and the
+  last thing it actually said was somewhere up the page. Nothing was lost.
+  Subagent activity is now put back where it happened, and a reopened session
+  ends on its newest message.
+
 ### Changed
 
 - **Picking an older conversation while the session is working now asks,

@@ -12,10 +12,11 @@
 // no Terminal tab to check against — indistinguishable from a wiped session,
 // which is exactly how Dan read it on the 0.3.0 update.
 //
-// WHAT IT DOES. Reads the conversation's own transcript ONCE, at session start,
-// and hands the entries to `StreamFeed.hydrate`, which derives blocks with the
-// same `blocks.ts` derivation the watcher uses. The live stream then appends
-// above them in the same buffer, in the same seq space.
+// WHAT IT DOES. Reads the conversation's own transcript ONCE, at session start
+// — and, since #1140, its subagent transcripts with it, merged in by time — and
+// hands the entries to `StreamFeed.hydrate`, which derives blocks with the same
+// `blocks.ts` derivation the watcher uses. The live stream then appends above
+// them in the same buffer, in the same seq space.
 //
 // FAIL-OPEN THROUGHOUT (P6). No file, an unreadable file, a file full of
 // garbage: the session starts anyway with the empty Session view it has today.
@@ -23,8 +24,11 @@
 // will not start is a bug.
 import { errorText } from '../../shared/error-text';
 import fs from 'fs';
+import path from 'path';
 import { Logger } from '../log/logger';
 import { conversationFile } from '../transcripts/paths';
+import { agentOriginFor } from './agent-attribution';
+import type { BlockOrigin, HydrateOptions } from './blocks';
 
 /**
  * How much of a transcript's TAIL is read back, in bytes.
@@ -308,9 +312,228 @@ export function readTranscriptHead(
   return { entries: out, cut, read: true };
 }
 
+/**
+ * How much SUBAGENT transcript one replay reads, across all of a conversation's
+ * subagent files, in bytes (#1140).
+ *
+ * The same budget as the main conversation and for the same reason: this runs
+ * synchronously inside `sessions:create`. Spent newest file first, so what is
+ * left out when it runs short is the oldest subagent work — the end of the
+ * conversation the Feed's own 1,000-block cap evicts first anyway.
+ */
+export const HISTORY_SIDECHAIN_BYTES = HISTORY_TAIL_BYTES;
+
+/** The most subagent files one replay opens. A session that ran more than this
+ *  loses the oldest from its replayed history, never the newest. */
+export const HISTORY_SIDECHAIN_FILES = 64;
+
+/** One subagent transcript line, and which agent's file it came out of. */
+export interface SidechainEntry {
+  entry: Record<string, unknown>;
+  origin: BlockOrigin;
+}
+
+/** A line's `timestamp` in epoch ms, or NaN when it has none we can read. */
+function stampOf(entry: Record<string, unknown>): number {
+  return typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN;
+}
+
+/** What `readSidechains` read, and what it left on disk. */
+export interface SidechainBacklog {
+  /** each file's lines in file order, newest file first */
+  files: SidechainEntry[][];
+  /** files not opened because every line in them predates `notBefore` */
+  olderFiles: number;
+  /** files not opened, or opened only in part, because the budget ran out */
+  shortFiles: number;
+  /** the bytes of those files this read did not cover */
+  unreadBytes: number;
+}
+
+/** A remainder too small to be worth a file's last line or two (#1140 review):
+ *  it would replay as an orphan fragment of a run with nothing before it. */
+const SIDECHAIN_MIN_SLICE = 64 * 1024;
+
+/**
+ * The subagent transcripts of one conversation, each file's lines in file
+ * order, newest file first (#1140).
+ *
+ * `<conversation>/subagents/agent-*.jsonl`, beside the main transcript — the
+ * layout `TranscriptWatcher.subagentFiles` reads, spelled the same way so the
+ * two cannot disagree about which files a conversation owns.
+ *
+ * `notBefore` is the first moment the replayed main conversation covers. A file
+ * last written before it holds nothing the merge would keep, so it is not
+ * opened at all — on a long conversation that is most of them, and this runs on
+ * the boot path once per resumed card.
+ *
+ * Fail-open like everything else here: a directory that will not list is a
+ * conversation with no subagents, and a file that will not read is skipped.
+ */
+export function readSidechains(
+  mainFile: string,
+  opts: { maxBytes?: number; maxFiles?: number; notBefore?: number } = {}
+): SidechainBacklog {
+  const maxBytes = opts.maxBytes ?? HISTORY_SIDECHAIN_BYTES;
+  const maxFiles = opts.maxFiles ?? HISTORY_SIDECHAIN_FILES;
+  const out: SidechainBacklog = { files: [], olderFiles: 0, shortFiles: 0, unreadBytes: 0 };
+  const dir = path.join(path.dirname(mainFile), path.basename(mainFile, '.jsonl'), 'subagents');
+  let names: fs.Dirent[];
+  try {
+    names = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  const files: Array<{ full: string; mtimeMs: number; size: number }> = [];
+  for (const e of names) {
+    if (!e.isFile() || !e.name.endsWith('.jsonl')) continue;
+    const full = path.join(dir, e.name);
+    try {
+      const st = fs.statSync(full);
+      if (opts.notBefore !== undefined && st.mtimeMs < opts.notBefore) {
+        out.olderFiles++;
+        continue;
+      }
+      files.push({ full, mtimeMs: st.mtimeMs, size: st.size });
+    } catch {
+      /* gone since the listing — nothing to replay from it */
+    }
+  }
+  files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  let budget = maxBytes;
+  files.forEach((f, i) => {
+    // Not opened at all: past the file cap, or what is left of the budget
+    // would buy only the tail end of a run.
+    if (i >= maxFiles || budget <= 0 || (budget < f.size && budget < SIDECHAIN_MIN_SLICE)) {
+      out.shortFiles++;
+      out.unreadBytes += f.size;
+      return;
+    }
+    const entries = readTranscriptTail(f.full, budget);
+    // Charged at what the window can have read: the file, or the budget.
+    const read = Math.min(budget, f.size);
+    budget -= read;
+    if (read < f.size) {
+      out.shortFiles++;
+      out.unreadBytes += f.size - read;
+    }
+    if (entries.length === 0) return;
+    out.files.push(
+      entries.map((entry) => ({
+        entry,
+        origin: { sidechain: true, ...agentOriginFor(entry, true, f.full) },
+      }))
+    );
+  });
+  return out;
+}
+
+/**
+ * The first moment a window of the MAIN conversation covers, or undefined.
+ *
+ * Read off the first `user` / `assistant` line and nothing else (#1140 review).
+ * A main transcript is not monotonic — attachments and hook summaries are
+ * routinely stamped minutes or hours behind the lines around them — and taking
+ * the window's edge from one of those would admit subagent work from turns the
+ * replay is not showing.
+ */
+export function firstTurnStamp(main: readonly Record<string, unknown>[]): number | undefined {
+  for (const e of main) {
+    if (e.type !== 'user' && e.type !== 'assistant') continue;
+    const at = stampOf(e);
+    if (!Number.isNaN(at)) return at;
+  }
+  return undefined;
+}
+
+/** What `mergeHistory` hands to `hydrate`. */
+export interface MergedHistory {
+  entries: Record<string, unknown>[];
+  origins: Map<Record<string, unknown>, BlockOrigin>;
+}
+
+/**
+ * The main conversation and its subagent transcripts as ONE list, in the order
+ * things happened (#1140).
+ *
+ * ── WHY A MERGE AT ALL ─────────────────────────────────────────────────────
+ *
+ * A live session shows a subagent's work where it ran: the watcher drains the
+ * subagent's file while the turn that dispatched it is still open. A resumed
+ * one used to get the main conversation first and then every subagent file
+ * whole, appended after it — so the conversation ended on old subagent work
+ * with its newest reply somewhere above. Merging by timestamp puts a replayed
+ * conversation back in the order the live one was in.
+ *
+ * ── WHAT IS GUARANTEED ─────────────────────────────────────────────────────
+ *
+ * EACH FILE KEEPS ITS OWN ORDER, whatever its timestamps say. A line's time is
+ * read as "no earlier than the line before it in the same file", so a missing
+ * or out-of-order stamp can move a line relative to OTHER files but never past
+ * its own neighbours. The main conversation in particular comes out exactly as
+ * it went in.
+ *
+ * A subagent file's LEADING lines with no stamp take the file's first real one,
+ * so they open the run they belong to rather than floating to the top of the
+ * conversation. (The main conversation's are left at the top, where they are.)
+ *
+ * ON A TIE THE MAIN CONVERSATION GOES FIRST: the dispatching `Agent` call is a
+ * main-conversation line, and a subagent's first line can share its
+ * millisecond.
+ *
+ * `notBefore` is where a CUT main window begins (`firstTurnStamp`). Subagent
+ * lines older than it are left out — they belong to turns the replay is not
+ * showing, and would otherwise pile up at the very top with nothing around
+ * them. Undefined for a conversation read whole: everything is kept.
+ */
+export function mergeHistory(
+  main: readonly Record<string, unknown>[],
+  sidechains: readonly (readonly SidechainEntry[])[],
+  notBefore?: number
+): MergedHistory {
+  const origins = new Map<Record<string, unknown>, BlockOrigin>();
+  if (sidechains.length === 0) return { entries: main.slice(), origins };
+  interface Timed {
+    entry: Record<string, unknown>;
+    at: number;
+    /** 0 = main; breaks a tie */
+    rank: number;
+    /** position within its own file */
+    i: number;
+  }
+  const timed: Timed[] = [];
+  const add = (entries: readonly Record<string, unknown>[], rank: number, floor: number): void => {
+    entries.forEach((entry, i) => {
+      const own = stampOf(entry);
+      if (!Number.isNaN(own) && own > floor) floor = own;
+      timed.push({ entry, at: floor, rank, i });
+    });
+  };
+  add(main, 0, -Infinity);
+  sidechains.forEach((file, f) => {
+    const kept =
+      notBefore === undefined ? file : file.filter((s) => !(stampOf(s.entry) < notBefore));
+    for (const s of kept) origins.set(s.entry, s.origin);
+    const first = kept.map((s) => stampOf(s.entry)).find((t) => !Number.isNaN(t));
+    add(
+      kept.map((s) => s.entry),
+      f + 1,
+      first ?? -Infinity
+    );
+  });
+  // `-Infinity - -Infinity` is NaN, which `||` reads as "equal" and falls
+  // through to the rank — the right answer for two lines with no time at all.
+  timed.sort((a, b) => a.at - b.at || a.rank - b.rank || a.i - b.i);
+  return { entries: timed.map((t) => t.entry), origins };
+}
+
 /** Just enough of `StreamFeed` for this to be callable with a test double. */
 export interface HydratableFeed {
-  hydrate(sessionId: string, entries: readonly Record<string, unknown>[]): number;
+  hydrate(
+    sessionId: string,
+    entries: readonly Record<string, unknown>[],
+    opts?: HydrateOptions
+  ): number;
 }
 
 export interface ReplayResumedHistoryArgs {
@@ -322,6 +545,8 @@ export interface ReplayResumedHistoryArgs {
   folder: string;
   /** the conversation being resumed (the plan's `resumeSessionId`) */
   nativeSessionId: string;
+  /** the clock, for a test that needs the replay to have happened "then" */
+  now?: () => number;
 }
 
 /**
@@ -350,12 +575,43 @@ export function replayResumedHistory(
       });
       return 0;
     }
-    const entries = readTranscriptTail(file);
-    const blocks = feed.hydrate(args.sessionId, entries);
+    // BEFORE the reads, not after: a line written while they run must count as
+    // live rather than be mistaken for backlog and dropped. (Nothing writes
+    // during a resume — the CLI says nothing until its first turn — so this is
+    // about which way the edge leans, not about a race anyone has seen.)
+    const replayedAt = (args.now ?? Date.now)();
+    const main = readTranscriptWindow(file);
+    // The subagent transcripts too, merged in where they happened (#1140).
+    // Left to the watcher they arrive AFTER this replay and land below the
+    // newest message; `sidechainBacklogBefore` is what tells the Feed to
+    // refuse them when the watcher offers them anyway.
+    //
+    // "Cut" by EITHER budget: the byte window says so itself, the line cap
+    // does not, and a conversation trimmed by it has older turns missing just
+    // the same.
+    const cut = main.cut || main.entries.length >= HISTORY_MAX_LINES;
+    const notBefore = cut ? firstTurnStamp(main.entries) : undefined;
+    const backlog = readSidechains(file, { notBefore });
+    const merged = mergeHistory(main.entries, backlog.files, notBefore);
+    const blocks = feed.hydrate(args.sessionId, merged.entries, {
+      origins: merged.origins,
+      sidechainBacklogBefore: replayedAt,
+    });
     log.info('replayed the resumed conversation into the Feed', {
       sessionId: args.sessionId,
       nativeSessionId: args.nativeSessionId,
-      entries: entries.length,
+      entries: main.entries.length,
+      subagentEntries: merged.origins.size,
+      // What a "my subagent run vanished after a restart" report needs: how
+      // much subagent history this replay chose not to read. Absent when it
+      // read all of it, which is the ordinary case.
+      ...(backlog.olderFiles || backlog.shortFiles
+        ? {
+            subagentFilesOlder: backlog.olderFiles,
+            subagentFilesShort: backlog.shortFiles,
+            subagentBytesUnread: backlog.unreadBytes,
+          }
+        : {}),
       blocks,
     });
     return blocks;
