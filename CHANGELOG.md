@@ -118,7 +118,10 @@ on the floor, and say so in your PR.
   thousand small ones, which is what the rest of the stutter turned out to be:
   with the app slowed to a sixth of its speed, typing during a reply in a
   thousand-entry conversation went from stalling for nearly half the time to
-  not stalling at all. Nothing about the conversation looks different.
+  not stalling at all. And a long reply no longer gets slower to draw the
+  longer it gets: the paragraphs Claude has finished are left alone while the
+  one being written is updated, where before the whole reply was redrawn for
+  every few words. Nothing about the conversation looks different.
 - **A long, busy session keeps following its newest message.** Once a
   conversation had grown past a thousand entries, a single click anywhere in it
   — or scrolling *down* — could make it stop keeping up, as though you had

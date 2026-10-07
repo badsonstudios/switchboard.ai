@@ -53,6 +53,11 @@
 // React-owned text node in a `.feed-md` container any more, and no glyph in the
 // DOM for a search to count either.
 //
+// (Since #716 it is no longer rewritten WHOLE once a frame either: a streaming
+// reply is several `.feed-md` containers, one per settled stretch plus the tail,
+// and only the tail's HTML is replaced. Marks in a settled stretch therefore
+// survive the next chunk, where they used to be wiped with everything else.)
+//
 // THE RULE STAYS, and it is now a boundary rather than live coverage — said
 // plainly so the next reader does not mistake a passing test for a hazard that
 // still exists. Rendered markdown always wraps its text in a block element, so

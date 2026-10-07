@@ -1278,6 +1278,224 @@ function useCoalesced(text: string, streaming: boolean | undefined): string {
 }
 
 /**
+ * Where a document that is still being written has SETTLED: the offset its last
+ * finished-looking block starts at. Everything before that offset is final —
+ * nothing appended later can change how it parses; everything from there on is
+ * still moving.
+ *
+ * `0` means "nothing has settled yet". `UNSPLITTABLE` means "do not split this
+ * at all, now or later", which is the answer for the three shapes where a
+ * block's meaning is NOT local:
+ *
+ *  - a link reference definition (`[x]: url`), which changes how text anywhere
+ *    else in the document renders;
+ *  - raw HTML, at ANY depth — a block of it, or a tag inside a paragraph or a
+ *    list item. An element opened in one block and closed in another is one
+ *    element to the sanitizer and two halves if they are parsed apart:
+ *    `intro <details>` hides everything after it when the document is whole;
+ *  - a carriage return, because `marked` normalises line endings before it
+ *    lexes and the offsets it reports are then into a different string (the
+ *    drift `repairOnce` documents).
+ *
+ * The length check at the end is that last guard from the other side: if the
+ * tokens' raw text does not add up to what was lexed, the offsets are not
+ * offsets into it.
+ *
+ * ── ONLY WHOLE LINES ARE EVIDENCE (found in review) ─────────────────────────
+ *
+ * The obvious rule — "every block but the last is finished" — is FALSE for a
+ * last line that has not finished arriving, because `marked` accepts end of
+ * input where a newline would go. `see the fix in\n#` lexes as a paragraph and
+ * a HEADING; one chunk later it is `#716 for details` and the same paragraph.
+ * `- took about\n1.` is a list and then an ordered list, until it is
+ * `1.5 seconds`, a lazy continuation of the first item. A frame that caught the
+ * marker alone would have cut a paragraph in two.
+ *
+ * So the unfinished last line is never looked at: the text is lexed up to its
+ * last newline, and what follows stays in the tail whatever it looks like.
+ *
+ * WHY "ALL BUT THE LAST BLOCK" IS THEN SAFE. Every construct that can grow by
+ * appending — a paragraph, a list (loose or tight), a blockquote, an unclosed
+ * fence, a table gaining rows, a paragraph about to become a setext heading or
+ * a table — is ONE top-level token for as long as it can still grow, and so it
+ * is the last one. A token with a complete line of something else after it has
+ * been closed by that line. `markdown-settled.test.tsx` holds this against
+ * every prefix of a corpus rather than against the argument.
+ */
+export function settledLength(text: string): number {
+  if (text.includes('\r')) return UNSPLITTABLE;
+  const lines = text.slice(0, text.lastIndexOf('\n') + 1);
+  // a shallow copy for the reason `repairOnce` gives: `lexer` writes to its options
+  const tokens = marked.lexer(lines, { ...MARKED_OPTIONS });
+  let html = false;
+  // `void`: `walkTokens` hands back whatever the callback returned, which the
+  // types allow to be promises. This one returns nothing.
+  void marked.walkTokens(tokens, (token) => {
+    if (token.type === 'html') html = true;
+  });
+  if (html) return UNSPLITTABLE;
+  let last = tokens.length - 1;
+  while (last >= 0 && tokens[last].type === 'space') last -= 1;
+  let offset = 0;
+  let settled = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token.type === 'def') return UNSPLITTABLE;
+    if (i === last) settled = offset;
+    offset += token.raw.length;
+  }
+  if (offset !== lines.length) return UNSPLITTABLE;
+  // A BLANK LINE AFTER IT, and it is a kind of block a blank line ends for
+  // good: then it has settled too, and the tail is only the line being written.
+  // Without this the tail is always the last TWO blocks — the finished one and
+  // the one arriving — and both are re-rendered per chunk; measured, that was
+  // about a tenth more script and layout than it needed to be.
+  if (last >= 0 && last < tokens.length - 1 && ENDED_BY_A_BLANK_LINE.has(tokens[last].type)) {
+    return lines.length;
+  }
+  return last > 0 ? settled : 0;
+}
+
+/**
+ * Blocks that a blank line closes, so nothing after one can join them.
+ *
+ * A SHORT LIST ON PURPOSE. Not a list: its next item, or an indented
+ * paragraph belonging to its last one, arrives after a blank line and is the
+ * same list. Not `code`: an indented code block runs straight across blank
+ * lines, and the token does not say on its face which kind it is. Headings,
+ * rules and fences take their trailing blank lines into their own token, so
+ * they never reach this test and settle by the ordinary rule above — which is
+ * merely one block later.
+ */
+const ENDED_BY_A_BLANK_LINE: ReadonlySet<string> = new Set(['paragraph', 'blockquote', 'table']);
+
+/** `settledLength`'s answer for a document that must be rendered whole. */
+export const UNSPLITTABLE = -1;
+
+/** One settled stretch of a streaming reply: its source text and what it rendered to. */
+interface SettledPiece {
+  /** where this piece ends in the reply's text */
+  end: number;
+  /**
+   * The piece's HTML, already in the object React is handed — and it has to be
+   * THIS object every time. React 19 compares the `dangerouslySetInnerHTML`
+   * prop by identity, not by its string: a fresh `{ __html }` holding the same
+   * text is a changed prop, and the element's `innerHTML` is written again.
+   * MEASURED before this was held still: 1,899 rewrites of settled pieces in a
+   * 12 s window in which not one of them had changed.
+   */
+  inner: { __html: string };
+}
+
+/** What `<Markdown>` remembers about a reply between chunks — see `useSettled`. */
+interface Settled {
+  /**
+   * The reply's text up to the last settled offset; every new chunk must start
+   * with it. For a reply being rendered `whole` it is the text that was found
+   * unsplittable — so that a DIFFERENT reply in the same component is not
+   * condemned by it.
+   */
+  head: string;
+  pieces: SettledPiece[];
+  /** a definition or raw HTML was seen: this reply is rendered whole, with no pieces */
+  whole: boolean;
+  decorate: ((html: string) => string) | undefined;
+}
+
+/** one array for every "no pieces", so a render that has none hands React nothing new */
+const NO_PIECES: SettledPiece[] = [];
+const NOTHING_SETTLED: Settled = { head: '', pieces: NO_PIECES, whole: false, decorate: undefined };
+
+/**
+ * A streaming reply as the pieces of it that have finished, each rendered ONCE,
+ * and the tail that is still being written (#716).
+ *
+ * ── WHY, AND IT OVERTURNS A DECISION RECORDED BELOW ─────────────────────────
+ *
+ * #635 measured the whole pipeline at 3.55 ms on a 20,000-character block and
+ * concluded there was no need to re-parse less than the whole reply. That number
+ * is the parse. What it did not count is what happens next: the container's
+ * `innerHTML` is replaced, so every paragraph of the reply is torn down, rebuilt
+ * and laid out again, twenty times a second, to add a dozen characters to the
+ * last one. MEASURED in the real app (`spike/probes/716/`, 980 blocks, a reply
+ * already 13,000 characters long and growing, a key typed every 100 ms, 12 s,
+ * 6x CPU throttle) — the numbers are in
+ * `spike/findings/716-streaming-render-cost.md`, and the short of it is that a
+ * reply's cost per chunk grew with the length of the reply.
+ *
+ * So the reply is cut where it has settled (`settledLength`). A settled piece is
+ * parsed, sanitised and decorated once, and its HTML string never changes again
+ * — which is what lets React leave its DOM alone. Only the tail is re-rendered.
+ *
+ * ── WHAT DID NOT CHANGE: THERE IS STILL ONE PIPELINE ────────────────────────
+ *
+ * Each piece, and the tail, goes through `renderMarkdown` and then the
+ * surface's `decorate` — the same two calls in the same order as a finished
+ * block. Pieces are never joined as STRINGS: each is its own sanitised fragment
+ * in its own element, so there is no concatenation for half a tag in one piece
+ * to meet the other half in the next.
+ *
+ * And the finished block does not use this at all. When the turn ends the whole
+ * text is rendered once, as it always was, so anything a split could get subtly
+ * wrong lasts only as long as the reply is still moving.
+ *
+ * ── THE REF IS A CACHE, NOT STATE ───────────────────────────────────────────
+ *
+ * It is written during render, which this file is careful about elsewhere
+ * (`useCoalesced`). It is safe here because nothing in it is trusted: every use
+ * checks that the text in hand still starts with `head`, and starts again from
+ * nothing if it does not. A render React throws away can leave the cache AHEAD
+ * of what was committed, and the next render then either extends it or discards
+ * it — it cannot show text that was never sent.
+ */
+function useSettled(
+  source: string,
+  streaming: boolean | undefined,
+  decorate: ((html: string) => string) | undefined
+): { pieces: SettledPiece[]; tail: string } {
+  const cache = React.useRef<Settled>(NOTHING_SETTLED);
+  return React.useMemo(() => {
+    if (!streaming) {
+      cache.current = NOTHING_SETTLED;
+      return { pieces: NO_PIECES, tail: source };
+    }
+    let was = cache.current;
+    if (was.decorate !== decorate || !source.startsWith(was.head)) was = NOTHING_SETTLED;
+    if (was.whole) return { pieces: NO_PIECES, tail: source };
+
+    const from = was.head.length;
+    const rest = source.slice(from);
+    const advance = settledLength(rest);
+    if (advance === UNSPLITTABLE) {
+      // Permanent — what made it so is in the text for good — and it takes the
+      // pieces already settled WITH it (found in review). A definition that
+      // arrives late changes a link in a piece rendered before it existed, and
+      // "rendered whole" has to mean the whole reply, as it did before there
+      // were pieces.
+      cache.current = { head: source, pieces: NO_PIECES, whole: true, decorate };
+      return { pieces: NO_PIECES, tail: source };
+    }
+    if (advance === 0) {
+      // Asked again on the next chunk: a reply that is one long paragraph so
+      // far is still worth looking at.
+      cache.current = { ...was, decorate };
+      return { pieces: was.pieces, tail: rest };
+    }
+    const text = rest.slice(0, advance);
+    const sanitized = renderMarkdown(text);
+    const piece = { end: from + advance, inner: { __html: decorate ? decorate(sanitized) : sanitized } };
+    const now: Settled = {
+      head: source.slice(0, piece.end),
+      pieces: [...was.pieces, piece],
+      whole: false,
+      decorate,
+    };
+    cache.current = now;
+    return { pieces: now.pieces, tail: source.slice(piece.end) };
+  }, [source, streaming, decorate]);
+}
+
+/**
  * Render markdown to sanitized HTML.
  *
  * ── WHILE TEXT IS STILL ARRIVING (#635) ─────────────────────────────────────
@@ -1330,6 +1548,12 @@ function useCoalesced(text: string, streaming: boolean | undefined): string {
  *    reason there is no window logic here, and re-parsing only a suffix would
  *    mean a second notion of what a document is.
  *
+ *    ⚠️ SUPERSEDED BY #716 — see `useSettled` above. The parse was never the
+ *    pain; replacing the whole reply's DOM on every frame was, and these
+ *    numbers could not see it. What that paragraph was right to fear is kept:
+ *    the split is at block boundaries the lexer itself reports, not at a
+ *    character window, and it applies only while the reply is moving.
+ *
  * The caret is drawn in CSS from `STREAMING_ATTR` (`tokens.css`), not as an
  * element. It sits inline after the last thing rendered — which is where the
  * text actually is — instead of on its own line below a block element, and it
@@ -1367,18 +1591,40 @@ export function Markdown({
   decorate?: (html: string) => string;
 }): React.JSX.Element {
   const source = useCoalesced(text, streaming);
-  const html = React.useMemo(() => {
+  // Not streaming: no pieces, and `tail` is the whole text — the finished path
+  // is exactly what it was before there were pieces.
+  const { pieces, tail } = useSettled(source, streaming, decorate);
+  // The OBJECT is memoised, not just the string — see `SettledPiece.inner`. A
+  // streaming block renders twice per chunk (the new text arrives, then the
+  // frame `useCoalesced` owes fires), and the first of those changes nothing.
+  const inner = React.useMemo(() => {
     // ONE pipeline, streaming or not: the only difference is that a partial
     // document gets its open constructs closed FIRST, as text, before the same
     // parse → sanitize → decorate chain every finished block goes through.
-    const sanitized = renderMarkdown(streaming ? completePartialMarkdown(source) : source);
-    return decorate ? decorate(sanitized) : sanitized;
-  }, [source, streaming, decorate]);
-  return (
+    const sanitized = renderMarkdown(streaming ? completePartialMarkdown(tail) : tail);
+    return { __html: decorate ? decorate(sanitized) : sanitized };
+  }, [tail, streaming, decorate]);
+  const live = (
     <div
       className={className}
       {...(streaming ? { [STREAMING_ATTR]: '' } : {})}
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={inner}
     />
+  );
+  // ALWAYS the fragment, even with no pieces: the live container then sits in
+  // the same place in React's tree before the first piece settles, after it,
+  // and when the turn ends, so it is one element for the life of the block.
+  return (
+    <>
+      {/* Settled pieces, each in a container of its own with the same class —
+          so every `.feed-md` rule applies to them unchanged, and the "still
+          typing" caret, which hangs off the STREAMING container's last child,
+          stays on the tail where the text is arriving. Keyed by where the piece
+          ends, which never changes once it has settled. */}
+      {pieces.map((piece) => (
+        <div key={piece.end} className={className} dangerouslySetInnerHTML={piece.inner} />
+      ))}
+      {live}
+    </>
   );
 }

@@ -109,12 +109,23 @@
 > left OPEN with the numbers on it; whether to keep it as a bytes-only tidy
 > is the owner's call. `spike/findings/1013-streaming-hot-path.md`.
 >
-> **WHAT IS LEFT OF THE TYPING LAG, MEASURED:** only a very long reply on a
-> very slow machine. A 16,000-character reply at 6x still stalls (8–13 long
-> tasks, 460–750 ms of 12 s, ~300 frames of 750); at 4x it does not. The cause
-> is the whole reply being parsed and laid out again on every chunk — step 1
-> of the #716 findings note. **PROPOSED NEXT, waiting on the owner's word:**
-> that step, then #1055 and #743. Nothing is claimed.
+> **THE OWNER SAID "go" (2026-10-07)** to this order: the long-reply step of
+> #716, then #1055, then #743.
+>
+> **THIRD MEASURED STEP OF #716 — IN FLIGHT 2026-10-07, branch
+> `feature/716-settled-reply-pieces`.** A long reply got slower to draw the
+> longer it got. Two causes, both measured: (1) React 19 compares
+> `dangerouslySetInnerHTML` by the OBJECT, so every render rewrote the reply's
+> whole DOM even when its HTML string had not changed — and a streaming block
+> renders twice per chunk; (2) the whole reply was parsed and replaced per
+> chunk. Now the finished paragraphs are rendered once each and left alone,
+> and only the tail is re-rendered. **A 13,000-character reply still growing,
+> 6x, before and after ALTERNATED on a machine that was not quiet: frames
+> 240–307 → 324–690 (up in all four pairs), layout 3,456–3,601 → 1,707–2,242 ms.**
+> ⚠️ Sequential before/after runs were thrown out half-way: a .NET build on the
+> machine moved the same code's script figure by a third. `ab.sh`-style
+> alternation is the only comparison to trust here. Both issues STILL stay open
+> for the laptop.
 >
 > **A flake that reddened a run:** #1002 (`quiet-hours.spec.ts:287`) failed
 > the Windows e2e job on PR #1131 and passed on re-run. Sighting is on the

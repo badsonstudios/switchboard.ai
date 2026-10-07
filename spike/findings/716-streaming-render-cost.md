@@ -234,6 +234,111 @@ there is still something to have. Measure them against `main thread busy` and
 the script figure, not against long tasks, of which there are none left to
 count.
 
+## Third step, 2026-10-07: a reply cost more the longer it got
+
+After the second step the one case that still stalled was a long reply on a
+slow machine. The probe gained `PROBE_START` (the reply is already N characters
+long when the window opens, and grows at the ordinary 240 characters a second)
+because the earlier way of getting a long reply, `PROBE_STEP=67`, types five
+times faster than any model and finishes a paragraph on nearly every chunk.
+`PROBE_FLAGGED=1 PROBE_PARAS=1` throughout: the block carries `streaming: true`
+as a real partial does, and is prose in ~330-character paragraphs.
+
+**Two causes. The first was not on anybody's list.**
+
+1. **React 19 compares `dangerouslySetInnerHTML` by the object, not by the
+   string in it.** A fresh `{ __html }` holding identical text is a changed
+   prop and the element's `innerHTML` is assigned again — the whole subtree
+   torn down, rebuilt and laid out. `<Markdown>` built that object inline on
+   every render, and a streaming block renders TWICE per chunk (the text
+   arrives; then the frame `useCoalesced` owes fires), so the reply's DOM was
+   being rebuilt twice per chunk, once for nothing. Found with a
+   `MutationObserver` planted by `PROBE_EVAL` after a first attempt at the fix
+   below moved script and left layout exactly where it was: **1,899 writes to
+   settled pieces in a 12 s window in which none of them had changed.** With
+   the object held still: 0.
+2. **The whole reply was parsed, sanitised and replaced on every chunk** — step
+   1 of the list further up. Now the reply is cut where it has settled (the
+   start of its last top-level block, as the lexer reports it), each settled
+   stretch is rendered once, and only the tail is re-rendered.
+
+**How these were taken, because it changed half-way through.** The first
+before/after was sequential — three runs of one build, then three of the other
+— and a .NET build started on the machine between them; the same code read
+3,100 ms of script in one batch and 4,200 in the next. So the two builds are now
+kept side by side and the probe ALTERNATES between them, one run each, so both
+see the same machine. Everything below is from alternating runs of the code that
+shipped. The machine was not quiet (one "after" run at 6x is plainly a disturbed
+one and is left in); the pairs are what to read.
+
+A 13,000-character reply still growing. 6x, four pairs:
+
+| pair | | long tasks | stalled, of 12,000 ms | frames | script | layout | key → paint p50 |
+|---|---|---|---|---|---|---|---|
+| 1 | before | 20 | 1,310 | 307 | 3,859 | 3,601 | 96 ms |
+| | after | 4 | 225 | 690 | 3,392 | 1,707 | 72 ms |
+| 2 | before | 18 | 1,088 | 240 | 3,959 | 3,481 | 80 ms |
+| | after | 10 | 643 | 506 | 4,143 | 1,986 | 64 ms |
+| 3 | before | 21 | 1,403 | 256 | 3,796 | 3,599 | 88 ms |
+| | after | 17 | 1,091 | 324 | 4,466 | 2,242 | 88 ms |
+| 4 | before | 9 | 602 | 272 | 4,046 | 3,456 | 80 ms |
+| | after | 2 | 123 | 649 | 3,562 | 1,854 | 56 ms |
+
+Frames are up in every pair, by 1.3x in the disturbed one and 2.1–2.4x in the
+others. **Layout is the steady number: 3,456–3,601 ms before, 1,707–2,242
+after**, down by 38–53%. Script moves with the machine more than with the
+change.
+
+4x, two pairs: main thread busy 10,595–11,029 ms before and 8,362–8,528 after;
+layout 2,768–2,878 before and 1,234–1,279 after. Nothing stalls at 4x on either
+side, so the saving there is headroom, not something a person would see.
+
+**How much is each half?** One sequential batch on a quiet machine, 6x, with
+the prop object held still and NO pieces: 592–610 frames and ~2,430 ms of
+layout, against 358–387 and ~3,510 before it. So the object alone is most of
+the frames; the pieces are the rest of the layout and all of the parse.
+
+**A review found the first rule for "settled" was wrong**, and the fix cost a
+little. "Every block but the last is finished" is false when the last line has
+not finished arriving: `marked` accepts end of input where a newline would go,
+so `see the fix in\n#` is a paragraph and a HEADING for one frame and one
+paragraph the next. Only whole lines are evidence now. On its own that left the
+tail two blocks long (the finished one and the one arriving), so a paragraph
+with a blank line after it — which nothing can join — settles at once.
+
+An ordinary reply (growing from nothing to ~2,900 characters) pays the same
+double write. These are sequential and from the first version of the change,
+and are here for the layout column only:
+
+| | frames | layout | main thread busy |
+|---|---|---|---|
+| 6x before | 530–569 | ~2,940 | ~11,960 |
+| 6x after | 571–694 | ~1,970 | ~11,020 |
+| 4x before | 746–749 | ~2,045 | ~8,830 |
+| 4x after | 749–752 | ~1,225 | ~7,295 |
+
+**The earlier tables understate what `main` cost**, for the same reason: they
+were taken without `PROBE_FLAGGED`, so the probe's block was a finished one that
+kept changing — no coalescing, one render per chunk, one write. A real partial
+is flagged. Compare the 4x "after" row of the second step (layout ~1,360) with
+the 4x "before" row here (~2,045): same code, the flag is the difference.
+
+**What it overturns.** `markdown.tsx` recorded, from #635, that the whole
+pipeline costs 3.55 ms on a 20,000-character block and that "re-parsing only a
+suffix would mean a second notion of what a document is". The number is right
+and it is the parse; it did not count the DOM being replaced, which is where the
+time was. The fear is kept: the cut is at block boundaries the lexer itself
+reports, a reply containing a link definition, raw HTML or a carriage return is
+not cut at all, every piece goes through the same parse → sanitise → decorate
+calls, pieces are separate elements and are never joined as strings, and the
+finished reply is rendered whole exactly as before. `markdown-settled.test.tsx`
+holds the picture equal to the whole render at every length of a reply that has
+one of every block construct in it.
+
+**Not looked at:** other surfaces that hand React a fresh `{ __html }` per
+render. The feed's finished blocks are memoised and do not re-render; the
+document viewer and the update dialog were not measured.
+
 ## What this probe cannot say
 
 - **One session.** #1013 is eight. Each visible conversation pays this

@@ -563,7 +563,10 @@ describe('<Markdown>', () => {
     // — but it says nothing about the transition, which is the test above.
     const complete = '## Title\n\nsome **bold** and `code`\n\n- one\n- two\n';
     const streamed = mount(<Markdown text={complete} streaming />);
-    const streamedHtml = streamed.querySelector('.feed-md')!.innerHTML;
+    // Since #716 a streaming reply is rendered in settled pieces, each its own
+    // `.feed-md`, so "what the streamed path rendered" is all of them in order.
+    // `markdown-settled.test.tsx` holds that against every prefix of a reply.
+    const streamedHtml = [...streamed.querySelectorAll('.feed-md')].map((el) => el.innerHTML).join('');
     act(() => root!.unmount());
     const finished = mount(<Markdown text={complete} />);
     expect(finished.querySelector('.feed-md')!.innerHTML).toBe(streamedHtml);

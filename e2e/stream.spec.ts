@@ -388,8 +388,15 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     // The block that is STILL FILLING IN. The attribute is written by
     // `<Markdown>` only while `streaming` is true, so scoping to it is what
     // makes the three assertions below statements about a partial document.
-    const live = w.locator('.feed-md[data-feed-streaming]');
-    await expect(live).toBeVisible({ timeout: 30_000 });
+    //
+    // Scoped to the BLOCK that holds it, not to the attribute's own element:
+    // since #716 a streaming reply is rendered as its settled stretches plus the
+    // tail still being written, and only the tail wears the attribute. The
+    // heading and the fence below have settled; the open emphasis has not.
+    const tail = w.locator('.feed-md[data-feed-streaming]');
+    await expect(tail).toBeVisible({ timeout: 30_000 });
+    const live = w.locator('[data-feed-seq]').filter({ has: tail });
+    await expect(live).toHaveCount(1);
     // A heading whose text arrived across two deltas.
     await expect(live.locator('h2')).toHaveText(/STREAMED-HEADING/);
     // A fence, rendered while the reply is still going.
@@ -404,6 +411,9 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     // already completed itself. Caught in review; do not remove it.
     await expect(live.locator('strong')).toHaveCount(2);
     await expect(live.locator('strong').last()).toHaveText(/NEVER-CLOSED/);
+    // ...and it is in the TAIL, which is the part `completePartialMarkdown` is
+    // still applied to.
+    await expect(tail.locator('strong')).toHaveText(/NEVER-CLOSED/);
 
     // No Copy button on a fence that is still being written: a click would put
     // half a command on the clipboard (`decorateFeedMarkdown`'s `streaming`).

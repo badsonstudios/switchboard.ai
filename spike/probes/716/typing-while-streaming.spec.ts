@@ -72,6 +72,13 @@ const STEP = Number(process.env.PROBE_STEP ?? 12);
  * the new text" could save.
  */
 const GHOSTS = Number(process.env.PROBE_GHOSTS ?? 0);
+/**
+ * `PROBE_START=<chars>`: the reply is already this long when the window opens,
+ * and grows from there at the ordinary rate. A long reply at a REAL speed —
+ * `PROBE_STEP=67` reaches the same length by typing five times faster than any
+ * model does, which finishes a paragraph on nearly every chunk.
+ */
+const START = Number(process.env.PROBE_START ?? 0);
 /** `PROBE_PARAS=1`:the reply is short paragraphs rather than ONE that grows */
 const PARAS = process.env.PROBE_PARAS === '1';
 
@@ -198,11 +205,11 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
   let streamed = Promise.resolve();
   if (STREAM) {
     streamed = a.app.evaluate(
-      ({ BrowserWindow }, { id, text, ms, still, flagged, newEvery, step, ghosts, visible }) =>
+      ({ BrowserWindow }, { id, text, ms, still, flagged, newEvery, step, ghosts, visible, start }) =>
         new Promise<void>((done) => {
           const wc = BrowserWindow.getAllWindows()[0].webContents;
           const t0 = Date.now();
-          let n = 0;
+          let n = start;
           let seq = 900_000;
           let opened = t0;
           const timer = setInterval(() => {
@@ -239,7 +246,7 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
         }),
       {
         id: liveId,
-        text: PARAS ? words.trimEnd() + '.\n\n' : words,
+        text: PARAS ? (words + words + words + words).trimEnd() + '.\n\n' : words,
         ms: SECONDS * 1000,
         still: process.env.PROBE_STILL === '1',
         flagged: FLAGGED,
@@ -247,6 +254,7 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
         step: STEP,
         ghosts: GHOSTS,
         visible: process.env.PROBE_VISIBLE !== '0',
+        start: START,
       }
     );
   }
@@ -356,6 +364,12 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
   const delay = rec.keys.map((k) => k[1]);
   const longTotal = Math.round(rec.long.reduce((x, y) => x + y, 0));
   const slowFrames = rec.frames.filter((f) => f > 50).length;
+  // whatever a `PROBE_EVAL` script left behind to be asked at the end
+  const note = await w.evaluate(() => {
+    const f = (window as unknown as { __probeNote?: () => string }).__probeNote;
+    return f ? f() : '';
+  });
+  if (note) console.log(`probe716 note: ${note}`);
   const blocks = await w.locator('[data-perf-blocks]').first().getAttribute('data-perf-blocks');
   // Is the scroll height still the fully-laid-out truth? Read both ways, the
   // way `e2e/feed-skipping.spec.ts` does — after the numbers above are taken,
