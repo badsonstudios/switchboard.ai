@@ -102,7 +102,7 @@ export function HistoryPane(props: {
   readStatus?: ReadStatus;
   readCommitFiles?: ReadCommitFiles;
   /** the card a diff opened from here is attributed to (§5.24) */
-  sessionId?: string;
+  attributionCardId?: string;
   /** this card, so ⏱ from the Changes tab can pin this tab to one path (item 10) */
   cardId?: string;
   /** the clock, injected — see `relativeTime` for why it is not read in here */
@@ -773,7 +773,7 @@ export function HistoryPane(props: {
                     folder={props.folder}
                     commit={c}
                     gutter={gutter}
-                    sessionId={props.sessionId}
+                    attributionCardId={props.attributionCardId}
                   />
                 )}
               </React.Fragment>
@@ -881,7 +881,7 @@ function CommitFiles(props: {
   commit: GitCommitDto;
   /** the lane gutter's width, so the file list lines up under its commit */
   gutter: number;
-  sessionId?: string;
+  attributionCardId?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   /**
@@ -945,7 +945,7 @@ function CommitFiles(props: {
               path: f.path,
               left: base,
               right: props.commit.id,
-              sessionId: props.sessionId,
+              attributionCardId: props.attributionCardId,
             })
           }
           style={{

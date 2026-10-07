@@ -112,8 +112,8 @@
 > **THE OWNER SAID "go" (2026-10-07)** to this order: the long-reply step of
 > #716, then #1055, then #743.
 >
-> **THIRD MEASURED STEP OF #716 — IN FLIGHT 2026-10-07, branch
-> `feature/716-settled-reply-pieces`.** A long reply got slower to draw the
+> **THIRD MEASURED STEP OF #716 — DONE 2026-10-07, PR #1133 (`88b1ad5`),
+> merged, NOT released.** A long reply got slower to draw the
 > longer it got. Two causes, both measured: (1) React 19 compares
 > `dangerouslySetInnerHTML` by the OBJECT, so every render rewrote the reply's
 > whole DOM even when its HTML string had not changed — and a streaming block
@@ -126,6 +126,20 @@
 > machine moved the same code's script figure by a third. `ab.sh`-style
 > alternation is the only comparison to trust here. Both issues STILL stay open
 > for the laptop.
+>
+> **#1055 — DONE 2026-10-07 on `feature/1055-attribution-card-id`** (the PR
+> that carries this line). The id that says which session a viewer was opened
+> from is a CARD id and is now called `attributionCardId` at every hop that is
+> not on disk. The persisted `params.sessionId` keeps its name on purpose — a
+> rename there is a layout migration whose failure mode is the bug itself —
+> with one comment where it is written and one where it is read. **A FOURTH
+> wrong call site turned up doing it:** the History tab passed the live session
+> id into a diff target (harmless only because no diff panel draws a chip yet).
+> The Files tab and the in-card Changes tab now each have a chip assertion;
+> both go red with the live id put back. No user-facing change.
+>
+> **NEXT: #743** (the watcher's `seenNames.clear()` at 5,000). Nothing else is
+> claimed. 0.8.115 is cut when the owner asks.
 >
 > **A flake that reddened a run:** #1002 (`quiet-hours.spec.ts:287`) failed
 > the Windows e2e job on PR #1131 and passed on re-run. Sighting is on the

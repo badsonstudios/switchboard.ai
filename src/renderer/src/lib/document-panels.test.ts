@@ -101,11 +101,11 @@ describe('document-panels — every file opens its own tab (#530)', () => {
 
   it('attribution is recorded per panel, and a re-open does not rewrite it', () => {
     const first = planDocumentOpen('/p/a.md', 'card-1');
-    expect(first.sessionId).toBe('card-1');
+    expect(first.attributionCardId).toBe('card-1');
     // a second file from a second card is its OWN viewer, with its own lineage
     expect(planDocumentOpen('/p/b.md', 'card-2')).toMatchObject({
       action: 'create',
-      sessionId: 'card-2',
+      attributionCardId: 'card-2',
     });
     // ...and asking for the first again from the palette (no session) focuses
     // it WITHOUT stripping the chip: where a document came from is a fact about
@@ -113,9 +113,9 @@ describe('document-panels — every file opens its own tab (#530)', () => {
     expect(planDocumentOpen('/p/a.md')).toMatchObject({
       action: 'focus',
       id: first.id,
-      sessionId: 'card-1',
+      attributionCardId: 'card-1',
     });
-    expect(documentPanels()[0]?.sessionId).toBe('card-1');
+    expect(documentPanels()[0]?.attributionCardId).toBe('card-1');
   });
 
   it('closing a viewer forgets it, and the file can then be opened afresh', () => {

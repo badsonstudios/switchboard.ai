@@ -74,7 +74,7 @@ export interface DiffTarget {
   /** the "after" side: a sha, a ref, or `WORKING_TREE_RIGHT` */
   right: string;
   /** the card this diff was opened from, for §5.24 attribution (or none) */
-  sessionId?: string;
+  attributionCardId?: string;
 }
 
 /**
@@ -116,7 +116,7 @@ let seq = 0;
  * ask for — which is the vanished-document failure `document-panels` records,
  * arriving by a different door.
  *
- * `sessionId` is NOT in the key: attribution says where a diff was opened from,
+ * `attributionCardId` is NOT in the key: attribution says where a diff was opened from,
  * and two cards asking about the same comparison are asking one question.
  *
  * Path separators and case are folded exactly as `documentKey` folds them, and
@@ -167,7 +167,7 @@ export function planDiffOpen(target: DiffTarget): DiffOpenPlan {
   for (const entry of entries.values()) {
     if (diffKey(entry.target) === key) {
       // Already open — raise it rather than opening a second copy of one
-      // comparison. The recorded `sessionId` is NOT overwritten, for the reason
+      // comparison. The recorded `attributionCardId` is NOT overwritten, for the reason
       // `planDocumentOpen` gives: attribution is where it came FROM, and that
       // does not change because someone asked again from somewhere else.
       return { action: 'focus', id: entry.id, target: entry.target };

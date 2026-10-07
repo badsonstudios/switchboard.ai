@@ -43,7 +43,7 @@ export function DiffPane(props: {
    * chip. Optional because this pane is also rendered by tests and could one
    * day be pointed at a folder with no session behind it.
    */
-  sessionId?: string;
+  attributionCardId?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [status, setStatus] = useState<GitStatusDto | null>(null);
@@ -159,7 +159,7 @@ export function DiffPane(props: {
         status={status}
         selected={selected}
         onSelect={setSelected}
-        sessionId={props.sessionId}
+        attributionCardId={props.attributionCardId}
         cardId={props.cardId}
         onRefresh={() => setRefreshes((n) => n + 1)}
       />
@@ -231,7 +231,7 @@ export function DiffPane(props: {
                   path: selected,
                   left: WORKING_TREE_LEFT,
                   right: WORKING_TREE_RIGHT,
-                  sessionId: props.sessionId,
+                  attributionCardId: props.attributionCardId,
                 })
               }
             >

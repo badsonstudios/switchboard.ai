@@ -71,11 +71,11 @@ describe('diffKey', () => {
     expect(diffKey(working('/a', 'x.ts'))).not.toBe(diffKey(working('/b', 'x.ts')));
   });
 
-  it('⚠️ `sessionId` is NOT in the key', () => {
+  it('⚠️ `attributionCardId` is NOT in the key', () => {
     // Attribution says where a diff was opened FROM. Two cards asking about the
     // same comparison are asking one question.
-    const a = diffKey({ ...working('/p', 'x.ts'), sessionId: 'card-1' });
-    const b = diffKey({ ...working('/p', 'x.ts'), sessionId: 'card-2' });
+    const a = diffKey({ ...working('/p', 'x.ts'), attributionCardId: 'card-1' });
+    const b = diffKey({ ...working('/p', 'x.ts'), attributionCardId: 'card-2' });
     expect(a).toBe(b);
   });
 
@@ -114,12 +114,12 @@ describe('planDiffOpen', () => {
     expect(planDiffOpen(working('/p', 'src\\a.ts'))).toMatchObject({ action: 'focus', id: first.id });
   });
 
-  it('⚠️ does NOT overwrite the recorded `sessionId` on a focus', () => {
+  it('⚠️ does NOT overwrite the recorded `attributionCardId` on a focus', () => {
     // Attribution is where it came from, and that does not change because
     // somebody asked again from somewhere else — `planDocumentOpen`'s rule.
-    planDiffOpen({ ...working('/p', 'a.ts'), sessionId: 'card-1' });
-    const again = planDiffOpen({ ...working('/p', 'a.ts'), sessionId: 'card-2' });
-    expect(again.target.sessionId).toBe('card-1');
+    planDiffOpen({ ...working('/p', 'a.ts'), attributionCardId: 'card-1' });
+    const again = planDiffOpen({ ...working('/p', 'a.ts'), attributionCardId: 'card-2' });
+    expect(again.target.attributionCardId).toBe('card-1');
   });
 
   it('opens a second panel for the same file at a different comparison', () => {

@@ -176,6 +176,29 @@ test.describe('a tab per document (#530)', () => {
     await launched?.cleanup();
   });
 
+  test('a file opened from the card`s own Changes tab says which session it came from (#1055)', async () => {
+    // The test above opens from the RELOCATED Changes panel (rail ▸ Open
+    // changes), and for a long time that was the only one of the three surfaces
+    // with a chip assertion — which is how the other two passed the wrong id
+    // for months. This is the Changes tab INSIDE the card; the Files tab's is in
+    // `files-tab.spec.ts`.
+    const dir = tempGitProject(['ONE.md']);
+    a = await launchApp({ seedFolder: dir });
+    const w = a.window;
+    const title = path.basename(dir);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+    await w.getByRole('tab', { name: 'Changes' }).first().click();
+    // the premise: this is the in-card tab, so no `· diff` panel was opened
+    await expect(w.locator('.dv-tab', { hasText: '· diff' })).toHaveCount(0);
+
+    await openInViewer(w, 'ONE.md');
+    await expect(viewer(w)).toBeVisible({ timeout: 15_000 });
+    await expect(docName(w)).toHaveText('ONE.md');
+    const chip = w.locator('[data-testid="doc-attribution"]');
+    await expect(chip).toBeVisible();
+    await expect(chip).toHaveAttribute('aria-label', `Opened from the session ${title}`);
+  });
+
   test('three files open three tabs, and no pin control exists anywhere', async () => {
     // THE DONE-WHEN, end to end. The unit test proves the registry plans three
     // `create`s; only a real window proves the three panels are all still THERE
