@@ -35,7 +35,9 @@ app redraw every message in the conversation, not just the one being written.
 And setting the off-screen messages aside one at a time still left the app
 keeping an eye on each of them, a thousand times over, every time the reply
 grew. They are now set aside in a few dozen larger pieces instead, and a reply
-arriving costs the same in a long conversation as in a short one.
+arriving costs the same in a long conversation as in a short one. A long reply
+was also redrawn from its first word every time a few more arrived; now only
+the paragraph being written is.
 
 You do not have to do anything to get this, and nothing about the conversation
 looks different. If typing in a long session still stutters for you, that is

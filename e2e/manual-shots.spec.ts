@@ -800,7 +800,10 @@ test.describe('manual screenshots (#1082)', () => {
     // ── a reply arriving, LAST: this turn never ends ─────────────────────────
     await w.locator('.dv-tab', { hasText: 'acme-storefront' }).click();
     await streamPrompter(a)('acme-storefront', '!partial-md');
-    const streaming = w.locator('.feed-md[data-feed-streaming]');
+    // the whole reply, not only the stretch of it still being written (#716)
+    const streaming = w
+      .locator('[data-feed-seq]')
+      .filter({ has: w.locator('.feed-md[data-feed-streaming]') });
     await expect(streaming).toBeVisible({ timeout: 30_000 });
     // The stand-in streams test words; the picture shows a reply. Nothing else
     // about it is touched — the cursor, the half-finished bold and the working
