@@ -4269,9 +4269,25 @@ its price was a second session nobody asked for. So:
   that card.** Its conversation is replaced; the card, its name and its place
   stay. The conversation it left is released entirely (not kept as an
   ancestor), so it is pickable again from the same list.
-- **A busy session is not interrupted.** Working, or waiting on a permission or
-  a question, refuses the pick and says why; the turn in flight would otherwise
-  be lost and a held permission answered by a kill.
+- **A busy session is not interrupted without a yes.** Working, or waiting on a
+  permission or a question, does not make the pick: the turn in flight would be
+  lost and a held permission answered by a kill. *As first built this was a
+  refusal* ("wait for it to finish, then pick again"). **Since #1127
+  (owner, 2026-10-06: "that sounds good to me") it is a QUESTION**, asked in
+  the picker: *Cancel* / *Stop it and open that conversation*, **Cancel
+  focused**, because the risk that was named is a mis-click throwing work away.
+  The answer "yes" is the same request with `stopFirst: true`, which lifts the
+  busy check and NOTHING else — a conversation another card took in the
+  meantime, or one that is not there, is still refused with the session
+  untouched, so the work is never given up for a pick that then cannot open.
+  The same offer is made for a session waiting on the user, worded for what is
+  lost there (the question goes unanswered). **Two things review added, both
+  about the mis-click:** the destructive button is DISABLED for the first
+  700 ms (`STOP_ARM_MS`) — a pick is often a double-click, main answers at once,
+  and the question is drawn where the list was, so the second click landed on
+  it — and the list is taken away while the question is up and the question
+  NAMES the conversation, so a stray click can neither pick a different row nor
+  leave the user confirming a question about the wrong one.
 - **A pick from another folder still opens a new card.** A card is bound to its
   folder.
 - **The `+ session` picker is unchanged** — there is no card yet to open it in.

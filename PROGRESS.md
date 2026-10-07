@@ -23,9 +23,8 @@
 >
 > # 🚧 NOW — 2026-10-07: **#1126, then #1127 — the owner: "we can do 1126 and 1127 next".**
 >
-> **#1126 (a session writes its own `@Name` handoff) — DONE 2026-10-07 on
-> `feature/1126-self-written-handoff`** (the PR that carries this line; NOT
-> released). The owner chose, when asked: **a switch in the prompt box** that
+> **#1126 (a session writes its own `@Name` handoff) — DONE 2026-10-07, PR
+> #1139 (`e61c7d9`), merged, NOT released.** The owner chose, when asked: **a switch in the prompt box** that
 > appears when the draft names another session ("Ask Name to write the
 > handoff", off by default; Send waits while it writes, with a Cancel); and
 > **when the named session is busy or waiting on an answer, send at once with
@@ -50,8 +49,19 @@
 > request and its reply stay in the named session's conversation, so a later
 > ordinary `@Name` brief quotes them as something it was asked.
 >
-> **#1127 ("stop it and open that conversation" on a busy history pick) — NEXT, not started.**
-> Cancel must be the default.
+> **#1127 ("stop it and open that conversation" on a busy history pick) — DONE
+> 2026-10-07 on `feature/1127-stop-and-open`** (the PR that carries this line;
+> NOT released). A busy pick is a QUESTION now, asked in the picker, with
+> **Cancel focused**. "Yes" is the same request with `stopFirst: true`, which
+> lifts the busy check and nothing else, so a pick that cannot be opened still
+> leaves the session untouched. Offered for a session waiting on the user too,
+> worded for what is lost there. Top row of the tracker's Untested table —
+> **step 2 (try to trip the Cancel default with a real keyboard) is the one
+> only the owner can do.**
+>
+> **BOTH APPROVED FEATURES ARE BUILT. Nothing is claimed.** Waiting on the
+> owner: the laptop test of #716 / #1013 on v0.8.115; hand-tests of #1126 and
+> #1127 (which need 0.8.116 cut first).
 
 > # ✅ 2026-10-06: **the bugs-first list — DONE, and released in v0.8.115**
 >

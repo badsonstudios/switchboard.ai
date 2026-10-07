@@ -46,6 +46,7 @@ import {
   endedPill,
   samePickFolder,
   switchRefusalKey,
+  afterSwitchAnswer,
   type CardParams,
 } from './SessionGrid';
 
@@ -422,6 +423,57 @@ describe('a pick from a card\'s own history (#1090)', () => {
     expect(samePickFolder('/home/dan/sb', '/home/dan/other')).toBe(false);
     expect(samePickFolder('/home/dan/sb', undefined)).toBe(false);
     expect(samePickFolder('', '')).toBe(false);
+  });
+
+  // #1127 — what the card does with main's answer to a pick. The panel that
+  // calls this needs a live dockview, so the decision is a function and the
+  // decision is what is tested: two of these branches are the difference
+  // between asking before work is thrown away and not asking.
+  describe('afterSwitchAnswer', () => {
+    it('ASKS when a busy session refused a pick that did not carry the yes', () => {
+      expect(afterSwitchAnswer({ ok: false, reason: 'busy', busy: 'working' }, false)).toEqual({
+        kind: 'ask',
+        busy: 'working',
+      });
+      expect(afterSwitchAnswer({ ok: false, reason: 'busy', busy: 'waiting' }, false)).toEqual({
+        kind: 'ask',
+        busy: 'waiting',
+      });
+    });
+
+    it('does NOT ask a second time — a `busy` to a request that carried the yes is a notice', () => {
+      // main lifts the busy refusal for that request, so this is an older main
+      // or something stranger; a loop of questions would be the worst answer
+      expect(afterSwitchAnswer({ ok: false, reason: 'busy', busy: 'working' }, true)).toEqual({
+        kind: 'notice',
+        reason: 'busy',
+      });
+    });
+
+    it('falls back to the notice when main says busy without saying with what', () => {
+      expect(afterSwitchAnswer({ ok: false, reason: 'busy' }, false)).toEqual({ kind: 'notice', reason: 'busy' });
+    });
+
+    it('says why for every other refusal, with or without the yes', () => {
+      for (const reason of ['held', 'unavailable', 'no-card', 'bad-request'] as const) {
+        for (const stopFirst of [false, true]) {
+          expect(afterSwitchAnswer({ ok: false, reason }, stopFirst)).toEqual({ kind: 'notice', reason });
+        }
+      }
+    });
+
+    it('re-arms the card only when main actually moved it', () => {
+      expect(afterSwitchAnswer({ ok: true, changed: true }, false)).toEqual({ kind: 'rearm' });
+      expect(afterSwitchAnswer({ ok: true, changed: true }, true)).toEqual({ kind: 'rearm' });
+      // already in that conversation: the session is left alone
+      expect(afterSwitchAnswer({ ok: true, changed: false }, false)).toEqual({ kind: 'close' });
+      expect(afterSwitchAnswer({ ok: true, changed: false }, true)).toEqual({ kind: 'close' });
+    });
+
+    it('treats no answer at all — a rejected or refused call — as "could not be opened"', () => {
+      expect(afterSwitchAnswer(null, false)).toEqual({ kind: 'notice', reason: 'unavailable' });
+      expect(afterSwitchAnswer(undefined, true)).toEqual({ kind: 'notice', reason: 'unavailable' });
+    });
   });
 
   it('every refusal has a sentence, and they are three different ones', () => {

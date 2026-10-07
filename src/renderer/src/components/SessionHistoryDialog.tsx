@@ -32,7 +32,37 @@ import type { ConversationHistory, ConversationRow } from '../../../shared/sessi
 export interface HistoryPick {
   nativeId: string;
   folder: string;
+  /** what the row was called in the list — so a question about this pick can NAME it (#1127) */
+  description?: string;
 }
+
+/**
+ * How long "Stop it" stays unpressable after the question appears (#1127).
+ *
+ * ⚠️ THE QUESTION IS DRAWN WHERE THE LIST WAS, and a pick is very often a
+ * DOUBLE-click (found in review). Main answers a busy pick at once, so the
+ * question was on screen inside the double-click interval and the second click
+ * landed on whatever had appeared under the pointer — which, as first built,
+ * was the widest thing there: the button that throws the work away. A question
+ * nobody had time to read is not a question.
+ *
+ * Longer than the longest double-click interval the OS offers by default
+ * (500 ms on Windows). Cancel is live at once; only the destructive answer
+ * waits.
+ */
+export const STOP_ARM_MS = 700;
+
+/** The two answers to "stop it?" (#1127) — the same plain button, on purpose: neither is dressed as the safe one, the FOCUS is. */
+const CONFIRM_BUTTON: React.CSSProperties = {
+  background: 'var(--chip)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-chip)',
+  color: 'var(--text)',
+  fontFamily: 'var(--font-ui)',
+  fontSize: 12,
+  padding: '3px 10px',
+  cursor: 'pointer',
+};
 
 export function SessionHistoryDialog(props: {
   open: boolean;
@@ -52,6 +82,29 @@ export function SessionHistoryDialog(props: {
    * still open when it does, so this is where the reason is said.
    */
   notice?: string;
+  /**
+   * A pick main will only make if the user says so (#1127): the card's session
+   * is in the middle of something, and opening the conversation here stops it.
+   *
+   * ASKED HERE, in the dialog the pick was made in, for the reason `notice` is
+   * said here — and it REPLACES the dead end `notice` used to be for this case
+   * ("wait for it to finish, then pick again").
+   *
+   * CANCEL IS THE DEFAULT, and that is the whole safety of it: it takes the
+   * focus when the question appears, so the Enter that made the pick — or one
+   * pressed a moment later out of habit — lands on "no". Throwing away a turn
+   * in flight takes a deliberate move to the other button.
+   */
+  confirm?: {
+    /** a short name for the question — what a screen reader calls it */
+    title: string;
+    /** what is at stake, naming the conversation */
+    message: string;
+    confirmLabel: string;
+    cancelLabel: string;
+    onConfirm: () => void;
+    onCancel: () => void;
+  };
 }): React.JSX.Element | null {
   const { t, i18n } = useTranslation();
   const [query, setQuery] = React.useState('');
@@ -152,6 +205,28 @@ export function SessionHistoryDialog(props: {
     );
   }, [answer, query]);
 
+  // The question takes the focus when it appears, and it goes to CANCEL — see
+  // `confirm`. Back to the search box when it is answered "no", so the picker
+  // is where it was; a "yes" closes the dialog or replaces this with a notice.
+  const cancelStop = React.useRef<HTMLButtonElement | null>(null);
+  const asking = props.confirm !== undefined;
+  const wasAsking = React.useRef(false);
+  React.useEffect(() => {
+    if (asking) cancelStop.current?.focus();
+    else if (wasAsking.current) input.current?.focus();
+    wasAsking.current = asking;
+  }, [asking]);
+  // "Stop it" is not pressable until the question has been up long enough to
+  // have been seen — see `STOP_ARM_MS`.
+  const [armed, setArmed] = React.useState(false);
+  React.useEffect(() => {
+    setArmed(false);
+    if (!asking) return;
+    const id = window.setTimeout(() => setArmed(true), STOP_ARM_MS);
+    return () => window.clearTimeout(id);
+  }, [asking]);
+  // (above the early return below: hooks run on every render, open or not)
+
   if (!props.open) return null;
 
   const close = (): void => {
@@ -166,7 +241,7 @@ export function SessionHistoryDialog(props: {
     // A claimed row is inert rather than absent — see the header.
     if (!row || row.claimed) return;
     // Nothing is reset here: see the effect on `props.open` above.
-    props.onPick({ nativeId: row.nativeId, folder: row.folder });
+    props.onPick({ nativeId: row.nativeId, folder: row.folder, description: row.description });
   };
 
   const move = (delta: number): void => {
@@ -178,6 +253,18 @@ export function SessionHistoryDialog(props: {
     // This dialog owns its keys while open, including the command registry's
     // accelerators — the palette makes the same claim for the same reason.
     e.stopPropagation();
+    // WHILE A QUESTION IS UP (#1127) THE LIST'S KEYS STAND DOWN. Enter here
+    // means "pick the highlighted row", and with the question showing that
+    // would make the same pick again from under it — or, worse, read as an
+    // answer. The two buttons take Enter and Space natively; Escape says no to
+    // the question rather than closing the whole picker.
+    if (props.confirm) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        props.confirm.onCancel();
+      }
+      return;
+    }
     if (e.key === 'Escape') {
       e.preventDefault();
       close();
@@ -189,6 +276,10 @@ export function SessionHistoryDialog(props: {
       move(-1);
     } else if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
       e.preventDefault();
+      // A HELD Enter is one pick, not a stream of them (#1127, review). With a
+      // question that Enter also answers "no", key-repeat would otherwise pick,
+      // cancel, pick, cancel for as long as the key was down.
+      if (e.repeat) return;
       pick(rows[selected]);
     }
   };
@@ -240,6 +331,10 @@ export function SessionHistoryDialog(props: {
           <input
             ref={input}
             value={query}
+            // Out of reach while a question is up (#1127): its keys are standing
+            // down, and a search box that takes typing but ignores Enter and the
+            // arrows is a control that silently does nothing.
+            disabled={asking}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t('sessionHistory.placeholder')}
             aria-label={t('sessionHistory.placeholder')}
@@ -267,6 +362,7 @@ export function SessionHistoryDialog(props: {
             data-history-scope={scope}
             aria-pressed={scope === 'all'}
             onClick={() => setScope((s) => (s === 'all' ? 'folder' : 'all'))}
+            disabled={asking}
             title={t('sessionHistory.scopeAllHint')}
             style={{
               background: scope === 'all' ? 'var(--chip)' : 'transparent',
@@ -285,6 +381,54 @@ export function SessionHistoryDialog(props: {
           </button>
         </div>
 
+        {/* A pick that needs a yes first (#1127). `alertdialog`: it interrupts,
+            it asks, and it holds the focus until answered — the search box and
+            the scope switch are disabled and THE LIST IS TAKEN AWAY while it is
+            up (below), so there is nothing else in the picker to reach, and no
+            row for a stray second click to pick instead. Named by a short
+            title and DESCRIBED by the sentence, so a screen reader announces a
+            question and then what is at stake rather than one long name. */}
+        {props.confirm && (
+          <div
+            data-history-confirm
+            role="alertdialog"
+            aria-modal="true"
+            aria-label={props.confirm.title}
+            aria-describedby={`${listId}confirm`}
+            style={{
+              padding: '14px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+              fontSize: 12,
+            }}
+          >
+            <span id={`${listId}confirm`} style={{ color: 'var(--status-crashed-ink)' }}>
+              {props.confirm.message}
+            </span>
+            <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                ref={cancelStop}
+                type="button"
+                data-history-confirm-cancel
+                onClick={props.confirm.onCancel}
+                style={CONFIRM_BUTTON}
+              >
+                {props.confirm.cancelLabel}
+              </button>
+              <button
+                type="button"
+                data-history-confirm-ok
+                // not until it has been up long enough to be read — `STOP_ARM_MS`
+                disabled={!armed}
+                onClick={props.confirm.onConfirm}
+                style={armed ? CONFIRM_BUTTON : { ...CONFIRM_BUTTON, color: 'var(--faint)', cursor: 'default' }}
+              >
+                {props.confirm.confirmLabel}
+              </button>
+            </span>
+          </div>
+        )}
         {/* A pick main refused (#1090). Above the list and `role="alert"`, so
             it is seen and heard without the list moving under the pointer. */}
         {props.notice && (
@@ -301,7 +445,16 @@ export function SessionHistoryDialog(props: {
             {props.notice}
           </div>
         )}
-        <div data-history-rows id={`${listId}rows`} role="listbox" aria-label={t('sessionHistory.title')} style={{ overflowY: 'auto' }}>
+        {/* Not shown while a question is up (#1127) — kept MOUNTED, so the
+            search, the highlight and the scroll position are exactly where they
+            were when the answer is "no". */}
+        <div
+          data-history-rows
+          id={`${listId}rows`}
+          role="listbox"
+          aria-label={t('sessionHistory.title')}
+          style={asking ? { display: 'none' } : { overflowY: 'auto' }}
+        >
           {loading && (
             <div data-history-loading style={{ padding: 14, color: 'var(--muted)', fontSize: 12 }}>
               {t('sessionHistory.loading')}

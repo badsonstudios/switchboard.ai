@@ -21,7 +21,14 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir, tempProjectFolder } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  pollAsync,
+  registerTempDir,
+  sessionStatuses,
+  tempProjectFolder,
+} from './fixtures/app';
 
 /**
  * `slugForCwd`, restated.
@@ -41,6 +48,116 @@ test.describe('session history (#836)', () => {
 
   test.afterEach(async () => {
     await a?.cleanup();
+  });
+
+  test('a WORKING session asks before it is stopped — Cancel changes nothing, yes opens the pick (#1127)', async () => {
+    test.setTimeout(180_000);
+    const folder = tempProjectFolder();
+    const home = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-hist-')));
+    const conversation = '66666666-7777-8888-9999-000000000000';
+    const dir = path.join(home, '.claude', 'projects', slug(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, `${conversation}.jsonl`),
+      [
+        JSON.stringify({
+          type: 'user',
+          isSidechain: false,
+          cwd: folder,
+          message: { role: 'user', content: 'the conversation worth stopping for' },
+          uuid: 'u1',
+        }),
+        JSON.stringify({ type: 'ai-title', aiTitle: TITLE, sessionId: conversation }),
+      ].join('\n') + '\n'
+    );
+
+    a = await launchApp({ seedFolder: folder, home, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    // The session starts a turn that never ends.
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!hang');
+    await box.press('Enter');
+    await pollAsync(async () => ((await sessionStatuses(a)).get(title) === 'working' ? true : null), 'the session to be working');
+
+    await w.locator('[data-testid="card-history"]').first().click();
+    // By its title: the list also holds the conversation this session is IN,
+    // which exists the moment it was sent a prompt.
+    const rows = w.locator('[data-history-row]').filter({ hasText: TITLE });
+    await expect(rows).toHaveCount(1, { timeout: 15_000 });
+    const ask = w.locator('[data-history-confirm]');
+
+    // ── ⚠️ A DOUBLE-CLICK ────────────────────────────────────────────────────
+    // How a row is very often picked. Main answers a busy pick at once, so the
+    // question is on screen inside the double-click interval and is drawn where
+    // the list was: the second click lands on whatever appeared under the
+    // pointer. As first built that was the button that stops the session
+    // (found in review). Whatever it lands on now, the session is not stopped.
+    await rows.first().dblclick();
+    await w.waitForTimeout(1_000);
+    expect((await sessionStatuses(a)).get(title)).toBe('working');
+    await expect(w.locator('[data-history-dialog]')).toBeVisible();
+    // back to a clean picker, whichever way the second click fell
+    if (await ask.count()) await w.locator('[data-history-confirm-cancel]').click();
+    await expect(ask).toHaveCount(0);
+
+    await rows.first().click();
+
+    // NOT a refusal any more: a question, in the dialog, saying what is at stake
+    // — and WHICH conversation it is about.
+    await expect(ask).toBeVisible({ timeout: 15_000 });
+    await expect(ask).toContainText('This session is working');
+    await expect(ask).toContainText(TITLE);
+    // the list is gone while it asks: no other row to pick by accident
+    await expect(w.locator('[data-history-row]').first()).toBeHidden();
+    // ⚠️ CANCEL HAS THE FOCUS. The pick was a click here, but it is just as
+    // often an Enter — and the next Enter must land on "no".
+    await expect(w.locator('[data-history-confirm-cancel]')).toBeFocused();
+
+    // ── no ───────────────────────────────────────────────────────────────────
+    await w.keyboard.press('Enter');
+    await expect(ask).toHaveCount(0);
+    // the picker is still there, and the session is still doing what it was
+    await expect(w.locator('[data-history-dialog]')).toBeVisible();
+    expect((await sessionStatuses(a)).get(title)).toBe('working');
+    await expect(w.getByText('the conversation worth stopping for')).toHaveCount(0);
+
+    // ── a pick made with the KEYBOARD, and an Enter too many ────────────────
+    const search = w.locator('[data-history-search]');
+    await expect(search).toBeFocused();
+    await search.fill(TITLE.slice(0, 6));
+    await w.keyboard.press('Enter');
+    await expect(ask).toBeVisible({ timeout: 15_000 });
+    await expect(w.locator('[data-history-confirm-cancel]')).toBeFocused();
+    await w.keyboard.press('Enter');
+    await expect(ask).toHaveCount(0);
+    expect((await sessionStatuses(a)).get(title)).toBe('working');
+    await search.fill('');
+
+    // ── yes ──────────────────────────────────────────────────────────────────
+    await rows.first().click();
+    await expect(ask).toBeVisible({ timeout: 15_000 });
+    // it cannot be pressed the instant it appears…
+    await expect(w.locator('[data-history-confirm-ok]')).toBeDisabled();
+    // …only once it has been up long enough to have been read
+    await expect(w.locator('[data-history-confirm-ok]')).toBeEnabled({ timeout: 5_000 });
+    await w.locator('[data-history-confirm-ok]').click();
+    await expect(w.locator('[data-history-dialog]')).toHaveCount(0, { timeout: 15_000 });
+    // it is IN the picked conversation — its opening prompt is replayed…
+    await expect(w.getByText('the conversation worth stopping for')).toBeVisible({ timeout: 25_000 });
+    // …in the same card, running, and not read as "the session died"
+    expect(((await w.evaluate(() => window.switchboard.sessions.cards())) as unknown[]).length).toBe(1);
+    await expect(w.locator('[data-testid="card-overlay"]')).toHaveCount(0);
+    // A POSITIVE status, not merely "not working" — which an absent card would
+    // also satisfy. The card is there, under its name, and the turn that was
+    // never going to end is not running in it.
+    await pollAsync(async () => {
+      const status = (await sessionStatuses(a)).get(title);
+      return status !== undefined && status !== 'working' ? status : null;
+    }, 'the card to be running the picked conversation, with the stopped turn gone');
   });
 
   test('lists a past conversation, filters it, and opens it IN THE SAME CARD (#1090)', async () => {

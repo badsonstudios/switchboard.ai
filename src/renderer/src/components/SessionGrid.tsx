@@ -138,7 +138,9 @@ import { type TransportKind } from '../../../shared/transport';
 import type {
   AutonomyMode,
   SessionStatus,
+  SwitchBusyState,
   SwitchConversationRefusal,
+  SwitchConversationResult,
 } from '../../../shared/sessions';
 import { srOnly } from './sr-only';
 import {
@@ -296,6 +298,42 @@ export function switchRefusalKey(reason: SwitchConversationRefusal): string {
   // was drawn and another card has taken the conversation since.
   if (reason === 'held') return 'sessionHistory.switchHeld';
   return 'sessionHistory.openFailed';
+}
+
+/**
+ * What to do with main's answer to "open this conversation in this card"
+ * (#1127) — the whole decision, with no component in it.
+ *
+ * Pure and exported for the reason `switchRefusalKey` is: the panel that calls
+ * it needs a live dockview and cannot be mounted in a unit test, and every
+ * branch here is one that matters — two of them are the difference between
+ * asking before a session's work is thrown away and not asking.
+ *
+ *  - `ask`    main will not stop a busy session unasked; put the question.
+ *             ONLY for a request that did not already carry the yes. A `busy`
+ *             that comes back to one that did is not a second question — main
+ *             lifts that refusal for it, so this can only be an older main —
+ *             and it falls to the notice, which still says what to do.
+ *  - `notice` refused; nothing about the session changed. Say why.
+ *  - `close`  already in that conversation: nothing to do.
+ *  - `rearm`  main moved the card and ended its session: start the new one.
+ *
+ * No answer at all (a rejected or refused invoke) is `unavailable`.
+ */
+export type SwitchNext =
+  | { kind: 'ask'; busy: SwitchBusyState }
+  | { kind: 'notice'; reason: SwitchConversationRefusal }
+  | { kind: 'close' }
+  | { kind: 'rearm' };
+
+export function afterSwitchAnswer(
+  answer: SwitchConversationResult | null | undefined,
+  stopFirst: boolean
+): SwitchNext {
+  if (!answer) return { kind: 'notice', reason: 'unavailable' };
+  if (answer.ok) return answer.changed ? { kind: 'rearm' } : { kind: 'close' };
+  if (answer.reason === 'busy' && answer.busy && !stopFirst) return { kind: 'ask', busy: answer.busy };
+  return { kind: 'notice', reason: answer.reason };
 }
 
 /**
@@ -568,6 +606,21 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [historyOpen, setHistoryOpen] = React.useState(false);
   // why the last pick from this card's history did not happen (#1090)
   const [historyNotice, setHistoryNotice] = React.useState<string | undefined>(undefined);
+  // A pick that needs a yes (#1127): this card's session is in the middle of
+  // something, and opening the conversation here would stop it. Holds the pick
+  // being asked about, so "yes" opens THAT one whatever is highlighted by then.
+  const [historyStop, setHistoryStop] = React.useState<{
+    conversationId: string;
+    busy: SwitchBusyState;
+    /** what the list called it, so the question names what it is about */
+    description?: string;
+  } | null>(null);
+  // Is the picker open RIGHT NOW? Read by an answer that arrives late: a
+  // question about a pick from a picker the user has since closed must not be
+  // waiting for them the next time they open it.
+  const historyOpenNow = React.useRef(false);
+  historyOpenNow.current = historyOpen;
+  // (`openHere`, below the refs it uses, is what a pick and a "yes" both call.)
   // A pick main has not answered yet. A second pick in that gap is dropped:
   // the busy check would pass it (the old session is already gone) and its
   // re-arm could race the start the first one caused.
@@ -576,6 +629,56 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // component has let go of it, so its exit arrives while `live` still names
   // it — and must not be read as "the session died".
   const switchingFrom = React.useRef<string | null>(null);
+  /**
+   * Open a past conversation IN THIS CARD — what a pick from its history does,
+   * and what the "stop it and open that conversation" answer does (#1127).
+   *
+   * The dialog STAYS OPEN until main answers: a refusal changes nothing about
+   * the session, and the dialog is where the reason can be said next to the
+   * list it is about. `busy` is not a refusal any more but a QUESTION — main
+   * says what the session is in the middle of and the dialog asks; only that
+   * question's "yes" calls this with `stopFirst`.
+   */
+  const openHere = (conversationId: string, stopFirst: boolean, description?: string): void => {
+    if (!cardId || pickPending.current) return;
+    pickPending.current = true;
+    switchingFrom.current = live?.id ?? null;
+    setHistoryNotice(undefined);
+    const settle = (answer: SwitchConversationResult | null | undefined): void => {
+      const next = afterSwitchAnswer(answer, stopFirst);
+      pickPending.current = false;
+      if (next.kind !== 'rearm') switchingFrom.current = null;
+      switch (next.kind) {
+        case 'ask':
+          // only into a picker that is still open — see `historyOpenNow`
+          if (historyOpenNow.current) setHistoryStop({ conversationId, busy: next.busy, description });
+          return;
+        case 'notice':
+          setHistoryNotice(t(switchRefusalKey(next.reason)));
+          return;
+        case 'close':
+          setHistoryOpen(false);
+          return;
+        case 'rearm':
+          setHistoryOpen(false);
+          // MAIN ALREADY ENDED THE OLD SESSION, so this is the renderer's half
+          // of a restart and nothing more: let go of the old binding and re-arm
+          // the lazy spawn, which resumes the picked conversation as the card's
+          // own. Not `restartSelf` — its `dropLive` would be a second kill sent
+          // after the fact, with nothing left for it to end but whatever starts
+          // next.
+          sessionStore.forgetCardLiveIds(cardId);
+          setEnded(null);
+          setLive(null);
+          spawning.current = false;
+          return;
+      }
+    };
+    void window.switchboard.sessions
+      .switchConversation(cardId, conversationId, stopFirst ? { stopFirst: true } : {})
+      .then((answer) => settle(answered(answer)))
+      .catch(() => settle(null));
+  };
   const cardId = props.params?.cardId;
   // PRESENTATION STATE LIVES IN THE STORE (P2-E15-08, AR-P1-5), not here.
   //
@@ -2039,6 +2142,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               data-no-maximize
               onClick={() => {
                 setHistoryNotice(undefined);
+                setHistoryStop(null);
                 setHistoryOpen(true);
               }}
               title={t('sessionHistory.open')}
@@ -2052,7 +2156,35 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 open
                 folder={folder}
                 notice={historyNotice}
-                onClose={() => setHistoryOpen(false)}
+                onClose={() => {
+                  setHistoryStop(null);
+                  setHistoryOpen(false);
+                }}
+                confirm={
+                  historyStop
+                    ? {
+                        title: t('sessionHistory.stopTitle'),
+                        // NAMED, so the question is about one conversation and
+                        // says which — "that conversation" could be any row.
+                        message: t(
+                          historyStop.busy === 'working' ? 'sessionHistory.stopWorking' : 'sessionHistory.stopWaiting',
+                          { name: historyStop.description?.trim() || t('sessionHistory.stopUnnamed') }
+                        ),
+                        confirmLabel: t('sessionHistory.stopConfirm'),
+                        cancelLabel: t('sessionHistory.stopCancel'),
+                        // THE YES: the same request again, carrying it. Main
+                        // still checks everything else first, so a pick that
+                        // can no longer be opened is refused with the session
+                        // untouched — and that reason is then what is shown.
+                        onConfirm: () => {
+                          const { conversationId, description } = historyStop;
+                          setHistoryStop(null);
+                          openHere(conversationId, true, description);
+                        },
+                        onCancel: () => setHistoryStop(null),
+                      }
+                    : undefined
+                }
                 onPick={(pick) => {
                   // IN THIS CARD (#1090, §5.33 as amended 2026-10-04). The owner
                   // picked from a card's history and found himself in a second
@@ -2063,6 +2195,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   // own: a card is bound to its folder, and a session cannot be
                   // moved to a different one.
                   if (!cardId || !samePickFolder(pick.folder, folder)) {
+                    setHistoryStop(null);
                     setHistoryOpen(false);
                     void addSessionCardTo(props.containerApi, pick.folder, {
                       into: poppedOut ? props.api.group : null,
@@ -2070,41 +2203,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                     });
                     return;
                   }
-                  // The dialog STAYS OPEN until main answers: a refusal changes
-                  // nothing about the session, and the dialog is where the
-                  // reason can be said next to the list it is about.
-                  if (pickPending.current) return;
-                  pickPending.current = true;
-                  switchingFrom.current = live?.id ?? null;
-                  const refused = (reason: SwitchConversationRefusal): void => {
-                    pickPending.current = false;
-                    switchingFrom.current = null;
-                    setHistoryNotice(t(switchRefusalKey(reason)));
-                  };
-                  void window.switchboard.sessions
-                    .switchConversation(cardId, pick.nativeId)
-                    .then((answer) => {
-                      const result = answered(answer);
-                      if (!result?.ok) return refused(result ? result.reason : 'unavailable');
-                      pickPending.current = false;
-                      setHistoryOpen(false);
-                      if (!result.changed) {
-                        switchingFrom.current = null;
-                        return;
-                      }
-                      // MAIN ALREADY ENDED THE OLD SESSION, so this is the
-                      // renderer's half of a restart and nothing more: let go
-                      // of the old binding and re-arm the lazy spawn, which
-                      // resumes the picked conversation as the card's own. Not
-                      // `restartSelf` — its `dropLive` would be a second kill
-                      // sent after the fact, with nothing left for it to end
-                      // but whatever starts next.
-                      sessionStore.forgetCardLiveIds(cardId);
-                      setEnded(null);
-                      setLive(null);
-                      spawning.current = false;
-                    })
-                    .catch(() => refused('unavailable'));
+                  // a different row picked while a question was up answers it "no"
+                  setHistoryStop(null);
+                  openHere(pick.nativeId, false, pick.description);
                 }}
               />
             )}

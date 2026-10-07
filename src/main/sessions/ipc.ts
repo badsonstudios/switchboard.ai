@@ -2877,8 +2877,31 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   //
   // The renderer re-arms the card's lazy spawn on `ok`, and that start resumes
   // the picked id as the card's OWN stored conversation, by the ordinary path.
+  //
+  // ── "STOP IT AND OPEN THAT CONVERSATION" (#1127) ────────────────────────────
+  //
+  // A busy card used to be a dead end: refused, and the user had to stop the
+  // session and pick again. The owner approved an offer instead (2026-10-06):
+  // the refusal comes back saying WHAT it is busy with, the picker asks, and a
+  // yes sends the same request again with `stopFirst: true`.
+  //
+  // `stopFirst` LIFTS ONE REFUSAL AND NOTHING ELSE. Opening a conversation in
+  // a card already ends that card's session (`dropLiveForCard`, below the point
+  // of no return) — so "stop it" needs no new machinery, only permission to
+  // reach that line while the session is working. Every OTHER check still runs
+  // first and still refuses with the session untouched: a conversation another
+  // card took in the meantime, or one that is not there, does not cost the user
+  // the work they had just agreed to give up for it.
+  //
+  // `=== true`, not truthiness: it is a decision to throw work away, and it is
+  // made by a confirmation the user answered, not by whatever the renderer
+  // happened to send.
   broker.handle('sessions:switchConversation', (_e, req: unknown): SwitchConversationResult => {
-    const { cardId, conversationId } = (req ?? {}) as { cardId?: unknown; conversationId?: unknown };
+    const { cardId, conversationId, stopFirst } = (req ?? {}) as {
+      cardId?: unknown;
+      conversationId?: unknown;
+      stopFirst?: unknown;
+    };
     const no = (reason: SwitchConversationRefusal): SwitchConversationResult => {
       log.warn(`sessions:switchConversation refused: ${reason}`, {
         cardId: typeof cardId === 'string' ? cardId.slice(0, 80) : typeof cardId,
@@ -2893,15 +2916,20 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // already there — nothing to do, and not worth restarting a session over
     if (card.nativeSessionId === conversationId) return { ok: true, changed: false };
 
-    // A session in the middle of something is not interrupted. The turn in
-    // flight would be lost, and a held permission would be answered by a kill.
+    // A session in the middle of something is not interrupted — UNLESS THE USER
+    // SAID TO (#1127). The turn in flight would be lost, and a held permission
+    // would be answered by a kill, so the first ask is always refused, with
+    // which of the two it is; only a request carrying the user's yes goes on.
     // `starting` is NOT busy: nothing has been asked of it yet, and a card that
     // was only just opened is exactly where "no, the other one" gets said.
-    for (const [liveId, cid] of cardOfLive) {
-      if (cid !== cardId) continue;
-      const status = manager.get(liveId)?.status;
-      if (status === 'working' || status === 'needs-permission' || status === 'needs-input') {
-        return no('busy');
+    if (stopFirst !== true) {
+      for (const [liveId, cid] of cardOfLive) {
+        if (cid !== cardId) continue;
+        const status = manager.get(liveId)?.status;
+        if (status === 'working' || status === 'needs-permission' || status === 'needs-input') {
+          log.warn('sessions:switchConversation refused: busy', { cardId: cardId.slice(0, 80), status });
+          return { ok: false, reason: 'busy', busy: status === 'working' ? 'working' : 'waiting' };
+        }
       }
     }
 
@@ -2938,26 +2966,40 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // Point of no return. The live session goes first, so nothing is still
     // writing the old conversation's id back onto the card while it changes.
     dropLiveForCard(cardId);
-    const fresh = deps.persist.list().find((s) => s.id === cardId) ?? card;
-    // an id this card is being handed is not one it has given away
-    const ceded = (fresh.cededNativeIds ?? []).filter((id) => id !== conversationId);
-    deps.persist.upsert({
-      ...fresh,
-      nativeSessionId: conversationId,
-      nativeSessionLineage: undefined,
-      // `undefined`, never `[]` — the shape the store loads (see `recordNativeId`)
-      cededNativeIds: ceded.length > 0 ? ceded : undefined,
-      // The numbers were the conversation it left. `sessions:create` hands a
-      // card's stored usage back as the strip's starting point, so keeping
-      // them would show the old conversation's totals over the new one until
-      // its first snapshot.
-      usage: undefined,
-      cliCost: undefined,
-    });
-    // The label described the conversation the card just left (#886's rule).
-    clearAutoLabel(cardId, 'the card was moved to another conversation');
-    cardsChanged();
-    log.info('sessions:switchConversation moved a card', { cardId, conversation: conversationId });
+    // …and if anything below throws, SAY SO rather than rejecting. The session
+    // is already gone by here, and since #1127 that can be a session the user
+    // agreed to stop for this: an unhandled throw would leave the picker
+    // waiting on an answer that never comes, over a card with nothing in it.
+    // `unavailable` is the truthful word — it was not opened — and the card's
+    // own "session ended" then says the rest.
+    try {
+      const fresh = deps.persist.list().find((s) => s.id === cardId) ?? card;
+      // an id this card is being handed is not one it has given away
+      const ceded = (fresh.cededNativeIds ?? []).filter((id) => id !== conversationId);
+      deps.persist.upsert({
+        ...fresh,
+        nativeSessionId: conversationId,
+        nativeSessionLineage: undefined,
+        // `undefined`, never `[]` — the shape the store loads (see `recordNativeId`)
+        cededNativeIds: ceded.length > 0 ? ceded : undefined,
+        // The numbers were the conversation it left. `sessions:create` hands a
+        // card's stored usage back as the strip's starting point, so keeping
+        // them would show the old conversation's totals over the new one until
+        // its first snapshot.
+        usage: undefined,
+        cliCost: undefined,
+      });
+      // The label described the conversation the card just left (#886's rule).
+      clearAutoLabel(cardId, 'the card was moved to another conversation');
+      cardsChanged();
+      log.info('sessions:switchConversation moved a card', { cardId, conversation: conversationId });
+    } catch (err) {
+      log.error('sessions:switchConversation ended the session and then could not move the card', {
+        cardId: cardId.slice(0, 80),
+        error: errorText(err),
+      });
+      return { ok: false, reason: 'unavailable' };
+    }
     return { ok: true, changed: true };
   });
 

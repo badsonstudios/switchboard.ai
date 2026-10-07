@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
-import { SessionHistoryDialog, HistoryPick } from './SessionHistoryDialog';
+import { SessionHistoryDialog, HistoryPick, STOP_ARM_MS } from './SessionHistoryDialog';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { ipcRefusal } from '../../../shared/ipc/refusal';
 import type { ConversationHistory, ConversationRow } from '../../../shared/session-history';
@@ -200,7 +200,7 @@ describe('SessionHistoryDialog', () => {
     } satisfies ConversationHistory;
     const h = await mount();
     await click(rows()[0]);
-    expect(h.picked).toEqual([{ nativeId: 'conv-9', folder: 'D:/elsewhere/api' }]);
+    expect(h.picked).toMatchObject([{ nativeId: 'conv-9', folder: 'D:/elsewhere/api' }]);
   });
 
   it('a REFUSED pick keeps the search — it is forgotten when the dialog closes, not before (#1099)', async () => {
@@ -216,7 +216,7 @@ describe('SessionHistoryDialog', () => {
     const h = await mount();
     await type('migra');
     await click(rows()[0]);
-    expect(h.picked).toEqual([{ nativeId: 'b', folder: 'C:/work/app' }]);
+    expect(h.picked).toMatchObject([{ nativeId: 'b', folder: 'C:/work/app' }]);
     // The parent did not close it — main refused — and says why. The search and
     // the one row it left are exactly where they were.
     await mount({ notice: 'This session is in the middle of something.' });
@@ -331,5 +331,215 @@ describe('SessionHistoryDialog', () => {
     // An attribute selector rather than `#id`: `useId` produces `:r0:`-shaped
     // ids, which are not valid CSS identifiers, and jsdom has no `CSS.escape`.
     expect(host.querySelector(`[id="${active}"]`)).toBe(rows()[0]);
+  });
+});
+
+describe('a pick that needs a yes first (#1127)', () => {
+  // The card's session is working. Opening the conversation here stops it, so
+  // the picker asks — and the whole safety of asking is which answer is the
+  // easy one.
+  const question = (over: Partial<{ onConfirm: () => void; onCancel: () => void }> = {}) => ({
+    title: 'Stop this session?',
+    message: 'This session is working. Opening “Second” here stops it.',
+    confirmLabel: 'Stop it and open that conversation',
+    cancelLabel: 'Cancel',
+    onConfirm: () => {},
+    onCancel: () => {},
+    ...over,
+  });
+  const ask = (): HTMLElement | null => host.querySelector<HTMLElement>('[data-history-confirm]');
+  const cancel = (): HTMLButtonElement => host.querySelector<HTMLButtonElement>('[data-history-confirm-cancel]')!;
+  const ok = (): HTMLButtonElement => host.querySelector<HTMLButtonElement>('[data-history-confirm-ok]')!;
+  const twoRows = (): void => {
+    answer = {
+      status: 'ok',
+      truncated: false,
+      rows: [row({ nativeId: 'a', description: 'First' }), row({ nativeId: 'b', description: 'Second' })],
+    } satisfies ConversationHistory;
+  };
+
+  it('asks in the dialog, as an alert dialog with a short NAME and the stakes as its description', async () => {
+    twoRows();
+    await mount({ confirm: question() });
+    expect(ask()?.getAttribute('role')).toBe('alertdialog');
+    expect(ask()?.getAttribute('aria-modal')).toBe('true');
+    // a question, then what is at stake — not one long sentence as the name
+    expect(ask()?.getAttribute('aria-label')).toBe('Stop this session?');
+    const described = ask()!.getAttribute('aria-describedby')!;
+    expect(host.querySelector(`[id="${described}"]`)?.textContent).toContain('This session is working');
+    expect(cancel().textContent).toBe('Cancel');
+    expect(ok().textContent).toBe('Stop it and open that conversation');
+  });
+
+  // ⚠️ THE DOUBLE-CLICK. A pick is very often a double-click, main answers a
+  // busy pick at once, and the question is drawn where the list was — so the
+  // second click lands on whatever appeared under the pointer.
+  describe('a second click that was meant for the list', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+    const advance = async (ms: number): Promise<void> => {
+      await act(async () => {
+        vi.advanceTimersByTime(ms);
+      });
+    };
+
+    it('cannot press "Stop it" until the question has been up long enough to be read', async () => {
+      twoRows();
+      let stopped = 0;
+      await mount({ confirm: question({ onConfirm: () => (stopped += 1) }) });
+      expect(ok().disabled).toBe(true);
+      // a click on a disabled button is not a click
+      ok().click();
+      expect(stopped).toBe(0);
+
+      await advance(STOP_ARM_MS - 1);
+      expect(ok().disabled).toBe(true);
+      await advance(2);
+      expect(ok().disabled).toBe(false);
+      ok().click();
+      expect(stopped).toBe(1);
+    });
+
+    it('Cancel is live at once — only the destructive answer waits', async () => {
+      twoRows();
+      let cancelled = 0;
+      await mount({ confirm: question({ onCancel: () => (cancelled += 1) }) });
+      expect(cancel().disabled).toBe(false);
+      cancel().click();
+      expect(cancelled).toBe(1);
+    });
+
+    it('starts the wait again for every question, not once per dialog', async () => {
+      twoRows();
+      await mount({ confirm: question() });
+      await advance(STOP_ARM_MS + 1);
+      expect(ok().disabled).toBe(false);
+      await mount({});
+      await mount({ confirm: question() });
+      expect(ok().disabled).toBe(true);
+    });
+  });
+
+  it('takes the LIST away while it asks — there is no row for a stray click to pick instead', async () => {
+    twoRows();
+    await mount({ confirm: question() });
+    const list = host.querySelector<HTMLElement>('[data-history-rows]')!;
+    expect(list.style.display).toBe('none');
+    // ...and the two controls beside it are out of reach, rather than live with dead keys
+    expect(host.querySelector<HTMLInputElement>('[data-history-search]')!.disabled).toBe(true);
+    await mount({});
+    expect(host.querySelector<HTMLElement>('[data-history-rows]')!.style.display).not.toBe('none');
+    expect(host.querySelector<HTMLInputElement>('[data-history-search]')!.disabled).toBe(false);
+  });
+
+  it('hands the row`s own description up with the pick, so the question can name it', async () => {
+    twoRows();
+    const h = await mount();
+    await click(rows()[1]);
+    expect(h.picked).toEqual([{ nativeId: 'b', folder: 'C:/work/app', description: 'Second' }]);
+  });
+
+  it('a HELD Enter is one pick, not a stream of them', async () => {
+    twoRows();
+    const h = await mount();
+    const dialog = host.querySelector<HTMLElement>('[data-history-dialog]')!;
+    await act(async () => {
+      dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      for (let i = 0; i < 5; i += 1) {
+        dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, repeat: true }));
+      }
+    });
+    expect(h.picked).toHaveLength(1);
+  });
+
+  it('a click outside while it is asking closes the picker — which the caller reads as "no"', async () => {
+    twoRows();
+    const h = await mount({ confirm: question() });
+    await act(async () => {
+      host.firstElementChild!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+    expect(h.closed).toBe(1);
+  });
+
+  it('⚠️ puts the focus on CANCEL — the Enter that made the pick must not also answer it', async () => {
+    twoRows();
+    await mount();
+    expect(ask()).toBeNull();
+    await mount({ confirm: question() });
+    expect(document.activeElement).toBe(cancel());
+  });
+
+  it('Cancel is listed first, so it is also the first one Tab reaches', async () => {
+    twoRows();
+    await mount({ confirm: question() });
+    const buttons = [...ask()!.querySelectorAll('button')];
+    expect(buttons[0]).toBe(cancel());
+    expect(buttons[1]).toBe(ok());
+  });
+
+  it('each button does its own thing, once', async () => {
+    twoRows();
+    const calls: string[] = [];
+    vi.useFakeTimers();
+    try {
+      await mount({
+        confirm: question({ onConfirm: () => calls.push('yes'), onCancel: () => calls.push('no') }),
+      });
+      await act(async () => {
+        vi.advanceTimersByTime(STOP_ARM_MS + 1);
+      });
+      cancel().click();
+      ok().click();
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(calls).toEqual(['no', 'yes']);
+  });
+
+  // (`press` dispatches on the dialog ROOT, so what these two pin is the list's
+  // keys standing down. That Enter on the FOCUSED Cancel button cancels is a
+  // native activation jsdom does not perform — `e2e/session-history.spec.ts`
+  // holds that one, with a real keyboard.)
+  it('while it is asking, Enter does NOT pick the highlighted row from under the question', async () => {
+    twoRows();
+    const h = await mount({ confirm: question() });
+    await press('Enter');
+    await press('ArrowDown');
+    await press('Enter');
+    expect(h.picked).toEqual([]);
+  });
+
+  it('Escape answers the question "no" — it does not close the whole picker', async () => {
+    twoRows();
+    let cancelled = 0;
+    const h = await mount({ confirm: question({ onCancel: () => (cancelled += 1) }) });
+    await press('Escape');
+    expect(cancelled).toBe(1);
+    expect(h.closed).toBe(0);
+  });
+
+  it('gives the focus back to the search box when the answer was no', async () => {
+    twoRows();
+    await mount({ confirm: question() });
+    expect(document.activeElement).toBe(cancel());
+    await mount({});
+    expect(ask()).toBeNull();
+    expect(document.activeElement).toBe(host.querySelector('[data-history-search]'));
+  });
+
+  it('keeps the search and the list exactly as they were while it asks', async () => {
+    twoRows();
+    await mount();
+    await type('Sec');
+    await mount({ confirm: question() });
+    expect(host.querySelector<HTMLInputElement>('[data-history-search]')!.value).toBe('Sec');
+    expect(rows()).toHaveLength(1);
+  });
+
+  it('with no question, the keys are the list`s again', async () => {
+    twoRows();
+    const h = await mount();
+    await press('Enter');
+    expect(h.picked).toHaveLength(1);
   });
 });

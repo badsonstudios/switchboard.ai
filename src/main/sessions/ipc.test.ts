@@ -1115,15 +1115,72 @@ describe('session history (P2-E20-01, §5.33)', () => {
       expect(h.cards.find((c) => c.id === 'card-1')?.nativeSessionId).toBe('mine');
     };
 
-    for (const status of ['working', 'needs-permission', 'needs-input']) {
-      it(`refuses while the session is ${status}, and interrupts nothing`, () => {
+    for (const [status, busy] of [
+      ['working', 'working'],
+      ['needs-permission', 'waiting'],
+      ['needs-input', 'waiting'],
+    ]) {
+      it(`refuses while the session is ${status}, says what it is in the middle of, and interrupts nothing`, () => {
         seedConversation('other', folder);
         const h = harness(caps(), folder, { prior: own(), status });
         h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
-        expect(move(h, 'other')).toEqual({ ok: false, reason: 'busy' });
+        expect(move(h, 'other')).toEqual({ ok: false, reason: 'busy', busy });
         untouched(h);
       });
+
+      // #1127: the user was asked, and said to stop it.
+      it(`with the user's yes, stops a session that is ${status} and opens the pick`, () => {
+        seedConversation('other', folder);
+        const h = harness(caps(), folder, { prior: own(), status });
+        h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
+        expect(
+          h.call('sessions:switchConversation', { cardId: 'card-1', conversationId: 'other', stopFirst: true })
+        ).toEqual({ ok: true, changed: true });
+        expect(h.removed).toHaveLength(1);
+        expect(h.cards.find((c) => c.id === 'card-1')?.nativeSessionId).toBe('other');
+      });
     }
+
+    it('takes the yes only as `true` — a truthy something else does not stop a working session', () => {
+      seedConversation('other', folder);
+      const h = harness(caps(), folder, { prior: own(), status: 'working' });
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
+      for (const notYes of ['true', 1, {}, 'yes']) {
+        expect(
+          h.call('sessions:switchConversation', { cardId: 'card-1', conversationId: 'other', stopFirst: notYes })
+        ).toEqual({ ok: false, reason: 'busy', busy: 'working' });
+      }
+      untouched(h);
+    });
+
+    it('⚠️ the yes lifts ONLY the busy refusal: a pick that cannot be opened still costs the session nothing', () => {
+      // The user agreed to give up the work in flight FOR that conversation. If
+      // another card took it in the meantime, or it is not there, stopping the
+      // session anyway would throw the work away and open nothing.
+      seedConversation('taken', folder);
+      const h = harness(caps(), folder, {
+        prior: own(),
+        status: 'working',
+        otherCards: [priorCard({ folder, id: 'card-2', nativeSessionId: 'taken' })],
+      });
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
+      const stop = (conversationId: string) =>
+        h.call('sessions:switchConversation', { cardId: 'card-1', conversationId, stopFirst: true });
+      expect(stop('taken')).toEqual({ ok: false, reason: 'held' });
+      expect(stop('never-existed')).toEqual({ ok: false, reason: 'unavailable' });
+      expect(stop('../../etc/passwd')).toEqual({ ok: false, reason: 'bad-request' });
+      untouched(h);
+    });
+
+    it('the yes does not stop a working session to "open" the conversation it is already in', () => {
+      seedConversation('mine', folder);
+      const h = harness(caps(), folder, { prior: own(), status: 'working' });
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
+      expect(
+        h.call('sessions:switchConversation', { cardId: 'card-1', conversationId: 'mine', stopFirst: true })
+      ).toEqual({ ok: true, changed: false });
+      untouched(h);
+    });
 
     it('refuses a conversation another card holds', () => {
       seedConversation('taken', folder);
