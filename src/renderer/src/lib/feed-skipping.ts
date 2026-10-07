@@ -81,6 +81,14 @@
 //     means exact for content that has not changed unseen, which is every
 //     block the user has ever looked at.
 //
+//     GROUPS (#716) HAVE THE SAME LIMITATION ONE LEVEL UP, and one more case.
+//     A group whose child LIST changes while it is skipped is caught and
+//     re-measured (`regroup` in the hook). A block that changes size inside a
+//     skipped group without the list changing is not — the tool OUT above, and
+//     also a block the find bar had expanded collapsing again when the bar
+//     closes, which leaves the group TALL rather than short until it is
+//     scrolled to. That one was already true of the block itself.
+//
 //  4. **The feedback loop has to be closed by construction.** We write a
 //     CONTENT-box height and observe the CONTENT box, so a skipped block
 //     reports back exactly the number we wrote and nothing happens. Observing
@@ -106,6 +114,82 @@ export const WIDTH_EPSILON_PX = 1;
  * observation to deliver.
  */
 export const HEIGHT_EPSILON_PX = 0.5;
+
+/**
+ * How many sequence numbers share one GROUP (#716, #1013).
+ *
+ * ── WHY BLOCKS ARE GROUPED AT ALL ───────────────────────────────────────────
+ *
+ * Skipping each block on its own made an off-screen block cheap, not free: the
+ * engine still keeps a visibility watch on every `content-visibility: auto`
+ * element and still walks each one in layout, pre-paint and commit. MEASURED
+ * in the real app (`spike/probes/716/`: 980 real blocks, one reply streaming, a
+ * key typed every 100ms, 12s; the engine's own timeline):
+ *
+ *                                        long tasks / stalled   frames   layout   key->paint p95
+ *     4x, every block skipped (before)   16-27 / 950-1,700 ms   420-530  4,400 ms    88-104 ms
+ *     4x, the old ones `display: none`       0 /       0 ms      ~785    1,430 ms    56-64 ms
+ *     4x, in PLAIN wrappers of 40         5-11 /   310-660 ms    ~600    3,600 ms       88 ms
+ *     4x, in SKIPPED groups of 40 (this)   0-1 /     0-79 ms     ~748    1,360 ms    56-64 ms
+ *     6x, every block skipped (before)   66-70 / 5,470-5,940 ms 183-212  5,300 ms   144-200 ms
+ *     6x, in SKIPPED groups of 40 (this)   0-2 /    0-124 ms    556-630  2,150 ms    80-96 ms
+ *
+ * And at the 1,000-block cap with a new block every half second, so that each
+ * one evicts the oldest and the first group is re-measured every time — the
+ * steady state of a long session: 38-40 / 3,100-3,300 ms and ~350 frames
+ * before, 0-1 / 0-66 ms and ~710 frames after, at 4x.
+ *
+ * Row two is the floor — what it would cost if the old blocks were not there —
+ * and a skipped group reaches it. A wrapper that is NOT itself skipped buys a
+ * fraction, so it is not the number of siblings that costs; it is the number of
+ * skipped elements the engine can see, and a skipped group hides its forty.
+ * `spike/findings/716-streaming-render-cost.md` has the engine's own timeline.
+ *
+ * ── WHY BY SEQUENCE NUMBER ──────────────────────────────────────────────────
+ *
+ * Because a block's `seq` never changes, so neither does its group: an eviction
+ * at the 1,000-block cap takes a block off the FRONT, a new block lands on the
+ * end, and nothing in between changes parent. Grouping by position in the list
+ * would move every block one place on every eviction, and React re-parents by
+ * unmounting.
+ *
+ * Forty is what was measured. Smaller means more groups for the engine to walk,
+ * larger means more blocks rendered for the group on screen; the square root of
+ * the cap is 32, and nothing here is sensitive to the difference.
+ */
+export const FEED_GROUP_SIZE = 40;
+
+/** One group of the conversation: its blocks, and a key that outlives them changing. */
+export interface FeedGroup<B> {
+  /** `Math.floor(seq / FEED_GROUP_SIZE)` of the block that opened it */
+  key: number;
+  blocks: B[];
+}
+
+/**
+ * Cut a conversation into groups by sequence number.
+ *
+ * The list is in `seq` order — `upsertBlock` inserts by it — so each group is a
+ * consecutive run. A block that is somehow OUT of order stays with the run it
+ * was found in rather than opening a second group under a key that already
+ * exists: keys only ever go up, so React is never handed the same one twice.
+ */
+export function groupBySeq<B extends { seq: number }>(
+  blocks: readonly B[],
+  size: number = FEED_GROUP_SIZE
+): Array<FeedGroup<B>> {
+  const out: Array<FeedGroup<B>> = [];
+  let open: FeedGroup<B> | undefined;
+  for (const b of blocks) {
+    const key = Math.floor(b.seq / size);
+    if (!open || key > open.key) {
+      open = { key, blocks: [] };
+      out.push(open);
+    }
+    open.blocks.push(b);
+  }
+  return out;
+}
 
 /** What a block's inline style should say, given what we know about its height. */
 export interface SkipStyle {
@@ -222,6 +306,19 @@ export class FeedHeights {
     if (was !== undefined && Math.abs(was - height) < HEIGHT_EPSILON_PX) return false;
     this.heights.set(key, height);
     return true;
+  }
+
+  /**
+   * Forget ONE height, because what it measured has changed unseen (#716).
+   *
+   * A skipped group is not laid out, so a block arriving in it, leaving it or
+   * being filtered out of it produces no resize report: the stored height is
+   * then a lie the engine will never correct. The caller drops it, the group
+   * renders once, and the observer measures it again. Returns whether there was
+   * anything to forget.
+   */
+  forget(key: string): boolean {
+    return this.heights.delete(key);
   }
 
   /**

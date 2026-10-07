@@ -7,7 +7,8 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
-import { useFeedSkipping } from '../lib/use-feed-skipping';
+import { groupBySeq } from '../lib/feed-skipping';
+import { FEED_GROUP_ATTR, FEED_GROUP_OPEN_ATTR, useFeedSkipping } from '../lib/use-feed-skipping';
 import { autonomyTooltip, isAutonomy } from '../lib/autonomy';
 import {
   clearConversation,
@@ -153,6 +154,9 @@ function agentCaption(t: (k: string, o?: Record<string, string>) => string, h: A
  * evicted or replaced block takes its entry with it.
  */
 const retrying = new WeakSet<FeedBlockDto>();
+
+/** one object for every group, so React never sees its `style` prop change */
+const GROUP_STYLE: React.CSSProperties = { display: 'flow-root' };
 
 /**
  * May `Block` skip this render?
@@ -439,6 +443,8 @@ export function FeedView(props: {
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
+  /** counts the times `blocks` was REPLACED outright, for `useFeedSkipping` */
+  const [conversation, setConversation] = React.useState(0);
   // /clear executes SILENTLY (empty local-command stdout, no assistant reply
   // â€” verified vs claude 2.1.218), so without an explicit marker a cleared
   // conversation reads as "nothing happened" (Dan 2026-07-24)
@@ -522,7 +528,10 @@ export function FeedView(props: {
       // `FeedBlockDto[]` reaches `blocks.map` on the very next render and takes
       // the whole feed down. An empty feed is the fail-open: the session keeps
       // running and the live `onBlock` stream still fills it from here on.
-      if (!cancelled) setBlocks((answered(b) ?? []) as FeedBlockDto[]);
+      if (cancelled) return;
+      setBlocks((answered(b) ?? []) as FeedBlockDto[]);
+      // a REPLACEMENT, not an addition — see `useFeedSkipping`'s `conversation`
+      setConversation((n) => n + 1);
     });
     const off = window.switchboard.transcripts.onBlock((p) => {
       if (p.sessionId !== props.sessionId) return;
@@ -535,6 +544,7 @@ export function FeedView(props: {
     const offReset = window.switchboard.transcripts.onReset((p) => {
       if (p.sessionId !== props.sessionId) return;
       setBlocks([]);
+      setConversation((n) => n + 1);
       setCleared(p.cause === 'clear'); // a plain rebind clears any stale marker
     });
     return () => {
@@ -809,7 +819,7 @@ export function FeedView(props: {
    * browser clamps, and then clears `owesRestore` so nothing ever retries it.
    * That is #555 and Dan's 2026-07-26 bug, reproduced exactly.
    */
-  useFeedSkipping(scroller, content);
+  useFeedSkipping(scroller, content, conversation);
   // Self-healing pin (Dan round 5: cards you SWITCH to sat at the top after
   // app start): a one-shot pin can land while the panel has no layout yet â€”
   // dockview shows background panels a frame later, restore relayouts, and
@@ -1035,6 +1045,9 @@ export function FeedView(props: {
   // feed's re-render cost is #740's, and one pass over a list already being
   // walked is not the part worth changing blind.
   const agentHeads = agentRunHeads(visibleBlocks, blocks);
+  const groups = groupBySeq(visibleBlocks);
+  /** the conversation's first block never gets a turn rule above it */
+  const firstVisible = visibleBlocks[0];
   return (
     // `data-perf-*`: how big this conversation is, and how much of it is on
     // screen, published for E21's detailed capture (#923). The whole premise of
@@ -1288,48 +1301,74 @@ export function FeedView(props: {
           {/* the find bar's reveal set reaches the collapsible renderers from
               here â€” see lib/feed-reveal for why it is a context and not props */}
           <FeedRevealProvider value={reveal}>
-            {visibleBlocks.map((b, i) => (
-              <React.Fragment key={b.seq}>
-                {/* WHICH subagent is speaking (#788).
+            {/* IN GROUPS, and the groups are what the engine skips (#716, #1013 —
+                the numbers are at `FEED_GROUP_SIZE`). A thousand blocks each
+                skipped on its own still cost a streaming reply about a third of
+                the window at 4x; twenty-five skipped groups cost nothing that
+                could be measured.
 
-                    The two captions can no longer collide: the turn divider
-                    below now skips sidechain blocks. That was a defect this
-                    item surfaced rather than caused — a subagent's `user` line
-                    is the TASK PROMPT the parent handed it, not a new turn in
-                    the human's conversation, and it has been ruling off
-                    "NEW PROMPT" above other people's prompts since #640. It
-                    read as a stray divider before; beneath an agent caption it
-                    would read as the app disagreeing with itself.
+                `flow-root` ALWAYS, not only once a group is skipped. A skipped
+                group is a formatting context of its own, so a divider's margin
+                at its edge stays inside it; the open group has to measure the
+                same way or the height it is stood on when it closes would be
+                short by exactly that margin.
 
-                    NOT `aria-hidden`, and that is the deliberate difference
-                    from `.turn-divider`. That one is hidden because the prompt
-                    under it is already announced as the user's own words, so
-                    saying "new prompt" first is reading the furniture out loud.
-                    An agent's NAME is announced nowhere else at all: hide it
-                    and a screen reader gives three interleaved agents as one
-                    voice, which is this item's own bug for a different reader. */}
-                {(() => {
-                  const head = agentHeads.get(b.seq);
-                  return head ? <div className="agent-divider">{agentCaption(t, head)}</div> : null;
-                })()}
-                {/* A new prompt starts a new turn â€” rule it off (Dan #11), and
-                    since #640 rule it off so the eye LANDS on it: scanning a
-                    long session, the turn boundaries have to be findable
-                    without reading. Everything it looks like is `.turn-divider`
-                    in tokens.css, deliberately â€” the ink it writes on the
-                    feed's surface is a contrast promise in four themes, and the
-                    drift test can only measure a promise the stylesheet holds.
-                    `aria-hidden`: this is a landmark for the EYE. The prompt
-                    under it is already announced as the user's own words, and a
-                    screen reader stopping to say "new prompt" before each one
-                    would be reading the furniture out loud. */}
-                {b.kind === 'user' && i > 0 && !b.sidechain && (
-                  <div className="turn-divider" aria-hidden>
-                    {t('feedView.turnMarker')}
-                  </div>
-                )}
-                <Block b={b} />
-              </React.Fragment>
+                The wrapper is ours and it is inert: no role, no tab stop, and
+                its attributes are in the namespace the feed takes back from
+                every reply. Everything that finds a block — the find jump, the
+                keyboard walk, the marks — asks the region for descendants in
+                document order, which a wrapper does not change. */}
+            {groups.map((g, gi) => (
+              <div
+                key={g.key}
+                {...{ [FEED_GROUP_ATTR]: String(g.key) }}
+                {...(gi === groups.length - 1 ? { [FEED_GROUP_OPEN_ATTR]: '' } : {})}
+                style={GROUP_STYLE}
+              >
+                {g.blocks.map((b) => (
+                  <React.Fragment key={b.seq}>
+                    {/* WHICH subagent is speaking (#788).
+
+                        The two captions can no longer collide: the turn divider
+                        below now skips sidechain blocks. That was a defect this
+                        item surfaced rather than caused — a subagent's `user` line
+                        is the TASK PROMPT the parent handed it, not a new turn in
+                        the human's conversation, and it has been ruling off
+                        "NEW PROMPT" above other people's prompts since #640. It
+                        read as a stray divider before; beneath an agent caption it
+                        would read as the app disagreeing with itself.
+
+                        NOT `aria-hidden`, and that is the deliberate difference
+                        from `.turn-divider`. That one is hidden because the prompt
+                        under it is already announced as the user's own words, so
+                        saying "new prompt" first is reading the furniture out loud.
+                        An agent's NAME is announced nowhere else at all: hide it
+                        and a screen reader gives three interleaved agents as one
+                        voice, which is this item's own bug for a different reader. */}
+                    {(() => {
+                      const head = agentHeads.get(b.seq);
+                      return head ? <div className="agent-divider">{agentCaption(t, head)}</div> : null;
+                    })()}
+                    {/* A new prompt starts a new turn â€” rule it off (Dan #11), and
+                        since #640 rule it off so the eye LANDS on it: scanning a
+                        long session, the turn boundaries have to be findable
+                        without reading. Everything it looks like is `.turn-divider`
+                        in tokens.css, deliberately â€” the ink it writes on the
+                        feed's surface is a contrast promise in four themes, and the
+                        drift test can only measure a promise the stylesheet holds.
+                        `aria-hidden`: this is a landmark for the EYE. The prompt
+                        under it is already announced as the user's own words, and a
+                        screen reader stopping to say "new prompt" before each one
+                        would be reading the furniture out loud. */}
+                    {b.kind === 'user' && b !== firstVisible && !b.sidechain && (
+                      <div className="turn-divider" aria-hidden>
+                        {t('feedView.turnMarker')}
+                      </div>
+                    )}
+                    <Block b={b} />
+                  </React.Fragment>
+                ))}
+              </div>
             ))}
           </FeedRevealProvider>
           <div ref={bottom} />

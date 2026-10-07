@@ -66,6 +66,18 @@
 >    re-parsing the growing reply, and plain layout and paint. The findings
 >    note lists three next steps, each worth 100–300 ms of a 12 s window. Nothing is known yet about
 >    Tanner's machine.
+>
+>    **SECOND MEASURED STEP, 2026-10-06 (later): that paragraph was wrong, and
+>    there WAS a second single cause.** The profile it rests on only sees
+>    script. The engine's own timeline over the same window says script is
+>    2,000 ms and LAYOUT is 4,400: every block is skipped on its own (#740),
+>    and a skipped block is cheap, not free — the engine still watches and
+>    walks each of the ~940. Blocks now sit in groups of 40 by sequence number
+>    and the GROUPS are skipped. **4x: 16–27 long tasks / 950–1,700 ms → 0–1 /
+>    0–79 ms, 420–530 frames → ~748, key→paint p95 88–104 → 56–64 ms. 6x: 66–70
+>    / 5,470–5,940 ms → 0–2 / 0–124 ms, ~200 frames → 556–630.** The three
+>    script-side steps were NOT done and are what is left. Both issues STILL
+>    stay open: the laptop is the machine that decides.
 > 6. ✅ **#1104 and #1105** (white scrollbar in dark dialogs; the Events edge tab
 >    over the Files tab's git letter) — **DONE 2026-10-06, PR #1125, merged, NOT
 >    released.** The engine is now told which scheme the theme is (app-wide, so
@@ -82,9 +94,11 @@
 >
 > **WHERE THE LIST STANDS, 2026-10-06:** 1, 2, 3 and 6 are merged. 4 is closed.
 > 5 has its first step merged and is not finished. 7 is merged.
-> **So the list is done except the rest of 5.** Next up: nothing is claimed —
-> the owner decides between cutting 0.8.115, more of item 5, and the two
-> approved features (#1126, #1127).
+> **So the list is done except the rest of 5** — which got its second step the
+> same day (above). **The owner's order for what follows, 2026-10-06:** #1062
+> (send only the new text of a streaming block), then any other open bug worth
+> doing, said out loud before starting. No new features; #1126 and #1127 wait
+> for "build them". 0.8.115 is cut when he asks.
 >
 > **THE OWNER'S ANSWERS, 2026-10-06:** (a) #1088 meant the **history picker**
 > — "the previous conversations clock icon … lists all sorts of crap in
@@ -103,12 +117,6 @@
 > **NOT IN THIS LIST, ON PURPOSE:** the 15 "Flakes & CI health" tickets. The
 > three that were costing re-runs are fixed and eleven PR runs in a row have
 > gone green first time. A NEW sighting still gets its comment on the ticket.
->
-> **STILL THE OWNER'S, AND STILL OPEN — do not touch without asking:**
-> (a) draft PR #1089 / #1088: did "History shows every tool call as a separate
-> line" mean the conversation view or the history picker? (b) may a session
-> WRITE its own `@Name` handoff? (c) should a busy session offer "stop it and
-> switch" on a history pick?
 
 > # ✅ RELEASED: v0.8.114, 2026-10-05 (`76386f1`, PR #1110)
 >

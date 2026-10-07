@@ -41,6 +41,24 @@ const LABEL = process.env.PROBE_LABEL ?? '';
  * in `electron.vite.config.ts` for the run, and take it out again.
  */
 const PROFILE = process.env.PROBE_PROFILE === '1';
+/**
+ * `PROBE_FLAGGED=1`: the growing block carries `streaming: true`, as a real
+ * partial does — which is what turns on the per-frame coalescing and the
+ * partial-markdown repair in `<Markdown>`. Without it the block is rendered as
+ * a finished one that happens to keep changing.
+ */
+const FLAGGED = process.env.PROBE_FLAGGED === '1';
+const TRACE = process.env.PROBE_TRACE === '1';
+/**
+ * `PROBE_NEW=<ms>`: the reply moves on to a NEW block every so many
+ * milliseconds, instead of growing one for the whole window. With
+ * `PROBE_BACKLOG=1000` the conversation is at its cap, so every new block
+ * evicts the oldest — the steady state of a long session, and the path that
+ * re-measures the first group each time (#716).
+ */
+const NEW_EVERY = Number(process.env.PROBE_NEW ?? 0);
+/** `PROBE_PARAS=1`:the reply is short paragraphs rather than ONE that grows */
+const PARAS = process.env.PROBE_PARAS === '1';
 
 function realBlocks(want: number): FeedBlock[] {
   const dir = path.join(os.homedir(), '.claude', 'projects', 'C--Projects-Switchboard-ai');
@@ -126,6 +144,16 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
   const cdp = await w.context().newCDPSession(w);
   if (THROTTLE > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
 
+  // `PROBE_EVAL`: script run in the page once the conversation is loaded — for
+  // asking "what would it cost if…" of the live DOM without a rebuild. Whatever
+  // it returns is printed.
+  if (process.env.PROBE_EVAL) {
+    // a function BODY, wrapped here so the script can `return` what it found
+    const said = String(await w.evaluate(`(() => {${process.env.PROBE_EVAL}\n})()`));
+    console.log(`probe716 eval: ${said}`);
+    await w.waitForTimeout(1_000);
+  }
+
   const box = w.getByPlaceholder(/Prompt this session/);
   await box.click();
 
@@ -155,19 +183,31 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
   let streamed = Promise.resolve();
   if (STREAM) {
     streamed = a.app.evaluate(
-      ({ BrowserWindow }, { id, text, ms, still }) =>
+      ({ BrowserWindow }, { id, text, ms, still, flagged, newEvery }) =>
         new Promise<void>((done) => {
           const wc = BrowserWindow.getAllWindows()[0].webContents;
           const t0 = Date.now();
           let n = 0;
+          let seq = 900_000;
+          let opened = t0;
           const timer = setInterval(() => {
+            if (newEvery > 0 && Date.now() - opened >= newEvery) {
+              opened = Date.now();
+              seq += 1;
+              n = 0;
+            }
             n += 12;
             let body = '';
             while (body.length < n) body += text;
             wc.send('sessions:feedBlock', {
               sessionId: id,
               // `still`: the same text in a new object — React re-renders, the DOM does not change
-              block: { seq: 900_000, kind: 'assistant', text: still ? body.slice(0, 600) : body.slice(0, n) },
+              block: {
+                seq,
+                kind: 'assistant',
+                text: still ? body.slice(0, 600) : body.slice(0, n),
+                ...(flagged ? { streaming: true } : {}),
+              },
             });
             if (Date.now() - t0 > ms) {
               clearInterval(timer);
@@ -175,10 +215,38 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
             }
           }, 50);
         }),
-      { id: liveId, text: words, ms: SECONDS * 1000, still: process.env.PROBE_STILL === '1' }
+      {
+        id: liveId,
+        text: PARAS ? words.trimEnd() + '.\n\n' : words,
+        ms: SECONDS * 1000,
+        still: process.env.PROBE_STILL === '1',
+        flagged: FLAGGED,
+        newEvery: NEW_EVERY,
+      }
     );
   }
 
+  // The renderer's own accounting of where its main thread went, cumulative, so
+  // the difference across the window is a CONTINUOUS number. "Long tasks" only
+  // counts the part of the distribution that crosses 50ms, which is why it
+  // moves by hundreds of ms between identical runs.
+  await cdp.send('Performance.enable');
+  const metrics = async (): Promise<Record<string, number>> => {
+    const { metrics: ms } = await cdp.send('Performance.getMetrics');
+    return Object.fromEntries(ms.map((m) => [m.name, m.value]));
+  };
+  // `PROBE_TRACE=1`: the engine's own timeline over the window, summed by event
+  // name — what a layout cost, how many objects it had to visit, what paint
+  // took. The profile above only sees script; this sees the rest.
+  const traced: Array<{ name: string; ph: string; dur?: number; args?: Record<string, unknown> }> = [];
+  if (TRACE) {
+    cdp.on('Tracing.dataCollected', (e) => traced.push(...(e.value as unknown as typeof traced)));
+    await cdp.send('Tracing.start', {
+      transferMode: 'ReportEvents',
+      traceConfig: { includedCategories: ['devtools.timeline', 'disabled-by-default-devtools.timeline'] },
+    });
+  }
+  const before = await metrics();
   if (PROFILE) {
     await cdp.send('Profiler.enable');
     await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
@@ -192,6 +260,39 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
     await w.waitForTimeout(100);
   }
   await streamed;
+  const after = await metrics();
+  const spent = (k: string): number => Math.round((after[k] - before[k]) * 1000);
+  if (TRACE) {
+    const ended = new Promise<void>((done) => cdp.once('Tracing.tracingComplete', () => done()));
+    await cdp.send('Tracing.end');
+    await ended;
+    const by = new Map<string, { n: number; us: number }>();
+    let dirty = 0;
+    let total = 0;
+    let layouts = 0;
+    let styled = 0;
+    for (const e of traced) {
+      if (e.ph !== 'X') continue;
+      const row = by.get(e.name) ?? { n: 0, us: 0 };
+      row.n += 1;
+      row.us += e.dur ?? 0;
+      by.set(e.name, row);
+      if (e.name === 'Layout') {
+        const d = (e.args?.beginData ?? {}) as { dirtyObjects?: number; totalObjects?: number };
+        dirty += d.dirtyObjects ?? 0;
+        total += d.totalObjects ?? 0;
+        layouts += 1;
+      }
+      if (e.name === 'UpdateLayoutTree') styled += Number((e.args as { elementCount?: number })?.elementCount ?? 0);
+    }
+    for (const [name, r] of [...by.entries()].sort((x, y) => y[1].us - x[1].us).slice(0, 25)) {
+      console.log(`probe716 trace: ${String(Math.round(r.us / 1000)).padStart(6)} ms  ${String(r.n).padStart(6)}x  ${name}`);
+    }
+    console.log(
+      `probe716 trace: per layout, ${Math.round(dirty / Math.max(1, layouts))} dirty of ${Math.round(total / Math.max(1, layouts))} objects; ` +
+        `${styled} elements restyled in all`
+    );
+  }
   if (PROFILE) {
     const { profile } = await cdp.send('Profiler.stop');
     const self = new Map<number, number>();
@@ -222,11 +323,34 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
   const longTotal = Math.round(rec.long.reduce((x, y) => x + y, 0));
   const slowFrames = rec.frames.filter((f) => f > 50).length;
   const blocks = await w.locator('[data-perf-blocks]').first().getAttribute('data-perf-blocks');
+  // Is the scroll height still the fully-laid-out truth? Read both ways, the
+  // way `e2e/feed-skipping.spec.ts` does — after the numbers above are taken,
+  // because this forces the layout the feed exists to avoid.
+  const exact = await w.evaluate(() => {
+    const scroller = document.querySelector<HTMLElement>('[data-feed-region]')!;
+    const els = [...scroller.querySelectorAll<HTMLElement>('[data-feed-group], [data-feed-block]')];
+    const skipped = scroller.scrollHeight;
+    const saved = els.map((e) => [e.style.contentVisibility, e.style.containIntrinsicSize]);
+    for (const e of els) {
+      e.style.contentVisibility = '';
+      e.style.containIntrinsicSize = '';
+    }
+    const truth = scroller.scrollHeight;
+    els.forEach((e, i) => {
+      e.style.contentVisibility = saved[i][0];
+      e.style.containIntrinsicSize = saved[i][1];
+    });
+    const groups = scroller.querySelectorAll('[data-feed-group]').length;
+    return `scrollHeight ${skipped} vs ${truth} laid out (${skipped - truth}), ${groups} groups`;
+  });
   console.log(
     `probe716 ${LABEL} | blocks ${blocks} stream ${STREAM} throttle ${THROTTLE}x | typed ${typed}, ` +
       `slow keydowns(>=16ms) ${rec.keys.length} | key->paint p50 ${pct(dur, 50)} p95 ${pct(dur, 95)} max ${pct(dur, 100)} ms | ` +
       `input delay p50 ${pct(delay, 50)} p95 ${pct(delay, 95)} max ${pct(delay, 100)} ms | ` +
       `long tasks ${rec.long.length}, ${longTotal} ms of ${SECONDS * 1000} (worst ${pct(rec.long, 100)}) | ` +
-      `frames ${rec.frames.length}, p95 gap ${pct(rec.frames, 95)} ms, >50ms: ${slowFrames}`
+      `frames ${rec.frames.length}, p95 gap ${pct(rec.frames, 95)} ms, >50ms: ${slowFrames} | ` +
+      `main thread busy ${spent('TaskDuration')} ms = script ${spent('ScriptDuration')} + style ${spent('RecalcStyleDuration')} + ` +
+      `layout ${spent('LayoutDuration')} + other (${after.LayoutCount - before.LayoutCount} layouts, ${after.RecalcStyleCount - before.RecalcStyleCount} style passes) | ` +
+      exact
   );
 });

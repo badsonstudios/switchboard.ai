@@ -64,6 +64,14 @@ interface Exactness {
    * fixture, and this does not.
    */
   worstBlockErrorPx: number;
+  /** how many groups the blocks are in (#716) */
+  groups: number;
+  /** how many of those the feed is skipping as ONE, on the group's own height */
+  groupsStyled: number;
+  /** is the last group — the one still being written to — left unskipped? */
+  openGroupStyled: boolean;
+  /** the same claim as `worstBlockErrorPx`, for the height written on a group */
+  worstGroupErrorPx: number;
 }
 
 /**
@@ -83,13 +91,23 @@ const exactness = (w: Page): Promise<Exactness> =>
     const scroller = regions[0];
     const blocks = [...scroller.querySelectorAll<HTMLElement>('[data-feed-block]')];
 
+    // The groups the blocks sit in (#716). They are skipped too, and a skipped
+    // group does not lay out the blocks inside it, so "everything rendered"
+    // means stripping BOTH layers.
+    const groups = [...scroller.querySelectorAll<HTMLElement>('[data-feed-group]')];
+
     const skipped = scroller.scrollHeight;
     const saved = blocks.map((b) => [b.style.contentVisibility, b.style.containIntrinsicSize]);
     const styled = saved.filter(([cv]) => cv === 'auto').length;
+    const savedGroups = groups.map((g) => [g.style.contentVisibility, g.style.containIntrinsicSize]);
+    const groupsStyled = savedGroups.filter(([cv]) => cv === 'auto').length;
+    const openGroupStyled = groups.some(
+      (g) => g.hasAttribute('data-feed-group-open') && g.style.contentVisibility === 'auto'
+    );
 
-    for (const b of blocks) {
-      b.style.contentVisibility = '';
-      b.style.containIntrinsicSize = '';
+    for (const el of [...groups, ...blocks]) {
+      el.style.contentVisibility = '';
+      el.style.containIntrinsicSize = '';
     }
     // One forced layout with everything rendered — and, in the same pass, what
     // each block REALLY is, so the written lengths can be checked one by one
@@ -97,6 +115,12 @@ const exactness = (w: Page): Promise<Exactness> =>
     // `contain-intrinsic-size` speaks; handing it a border box would double
     // each block's padding.
     const truth = scroller.scrollHeight;
+    // Each group's real height, taken NOW — while the blocks inside it are
+    // still rendered for real. Read after the loop below has put their skip
+    // styling back, a group would be measured standing on its blocks' written
+    // heights, and a group height that agreed with those but not with the truth
+    // would pass (review).
+    const realGroups = groups.map((g) => g.getBoundingClientRect().height);
     let worstBlockErrorPx = 0;
     blocks.forEach((b, i) => {
       const written = saved[i][1];
@@ -116,6 +140,21 @@ const exactness = (w: Page): Promise<Exactness> =>
       b.style.contentVisibility = saved[i][0]!;
       b.style.containIntrinsicSize = saved[i][1]!;
     });
+    // A group has no padding or border of its own, so its box IS its content box.
+    let worstGroupErrorPx = 0;
+    groups.forEach((_g, i) => {
+      const written = savedGroups[i][1];
+      if (written) {
+        const length = parseFloat(written.replace('auto', '').trim());
+        if (Number.isFinite(length)) {
+          worstGroupErrorPx = Math.max(worstGroupErrorPx, Math.abs(length - realGroups[i]));
+        }
+      }
+    });
+    groups.forEach((g, i) => {
+      g.style.contentVisibility = savedGroups[i][0]!;
+      g.style.containIntrinsicSize = savedGroups[i][1]!;
+    });
 
     return {
       skipped,
@@ -124,6 +163,10 @@ const exactness = (w: Page): Promise<Exactness> =>
       total: blocks.length,
       width: Math.round(scroller.clientWidth),
       worstBlockErrorPx,
+      groups: groups.length,
+      groupsStyled,
+      openGroupStyled,
+      worstGroupErrorPx,
     };
   });
 
@@ -143,6 +186,14 @@ function expectExact(r: Exactness, blocks: number): void {
   // a neighbour's. Half a pixel is `HEIGHT_EPSILON_PX`, the same slack the
   // module uses to decide a report is not news.
   expect(r.worstBlockErrorPx).toBeLessThanOrEqual(0.5);
+  // The same premise and the same claim one level up (#716). Every group but
+  // the last is skipped as one element — if that ever stops, this file goes on
+  // passing on the per-block skipping alone while the cost it removed comes
+  // back — and each stands on its own measured height.
+  expect(r.groups).toBeGreaterThan(1);
+  expect(r.groupsStyled).toBe(r.groups - 1);
+  expect(r.openGroupStyled).toBe(false);
+  expect(r.worstGroupErrorPx).toBeLessThanOrEqual(0.5);
   // ...and the consequence: "within a pixel or two of the fully-laid-out
   // truth" (#740's done-when). The budget SCALES, because the error does:
   // `toFixed(2)` caps per-block rounding at 0.005px and Chromium's LayoutUnit
@@ -151,6 +202,13 @@ function expectExact(r: Exactness, blocks: number): void {
   // Signed errors mostly cancel, so in practice this lands near zero.
   expect(Math.abs(r.skipped - r.truth)).toBeLessThanOrEqual(Math.max(2, blocks * 0.02));
 }
+
+/**
+ * Has the measuring pass finished? It is observer-driven and takes a frame or
+ * two per layer: a block is measured, then the group around it, and a group
+ * that has just changed is rendered once more before it is skipped again.
+ */
+const settled = (r: Exactness): boolean => r.styled === r.total && r.groupsStyled === r.groups - 1;
 
 test.describe.configure({ mode: 'serial' });
 
@@ -176,6 +234,7 @@ test.describe('the feed skips what is off screen (#740)', () => {
     // the measuring pass is observer-driven, so give it frames rather than
     // reading on the same tick the last block landed
     await expect.poll(async () => (await exactness(a.window)).styled, { timeout: 15_000 }).toBe(61);
+    await expect.poll(async () => settled(await exactness(a.window)), { timeout: 15_000 }).toBe(true);
 
     expectExact(await exactness(a.window), 61);
   });
@@ -191,6 +250,7 @@ test.describe('the feed skips what is off screen (#740)', () => {
     await expect
       .poll(async () => (await exactness(a.window)).styled, { timeout: 25_000 })
       .toBe(403);
+    await expect.poll(async () => settled(await exactness(a.window)), { timeout: 25_000 }).toBe(true);
 
     expectExact(await exactness(a.window), 403);
   });
@@ -232,7 +292,7 @@ test.describe('the feed skips what is off screen (#740)', () => {
       .poll(
         async () => {
           const r = await exactness(a.window);
-          return r.styled === r.total && Math.abs(r.skipped - r.truth) <= 2;
+          return settled(r) && Math.abs(r.skipped - r.truth) <= 2;
         },
         { timeout: 25_000 }
       )
@@ -244,5 +304,53 @@ test.describe('the feed skips what is off screen (#740)', () => {
     // that reflows is a conversation that got TALLER.
     expect(after.truth).toBeGreaterThan(before.truth);
     expectExact(after, after.total);
+  });
+
+  test('hiding blocks inside a skipped group re-measures the group (#716)', async () => {
+    // The failure this catches does not throw either. A skipped group is not
+    // laid out, so nothing reports that the blocks inside it changed: switch to
+    // `quiet` and a group that lost its tool rows would keep the height it had
+    // with them, for as long as it stayed off screen.
+    const title = path.basename(folder);
+    const w = a.window;
+    // Tool rows, which `quiet` hides — and then enough prose after them that
+    // the group they are in is CLOSED and far above the fold.
+    await streamPrompter(a)(title, '!tools');
+    await streamPrompter(a)(title, `!bulk 120 ${PROSE}C #`);
+    await w.getByText(`${PROSE}C #120`, { exact: true }).waitFor({ timeout: 90_000 });
+    await expect.poll(async () => settled(await exactness(w)), { timeout: 25_000 }).toBe(true);
+    const before = await exactness(w);
+    expectExact(before, before.total);
+
+    await w.getByRole('button', { name: 'quiet', exact: true }).click();
+    // THE PREMISE: something was actually hidden, and it made the conversation
+    // shorter. Otherwise the poll below is true before it starts.
+    await expect.poll(async () => (await exactness(w)).total, { timeout: 15_000 }).toBeLessThan(before.total);
+    await expect
+      .poll(
+        async () => {
+          const r = await exactness(w);
+          return settled(r) && Math.abs(r.skipped - r.truth) <= 2;
+        },
+        { timeout: 25_000 }
+      )
+      .toBe(true);
+    const quiet = await exactness(w);
+    expect(quiet.truth).toBeLessThan(before.truth);
+    expectExact(quiet, quiet.total);
+
+    // ...and back, which is the other direction: a group that GAINED blocks.
+    await w.getByRole('button', { name: 'normal', exact: true }).click();
+    await expect.poll(async () => (await exactness(w)).total, { timeout: 15_000 }).toBe(before.total);
+    await expect
+      .poll(
+        async () => {
+          const r = await exactness(w);
+          return settled(r) && Math.abs(r.skipped - r.truth) <= 2;
+        },
+        { timeout: 25_000 }
+      )
+      .toBe(true);
+    expectExact(await exactness(w), before.total);
   });
 });

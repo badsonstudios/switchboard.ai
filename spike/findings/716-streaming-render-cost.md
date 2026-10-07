@@ -4,7 +4,9 @@
 to run; `PROBE_BACKLOG=980 PROBE_STREAM=1 PROBE_THROTTLE=4 npx playwright test e2e/typing-while-streaming.spec.ts`).
 **Date:** 2026-10-06. **Outcome:** one cause measured and removed (about seven
 eighths of the stalled time); one suspect cleared; the remainder measured and
-left, with what it is known to be made of.
+left, with what it is known to be made of. **Then, the same day, a second cause
+found in the remainder and removed — the rest of the stalled time at 4x and
+nearly all of it at 6x. See "Second step".**
 
 ## What was known
 
@@ -81,6 +83,9 @@ smaller than that can be told apart with this metric.
 
 ## What is left, and what it is made of
 
+> ⚠️ **This section's headline was wrong — read "Second step" below first.** It
+> is kept because the script breakdown in it is still true and is what is left.
+
 At 4x: 16 long tasks, 931 ms. At 6x it is still 5.9 s, so a machine slower
 than the 4x proxy will still feel it. **There is no second single cause.**
 
@@ -117,6 +122,117 @@ What that points at, in the order the numbers suggest, none of it done here:
 
 Each is worth something like 100–300 ms of a 12 s window at 4x. None is the
 next 8x.
+
+## Second step, later the same day: the section above was wrong
+
+**"There is no second single cause" was a conclusion drawn from an instrument
+that could not see one.** The CPU profile samples script. It reported 2,291 ms
+and described the rest as "not script at all: style, layout and paint for the
+block that grew" — one clause, for what turned out to be twice the size of
+everything it had itemised.
+
+Two things were added to the probe before anything was changed:
+
+- **`Performance.getMetrics` across the window** — the renderer's own
+  cumulative accounting of script, style and layout. It is a continuous number.
+  "Long tasks" counts only the part of a distribution that crosses 50 ms, and
+  three identical runs on `main` read **971, 1,060 and 1,432 ms**, so the ±100 ms
+  quoted above was optimistic; the layout figure moved by about 3% across the
+  same runs.
+- **`PROBE_TRACE=1`** — the engine's `devtools.timeline` events over the window,
+  summed by name.
+
+At 4x, 980 blocks, one reply streaming, on `main` after the first step:
+
+| | ms of the 12 s window | |
+|---|---|---|
+| `Layout` | **4,417** | 237 of them, ~18 ms each — with **38 dirty objects of 1,296** |
+| script, all of it | ~2,000 | the whole of the table in the section above |
+| `IntersectionObserverController::computeIntersections` | 1,534 | the engine's own visibility watch |
+| `Commit` | 1,298 | |
+| `PrePaint` | 1,013 | |
+| `Paint` | 815 | |
+
+Thirty-eight dirty objects and eighteen milliseconds. The layout is not doing
+much work; it is visiting a great deal. Since #740 every block is
+`content-visibility: auto` on its own measured height, and that makes an
+off-screen block cheap, not free: the engine keeps a visibility watch on each
+such element and walks each one in layout, pre-paint and commit. There were 942
+of them.
+
+### Asked of the live DOM before writing anything
+
+`PROBE_EVAL` runs a script in the page once the conversation is loaded, so a
+"what would it cost if" needs no rebuild. Three, at 4x:
+
+| | long tasks | stalled | frames | layout | key → paint p95 |
+|---|---|---|---|---|---|
+| `main` | 16–27 | 950–1,700 ms | 420–530 | 4,400 ms | 88–104 ms |
+| all but the last 60 blocks `display: none` — **the floor** | 0 | 0 | ~785 | 1,430 ms | 56–64 ms |
+| the same blocks in **plain** wrappers of 40 | 5–11 | 310–660 ms | ~600 | 3,600 ms | 88 ms |
+| the same blocks in wrappers of 40 that are **themselves skipped** | 0 | 0 | ~785 | 1,390 ms | 56–64 ms |
+
+A skipped wrapper reaches the floor. A plain one buys a fraction, so it is not
+the number of siblings the container has that costs — it is the number of
+skipped elements the engine can see, and a skipped group hides its forty.
+
+(An earlier attempt at "rendering blocks in memoised groups", recorded above as
+moving nothing, grouped them for React and left the DOM flat. It could not have
+found this.)
+
+### What shipped
+
+Blocks sit in group elements keyed by `Math.floor(seq / 40)`, and
+`useFeedSkipping` measures and skips the groups exactly as it does blocks. By
+sequence number rather than position so that an eviction at the 1,000-block cap
+never moves a block between parents. The last group — the one still being
+written to — is measured and never skipped. A group whose blocks change while
+it is skipped (eviction, the verbosity filter, a find-reveal), or that has just
+stopped being the open one, is forgotten, rendered once and measured again.
+
+The same probe against the real code, three runs each:
+
+| | long tasks | stalled, of 12,000 ms | frames | layout | key → paint p95 |
+|---|---|---|---|---|---|
+| **4x** before | 16–27 | 950–1,700 | 420–530 | ~4,400 | 88–104 ms |
+| **4x** after | **0–1** | **0–79** | **~748** | ~1,360 | **56–64 ms** |
+| **6x** before | 66–70 | 5,470–5,940 | 183–212 | ~5,300 | 144–200 ms |
+| **6x** after | **0–2** | **0–124** | **556–630** | ~2,150 | **80–96 ms** |
+
+**And at the cap**, which the runs above never reach (`PROBE_BACKLOG=1000
+PROBE_NEW=500`: a new block every half second, each one evicting the oldest, so
+the first group is forgotten and re-measured every time — the steady state of a
+long session). 4x, three runs each:
+
+| | long tasks | stalled | frames | key → paint p95 | scroll height against fully laid out |
+|---|---|---|---|---|---|
+| before | 38–40 | 3,127–3,312 ms | 344–354 | 144–152 ms | −5 px of 101,168 |
+| after | 0–1 | 0–66 ms | 708–712 | 64–72 ms | −1 px of 101,168 |
+
+The probe now reads the scroll height both ways at the end of every run, the
+way `e2e/feed-skipping.spec.ts` does.
+
+**One conversation replacing another** needed a fix of its own, found in review:
+both count from the same first sequence number, so React keeps the same elements
+under the same keys and nothing reports that every stored height is now about
+something else. It was true of blocks since #740; a group would have carried
+forty times the error. The hook now takes a counter that `FeedView` bumps when
+the list is replaced outright, and starts again from nothing.
+
+The 4x "after" row is the floor measured above, and it is also what an IDLE
+long conversation measured in the first table (88 ms key → paint, 746 frames):
+at this throttle a streaming reply in a thousand-block conversation now costs
+typing nothing that the probe can see.
+
+### What is left
+
+Script, and only script: ~2,000 ms of the window at 4x and ~3,400 at 6x, the
+table in "What is left" above, unchanged by this step. The three things it
+points at were not done. They are now the largest thing in the window rather
+than a third of what remained, and at 6x the frame count (556–630 of ~750) says
+there is still something to have. Measure them against `main thread busy` and
+the script figure, not against long tasks, of which there are none left to
+count.
 
 ## What this probe cannot say
 

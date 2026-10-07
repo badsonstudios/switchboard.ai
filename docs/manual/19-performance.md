@@ -29,6 +29,14 @@ had scrolled up in still puts you where you were reading. Those were measured,
 not assumed — an earlier attempt at the same speed-up guessed the sizes
 instead, made the scroll bar more than twice too long, and was taken back out.
 
+Two more things were found later, both about typing **while Claude is
+replying** in a long conversation. Each few words of a reply used to make the
+app redraw every message in the conversation, not just the one being written.
+And setting the off-screen messages aside one at a time still left the app
+keeping an eye on each of them, a thousand times over, every time the reply
+grew. They are now set aside in a few dozen larger pieces instead, and a reply
+arriving costs the same in a long conversation as in a short one.
+
 You do not have to do anything to get this, and nothing about the conversation
 looks different. If typing in a long session still stutters for you, that is
 worth reporting — see **Report a problem** below, and turn capture on first if

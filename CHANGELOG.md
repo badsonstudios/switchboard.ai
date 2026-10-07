@@ -113,8 +113,12 @@ on the floor, and say so in your PR.
 - **Typing while Claude is replying is smoother in a long conversation.** Each
   piece of a reply as it arrived made the app redraw the whole conversation —
   every entry, up to a thousand — to add a few words to the last one. It now
-  redraws only the entry that changed. On a slow machine that was most of the
-  stutter; some remains, and is being measured.
+  redraws only the entry that changed. And the part of a long conversation
+  that is off screen is now set aside in a few large pieces rather than a
+  thousand small ones, which is what the rest of the stutter turned out to be:
+  with the app slowed to a sixth of its speed, typing during a reply in a
+  thousand-entry conversation went from stalling for nearly half the time to
+  not stalling at all. Nothing about the conversation looks different.
 - **A long, busy session keeps following its newest message.** Once a
   conversation had grown past a thousand entries, a single click anywhere in it
   — or scrolling *down* — could make it stop keeping up, as though you had
