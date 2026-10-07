@@ -21,7 +21,33 @@
 > measured in time, sending only the new text saves megabytes and no
 > milliseconds.
 >
-> # 🚧 NOW — 2026-10-07: **#1126, then #1127 — the owner: "we can do 1126 and 1127 next".**
+> # 🚧 NOW — 2026-10-07: **the new tickets, bugs first — #1140, #1137, #1145, #1142, #1144, #1130, #1143, in that order.**
+>
+> The owner's list and rules, 2026-10-07. Each is its own item through
+> `/next-item`; **reproduce or measure before changing anything**; one PR in CI
+> at a time, with the previous item's close-out folded into the next PR.
+> **#1142: look at the screenshot, then TELL him the proposal before building.
+> #1143 is large: read it, then ASK him the design questions before starting.**
+> Do not cut 0.8.116 unless he asks. He was asked first, as instructed: no
+> laptop result for #716 yet, nothing to add to the tickets.
+>
+> **#1140 (a session lost its latest text after the update to 0.8.115) — FIX
+> ON `feature/1140-lost-text-after-update`** (the PR that carries this line;
+> NOT released). **Reproduced first.** Nothing was lost. On a resumed session
+> the conversation was replayed, and THEN the watcher appended every subagent
+> transcript that conversation had ever written, below the newest reply — so
+> the session ended on old subagent work. The bundle's log shows the right
+> conversation resumed (422 lines, 78 blocks) and a card sitting at 195 blocks
+> four seconds later. Fix: the replay reads the subagent transcripts too and
+> merges them in by time, and the feed refuses subagent lines older than the
+> replay when the watcher offers them. The owner said the session was idle and
+> the text is still missing, which fits. **Not provable from the log: that the
+> 195-block card was Tristana3.** The tracker's Re-test row tells him how to
+> check on 0.8.115 before updating (scroll up past the subagent block).
+>
+> **NEXT: #1137** (group header says "1 need you" while every row reads Done).
+>
+> ## Earlier on 2026-10-07: #1126, then #1127 — the owner: "we can do 1126 and 1127 next".
 >
 > **#1126 (a session writes its own `@Name` handoff) — DONE 2026-10-07, PR
 > #1139 (`e61c7d9`), merged, NOT released.** The owner chose, when asked: **a switch in the prompt box** that

@@ -327,6 +327,29 @@ export interface BlockOrigin {
   agentName?: string;
 }
 
+/**
+ * What `StreamFeed.hydrate` may be told about the entries it is handed (#1140).
+ *
+ * HERE rather than beside `hydrate`, because `history.ts` builds one and
+ * `history.ts` is on the session bus's default read path: importing it from
+ * `stream-feed.ts` would put the whole stream Feed on that path too, which
+ * `context-package.test.ts` rightly refuses.
+ */
+export interface HydrateOptions {
+  /**
+   * The entries that came out of a SUBAGENT transcript, and whose they are.
+   * Keyed by the entry object itself: the caller merged two kinds of file into
+   * one list and this is how the difference survives the merge.
+   */
+  origins?: ReadonlyMap<Record<string, unknown>, BlockOrigin>;
+  /**
+   * When the history was replayed, in epoch ms. A subagent line stamped at or
+   * before it is backlog the replay has already accounted for — see
+   * `StreamFeed.absorbSidechain`.
+   */
+  sidechainBacklogBefore?: number;
+}
+
 /** A derived block: everything `deriveIntents` can know from one line alone. */
 export type DerivedBlock = Omit<FeedBlock, 'seq' | keyof BlockOrigin>;
 
