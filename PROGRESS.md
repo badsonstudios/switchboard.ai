@@ -3,7 +3,37 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 NOW — 2026-10-06: **BUGS FIRST. No new features until this list is done and 0.8.115 is cut.**
+> # ✅ RELEASED: v0.8.115, 2026-10-07 (`7165cfe`, PR #1136)
+>
+> The owner: *"cut the release"*. A plain patch step. Installer and `.sha256`
+> sidecar both published, and the published pair downloaded and verified to
+> match. `0.8.116 — unreleased` is open and empty.
+>
+> **In it, all in the tracker's Re-test table and all installable now:** the
+> typing lag's three measured steps (#716 / #1013 — PRs #1123, #1131, #1133;
+> **both issues stay open until the owner has tried it on the laptop**); the
+> conversation following its newest message at the 1,000 cap (#1111); Ctrl+=
+> zoom (#1114); the mode chip after a plan (#1072); the readable plan approval
+> (#1071); dark scrollbars and the Files tab's git letters (#1104, #1105); the
+> history picker listing conversations (#1088). Internal: #1055, #743.
+>
+> **#1062 is CLOSED, not planned, on the owner's word** (*"yeah, close it"*):
+> measured in time, sending only the new text saves megabytes and no
+> milliseconds.
+>
+> # 🚧 NOW — 2026-10-07: **#1126, then #1127 — the owner: "we can do 1126 and 1127 next".**
+>
+> **#1126 (a session writes its own `@Name` handoff) — IN FLIGHT.** The owner
+> chose, when asked: **a switch in the prompt box** that appears when the draft
+> names another session ("Ask Name to write the handoff", off by default; Send
+> waits while it writes, with a Cancel); and **when the named session is busy
+> or waiting on an answer, send at once with today's app-built brief and say
+> so** — never interrupt it.
+>
+> **#1127 ("stop it and open that conversation" on a busy history pick) — next.**
+> Cancel must be the default.
+
+> # ✅ 2026-10-06: **the bugs-first list — DONE, and released in v0.8.115**
 >
 > **The owner, 2026-10-06, after v0.8.114 went out and Tanner started testing
 > it:** *"let's just start knocking out bugs here."* He was asked whether bug
@@ -148,9 +178,8 @@
 > user-facing change.
 >
 > **THE OWNER'S LIST IS DONE (2026-10-07):** the long-reply step of #716,
-> #1055, #743. Nothing is claimed. **Waiting on the owner:** whether to cut
-> 0.8.115; the laptop test of #716 / #1013 (three steps, all unreleased);
-> whether #1062 is kept as a bytes-only tidy or dropped.
+> #1055, #743. All of it is in v0.8.115. **Still waiting on the owner:** the
+> laptop test of #716 / #1013.
 >
 > **A flake that reddened a run:** #1002 (`quiet-hours.spec.ts:287`) failed
 > the Windows e2e job on PR #1131 and passed on re-run. Sighting is on the
