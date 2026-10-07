@@ -135,7 +135,7 @@ test.describe('the Files tab (#521 layer 2)', () => {
   });
 
   test('a folder expands lazily and a file opens in the viewer', async () => {
-    const { w } = await openFiles();
+    const { w, folder } = await openFiles();
 
     // Nothing from inside `src` is on screen until it is asked for — the tree
     // expands one level at a time and main never walks ahead of it.
@@ -161,6 +161,15 @@ test.describe('the Files tab (#521 layer 2)', () => {
       timeout: 15_000,
     });
     await expect(w.getByText('Inside src.').first()).toBeVisible({ timeout: 15_000 });
+
+    // §5.24, and the assertion this surface never had (#1055). A file opened
+    // from a session's Files tab says which session — and for months it did
+    // not: the tab passed the LIVE session id where a card id was wanted, the
+    // lookup found nothing, and nothing looks exactly like "no attribution".
+    // The viewer worked, so no test and no person noticed.
+    const chip = w.locator('[data-testid="doc-attribution"]').first();
+    await expect(chip).toBeVisible();
+    await expect(chip).toHaveAttribute('aria-label', `Opened from the session ${path.basename(folder)}`);
   });
 
   test('Refresh picks up a file written while the tab was open', async () => {

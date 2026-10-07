@@ -132,7 +132,7 @@ export function ScmSidebar(props: {
   selected: string | null;
   onSelect: (path: string) => void;
   /** the card this sidebar belongs to, for §5.24 attribution on an open */
-  sessionId?: string;
+  attributionCardId?: string;
   /** ask main again — the ⟲ in the header */
   onRefresh: () => void;
   /** the card, so ⏱ can send this file's history to the History tab (item 10) */
@@ -843,7 +843,7 @@ export function ScmSidebar(props: {
                       key={`${group.kind}:${row.path}`}
                       row={row}
                       folder={props.folder}
-                      sessionId={props.sessionId}
+                      attributionCardId={props.attributionCardId}
                       selected={props.selected === row.path}
                       onSelect={props.onSelect}
                       cardId={props.cardId}
@@ -872,7 +872,7 @@ export function ScmSidebar(props: {
                         key={node.key}
                         row={node.row}
                         folder={props.folder}
-                        sessionId={props.sessionId}
+                        attributionCardId={props.attributionCardId}
                         selected={props.selected === node.row.path}
                         onSelect={props.onSelect}
                         cardId={props.cardId}
@@ -996,7 +996,7 @@ function FolderRow(props: { node: ScmTreeFolder; onToggle: () => void }): React.
 function Row(props: {
   row: ScmRow;
   folder: string;
-  sessionId?: string;
+  attributionCardId?: string;
   selected: boolean;
   onSelect: (path: string) => void;
   cardId?: string;
@@ -1171,7 +1171,7 @@ function Row(props: {
                   path: row.path,
                   left: WORKING_TREE_LEFT,
                   right: WORKING_TREE_RIGHT,
-                  sessionId: props.sessionId,
+                  attributionCardId: props.attributionCardId,
                 })
               }
             >
@@ -1215,7 +1215,7 @@ function Row(props: {
             className="scm-act"
             title={t('diff.openInViewer', { file: row.path })}
             aria-label={t('diff.openInViewer', { file: row.path })}
-            onClick={() => openDocument(joinPath(props.folder, row.path), props.sessionId)}
+            onClick={() => openDocument(joinPath(props.folder, row.path), props.attributionCardId)}
           >
             {t('diff.openInViewerIcon')}
           </button>

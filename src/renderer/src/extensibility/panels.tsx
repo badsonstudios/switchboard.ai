@@ -140,15 +140,13 @@ export const sessionPanels: PanelContribution[] = [
           folder={ctx.folder}
           colorScheme={ctx.colorScheme}
           cardId={ctx.cardId}
-          // ⚠️⚠️ **`ctx.cardId`, NOT `ctx.sessionId`, AND THE PROP NAME LIES.**
-          // §5.24 attribution resolves through `sessionStore.getCardTitle`, which
-          // matches on the CARD id — while `PanelContext.sessionId` is documented
-          // three lines from here as *"the LIVE session id — churns on resume"*.
-          // The first version of this fix passed the live id: the prop went from
-          // ABSENT to WRONG, which is worse, and it looks identical on screen
-          // because an unresolved id draws no chip. `lib/document-open.ts` carries
-          // the full warning; issue 1055 is the rename that ends it.
-          sessionId={ctx.cardId}
+          // `ctx.cardId`, never `ctx.sessionId`: §5.24 attribution resolves through
+          // `sessionStore.getCardTitle`, which matches on the CARD id, while
+          // `PanelContext.sessionId` is the LIVE session id and resolves to
+          // nothing — which draws no chip and looks exactly like absence. The
+          // prop used to be called `sessionId` and this call site got it wrong
+          // because of that (#1055).
+          attributionCardId={ctx.cardId}
         />
       ) : null,
   },
@@ -227,9 +225,13 @@ export const sessionPanels: PanelContribution[] = [
           folder={ctx.folder}
           active={ctx.visible}
           // `cardId` is how ⏱ in the Changes tab reaches THIS tab (item 10), and
-          // `sessionId` is §5.24 attribution on a diff opened from a commit.
+          // `attributionCardId` is §5.24 attribution on a diff opened from a
+          // commit. ⚠️ It was `ctx.sessionId` — the live id — until #1055 renamed
+          // the prop and the mismatch became visible. No diff panel draws a chip
+          // yet, so nothing was missing on screen; the day one does, it would
+          // have been the fourth surface to attribute nothing.
           cardId={ctx.cardId}
-          sessionId={ctx.sessionId}
+          attributionCardId={ctx.cardId}
         />
       ) : null,
   },

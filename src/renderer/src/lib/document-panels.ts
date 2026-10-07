@@ -61,15 +61,15 @@ export interface DocumentPanelEntry {
    */
   readonly path: string;
   /** the card this viewer was opened from, for §5.24 attribution (or none) */
-  readonly sessionId?: string;
+  readonly attributionCardId?: string;
 }
 
 /** What the caller should do with dockview to honour an open request. */
 export type DocumentOpenPlan =
   /** it is already open: raise it */
-  | { action: 'focus'; id: string; path: string; sessionId?: string }
+  | { action: 'focus'; id: string; path: string; attributionCardId?: string }
   /** everything else: a new tab, beside the ones already there */
-  | { action: 'create'; id: string; path: string; sessionId?: string };
+  | { action: 'create'; id: string; path: string; attributionCardId?: string };
 
 const entries = new Map<string, DocumentPanelEntry>();
 let seq = 0;
@@ -126,21 +126,21 @@ export function documentPanels(): readonly DocumentPanelEntry[] {
  * failed to open is corrected by `forgetDocumentPanel`, which the removal
  * handler calls anyway.
  */
-export function planDocumentOpen(path: string, sessionId?: string): DocumentOpenPlan {
+export function planDocumentOpen(path: string, attributionCardId?: string): DocumentOpenPlan {
   const key = documentKey(path);
   for (const entry of entries.values()) {
     if (documentKey(entry.path) === key) {
       // Already open — raise it rather than opening a second copy of one file.
-      // The recorded `sessionId` is NOT overwritten: attribution says where a
+      // The recorded `attributionCardId` is NOT overwritten: attribution says where a
       // document came from, and the answer to that does not change because
       // someone asked for it again from somewhere else.
-      return { action: 'focus', id: entry.id, path: entry.path, sessionId: entry.sessionId };
+      return { action: 'focus', id: entry.id, path: entry.path, attributionCardId: entry.attributionCardId };
     }
   }
   seq += 1;
   const id = `${DOCUMENT_PANEL_PREFIX}${seq}`;
-  entries.set(id, { id, path, sessionId });
-  return { action: 'create', id, path, sessionId };
+  entries.set(id, { id, path, attributionCardId });
+  return { action: 'create', id, path, attributionCardId };
 }
 
 /**

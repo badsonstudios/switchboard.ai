@@ -425,7 +425,7 @@ function FileBlock(props: {
               path: row.path,
               left: WORKING_TREE_LEFT,
               right: WORKING_TREE_RIGHT,
-              sessionId: props.cardId,
+              attributionCardId: props.cardId,
             })
           }
         >

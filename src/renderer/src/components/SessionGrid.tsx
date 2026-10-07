@@ -2962,18 +2962,11 @@ function DiffPanel(
       // verb, with nothing explaining the difference. The id already held the
       // answer.
       cardId={cardId}
-      // ⚠️⚠️ **AND THE SAME VALUE GOES TO `sessionId`, WHICH IS A MISNOMER, NOT A
-      // BUG — I REMOVED IT ONCE AND AN E2E CAUGHT ME.** The prop is named
-      // `sessionId` the whole way down (`openDocument` → `planDocumentOpen` →
-      // the dockview panel's persisted `params.sessionId`), but the value §5.24
-      // attribution needs is a **CARD** id: the viewer resolves it with
-      // `sessionStore.getCardTitle`, which matches on `sessions[].id`, the card
-      // id. Review read the name, called it a bug, and I agreed and dropped it —
-      // which turned a working attribution chip into a missing one until
-      // `document-peek.spec.ts` went red. The name is wrong; the value was
-      // always right. See `lib/document-open.ts` for the one place that now says
-      // so, and issue 1055 for the rename.
-      sessionId={cardId}
+      // ...and the same card is who a file opened from here is attributed to
+      // (§5.24). This line was once removed in review as a bug, because the prop
+      // was called `sessionId` and the value is a card id; `document-peek.spec.ts`
+      // went red on the missing chip. #1055 renamed the prop.
+      attributionCardId={cardId}
     />
   );
 }
@@ -3598,10 +3591,10 @@ function openDocumentPanel(
   api: DockviewApi | null,
   filePath: string,
   colorScheme: 'light' | 'dark',
-  sessionId?: string
+  attributionCardId?: string
 ): void {
   if (!api || !filePath) return;
-  const plan = planDocumentOpen(filePath, sessionId);
+  const plan = planDocumentOpen(filePath, attributionCardId);
   if (plan.action === 'focus') {
     const panel = api.getPanel(plan.id);
     if (panel) {
@@ -3621,7 +3614,7 @@ function openDocumentPanel(
     // if a removal never reported. Correct the registry and open properly
     // rather than dropping the user's click on the floor (fail-open).
     forgetDocumentPanel(plan.id);
-    openDocumentPanel(api, filePath, colorScheme, sessionId);
+    openDocumentPanel(api, filePath, colorScheme, attributionCardId);
     return;
   }
   try {
@@ -3629,7 +3622,16 @@ function openDocumentPanel(
       id: plan.id,
       component: 'documentViewer',
       title: documentTabTitle(filePath),
-      params: { path: filePath, colorScheme, sessionId: sessionId ?? null },
+      // ⚠️ THE ONE PLACE THE OLD NAME IS KEPT, DELIBERATELY (#1055). `params` is
+      // frozen into the saved layout, so `sessionId` here is a key on disk in
+      // every workspace written since the viewer shipped. Renaming it would
+      // need a reader that accepts both for ever, to save one line from saying
+      // what this comment says — and a reader that knew only the new key would
+      // drop the attribution of every restored viewer, silently, which is the
+      // very failure the rename exists to end. So: the WIRE name is `sessionId`,
+      // the value is a CARD id, and this line and `DocumentViewerPanel`'s read
+      // of it are the only two places that have to know.
+      params: { path: filePath, colorScheme, sessionId: attributionCardId ?? null },
       position: { referenceGroup: documentHomeGroup(api) },
     });
   } catch (err) {
@@ -3987,12 +3989,15 @@ function DocumentViewerPanel(
   // argument `IdentityTab` records: a rename or a re-assigned accent has to
   // reach a viewer that has been on screen for an hour, and a copy frozen into
   // the layout blob at `addPanel` never could.
-  const sessionId = props.params?.sessionId ?? null;
+  //
+  // `params.sessionId` is the persisted key and it holds a CARD id — see
+  // `openDocumentPanel` for why the key kept its old name (#1055).
+  const attributionCardId = props.params?.sessionId ?? null;
   const sessionName = React.useSyncExternalStore(subscribeStore, () =>
-    sessionId ? sessionStore.getCardTitle(sessionId) : undefined
+    attributionCardId ? sessionStore.getCardTitle(attributionCardId) : undefined
   );
   const sessionAccent = React.useSyncExternalStore(subscribeStore, () =>
-    sessionId ? sessionStore.getCardAccent(sessionId) : undefined
+    attributionCardId ? sessionStore.getCardAccent(attributionCardId) : undefined
   );
   // NO TITLE, NO CHIP. A viewer OUTLIVES the session it was opened from
   // (§5.30), and once that session is closed the store stops answering for the
@@ -4000,8 +4005,8 @@ function DocumentViewerPanel(
   // to stop claiming it, rather than fall back to a raw card id no user has
   // ever seen. A live card always has a title, so this only fires on departure.
   const session = React.useMemo(
-    () => (sessionId && sessionName ? { name: sessionName, accent: sessionAccent } : undefined),
-    [sessionId, sessionName, sessionAccent]
+    () => (attributionCardId && sessionName ? { name: sessionName, accent: sessionAccent } : undefined),
+    [attributionCardId, sessionName, sessionAccent]
   );
 
   const onPopoutToggle = React.useCallback(
@@ -5551,7 +5556,7 @@ export interface GridController {
    * — a tint and a chip, never ownership. It never lands in a session's group,
    * nor in a popped-out viewer's window — see the implementation's note.
    */
-  openDocument: (absolutePath: string, sessionId?: string) => void;
+  openDocument: (absolutePath: string, attributionCardId?: string) => void;
   /**
    * Open one COMPARISON as its own dock panel (E24 Git v2 item 5, design §3).
    *
@@ -6435,8 +6440,8 @@ export function SessionGrid(props: {
             : { referenceGroup: onScreen(own) ? own : sessionCardHome(api) },
         });
       },
-      openDocument: (filePath, sessionId) =>
-        openDocumentPanel(apiRef.current, filePath, props.colorScheme, sessionId),
+      openDocument: (filePath, attributionCardId) =>
+        openDocumentPanel(apiRef.current, filePath, props.colorScheme, attributionCardId),
       openGitDiff: (target) => openGitDiffPanel(apiRef.current, target, props.colorScheme),
       openAllChanges: (cardId, folder, title) =>
         openAllChangesPanel(apiRef.current, cardId, folder, props.colorScheme, title),

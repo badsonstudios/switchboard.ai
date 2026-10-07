@@ -21,13 +21,14 @@
 /**
  * What actually opens a panel — installed by `App` from the grid controller.
  *
- * `sessionId` is the CARD the request came from, when there was one (P2-E16-03,
- * §5.24): the viewer wears that session's accent and a `↳ session` chip. It is
+ * `attributionCardId` is the CARD the request came from, when there was one
+ * (P2-E16-03, §5.24): the viewer wears that session's accent and a `↳ session`
+ * chip. It is
  * attribution, not ownership — the viewer outlives the session and belongs to
  * no group of its own — so it is optional at every call site, and the palette's
  * `Open file…` passes nothing on purpose.
  */
-export type DocumentOpener = (absolutePath: string, sessionId?: string) => void;
+export type DocumentOpener = (absolutePath: string, attributionCardId?: string) => void;
 
 let opener: DocumentOpener | null = null;
 
@@ -48,32 +49,28 @@ export function canOpenDocuments(): boolean {
  * affordance disabled rather than offering a click that does nothing.
  */
 /**
- * ⚠️⚠️ **THE SECOND ARGUMENT IS A **CARD** ID, THOUGH EVERY NAME ON THIS PATH
- * SAYS `sessionId`. READ THIS BEFORE PASSING ONE.**
+ * THE SECOND ARGUMENT IS A CARD ID, AND SINCE #1055 IT IS NAMED FOR ONE.
  *
  * §5.24 attribution is resolved by `sessionStore.getCardTitle` /
- * `getCardAccent`, which match on `sessions[].id` — **the card id**. A LIVE
- * session id resolves to nothing there, and "nothing" is exactly what absence
- * looks like: the chip is simply not drawn, the viewer works, and nobody reports
- * it.
+ * `getCardAccent`, which match on `sessions[].id` — the card id. A LIVE session
+ * id resolves to nothing there, and "nothing" is exactly what absence looks
+ * like: the chip is simply not drawn, the viewer works, and nobody reports it.
  *
- * The name is `sessionId` because it is the dockview panel's persisted
- * `params.sessionId` (`lib/document-panels.ts`) and renaming a persisted key is a
- * migration. **So the name is wrong and the value must be a card id anyway** —
- * issue 1055 is the rename.
+ * Every hop on this path used to call the value `sessionId`, and it went wrong
+ * three times because of the name alone: two call sites passed
+ * `PanelContext.sessionId` (*"the LIVE session id — churns on resume"*) and
+ * attributed nothing for months, and a reviewer read the name on a correct call
+ * site and had it removed. A fourth was found doing the rename — the History
+ * tab was passing the live id into a diff target, harmlessly only because no
+ * diff panel reads it yet.
  *
- * **THIS HAS NOW BITTEN THREE TIMES**, which is why the warning is this loud:
- * `PanelContext.sessionId` is documented as *"the LIVE session id — churns on
- * resume"*, so two call sites in `extensibility/panels.tsx` passed it and
- * attributed nothing; and a reviewer reading the name in `SessionGrid`'s
- * relocated-Changes host called a correct value a bug, which I removed before an
- * e2e caught it. **Pass `ctx.cardId`.**
+ * ONE PLACE STILL SAYS `sessionId`, ON PURPOSE: the dockview panel's persisted
+ * `params.sessionId`. See `openDocumentPanel` in `SessionGrid.tsx`.
  */
 export function openDocument(absolutePath: string, attributionCardId?: string): boolean {
-  const sessionId = attributionCardId;
   if (!opener || typeof absolutePath !== 'string' || absolutePath.length === 0) return false;
   try {
-    opener(absolutePath, sessionId);
+    opener(absolutePath, attributionCardId);
     return true;
   } catch {
     // The grid throwing must not take the surface that asked with it.
