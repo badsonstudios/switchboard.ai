@@ -82,10 +82,22 @@ export type SwitchConversationRefusal =
   /** the conversation is not there to resume, in this card's folder */
   | 'unavailable';
 
+/**
+ * What a `busy` card is in the middle of (#1127) — the two are different things
+ * to throw away, and the offer to stop it says which: `working` loses the turn
+ * in flight; `waiting` leaves a question or a permission unanswered.
+ */
+export type SwitchBusyState = 'working' | 'waiting';
+
 /** What `sessions:switchConversation` answers. */
 export type SwitchConversationResult =
   | { readonly ok: true; readonly changed: boolean }
-  | { readonly ok: false; readonly reason: SwitchConversationRefusal };
+  | {
+      readonly ok: false;
+      readonly reason: SwitchConversationRefusal;
+      /** present on `busy` only: what the session would be stopped in the middle of */
+      readonly busy?: SwitchBusyState;
+    };
 
 export type SessionStatus =
   | 'starting'

@@ -96,6 +96,15 @@ on the floor, and say so in your PR.
 
 ## 0.8.116 — unreleased
 
+### Changed
+
+- **Picking an older conversation while the session is working now asks,
+  instead of refusing.** The list of previous conversations used to say the
+  session was busy and leave you to stop it and pick again. It now asks —
+  **Cancel** or **Stop it and open that conversation** — with Cancel selected,
+  so an accidental Enter changes nothing. Stopping throws away what the session
+  was doing at that moment; everything before it is kept.
+
 ### Added
 
 - **A session can write its own handoff.** When your message names another

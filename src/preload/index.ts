@@ -416,8 +416,17 @@ const api = {
      * while the card is busy, when another card holds the conversation, or when
      * it is not there to resume — and a refusal changes nothing.
      */
-    switchConversation: (cardId: string, conversationId: string): Promise<SwitchConversationResult> =>
-      ipcRenderer.invoke('sessions:switchConversation', { cardId, conversationId }),
+    switchConversation: (
+      cardId: string,
+      conversationId: string,
+      /** `stopFirst`: the user was asked and said to stop a working session for this (#1127) */
+      opts: { stopFirst?: boolean } = {}
+    ): Promise<SwitchConversationResult> =>
+      ipcRenderer.invoke('sessions:switchConversation', {
+        cardId,
+        conversationId,
+        ...(opts.stopFirst === true ? { stopFirst: true } : {}),
+      }),
     setTaskLabel: (cardId: string, label: string): Promise<void> =>
       ipcRenderer.invoke('sessions:setTaskLabel', cardId, label),
     setAutonomy: (cardId: string, autonomy: AutonomyMode): Promise<void> =>

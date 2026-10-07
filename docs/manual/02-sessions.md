@@ -54,11 +54,34 @@ is not lost: it is saved like every other, and it is in this same list the next
 time you open it, so going back is the same two clicks.
 
 Because it replaces what the session is doing, **it will not interrupt a session
-that is in the middle of something**. If Claude is working, or is waiting for
-you to answer a permission request or a question, the list stays open and says
-so. Let it finish, or answer it, and pick again. Whatever you had typed in the
-search box is still there, so the conversation you wanted is still in front of
-you.
+that is in the middle of something without asking you first**. If Claude is
+working, or is waiting for you to answer a permission request or a question,
+the list stays open and asks:
+
+> This session is working. Opening “Fix the login redirect” here stops it, and
+> what it is doing right now is lost.
+>
+> **Cancel** · **Stop it and open that conversation**
+
+It names the conversation you picked, and the list is put away while it asks, so
+there is nothing else to click by accident.
+
+**Cancel is the one that is selected**, so pressing Enter — including the Enter
+you may have just picked the conversation with — leaves everything as it was.
+**Stop it and open that conversation cannot be pressed for the first moment**
+(under a second): if you double-clicked the conversation, the second click must
+not be able to answer a question you have not read yet. After that, stopping the
+session takes a deliberate click, or a Tab and then Enter. Escape also means
+Cancel, and the list comes back with whatever you had typed in the search box
+still there.
+
+If you do stop it, the turn it was in the middle of is gone — it does not finish
+in the background — and a permission request or a question it was waiting on is
+left unanswered. The conversation itself is not lost: everything up to that
+moment is saved, and it is in this same list afterwards.
+
+If the conversation you picked turns out not to be openable after all, nothing
+is stopped: the session carries on and the list says why.
 
 The list also stays open if another session card opened that same conversation
 in the moment since the list was drawn — a conversation can only be open in one
