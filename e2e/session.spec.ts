@@ -73,7 +73,7 @@ test.describe('a session card', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
-  test('spawns with its card and the usage strip (E3-02 / E7-01)', async () => {
+  test('spawns with its card, and no usage strip in the header (E3-02, #1145)', async () => {
     const folder = tempProjectFolder();
     const name = path.basename(folder);
     a = await launchApp({ seedFolder: folder });
@@ -81,8 +81,12 @@ test.describe('a session card', () => {
 
     // the card appears (tab shows the folder name)
     await expect(window.getByText(name).first()).toBeVisible({ timeout: 25_000 });
-    // usage strip is present from the start (zeros until real activity)
-    await expect(window.getByText('↑ 0').first()).toBeVisible({ timeout: 15_000 });
+    // The usage strip used to be asserted here, present from the start with
+    // zeros. It was retired from the header by owner directive (#1145), so the
+    // claim is now the opposite — once the strip's row has drawn, which is what
+    // the tab list being visible says.
+    await expect(window.getByTestId('view-tabs').first()).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByText('↑ 0')).toHaveCount(0);
 
     // #358, riding this launch: the card's live region is in the DOM from the
     // start and EMPTY. This is the load-bearing half of that fix and the half

@@ -1916,6 +1916,16 @@ the to-do list.
 
 ### 5.13 Usage & cost tracking
 
+> **The card header no longer shows the usage strip (retired 2026-10-07, owner
+> directive, #1145).** *"The Claude information — the 89k thinking and usage
+> and all that — remove that for now. I don't want it on there. We're going to
+> put it somewhere else eventually."* This is a change of PLACEMENT, not a
+> judgment on the data: `UsageStrip`, the ledger and every figure below are
+> kept and still computed, only the header mount is gone. Its next home is
+> undecided (candidates: the activity report, a usage panel). **Do not restore
+> it to the header as a regression.** The same item removed the header's
+> "·N changed" text, which the Changes tab's badge had made a duplicate.
+
 **Usage is FIRST-PARTY and native (decided 2026-07-29).** switchboard.ai parses
 Claude Code transcripts for its own usage numbers, in TypeScript, in this
 repo. **ClaudeMon integration is dropped** — not deferred pending a decision,

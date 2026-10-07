@@ -57,12 +57,25 @@ describe('the card-header git line', () => {
     }
   });
 
-  it('shows the branch, and the dirty count when there is one', async () => {
+  it('shows the branch', async () => {
     // The control. Without it every assertion below is satisfied by a component
     // that renders nothing under any circumstances.
-    await render(status({ files: [{ path: 'a.ts', staged: false, unstaged: true, untracked: false }] }));
+    await render(status());
     expect(host.textContent).toContain('main');
-    expect(host.textContent).toContain('1');
+  });
+
+  // #1145: the Changes tab's badge is the one changes count. This line used to
+  // repeat it ("·3 changed"), and the owner asked for the repeat gone.
+  it('does NOT repeat the dirty count the Changes tab already shows', async () => {
+    const file = (p: string) => ({ path: p, staged: false, unstaged: true, untracked: false });
+    await render(status({ files: [file('a.ts'), file('b.ts'), file('c.ts')] }));
+    expect(host.textContent).toContain('main');
+    expect(host.textContent).not.toMatch(/3|changed/);
+  });
+
+  it('still says how far ahead the branch is', async () => {
+    await render(status({ ahead: 2 }));
+    expect(host.textContent).toContain('2');
   });
 
   it('draws nothing for a folder that is not a repository', async () => {

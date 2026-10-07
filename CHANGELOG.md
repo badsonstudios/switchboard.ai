@@ -96,6 +96,15 @@ on the floor, and say so in your PR.
 
 ## 0.8.116 — unreleased
 
+### Removed
+
+- **The card header is less crowded.** The "·11 changed" text beside the branch
+  name is gone: the **Changes** tab already shows that number, right beside it.
+  The row of token and cost figures is off the header too, for now — it is
+  going to come back somewhere with more room. Nothing has stopped being
+  counted. To see a session's figures in the meantime, type `/usage` or `/cost`
+  into its prompt box.
+
 ### Fixed
 
 - **"1 need you" now always points at a row you can see.** A group's heading

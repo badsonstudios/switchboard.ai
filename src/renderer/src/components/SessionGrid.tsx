@@ -58,7 +58,6 @@ import {
 import { getDiffLayout, subscribeDiffLayout } from '../lib/diff-layout';
 import { forgetDiffPlace } from '../lib/diff-places';
 import { forgetCardFileHistory } from '../lib/file-history';
-import { UsageStrip } from './UsageStrip';
 import { GitContext } from './GitContext';
 import type { GitStatusDto } from '../lib/git-status';
 import { Usage, ZERO_USAGE } from '../lib/usage';
@@ -2610,8 +2609,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           >
 
             {/* A REAL tablist (#197). Only the tabs are inside it — the plan
-                counter, the git chip and the usage strip share the strip's row
-                but are readouts, and a tablist that contained them would be
+                counter and the git chip share the strip's row but are
+                readouts, and a tablist that contained them would be
                 telling a screen reader they are tabs. */}
             <div
               role="tablist"
@@ -2710,16 +2709,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 </span>
               )}
               <GitContext status={git} />
-              {usage && (
-                <span style={{ display: 'inline-flex', flexShrink: 0 }}>
-                  <UsageStrip
-                    usage={usage.usage}
-                    model={usage.model}
-                    cliCost={usage.cliCost}
-                    inline
-                  />
-                </span>
-              )}
+              {/* NO USAGE STRIP HERE, SINCE #1145 — retired from the header by
+                  owner directive (2026-10-07), "for now": the tokens, the
+                  thinking share and the spend are to come back somewhere else.
+                  `UsageStrip` and the `usage` state above are deliberately kept
+                  (the state still seeds the model chip), so the next home is a
+                  mount, not a rebuild. Do not restore it here as a regression —
+                  DESIGN §5.13 records the decision. */}
             </span>
           </div>
           {/* active view */}
