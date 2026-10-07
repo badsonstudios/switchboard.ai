@@ -78,6 +78,44 @@ Three things it had to get right, each with a test that goes red without it:
 would append instead of upsert, across the delta→message supersede that
 `stream-feed.ts`'s header spends sixty lines on. Filed as **#1062**.
 
+## #1062 measured in TIME, 2026-10-06: the bytes are not where the time goes
+
+Delta-only saves bytes — 10.83 MB to 0.18 MB on a 16,000-character reply. What
+was never measured is what those bytes cost anybody. Asked of the real app with
+`spike/probes/716/` (980 real blocks on screen, a key typed every 100 ms, 12 s,
+renderer at 4x throttle), using a stream the window cannot render:
+
+`PROBE_GHOSTS=8 PROBE_STEP=67 PROBE_VISIBLE=0` — eight replies, each growing to
+16,000 characters at 20 messages a second, each message carrying the whole text
+so far, addressed to sessions the window is not showing. Every card hears every
+`sessions:feedBlock` and drops the ones that are not its own, so a ghost costs
+the renderer exactly what the WIRE costs — receive, decode, one comparison — and
+nothing of what a render costs. That is the whole of what delta-only could save.
+
+| 12 s window | renderer main thread busy | of which script | long tasks | main process CPU |
+|---|---|---|---|---|
+| nothing streaming | 5,090–6,040 ms | 496–566 ms | 0 | 203–375 ms |
+| 8 ghost replies, ~15 MB on the wire | 5,293–6,403 ms | 503–632 ms | 0–2 | 391–499 ms |
+| ONE visible 16,000-character reply | 10,650–11,640 ms | 2,750–3,330 ms | 0–8 | 297–531 ms |
+
+Eight full-size streams, eight times the bytes #1062 would remove, cost the
+renderer nothing that can be told from an idle window and the main process
+about 150 ms of CPU in twelve seconds. One reply the window actually DRAWS costs
+forty times that.
+
+**So #1062 as written would not move typing lag or the many-sessions lag, and
+it was not built.** It is a protocol change across the delta-to-message
+supersede for a saving that is real in megabytes and invisible in milliseconds.
+
+What the third row does show is that a reply's cost grows with its own length:
+script 2,050 → ~2,900 ms and layout 1,350 → ~2,650 ms between a 2,900- and a
+16,000-character reply, at 4x. At 6x that is the one case left that stalls
+(8–13 long tasks, 460–750 ms, ~300 frames of 750). The cause is in the
+renderer — the whole reply is parsed, sanitised and laid out again on every
+chunk — and sending less text would not change it, because the renderer would
+append and then do exactly the same work. That is step 1 in
+`716-streaming-render-cost.md`, and it is the measured next thing.
+
 ## What this probe cannot say
 
 It counts messages and bytes in node. It does **not** measure what one feed

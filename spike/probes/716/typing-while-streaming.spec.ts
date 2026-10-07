@@ -57,6 +57,21 @@ const TRACE = process.env.PROBE_TRACE === '1';
  * re-measures the first group each time (#716).
  */
 const NEW_EVERY = Number(process.env.PROBE_NEW ?? 0);
+/**
+ * `PROBE_STEP=<chars>`: how much the reply grows per 50ms tick. The default 12
+ * is 60 tokens a second and ends the window at ~2,900 characters; 67 ends it at
+ * 16,000, the reply #1062 measured its bytes on.
+ */
+const STEP = Number(process.env.PROBE_STEP ?? 12);
+/**
+ * `PROBE_GHOSTS=<n>`: n MORE replies streaming at the same rate, addressed to
+ * sessions this window is not showing (#1062, #1013). Every card hears every
+ * `sessions:feedBlock` and drops the ones that are not its own, so a ghost
+ * costs the renderer exactly what the WIRE costs — receive, decode, one
+ * comparison — and nothing of what a render costs. That is the part "send only
+ * the new text" could save.
+ */
+const GHOSTS = Number(process.env.PROBE_GHOSTS ?? 0);
 /** `PROBE_PARAS=1`:the reply is short paragraphs rather than ONE that grows */
 const PARAS = process.env.PROBE_PARAS === '1';
 
@@ -183,7 +198,7 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
   let streamed = Promise.resolve();
   if (STREAM) {
     streamed = a.app.evaluate(
-      ({ BrowserWindow }, { id, text, ms, still, flagged, newEvery }) =>
+      ({ BrowserWindow }, { id, text, ms, still, flagged, newEvery, step, ghosts, visible }) =>
         new Promise<void>((done) => {
           const wc = BrowserWindow.getAllWindows()[0].webContents;
           const t0 = Date.now();
@@ -196,9 +211,16 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
               seq += 1;
               n = 0;
             }
-            n += 12;
+            n += step;
             let body = '';
             while (body.length < n) body += text;
+            for (let g = 0; g < ghosts; g += 1) {
+              wc.send('sessions:feedBlock', {
+                sessionId: `ghost-${g}`,
+                block: { seq: 900_000, kind: 'assistant', text: body.slice(0, n), streaming: true },
+              });
+            }
+            if (!visible) return void (Date.now() - t0 > ms && (clearInterval(timer), done()));
             wc.send('sessions:feedBlock', {
               sessionId: id,
               // `still`: the same text in a new object — React re-renders, the DOM does not change
@@ -222,6 +244,9 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
         still: process.env.PROBE_STILL === '1',
         flagged: FLAGGED,
         newEvery: NEW_EVERY,
+        step: STEP,
+        ghosts: GHOSTS,
+        visible: process.env.PROBE_VISIBLE !== '0',
       }
     );
   }
@@ -247,6 +272,14 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
     });
   }
   const before = await metrics();
+  // ...and the MAIN process's CPU over the same window: it is the one that
+  // serialises every block it sends, and the throttle above does not reach it.
+  const mainCpu = (): Promise<number> =>
+    a!.app.evaluate(() => {
+      const u = process.cpuUsage();
+      return (u.user + u.system) / 1000;
+    });
+  const mainBefore = await mainCpu();
   if (PROFILE) {
     await cdp.send('Profiler.enable');
     await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
@@ -261,6 +294,7 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
   }
   await streamed;
   const after = await metrics();
+  const mainSpent = Math.round((await mainCpu()) - mainBefore);
   const spent = (k: string): number => Math.round((after[k] - before[k]) * 1000);
   if (TRACE) {
     const ended = new Promise<void>((done) => cdp.once('Tracing.tracingComplete', () => done()));
@@ -351,6 +385,7 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
       `frames ${rec.frames.length}, p95 gap ${pct(rec.frames, 95)} ms, >50ms: ${slowFrames} | ` +
       `main thread busy ${spent('TaskDuration')} ms = script ${spent('ScriptDuration')} + style ${spent('RecalcStyleDuration')} + ` +
       `layout ${spent('LayoutDuration')} + other (${after.LayoutCount - before.LayoutCount} layouts, ${after.RecalcStyleCount - before.RecalcStyleCount} style passes) | ` +
-      exact
+      exact +
+      ` | main process cpu ${mainSpent} ms`
   );
 });

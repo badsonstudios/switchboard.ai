@@ -67,8 +67,9 @@
 >    note lists three next steps, each worth 100–300 ms of a 12 s window. Nothing is known yet about
 >    Tanner's machine.
 >
->    **SECOND MEASURED STEP, 2026-10-06 (later): that paragraph was wrong, and
->    there WAS a second single cause.** The profile it rests on only sees
+>    **SECOND MEASURED STEP, 2026-10-06 (later), PR #1131 (`f7e647d`), merged,
+>    NOT released: that paragraph was wrong, and there WAS a second single
+>    cause.** The profile it rests on only sees
 >    script. The engine's own timeline over the same window says script is
 >    2,000 ms and LAYOUT is 4,400: every block is skipped on its own (#740),
 >    and a skipped block is cheap, not free — the engine still watches and
@@ -99,6 +100,25 @@
 > (send only the new text of a streaming block), then any other open bug worth
 > doing, said out loud before starting. No new features; #1126 and #1127 wait
 > for "build them". 0.8.115 is cut when he asks.
+>
+> **#1062 — MEASURED IN TIME AND NOT BUILT, 2026-10-06.** It saves megabytes
+> and no milliseconds: eight full-size replies streamed at a window that does
+> not draw them (the whole of what the wire costs) are indistinguishable from
+> an idle window in the renderer and cost the main process ~150 ms of CPU in
+> 12 s. One reply the window DOES draw costs forty times that. The issue is
+> left OPEN with the numbers on it; whether to keep it as a bytes-only tidy
+> is the owner's call. `spike/findings/1013-streaming-hot-path.md`.
+>
+> **WHAT IS LEFT OF THE TYPING LAG, MEASURED:** only a very long reply on a
+> very slow machine. A 16,000-character reply at 6x still stalls (8–13 long
+> tasks, 460–750 ms of 12 s, ~300 frames of 750); at 4x it does not. The cause
+> is the whole reply being parsed and laid out again on every chunk — step 1
+> of the #716 findings note. **PROPOSED NEXT, waiting on the owner's word:**
+> that step, then #1055 and #743. Nothing is claimed.
+>
+> **A flake that reddened a run:** #1002 (`quiet-hours.spec.ts:287`) failed
+> the Windows e2e job on PR #1131 and passed on re-run. Sighting is on the
+> ticket. Second time on Windows CI.
 >
 > **THE OWNER'S ANSWERS, 2026-10-06:** (a) #1088 meant the **history picker**
 > — "the previous conversations clock icon … lists all sorts of crap in
