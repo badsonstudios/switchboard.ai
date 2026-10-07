@@ -117,13 +117,76 @@ export interface DiscoveryScheduleOptions {
   givenUpMs?: number;
 }
 
+/**
+ * Has this root's watch named this path before? (#743)
+ *
+ * Bounded, because a root lives as long as the app does and a set that only
+ * grew would be a slow leak. HOW it is bounded is the whole of this class.
+ *
+ * It used to be one Set, cleared outright past 5,000 names, with a comment that
+ * priced the clear at "one extra immediate sweep per path, not correctness".
+ * That is true of one path and misleading about the root: after a clear EVERY
+ * path looks new, so the next append to each file being written is taken for a
+ * transcript appearing — a ladder reset and a run of fast sweeps apiece, in a
+ * burst, on exactly the trees that are busiest. Since #719 made appends inert
+ * that was the one remaining way for a busy root to keep re-arming the fast
+ * ladder. Reproduced in the suite: 50 files being written, the 5,001st name
+ * arrives, and 50 of 50 next appends earned a sweep.
+ *
+ * HOW CLOSE IT IS, said precisely because the issue and a first draft of this
+ * comment each got it wrong in a different direction. It was filed as
+ * unreachable: the tree measured then had 1,232 entries against the cap. The
+ * owner's `~/.claude/projects` had 4,600 files on 2026-10-07 — nearly four
+ * times as many, five weeks on. But the filter only holds names the watch has
+ * NAMED since the app started, so the size of the tree is a ceiling on it, not
+ * a reading of it: crossing the cap takes 5,000 distinct files written in one
+ * run of the app. Not biting today; no longer out of reach of a long-lived
+ * process on a tree that grows like that one.
+ *
+ * TWO GENERATIONS instead. Names go into the young one; when it is full it
+ * becomes the old one and a fresh young one starts; a name found in the old one
+ * is carried forward. So what is dropped is a name nothing has mentioned for a
+ * whole generation of OTHER names — the coldest files, the ones least likely to
+ * be appended to — and a file that is still being written is never forgotten,
+ * however many others come and go. Forgetting one still costs what the old
+ * comment said, one extra sweep; it just can no longer be all of them at once.
+ *
+ * At most twice `cap` names are held.
+ */
+export class NoveltyFilter {
+  private young = new Set<string>();
+  private old = new Set<string>();
+
+  constructor(private readonly cap: number = 5000) {}
+
+  /** True the first time a name is offered, and it is remembered from then on. */
+  isNew(name: string): boolean {
+    if (this.young.has(name)) return false;
+    const known = this.old.has(name);
+    if (this.young.size >= this.cap) {
+      this.old = this.young;
+      this.young = new Set();
+    }
+    // a name from the old generation is carried forward: it is still in use
+    this.young.add(name);
+    return !known;
+  }
+
+  /** how many names are held — for tests and the diagnostic view */
+  get size(): number {
+    let n = this.young.size;
+    for (const name of this.old) if (!this.young.has(name)) n += 1;
+    return n;
+  }
+}
+
 interface RootState {
   /** OUR OWN state changed (a session started, bound, reset, learned its native
    *  id). Immediate: no filesystem event describes these, and they are rare. */
   dirty: boolean;
-  /** every path this root's watch has ever named. A path we have not seen is a
-   *  file APPEARING, which is the only thing discovery cares about. */
-  seenNames: Set<string>;
+  /** the paths this root's watch has named. A path we have not seen is a file
+   *  APPEARING, which is the only thing discovery cares about. */
+  seenNames: NoveltyFilter;
   lastSweepAt: number;
   backoffIdx: number;
   handle: WatchHandle | null;
@@ -222,7 +285,7 @@ export class DiscoverySchedule {
     if (!st) {
       st = {
         dirty: true,
-        seenNames: new Set(),
+        seenNames: new NoveltyFilter(),
         lastSweepAt: 0,
         backoffIdx: 0,
         handle: null,
@@ -567,12 +630,7 @@ export class DiscoverySchedule {
     // drain's business (#719). Counted in `events` — the diagnostic and the
     // tests both read it — and otherwise ignored: it does not dirty the root,
     // it does not reset the ladder, and it does not shorten the interval.
-    if (st.seenNames.has(name)) return;
-    // Unbounded growth would be a slow leak on a long-lived root; the set is
-    // only a novelty filter, so forgetting everything costs one extra
-    // immediate sweep per path, not correctness.
-    if (st.seenNames.size > 5000) st.seenNames.clear();
-    st.seenNames.add(name);
+    if (!st.seenNames.isNew(name)) return;
     // A transcript APPEARING is the one thing that can still rescue a root
     // every session gave up on, so it buys the fast ladder back (#129) — the
     // known-path branch above deliberately does not.

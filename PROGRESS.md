@@ -127,8 +127,7 @@
 > alternation is the only comparison to trust here. Both issues STILL stay open
 > for the laptop.
 >
-> **#1055 — DONE 2026-10-07 on `feature/1055-attribution-card-id`** (the PR
-> that carries this line). The id that says which session a viewer was opened
+> **#1055 — DONE 2026-10-07, PR #1134 (`daa8cb0`), merged.** The id that says which session a viewer was opened
 > from is a CARD id and is now called `attributionCardId` at every hop that is
 > not on disk. The persisted `params.sessionId` keeps its name on purpose — a
 > rename there is a layout migration whose failure mode is the bug itself —
@@ -138,8 +137,20 @@
 > The Files tab and the in-card Changes tab now each have a chip assertion;
 > both go red with the live id put back. No user-facing change.
 >
-> **NEXT: #743** (the watcher's `seenNames.clear()` at 5,000). Nothing else is
-> claimed. 0.8.115 is cut when the owner asks.
+> **#743 — DONE 2026-10-07 on `feature/743-novelty-filter-generations`** (the
+> PR that carries this line). The watcher's "have I seen this path" filter was
+> cleared outright past 5,000 names, after which every file being written
+> looked new and each next append bought a run of fast sweeps. REPRODUCED in
+> the suite first: 50 of 50. Now two generations, so only the coldest names are
+> dropped and a file still being written never is. Still latent on this
+> machine (it needs 5,000 distinct files written in one run), but the tree it
+> was called unreachable on has gone 1,232 → 4,600 files in five weeks. No
+> user-facing change.
+>
+> **THE OWNER'S LIST IS DONE (2026-10-07):** the long-reply step of #716,
+> #1055, #743. Nothing is claimed. **Waiting on the owner:** whether to cut
+> 0.8.115; the laptop test of #716 / #1013 (three steps, all unreleased);
+> whether #1062 is kept as a bytes-only tidy or dropped.
 >
 > **A flake that reddened a run:** #1002 (`quiet-hours.spec.ts:287`) failed
 > the Windows e2e job on PR #1131 and passed on re-run. Sighting is on the
