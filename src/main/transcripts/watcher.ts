@@ -179,10 +179,15 @@ interface TranscriptHead {
 
 /** Cap on the `readHead` memo. It can only grow with distinct files under the
  *  watched roots, so on a real tree (~1,200 transcripts) it never binds — this
- *  is the same "a novelty filter is not correctness" idiom the discovery
- *  scheduler uses for `seenNames`: forgetting everything costs one re-read per
- *  path, never a wrong answer. It exists so a pathological tree cannot turn a
- *  fix for unbounded work into unbounded memory. */
+ *  is the "a novelty filter is not correctness" idiom the discovery scheduler
+ *  USED to use for `seenNames` (#743 replaced that one with two generations,
+ *  because there a clear re-armed the sweep ladder for every path at once):
+ *  forgetting everything costs one re-read per path, never a wrong answer. It
+ *  is left as a plain clear HERE on purpose — only files created after launch
+ *  are ever read (see `known`), so reaching the cap takes 4,096 new transcripts
+ *  in one run, and what a clear then costs is reads, spread over the sweeps
+ *  that ask, not a burst of sweeps. It exists so a pathological tree cannot
+ *  turn a fix for unbounded work into unbounded memory. */
 const HEAD_CACHE_MAX = 4096;
 
 /**

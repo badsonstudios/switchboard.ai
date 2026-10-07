@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { DiscoverySchedule, DiscoveryScheduleOptions, WatchHandle } from './discovery-scheduler';
+import { DiscoverySchedule, DiscoveryScheduleOptions, NoveltyFilter, WatchHandle } from './discovery-scheduler';
 import { LogSink, createLogger } from '../log/logger';
 import { tempDir } from '../../test-temp-dirs';
 
@@ -64,6 +64,102 @@ describe('DiscoverySchedule — the watch accelerates, the backoff guarantees', 
     expect(s.stats(ROOT)!.backoffMs).toBe(400);
     s.noteSwept(ROOT, 1000);
     expect(s.stats(ROOT)!.backoffMs).toBe(400); // capped, never grows past the ladder
+  });
+
+  // #743. The novelty filter used to be one Set that was CLEARED when it passed
+  // 5,000 names, and the comment beside it priced that at "one extra immediate
+  // sweep per path". True per path. In aggregate it was every path the root had
+  // ever named looking new again at once — so on a tree where the 5,001st
+  // transcript appears, the next append to EACH file already being written
+  // reset the ladder and bought a run of fast sweeps, which is #719's CPU burn
+  // arriving by the one door left open.
+  //
+  // It was filed as unreachable: the tree measured then had 1,232 entries. The
+  // owner's had 4,600 on 2026-10-07. (A ceiling, not a reading — the filter
+  // holds only names written during one run of the app.)
+  describe('NoveltyFilter (#743)', () => {
+    it('says new once, and holds at most two generations', () => {
+      const f = new NoveltyFilter(3);
+      expect(f.isNew('a')).toBe(true);
+      expect(f.isNew('a')).toBe(false);
+      for (const n of ['b', 'c', 'd', 'e', 'f', 'g', 'h', 'i']) f.isNew(n);
+      expect(f.size).toBeLessThanOrEqual(6);
+    });
+
+    it('carries a name forward when it is mentioned again, so it outlives its generation', () => {
+      const f = new NoveltyFilter(3);
+      f.isNew('keep');
+      for (const n of ['b', 'c', 'd']) f.isNew(n); // `keep` is now in the old generation
+      expect(f.isNew('keep')).toBe(false); // ...and this carries it forward
+      for (const n of ['e', 'f', 'g']) f.isNew(n); // the generation it was born in is gone
+      expect(f.isNew('keep')).toBe(false);
+      // while a name nobody mentioned again has been dropped
+      expect(f.isNew('b')).toBe(true);
+    });
+  });
+
+  describe('the novelty filter forgets the coldest names, never all of them (#743)', () => {
+    /** how many of `names` earn a sweep when the watch names them again */
+    const earned = (
+      s: DiscoverySchedule,
+      fire: (filename?: string | null) => void,
+      names: string[]
+    ): number => {
+      let n = 0;
+      let t = 1_000_000;
+      for (const name of names) {
+        s.noteSwept(ROOT, t); // the sweep just happened; nothing is owed
+        fire(name);
+        t += 1;
+        if (s.shouldSweep(ROOT, t)) n += 1;
+      }
+      return n;
+    };
+
+    it('an append to a file it has seen stays an append when the 5,001st name arrives', () => {
+      const { state, factory } = fakeWatch();
+      const s = new DiscoverySchedule({ log: log(), watchFactory: factory, backoffMs: [100, 200, 400] });
+      s.register(ROOT);
+      const active = Array.from({ length: 50 }, (_, i) => `active-${i}.jsonl`);
+      // the busy files are named first, then enough others to cross the cap
+      for (const name of active) state.fire(name);
+      for (let i = 0; i < 5_000; i += 1) state.fire(`other-${i}.jsonl`);
+
+      // BEFORE THE FIX THIS WAS 50 OF 50: every one of them a ladder reset.
+      expect(earned(s, state.fire, active)).toBe(0);
+    });
+
+    it('still calls a path it has never seen new, on either side of the cap', () => {
+      const { state, factory } = fakeWatch();
+      const s = new DiscoverySchedule({ log: log(), watchFactory: factory, backoffMs: [100, 200, 400] });
+      s.register(ROOT);
+      for (let i = 0; i < 5_200; i += 1) state.fire(`other-${i}.jsonl`);
+      expect(earned(s, state.fire, ['brand-new.jsonl'])).toBe(1);
+      // ...and only once
+      expect(earned(s, state.fire, ['brand-new.jsonl'])).toBe(0);
+    });
+
+    it('keeps a name that is still being written, however many others come and go', () => {
+      // touched once per generation, it is carried forward each time
+      const { state, factory } = fakeWatch();
+      const s = new DiscoverySchedule({ log: log(), watchFactory: factory, backoffMs: [100, 200, 400] });
+      s.register(ROOT);
+      state.fire('long-lived.jsonl');
+      for (let gen = 0; gen < 4; gen += 1) {
+        for (let i = 0; i < 4_000; i += 1) state.fire(`gen${gen}-${i}.jsonl`);
+        expect(earned(s, state.fire, ['long-lived.jsonl']), `after generation ${gen}`).toBe(0);
+      }
+    });
+
+    it('does forget a name nothing has touched for two full generations — it is bounded', () => {
+      const { state, factory } = fakeWatch();
+      const s = new DiscoverySchedule({ log: log(), watchFactory: factory, backoffMs: [100, 200, 400] });
+      s.register(ROOT);
+      state.fire('cold.jsonl');
+      for (let i = 0; i < 10_001; i += 1) state.fire(`other-${i}.jsonl`);
+      // one extra sweep for one cold path: the cost the old comment claimed
+      expect(earned(s, state.fire, ['cold.jsonl'])).toBe(1);
+    });
   });
 
   it('a NEW path sweeps on the next tick and resets the ladder', () => {
