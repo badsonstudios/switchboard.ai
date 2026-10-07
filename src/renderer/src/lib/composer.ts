@@ -8,6 +8,7 @@
 import { sessionStore } from '../store/session-store';
 import type { PromptAttachment } from '../../../shared/prompt-attachments';
 import { answered } from '../../../shared/ipc/refusal';
+import type { MentionHandoff } from '../../../shared/mention-prompt';
 
 // ── NO PTY FALLBACK SINCE #952 ──────────────────────────────────────────────
 //
@@ -120,14 +121,32 @@ export async function submitPrompt(
  * `void`-ed key handler holding the one-send-at-a-time guard.
  */
 export type DraftMentions =
-  | { kind: 'send'; prompt: string }
+  | { kind: 'send'; prompt: string; handoffs?: MentionHandoff[] }
   | { kind: 'refused'; refusals: string[] }
   | { kind: 'unresolved'; prompt: string };
 
-export async function resolveDraftMentions(sessionId: string, text: string): Promise<DraftMentions> {
+/**
+ * `selfWritten` (#1126): first ask each session the draft names to write its
+ * own handoff. A DIFFERENT CHANNEL, not a flag on the same one — it starts a
+ * turn in other sessions, and main gates that as a write. It resolves when they
+ * have answered or the wait has given up, so it can take over a minute; every
+ * failure still comes back as one of the three kinds above.
+ */
+export async function resolveDraftMentions(
+  sessionId: string,
+  text: string,
+  opts: { selfWritten?: boolean } = {}
+): Promise<DraftMentions> {
   try {
-    const r = answered(await window.switchboard.sessions.resolveMentions(sessionId, text));
-    if (r && r.ok === true && typeof r.prompt === 'string') return { kind: 'send', prompt: r.prompt };
+    const call = opts.selfWritten
+      ? window.switchboard.sessions.resolveMentionsWithHandoff
+      : window.switchboard.sessions.resolveMentions;
+    const r = answered(await call(sessionId, text));
+    if (r && r.ok === true && typeof r.prompt === 'string') {
+      return Array.isArray(r.handoffs) && r.handoffs.length > 0
+        ? { kind: 'send', prompt: r.prompt, handoffs: r.handoffs }
+        : { kind: 'send', prompt: r.prompt };
+    }
     if (r && r.ok === false && Array.isArray(r.refusals) && r.refusals.length > 0) {
       return { kind: 'refused', refusals: r.refusals };
     }

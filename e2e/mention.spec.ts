@@ -169,4 +169,190 @@ test.describe('@-mention resolution at send (#798)', () => {
     expect(await literalTurn.innerText()).toContain(LITERAL);
     await expect(literalTurn).not.toContainText('Brief on');
   });
+
+  /**
+   * Two idle sessions, Alpha with something said that is readable through the
+   * resolver. The first test above does the same by hand and explains each
+   * wait; this is that setup for the cases below.
+   */
+  async function twoSessions(): Promise<{
+    w: Page;
+    alpha: string;
+    alphaLive: string;
+    betaLive: string;
+    marker: string;
+    resolveFromBeta: (text: string) => Promise<{ ok?: boolean; prompt?: string } | null>;
+  }> {
+    const folderA = tempProjectFolder();
+    const folderB = tempProjectFolder();
+    a = await launchApp({ seedFolder: folderA, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    const alpha = path.basename(folderA);
+    const beta = path.basename(folderB);
+    await expect(w.getByText(alpha).first()).toBeVisible({ timeout: 25_000 });
+    await a.app.evaluate(({ dialog }, dir) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
+    }, folderB);
+    await w.getByRole('button', { name: '+ session' }).click();
+    await expect(w.getByText(beta).first()).toBeVisible({ timeout: 25_000 });
+    await pollAsync(async () => {
+      const s = await sessionStatuses(a);
+      return s.get(alpha) === 'idle' && s.get(beta) === 'idle' ? true : null;
+    }, 'both sessions to be up and idle');
+    const liveIdOf = (title: string): Promise<string> =>
+      pollAsync(async () => {
+        const cards = (await w.evaluate(() => window.switchboard.sessions.cards())) as Array<{
+          title: string;
+          liveId?: string;
+        }>;
+        return cards.find((c) => c.title === title)?.liveId ?? null;
+      }, `a live session for "${title}"`);
+    const alphaLive = await liveIdOf(alpha);
+    const betaLive = await liveIdOf(beta);
+    const marker = `alpha-marker-${Date.now()}`;
+    expect(
+      await w.evaluate(
+        ([id, t]) => window.switchboard.sessions.submitPrompt(id, t),
+        [alphaLive, `remember ${marker}`] as [string, string]
+      )
+    ).toBe(true);
+    const resolveFromBeta = (text: string): Promise<{ ok?: boolean; prompt?: string } | null> =>
+      w.evaluate(
+        ([id, t]) => window.switchboard.sessions.resolveMentions(id, t),
+        [betaLive, text] as [string, string]
+      );
+    await pollAsync(
+      async () => ((await resolveFromBeta(`@${alpha}`))?.prompt?.includes(marker) ? true : null),
+      "alpha's recent output to become readable",
+      40_000
+    );
+    // ...and Alpha's turn is OVER. The handoff switch only asks a session that
+    // is free, and "its output is readable" is true a moment before "done".
+    await pollAsync(async () => ((await sessionStatuses(a)).get(alpha) === 'done' ? true : null), 'alpha to finish its turn');
+    return { w, alpha, alphaLive, betaLive, marker, resolveFromBeta };
+  }
+
+  const handoffSwitch = (w: Page) => w.locator('[data-handoff-switch]');
+  const notice = (w: Page) => w.locator('[data-composer-attach-notice]');
+
+  test('with the switch on, the named session writes its own handoff and it rides at the top of the brief (#1126)', async () => {
+    test.setTimeout(180_000);
+    const { w, alpha, marker, resolveFromBeta } = await twoSessions();
+
+    await box(w).click();
+    await box(w).fill(`pick up @${alpha}'s work from here`);
+    // The switch is offered because the draft names another session, by name…
+    await expect(handoffSwitch(w)).toHaveText(`Ask ${alpha} to write the handoff`);
+    const toggle = handoffSwitch(w).locator('input[type="checkbox"]');
+    // …and it is OFF until asked for.
+    await expect(toggle).not.toBeChecked();
+    await toggle.check();
+    await box(w).press('Enter');
+
+    // THE ROUND TRIP, through the real manager and the real feed: Alpha is sent
+    // the request, the fake answers it (`FAKE-REPLY: <the prompt>`), Alpha's
+    // turn ends, and what it said comes back to Beta's send.
+    const sent = userTurns(w).filter({ hasText: 'work from here' });
+    await expect(sent).toBeVisible({ timeout: 60_000 });
+    await expect(notice(w)).toHaveText(`Sent with the handoff ${alpha} wrote.`);
+    await expect(box(w)).toHaveValue('');
+    // the switch was for that send; the next draft starts with it off
+    await expect(handoffSwitch(w)).toHaveCount(0);
+
+    const context = sent.locator('[data-feed-box="context"]');
+    await context.locator('[data-feed-expander]').click();
+    // the app no longer claims no model wrote it, and says which part one did
+    await expect(sent).not.toContainText('no model wrote it');
+    await expect(sent).toContainText('switchboard has not checked it');
+    await expect(sent).toContainText('Handoff, written by that session');
+    // what Alpha "wrote": the fake's echo of the request it was sent
+    await expect(sent).toContainText('FAKE-REPLY: [switchboard: handoff request]');
+    // ⚠️ AND THE REST OF THE BRIEF IS ALPHA AS IT WAS BEFORE IT WAS ASKED. The
+    // request must not be listed under what Alpha "was asked", nor its answer
+    // quoted a second time under the recent conversation.
+    await expect(sent).toContainText(marker);
+    const text = await sent.innerText();
+    expect(text.split('[switchboard: handoff request]').length - 1).toBe(1);
+
+    // ALPHA REALLY DID TAKE THE TURN — its own conversation now ends with the
+    // request and its answer, which is what a later, ordinary mention reads.
+    await pollAsync(
+      async () =>
+        ((await resolveFromBeta(`@${alpha}`))?.prompt?.includes('[switchboard: handoff request]') ? true : null),
+      "the handoff request to be in alpha's own conversation",
+      30_000
+    );
+  });
+
+  test('a BUSY session is not asked: the prompt goes at once with the usual brief, and the box says so (#1126)', async () => {
+    test.setTimeout(180_000);
+    const { w, alpha, alphaLive, resolveFromBeta } = await twoSessions();
+
+    // Alpha starts a turn that never ends.
+    expect(
+      await w.evaluate(
+        ([id, t]) => window.switchboard.sessions.submitPrompt(id, t),
+        [alphaLive, '!hang'] as [string, string]
+      )
+    ).toBe(true);
+    await pollAsync(async () => ((await sessionStatuses(a)).get(alpha) === 'working' ? true : null), 'alpha to be working');
+
+    await box(w).click();
+    await box(w).fill(`pick up @${alpha}'s work from here`);
+    await handoffSwitch(w).locator('input[type="checkbox"]').check();
+    await box(w).press('Enter');
+
+    const sent = userTurns(w).filter({ hasText: 'work from here' });
+    // AT ONCE — no wait on a session that will never finish
+    await expect(sent).toBeVisible({ timeout: 20_000 });
+    await expect(notice(w)).toHaveText(`${alpha} was busy, so it was not asked. The usual brief went instead.`);
+    const context = sent.locator('[data-feed-box="context"]');
+    await context.locator('[data-feed-expander]').click();
+    // today's brief, exactly: no handoff section, and the app's own claim intact
+    await expect(sent).toContainText('no model wrote it');
+    await expect(sent).not.toContainText('Handoff, written by that session');
+    // …and nothing was sent to Alpha. It is still on the turn it was on.
+    expect((await sessionStatuses(a)).get(alpha)).toBe('working');
+    expect((await resolveFromBeta(`@${alpha}`))?.prompt ?? '').not.toContain('[switchboard: handoff request]');
+  });
+
+  test('a session whose process has ENDED is not asked — and is not left looking busy (#1126)', async () => {
+    // Found in review, and it needs the real manager to see: a session that
+    // exits cleanly keeps `done` on its record and keeps a transport handle
+    // that swallows a send and reports success. So it was "asked", its card
+    // flipped to working for good, and Send waited out the whole ninety seconds
+    // for a turn that could never end.
+    test.setTimeout(180_000);
+    const { w, alpha, alphaLive } = await twoSessions();
+    expect(
+      await w.evaluate(
+        ([id, t]) => window.switchboard.sessions.submitPrompt(id, t),
+        [alphaLive, '!exit 0'] as [string, string]
+      )
+    ).toBe(true);
+    // gone, by the app's own account of it
+    await pollAsync(async () => {
+      const cards = (await w.evaluate(() => window.switchboard.sessions.summaries())) as Array<{
+        name: string;
+        exited: boolean;
+      }>;
+      return cards.find((c) => c.name === alpha)?.exited ? true : null;
+    }, 'alpha to have exited');
+    const statusBefore = (await sessionStatuses(a)).get(alpha);
+
+    await box(w).click();
+    await box(w).fill(`pick up @${alpha}'s work from here`);
+    await handoffSwitch(w).locator('input[type="checkbox"]').check();
+    await box(w).press('Enter');
+
+    const sent = userTurns(w).filter({ hasText: 'work from here' });
+    // AT ONCE — well inside the ninety seconds it used to hang for
+    await expect(sent).toBeVisible({ timeout: 20_000 });
+    await expect(notice(w)).toHaveText(
+      `${alpha} is not running, so there is no handoff from it. The usual brief went instead.`
+    );
+    // …and its card says what it said before. It was not flipped to "working".
+    expect((await sessionStatuses(a)).get(alpha)).toBe(statusBefore);
+    expect(statusBefore).not.toBe('working');
+  });
 });

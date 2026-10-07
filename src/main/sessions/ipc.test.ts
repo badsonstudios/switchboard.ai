@@ -166,6 +166,8 @@ function harness(
     throwOnSpawn?: boolean;
     /** the composer's `@Name` resolver (P2-E11-08); absent = a wiring without one */
     resolveMentions?: SessionIpcDeps['resolveMentions'];
+    /** the composer's Cancel while it waits on a handoff (#1126) */
+    cancelHandoff?: SessionIpcDeps['cancelHandoff'];
     contextOffer?: SessionIpcDeps['contextOffer'];
     /** §5.5 Level 3 (P2-E11-12). Defaults OFF, like the shipped flag — a
      *  harness that defaulted it on would let every "fork is refused when the
@@ -653,6 +655,7 @@ function harness(
     /** #539 — the repairs the app announces on screen rather than only logging */
     onHistoryRepair: (r: unknown) => historyRepairs.push(r),
     resolveMentions: opts.resolveMentions,
+    cancelHandoff: opts.cancelHandoff,
     contextOffer: opts.contextOffer,
   } as unknown as SessionIpcDeps;
 
@@ -1617,6 +1620,94 @@ describe('registerSessionIpc — @ session summaries (P2-E11-07)', () => {
   it('resolveMentions is gated on TRANSCRIPTS — it returns what another session said, not just its name', () => {
     const caps = fs.readFileSync(path.join(__dirname, '../../shared/ipc/capabilities.ts'), 'utf8');
     expect(caps).toContain("'sessions:resolveMentions': 'transcripts.read'");
+  });
+
+  // ── a session writing its own handoff (#1126) ────────────────────────────
+  it('ONLY the handoff channel asks for a self-written handoff — the plain one never does', () => {
+    // The whole reason there are two channels: the first READS, the second
+    // starts a turn in other sessions. A flag leaking across would let a
+    // surface that may only read transcripts spend another session's usage.
+    const seen: Array<[string, unknown]> = [];
+    const h = harness(undefined, dir, {
+      resolveMentions: (text, _own, opts) => {
+        seen.push([text, opts]);
+        return { ok: true, prompt: text };
+      },
+    });
+    h.call('sessions:resolveMentions', 'live-b', 'ask @X');
+    h.call('sessions:resolveMentionsWithHandoff', 'live-b', 'ask @X');
+    expect(seen).toEqual([
+      ['ask @X', undefined],
+      ['ask @X', { selfWritten: true }],
+    ]);
+  });
+
+  it('the plain channel cannot be TALKED into it by an extra argument', () => {
+    const seen: unknown[] = [];
+    const h = harness(undefined, dir, {
+      resolveMentions: (text, _own, opts) => {
+        seen.push(opts);
+        return { ok: true, prompt: text };
+      },
+    });
+    h.call('sessions:resolveMentions', 'live-b', 'ask @X', { selfWritten: true });
+    expect(seen).toEqual([undefined]);
+  });
+
+  it('the handoff channel refuses a malformed call without asking anybody, and turns a throw into null', () => {
+    const calls: unknown[] = [];
+    const h = harness(undefined, dir, {
+      resolveMentions: (text) => {
+        calls.push(text);
+        return { ok: true, prompt: text };
+      },
+    });
+    expect(h.call('sessions:resolveMentionsWithHandoff', 42, 'ask @X')).toBeNull();
+    expect(h.call('sessions:resolveMentionsWithHandoff', 'live-b', undefined)).toBeNull();
+    expect(calls).toEqual([]);
+
+    const throwing = harness(undefined, dir, {
+      resolveMentions: () => {
+        throw new Error('the query core blew up');
+      },
+    });
+    expect(throwing.call('sessions:resolveMentionsWithHandoff', 'live-b', 'ask @X')).toBeNull();
+  });
+
+  it('the handoff channel carries how each handoff came out back to the composer', () => {
+    const answer = { ok: true as const, prompt: 'P', handoffs: [{ name: 'X', outcome: 'busy' as const }] };
+    const h = harness(undefined, dir, { resolveMentions: () => answer });
+    expect(h.call('sessions:resolveMentionsWithHandoff', 'live-b', 'ask @X')).toEqual(answer);
+  });
+
+  it('cancelHandoff says whether there was anything to stop waiting for, and never throws', () => {
+    const asked: string[] = [];
+    const h = harness(undefined, dir, {
+      cancelHandoff: (own) => {
+        asked.push(own);
+        return own === 'live-b' ? 2 : 0;
+      },
+    });
+    expect(h.call('sessions:cancelHandoff', 'live-b')).toBe(true);
+    expect(h.call('sessions:cancelHandoff', 'live-z')).toBe(false);
+    expect(asked).toEqual(['live-b', 'live-z']);
+    // malformed: refused at the boundary, the canceller never asked
+    expect(h.call('sessions:cancelHandoff', 42)).toBeNull();
+    expect(asked).toHaveLength(2);
+
+    expect(harness(undefined, dir, {}).call('sessions:cancelHandoff', 'live-b')).toBe(false);
+    const throwing = harness(undefined, dir, {
+      cancelHandoff: () => {
+        throw new Error('gone');
+      },
+    });
+    expect(throwing.call('sessions:cancelHandoff', 'live-b')).toBe(false);
+  });
+
+  it('both handoff channels are WRITES — they start work in other sessions', () => {
+    const caps = fs.readFileSync(path.join(__dirname, '../../shared/ipc/capabilities.ts'), 'utf8');
+    expect(caps).toContain("'sessions:resolveMentionsWithHandoff': 'sessions.write'");
+    expect(caps).toContain("'sessions:cancelHandoff': 'sessions.write'");
   });
 
   // ── the context chip's drop dialog (P2-E11-10, §5.5) ──────────────────────

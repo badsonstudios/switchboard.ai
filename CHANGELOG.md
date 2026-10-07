@@ -96,6 +96,17 @@ on the floor, and say so in your PR.
 
 ## 0.8.116 — unreleased
 
+### Added
+
+- **A session can write its own handoff.** When your message names another
+  session with `@Name`, a switch appears under the prompt box: **Ask Name to
+  write the handoff**. Turn it on and that session is asked to sum up where it
+  is, in its own words, and your message is sent with that summary at the top
+  of the usual brief. It uses a turn in the other session and you wait for it,
+  usually well under a minute, with a **Cancel** if you change your mind. A
+  session that is busy or waiting on you is never interrupted: your message
+  goes at once with the usual brief, and a line under the box says why.
+
 ## 0.8.115 — 2026-10-07
 
 ### Fixed

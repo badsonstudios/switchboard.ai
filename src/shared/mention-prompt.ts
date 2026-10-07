@@ -59,7 +59,33 @@ export type MentionAnswer =
   | { kind: 'own' }
   | { kind: 'ambiguous'; reason: string };
 
-export type MentionPrompt = { ok: true; prompt: string } | { ok: false; refusals: string[] };
+export type MentionPrompt =
+  | { ok: true; prompt: string; handoffs?: MentionHandoff[] }
+  | { ok: false; refusals: string[] };
+
+/**
+ * Why a session the user asked to write its own handoff did not (#1126). The
+ * send still went, with the app's own brief — these are what the composer says
+ * afterwards. `main/sessions/handoff-request.ts` documents each.
+ */
+export type HandoffFallback =
+  | 'busy'
+  | 'waiting'
+  | 'not-running'
+  | 'unreachable'
+  | 'timeout'
+  | 'asked'
+  | 'empty'
+  | 'ended'
+  | 'cancelled';
+
+/** One session the draft named, and how its handoff came out. */
+export interface MentionHandoff {
+  /** the session's own name, as the brief heads it */
+  name: string;
+  /** `written`, or why the app's brief went instead */
+  outcome: 'written' | HandoffFallback;
+}
 
 /**
  * How much injected context ONE prompt may carry, across every session

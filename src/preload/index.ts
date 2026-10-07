@@ -369,6 +369,16 @@ const api = {
     resolveMentions: (liveId: string, text: string): Promise<MentionPrompt | null> =>
       ipcRenderer.invoke('sessions:resolveMentions', liveId, text),
     /**
+     * The same, after ASKING each named session to write its own handoff
+     * (#1126). Slow on purpose — it resolves when they have answered, or after
+     * the wait gives up — and `handoffs` on the answer says how each came out.
+     */
+    resolveMentionsWithHandoff: (liveId: string, text: string): Promise<MentionPrompt | null> =>
+      ipcRenderer.invoke('sessions:resolveMentionsWithHandoff', liveId, text),
+    /** stop waiting for the handoffs this session asked for; the send then does not go */
+    cancelHandoff: (liveId: string): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:cancelHandoff', liveId),
+    /**
      * What a dropped context chip is offering (P2-E11-10, §5.5): the three
      * fidelities, the size of each, and the text each would inject — all from
      * one build of one package, so the number shown and the block delivered

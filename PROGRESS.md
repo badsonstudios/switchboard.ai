@@ -23,14 +23,34 @@
 >
 > # 🚧 NOW — 2026-10-07: **#1126, then #1127 — the owner: "we can do 1126 and 1127 next".**
 >
-> **#1126 (a session writes its own `@Name` handoff) — IN FLIGHT.** The owner
-> chose, when asked: **a switch in the prompt box** that appears when the draft
-> names another session ("Ask Name to write the handoff", off by default; Send
-> waits while it writes, with a Cancel); and **when the named session is busy
-> or waiting on an answer, send at once with today's app-built brief and say
-> so** — never interrupt it.
+> **#1126 (a session writes its own `@Name` handoff) — DONE 2026-10-07 on
+> `feature/1126-self-written-handoff`** (the PR that carries this line; NOT
+> released). The owner chose, when asked: **a switch in the prompt box** that
+> appears when the draft names another session ("Ask Name to write the
+> handoff", off by default; Send waits while it writes, with a Cancel); and
+> **when the named session is busy or waiting on an answer, send at once with
+> today's app-built brief and say so** — never interrupt it.
 >
-> **#1127 ("stop it and open that conversation" on a busy history pick) — next.**
+> What was built: main asks each named session with a fixed request, waits up
+> to 90 s for its turn to end, lifts that turn's prose and puts it at the top
+> of the brief's fenced body; the brief's head stops saying "no model wrote
+> it". A channel of its own with a WRITE capability. Cancel does not send.
+> **Review found one blocker before it shipped** — a session whose process had
+> ended still read `done`, so it was "asked", its card flipped to working for
+> good and Send hung for 90 s — and six more, all fixed: the lifted text is
+> now tied to the turn it was asked in; Cancel is immediate with two readers;
+> the asking session's name cannot close its own quotation; the wait survives
+> a remounted composer; a session that was asked but did not deliver is
+> described as it was before the request; a reply cannot print the brief's
+> end-of-data marker.
+>
+> ⚠️ **Not judged by anything automated: whether a real session's handoff is
+> any good, and whether it obeys "without using any tools".** The fake echoes
+> the request. Top row of the tracker's Untested table. **Known, left:** the
+> request and its reply stay in the named session's conversation, so a later
+> ordinary `@Name` brief quotes them as something it was asked.
+>
+> **#1127 ("stop it and open that conversation" on a busy history pick) — NEXT, not started.**
 > Cancel must be the default.
 
 > # ✅ 2026-10-06: **the bugs-first list — DONE, and released in v0.8.115**

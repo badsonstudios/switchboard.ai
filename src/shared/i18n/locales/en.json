@@ -1035,6 +1035,23 @@
     "mention": {
       "refused": "Not sent, and nothing has been cleared. {reasons}",
       "lookupFailed": "Sent as you typed it. switchboard.ai couldn't look up the sessions you mentioned, so none of their recent work went with it."
+    },
+    "handoff": {
+      "askOne": "Ask {name} to write the handoff",
+      "askMany": "Ask the sessions you named to write their handoffs",
+      "askHint": "Off: switchboard.ai sends its own brief on that session, built from its record. On: that session is asked to sum up where it is, in its own words. It uses a turn there, and Send waits for it for up to a minute and a half. A session that is busy is not interrupted.",
+      "waitingOne": "Waiting for {name} to write its handoff…",
+      "waitingMany": "Waiting for the sessions you named to write their handoffs…",
+      "cancel": "Cancel",
+      "cancelHint": "Stop waiting. Your prompt is not sent and stays in the box. The session that was asked finishes writing anyway.",
+      "cancelled": "Not sent, and nothing has been cleared. You stopped waiting; whatever was asked for a handoff will still finish writing it.",
+      "written": "Sent with the handoff {name} wrote.",
+      "busy": "{name} was busy, so it was not asked. The usual brief went instead.",
+      "waiting": "{name} is waiting on an answer from you, so it was not asked. The usual brief went instead.",
+      "gone": "{name} is not running, so there is no handoff from it. The usual brief went instead.",
+      "timeout": "{name} had not finished after a minute and a half. The usual brief went instead.",
+      "asked": "{name} stopped to ask something instead of writing the handoff — look at its card. The usual brief went instead.",
+      "empty": "{name} finished without writing anything. The usual brief went instead."
     }
   },
   "statusbar": {

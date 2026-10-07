@@ -471,8 +471,26 @@ Autocomplete popup lists live sessions by name/color.
 > pass for the app's — and a brief is capped at 18,000 characters with fixed
 > shares for the asked-for sections, because a block that does not fit the
 > prompt's 40k is left out whole and an uncapped brief would have injected
-> nothing on exactly the long sessions it is for. *Not built:* asking the source session to write its own handoff — the
+> nothing on exactly the long sessions it is for. *Not built* at the time: asking the source session to write its own handoff — the
 > one option where a model authors the text, and the owner's call.
+>
+> **Built since (#1126, 2026-10-07), on the owner's yes** (*"I'm fine with the
+> session writing its own handoff with Claude"*). A switch under the composer,
+> shown only while the draft names another session and off by default, sends
+> through a channel of its own (`sessions:resolveMentionsWithHandoff`, a WRITE
+> capability — it starts a turn in other sessions, and the read-only mention
+> channel must not be able to). Main asks each named session with a fixed
+> request (`handoff-request.ts`), waits for its turn to end (90 s), and lifts
+> its last turn exactly as Dispatch's round-trip does. The text goes at the top
+> of the brief's FENCED body, capped at 6,000 characters, and the head stops
+> saying "no model wrote it" and says which part one did. **A session that is
+> working, or waiting on the user, is never asked** (the owner's answer when
+> asked) — and that, a timeout, a turn that ends on a question, a crash and a
+> Cancel all send the ordinary brief and say so; Cancel alone does not send.
+> The rest of the brief is read BEFORE the session is asked, so the request
+> and its answer are not quoted back under "Recent conversation". §5.4 is not
+> engaged: the text submitted is the app's own, and the user's Send is the
+> keypress. Nothing on the bus can reach it.
 >
 > **As built (#797, #798, 2026-09-15).** The popup lists `summariesFrom` — the
 > bus's own list. At send, a draft that may mention a session goes to main

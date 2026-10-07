@@ -44,6 +44,16 @@ import {
 } from '../lib/composer-attachment-draft';
 import { interruptSession, resolveDraftMentions, submitPrompt } from '../lib/composer';
 import { mayMention } from '../../../shared/mention-finder';
+import {
+  beginHandoffWait,
+  cancelHandoffWait,
+  endHandoffWait,
+  handoffNotice,
+  handoffWaitOf,
+  handoffWasCancelled,
+  namedOtherSessions,
+  subscribeHandoffWaits,
+} from '../lib/handoff-switch';
 import { interceptSlash } from '../lib/slash-intercept';
 import { sessionStore } from '../store/session-store';
 import { ComposerAttachments } from './ComposerAttachments';
@@ -1992,6 +2002,15 @@ const COMPLETION_ANNOUNCE_STYLE: React.CSSProperties = {
   clipPath: 'inset(50%)',
 };
 
+/** Visually hidden, still read out — the handoff switch's hint and its status (#1126). */
+const HANDOFF_SILENT: React.CSSProperties = {
+  position: 'absolute',
+  inlineSize: 1,
+  blockSize: 1,
+  overflow: 'hidden',
+  clipPath: 'inset(50%)',
+};
+
 /**
  * Prompt composer (P2-E10-02, Â§5.10): an INPUT ROUTE to the real CLI â€” the
  * text is written to the session's PTY exactly as if typed in the terminal
@@ -2142,6 +2161,52 @@ function Composer({
   );
   /** one line of explanation for a paste that produced nothing, or null */
   const [attachNotice, setAttachNotice] = React.useState<string | null>(null);
+
+  // "Ask it to write the handoff" (#1126). A draft that names ANOTHER session
+  // sends a brief on it, built by the app from that session's record. This
+  // switch asks the session to write one itself instead — a turn of its usage
+  // and a wait here, which is why it is a switch, off by default, and not what
+  // a mention does. The owner chose the shape (2026-10-07): in the prompt box,
+  // where the mention is typed; and a busy session is never interrupted.
+  //
+  // WHO THE DRAFT NAMES needs the session list, which the `@` popup only holds
+  // while it is open. `mentionable` is that list KEPT for as long as the draft
+  // could hold a mention (`mayMention` — an `@` at a word boundary): the popup
+  // fills it every time it fetches its own, and it is fetched separately only
+  // for a draft that got its `@` without the popup ever opening (a paste, a
+  // restored draft). The effect is below, beside the popup's. A draft with no
+  // such `@` fetches nothing.
+  const [mentionable, setMentionable] = React.useState<SessionSummary[] | null>(null);
+  const [askHandoff, setAskHandoff] = React.useState(false);
+  // A send that is out, waiting on other sessions to write. In a MODULE store
+  // keyed by card, beside the one-send-at-a-time guard it rides with — see
+  // `HandoffWait` for what went wrong while it was a `useState` here.
+  const handoffKey = cardId ?? sessionId;
+  const handoffWait = React.useSyncExternalStore(subscribeHandoffWaits, () => handoffWaitOf(handoffKey));
+  const couldMention = !draft.startsWith('/') && mayMention(draft);
+  const namedSessions = React.useMemo(
+    () => (mentionable ? namedOtherSessions(draft, mentionable, sessionId) : []),
+    [draft, mentionable, sessionId]
+  );
+  const namesSomeone = namedSessions.length > 0;
+  const handoffHintId = React.useId();
+  // The switch is about THIS draft's mentions. Take the last one out and it is
+  // off again — otherwise it would be found already on, out of sight, the next
+  // time a name was typed.
+  React.useEffect(() => {
+    if (!namesSomeone) setAskHandoff(false);
+  }, [namesSomeone]);
+  const stopHandoffWait = React.useCallback((): void => {
+    const wait = cancelHandoffWait(handoffKey);
+    if (!wait) return;
+    // Under the id the SEND was made with, not the one this card has now: a
+    // restarted card has a new live id, and main keyed the wait on the old one.
+    // Main answers the waiting call at once and the send's own callback then
+    // declines to send.
+    void window.switchboard.sessions.cancelHandoff(wait.sessionId).catch(() => {});
+    // the button is about to unmount; the draft it left alone is where to be
+    box.current?.focus();
+  }, [handoffKey]);
 
   // Messages other sessions sent this card (P2-E11-05, §5.4) — HELD, never
   // sent, until the user presses Enter below. A module-level store keyed by
@@ -2779,7 +2844,12 @@ function Composer({
     void window.switchboard.sessions
       .summaries()
       .then((list) => {
-        if (!cancelled) setSummaries(answered(list) ?? []);
+        if (cancelled) return;
+        const got = answered(list) ?? [];
+        setSummaries(got);
+        // ...and the handoff switch reads the same list (#1126), kept after the
+        // popup closes — ONE fetch per opening still, not one each.
+        setMentionable(got);
       })
       // A REJECTED invoke is an answer too (review, #797): left at `null`, the
       // in-flight guard below would swallow Enter and Tab for as long as the
@@ -2791,6 +2861,33 @@ function Composer({
       cancelled = true;
     };
   }, [mentionWanted]);
+  // The handoff switch's own copy of the list (#1126), for the one case the
+  // popup above does not cover: a draft that could hold a mention while the
+  // popup is CLOSED and never supplied one — pasted text, a draft restored on
+  // mount. `haveMentionable` is read, not depended on: this must not re-run
+  // because its own answer arrived.
+  const haveMentionable = React.useRef(false);
+  haveMentionable.current = mentionable !== null;
+  React.useEffect(() => {
+    if (!couldMention) {
+      setMentionable(null);
+      return;
+    }
+    if (mentionWanted || haveMentionable.current) return;
+    let cancelled = false;
+    void window.switchboard.sessions
+      .summaries()
+      .then((list) => {
+        if (!cancelled) setMentionable(answered(list) ?? []);
+      })
+      // no list, no switch: the send itself still resolves in main, as it always has
+      .catch(() => {
+        if (!cancelled) setMentionable([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [couldMention, mentionWanted]);
   React.useEffect(() => {
     setSelected(0);
     setNavigated(false);
@@ -2968,6 +3065,10 @@ function Composer({
   React.useLayoutEffect(remeasure, [
     attachments,
     attachNotice,
+    // the handoff switch (#1126) is one more line in the same strip
+    namesSomeone,
+    handoffWait,
+    namedSessions.length,
     dockedChrome,
     confirmClear,
     remeasure,
@@ -3244,17 +3345,43 @@ function Composer({
     // and say that the context did not go.
     if (!text.startsWith('/') && mayMention(text)) {
       const done = beginSend(cardId);
-      void resolveDraftMentions(sessionId, text).then((r) => {
+      // WITH A HANDOFF (#1126) this await is long — each named session is asked
+      // to write, and the send waits for them. The one-send-at-a-time guard is
+      // held for all of it, which is right: a second Enter must not send the
+      // same draft without the handoff the first one is waiting on.
+      const selfWritten = askHandoff && namesSomeone;
+      const wait = selfWritten ? beginHandoffWait(handoffKey, sessionId, namedSessions) : undefined;
+      const settled = (): void => {
         done();
+        if (wait) endHandoffWait(handoffKey, wait);
+      };
+      void resolveDraftMentions(sessionId, text, { selfWritten }).then((r) => {
+        settled();
+        // CANCEL MEANS NOT SENT. The user asked for a handoff and then stopped
+        // waiting for it; sending without it would be doing the thing they
+        // had switched away from. The draft is untouched — and the switch is
+        // left ON, so Enter again asks again (and joins the handoff that
+        // session is by now part-way through writing).
+        if (handoffWasCancelled(wait, r.kind === 'send' ? r.handoffs : undefined)) {
+          setAttachNotice(t('feedView.handoff.cancelled'));
+          return;
+        }
         if (r.kind === 'refused') {
           setAttachNotice(t('feedView.mention.refused', { reasons: r.refusals.join(' ') }));
           return;
         }
+        // The switch is NOT turned off here. It goes off when the draft that
+        // named somebody is cleared — which happens only once the prompt has
+        // actually gone — so a send main then declines leaves it as it was.
         dispatch(
           withForwarded(forwarding, r.prompt),
-          r.kind === 'unresolved' ? t('feedView.mention.lookupFailed') : null
+          r.kind === 'unresolved'
+            ? t('feedView.mention.lookupFailed')
+            : r.kind === 'send'
+              ? handoffNotice(t, r.handoffs)
+              : null
         );
-      }, done);
+      }, settled);
       box.current?.focus();
       return;
     }
@@ -3546,6 +3673,85 @@ function Composer({
         notice={attachNotice}
         onRemove={removeAttachment}
       />
+      {/* "Ask it to write the handoff" (#1126) — only while the draft names
+          another session, and replaced by the wait (with its Cancel) while a
+          send is out. A real checkbox in a real label: it is a setting for
+          this one send, the control that says so natively, and a click on the
+          words works.
+
+          THE ANNOUNCEMENT IS A SEPARATE, ALWAYS-MOUNTED REGION (review). A
+          `role="status"` that is mounted already holding its text is very often
+          not announced at all — the same reason `ComposerAttachments` mounts
+          its notice region empty — and one that wraps the Cancel button reads
+          the button out as part of the message. So the words a screen reader
+          hears live in a hidden region that is always there and merely changes,
+          and the line a sighted user reads is marked as the same thing said
+          twice. */}
+      <span role="status" data-handoff-status="" style={HANDOFF_SILENT}>
+        {handoffWait
+          ? handoffWait.names.length === 1
+            ? t('feedView.handoff.waitingOne', { name: handoffWait.names[0] })
+            : t('feedView.handoff.waitingMany')
+          : ''}
+      </span>
+      {handoffWait ? (
+        <div
+          data-handoff-wait=""
+          style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, color: 'var(--muted)' }}
+        >
+          <span aria-hidden style={{ minInlineSize: 0 }}>
+            {handoffWait.names.length === 1
+              ? t('feedView.handoff.waitingOne', { name: handoffWait.names[0] })
+              : t('feedView.handoff.waitingMany')}
+          </span>
+          <button
+            type="button"
+            className={CHIP_CLASS}
+            data-handoff-cancel=""
+            title={t('feedView.handoff.cancelHint')}
+            onClick={stopHandoffWait}
+          >
+            {t('feedView.handoff.cancel')}
+          </button>
+        </div>
+      ) : namesSomeone ? (
+        <>
+        <label
+          data-handoff-switch=""
+          title={t('feedView.handoff.askHint')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 10,
+            color: 'var(--muted)',
+            cursor: 'pointer',
+            inlineSize: 'fit-content',
+            maxInlineSize: '100%',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={askHandoff}
+            onChange={(e) => setAskHandoff(e.currentTarget.checked)}
+            // what it costs, for somebody who cannot hover for the tooltip
+            aria-describedby={handoffHintId}
+            style={{ margin: 0 }}
+          />
+          <span style={{ minInlineSize: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {namedSessions.length === 1
+              ? t('feedView.handoff.askOne', { name: namedSessions[0] })
+              : t('feedView.handoff.askMany')}
+          </span>
+        </label>
+        {/* OUTSIDE the label, or it would be part of the checkbox's NAME: a
+            screen reader would announce the whole paragraph as what the box is
+            called, every time, instead of offering it as its description. */}
+        <span id={handoffHintId} style={HANDOFF_SILENT}>
+          {t('feedView.handoff.askHint')}
+        </span>
+        </>
+      ) : null}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
       <textarea
         ref={box}

@@ -275,7 +275,19 @@ export interface SessionIpcDeps {
    * `main/index.ts` hands it the bus's own `SessionQueries` and `renderOutput`.
    * Optional: a wiring without one sends every draft exactly as typed.
    */
-  resolveMentions?: (text: string, ownSessionId: string) => MentionPrompt | Promise<MentionPrompt>;
+  resolveMentions?: (
+    text: string,
+    ownSessionId: string,
+    opts?: { selfWritten?: boolean }
+  ) => MentionPrompt | Promise<MentionPrompt>;
+  /** stop waiting for the handoffs a session asked for (#1126); how many it was waiting on */
+  cancelHandoff?: (ownSessionId: string) => number;
+  /**
+   * Was the turn that just ended in this session the app's own handoff request
+   * (#1126)? Asked ONCE per finished turn. Such a turn is not evidence that the
+   * work moved on, so it must not rename the card.
+   */
+  handoffTurnEnded?: (liveId: string) => boolean;
 }
 
 /**
@@ -892,7 +904,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // A finished turn is the one moment the work has demonstrably moved on
     // (#758). `done` is `transition()`'s answer to both stream `result` and the
     // `Stop` hook, so this fires once per real turn on either transport.
-    if (change.to === 'done') maybeAiLabel(change.sessionId);
+    //
+    // ...unless the turn was the app's own request for a handoff (#1126): then
+    // nothing moved on but a summary being written, and a label generated from
+    // it would rename the card "Writing a handoff". Asked on every `done`, so
+    // the answer is consumed even when labels are off.
+    if (change.to === 'done' && deps.handoffTurnEnded?.(change.sessionId) !== true) {
+      maybeAiLabel(change.sessionId);
+    }
     // A DISPATCHED session finishing is the round-trip (P2-E13-05). Same signal
     // as the label above and for the same reason — `done` is `transition()`'s
     // answer to both the stream `result` and the `Stop` hook — and `completed`
@@ -2544,28 +2563,51 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     }
   });
 
-  broker.handle('sessions:resolveMentions', (_e, sessionId: unknown, text: unknown) => {
-    if (typeof sessionId !== 'string' || typeof text !== 'string') {
-      return refuse('sessions:resolveMentions', 'sessionId and text are required');
-    }
-    if (!deps.resolveMentions) return { ok: true, prompt: text } satisfies MentionPrompt;
-    const failed = (err: unknown): null => {
-      log.warn('sessions:resolveMentions failed; the draft will be sent as typed', {
-        sessionId,
-        error: errorText(err),
-      });
-      return null;
+  // ONE handler for the two channels (#1126): the plain send, and the send that
+  // first asks each named session to write its own handoff. They differ in one
+  // flag and in the capability each channel needs — see `capabilities.ts` for
+  // why the second is a channel of its own rather than an argument to the first.
+  const resolveMentionsOn =
+    (channel: 'sessions:resolveMentions' | 'sessions:resolveMentionsWithHandoff', selfWritten: boolean) =>
+    (_e: unknown, sessionId: unknown, text: unknown) => {
+      if (typeof sessionId !== 'string' || typeof text !== 'string') {
+        return refuse(channel, 'sessionId and text are required');
+      }
+      if (!deps.resolveMentions) return { ok: true, prompt: text } satisfies MentionPrompt;
+      const failed = (err: unknown): null => {
+        log.warn(`${channel} failed; the draft will be sent as typed`, {
+          sessionId,
+          error: errorText(err),
+        });
+        return null;
+      };
+      try {
+        // A wiring may answer LATER (#1092: the real one looks up each mentioned
+        // folder's git state first; #1126: it may wait on another session's
+        // turn). A rejection is the same fail-open as a throw.
+        const answer = deps.resolveMentions(text, sessionId, selfWritten ? { selfWritten: true } : undefined);
+        // any thenable, not only a native Promise
+        return typeof (answer as { then?: unknown } | null)?.then === 'function'
+          ? Promise.resolve(answer).catch(failed)
+          : answer;
+      } catch (err) {
+        return failed(err);
+      }
     };
+  broker.handle('sessions:resolveMentions', resolveMentionsOn('sessions:resolveMentions', false));
+  broker.handle(
+    'sessions:resolveMentionsWithHandoff',
+    resolveMentionsOn('sessions:resolveMentionsWithHandoff', true)
+  );
+  // The composer's Cancel while it waits (#1126). `true` = there was something
+  // to stop waiting for. The named sessions are not interrupted.
+  broker.handle('sessions:cancelHandoff', (_e, sessionId: unknown) => {
+    if (typeof sessionId !== 'string') return refuse('sessions:cancelHandoff', 'sessionId is required');
     try {
-      // A wiring may answer LATER (#1092: the real one looks up each mentioned
-      // folder's git state first). A rejection is the same fail-open as a throw.
-      const answer = deps.resolveMentions(text, sessionId);
-      // any thenable, not only a native Promise
-      return typeof (answer as { then?: unknown } | null)?.then === 'function'
-        ? Promise.resolve(answer).catch(failed)
-        : answer;
+      return (deps.cancelHandoff?.(sessionId) ?? 0) > 0;
     } catch (err) {
-      return failed(err);
+      log.warn('sessions:cancelHandoff failed', { sessionId, error: errorText(err) });
+      return false;
     }
   });
 
