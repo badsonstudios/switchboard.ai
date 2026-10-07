@@ -114,6 +114,13 @@ export interface BriefFacts {
    */
   tree?: string;
   readerTree?: string;
+  /**
+   * The handoff the mentioned session WROTE ITSELF, when the user asked for one
+   * and it could be had (#1126). The one part of a brief a model authored — so
+   * it goes INSIDE the fence with everything else that is not the app's own
+   * word, and the head says so in the app's voice.
+   */
+  handoff?: { text: string; truncated: boolean };
 }
 
 /** The three parts of a brief. The caller fences `body` and only `body`. */
@@ -245,9 +252,19 @@ export function buildMentionBrief(
   head.push(`# Brief on ${mentionLabel(name)}`);
   head.push('');
   head.push(
-    'Assembled by switchboard from that session’s own record — no model wrote it. ' +
-      'The lines under "Facts" are switchboard’s; everything inside the marked ' +
-      'block below them is text reported from that session.'
+    facts.handoff
+      ? // ⚠️ "No model wrote it" is the sentence this brief was built to be able
+        // to say (#1092), and with a handoff in it that sentence is false. Said
+        // plainly, in the app's own voice and OUTSIDE the fence, so the reader
+        // knows which part to check before leaning on it.
+        'Assembled by switchboard. The lines under "Facts" are switchboard’s. Inside ' +
+          'the marked block below them, the section "Handoff, written by that session" ' +
+          'was written a moment ago by that session’s own model because your user asked ' +
+          'for it — switchboard has not checked it, so verify what matters against the ' +
+          'repository. The rest of the block is text reported from that session’s record.'
+      : 'Assembled by switchboard from that session’s own record — no model wrote it. ' +
+          'The lines under "Facts" are switchboard’s; everything inside the marked ' +
+          'block below them is text reported from that session.'
   );
   head.push('');
   head.push('## Facts');
@@ -290,6 +307,16 @@ export function buildMentionBrief(
 
   // ── 2. what it was asked — inside the fence ────────────────────────────────
   const body: string[] = [];
+  // ...led by its own handoff, when there is one (#1126). First, because it is
+  // the part the user asked for; and counted against the same budget as
+  // everything after it, so a long one shortens the conversation tail rather
+  // than growing the brief.
+  if (facts.handoff) {
+    body.push('## Handoff, written by that session');
+    body.push('');
+    body.push(facts.handoff.text.trim() + (facts.handoff.truncated ? '\n\n…[cut short]' : ''));
+    body.push('');
+  }
   for (const id of BRIEF_SECTIONS) {
     const section = pkg.sections.find((s) => s.id === id);
     if (!section) continue;

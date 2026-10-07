@@ -284,6 +284,41 @@ The box at the bottom sends straight to the real Claude Code session:
 
   Only the recent end of a long conversation comes along, and the brief says
   when older turns were left out.
+
+  **Or ask that session to write the handoff itself.** As soon as your message
+  names another session, a small switch appears under the prompt box: **Ask
+  TradingApp to write the handoff**. It is off unless you turn it on, and it is
+  for that one message.
+
+  With it on, pressing Enter does not send straight away. TradingApp is asked,
+  in its own conversation, to sum up where it is for a colleague — what it was
+  asked, what is done and what is not, what it decided and why, which files and
+  branches matter, and what it would do next. The line under the box says
+  **Waiting for TradingApp to write its handoff…** and when the answer arrives
+  your message goes, with that summary at the top of the brief. Everything
+  else in the brief is still there underneath it.
+
+  What that costs, so you can decide when it is worth it:
+
+  - **It uses a turn in the other session.** You will see the request and the
+    reply in TradingApp's own conversation, marked `[switchboard: handoff
+    request]`.
+  - **You wait** — usually well under a minute. **Cancel** stops the wait; your
+    message is then *not* sent and stays in the box, and TradingApp finishes
+    writing anyway.
+  - **An AI wrote that part.** The rest of the brief is facts the app can vouch
+    for; the handoff is the other session's own account, and the brief tells
+    the session receiving it to check what matters before leaning on it.
+
+  **A session that is busy is never interrupted.** If TradingApp is working, or
+  waiting on an answer from you, it is not asked: your message goes at once
+  with the ordinary brief, and the line under the box says so. The same happens
+  if it is not running, takes longer than a minute and a half, or stops to ask
+  a question instead of writing — in every case you get the brief you would
+  have had with the switch off, and a sentence saying why.
+
+  If your message names several sessions, the switch asks all of them, side by
+  side.
   - **It arrives folded up.** In the conversation, what came from TradingApp
     shows as a single **Context from TradingApp** row — click it to read the
     whole thing, click again to fold it away. Your own question sits underneath,

@@ -354,3 +354,52 @@ describe('sameFolder', () => {
     expect(sameFolder('', '', WIN32_STYLE)).toBe(false);
   });
 });
+
+describe('a handoff the session wrote itself (#1126)', () => {
+  const handoff = { text: 'THE_HANDOFF: refactor is half done.', truncated: false };
+
+  it('leads the fenced block, ahead of what the session was asked', () => {
+    const { body } = buildMentionBrief(pkg({ goal: 'THE_GOAL' }), said('THE_REPLY'), { handoff });
+    expect(body.indexOf('## Handoff, written by that session')).toBe(0);
+    expect(body.indexOf('THE_HANDOFF')).toBeLessThan(body.indexOf('THE_GOAL'));
+    expect(body.indexOf('THE_GOAL')).toBeLessThan(body.indexOf('THE_REPLY'));
+  });
+
+  it('is INSIDE the fence — a model wrote it, so it is data like everything else from that session', () => {
+    const parts = buildMentionBrief(pkg(), said('x'), { handoff });
+    expect(parts.body).toContain('THE_HANDOFF');
+    expect(parts.head).not.toContain('THE_HANDOFF');
+    expect(parts.more).not.toContain('THE_HANDOFF');
+  });
+
+  it('stops the app claiming no model wrote the brief, and says which part one did', () => {
+    // "no model wrote it" is the sentence #1092 built the brief to be able to
+    // say. With a handoff in it that sentence would be false in the app's voice.
+    const without = buildMentionBrief(pkg(), said('x')).head;
+    const withOne = buildMentionBrief(pkg(), said('x'), { handoff }).head;
+    expect(without).toContain('no model wrote it');
+    expect(withOne).not.toContain('no model wrote it');
+    expect(withOne).toContain('written a moment ago by that session’s own model');
+    expect(withOne).toContain('switchboard has not checked it');
+  });
+
+  it('says when it was cut short', () => {
+    const { body } = buildMentionBrief(pkg(), said('x'), { handoff: { text: 'long', truncated: true } });
+    expect(body).toContain('…[cut short]');
+  });
+
+  it('is counted against the brief`s budget — a long one shortens the conversation, not the cap', () => {
+    const long = { text: 'H'.repeat(6_000), truncated: false };
+    const talk = 'T'.repeat(40_000);
+    const withOne = brief(pkg(), said(talk), { handoff: long });
+    const without = brief(pkg(), said(talk));
+    // the handoff is all there...
+    expect(withOne).toContain('H'.repeat(6_000));
+    // ...and the document did not grow by its length to make room
+    expect(withOne.length - without.length).toBeLessThan(1_000);
+  });
+
+  it('changes nothing at all when there is none', () => {
+    expect(brief(pkg({ goal: 'g' }), said('x'), {})).toBe(brief(pkg({ goal: 'g' }), said('x')));
+  });
+});

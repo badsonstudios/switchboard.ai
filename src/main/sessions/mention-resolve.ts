@@ -54,6 +54,12 @@ export interface MentionExtras {
   git?: (folder: string) => BriefGitFacts | undefined;
   /** a folder's working-tree root (#1098), on the same terms; asked of the READER's folder too */
   tree?: (folder: string) => string | undefined;
+  /**
+   * The handoff a session wrote itself (#1126), by session id — when the user
+   * asked for one and it arrived. Undefined is every other case, and the brief
+   * is then exactly what it was before this existed.
+   */
+  handoff?: (sessionId: string) => { text: string; truncated: boolean } | undefined;
 }
 
 /**
@@ -162,6 +168,7 @@ function answerFor(
         ...(extras.git ? { git: safeGit(extras.git, found.value.folder) } : {}),
         ...(extras.tree ? { tree: safeGit(extras.tree, found.value.folder) } : {}),
         ...(extras.tree && reader ? { readerTree: safeGit(extras.tree, reader.folder) } : {}),
+        ...(extras.handoff ? { handoff: safeGit(extras.handoff, found.value.id) } : {}),
       },
       extras.fence
     );

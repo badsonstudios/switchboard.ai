@@ -96,7 +96,8 @@ import { isCommitRef, isLogQuery, isRev } from './git/git-log';
 import { type GitWriteResult, asPathList } from './git/git-write';
 import { BusHost } from './bus/host-channel';
 import { SessionQueries, summariesFrom } from './sessions/queries';
-import { mentionedSessions, resolveMentions } from './sessions/mention-resolve';
+import { resolveMentionsWithHandoffs } from './sessions/mention-handoff';
+import { HandoffRequests } from './sessions/handoff-request';
 import { createMentionGitLookup, createMentionTreeLookup, MENTION_GIT_BUDGET_MS } from './sessions/mention-git';
 import { buildContextOffer } from './sessions/context-drop';
 import { quoted, renderOutput } from './bus/bus-tools';
@@ -2785,6 +2786,24 @@ app
     // is refused with a reason the row prints, which is #765's "never silently
     // dropped" applied to the same delivery from the other end.
     broker.handle('dispatch:inject', (_e, reviewer: unknown) => dispatchResults.inject(reviewer));
+    // A session writing its own `@Name` handoff (#1126). The same two things
+    // Dispatch's round-trip stands on — the manager's `submitPrompt` and the
+    // Feed's own blocks — and reachable only from the composer's IPC below:
+    // nothing on the bus can ask a session to do this.
+    const handoffs = new HandoffRequests({
+      // ⚠️ UNDEFINED FOR A SESSION WHOSE PROCESS HAS GONE, whatever its record's
+      // last status says — see `HandoffDeps.status`. A cleanly exited session
+      // still reads `done` and still has a handle that swallows a send.
+      status: (sessionId) => {
+        const record = manager.get(sessionId);
+        return record && record.exitCode === null ? record.status : undefined;
+      },
+      submit: (sessionId, text) => manager.submitPrompt(sessionId, text),
+      blocks: (sessionId) => streamFeed.blocks(sessionId),
+      log: createLogger(sink, 'handoff'),
+    });
+    manager.onStatusChange((change) => handoffs.noteStatus(change));
+    manager.onSessionExit((e) => handoffs.noteGone(e.sessionId));
     const sessionIpc: SessionIpcHandle = registerSessionIpc({
       manager,
       streamPermissions,
@@ -2885,21 +2904,32 @@ app
       // "it shares your working tree" is true of `repo/packages/a` and `repo`,
       // and comparing the two folder names cannot see it. Both lookups run side
       // by side under the one budget, so this adds no wait of its own.
-      resolveMentions: async (text, ownSessionId) => {
-        const folders = mentionedSessions(sessionQueries, text, ownSessionId).map((s) => s.folder);
-        const listed = folders.length > 0 ? sessionQueries.listSessions() : undefined;
-        const own = listed?.ok ? listed.value.find((s) => s.id === ownSessionId)?.folder : undefined;
-        const [git, tree] = await Promise.all([
-          mentionGit.lookup(folders),
-          mentionTree.lookup(own && folders.length > 0 ? [...folders, own] : []),
-        ]);
-        return resolveMentions(sessionQueries, renderOutput, text, ownSessionId, {
-          mint: () => contextRefs.mint(ownSessionId),
-          fence: quoted,
-          git: (folder) => git.get(folder),
-          tree: (folder) => tree.get(folder),
-        });
-      },
+      // The ORDER of this — ask nobody if the send will be refused, read each
+      // session before asking it, look up git after the wait — is
+      // `mention-handoff.ts`, where it has tests. Without the switch it is the
+      // plain resolve it always was.
+      resolveMentions: (text, ownSessionId, opts) =>
+        resolveMentionsWithHandoffs(
+          {
+            queries: sessionQueries,
+            render: renderOutput,
+            request: (sourceId, readerId, askedBy) => handoffs.request(sourceId, readerId, askedBy),
+            lookup: async (folders, readerFolder) => {
+              const [git, tree] = await Promise.all([
+                mentionGit.lookup(folders),
+                mentionTree.lookup(readerFolder && folders.length > 0 ? [...folders, readerFolder] : []),
+              ]);
+              return { git: (folder) => git.get(folder), tree: (folder) => tree.get(folder) };
+            },
+            mint: () => contextRefs.mint(ownSessionId),
+            fence: quoted,
+          },
+          text,
+          ownSessionId,
+          opts
+        ),
+      cancelHandoff: (ownSessionId) => handoffs.cancel(ownSessionId),
+      handoffTurnEnded: (liveId) => handoffs.consumeHandoffTurn(liveId),
       // The context chip's drop dialog (P2-E11-10) — the SAME `sessionQueries`
       // the bus tools, `@Name` and `get_session_output` answer from, so a chip
       // dragged across the screen and an agent asking about the same session

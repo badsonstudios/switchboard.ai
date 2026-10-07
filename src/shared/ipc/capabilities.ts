@@ -505,6 +505,13 @@ export const CHANNEL_CAPABILITIES = {
   // already gates — a surface allowed only to LIST sessions must not be able to
   // read what they said.
   'sessions:resolveMentions': 'transcripts.read',
+  // The same send WITH a self-written handoff (#1126). A SEPARATE CHANNEL, and
+  // a WRITE one, because that is what it is: it submits a prompt into every
+  // session the draft names and spends a turn of each. Folding it into the
+  // channel above as a flag would have let a surface that may only READ
+  // transcripts start work in other sessions.
+  'sessions:resolveMentionsWithHandoff': 'sessions.write',
+  'sessions:cancelHandoff': 'sessions.write',
   // The context chip's drop dialog (P2-E11-10, §5.5). TRANSCRIPTS for exactly
   // `resolveMentions`' reason, and more so: the answer carries a rendered
   // handoff built from another session's conversation — its goal, its plan, the

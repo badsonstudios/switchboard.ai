@@ -9,6 +9,7 @@
 // Every test that could plausibly send ALSO counts what reached main's typed
 // route (`sessions.submitPrompt`), because several of the rules here are about a
 // key that must NOT send — and several about one that must.
+import { resetHandoffWaitsForTests } from '../lib/handoff-switch';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
@@ -47,6 +48,10 @@ let summariesMode: 'resolve' | 'hold' | 'refuse' | 'reject';
 let releaseSummaries: (() => void) | null = null;
 /** what main's `sessions.resolveMentions` answers (P2-E11-08); every call is recorded */
 let resolveMentions: (id: string, text: string) => Promise<unknown>;
+/** the SLOW channel (#1126): the same answer, after the named sessions were asked to write */
+let resolveWithHandoff: (id: string, text: string) => Promise<unknown>;
+let handoffCalls: Array<[string, string]>;
+let cancelCalls: string[];
 let resolveCalls: Array<[string, string]>;
 const roots: Root[] = [];
 
@@ -89,6 +94,11 @@ function stubBridge(): void {
         }
       },
       resolveMentions: (id: string, text: string) => resolveMentions(id, text),
+      resolveMentionsWithHandoff: (id: string, text: string) => resolveWithHandoff(id, text),
+      cancelHandoff: (id: string) => {
+        cancelCalls.push(id);
+        return Promise.resolve(true);
+      },
       submitPrompt: (_id: string, text: string) => {
         submitted.push(text);
         return Promise.resolve(true);
@@ -178,6 +188,13 @@ beforeEach(async () => {
   // which is also what every pre-#798 test in this file expects to be sent.
   resolveMentions = (id, text) => {
     resolveCalls.push([id, text]);
+    return Promise.resolve({ ok: true, prompt: text });
+  };
+  handoffCalls = [];
+  cancelCalls = [];
+  resetHandoffWaitsForTests();
+  resolveWithHandoff = (id, text) => {
+    handoffCalls.push([id, text]);
     return Promise.resolve({ ok: true, prompt: text });
   };
   vi.stubGlobal(
@@ -676,5 +693,268 @@ describe('the slash popup is unchanged by the generalisation', () => {
     await type(host, '/(@Tr');
     expect(mentionRows(host)).toHaveLength(0);
     expect(summaryFetches).toBe(0);
+  });
+});
+
+describe('asking a named session to write its own handoff (#1126)', () => {
+  const notice = (host: HTMLElement): string =>
+    host.querySelector<HTMLElement>('[data-composer-attach-notice]')?.textContent ?? '';
+  const theSwitch = (host: HTMLElement): HTMLInputElement | null =>
+    host.querySelector<HTMLInputElement>('[data-handoff-switch] input[type="checkbox"]');
+  const waiting = (host: HTMLElement): HTMLElement | null => host.querySelector<HTMLElement>('[data-handoff-wait]');
+  /** what a screen reader is told — a region that is always there and only changes */
+  const announced = (host: HTMLElement): HTMLElement =>
+    host.querySelector<HTMLElement>('[data-handoff-status]')!;
+  /**
+   * The words on the switch — ALL of the label, which is the checkbox's name.
+   * The description of what it costs must not be in here (see the test below).
+   */
+  const switchLabel = (host: HTMLElement): string =>
+    host.querySelector<HTMLElement>('[data-handoff-switch]')?.textContent ?? '';
+  const flip = async (host: HTMLElement): Promise<void> => {
+    await act(async () => {
+      theSwitch(host)!.click();
+    });
+  };
+
+  it('offers the switch only when the draft names ANOTHER session, and names it', async () => {
+    const host = await mount();
+    expect(theSwitch(host)).toBeNull();
+    await type(host, 'just words');
+    expect(theSwitch(host)).toBeNull();
+    await type(host, 'mail dan@example.com');
+    expect(theSwitch(host)).toBeNull();
+    await type(host, 'ping @nobody about it');
+    expect(theSwitch(host)).toBeNull();
+    // its own session is left as typed at send, so there is nobody to ask
+    await type(host, 'as @Beta said');
+    expect(theSwitch(host)).toBeNull();
+
+    await type(host, 'take over from @BrainHarbor please');
+    expect(theSwitch(host)).not.toBeNull();
+    expect(switchLabel(host)).toBe('Ask BrainHarbor to write the handoff');
+  });
+
+  it('says what it costs to somebody who cannot hover for the tooltip', async () => {
+    const host = await mount();
+    await type(host, 'take over from @BrainHarbor please');
+    const described = theSwitch(host)!.getAttribute('aria-describedby');
+    expect(described).toBeTruthy();
+    const hint = host.ownerDocument.getElementById(described!);
+    expect(hint?.textContent).toContain('It uses a turn there');
+    expect(hint?.textContent).toContain('A session that is busy is not interrupted');
+    // a DESCRIPTION, not part of the name: inside the label it would be read
+    // out as what the checkbox is called
+    expect(hint?.closest('label')).toBeNull();
+    expect(switchLabel(host)).toBe('Ask BrainHarbor to write the handoff');
+  });
+
+  it('is OFF by default, and a send with it off uses the ordinary channel', async () => {
+    const host = await mount();
+    await type(host, 'take over from @BrainHarbor please');
+    expect(theSwitch(host)!.checked).toBe(false);
+    await press(host, 'Enter');
+    expect(resolveCalls).toHaveLength(1);
+    // counted: the property is that nobody was asked to write anything
+    expect(handoffCalls).toHaveLength(0);
+  });
+
+  it('with it ON, sends through the handoff channel and says whose handoff went', async () => {
+    resolveWithHandoff = (id, text) => {
+      handoffCalls.push([id, text]);
+      return Promise.resolve({
+        ok: true,
+        prompt: 'BRIEF WITH HANDOFF\n\ntake over',
+        handoffs: [{ name: 'BrainHarbor', outcome: 'written' }],
+      });
+    };
+    const host = await mount();
+    await type(host, 'take over from @BrainHarbor please');
+    await flip(host);
+    await press(host, 'Enter');
+
+    expect(handoffCalls).toEqual([[OWN_ID, 'take over from @BrainHarbor please']]);
+    expect(resolveCalls).toHaveLength(0);
+    expect(submitted).toEqual(['BRIEF WITH HANDOFF\n\ntake over']);
+    expect(boxOf(host).value).toBe('');
+    expect(notice(host)).toBe('Sent with the handoff BrainHarbor wrote.');
+  });
+
+  it('a BUSY session is not asked: the prompt still goes, and the box says why the brief is the usual one', async () => {
+    resolveWithHandoff = () =>
+      Promise.resolve({ ok: true, prompt: 'USUAL BRIEF', handoffs: [{ name: 'TradingApp', outcome: 'busy' }] });
+    const host = await mount();
+    await type(host, 'take over from @TradingApp please');
+    await flip(host);
+    await press(host, 'Enter');
+    expect(submitted).toEqual(['USUAL BRIEF']);
+    expect(notice(host)).toBe('TradingApp was busy, so it was not asked. The usual brief went instead.');
+  });
+
+  it('shows that it is WAITING, with a Cancel, and sends nothing until the answer arrives', async () => {
+    let answer: (v: unknown) => void = () => {};
+    resolveWithHandoff = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const host = await mount();
+    await type(host, 'take over from @BrainHarbor please');
+    await flip(host);
+    await press(host, 'Enter');
+
+    expect(waiting(host)?.textContent).toContain('Waiting for BrainHarbor to write its handoff');
+    // ANNOUNCED from a region that was already there, empty, before the wait —
+    // one mounted holding its text is often not read out at all — and that does
+    // NOT contain the Cancel button, which would be read as part of the message.
+    expect(announced(host).getAttribute('role')).toBe('status');
+    expect(announced(host).textContent).toBe('Waiting for BrainHarbor to write its handoff…');
+    expect(announced(host).querySelector('button')).toBeNull();
+    expect(host.querySelector('[data-handoff-cancel]')).not.toBeNull();
+    // the switch is replaced by the wait, not shown beside it
+    expect(theSwitch(host)).toBeNull();
+    expect(submitted).toEqual([]);
+    // ...and a second Enter does not send the draft without the handoff
+    await press(host, 'Enter');
+    expect(submitted).toEqual([]);
+
+    await act(async () => {
+      answer({ ok: true, prompt: 'P', handoffs: [{ name: 'BrainHarbor', outcome: 'written' }] });
+    });
+    await flush();
+    expect(waiting(host)).toBeNull();
+    expect(announced(host).textContent).toBe('');
+    expect(submitted).toEqual(['P']);
+  });
+
+  it('the status region is there, EMPTY, before anything is waited for', async () => {
+    const host = await mount();
+    expect(announced(host)).not.toBeNull();
+    expect(announced(host).textContent).toBe('');
+  });
+
+  it('keeps naming who it is waiting on when the draft is edited mid-wait', async () => {
+    let answer: (v: unknown) => void = () => {};
+    resolveWithHandoff = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const host = await mount();
+    await type(host, 'take over from @BrainHarbor please');
+    await flip(host);
+    await press(host, 'Enter');
+    await type(host, 'something else entirely');
+    expect(waiting(host)?.textContent).toContain('Waiting for BrainHarbor to write its handoff');
+    // ANSWERED before the test ends: the one-send-at-a-time guard is a module,
+    // and a wait left hanging here would swallow every send in the tests after.
+    await act(async () => {
+      answer({ ok: true, prompt: 'P', handoffs: [{ name: 'BrainHarbor', outcome: 'written' }] });
+    });
+    await flush();
+  });
+
+  it('a composer that REMOUNTS mid-wait still shows the wait and its Cancel, and cancels the right send', async () => {
+    // The one-send-at-a-time guard is keyed by card and outlives the composer.
+    // While the wait was component state, a remount came back showing the
+    // switch — no "Waiting…", no Cancel — with Enter still swallowed.
+    let answer: (v: unknown) => void = () => {};
+    resolveWithHandoff = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const first = await mount();
+    await type(first, 'take over from @BrainHarbor please');
+    await flip(first);
+    await press(first, 'Enter');
+    expect(waiting(first)).not.toBeNull();
+
+    await act(async () => roots.pop()!.unmount());
+    const second = await mount();
+    expect(waiting(second)?.textContent).toContain('Waiting for BrainHarbor to write its handoff');
+    await act(async () => {
+      second.querySelector<HTMLElement>('[data-handoff-cancel]')!.click();
+    });
+    expect(cancelCalls).toEqual([OWN_ID]);
+
+    // main answers the old instance's call as cancelled — and it does NOT send
+    await act(async () => {
+      answer({ ok: true, prompt: 'USUAL BRIEF', handoffs: [{ name: 'BrainHarbor', outcome: 'cancelled' }] });
+    });
+    await flush();
+    expect(submitted).toEqual([]);
+    expect(waiting(second)).toBeNull();
+  });
+
+  it('does not send when MAIN says it was cancelled, whatever this composer remembers', async () => {
+    resolveWithHandoff = () =>
+      Promise.resolve({ ok: true, prompt: 'USUAL BRIEF', handoffs: [{ name: 'BrainHarbor', outcome: 'cancelled' }] });
+    const host = await mount();
+    await type(host, 'take over from @BrainHarbor please');
+    await flip(host);
+    await press(host, 'Enter');
+    expect(submitted).toEqual([]);
+    expect(boxOf(host).value).toBe('take over from @BrainHarbor please');
+    expect(notice(host)).toContain('Not sent');
+  });
+
+  it('CANCEL means not sent: the draft stays, main is told, and the late answer is not sent either', async () => {
+    let answer: (v: unknown) => void = () => {};
+    resolveWithHandoff = () =>
+      new Promise((resolve) => {
+        answer = resolve;
+      });
+    const host = await mount();
+    await type(host, 'take over from @BrainHarbor please');
+    await flip(host);
+    await press(host, 'Enter');
+    await act(async () => {
+      host.querySelector<HTMLElement>('[data-handoff-cancel]')!.click();
+    });
+    expect(cancelCalls).toEqual([OWN_ID]);
+
+    // main ends the wait by answering — with the usual brief, as it would for any fallback
+    await act(async () => {
+      answer({ ok: true, prompt: 'USUAL BRIEF', handoffs: [{ name: 'BrainHarbor', outcome: 'cancelled' }] });
+    });
+    await flush();
+    expect(submitted).toEqual([]);
+    expect(boxOf(host).value).toBe('take over from @BrainHarbor please');
+    expect(notice(host)).toContain('Not sent');
+    expect(waiting(host)).toBeNull();
+    // the switch is still on: pressing Enter again asks again, which is what was asked for
+    expect(theSwitch(host)?.checked).toBe(true);
+  });
+
+  it('turns itself off once the send has gone, and when the name is deleted', async () => {
+    const host = await mount();
+    await type(host, 'take over from @BrainHarbor please');
+    await flip(host);
+    await press(host, 'Enter');
+    expect(submitted).toHaveLength(1);
+    await type(host, 'and @BrainHarbor again');
+    expect(theSwitch(host)!.checked).toBe(false);
+
+    await flip(host);
+    expect(theSwitch(host)!.checked).toBe(true);
+    await type(host, 'no names now');
+    expect(theSwitch(host)).toBeNull();
+    await type(host, 'back to @BrainHarbor');
+    expect(theSwitch(host)!.checked).toBe(false);
+  });
+
+  it('an ambiguous name is still refused with its reason, switch or no switch', async () => {
+    resolveWithHandoff = () => Promise.resolve({ ok: false, refusals: ['"TradingApp" is ambiguous.'] });
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await flip(host);
+    await press(host, 'Enter');
+    expect(submitted).toEqual([]);
+    expect(notice(host)).toContain('Not sent');
+    expect(notice(host)).toContain('ambiguous');
+  });
+
+  it('says "the sessions you named" when there is more than one', async () => {
+    const host = await mount();
+    await type(host, 'compare @BrainHarbor with @TradingApp');
+    expect(switchLabel(host)).toBe('Ask the sessions you named to write their handoffs');
   });
 });
