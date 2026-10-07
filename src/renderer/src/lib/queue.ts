@@ -104,14 +104,20 @@ export function queueable(e: AttentionEvent): boolean {
  * count exactly what the Events window lists, and dismissal decrements them by
  * construction rather than by a second rule that has to be kept in step.
  *
- * ── WHAT THIS DELIBERATELY DOES NOT TOUCH ───────────────────────────────────
+ * ── THE ROWS READ THIS SET TOO, SINCE #1137 ─────────────────────────────────
  *
- * The rail row's tint, the lamp's hue and `data-needs-you` still paint the
- * session's real STATUS, for the reason `lib/focus-policy` gives when `none`
- * silences a session: "§4's fail-open rule does not let a preference of ours
- * make a session's true state unknowable." A dismissal says "stop counting
- * this", not "the session is no longer blocked" — the CLI may well still be
- * waiting, and the row is where you find that out.
+ * This section used to say the rail row's tint, the lamp and `data-needs-you`
+ * deliberately kept painting the session's real STATUS. That left two
+ * user-visible answers to "who needs me" that could disagree, and they did:
+ * looking at a finished session relaxes its event to `ready` and leaves its
+ * status `done`, so "1 need you" sat over three identically lit rows.
+ *
+ * The treatment now follows this set (`rail-view`'s `attentionPaint`). What is
+ * kept of the old argument — "§4's fail-open rule does not let a preference of
+ * ours make a session's true state unknowable" — is the WORD on the row, which
+ * still says and colours what the session is doing. A dismissal says "stop
+ * counting this", not "the session is no longer blocked", and the word is
+ * where you find that out.
  *
  * ⚠️ **THE "SAFE DIRECTION" CLAIM HELD UNTIL P2-E13-05 AND NO LONGER DOES.** It
  * used to read: *a queued event exists only for a session in an attention status,

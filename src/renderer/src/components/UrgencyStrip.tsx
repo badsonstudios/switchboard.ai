@@ -62,7 +62,7 @@ export function UrgencyStrip(props: {
   // this is a readout, so StrictMode's double-invoke differing by a millisecond
   // changes nothing, and the effect below deliberately re-reads the clock.
   const now = Date.now();
-  const lamps = buildLamps(props.sessions, props.urgency, now);
+  const lamps = buildLamps(props.sessions, props.urgency, now, props.needing);
   const needingCount = needCount(props.sessions, props.needing);
 
   // ONE timer for the whole strip, armed at the soonest deadline: the strip has

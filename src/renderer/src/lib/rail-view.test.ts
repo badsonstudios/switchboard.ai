@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  attentionPaint,
   presentStatus,
   statusVars,
   needCount,
@@ -230,5 +231,44 @@ describe("the row's short state word (#877)", () => {
     // render an empty space where the state goes.
     expect(presentStatus('nonsense').shortKey).toBe(presentStatus('idle').shortKey);
     expect(presentStatus(undefined).shortKey).toBe(presentStatus('idle').shortKey);
+  });
+});
+
+describe('attentionPaint — the one rule for who is lit (#1137)', () => {
+  it('lights a counted session in its own ramp', () => {
+    expect(attentionPaint('done', true)).toEqual({ lit: true, token: 'done', stateInk: true });
+    expect(attentionPaint('needs-input', true)).toEqual({
+      lit: true,
+      token: 'needs-input',
+      stateInk: true,
+    });
+  });
+
+  // looking at a finished session takes it off the count and leaves it `done`
+  it('does not light a finished session nobody is counting', () => {
+    expect(attentionPaint('done', false)).toEqual({ lit: false, token: 'done', stateInk: false });
+  });
+
+  // dismissing an ask does not answer it: the word keeps its colour
+  it.each(['needs-input', 'needs-permission', 'crashed'])(
+    'keeps the state word coloured for a dismissed %s',
+    (status) => {
+      expect(attentionPaint(status, false)).toEqual({ lit: false, token: status, stateInk: true });
+    }
+  );
+
+  // a returned review is filed on its author, who is usually idle
+  it('lights a counted session whose status is calm, as finished work', () => {
+    expect(attentionPaint('idle', true)).toEqual({ lit: true, token: 'done', stateInk: true });
+    expect(attentionPaint('working', true).token).toBe('done');
+  });
+
+  it('fails open on a status it does not know', () => {
+    expect(attentionPaint('no-such-status', false)).toEqual({
+      lit: false,
+      token: 'idle',
+      stateInk: false,
+    });
+    expect(attentionPaint(undefined, false).lit).toBe(false);
   });
 });

@@ -21,7 +21,7 @@
 //
 // Pure by construction (no React, no DOM, no clock of its own — `now` is always
 // passed in) so every rule below is a unit test rather than an e2e guess.
-import { presentStatus, StatusToken } from './rail-view';
+import { attentionPaint, presentStatus, StatusToken } from './rail-view';
 
 /**
  * How long the arrived-at lamp stays lit after a jump.
@@ -111,15 +111,22 @@ export interface LampSource {
 export function buildLamps(
   sessions: readonly LampSource[],
   lit: UrgencyMarks,
-  now: number
+  now: number,
+  /**
+   * The cards the strip's own "N need you" is counting (#1137). A lamp is
+   * filled exactly when its session is one of them, so the number beside the
+   * lamps is the number of filled lamps. Omitted = nobody is counted.
+   */
+  needing: ReadonlySet<string> = new Set()
 ): UrgencyLamp[] {
   return sessions.map((s) => {
     const p = presentStatus(s.status);
+    const paint = attentionPaint(s.status, needing.has(s.id));
     return {
       cardId: s.id,
       title: s.title,
-      token: p.token,
-      needsYou: p.needsYou,
+      token: paint.token,
+      needsYou: paint.lit,
       lit: isLit(lit, s.id, now),
       suspended: s.status === 'suspended' || s.status === 'not-started',
       labelKey: p.labelKey,
