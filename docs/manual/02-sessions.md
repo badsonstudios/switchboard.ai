@@ -290,6 +290,22 @@ Every session shows one of these:
 | **suspended** | Kept, but not currently running |
 | **not started** | Nothing ever ran in this card — see below |
 
+### Which ones need you
+
+A row that needs you is **highlighted**: tinted, with a thicker colored bar at
+its left edge and its name in bold. Each group's heading counts them — **"2 need
+you"**, or **"calm"** — and so do the bottom of the Sessions list and the strip
+across the top of the window. The count and the highlighted rows always match:
+if a heading says 1, exactly one row under it is highlighted.
+
+A session stops needing you when you deal with it:
+
+- A **done** session stays highlighted until you look at it. Click it and the
+  highlight goes; the row still says **done** until you give it something new.
+- A session that is asking you something stays highlighted until you answer. If
+  you dismiss its entry in **Events** instead, the highlight and the count both
+  drop, but the word on the row stays colored — it is still waiting.
+
 ## Leaving and coming back
 
 Sessions survive restarts. When you reopen switchboard, the cards are back

@@ -45,7 +45,9 @@
 // mode's name over-promises otherwise:
 //
 //   • The rail row, the urgency lamp and the strip's "N need you" count all
-//     keep painting the session's real STATUS. That is not the urgency hint; it
+//     keep going. (They read the Events window's list since #621 and #1137,
+//     and that list is the UNfiltered one, so `none` does not empty it.) That
+//     is not the urgency hint; it
 //     is the session being LISTED, which i3 also keeps doing. Blanking it would
 //     make a held permission invisible rather than quiet, and §4's fail-open
 //     rule does not let a preference of ours make a session's true state

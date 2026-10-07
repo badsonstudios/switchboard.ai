@@ -74,6 +74,7 @@ import {
 } from '../lib/rail-order';
 import { LineageMap, NO_LINEAGE, railDepthIndent } from '../lib/dispatch-lineage';
 import {
+  attentionPaint,
   presentStatus,
   needCount,
   clampRailWidth,
@@ -837,8 +838,11 @@ export function SessionsRail(props: {
 
   const sessionRow = (s: RailSession, bucket: string): React.JSX.Element => {
     const p = presentStatus(s.status);
-    const hue = `var(--status-${p.token})`;
-    const ink = `var(--status-${p.token}-ink)`;
+    // WHO NEEDS YOU is the count's own answer (#1137), not the status's: a row
+    // is lit exactly when its session is one of the N the header is counting.
+    const paint = attentionPaint(s.status, props.needing.has(s.id));
+    const hue = `var(--status-${paint.token})`;
+    const ink = `var(--status-${paint.token}-ink)`;
     const accent = s.accent ?? 'var(--faint)';
     const selected = s.id === props.selectedId;
     const isPinned = props.pinned.has(s.id);
@@ -852,7 +856,7 @@ export function SessionsRail(props: {
     const indent = railDepthIndent(depth);
     // a needy session outranks selection: the attention tint is the signal the
     // whole panel exists to carry
-    const rowTint = p.needsYou ? tint(hue, 10) : selected ? tint(accent, 10) : 'transparent';
+    const rowTint = paint.lit ? tint(hue, 10) : selected ? tint(accent, 10) : 'transparent';
 
     return (
       <div
@@ -864,7 +868,7 @@ export function SessionsRail(props: {
         // `.rail-row[data-tinted='true']:hover`, the exception that kept a
         // needy row's tint from being repainted. No hover rule, nothing to
         // except it from.
-        data-needs-you={p.needsYou}
+        data-needs-you={paint.lit}
         data-session-status={p.token}
         // §5.8's pinning contract (E9-09). An attribute rather than only a
         // glyph: the protection is a fact about the row that the e2e suite has
@@ -997,9 +1001,9 @@ export function SessionsRail(props: {
             insetBlockEnd: 3,
             // thickens to 4px when it needs you — legible from the far edge of
             // the screen without reading a word
-            inlineSize: p.needsYou ? 4 : 2.5,
+            inlineSize: paint.lit ? 4 : 2.5,
             borderRadius: '0 2px 2px 0',
-            background: p.needsYou ? hue : selected ? accent : tint(accent, 45),
+            background: paint.lit ? hue : selected ? accent : tint(accent, 45),
           }}
         />
         {depth !== undefined && (
@@ -1158,7 +1162,7 @@ export function SessionsRail(props: {
                     flex: 1,
                     minInlineSize: 0,
                     fontSize: 11.5,
-                    fontWeight: p.needsYou ? 700 : 600,
+                    fontWeight: paint.lit ? 700 : 600,
                     color: 'var(--text)',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -1181,7 +1185,9 @@ export function SessionsRail(props: {
                     // the ask's ink when it needs you, quiet otherwise — the
                     // §5.8 ladder still reads at a glance, and the tint, the
                     // 4px edge bar and the bold name all still carry it
-                    color: p.needsYou ? ink : 'var(--muted)',
+                    // …and a BLOCKED session whose event was dismissed keeps
+                    // the ink without the rest: off the count, still asking
+                    color: paint.stateInk ? ink : 'var(--muted)',
                     whiteSpace: 'nowrap',
                   }}
                 >

@@ -7,11 +7,15 @@
 // THERE ARE TWO HALVES, and #621 is what taught us they are not the same
 // question:
 //
-//   presentStatus().needsYou  what the session IS. Drives the row treatment
-//                             (tint, 4px bar, name at 700, the ask instead of
-//                             a state word) and the urgency lamp. Purely a
-//                             function of STATUS: a blocked session looks
-//                             blocked whatever the user has told us about it.
+//   presentStatus()           what the session IS: its colour ramp, its glyph
+//                             and the word beside its name. Purely a function
+//                             of STATUS. Its `needsYou` is "is this a status
+//                             that waits on a human", which the layout rules
+//                             still read (a blocked card is not folded away).
+//   attentionPaint()          whether the row and the lamp are LIT (tint, 4px
+//                             bar, name at 700, filled lamp). Since #1137 that
+//                             is the count's own answer, not the status's, so
+//                             "N need you" is exactly N lit rows.
 //   needCount()               how many demands are still ON YOUR PLATE. Drives
 //                             the per-group summary, the rail footer and the
 //                             strip's aggregate — and it counts the Events
@@ -201,6 +205,61 @@ export function statusVars(token: StatusToken): { hue: string; ink: string } {
   return { hue: `var(--status-${token})`, ink: `var(--status-${token}-ink)` };
 }
 
+/** What a row or a lamp paints for one session, given who is being counted. */
+export interface AttentionPaint {
+  /** the attention treatment is on: the tint, the 4px bar, the bold name */
+  lit: boolean;
+  /** the colour ramp to paint it in */
+  token: StatusToken;
+  /**
+   * The short state word keeps its status colour even when the row is calm.
+   *
+   * True for a session that is BLOCKED — asking, waiting on a permission,
+   * crashed — whose event the user dismissed. Dismissing takes it off the
+   * count and stops the row shouting; it does not answer the session, and §4's
+   * fail-open rule does not let a dismissal make that unknowable. The coloured
+   * word is where it stays knowable.
+   */
+  stateInk: boolean;
+}
+
+/** Statuses a session cannot leave on its own: someone has to act. */
+const BLOCKED: ReadonlySet<string> = new Set(['needs-input', 'needs-permission', 'crashed']);
+
+/**
+ * THE ONE RULE for the needs-you treatment on a row or a lamp (#1137).
+ *
+ * `counted` is "is this session in `needingCards`" — the same set every
+ * "N need you" readout counts. So a count of N is exactly N lit rows, by
+ * construction: there is no second derivation to keep in step.
+ *
+ * ── WHAT THIS REPLACED ─────────────────────────────────────────────────────
+ *
+ * The treatment used to be `presentStatus(status).needsYou`, while the counters
+ * read the Events window (#621). The two parted whenever the user acted on an
+ * event without the session's status moving — and the commonest way to do that
+ * is to LOOK at a finished session, which relaxes its event from `done` to
+ * `ready` and leaves its status at `done`. Every finished session the user had
+ * already looked at stayed lit, identical to the one that had not been, under a
+ * header that counted only the latter: "1 need you" over three rows reading
+ * Done, with nothing to say which.
+ *
+ * #621's note argued the row should keep painting the real status so a
+ * dismissal could not hide a blocked session. That half is kept — in the WORD
+ * (`stateInk`), which still says and colours what the session is doing — and
+ * given up in the TREATMENT, because two user-visible answers to "who needs
+ * me" that can disagree is the defect.
+ *
+ * A session counted for something its status does not show (a returned review
+ * is filed on its author, who is usually idle) is lit in the `done` ramp:
+ * finished work to look at, which is what it is.
+ */
+export function attentionPaint(status: string | undefined, counted: boolean): AttentionPaint {
+  const p = presentStatus(status);
+  if (counted) return { lit: true, token: p.needsYou ? p.token : 'done', stateInk: true };
+  return { lit: false, token: p.token, stateInk: BLOCKED.has(status ?? '') };
+}
+
 /**
  * How many of these sessions have an OUTSTANDING DEMAND on them — the one rule
  * behind every "N need you" readout: the group-header summary, the rail footer
@@ -211,8 +270,8 @@ export function statusVars(token: StatusToken): { hue: string; ink: string } {
  * what this function used to count and what #621 was: dismissing an event took
  * it out of the Events window without moving the session's status, so the
  * counters went on reporting a demand nobody was still being shown. See
- * `needingCards` for why the feed is the authority here and why the ROW
- * treatment (which is still status-driven, three lines up) deliberately is not.
+ * `needingCards` for why the feed is the authority here. The ROW treatment
+ * reads the same set since #1137 — see `attentionPaint`.
  *
  * A set rather than a predicate so all three call sites are provably reading
  * the same derivation — the store computes it once, per push.

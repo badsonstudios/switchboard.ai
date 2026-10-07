@@ -98,6 +98,14 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **"1 need you" now always points at a row you can see.** A group's heading
+  could say one session needed you while every row under it looked the same
+  and read "done". A finished session you had already looked at stopped being
+  counted but kept its highlight, so nothing told you which one was left. Now
+  the highlight follows the count: a finished session calms down once you have
+  looked at it, and a heading that says 1 has exactly one highlighted row. The
+  lamps across the top of the window follow the same rule.
+
 - **A session no longer looks as if it "went back" after a restart or an
   update.** If a conversation had used subagents, reopening the app put all of
   their old activity at the bottom of the conversation, underneath the newest

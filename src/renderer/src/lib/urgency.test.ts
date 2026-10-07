@@ -46,13 +46,31 @@ describe('buildLamps — one lamp per session, live status (E9-04)', () => {
       'done',
       'crashed',
     ]);
-    // 'needs you' is the rail's rule, unchanged: done is in the set (§5.8's
-    // completed-unreviewed state), working and idle are not
-    expect(lamps.filter((l) => l.needsYou).map((l) => l.cardId)).toEqual([
-      'input',
-      'perm',
+    // …and with nobody being counted, no lamp is filled, whatever its status
+    // (#1137): "needs you" is the count's answer, not the status's.
+    expect(lamps.filter((l) => l.needsYou)).toEqual([]);
+  });
+
+  // The strip prints "N need you" beside these lamps. N is the size of
+  // `needing`, so the filled lamps have to be exactly those cards.
+  it('fills exactly the lamps the count is counting (#1137)', () => {
+    const sessions = [
+      session('looked-at', 'done'),
+      session('waiting', 'done'),
+      session('dismissed', 'needs-permission'),
+      session('author', 'idle'),
+      session('busy', 'working'),
+    ];
+    const lamps = buildLamps(sessions, new Map(), T, new Set(['waiting', 'author']));
+    expect(lamps.filter((l) => l.needsYou).map((l) => l.cardId)).toEqual(['waiting', 'author']);
+    // a session counted for something its status does not show is painted as
+    // finished work to look at; everyone else keeps their own ramp
+    expect(lamps.map((l) => l.token)).toEqual([
       'done',
-      'crash',
+      'done',
+      'needs-permission',
+      'done',
+      'working',
     ]);
   });
 

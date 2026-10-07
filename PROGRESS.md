@@ -31,9 +31,9 @@
 > Do not cut 0.8.116 unless he asks. He was asked first, as instructed: no
 > laptop result for #716 yet, nothing to add to the tickets.
 >
-> **#1140 (a session lost its latest text after the update to 0.8.115) — FIX
-> ON `feature/1140-lost-text-after-update`** (the PR that carries this line;
-> NOT released). **Reproduced first.** Nothing was lost. On a resumed session
+> **#1140 (a session lost its latest text after the update to 0.8.115) — DONE
+> 2026-10-07, PR #1146 (`2d95f0a`), merged, NOT released.** **Reproduced
+> first.** Nothing was lost. On a resumed session
 > the conversation was replayed, and THEN the watcher appended every subagent
 > transcript that conversation had ever written, below the newest reply — so
 > the session ended on old subagent work. The bundle's log shows the right
@@ -45,7 +45,30 @@
 > 195-block card was Tristana3.** The tracker's Re-test row tells him how to
 > check on 0.8.115 before updating (scroll up past the subagent block).
 >
-> **NEXT: #1137** (group header says "1 need you" while every row reads Done).
+> Review (required: it touches the conversation view) found no blocker and
+> five things worth fixing, all fixed — the main one being that the end-to-end
+> tests could pass with the fix deleted. Measured cost: 18 to 24 ms more per
+> resumed card on the six heaviest conversations here, about 1 ms on an
+> ordinary one. **Known, left:** on a conversation with more than 4 MB of
+> subagent transcript, the oldest subagent activity is not shown after a
+> restart (it used to be shown, misplaced); the log line says how much.
+>
+> **#1137 (group header says "1 need you" while every row reads Done) — FIX ON
+> `feature/1137-need-you-count-matches-rows`** (the PR that carries this line;
+> NOT released). **Reproduced first**, as a failing test: three finished
+> sessions, two already looked at, the header says 1 and all three rows are
+> lit. It was the issue's cause 1 and 2 at once — looking at a finished session
+> relaxes its event to `ready` (off the count) and leaves its status `done`
+> (row still lit). Fix: ONE rule, `attentionPaint`, lights a row or a lamp
+> exactly when its session is in the set the counters count. **Judgment call,
+> flagged in the tracker for the owner:** a blocked session whose event was
+> dismissed is no longer lit either (the #621 e2e asserted the opposite on
+> purpose); its state word keeps its colour. **Not touched:** the Collapsed
+> strip's rows, and the layout rules that ask "is this card blocked" — those
+> are about the session's status, not about the count.
+>
+> **NEXT: #1145** (drop the duplicate "N changes" text and the usage strip from
+> the card header; removal only).
 >
 > ## Earlier on 2026-10-07: #1126, then #1127 — the owner: "we can do 1126 and 1127 next".
 >

@@ -163,11 +163,16 @@ test.describe('sessions rail', () => {
     await expect(rail(w).getByText('calm')).toBeVisible();
     await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '0');
 
-    // The ROW is deliberately unmoved: the CLI is still waiting for permission,
-    // and §4's fail-open rule does not let a dismissal make that unknowable.
-    // Dismissing takes the item off your plate; it does not answer it.
+    // The row follows the count down too (#1137): "0 need you" over a lit row
+    // is the same disagreement from the other side. What does NOT move is what
+    // the row SAYS — the CLI is still waiting for permission, and §4's
+    // fail-open rule does not let a dismissal make that unknowable. Dismissing
+    // takes the item off your plate; it does not answer it.
+    await expect(r).toHaveAttribute('data-needs-you', 'false');
     await expect(r).toHaveAttribute('data-session-status', 'needs-permission');
-    await expect(r).toHaveAttribute('data-needs-you', 'true');
+    await expect
+      .poll(() => r.locator('[data-rail-state]').evaluate((el) => (el as HTMLElement).style.color))
+      .toBe('var(--status-needs-permission-ink)');
   });
 
   test("the row's ✕ ends the session, and only after the confirm", async () => {
