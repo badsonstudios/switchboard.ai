@@ -63,9 +63,10 @@ top of the window while it is lit. Click it again to bring the list back.
 
 ### Listing sessions across the top instead
 
-> **Nearly finished.** Everything is listed and you can work in it. What is
-> still missing is the right-click menus and dragging: to rename, pin, move,
-> reorder or recolour, switch to the list on the left for now.
+> **Nearly finished.** Everything is listed, and everything you can do to a
+> session or a group is on a right-click. What is still missing is dragging:
+> to put groups or sessions in a different order, switch to the list on the
+> left for now.
 
 The list does not have to live on the left. Next to **▸ commands** in the bar
 along the top of the window there is a two-part button, **◧ left** and
@@ -112,8 +113,9 @@ what it is working on, the status mark and **✕** to close it, plus the
 shortcut number. When a group says **2 need you**, exactly two rows in its
 list are highlighted. Click a row to go to that session; the list closes.
 Click the group again, click anywhere else, or press `Esc` to close the list
-without going anywhere. (Renaming a session from this list is not there yet;
-for now, switch to the list on the left to rename one.)
+without going anywhere. A double-click does not rename a row here, as it does
+in the list on the left: the first click already goes to the session. Use
+**Rename…** on the right-click menu instead.
 
 After the groups come the sessions that are **not in a group**, each as a
 two-line pill: its name and a word for what it is doing, what it is working
@@ -141,6 +143,45 @@ wheel over it, or the cell that appears at each end. A cell turns **amber and
 shows a number** when that many sessions that need you are off that end; it
 is plain when sessions are cut off but none is waiting. Click a cell to scroll
 that way. The **N need you** total above never scrolls.
+
+#### Right-click menus on the strip
+
+There are no menu buttons on the strip. **Right-click** the thing you want to
+change. (From the keyboard: move to it with `Tab`, then press `Shift+F10`.)
+
+**On a session** (its pill, or its row in an open list):
+
+- **Open changes** shows what that session has changed.
+- **Rename…** puts a box where the name was. `Enter` keeps the new name;
+  `Esc`, or clicking away, leaves the old one. An empty name is ignored.
+- **Pin session** / **Unpin session**.
+- **Close session** asks first, exactly as the ✕ does.
+- **Move to group** lists your groups, with a tick on the one the session is
+  in now, and **No group**. Pick one to move it.
+
+**On a group:**
+
+- **New session in this group** — the same as its ⊕.
+- **Open all in the workspace** brings back every session in the group that
+  is folded away, one after another; you end up on the last one. It is greyed
+  out when none is folded away, and it leaves the others where they are.
+- **Rename group…** works like renaming a session.
+- **Change colour** steps to the next colour.
+- **How its sessions are shown: …** says what happens to this group's
+  sessions when you send a prompt, and steps to the next choice each time you
+  pick it. See [Getting out of the way by itself](#getting-out-of-the-way-by-itself).
+- **Delete group** removes the group. Its sessions are not closed; they are
+  simply no longer in a group.
+
+An automatic group only has **Open all in the workspace**: it is a folder the
+app noticed, so there is nothing of it to rename, recolour or delete.
+
+**On an empty part of the strip** (including the line with **+ group** and
+**+ session**): **Sessions on the left** / **Sessions across the top**, with a
+tick on the one in use, then **+ New group** and **+ New session**.
+
+None of the menus has "Move up" or "Move down". Order is by dragging, which
+is not on the strip yet.
 
 When you press `Ctrl+Space` to go to the next session that needs you, its pill
 is outlined for a moment, and the strip scrolls so you can see it. For a

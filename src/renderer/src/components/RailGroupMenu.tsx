@@ -27,6 +27,22 @@ export interface RailGroupMenuItem {
   /** false = shown, focusable, dimmed, and does nothing */
   can: boolean;
   run: () => void;
+  /**
+   * An eyebrow drawn above this item: the name of the section it starts
+   * (#1143, for the strip's "Move to group"). Not an item — it takes no focus
+   * and the arrows walk past it.
+   */
+  heading?: string;
+  /** a hairline above this item, for a section that needs no name */
+  divider?: boolean;
+  /**
+   * This item is one choice out of a set, and this is whether it is the one
+   * in force. Present (true OR false) makes it a `menuitemradio`; absent, it
+   * is a plain command. A set of named values rather than a submenu for the
+   * reason the rail's own "Move to group" gives: a submenu is a second surface
+   * to open, aim at and keep open, for a list that is short.
+   */
+  checked?: boolean;
 }
 
 export function RailGroupMenu(props: {
@@ -38,6 +54,8 @@ export function RailGroupMenu(props: {
   items: readonly RailGroupMenuItem[];
   /** `restoreFocus` is true when the keyboard should go back where it came from */
   onClose: (restoreFocus: boolean) => void;
+  /** the e2e handle; the rail's group menu keeps the name it always had */
+  testId?: string;
 }): React.JSX.Element {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const [place, setPlace] = React.useState<MenuPlacement | null>(null);
@@ -76,14 +94,14 @@ export function RailGroupMenu(props: {
 
   React.useLayoutEffect(() => {
     if (!place) return;
-    ref.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+    ref.current?.querySelector<HTMLElement>('[role^="menuitem"]')?.focus();
   }, [place]);
 
   return (
     <div
       ref={ref}
       role="menu"
-      data-testid="rail-group-menu"
+      data-testid={props.testId ?? 'rail-group-menu'}
       aria-label={props.label}
       onPointerDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
@@ -92,7 +110,7 @@ export function RailGroupMenu(props: {
           return;
         }
         const items = Array.from(
-          e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')
+          e.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]')
         );
         if (items.length === 0) return;
         const at = items.indexOf(e.currentTarget.ownerDocument.activeElement as HTMLElement);
@@ -123,37 +141,68 @@ export function RailGroupMenu(props: {
       }}
     >
       {props.items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          role="menuitem"
-          data-group-menu-item={item.id}
-          aria-disabled={!item.can}
-          className="rail-menu-item"
-          onClick={() => {
-            if (!item.can) return; // aria-disabled is a claim; this is the fact
-            // Focus is the CALLER's to place: a move re-orders the list, and
-            // where the keyboard belongs afterwards is on the group that moved.
-            onClose(false);
-            item.run();
-          }}
-          style={{
-            display: 'block',
-            inlineSize: '100%',
-            padding: '5px 9px',
-            borderRadius: 4,
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--text)',
-            whiteSpace: 'nowrap',
-            textAlign: 'start',
-            fontSize: 11,
-            fontFamily: 'var(--font-ui)',
-            opacity: item.can ? 1 : 0.45,
-          }}
-        >
-          {item.label}
-        </button>
+        <React.Fragment key={item.id}>
+          {item.divider && (
+            <div
+              aria-hidden
+              style={{ marginBlock: 4, borderBlockStart: '1px solid var(--border)' }}
+            />
+          )}
+          {item.heading !== undefined && (
+            <div
+              data-menu-heading
+              style={{
+                marginBlockStart: 4,
+                paddingBlock: '4px 2px',
+                paddingInline: 9,
+                borderBlockStart: '1px solid var(--border)',
+                color: 'var(--faint)',
+                fontSize: 9.5,
+                textTransform: 'uppercase',
+                letterSpacing: 0.4,
+              }}
+            >
+              {item.heading}
+            </div>
+          )}
+          <button
+            type="button"
+            role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+            aria-checked={item.checked}
+            data-group-menu-item={item.id}
+            aria-disabled={!item.can}
+            className="rail-menu-item"
+            onClick={() => {
+              if (!item.can) return; // aria-disabled is a claim; this is the fact
+              // Focus is the CALLER's to place: a move re-orders the list, and
+              // where the keyboard belongs afterwards is on the group that moved.
+              onClose(false);
+              item.run();
+            }}
+            style={{
+              display: 'block',
+              inlineSize: '100%',
+              padding: '5px 9px',
+              borderRadius: 4,
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--text)',
+              whiteSpace: 'nowrap',
+              textAlign: 'start',
+              fontSize: 11,
+              fontFamily: 'var(--font-ui)',
+              opacity: item.can ? 1 : 0.45,
+            }}
+          >
+            {item.checked !== undefined && (
+              // the mark is decoration: `aria-checked` is what says it
+              <span aria-hidden style={{ display: 'inline-block', inlineSize: 14 }}>
+                {item.checked ? '✓' : ''}
+              </span>
+            )}
+            {item.label}
+          </button>
+        </React.Fragment>
       ))}
     </div>
   );
