@@ -7,6 +7,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
+import { applyFolds, isExploration, type FoldRun } from '../lib/feed-folds';
 import { groupBySeq } from '../lib/feed-skipping';
 import { FEED_GROUP_ATTR, FEED_GROUP_OPEN_ATTR, useFeedSkipping } from '../lib/use-feed-skipping';
 import { autonomyTooltip, isAutonomy } from '../lib/autonomy';
@@ -35,6 +36,7 @@ import type { BindingDiagnostics, BindingState } from '../../../shared/transcrip
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { resolveFeedBlock } from '../extensibility/feed-render';
 import { ContributionBoundary } from '../extensibility/boundary';
+import { FeedExpander, ToolBox } from '../extensibility/feed-blocks';
 import { uiFlush, uiGet, uiSet } from '../lib/ui-state';
 import { clearDraft, loadDraft, saveDraft } from '../lib/composer-draft';
 import {
@@ -167,6 +169,149 @@ const retrying = new WeakSet<FeedBlockDto>();
 
 /** one object for every group, so React never sees its `style` prop change */
 const GROUP_STYLE: React.CSSProperties = { display: 'flow-root' };
+
+/** no fold has been opened by hand — one object, so the state can bail out */
+const NO_FOLDS: ReadonlySet<number> = new Set();
+
+/** marks a fold's row; in the `data-feed*` namespace the feed takes back from
+ *  every reply (`decoration-guard`), like the group and block attributes */
+const FEED_FOLD_ATTR = 'data-feed-fold';
+
+/**
+ * A burst of looking around, as ONE row (#1130).
+ *
+ * The owner's screenshot was about twenty consecutive one-line boxes — Grep,
+ * Read, Glob, Grep… — for what is, to the reader, one event. This is that
+ * event: what kind of calls and how many, and the newest one so a burst still
+ * in progress shows where it has got to. It opens onto the calls themselves,
+ * drawn below it exactly as they always were. `lib/feed-folds` decides what
+ * folds and where a run ends.
+ *
+ * ── WHAT IT IS, STRUCTURALLY ────────────────────────────────────────────────
+ *
+ * A sibling of the blocks, drawn in its head block's place in the list —
+ * furniture, like the two dividers, and deliberately NOT a block:
+ *
+ *  - no `data-feed-block` and no `data-feed-seq`. A find jump resolves a block
+ *    by its seq and paints its marks inside that element; this row borrowing
+ *    the head's seq would send both HERE instead of to the call.
+ *  - the members are not nested in it. `use-feed-skipping` needs every block to
+ *    be a direct child of its group, and watches each group's child list.
+ *
+ * ── AND IT IS OPERABLE THE WAY EVERY OTHER EXPANDER IS ─────────────────────
+ *
+ * A `FeedExpander`, so it is a stop on the conversation's arrow-key walk and
+ * Enter opens it; the box around it is the same mouse convenience `ToolBox`
+ * gives the tool rows.
+ *
+ * Memoised on primitives, for #716's reason: a streamed chunk re-renders the
+ * list, and a row that has not changed must cost nothing.
+ */
+const FoldRow = React.memo(function FoldRow(props: {
+  head: number;
+  open: boolean;
+  searches: number;
+  reads: number;
+  latest: string;
+  sidechain: boolean;
+  onToggle: (head: number) => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const toggle = (): void => props.onToggle(props.head);
+  const counts = [
+    props.searches > 0 ? t('feedView.fold.searches', { count: props.searches }) : '',
+    props.reads > 0 ? t('feedView.fold.reads', { count: props.reads }) : '',
+  ]
+    .filter(Boolean)
+    .join(t('feedView.fold.join'));
+  return (
+    <div
+      {...{ [FEED_FOLD_ATTR]: String(props.head) }}
+      data-feed-fold-open={props.open ? '' : undefined}
+      style={{
+        display: 'flex',
+        gap: 8,
+        padding: '4px 8px',
+        // the same spine a subagent's own blocks stand on — see `Block`
+        ...(props.sidechain
+          ? {
+              marginInlineStart: 'var(--feed-sidechain-indent)',
+              borderInlineStart: '1px dashed var(--faint)',
+              opacity: 0.85,
+            }
+          : {}),
+      }}
+    >
+      {/* the gutter every row reserves, with the tool rows' own dot */}
+      <span
+        aria-hidden
+        style={{
+          inlineSize: 6,
+          blockSize: 6,
+          flexShrink: 0,
+          marginBlockStart: 5,
+          borderRadius: '50%',
+          background: 'var(--faint)',
+        }}
+      />
+      <div style={{ flex: 1, minInlineSize: 0 }}>
+        <ToolBox kind="fold" onToggle={toggle}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5 }}>
+            <FeedExpander
+              open={props.open}
+              onToggle={toggle}
+              style={{
+                display: 'flex',
+                gap: 6,
+                alignItems: 'baseline',
+                color: 'var(--muted)',
+                padding: '1px 0',
+                inlineSize: '100%',
+              }}
+            >
+              <span style={{ color: 'var(--faint)', fontSize: 8 }}>
+                {props.open ? t('feedView.fold.caretOpen') : t('feedView.fold.caretClosed')}
+              </span>
+              <span style={{ color: 'var(--status-working-ink)', fontWeight: 600, flexShrink: 0 }}>
+                {t('feedView.fold.title')}
+              </span>
+              {/* The title holds; the counts shorten only once the newest call
+                  beside them has given way entirely (its basis is zero). On a
+                  narrow card nothing spills out of the box — which would give
+                  the whole conversation a sideways scrollbar. */}
+              <span
+                style={{
+                  flex: '0 1 auto',
+                  minInlineSize: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {counts}
+              </span>
+              {/* the newest call, only while shut: open, it is the last row below */}
+              {!props.open && props.latest !== '' && (
+                <span
+                  style={{
+                    flex: '1 1 0%',
+                    color: 'var(--faint)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    minInlineSize: 0,
+                  }}
+                >
+                  {t('feedView.fold.latest', { call: props.latest })}
+                </span>
+              )}
+            </FeedExpander>
+          </div>
+        </ToolBox>
+      </div>
+    </div>
+  );
+});
 
 /**
  * May `Block` skip this render?
@@ -455,6 +600,15 @@ export function FeedView(props: {
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
   /** counts the times `blocks` was REPLACED outright, for `useFeedSkipping` */
   const [conversation, setConversation] = React.useState(0);
+  /**
+   * The folds the user has opened (#1130), as the seqs of their MEMBERS.
+   *
+   * Every member, not just the head: a run grows at its tail while Claude is
+   * still looking and loses its head when the oldest block is evicted at the
+   * cap, and a fold opened by hand must stay open through both. "Any member of
+   * this run is in the set" is true across either change.
+   */
+  const [openFolds, setOpenFolds] = React.useState<ReadonlySet<number>>(NO_FOLDS);
   // /clear executes SILENTLY (empty local-command stdout, no assistant reply
   // â€” verified vs claude 2.1.218), so without an explicit marker a cleared
   // conversation reads as "nothing happened" (Dan 2026-07-24)
@@ -554,6 +708,8 @@ export function FeedView(props: {
     const offReset = window.switchboard.transcripts.onReset((p) => {
       if (p.sessionId !== props.sessionId) return;
       setBlocks([]);
+      // seqs start again from 1: a remembered seq would open a stranger's fold
+      setOpenFolds(NO_FOLDS);
       setConversation((n) => n + 1);
       setCleared(p.cause === 'clear'); // a plain rebind clears any stale marker
     });
@@ -948,11 +1104,105 @@ export function FeedView(props: {
       markGesture('jump');
       if (pinned.current) noteUnpin('jump', 0, 0);
       pinned.current = false;
+      // (A fold standing over the block opens for the same reveal — see
+      // where `applyFolds` is called.)
       // The SCROLL is not done here â€” see the layout effect below.
       return true;
     },
     [markGesture, noteUnpin],
   );
+  /** the folds as last rendered, for `toggleFold` — a callback that must stay
+   *  the same function across renders, or every `FoldRow` re-renders with it */
+  const foldsRef = React.useRef<ReadonlyMap<number, FoldRun & { open: boolean }>>(new Map());
+  /**
+   * Open or shut one fold (#1130).
+   *
+   * OPENING UNPINS, deliberately. A fold at the bottom of a conversation that
+   * is following its tail would otherwise unfold twenty rows and be carried up
+   * out of the window by the very pin that was keeping the newest message in
+   * view — the row you clicked gone, and its last few calls where it was. You
+   * asked to read this list, so the view stays on it; "Jump to latest" is the
+   * way back, exactly as it is after a find jump.
+   *
+   * ⚠️ AND IT RECORDS WHERE YOU ARE READING (found in review). Unpinning is a
+   * promise that `restore()` will put the view back at `lastTop` when this card
+   * is shown again — and `lastTop` is otherwise written only by a scroll event
+   * or a find jump. Opening a fold grows the content BELOW the row, so
+   * `scrollTop` does not move and no scroll event ever fires: a session
+   * followed from its tail and never scrolled has `lastTop` 0, and switching
+   * away and back would have landed at the top of the conversation (#555).
+   *
+   * The other half — following again once the fold is shut and the view is
+   * back on the tail — is the layout effect below, because it is a question
+   * about the content's height AFTER the change has been committed.
+   */
+  const toggleFold = React.useCallback(
+    (head: number): void => {
+      const run = foldsRef.current.get(head);
+      if (!run) return;
+      const opening = !run.open;
+      setOpenFolds((prev) => {
+        // forget seqs the buffer has evicted, so the set cannot outgrow the feed
+        const live = new Set(blocksRef.current.map((b) => b.seq));
+        const next = new Set([...prev].filter((seq) => live.has(seq)));
+        for (const seq of run.seqs) {
+          if (opening) next.add(seq);
+          else next.delete(seq);
+        }
+        return next;
+      });
+      if (opening && pinned.current) {
+        noteUnpin('fold', 0, 0);
+        pinned.current = false;
+        const el = scroller.current;
+        if (el) {
+          lastTop.current = el.scrollTop;
+          knownTop.current = el.scrollTop;
+        }
+      }
+    },
+    [noteUnpin],
+  );
+  /**
+   * After a fold has opened or shut: are we back on the tail? (found in review)
+   *
+   * `nextPin`'s "landing within the slack follows again" rule runs on a SCROLL
+   * event, and a fold changes the content's height without one: shut a fold you
+   * opened at the tail and `scrollTop` is the maximum both before and after, so
+   * the view sat on the newest message with following switched off — new blocks
+   * not followed, and "Jump to latest" offered to someone looking at the
+   * latest. So the same question is asked here, once, after the commit.
+   *
+   * It also takes back an unpin that changed nothing: opening a fold in a
+   * conversation too short to scroll leaves nowhere to be but the tail.
+   */
+  React.useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    if (!pinned.current && el.scrollHeight - el.scrollTop - el.clientHeight <= TAIL_SLACK) {
+      pinned.current = true;
+    }
+    syncOffTail();
+  }, [openFolds, syncOffTail]);
+  /**
+   * A call the user is reading or standing on must not be folded away under
+   * them (found in review).
+   *
+   * Two calls are two ordinary rows; the third turns all three into one closed
+   * row. If you had opened the second to read its detail, or the keyboard was
+   * on its expander, that used to unmount it: the detail gone, and focus
+   * dropped out of the conversation onto the page. Touching an exploration
+   * call puts it in `openFolds`, so the run it later joins forms OPEN — the
+   * rows stay exactly where they are and the fold's row appears above them.
+   */
+  const keepUnfolded = React.useCallback((target: EventTarget | null): void => {
+    const el = (target as Element | null)?.closest?.(`[${FEED_SEQ_ATTR}]`);
+    if (!el) return;
+    const seq = Number(el.getAttribute(FEED_SEQ_ATTR));
+    const block = blocksRef.current.find((b) => b.seq === seq);
+    if (!block || !isExploration(block)) return;
+    setOpenFolds((prev) => (prev.has(seq) ? prev : new Set(prev).add(seq)));
+  }, []);
   /**
    * Take the view to the revealed block, after React has committed it.
    *
@@ -1034,6 +1284,8 @@ export function FeedView(props: {
   // blocks do not share seqs with the one we had revealed
   React.useEffect(() => {
     clearReveal();
+    // …and the same goes for the folds opened by hand (#1130)
+    setOpenFolds(NO_FOLDS);
   }, [props.sessionId, clearReveal]);
 
   // `revealed` OVERRIDES the verbosity filter (Â§5.31: find searches what the
@@ -1054,8 +1306,23 @@ export function FeedView(props: {
   // would be a real saving; it is deliberately not done here because the
   // feed's re-render cost is #740's, and one pass over a list already being
   // walked is not the part worth changing blind.
-  const agentHeads = agentRunHeads(visibleBlocks, blocks);
-  const groups = groupBySeq(visibleBlocks);
+  // THE FOLDS (#1130), applied AFTER the verbosity filter and BEFORE the
+  // grouping. After, because a run is what the reader sees as consecutive.
+  // Before, because a closed fold's members are left out of the list outright,
+  // and the groups — which are what the engine skips — must be built from what
+  // is really going to be in them.
+  //
+  // A fold is open when the user opened it, or when find is standing on one of
+  // its members: `jumpTo` reveals a seq and then looks for that block's
+  // element, so a fold that stayed shut would turn a jump into nothing at all.
+  // The same rule, for the same reason, that lets `revealed` override the
+  // verbosity filter two lines up.
+  const layout = applyFolds(visibleBlocks, (run) =>
+    run.seqs.some((seq) => openFolds.has(seq) || reveal.revealed.has(seq))
+  );
+  foldsRef.current = layout.folds;
+  const agentHeads = agentRunHeads(layout.rendered, blocks);
+  const groups = groupBySeq(layout.rendered);
   /** the conversation's first block never gets a turn rule above it */
   const firstVisible = visibleBlocks[0];
   return (
@@ -1073,7 +1340,7 @@ export function FeedView(props: {
     // exists. Nothing but counts: no id, no title, no path.
     <div
       data-perf-blocks={blocks.length}
-      data-perf-rendered={visibleBlocks.length}
+      data-perf-rendered={layout.rendered.length}
       style={{ blockSize: '100%', display: 'flex', flexDirection: 'column', background: 'var(--card-bg)' }}
     >
       <div
@@ -1279,7 +1546,13 @@ export function FeedView(props: {
         }}
         style={{ flex: 1, minBlockSize: 0, overflowY: 'auto', fontSize: 12, lineHeight: 1.5, paddingBlock: 6 }}
       >
-        <div ref={content}>
+        <div
+          ref={content}
+          // capture, so it is recorded whatever the row itself does with the
+          // event — see `keepUnfolded`
+          onClickCapture={(e) => keepUnfolded(e.target)}
+          onFocusCapture={(e) => keepUnfolded(e.target)}
+        >
           {cleared && (
             <div
               style={{
@@ -1335,7 +1608,9 @@ export function FeedView(props: {
                 {...(gi === groups.length - 1 ? { [FEED_GROUP_OPEN_ATTR]: '' } : {})}
                 style={GROUP_STYLE}
               >
-                {g.blocks.map((b) => (
+                {g.blocks.map((b) => {
+                  const fold = layout.folds.get(b.seq);
+                  return (
                   <React.Fragment key={b.seq}>
                     {/* WHICH subagent is speaking (#788).
 
@@ -1375,9 +1650,27 @@ export function FeedView(props: {
                         {t('feedView.turnMarker')}
                       </div>
                     )}
-                    <Block b={b} />
+                    {/* A burst of looking around, as one row (#1130) — AFTER
+                        the two captions, so a fold that opens a subagent's run
+                        or follows a prompt still sits under its heading. While
+                        the fold is shut this is all its head draws; the head's
+                        own block, like the rest of the run, appears when it is
+                        opened. */}
+                    {fold && (
+                      <FoldRow
+                        head={fold.head}
+                        open={fold.open}
+                        searches={fold.searches}
+                        reads={fold.reads}
+                        latest={fold.latest}
+                        sidechain={b.sidechain}
+                        onToggle={toggleFold}
+                      />
+                    )}
+                    {(!fold || fold.open) && <Block b={b} />}
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </div>
             ))}
           </FeedRevealProvider>
