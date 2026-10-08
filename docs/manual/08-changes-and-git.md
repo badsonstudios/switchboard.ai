@@ -7,8 +7,12 @@
 ## The branch line
 
 Each card header shows where the session's folder stands in git: the branch
-name (**⎇ main**), how many files have changed (**·3 changed**), and how many
-commits you're ahead of the remote (**↑2**). It updates as Claude works.
+name (**⎇ main**) and how many commits you're ahead of the remote (**↑2**). It
+updates as Claude works.
+
+How many files have changed is the number on the **Changes** tab itself, just
+to the left on the same row — **Changes 3**. (The branch line used to repeat
+it; it no longer does.)
 
 If the folder isn't a git repository, the line simply doesn't appear.
 

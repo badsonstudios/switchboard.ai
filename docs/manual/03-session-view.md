@@ -570,63 +570,18 @@ Two things follow from that:
 
 ## Tokens and cost
 
-Along the right-hand end of the card header, beside the branch name, a session
-shows what it has used: tokens in (`↑`), tokens out (`↓`), tokens read back
-from the cache (`⛁`), and a dollar figure.
+The card header used to end in a row of figures: tokens in, tokens out, how
+much of that was thinking, tokens read back from the cache, and a dollar
+estimate. **That row has been taken off the header for now.** It crowded the
+tab strip, and it is going to come back somewhere with more room.
 
-When the model thinks before it answers, the tokens-out figure is followed by a
-fainter one: `↓ 4.2k (2.9k thinking)`. That is how much of the output was the
-model working things through rather than writing the reply you read. It is
-already **inside** the tokens-out number — the session did not use 4.2k plus
-2.9k — and hovering it shows the share as a percentage. It doesn't appear until
-a session has actually done some thinking, and conversations recorded by
-versions of Claude Code older than 2.1.233 never show it, because they didn't
-record it. Unlike the other counts, the thinking figure can read a little
-**low** — never high: a conversation you started on an older version and carried
-on after updating only counts the thinking recorded since.
+Nothing is lost in the meantime. switchboard still keeps every session's
+counts, so they will be there when the readout returns. Until then, type
+`/usage` or `/cost` into a session's prompt box to have Claude Code report its
+own figures in the conversation.
 
-**The token counts closely match Claude Code's own count** — typically to
-within a percent or two — including the work done by any helper agents the
-session starts, which are counted as part of it. What they can't include is
-background work Claude Code does with a lighter model and never writes down (for
-example, naming the conversation), so where they differ they usually read a
-little **low**.
-
-**The dollar figure has two versions, and the card tells you which one you're
-looking at.**
-
-- **While a session is running** you see something like `~$3.20`. The tilde
-  means switchboard worked it out itself, from published per-model prices. It
-  is an **under**-estimate on purpose: some cached content is billed at two
-  different rates and the session's own records don't say which applies, so
-  switchboard always assumes the cheaper one. Hover for the full explanation.
-- **Once a session has ended**, the tilde disappears and the figure becomes
-  Claude Code's own — `$3.61`. Claude Code writes its exact accounting out when
-  it closes, and switchboard reads it and replaces its own guess. This is the
-  number to trust.
-- **Occasionally you'll see a `≥`**, as in `≥$3.61`. That means Claude Code
-  used a model it couldn't price, so even its own total is short. The real
-  figure is at least that much.
-
-Two things worth knowing:
-
-- **The exact figure only arrives when Claude Code closes itself.** It doesn't
-  write its accounting out until it exits, so there's no way to get the real
-  number mid-session — a session you leave open keeps showing the estimate
-  indefinitely, and that's expected rather than a fault. It also has to be
-  Claude Code's own decision to stop, and switchboard has no way to ask it to —
-  there is no longer a terminal to type `/exit` into. Restarting or closing the
-  session from switchboard shuts the transcript down first and leaves the
-  estimate standing.
-- **You are billed by your subscription, not per token.** The dollar figure is
-  there to give the token counts a sense of scale and to let you compare
-  sessions against each other — it is not a bill.
-
-Clearing a session's conversation resets all of this to zero, including the
-cost, because it's a new conversation. And reopening a conversation you'd
-finished puts the `~` estimate back as soon as it does any more work — the exact
-figure it was showing was the total as of last time, and it stops being the
-whole story the moment the session spends again.
+**You are billed by your subscription, not per token**, so none of this is a
+bill.
 
 ## What happened to the Terminal tab
 

@@ -53,9 +53,9 @@
 > subagent transcript, the oldest subagent activity is not shown after a
 > restart (it used to be shown, misplaced); the log line says how much.
 >
-> **#1137 (group header says "1 need you" while every row reads Done) — FIX ON
-> `feature/1137-need-you-count-matches-rows`** (the PR that carries this line;
-> NOT released). **Reproduced first**, as a failing test: three finished
+> **#1137 (group header says "1 need you" while every row reads Done) — DONE
+> 2026-10-07, PR #1148 (`a220bda`), merged, NOT released.** **Reproduced
+> first**, as a failing test: three finished
 > sessions, two already looked at, the header says 1 and all three rows are
 > lit. It was the issue's cause 1 and 2 at once — looking at a finished session
 > relaxes its event to `ready` (off the count) and leaves its status `done`
@@ -67,8 +67,22 @@
 > strip's rows, and the layout rules that ask "is this card blocked" — those
 > are about the session's status, not about the count.
 >
-> **NEXT: #1145** (drop the duplicate "N changes" text and the usage strip from
-> the card header; removal only).
+> **#1145 (card header: drop the duplicate "N changed" and the usage strip) —
+> DONE ON `feature/1145-header-decrowd`** (the PR that carries this line; NOT
+> released). Removal only, as asked: the branch line no longer repeats the
+> Changes tab's count, and `UsageStrip` is unmounted from the header.
+> **`UsageStrip`, its tests, the usage state and the ledger are all still in
+> the tree** — DESIGN §5.13 now opens with a note that the header placement
+> was retired by owner directive, so nobody restores it as a regression. The
+> manual's "Tokens and cost" section is cut down to say so and to point at
+> `/usage` and `/cost`. Where the figures go next is the owner's decision.
+>
+> **NEXT: #1142** (Changes tab file names too truncated). **STOP POINT BY THE
+> OWNER'S RULE: tell him the proposal before building.** The screenshot shows
+> names cut to about eight characters ("PROGR…", "CMakeLi…") in a 470px-wide
+> list with half of each row empty — the name column is being squeezed by the
+> row's layout, not by a lack of room. Then #1144, #1130, #1143 (ask the
+> design questions first).
 >
 > ## Earlier on 2026-10-07: #1126, then #1127 — the owner: "we can do 1126 and 1127 next".
 >

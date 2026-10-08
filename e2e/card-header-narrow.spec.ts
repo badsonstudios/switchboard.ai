@@ -70,7 +70,12 @@ test.describe('a narrow card header (#1083)', () => {
       const tabs = w.locator('[data-testid="view-tabs"]');
       const readouts = w.locator('[data-testid="view-readouts"]');
       // the premise: the git readout is really there, or there is nothing to crowd
-      await expect(readouts.getByText(/changed/)).toBeAttached({ timeout: 25_000 });
+      await expect(readouts.getByText(/a-branch-name-long-enough/)).toBeAttached({
+        timeout: 25_000,
+      });
+      // …and it is the branch ALONE (#1145): the changes count lives on the
+      // Changes tab's badge and the usage strip is off the header.
+      await expect(readouts.getByText(/changed/)).toHaveCount(0);
 
       const measure = (): Promise<{ strip: Box; tabs: Box[]; readouts: Box; parts: Box[] }> =>
         w.evaluate(() => {
