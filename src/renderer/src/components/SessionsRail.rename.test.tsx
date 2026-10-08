@@ -48,11 +48,12 @@ const GROUP: RailGroup = { id: 'g1', name: 'infra', color: 'var(--status-working
 async function mountRail(
   renames: Array<[string, string]>,
   groupRenames: Array<[string, string]> = [],
-  groups: RailGroup[] = []
+  groups: RailGroup[] = [],
+  pinned: ReadonlySet<string> = new Set()
 ): Promise<HTMLElement> {
-  const host = document.createElement('div');
-  document.body.appendChild(host);
-  root = createRoot(host);
+  // the host is reused on a second call, so a test can change what the rail
+  // is handed without tearing the first render down
+  const host = root ? document.body.querySelector<HTMLElement>('[data-test-host]')! : newHost();
   await act(async () => {
     root!.render(
       <SessionsRail
@@ -73,7 +74,7 @@ async function mountRail(
         onDeleteGroup={noop}
         onOpenInGroup={noop}
         onMoveToGroup={noop}
-        pinned={new Set()}
+        pinned={pinned}
         onTogglePin={noop}
         onSetSessionPolicy={noop}
         onSetSessionFocusPolicy={noop}
@@ -83,6 +84,14 @@ async function mountRail(
       />
     );
   });
+  return host;
+}
+
+function newHost(): HTMLElement {
+  const host = document.createElement('div');
+  host.dataset.testHost = '';
+  document.body.appendChild(host);
+  root = createRoot(host);
   return host;
 }
 
@@ -155,6 +164,26 @@ afterEach(async () => {
 });
 
 describe('the rail rename field (issue 294)', () => {
+  it('keeps what was typed when the row is moved under it (issue 1143)', async () => {
+    // A row is unmounted and remounted when its list re-parents it, and that
+    // needs no gesture from the user: here the session becomes pinned, which
+    // lifts its row into the sticky block. The draft is the RAIL's for exactly
+    // this reason. Kept in the row, it would come back as the old name, and
+    // Enter would commit that.
+    const renames: Array<[string, string]> = [];
+    const host = await mountRail(renames);
+    const field = await openField(host);
+    await type(field, 'half typ');
+
+    await mountRail(renames, [], [], new Set(['c1']));
+
+    expect(host.querySelector('[data-pinned-block] .rail-row input')).not.toBeNull();
+    const moved = host.querySelector<HTMLInputElement>('.rail-row input')!;
+    expect(moved.value).toBe('half typ');
+    await press(moved, 'Enter');
+    expect(renames).toEqual([['c1', 'half typ']]);
+  });
+
   it('commits a real name', async () => {
     const renames: Array<[string, string]> = [];
     const host = await mountRail(renames);

@@ -21,40 +21,70 @@
 > measured in time, sending only the new text saves megabytes and no
 > milliseconds.
 >
-> # ⏸ WAITING ON THE OWNER — 2026-10-08: **#1143's design questions, and whether to cut 0.8.116.**
+> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 1 of 6 (started 2026-10-08)
+>
+> **The design is SETTLED** (three mockup rounds, 2026-10-08). The spec is the
+> NEWEST comment on the issue ("DESIGN SETTLED WITH THE OWNER"); the pictures are
+> on the owner's machine in the git-ignored `.claude/work_files/1143/`
+> (`sessions-strip-FINAL.html`, `shots-final/`). **Do not re-open it and do not
+> make another mockup.** *(This block said the design questions were "waiting on
+> his answer" for a session after he had answered them: the mockups live outside
+> the repo, so nothing was committed and this file was not touched.)*
+>
+> **The eight points the mockups never drew were put to him with a
+> recommendation each, and he took all eight ("Sounds good", 2026-10-08).**
+> They are recorded on the issue. In short:
+>
+> 1. **Pinned:** a pinned loose pill sorts first among the pills and carries the
+>    pin mark, but scrolls with the strip. Inside a group's open list, pins
+>    behave as in the left list.
+> 2. **Automatic groups:** the same entry as a made group, with the folder icon
+>    and the word "auto", after the made groups and before the pills. Not
+>    draggable, not a drop target, no rename / colour / delete.
+> 3. **A session started by another session:** indented under its parent in an
+>    open list, as today. As a pill it sits just right of its parent with the
+>    lineage mark, and moves with it.
+> 4. **"N waiting":** a small numbered chip on the pill, and "· N waiting" on
+>    the group entry. Separate from "need you": not in the total, not in the
+>    amber arrow numbers.
+> 5. **The highlight after a jump** moves to the pill; the strip scrolls it into
+>    view. For a session in a group, the group entry flashes (and the row, if
+>    the list is open).
+> 6. **The "N idle sessions" fold:** nothing replaces it.
+> 7. **Hiding:** stays, but not as a third state. Ctrl+B hides whichever
+>    placement is active, and so does clicking the lit half of the left / top
+>    button.
+> 8. **Empty:** an empty group shows 0 and "empty", and is still a drop target.
+>    A strip with no sessions keeps its height and says "No sessions yet".
+>
+> **The split he agreed to — six PRs, each leaving left mode unchanged:**
+>
+> 1. **The session row lifted out of the list file** (internal, no visible
+>    change). **← IN FLIGHT**, branch `feature/1143-1-session-row`. *This line
+>    rides in that PR, so it cannot say "merged" about itself: if `main` has
+>    `src/renderer/src/components/SessionRow.tsx`, PR 1 has landed and PR 2 is
+>    next. PR 2 carries the close-out.*
+> 2. The setting (Settings, the top-bar button, hide / show), the line above
+>    the strip, and the strip's frame with its empty state. **The Settings
+>    choice is labelled "in progress" until PR 4 lands** — between PR 2 and
+>    PR 4 top mode is selectable on main but incomplete, and he was told so.
+> 3. Groups and their drop-down lists.
+> 4. Pills and overflow.
+> 5. Right-click menus. **Needs an independent review before it is pushed**
+>    (it carries "Close session").
+> 6. Dragging.
+>
+> **The issue stays OPEN until PR 6.** No PR before then may put a closing
+> keyword next to its number.
 >
 > **Seven of the eight tickets are merged and UNRELEASED**: #1140 (PR #1146),
 > #1137 (#1148), #1145 (#1149), #1142 (#1150), #1144 (#1151), #1130 (#1152),
 > on top of #1126 and #1127 from the day before. Each has a row in the dogfood
-> tracker. **Nothing is in flight, no PR is open.**
->
-> **#1143 (sessions strip across the top) is NOT STARTED, by the owner's rule:
-> "read it, then ASK ME the design questions before starting."** The questions
-> were put to him at the end of the 2026-10-08 session and are waiting on his
-> answer:
->
-> 1. **When there are too many groups and sessions to fit across the window**:
->    scroll sideways, or a "more" menu at the end? (Recommended: a "more" menu;
->    a sideways-scrolling strip hides sessions that need you.)
-> 2. **What a group's entry shows**: its name and its "N need you" count,
->    opening on a click? (Recommended, with the count and the rows inside
->    agreeing, as #1137 now guarantees.)
-> 3. **What the top strip can DO in its first version**: click to go to a
->    session, see who needs you, open a group's list — and nothing else, with
->    renaming, pinning, moving between groups and reordering done by switching
->    back to the left list? Or does the right-click menu have to come along?
-> 4. **The two rows it replaces each do a job the pills would have to take
->    over**: the row of lamps is what Ctrl+1 to 9 counts against and shows the
->    "N need you" total; the collapsed row is how a folded-away session is
->    brought back. Should a pill do both (numbered, and clicking one brings a
->    hidden session back)?
-> 5. **In top mode, is the left list gone entirely**, and with it the place
->    groups are made?
-> 6. **Tanner**: build a first version for him to react to, or wait for his
->    design first?
+> tracker. **DO NOT CUT 0.8.116 — the owner said to hold off (2026-10-08).**
 >
 > **Still open, untouched: #716 / #1013** (typing lag) until the owner has
-> tried v0.8.115 on the laptop. He had no result as of 2026-10-07.
+> tried v0.8.115 on the laptop. Asked a fourth and last time on 2026-10-08, no
+> answer. **Leave it; do not ask again and do not close them.**
 >
 > ## 2026-10-07 and 2026-10-08: the new tickets, bugs first — #1140, #1137, #1145, #1142, #1144, #1130, #1143, in that order.
 >
@@ -165,10 +195,9 @@
 > **Judgment calls, flagged in the tracker:** the threshold is three (two rows
 > stay two rows); opening a fold stops the conversation following.
 >
-> **THE LIST IS DONE EXCEPT #1143** (sessions strip across the top) — **which
-> is large and is the owner's STOP POINT: the design questions have to be put
-> to him before anything is built.** They are in this session's hand-off.
-> Then he says whether to cut 0.8.116.
+> **THE LIST IS DONE EXCEPT #1143** (sessions strip across the top), which is
+> large and was the owner's stop point. The design has since been settled with
+> him and the build is under way: see the block at the top of this file.
 >
 > ## Earlier on 2026-10-07: #1126, then #1127 — the owner: "we can do 1126 and 1127 next".
 >
