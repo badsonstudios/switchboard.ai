@@ -71,7 +71,8 @@ function bar(autonomy: string): React.JSX.Element {
       speakOn={false}
       onToggleSpeak={noop}
       railHidden={false}
-      onToggleRail={noop}
+      sessionsPlacement="left"
+      onPlacementClick={noop}
       railBinding="Ctrl+B"
       onOpenPalette={noop}
       paletteBinding="Ctrl+K"

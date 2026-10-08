@@ -40,6 +40,7 @@ const handlers = {
   onTheme: vi.fn(),
   onLang: vi.fn(),
   onSetTaskLabelSize: vi.fn(),
+  onSetSessionsPlacement: vi.fn(),
   onSetQuietWindow: vi.fn(),
   onSetPushPrefs: vi.fn(),
   onSetDispatchRetire: vi.fn(),
@@ -79,6 +80,7 @@ async function render(open = true, over: Record<string, unknown> = {}): Promise<
         themes={builtinThemes}
         lang="en"
         taskLabelSize="full"
+        sessionsPlacement="left"
         dispatchRetire="linger"
         quiet={quiet}
         push={push}
@@ -272,6 +274,20 @@ describe('every absorbed control is wired', () => {
       host.querySelector<HTMLInputElement>('[data-task-label-size="compact"]')!.click();
     });
     expect(handlers.onSetTaskLabelSize).toHaveBeenCalledWith('compact');
+  });
+
+  it('sessions list — shows where it is and writes a pick through', async () => {
+    await render(true, { sessionsPlacement: 'top' });
+    expect(
+      host.querySelector<HTMLInputElement>('[data-sessions-placement="top"]')?.checked
+    ).toBe(true);
+    expect(
+      host.querySelector<HTMLInputElement>('[data-sessions-placement="left"]')?.checked
+    ).toBe(false);
+    await act(async () => {
+      host.querySelector<HTMLInputElement>('[data-sessions-placement="left"]')!.click();
+    });
+    expect(handlers.onSetSessionsPlacement).toHaveBeenCalledWith('left');
   });
 
   it('quiet hours — seeds from the state it was given and writes through', async () => {

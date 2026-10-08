@@ -430,9 +430,10 @@ is showing or not.
 
 ## Hiding the Sessions list
 
-`Ctrl+B` hides and shows the Sessions list on the left, for when you want the
-whole window for the session you're in. The **▤ rail** button in the title bar
-does the same thing, so you can always get the list back with the mouse. The
+`Ctrl+B` hides and shows the Sessions list, for when you want the whole window
+for the session you're in. The **◧ left / ⬒ top** button in the title bar does
+the same thing: click the half that is lit to hide the list, and click either
+half to bring it back, so you can always get it back with the mouse. The
 choice sticks across restarts.
 
 ## The rule that matters
@@ -478,7 +479,7 @@ mouse, from anywhere.
   from the top, including sessions nested inside groups (even collapsed ones),
   not the order the tabs happen to sit in.
 - **The Sessions list vanished** — you probably pressed `Ctrl+B`. Press it
-  again, or click **▤ rail** in the title bar.
+  again, or click **◧ left** in the title bar.
 - **You can't remember a shortcut** — you don't have to. Open the command
   palette and read them off the list.
 - **`Ctrl+Space` didn't move** — most likely nothing is waiting on you: check
