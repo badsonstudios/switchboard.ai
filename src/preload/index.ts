@@ -788,6 +788,12 @@ const api = {
     ): Promise<{ id: string; name: string; color: string; notifyScope?: string } | null> =>
       ipcRenderer.invoke('groups:update', id, patch),
     remove: (id: string): Promise<void> => ipcRenderer.invoke('groups:delete', id),
+    /**
+     * Put a group just before another, or last with `null` (#1144). Resolves the
+     * new order as ids, or NULL when either group is unknown.
+     */
+    move: (id: string, beforeId: string | null): Promise<string[] | null> =>
+      ipcRenderer.invoke('groups:move', id, beforeId),
     setSessionGroup: (cardId: string, groupId: string | null): Promise<void> =>
       ipcRenderer.invoke('groups:setSessionGroup', cardId, groupId),
   },

@@ -336,6 +336,37 @@ describe('persistent groups (P2-E12-01: durable containers, empty ≠ gone)', ()
     expect(s.sessions.every((x) => x.groupId === undefined)).toBe(true);
   });
 
+  // #1144. The array's own order is the order the rail draws, so a move is a
+  // splice — and it must survive a restart and leave membership alone.
+  it('moveGroup reorders, survives a reload, and does not touch members', () => {
+    const st = makeStore(file);
+    st.load();
+    for (const id of ['a', 'b', 'c']) st.upsertGroup(grp(id));
+    st.upsertSession({ ...sess('s1'), groupId: 'c' });
+    const ids = (): string[] => st.snapshot().groups.map((g) => g.id);
+
+    // the owner's example: the bottom group becomes second
+    expect(st.moveGroup('c', 'b')).toBe(true);
+    expect(ids()).toEqual(['a', 'c', 'b']);
+    // null = last
+    expect(st.moveGroup('a', null)).toBe(true);
+    expect(ids()).toEqual(['c', 'b', 'a']);
+    // to where it already is: fine, and nothing moves
+    expect(st.moveGroup('c', 'b')).toBe(true);
+    expect(st.moveGroup('a', null)).toBe(true);
+    expect(ids()).toEqual(['c', 'b', 'a']);
+    // refused: unknown group, unknown neighbour, before itself
+    expect(st.moveGroup('nope', 'a')).toBe(false);
+    expect(st.moveGroup('a', 'nope')).toBe(false);
+    expect(st.moveGroup('a', 'a')).toBe(false);
+    expect(ids()).toEqual(['c', 'b', 'a']);
+
+    expect(st.snapshot().sessions[0].groupId).toBe('c');
+    st.save();
+    const again = makeStore(file);
+    expect(again.load().groups.map((g) => g.id)).toEqual(['c', 'b', 'a']);
+  });
+
   it('setSessionGroup validates: unknown group is a no-op, null clears', () => {
     const st = makeStore(file);
     st.load();

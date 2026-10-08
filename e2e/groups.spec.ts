@@ -191,5 +191,68 @@ test.describe('persistent groups (E12)', () => {
     await expect(w.getByText('New group')).toBeVisible();
     await w.getByTitle('Delete group (its sessions become ungrouped)').click();
     await expect(w.getByText('New group')).toHaveCount(0);
+    });
+
+  // #1144 — the owner's own example: "take the bottom group and make it second".
+  // By the menu, then by a drag, with a relaunch in between because an order
+  // that does not survive a restart is not an order.
+  test('groups can be reordered by the menu and by a drag, and the order survives a relaunch (#1144)', async () => {
+    a = await launchApp();
+    const first = a;
+    const w = first.window;
+    const order = (page: typeof w): Promise<string[]> =>
+      page.locator('nav [data-group-head] [data-rail-group-toggle]').allInnerTexts();
+
+    for (const name of ['One', 'Two', 'Three']) {
+      await w.getByTitle('Create a persistent group').click();
+      await w.getByText('New group', { exact: true }).dblclick();
+      await w.locator('input:focus').fill(name);
+      await w.locator('input:focus').press('Enter');
+      await expect(w.getByText(name, { exact: true })).toBeVisible();
+    }
+    expect(await order(w)).toEqual(['One', 'Two', 'Three']);
+
+    // BY THE MENU: the bottom group, up once, is second
+    const head = (page: typeof w, name: string) =>
+      page.locator('nav [data-group-head]', { hasText: name }).first();
+    await head(w, 'Three').click({ button: 'right' });
+    const menu = w.getByTestId('rail-group-menu');
+    await expect(menu).toBeVisible();
+    await menu.getByRole('menuitem', { name: 'Move group up' }).click();
+    await expect.poll(() => order(w)).toEqual(['One', 'Three', 'Two']);
+
+    // the top group cannot go up: the item is there, dimmed, and does nothing
+    await head(w, 'One').click({ button: 'right' });
+    await expect(menu.getByRole('menuitem', { name: 'Move group up' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    );
+    await w.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+
+    // survives a relaunch
+    await w.waitForTimeout(800); // let the debounced workspace save reach disk
+    await first.close();
+    a = await launchApp({ home: first.home });
+    const w2 = a.window;
+    await expect(w2.getByText('Three', { exact: true })).toBeVisible();
+    expect(await order(w2)).toEqual(['One', 'Three', 'Two']);
+
+    // BY A DRAG: pick "Two" up by its header and drop it on the top half of
+    // "One"'s card. HTML5 DnD, synthesized, the way the membership test above
+    // does it — with real coordinates, because which HALF of the card the
+    // pointer is in is the whole question.
+    const dt = await w2.evaluateHandle(() => new DataTransfer());
+    await head(w2, 'Two').dispatchEvent('dragstart', { dataTransfer: dt });
+    // the card is the header's parent, and the card is the drop target
+    const target = head(w2, 'One').locator('xpath=..');
+    const box = (await target.boundingBox())!;
+    const at = { dataTransfer: dt, clientX: box.x + box.width / 2, clientY: box.y + 2 };
+    await target.dispatchEvent('dragover', at);
+    // the line says where it will land, before it lands
+    await expect(w2.locator('[data-group-drop-line="before"]')).toHaveCount(1);
+    await target.dispatchEvent('drop', at);
+    await expect.poll(() => order(w2)).toEqual(['Two', 'One', 'Three']);
+    await expect(w2.locator('[data-group-drop-line]')).toHaveCount(0);
   });
 });

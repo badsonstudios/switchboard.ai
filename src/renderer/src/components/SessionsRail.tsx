@@ -85,6 +85,8 @@ import { uiGet, uiSet } from '../lib/ui-state';
 import { useHeldCounts } from '../lib/sibling-inbox';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
 import { MenuPlacement, placeMenu } from '../lib/menu-placement';
+import { dropGroup, stepGroup } from '../lib/group-order';
+import { RailGroupMenu } from './RailGroupMenu';
 import { directionOf } from '../lib/writing-direction';
 import {
   cardOverride,
@@ -107,6 +109,17 @@ import { DEFAULT_TASK_LABEL_SIZE, LABEL_LINES } from '../../../shared/task-label
 export type { RailSession, RailGroup } from '../model/types';
 
 const DND_TYPE = 'application/x-switchboard-card';
+/**
+ * A GROUP being dragged by its header (#1144).
+ *
+ * ITS OWN TYPE, and that is the whole of how a group drag and a session drag
+ * stay out of each other's way: every session-drop handler in this file tests
+ * for `DND_TYPE` (or a dockview tab in flight) before it does anything, so a
+ * group passing over a row, a card or the rail's background is simply not a
+ * thing those handlers see. A group can never be read as "a session dropped
+ * into the group next door" (#582's worry), because it never carries a card.
+ */
+const GROUP_DND_TYPE = 'application/x-switchboard-group';
 
 /** Tint helper: the group and accent colors are runtime DATA (user-picked from
  *  the stored palette), so they can't be tokens — color-mix keeps the alpha
@@ -273,6 +286,12 @@ export function SessionsRail(props: {
   onRenameGroup: (id: string, name: string) => void;
   onRecolorGroup: (id: string, color: string) => void;
   onDeleteGroup: (id: string) => void;
+  /**
+   * Reorder the groups (#1144): put `id` just before `beforeId`, or last when
+   * that is `null`. Optional so a caller with no way to persist an order
+   * offers neither the menu items nor the drag.
+   */
+  onMoveGroup?: (id: string, beforeId: string | null) => void;
   /** open a NEW session inside this group (E12-03) */
   onOpenInGroup: (id: string) => void;
   /** move a session between groups / to ungrouped (E12-04, rail DnD) */
@@ -382,6 +401,26 @@ export function SessionsRail(props: {
     rowId: string;
     edge: 'before' | 'after';
   } | null>(null);
+  // ── reordering GROUPS (#1144) ────────────────────────────────────────────
+  // The group's own right-click menu. Groups had none: this is the first thing
+  // a group can do that does not fit as a button on its header.
+  const [groupMenu, setGroupMenu] = React.useState<{
+    group: RailGroup;
+    x: number;
+    y: number;
+  } | null>(null);
+  // Which group a header drag picked up. A ref for #559's reason: `getData`
+  // answers '' during dragover, so the hit test has to have been told.
+  const dragGroup = React.useRef<string | null>(null);
+  // where a dragged group would land: above or below this group's card
+  const [groupDropAt, setGroupDropAt] = React.useState<{
+    groupId: string;
+    edge: 'before' | 'after';
+  } | null>(null);
+  // A move made from the menu re-orders the list under the keyboard. Once the
+  // new order arrives, focus goes back to the group that moved — and it is
+  // said aloud, because otherwise the move is a fact carried by the screen.
+  const pendingGroupMove = React.useRef<{ id: string; order: string } | null>(null);
   // the live width, so pointerup can persist what is actually on screen. A ref
   // rather than a read inside a setState updater: StrictMode invokes updaters
   // twice, and an updater that writes to disk is not a pure function.
@@ -540,6 +579,38 @@ export function SessionsRail(props: {
     setMenuPlace(null);
     if (restoreFocus) menuAnchor.current?.focus();
   }, []);
+
+  const groupIds = props.groups.map((g) => g.id);
+  // ids are UUIDs main minted, so a comma cannot occur inside one
+  const groupOrderKey = groupIds.join(',');
+  /** ask for a group move, and remember to follow it with focus and a word */
+  const moveGroup = (move: { id: string; beforeId: string | null } | null, fromKeyboard: boolean): void => {
+    if (!move || !props.onMoveGroup) return;
+    if (fromKeyboard) pendingGroupMove.current = { id: move.id, order: groupOrderKey };
+    props.onMoveGroup(move.id, move.beforeId);
+  };
+  React.useEffect(() => {
+    const p = pendingGroupMove.current;
+    const nav = navRef.current;
+    // "the order is no longer the one I left" is the condition — a value, not
+    // an event, for the reason the pin and the cross-group move give
+    if (!p || !nav || p.order === groupOrderKey) return;
+    pendingGroupMove.current = null;
+    const at = groupIds.indexOf(p.id);
+    const group = props.groups[at];
+    if (!group) return;
+    setMoveSaid(
+      t('rail.groupReordered', { name: group.name, position: at + 1, count: groupIds.length })
+    );
+    // never yank focus back from wherever the user has since gone
+    const doc = nav.ownerDocument;
+    const active = doc.activeElement as HTMLElement | null;
+    if (active && active !== doc.body && !nav.contains(active)) return;
+    Array.from(nav.querySelectorAll<HTMLElement>('[data-rail-group-toggle]'))
+      .find((el) => el.getAttribute('data-rail-group-toggle') === p.id)
+      ?.focus();
+    // keyed on the ORDER alone: the names and the translator ride along
+  }, [groupOrderKey]);
 
   // dismiss the context menu on any click elsewhere, Escape, or a window resize
   React.useEffect(() => {
@@ -1488,6 +1559,27 @@ export function SessionsRail(props: {
         // able to drag it right into the group window anywhere"). The header
         // needs no handler of its own — a drop there bubbles to here.
         onDragOver={(e) => {
+          // A GROUP in flight (#1144) is a different gesture with a different
+          // answer, and it is settled before anything about sessions is asked.
+          if (e.dataTransfer.types.includes(GROUP_DND_TYPE)) {
+            // over an auto-group, Ungrouped, or nowhere a move would change
+            // anything: no line, and no `preventDefault`, so the cursor says no
+            e.stopPropagation();
+            const dragged = dragGroup.current;
+            const edge = edgeAt(e.currentTarget, e.clientY);
+            const move =
+              g && dragged ? dropGroup(groupIds, dragged, g.id, edge === 'after') : null;
+            if (!move) {
+              setGroupDropAt(null);
+              return;
+            }
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            setGroupDropAt((prev) =>
+              prev?.groupId === g!.id && prev.edge === edge ? prev : { groupId: g!.id, edge }
+            );
+            return;
+          }
           // accept rail-row drags (our type) AND dockview tab drags
           // (published via drag-context — Dan's E12-04 eyeball find)
           if (!e.dataTransfer.types.includes(DND_TYPE) && !getDraggedCard()) return;
@@ -1519,11 +1611,24 @@ export function SessionsRail(props: {
           // dragging between the card's own children fires dragleave on the
           // one being left — only a pointer that has actually left the CARD
           // should clear the highlight
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null);
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+            setDropTarget(null);
+            setGroupDropAt((prev) => (prev?.groupId === g?.id ? null : prev));
+          }
         }}
         onDrop={(e) => {
           e.stopPropagation(); // don't bubble to the nav's ungroup drop
           e.preventDefault(); // claim it from dockview's own drop targets
+          if (e.dataTransfer.types.includes(GROUP_DND_TYPE)) {
+            // recomputed from the live list, by the same function the line was
+            // drawn from, so the line and the landing cannot disagree
+            const dragged = dragGroup.current;
+            const edge = edgeAt(e.currentTarget, e.clientY);
+            dragGroup.current = null;
+            setGroupDropAt(null);
+            if (g && dragged) moveGroup(dropGroup(groupIds, dragged, g.id, edge === 'after'), false);
+            return;
+          }
           const cardId = e.dataTransfer.getData(DND_TYPE) || getDraggedCard();
           setDraggedCard(null);
           setDropTarget(null);
@@ -1544,6 +1649,8 @@ export function SessionsRail(props: {
           border: '1px solid var(--group-frame)',
           borderRadius: 8,
           marginBlockEnd: 9,
+          // for the group drop line below, which sits in the gap between cards
+          position: 'relative',
           // NO `overflow: hidden` here, and that is load-bearing (#295):
           // `overflow` other than `visible` makes this box a scroll container,
           // and a `position: sticky` descendant is measured against its NEAREST
@@ -1556,10 +1663,59 @@ export function SessionsRail(props: {
             : 'var(--group-lift)',
         }}
       >
+        {g && groupDropAt?.groupId === g.id && (
+          // WHERE THE DRAGGED GROUP WILL LAND (#1144): the same 2px line, in
+          // the same ink, that #559 draws between rows — one way of saying
+          // "here", one level up. In the gap above or below this card, not on
+          // it, because a group goes BETWEEN groups.
+          <span
+            aria-hidden
+            data-group-drop-line={groupDropAt.edge}
+            style={{
+              position: 'absolute',
+              insetInline: 0,
+              [groupDropAt.edge === 'before' ? 'insetBlockStart' : 'insetBlockEnd']: -6,
+              blockSize: 2,
+              borderRadius: 1,
+              background: 'var(--status-working-ink)',
+              pointerEvents: 'none',
+            }}
+          />
+        )}
         <div
           className="rail-head"
           onClick={() => toggleCollapsed(opts.key)}
           title={opts.title ?? (isCollapsed ? t('rail.expand') : t('rail.collapse'))}
+          // ── reorder (#1144) ──────────────────────────────────────────────
+          // Only a group you MADE, and only when there is somewhere to save
+          // the order: an auto-group's place is derived from its folder, and
+          // Ungrouped is always last. A collapsed group drags the same as an
+          // open one — the header is the handle either way.
+          data-group-head={g?.id}
+          draggable={!!g && !!props.onMoveGroup && editingGroup !== g.id && props.groups.length > 1}
+          onDragStart={(e) => {
+            if (!g) return;
+            // the header only: a ROW inside the card starts its own drag and
+            // its event must not be relabelled as the group's on the way up
+            if (e.target !== e.currentTarget && (e.target as HTMLElement).closest('.rail-row'))
+              return;
+            e.dataTransfer.setData(GROUP_DND_TYPE, g.id);
+            e.dataTransfer.effectAllowed = 'move';
+            dragGroup.current = g.id;
+            // belt and braces: no session is in flight, whatever an earlier
+            // drag that ended off-window left behind
+            dragCard.current = null;
+          }}
+          onDragEnd={() => {
+            dragGroup.current = null;
+            setGroupDropAt(null);
+          }}
+          onContextMenu={(e) => {
+            if (!g || !props.onMoveGroup) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setGroupMenu({ group: g, x: e.clientX, y: e.clientY });
+          }}
           style={
             {
               display: 'flex',
@@ -1741,6 +1897,17 @@ export function SessionsRail(props: {
                 e.stopPropagation();
                 setEditingGroup(g.id);
                 setGroupDraft(g.name);
+              }}
+              // The same menu from the keyboard (#1144), where a right-click
+              // opens it: the Menu key and Shift+F10, which is what the session
+              // rows answer to. Opened at the button, since there is no pointer.
+              onKeyDown={(e) => {
+                if (!g || !props.onMoveGroup) return;
+                if (e.key !== 'ContextMenu' && !(e.key === 'F10' && e.shiftKey)) return;
+                e.preventDefault();
+                e.stopPropagation();
+                const box = e.currentTarget.getBoundingClientRect();
+                setGroupMenu({ group: g, x: box.left, y: box.bottom });
               }}
               title={g ? t('rail.renameGroup') : undefined}
               style={{
@@ -2118,6 +2285,35 @@ export function SessionsRail(props: {
       <div role="status" style={srOnly}>
         {moveSaid}
       </div>
+
+      {groupMenu && (
+        <RailGroupMenu
+          x={groupMenu.x}
+          y={groupMenu.y}
+          label={t('rail.groupMenuLabel', { name: groupMenu.group.name })}
+          onClose={(restoreFocus) => {
+            const id = groupMenu.group.id;
+            setGroupMenu(null);
+            if (!restoreFocus) return;
+            Array.from(
+              navRef.current?.querySelectorAll<HTMLElement>('[data-rail-group-toggle]') ?? []
+            )
+              .find((el) => el.getAttribute('data-rail-group-toggle') === id)
+              ?.focus();
+          }}
+          items={(['up', 'down'] as const).map((direction) => {
+            // the SAME function the drop uses for "is there anywhere to go",
+            // so an item is dimmed exactly when choosing it would do nothing
+            const move = stepGroup(groupIds, groupMenu.group.id, direction);
+            return {
+              id: direction,
+              label: t(direction === 'up' ? 'rail.groupMoveUp' : 'rail.groupMoveDown'),
+              can: move !== null,
+              run: () => moveGroup(move, true),
+            };
+          })}
+        />
+      )}
 
       <div
         className="rail-resize"

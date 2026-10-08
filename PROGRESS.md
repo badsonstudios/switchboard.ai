@@ -76,9 +76,8 @@
 > manual's "Tokens and cost" section is cut down to say so and to point at
 > `/usage` and `/cost`. Where the figures go next is the owner's decision.
 >
-> **#1142 (Changes tab file names too truncated) — DONE ON
-> `feature/1142-changes-list-width`** (the PR that carries this line; NOT
-> released). **Measured first**, in the real app with the owner's own file
+> **#1142 (Changes tab file names too truncated) — DONE 2026-10-08, PR #1150
+> (`8c12f66`), merged, NOT released.** **Measured first**, in the real app with the owner's own file
 > names: the list was a fixed 240px, a row was 232px, and the name got **57px**
 > while ~125px sat empty for buttons that only show on hover. Part of that was
 > a plain bug — the numbers and the buttons were meant to share one slot, and an
@@ -92,9 +91,24 @@
 > The name gets room before the folder path. Same probe after: every one of
 > those names fits in full at the default width (81, 72, 139, 146, 157px).
 >
-> **NEXT: #1144** (reorder groups in the rail: Move up/down on the menu first,
-> drag second). Then #1130, then #1143 — **which is large: read it, then ASK
-> the owner the design questions before starting.**
+> **#1144 (reorder groups in the rail) — DONE ON `feature/1144-reorder-groups`**
+> (the PR that carries this line; NOT released). Menu first, drag second, as
+> asked. The order was already there to be had: the rail draws groups in the
+> order main's array keeps them, so a move is a splice (`groups:move`, "put it
+> before this one, or last") and nothing else needed a new field. **Groups had
+> no menu at all**, so this adds one (right-click a header, or the Menu key /
+> Shift+F10 on its name) with Move group up / Move group down. Dragging a
+> header draws #559's insertion line between groups. **A group in flight
+> carries its own drag type**, which is the whole answer to #582's worry: no
+> session-drop handler can see it, and a test pins that in both directions.
+> Only groups the user made can move; automatic groups and Ungrouped stay
+> below them.
+>
+> **NEXT: #1130** (fold consecutive Read/Grep/Glob calls into one expandable
+> block). It touches the conversation view, so it needs an independent review
+> before pushing, and a before/after on the #716 probe with the builds
+> ALTERNATED run by run. Then #1143 — **which is large: read it, then ASK the
+> owner the design questions before starting.**
 >
 > ## Earlier on 2026-10-07: #1126, then #1127 — the owner: "we can do 1126 and 1127 next".
 >

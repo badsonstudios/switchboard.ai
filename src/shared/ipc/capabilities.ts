@@ -344,6 +344,7 @@ export const CHANNEL_CAPABILITIES = {
   'groups:create': 'groups.write',
   'groups:delete': 'groups.write',
   'groups:list': 'groups.read',
+  'groups:move': 'groups.write',
   'groups:palette': 'groups.read',
   'groups:setSessionGroup': 'groups.write',
   'groups:update': 'groups.write',
