@@ -3,7 +3,29 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ RELEASED: v0.8.115, 2026-10-07 (`7165cfe`, PR #1136)
+> # ✅ RELEASED: v0.8.116, 2026-10-08 (`9980aa3`, PR #1161)
+>
+> The owner, after trying the finished sessions strip in a test copy: *"Seems
+> okay… Go ahead and cut a release."* A plain patch step. Installer and
+> `.sha256` sidecar both published, and the published pair downloaded and
+> verified to match. `0.8.117 — unreleased` is open and empty.
+>
+> **In it, all installable now and all in the dogfood tracker:** sessions
+> listed across the top (#1143, six PRs, the block below); a session keeping
+> its latest text across an update (#1140); "N need you" always pointing at a
+> row you can see (#1137); the card header without the duplicate count and
+> the usage figures (#1145); whole file names and a wider Changes list
+> (#1142); groups in an order you choose (#1144); a burst of Read / Grep /
+> Glob as one row (#1130); a session writing its own handoff (#1126); a busy
+> history pick asking instead of refusing (#1127).
+>
+> **Nothing is in flight. No PR is open.** What is waiting is the owner's
+> hand-testing: thirteen rows in the tracker's Untested table, the six for
+> #1143 on top. He "played with it a little bit" in the test copy and said it
+> seemed okay; he has not worked through the rows, and the five departures
+> from the mockup listed below have not been put to him one by one.
+>
+> ## Earlier: v0.8.115, 2026-10-07 (`7165cfe`, PR #1136)
 >
 > The owner: *"cut the release"*. A plain patch step. Installer and `.sha256`
 > sidecar both published, and the published pair downloaded and verified to
@@ -21,10 +43,11 @@
 > measured in time, sending only the new text saves megabytes and no
 > milliseconds.
 >
-> # ✅ DONE, NOT RELEASED — #1143, sessions across the top (2026-10-08, six PRs, issue CLOSED)
+> # ✅ DONE AND RELEASED IN v0.8.116 — #1143, sessions across the top (2026-10-08, six PRs, issue CLOSED)
 >
-> **Nothing is in flight. No PR is open. `main` is at `d0044a2` plus this
-> close-out.** The owner has hand-tested NONE of it beyond a look at step 2.
+> The owner tried the finished build in a test copy on 2026-10-08 ("played
+> with it a little bit… seems okay") and asked for the release on the
+> strength of that. He has not worked through the tracker rows.
 >
 > **What it is.** A second placement for the sessions list: down the left (the
 > rail, still the default) or one strip across the top. Chosen from the
@@ -99,11 +122,11 @@
 >   not synthesize that click. For anything that moves focus on a keydown,
 >   the real app is the only witness.
 >
-> **ALL EIGHT of the 2026-10-07 tickets are now merged and UNRELEASED**: #1140
+> **ALL EIGHT of the 2026-10-07 tickets are RELEASED in v0.8.116**: #1140
 > (PR #1146), #1137 (#1148), #1145 (#1149), #1142 (#1150), #1144 (#1151),
-> #1130 (#1152) and #1143 (above), on top of #1126 and #1127 from the day
-> before. Each has a row in the dogfood tracker. **DO NOT CUT 0.8.116 — the
-> owner said to hold off (2026-10-08). Ask him; do not decide it.**
+> #1130 (#1152) and #1143 (above), with #1126 and #1127 from the day before.
+> Each has a row in the dogfood tracker. *(This paragraph said "do not cut
+> 0.8.116" until the owner asked for it himself, later the same day.)*
 >
 > **Still open, untouched: #716 / #1013** (typing lag) until the owner has
 > tried v0.8.115 on the laptop. Asked a fourth and last time on 2026-10-08, no
