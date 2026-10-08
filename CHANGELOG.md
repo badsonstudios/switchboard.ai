@@ -168,6 +168,13 @@ on the floor, and say so in your PR.
   session that is busy or waiting on you is never interrupted: your message
   goes at once with the usual brief, and a line under the box says why.
 
+### Internal
+
+- **The row that draws one session in the Sessions list is now its own piece.**
+  Nothing looks or behaves differently. It is the first step toward listing
+  sessions across the top of the window: the lists that will drop down from a
+  group there draw this same row, so the two places cannot come to disagree.
+
 ## 0.8.115 — 2026-10-07
 
 ### Fixed

@@ -72,21 +72,21 @@ import {
   planReorder,
   stepReorder,
 } from '../lib/rail-order';
-import { LineageMap, NO_LINEAGE, railDepthIndent } from '../lib/dispatch-lineage';
+import { LineageMap, NO_LINEAGE } from '../lib/dispatch-lineage';
 import {
-  attentionPaint,
-  presentStatus,
   needCount,
   clampRailWidth,
   railWidthAtPointer,
   RAIL_WIDTH_DEFAULT,
 } from '../lib/rail-view';
+import { tint } from '../lib/tint';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { useHeldCounts } from '../lib/sibling-inbox';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
 import { MenuPlacement, placeMenu } from '../lib/menu-placement';
 import { dropGroup, stepGroup } from '../lib/group-order';
 import { RailGroupMenu } from './RailGroupMenu';
+import { SessionRow } from './SessionRow';
 import { directionOf } from '../lib/writing-direction';
 import {
   cardOverride,
@@ -104,7 +104,6 @@ import {
   resolveFocusPolicy,
 } from '../lib/focus-policy';
 import { srOnly } from './sr-only';
-import { DEFAULT_TASK_LABEL_SIZE, LABEL_LINES } from '../../../shared/task-label-size';
 
 export type { RailSession, RailGroup } from '../model/types';
 
@@ -120,12 +119,6 @@ const DND_TYPE = 'application/x-switchboard-card';
  * into the group next door" (#582's worry), because it never carries a card.
  */
 const GROUP_DND_TYPE = 'application/x-switchboard-group';
-
-/** Tint helper: the group and accent colors are runtime DATA (user-picked from
- *  the stored palette), so they can't be tokens — color-mix keeps the alpha
- *  compositing in CSS instead of hand-rolling rgba in TS (§5.20). */
-const tint = (color: string, pct: number): string =>
-  `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 
 /**
  * A group key made safe to put in an `id` (#197). An auto-group's key is a
@@ -271,8 +264,8 @@ export function SessionsRail(props: {
    * How many lines the task label may take (#877) — `LABEL_LINES` from the
    * shared size vocabulary, never a number invented here.
    *
-   * A COUNT rather than the size name, because this component's job is to draw
-   * the clamp, not to interpret a preference: `shared/task-label-size.ts` owns
+   * A COUNT rather than the size name, because the rail's job (through
+   * `SessionRow`, which draws the clamp) is not to interpret a preference: `shared/task-label-size.ts` owns
    * what "full" means, so the rail and the card header cannot come to disagree.
    *
    * Optional, and the omission reads as the DEFAULT size — which is the truth
@@ -907,513 +900,96 @@ export function SessionsRail(props: {
     return true;
   };
 
-  const sessionRow = (s: RailSession, bucket: string): React.JSX.Element => {
-    const p = presentStatus(s.status);
-    // WHO NEEDS YOU is the count's own answer (#1137), not the status's: a row
-    // is lit exactly when its session is one of the N the header is counting.
-    const paint = attentionPaint(s.status, props.needing.has(s.id));
-    const hue = `var(--status-${paint.token})`;
-    const ink = `var(--status-${paint.token}-ink)`;
-    const accent = s.accent ?? 'var(--faint)';
-    const selected = s.id === props.selectedId;
-    const isPinned = props.pinned.has(s.id);
-    const waiting = waitingCounts.get(s.id) ?? 0;
-    // §5.15's "↳ Review of X" (#951). THE ORDER'S OWN ANSWER, not a lineage
-    // lookup: `depthOf` holds a row only if `railOrder` really placed it under the
-    // session that dispatched it, so a connector can never be drawn pointing at a
-    // row that is not above this one — an author closed, an author in another
-    // group, an author on the other side of a pin. See lib/dispatch-lineage.
-    const depth = order.depthOf.get(s.id);
-    const indent = railDepthIndent(depth);
-    // a needy session outranks selection: the attention tint is the signal the
-    // whole panel exists to carry
-    const rowTint = paint.lit ? tint(hue, 10) : selected ? tint(accent, 10) : 'transparent';
-
-    return (
-      <div
-        key={s.id}
-        className="rail-row"
-        // `data-needs-you` is the SEMANTIC one — does a human have to act —
-        // and is read by the specs. Its old companion `data-tinted` went with
-        // the dead hover rule it existed for (#253): its only reader was
-        // `.rail-row[data-tinted='true']:hover`, the exception that kept a
-        // needy row's tint from being repainted. No hover rule, nothing to
-        // except it from.
-        data-needs-you={paint.lit}
-        data-session-status={p.token}
-        // §5.8's pinning contract (E9-09). An attribute rather than only a
-        // glyph: the protection is a fact about the row that the e2e suite has
-        // to be able to read, and styling may want it later.
-        data-pinned={isPinned}
-        // #559: the row a drop would land against, and which side of it. Read
-        // by the e2e — an insertion line is a 2px bar and nothing else on the
-        // page can be asked whether it is in the right place.
-        data-drop-edge={dropAt?.rowId === s.id ? dropAt.edge : undefined}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData(DND_TYPE, s.id);
-          e.dataTransfer.effectAllowed = 'move';
-          // #559: `dataTransfer.getData` answers '' during dragover in
-          // Chromium's protected mode, so a hit test that needs to know WHICH
-          // card is in flight has to have been told. The group card's
-          // membership drop reads the payload at drop time and is unaffected.
-          dragCard.current = s.id;
-        }}
-        onDragOver={(e) => {
-          const edge = edgeAt(e.currentTarget, e.clientY);
-          // no reorder to offer — let it bubble to the group card, whose
-          // membership drop is what a cross-group drag has always meant
-          if (!planRowDrop(bucket, s.id, edge)) return;
-          e.preventDefault();
-          e.stopPropagation();
-          setDropAt({ bucket, rowId: s.id, edge });
-        }}
-        onDrop={(e) => {
-          const edge = edgeAt(e.currentTarget, e.clientY);
-          const next = planRowDrop(bucket, s.id, edge);
-          setDropAt(null);
-          dragCard.current = null;
-          if (!next) return; // never claimed it; the card below is welcome to it
-          e.preventDefault();
-          e.stopPropagation();
-          setDropTarget(null);
-          props.onReorder(bucket, next);
-        }}
-        onClick={() => props.onFocus(s.id)}
-        onDoubleClick={() => {
-          // THE SECOND DOOR TO THE SAME FIELD (#687). The menu's Rename is
-          // dimmed for a card main has never heard of, because
-          // `sessions:renameCard` is `if (prior) upsert(...)` and would write
-          // nothing while the next refresh painted the old name back. Gating one
-          // of the two entry points would just move the silent no-op behind a
-          // gesture with no label on it. Per ROW, not the menu's `notStartedRow`
-          // — that one is about whichever row the menu was opened on.
-          if (s.status === 'not-started') return;
-          setEditing(s.id);
-          setDraft(s.title);
-        }}
-        onContextMenu={(e) => {
-          // The RENAME BOX is inside this row, and a text box owes its user the
-          // edit menu before it owes anyone a session menu (#526). Chromium
-          // stops emitting the browser-process `context-menu` event the moment
-          // the page calls `preventDefault`, so without this early return the
-          // one place in the app you cannot Cut/Copy/Paste with the mouse is a
-          // field whose entire purpose is editing text.
-          if ((e.target as HTMLElement).closest?.('input, textarea, [contenteditable="true"]'))
-            return;
-          e.preventDefault();
-          // Shift+F10 and the ContextMenu key fire this same event, which is
-          // what gives the menu a keyboard path at all — but they carry no
-          // pointer, and Chromium reports (0, 0) for it. Anchor to the row
-          // instead, or the menu opens in the window's top-left corner.
-          const kb = e.clientX === 0 && e.clientY === 0;
-          const box = e.currentTarget.getBoundingClientRect();
-          // the ROW's inline-start edge, a little way in — the same offset the
-          // pointer would have landed at, mirrored so the keyboard's menu opens
-          // over the grid in both directions rather than off the far side of
-          // the rail. The row is the right element to ask here for the same
-          // reason the menu is the right one to ask at placement time: this is
-          // a fact about where the ROW's edges are (#642).
-          const kbX = directionOf(e.currentTarget) === 'rtl' ? box.right - 12 : box.left + 12;
-          menuAnchor.current = (e.target as HTMLElement).closest<HTMLElement>('button');
-          // the previous answer describes a menu that is about to be replaced
-          setMenuPlace(null);
-          setMenu({
-            session: s,
-            x: kb ? kbX : e.clientX,
-            y: kb ? box.bottom : e.clientY,
-          });
-        }}
-        // #951: how deep the nesting put this row. An attribute because the e2e
-        // has to be able to ask — indentation is a few pixels of padding and
-        // nothing else on the page can be asked whether it is right.
-        data-rail-depth={depth ?? undefined}
-        style={{
-          position: 'relative',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 9,
-          // LOGICAL padding, and the inline-start edge carries the nesting indent
-          // (#951). Logical rather than `padding: '8px 8px 8px 13px'` because the
-          // rail is mirrored in RTL and a nested row has to indent toward the
-          // reading direction, not always to the right.
-          paddingBlock: 8,
-          paddingInlineEnd: 8,
-          paddingInlineStart: 13 + indent,
-          borderRadius: 7,
-          marginBlockEnd: 2,
-          background: rowTint,
-        }}
-      >
-        {dropAt?.rowId === s.id && (
-          // The insertion line. `--status-working-ink` is the app's one
-          // per-theme-tuned accent (tokens.css) — the same one the focus ring
-          // uses, because this is the same kind of statement: here is where the
-          // thing you are doing will land.
-          <span
-            aria-hidden
-            data-drop-line={dropAt.edge}
-            style={{
-              position: 'absolute',
-              insetInline: 0,
-              [dropAt.edge === 'before' ? 'insetBlockStart' : 'insetBlockEnd']: -2,
-              blockSize: 2,
-              borderRadius: 1,
-              background: 'var(--status-working-ink)',
-            }}
-          />
-        )}
-        <span
-          aria-hidden
-          style={{
-            position: 'absolute',
-            insetInlineStart: 0,
-            insetBlockStart: 3,
-            insetBlockEnd: 3,
-            // thickens to 4px when it needs you — legible from the far edge of
-            // the screen without reading a word
-            inlineSize: paint.lit ? 4 : 2.5,
-            borderRadius: '0 2px 2px 0',
-            background: paint.lit ? hue : selected ? accent : tint(accent, 45),
-          }}
-        />
-        {depth !== undefined && (
-          // THE CONNECTOR. `aria-hidden` like every other glyph on the row: the
-          // relationship is already in the card's own TITLE, which
-          // `dispatchedTitle` built as "<role> of <session>" back at #948 and
-          // which the row label reads out. A second spoken "nested under" would
-          // say the same thing twice to the one user who cannot see the indent
-          // doing the work.
-          <span
-            aria-hidden
-            data-rail-lineage={s.id}
-            style={{ fontSize: 11, lineHeight: 1, color: 'var(--faint)', flex: 'none' }}
-          >
-            {t('rail.lineageMark')}
-          </span>
-        )}
-        {editing === s.id ? (
-          <input
-            autoFocus
-            value={draft}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => setEditing(null)}
-            /* A BLANK NAME IS NOT A RENAME (#294).
-               An empty commit used to put `''` in the store as a legal title,
-               and every display site (card header, tab, close confirm) grew its
-               own "empty counts as absent" rule to compensate. Worse, the rail
-               row itself renders the raw title, so the session went nameless in
-               the one place you would go to fix it.
-               Two guards, deliberately: main's `sessions:renameCard` is what
-               makes `''` impossible, and this is what makes the FIELD behave —
-               in the idiom it already has for an edit that goes nowhere. Escape
-               and blur both end the edit and leave the name that was there, and
-               so does this; a rejection the user cannot dismiss is a trap. The
-               name is trimmed on the way through for the same reason the task
-               label is — surrounding whitespace is never what was meant, and it
-               is what makes "blank" a rule you can state. */
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const name = draft.trim();
-                if (name) props.onRename(s.id, name);
-                setEditing(null);
-              }
-              if (e.key === 'Escape') setEditing(null);
-            }}
-            style={{
-              inlineSize: '100%',
-              background: 'var(--panel2)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-              borderRadius: 4,
-              fontSize: 11.5,
-              fontFamily: 'var(--font-ui)',
-            }}
-          />
-        ) : (
-          <>
-            {/* The row's real control (#197). It carries the whole name block
-                rather than just the title so the focus ring outlines what a
-                sighted user reads as "the row", and so the sub-label — which is
-                the ASK when the session needs you — is part of the accessible
-                name instead of loose text beside it. */}
-            <button
-              type="button"
-              className="rail-row-open"
-              data-rail-open={s.id}
-              // The state in words, because the only other place it appears is
-              // the status glyph, which is decorative to a screen reader. The
-              // detail is the row's OWN second line, and an `aria-label`
-              // replaces the contents outright — so it has to be folded in here
-              // or a task label would be readable to the eye and to nobody
-              // else. (Not when the session needs you: the second line IS the
-              // ask then, and the state already says it.)
-              // …and a sibling's waiting message is wrapped around that same
-              // `state` argument (#774) rather than given its own pair of row
-              // labels. Composing keeps this at two row labels instead of four,
-              // exactly as `rowDetail` already does for the task label — and it
-              // has to be here at all because the mark beside the row is
-              // `aria-hidden` decoration like every other glyph on the row.
-              aria-label={t(isPinned ? 'rail.rowLabelPinned' : 'rail.rowLabel', {
-                title: s.title,
-                state: ((): string => {
-                  // #877: the label is announced WHENEVER there is one, including
-                  // on a row that needs you. It used to be dropped in exactly
-                  // that case — so the one moment you most want to know WHICH
-                  // piece of work is asking, the row stopped saying. The ask
-                  // (`p.labelKey`) still leads, because that is the demand; the
-                  // label follows as the detail.
-                  const state = s.taskLabel
-                    ? t('rail.rowDetail', { detail: s.taskLabel, state: t(p.labelKey) })
-                    : t(p.labelKey);
-                  return waiting > 0 ? t('rail.rowWaiting', { state, count: waiting }) : state;
-                })(),
-              })}
-              // "this is the session the grid is showing" — a fact about the
-              // rail's own list, which is what aria-current is for
-              aria-current={selected ? 'true' : undefined}
-              onClick={(e) => {
-                // the row div below already focuses on click; without this the
-                // mouse would run it twice
-                e.stopPropagation();
-                props.onFocus(s.id);
-              }}
-              style={{
-                flex: 1,
-                minInlineSize: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                gap: 2,
-                background: 'transparent',
-                border: 'none',
-                padding: 0,
-                margin: 0,
-                textAlign: 'start',
-                font: 'inherit',
-                color: 'inherit',
-                cursor: 'pointer',
-              }}
-            >
-              {/* LINE 1 — the name, and the state as ONE SHORT WORD to its
-                  right (#877, the layout Dan picked off the mockup).
-
-                  The row used to show EITHER the label or the status on line 2,
-                  never both, so a session that needed you lost its task label
-                  entirely — at the one moment you most want to know which piece
-                  of work is asking. The short word is
-                  `presentStatus().shortKey` — the same `status.*` vocabulary the
-                  card header's pill uses, so two surfaces cannot describe one
-                  session differently.
-
-                  ⚠️ IT IS NOT DERIVED FROM `token`, which is what this first
-                  did. `token` is the COLOUR RAMP stem and the ramp collapses
-                  states that share a hue, so that spelling renamed a SUSPENDED
-                  session "idle" — the very distinction the rail exists to draw.
-                  CI caught it on Windows; `rail-view.test.ts` pins all three
-                  collapsed pairs now.
-
-                  The longer ask ("Wants
-                  permission to run") leaves the visible row and stays in the
-                  row button's accessible name, where nothing is lost to a
-                  screen reader. */}
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, inlineSize: '100%' }}>
-                <span
-                  // A NAMED hook, because the structural one broke here (#877).
-                  // Four e2e specs read the rail's order through
-                  // `[data-rail-open] > span` — the title was the button's first
-                  // direct child span until this row grew a flex wrapper, and
-                  // then that selector silently started returning the TASK
-                  // LABEL instead. Three tests failed on a mismatched string
-                  // rather than on anything to do with ordering, which is a
-                  // twenty-minute detour for whoever next touches this markup.
-                  data-rail-title={s.id}
-                  style={{
-                    flex: 1,
-                    minInlineSize: 0,
-                    fontSize: 11.5,
-                    fontWeight: paint.lit ? 700 : 600,
-                    color: 'var(--text)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {s.title}
-                </span>
-                <span
-                  // Named, like the title and the label beside it: the visible
-                  // state moved from the long ask on line 2 to this short word
-                  // (#877), and a spec that looks for it by its words is a spec
-                  // that breaks the next time the vocabulary is reworded.
-                  data-rail-state={s.id}
-                  style={{
-                    flexShrink: 0,
-                    fontFamily: 'var(--font-ui)',
-                    fontSize: 9,
-                    fontWeight: 700,
-                    // the ask's ink when it needs you, quiet otherwise — the
-                    // §5.8 ladder still reads at a glance, and the tint, the
-                    // 4px edge bar and the bold name all still carry it
-                    // …and a BLOCKED session whose event was dismissed keeps
-                    // the ink without the rest: off the count, still asking
-                    color: paint.stateInk ? ink : 'var(--muted)',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {t(p.shortKey)}
-                </span>
-              </div>
-              {/* LINES 2…N — the task label, in its own space.
-
-                  `labelLines` comes from the shared size vocabulary, so "full"
-                  means the same here as on the card header. The em dash holds
-                  ONE line open when there is no label yet: §5.11 asks that the
-                  row not reflow when one lands, and a label arrives late or
-                  never. */}
-              <span
-                // The clamp is the only thing the size setting DOES, and it is
-                // a computed style — so e2e needs a name to measure it on.
-                data-rail-label={s.id}
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontWeight: 400,
-                  fontSize: 9.5,
-                  lineHeight: 1.35,
-                  color: s.taskLabel ? 'var(--muted)' : 'var(--faint)',
-                  display: '-webkit-box',
-                  WebkitLineClamp: props.labelLines ?? LABEL_LINES[DEFAULT_TASK_LABEL_SIZE],
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                  maxInlineSize: '100%',
-                }}
-              >
-                {s.taskLabel ?? '—'}
-              </span>
-            </button>
-            {/* §5.8's pin (E9-09), on the row itself. AFTER the name block and
-                not before it: a marker in front of the title would indent the
-                pinned row's name away from every other row's, so the one row
-                you pinned is the one that no longer lines up. Decoration to a
-                screen reader — the fact is folded into the row button's own
-                accessible name above, where it is read as part of "this
-                session" rather than as a loose glyph beside it. */}
-            {isPinned && (
-              <span
-                aria-hidden
-                title={t('rail.pinnedHint')}
-                style={{ fontSize: 9, lineHeight: 1, flexShrink: 0, color: 'var(--muted)' }}
-              >
-                {t('rail.pinIcon')}
-              </span>
-            )}
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-end',
-                gap: 4,
-                flexShrink: 0,
-                alignSelf: 'stretch',
-              }}
-            >
-              <button
-                className="rail-x"
-                title={t('rail.closeSession')}
-                aria-label={t('rail.closeSession')}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  props.onClose(s.id);
-                }}
-                style={{ fontSize: 10 }}
-              >
-                {t('rail.closeSessionIcon')}
-              </button>
-              {/* #774: what other sessions have left here. Decoration, like
-                  every other mark on the row — the count is in the row button's
-                  accessible name above.
-
-                  IN THE STATUS COLUMN, NOT REPLACING THE STATUS GLYPH: what the
-                  session is doing and what is waiting for you in it are
-                  independent facts, and a working session with a message in it
-                  is the normal case rather than a corner. It sits ABOVE the
-                  glyph so the status column still ends on the glyph every row
-                  has, and it borrows `--status-needs-input` — the same ink the
-                  Session tab's badge uses, so one colour means "a person has to
-                  do something here" on both surfaces. Rule 3 of this file's
-                  header holds: no animation. */}
-              {waiting > 0 && (
-                <span
-                  aria-hidden
-                  data-rail-waiting={s.id}
-                  title={t('rail.waitingHint', { count: waiting })}
-                  style={{
-                    minInlineSize: 16,
-                    blockSize: 16,
-                    borderRadius: 8,
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    paddingInline: 4,
-                    fontFamily: 'var(--font-ui)',
-                    fontWeight: 700,
-                    fontSize: 9.5,
-                    lineHeight: 1,
-                    color: 'var(--status-needs-input-ink)',
-                    background: tint('var(--status-needs-input)', 18),
-                  }}
-                >
-                  {waiting}
-                </span>
-              )}
-              {/* The glyph and the ring are DECORATION: `aria-label` on a
-                  role-less span is ignored by every screen reader anyway, and
-                  the state it was trying to announce is now in the row button's
-                  own name. `title` stays — that one is for the mouse. */}
-              {p.spinner ? (
-                <span
-                  aria-hidden
-                  title={t(p.labelKey)}
-                  style={{
-                    inlineSize: 12,
-                    blockSize: 12,
-                    borderRadius: '50%',
-                    flexShrink: 0,
-                    border: `1.6px solid ${tint(hue, 22)}`,
-                    borderBlockStartColor: hue,
-                    animation: 'sb-spin 1.1s linear infinite',
-                  }}
-                />
-              ) : (
-                <span
-                  aria-hidden
-                  title={t(p.labelKey)}
-                  style={{
-                    inlineSize: 16,
-                    blockSize: 16,
-                    borderRadius: 4,
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontFamily: 'var(--font-ui)',
-                    fontWeight: 700,
-                    fontSize: 10,
-                    color: ink,
-                    background: tint(hue, 14),
-                  }}
-                >
-                  {p.glyphKey ? t(p.glyphKey) : ''}
-                </span>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    );
-  };
+  const sessionRow = (s: RailSession, bucket: string): React.JSX.Element => (
+    <SessionRow
+      key={s.id}
+      session={s}
+      needsYou={props.needing.has(s.id)}
+      selected={s.id === props.selectedId}
+      pinned={props.pinned.has(s.id)}
+      waiting={waitingCounts.get(s.id) ?? 0}
+      // §5.15's "↳ Review of X" (#951). THE ORDER'S OWN ANSWER, not a lineage
+      // lookup: `depthOf` holds a row only if `railOrder` really placed it under the
+      // session that dispatched it, so a connector can never be drawn pointing at a
+      // row that is not above this one — an author closed, an author in another
+      // group, an author on the other side of a pin. See lib/dispatch-lineage.
+      depth={order.depthOf.get(s.id)}
+      labelLines={props.labelLines}
+      editing={editing === s.id}
+      draft={draft}
+      onDraftChange={setDraft}
+      dropEdge={dropAt?.rowId === s.id ? dropAt.edge : undefined}
+      onFocus={() => props.onFocus(s.id)}
+      onClose={() => props.onClose(s.id)}
+      onRename={(name) => props.onRename(s.id, name)}
+      onStartRename={() => {
+        setEditing(s.id);
+        setDraft(s.title);
+      }}
+      onEndRename={() => setEditing(null)}
+      onDragStart={(e) => {
+        e.dataTransfer.setData(DND_TYPE, s.id);
+        e.dataTransfer.effectAllowed = 'move';
+        // #559: `dataTransfer.getData` answers '' during dragover in
+        // Chromium's protected mode, so a hit test that needs to know WHICH
+        // card is in flight has to have been told. The group card's
+        // membership drop reads the payload at drop time and is unaffected.
+        dragCard.current = s.id;
+      }}
+      onDragOver={(e) => {
+        const edge = edgeAt(e.currentTarget, e.clientY);
+        // no reorder to offer — let it bubble to the group card, whose
+        // membership drop is what a cross-group drag has always meant
+        if (!planRowDrop(bucket, s.id, edge)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setDropAt({ bucket, rowId: s.id, edge });
+      }}
+      onDrop={(e) => {
+        const edge = edgeAt(e.currentTarget, e.clientY);
+        const next = planRowDrop(bucket, s.id, edge);
+        setDropAt(null);
+        dragCard.current = null;
+        if (!next) return; // never claimed it; the card below is welcome to it
+        e.preventDefault();
+        e.stopPropagation();
+        setDropTarget(null);
+        props.onReorder(bucket, next);
+      }}
+      onContextMenu={(e) => {
+        // The RENAME BOX is inside this row, and a text box owes its user the
+        // edit menu before it owes anyone a session menu (#526). Chromium
+        // stops emitting the browser-process `context-menu` event the moment
+        // the page calls `preventDefault`, so without this early return the
+        // one place in the app you cannot Cut/Copy/Paste with the mouse is a
+        // field whose entire purpose is editing text.
+        if ((e.target as HTMLElement).closest?.('input, textarea, [contenteditable="true"]'))
+          return;
+        e.preventDefault();
+        // Shift+F10 and the ContextMenu key fire this same event, which is
+        // what gives the menu a keyboard path at all — but they carry no
+        // pointer, and Chromium reports (0, 0) for it. Anchor to the row
+        // instead, or the menu opens in the window's top-left corner.
+        const kb = e.clientX === 0 && e.clientY === 0;
+        const box = e.currentTarget.getBoundingClientRect();
+        // the ROW's inline-start edge, a little way in — the same offset the
+        // pointer would have landed at, mirrored so the keyboard's menu opens
+        // over the grid in both directions rather than off the far side of
+        // the rail. The row is the right element to ask here for the same
+        // reason the menu is the right one to ask at placement time: this is
+        // a fact about where the ROW's edges are (#642).
+        const kbX = directionOf(e.currentTarget) === 'rtl' ? box.right - 12 : box.left + 12;
+        menuAnchor.current = (e.target as HTMLElement).closest<HTMLElement>('button');
+        // the previous answer describes a menu that is about to be replaced
+        setMenuPlace(null);
+        setMenu({
+          session: s,
+          x: kb ? kbX : e.clientX,
+          y: kb ? box.bottom : e.clientY,
+        });
+      }}
+    />
+  );
 
   /**
    * §5.8's pinning contract, the OVERFLOW clause (#295, deferred from #78):
