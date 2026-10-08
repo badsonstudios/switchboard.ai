@@ -14,8 +14,8 @@ import {
 // the real window the three doors (the title bar's switch, Ctrl+B and Settings)
 // move ONE thing, and that the choice is still there after a restart.
 //
-// It covers the frame, the groups, the pills and the two rows the strip
-// replaces. The menus and the dragging each arrive with their own tests.
+// It covers the frame, the groups, the pills, the two rows the strip replaces
+// and the right-click menus. Dragging arrives with its own tests.
 test.describe('sessions list placement', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
@@ -176,6 +176,72 @@ test.describe('sessions list placement', () => {
     // …and it ENDS. With the lamps row gone, the strip is the only thing that
     // starts this beat and puts it out; a highlight lit for good is the failure.
     await expect(pill).not.toHaveAttribute('data-flash', 'true', { timeout: 10_000 });
+  });
+
+  test('everything a group needs can be done from the strip, by right-click', async () => {
+    // The whole point of the menus: with the sessions across the top there is
+    // no list on the left to go back to. So this never touches the rail until
+    // the last step, which is the menu sending you there.
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const { window } = a;
+    const name = path.basename(folder);
+    await window.locator('[data-placement="top"]').click();
+    const strip = window.getByTestId('sessions-strip');
+    const menu = window.getByTestId('strip-menu');
+    const pill = strip.locator('[data-strip-pill]');
+    const group = strip.locator('[data-strip-group]');
+    await expect(pill).toHaveCount(1);
+
+    // an empty part of the strip: make a group
+    await strip.locator('[data-strip-line]').click({ button: 'right', position: { x: 400, y: 8 } });
+    await menu.getByRole('menuitem', { name: '+ New group' }).click();
+    await expect(group).toHaveCount(1);
+    await expect(group.locator('[data-strip-group-summary]')).toHaveText('empty');
+
+    // the session: move it into that group
+    await pill.click({ button: 'right' });
+    await expect(menu.getByRole('menuitemradio', { name: 'No group' })).toHaveAttribute('aria-checked', 'true');
+    await menu.getByRole('menuitemradio', { name: 'New group' }).click();
+    await expect(pill).toHaveCount(0);
+    await expect(group.locator('[data-strip-group-count]')).toHaveText('1');
+
+    // the group: rename it
+    await group.click({ button: 'right' });
+    await menu.getByRole('menuitem', { name: 'Rename group…' }).click();
+    const groupBox = strip.locator('[data-strip-rename] input');
+    await expect(groupBox).toHaveValue('New group');
+    await groupBox.fill('Infra');
+    await groupBox.press('Enter');
+    await expect(group.locator('[data-strip-group-name]')).toHaveText('Infra');
+    // …and that Enter did nothing else. It used to: the keyboard went back to
+    // the group's button mid-keypress, and the same Enter "clicked" it open.
+    await expect(window.locator('[data-strip-list]')).toHaveCount(0);
+
+    // a row in its list: rename the session, with the list staying open
+    await group.locator('[data-strip-group-open]').click();
+    const list = window.locator('[data-strip-list]');
+    await list.locator('.rail-row').click({ button: 'right' });
+    await menu.getByRole('menuitem', { name: 'Rename…' }).click();
+    const rowBox = list.locator('.rail-row input');
+    await expect(rowBox).toHaveValue(name);
+    await rowBox.fill('renamed-here');
+    await rowBox.press('Enter');
+    await expect(list.locator('[data-rail-title]')).toHaveText('renamed-here');
+    await expect(list).toBeVisible();
+    await window.keyboard.press('Escape');
+
+    // the group: delete it, and its session is a pill again under its new name
+    await group.click({ button: 'right' });
+    await menu.getByRole('menuitem', { name: /^Delete group/ }).click();
+    await expect(group).toHaveCount(0);
+    await expect(pill.locator('[data-strip-pill-title]')).toHaveText('renamed-here');
+
+    // and the way back to the list on the left is in the same menu
+    await strip.locator('[data-strip-line]').click({ button: 'right', position: { x: 400, y: 8 } });
+    await menu.getByRole('menuitemradio', { name: 'Sessions on the left' }).click();
+    await expect(window.locator('nav')).toBeVisible();
+    await expect(strip).toHaveCount(0);
   });
 
   test('the lit half hides the strip, and Ctrl+B brings it back where it was', async () => {

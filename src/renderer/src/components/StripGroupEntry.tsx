@@ -70,6 +70,8 @@ export function StripGroupEntry(props: {
   /** open a NEW session in this group. Absent for an automatic group, whose
    *  membership is derived from a folder and cannot be given */
   onOpenInGroup?: () => void;
+  /** a right-click anywhere on the entry: the menu, since there is no menu icon */
+  onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const cell = React.useRef<HTMLDivElement | null>(null);
@@ -95,6 +97,7 @@ export function StripGroupEntry(props: {
     <div
       ref={cell}
       data-strip-group={props.groupKey}
+      onContextMenu={props.onContextMenu}
       data-strip-group-kind={props.kind}
       data-needs-you={need > 0}
       // read back by the strip when it measures what is off each end

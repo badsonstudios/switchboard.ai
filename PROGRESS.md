@@ -21,7 +21,7 @@
 > measured in time, sending only the new text saves megabytes and no
 > milliseconds.
 >
-> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 4 of 6 (PRs 1 to 3 merged 2026-10-08)
+> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 5 of 6 (PRs 1 to 4 merged 2026-10-08)
 >
 > **The design is SETTLED** (three mockup rounds, 2026-10-08). The spec is the
 > NEWEST comment on the issue ("DESIGN SETTLED WITH THE OWNER"); the pictures are
@@ -95,10 +95,8 @@
 >    was all done"), then said to continue: so do not hand him another
 >    half-step to test without saying first, in the first sentence, how much
 >    of the six is in it.
-> 4. Pills and overflow. **← IN FLIGHT**, branch `feature/1143-4-strip-pills`.
->    *This line rides in that PR: if `main` has
->    `src/renderer/src/components/StripPill.tsx`, PR 4 has landed and PR 5 is
->    next. PR 5 carries the close-out.* In it: loose sessions as pills (dashed
+> 4. Pills and overflow. **DONE 2026-10-08, PR #1157 (`27db5c3`), merged, NOT
+>    released.** In it: loose sessions as pills (dashed
 >    when collapsed or hidden); a fixed cell at each end, amber with a count
 >    (`lib/strip-overflow`); the post-jump beat lifted out of the lamps row
 >    into `lib/use-urgency-beat` and run by the strip; **the lamps row and the
@@ -109,8 +107,19 @@
 >    exactly one of lamps row / strip runs the beat, and "hidden" looks the
 >    same in both placements. A folded session INSIDE a group is counted on
 >    its group ("· N folded away") and dashed on its row in the list.
-> 5. Right-click menus. **Needs an independent review before it is pushed**
->    (it carries "Close session").
+> 5. Right-click menus. **← IN FLIGHT**, branch `feature/1143-5-strip-menus`.
+>    *This line rides in that PR: if `main` has
+>    `src/renderer/src/components/StripRenameBox.tsx`, PR 5 has landed and
+>    PR 6 is next. PR 6 carries the close-out.* It carries "Close session", so
+>    it had the independent review the owner requires before it was pushed.
+>    In it: three menus through the rail's small shared menu (which gained
+>    headings and one-of-N ticks); a rename box that REPLACES a pill or a
+>    group entry, and in-place rename for a row in a list; the rail's own
+>    handlers lifted to named functions in App and handed to both lists.
+>    **Left out on purpose, and told to the owner in the tracker row:** the
+>    per-session "on submit" and "when it needs you" overrides the rail's
+>    menu has (the mockup's menu did not list them), and renaming the
+>    palette's "Toggle the sessions rail" command.
 > 6. Dragging.
 >
 > **The issue stays OPEN until PR 6.** No PR before then may put a closing

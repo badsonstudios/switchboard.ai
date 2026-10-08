@@ -14,6 +14,7 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import { listStart, SessionsStrip } from './SessionsStrip';
 import { sessionSpokenName } from './SessionRow';
 import { railOrder } from '../lib/groups';
+import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { RailGroup, RailSession } from '../model/types';
 
 declare global {
@@ -77,6 +78,18 @@ async function mount(world: World, over: Partial<StripProps> = {}): Promise<HTML
         onOpenInGroup={noop}
         onFocus={noop}
         onClose={noop}
+        onDiff={noop}
+        onRename={noop}
+        onTogglePin={noop}
+        onMoveToGroup={noop}
+        onRenameGroup={noop}
+        palette={[]}
+        onRecolorGroup={noop}
+        policies={DEFAULT_BOOK}
+        onCycleGroupPolicy={noop}
+        onDeleteGroup={noop}
+        onOpenAll={noop}
+        onPlace={noop}
         {...over}
       />
     );

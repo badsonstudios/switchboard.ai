@@ -23,7 +23,12 @@
 //
 // The row scrolls sideways when it does not fit, and a fixed cell at each end
 // says what is past that edge — in amber, with a number, when it is a session
-// that needs you. The menus and the dragging each land in their own change.
+// that needs you.
+//
+// RIGHT-CLICK IS THE MENU, everywhere on the strip, and there is no menu icon:
+// on a session (its pill, or its row in an open list), on a group, and on an
+// empty part of the strip. None of the three has an ordering item — order is
+// by dragging, which lands in its own change.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
@@ -35,12 +40,14 @@ import { isLit, UrgencyMarks } from '../lib/urgency';
 import { useUrgencyBeat } from '../lib/use-urgency-beat';
 import { tint } from '../lib/tint';
 import { directionOf } from '../lib/writing-direction';
+import { groupOverride, PolicyBook } from '../lib/presentation-policy';
+import type { SessionsPlacement } from '../lib/sessions-placement';
+import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
+import { StripRenameBox } from './StripRenameBox';
 import { SessionRow } from './SessionRow';
 import { LAST_CHORD, StripGroupEntry } from './StripGroupEntry';
 import { StripPill } from './StripPill';
 
-/** see the row's `editing` prop below for why these are not wired yet */
-const noRename = (): void => {};
 /** the list's width: the rail's default, so a row reads the same in both */
 const LIST_WIDTH = 286;
 
@@ -105,8 +112,53 @@ export interface SessionsStripProps {
   /** open a NEW session inside this group */
   onOpenInGroup: (groupId: string) => void;
   onFocus: (cardId: string) => void;
+  /** end a session (the app confirms first — it forgets the record) */
   onClose: (cardId: string) => void;
+  // ── what the menus do. Each is the SAME handler the rail is given, so a
+  // ── gesture means one thing whichever list it was made in.
+  onDiff: (s: RailSession) => void;
+  onRename: (cardId: string, title: string) => void;
+  onTogglePin: (cardId: string) => void;
+  /** `null` takes the session out of every group */
+  onMoveToGroup: (cardId: string, groupId: string | null) => void;
+  onRenameGroup: (groupId: string, name: string) => void;
+  /** the colours a group may be: persisted data owned by the main process */
+  palette: readonly string[];
+  onRecolorGroup: (groupId: string, color: string) => void;
+  /** §5.8's presentation policy, for a group's own override */
+  policies: PolicyBook;
+  onCycleGroupPolicy: (groupId: string) => void;
+  onDeleteGroup: (groupId: string) => void;
+  /** bring every one of these cards back into the workspace */
+  onOpenAll: (cardIds: readonly string[]) => void;
+  /** list the sessions somewhere else — the strip's own door to the setting */
+  onPlace: (placement: SessionsPlacement) => void;
 }
+
+/** which of the strip's three menus is open, and where it was asked for */
+type StripMenu = { x: number; y: number } & (
+  | { kind: 'session'; id: string; from: 'pill' | 'row' }
+  | { kind: 'group'; key: string }
+  | { kind: 'strip' }
+);
+
+/**
+ * Where a menu opens: at the pointer, or — for Shift+F10 and the ContextMenu
+ * key, which fire the same event with no pointer and report (0, 0) — just
+ * inside the inline-start edge of the thing it is for, under it. The rail's
+ * rule (#526, #642), for the rail's reason: otherwise the keyboard's menu opens
+ * in the window's top-left corner.
+ */
+function menuPoint(e: React.MouseEvent<HTMLElement>): { x: number; y: number } {
+  if (e.clientX !== 0 || e.clientY !== 0) return { x: e.clientX, y: e.clientY };
+  const box = e.currentTarget.getBoundingClientRect();
+  const rtl = directionOf(e.currentTarget) === 'rtl';
+  return { x: rtl ? box.right - 12 : box.left + 12, y: box.bottom };
+}
+
+/** a text box owes its user the EDIT menu before it owes anyone ours (#526) */
+const inTextBox = (e: React.MouseEvent<HTMLElement>): boolean =>
+  (e.target as HTMLElement).closest?.('input, textarea, [contenteditable="true"]') != null;
 
 export function SessionsStrip(props: SessionsStripProps): React.JSX.Element | null {
   if (!props.shown) return null;
@@ -196,6 +248,25 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   // what is past each end of the row, by INLINE direction: `before` is the
   // start edge, wherever that is
   const [edges, setEdges] = React.useState(NO_EDGES);
+  const [menu, setMenu] = React.useState<StripMenu | null>(null);
+  // The keyboard goes back to what was acted on. A menu item usually changes
+  // the very thing it was opened from — a pin re-sorts the pills, a move turns
+  // a pill into a row, a rename swaps a box for a pill — so the element that
+  // had focus is gone by the time the action lands, and focus would fall to
+  // <body>. This holds WHO should have it, and the effect below hands it
+  // over once they are on screen again. It expires, so a session that never
+  // comes back cannot grab the keyboard minutes later.
+  const refocus = React.useRef<{ kind: 'session' | 'group' | 'strip'; id: string; at: number } | null>(
+    null
+  );
+  // What is being renamed, and where its box is: a pill and a group entry
+  // are REPLACED by a box (`StripRenameBox`); a row in a list edits in place,
+  // with its draft held here for the reason `SessionRow`'s field gives.
+  const [renaming, setRenaming] = React.useState<{
+    where: 'pill' | 'row' | 'group';
+    id: string;
+  } | null>(null);
+  const [draft, setDraft] = React.useState('');
 
   // The lamps row is not on screen in this placement, so the beat is ours.
   useUrgencyBeat(props.urgency, props.onExpire, props.onBeatStart);
@@ -266,6 +337,8 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   const close = React.useCallback((restoreFocus: boolean): void => {
     const was = openKeyRef.current;
     setOpen(null);
+    // a row being renamed goes with its list; a pill or a group does not
+    setRenaming((r) => (r?.where === 'row' ? null : r));
     // outside the state updater, which must stay pure
     if (was !== null && restoreFocus) openerOf(was)?.focus();
   }, []);
@@ -311,6 +384,9 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
     /** is this node part of the open list, or of the entry it hangs from */
     const ours = (at: Node | null): boolean => {
       if (listRef.current?.contains(at)) return true;
+      // a menu opened from a row belongs to the list: choosing Rename in it
+      // must not close the list the row being renamed is in
+      if ((at as HTMLElement | null)?.closest?.('[data-testid="strip-menu"]')) return true;
       const cell = (at as HTMLElement | null)?.closest?.<HTMLElement>('[data-strip-group]');
       return cell?.dataset.stripGroup === openKey;
     };
@@ -329,6 +405,9 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape') return;
       const at = e.target as Node | null;
+      // a rename box and a menu each own their Escape: that ends the edit or
+      // the menu, not the list under them
+      if ((at as HTMLElement | null)?.closest?.('input, textarea, [role="menu"]')) return;
       if (ours(at)) {
         e.stopPropagation();
         close(true);
@@ -464,6 +543,251 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
     // this runs when a mark ARRIVES, and reads whatever the row holds then
   }, [props.urgency]);
 
+  /** the control that stands for a session or a group, wherever it is now */
+  const controlOf = (kind: 'session' | 'group' | 'strip', id: string): HTMLElement | undefined => {
+    const within = stripRef.current;
+    if (kind === 'strip') return within?.querySelector<HTMLElement>('[data-strip-add-group]') ?? undefined;
+    if (kind === 'group') return openerOf(id);
+    const find = (sel: string, attr: string): HTMLElement | undefined =>
+      Array.from(within?.querySelectorAll<HTMLElement>(sel) ?? []).find(
+        (el) => el.getAttribute(attr) === id
+      );
+    return find('[data-strip-pill]', 'data-strip-pill') ?? find('[data-rail-open]', 'data-rail-open');
+  };
+  const focusTarget = (m: StripMenu): void => {
+    if (m.kind === 'session') controlOf('session', m.id)?.focus();
+    else if (m.kind === 'group') controlOf('group', m.key)?.focus();
+    else controlOf('strip', '')?.focus();
+  };
+  /** ask for the keyboard back on this once it is (back) on screen */
+  const ran = (kind: 'session' | 'group' | 'strip', id: string): void => {
+    refocus.current = { kind, id, at: Date.now() };
+  };
+  React.useEffect(() => {
+    const want = refocus.current;
+    if (!want) return;
+    if (Date.now() - want.at > 2000) {
+      refocus.current = null;
+      return;
+    }
+    // never out of a text box: a rename that just opened is where it belongs
+    if ((document.activeElement as HTMLElement | null)?.closest?.('input, textarea')) return;
+    const el = controlOf(want.kind, want.id);
+    if (!el) return;
+    refocus.current = null;
+    el.focus();
+  });
+
+  // ── nothing may outlive what it was about ──────────────────────────────────
+  //
+  // A rename box and a menu are both ABOUT one thing on the strip, and that
+  // thing can leave without anyone touching it: a second session opening in
+  // the same folder turns a pill into a row of an automatic group; a session
+  // closes; a list closes under its row. Left set, the state would come back
+  // to life when the thing does — a rename box reappearing with focus in the
+  // middle of whatever you were typing, or a menu redrawn at old coordinates.
+  // So each is dropped the moment its target is not where it was.
+  const renamingStillThere =
+    renaming === null ||
+    (renaming.where === 'pill' && order.loose.some((s) => s.id === renaming.id)) ||
+    (renaming.where === 'row' && (openEntry?.members.some((m) => m.id === renaming.id) ?? false)) ||
+    (renaming.where === 'group' && entries.some((e) => e.key === renaming.id && e.groupId !== undefined));
+  React.useEffect(() => {
+    if (!renamingStillThere) setRenaming(null);
+  }, [renamingStillThere]);
+
+  // ── the three menus ────────────────────────────────────────────────────────
+  //
+  // Built when one is open, from what the strip holds NOW: a session that was
+  // closed, or a group that was deleted, while its menu was up yields no items
+  // and the menu is simply not drawn.
+  const menuItems = ((): { label: string; items: RailGroupMenuItem[] } | null => {
+    if (!menu) return null;
+    if (menu.kind === 'session') {
+      const s = order.flat.find((x) => x.id === menu.id);
+      if (!s) return null;
+      // #687: a card main has never heard of cannot be renamed or regrouped —
+      // both are writes main declines for a card it has no record of. Dimmed
+      // here for the reason the rail dims them: an item must never be offered
+      // and then do nothing.
+      const started = s.status !== 'not-started';
+      const isPinned = props.pinned.has(s.id);
+      const items: RailGroupMenuItem[] = [
+        {
+          id: 'diff',
+          label: t('rail.menuDiff'),
+          can: true,
+          run: () => {
+            ran('session', s.id);
+            props.onDiff(s);
+          },
+        },
+        {
+          id: 'rename',
+          label: t('rail.menuRename'),
+          can: started,
+          run: () => {
+            // a row can only be edited in a list that is still open: it may
+            // have closed under this menu (a jump, a scroll) with no click
+            if (menu.from === 'row' && !openEntry?.members.some((m) => m.id === s.id)) return;
+            setDraft(s.title);
+            setRenaming({ where: menu.from, id: s.id });
+          },
+        },
+        {
+          id: 'pin',
+          label: t(isPinned ? 'rail.menuUnpin' : 'rail.menuPin'),
+          can: true,
+          run: () => {
+            ran('session', s.id);
+            props.onTogglePin(s.id);
+          },
+        },
+        {
+          id: 'close',
+          label: t('rail.menuClose'),
+          can: true,
+          run: () => {
+            // if you answer "no" to the question, you are back where you were
+            ran('session', s.id);
+            props.onClose(s.id);
+          },
+        },
+        // MOVE TO GROUP: one choice out of a known set — each of your groups,
+        // and none. The current one is checked, and choosing it does nothing.
+        ...props.groups.map(
+          (g, i): RailGroupMenuItem => ({
+            id: `move:${g.id}`,
+            label: g.name,
+            can: started,
+            checked: s.groupId === g.id,
+            ...(i === 0 ? { heading: t('rail.menuMove') } : {}),
+            run: () => {
+              ran('session', s.id);
+              if (s.groupId !== g.id) props.onMoveToGroup(s.id, g.id);
+            },
+          })
+        ),
+        {
+          id: 'move:none',
+          label: t('strip.menuNoGroup'),
+          can: started,
+          checked: !s.groupId,
+          ...(props.groups.length === 0 ? { heading: t('rail.menuMove') } : {}),
+          run: () => {
+            ran('session', s.id);
+            if (s.groupId) props.onMoveToGroup(s.id, null);
+          },
+        },
+      ];
+      return { label: t('rail.menuLabel', { title: s.title }), items };
+    }
+    if (menu.kind === 'group') {
+      const e = entries.find((x) => x.key === menu.key);
+      if (!e) return null;
+      const openAll: RailGroupMenuItem = {
+        id: 'open-all',
+        label: t('strip.menuOpenAll'),
+        // ONLY the ones that are folded away, and dimmed when none is: a
+        // session that is on screen, or behind a tab you can see, is not
+        // something to "open", and pulling a tabbed one out of its stack
+        // would be rearranging the workspace under the name of un-folding it
+        can: e.members.some((m) => props.folded.has(m.id)),
+        run: () => {
+          ran('group', e.key);
+          props.onOpenAll(e.members.filter((m) => props.folded.has(m.id)).map((m) => m.id));
+        },
+      };
+      const groupId = e.groupId;
+      // AN AUTOMATIC GROUP is a folder the app noticed, not a thing you made:
+      // it has no name to change, no colour, nothing to delete, and a session
+      // cannot be opened "into" it. Opening what it holds is all there is.
+      if (groupId === undefined) return { label: t('rail.groupMenuLabel', { name: e.name }), items: [openAll] };
+      const own = groupOverride(props.policies, groupId);
+      const items: RailGroupMenuItem[] = [
+        {
+          id: 'new',
+          label: t('rail.openInGroup'),
+          can: true,
+          run: () => {
+            close(false);
+            props.onOpenInGroup(groupId);
+          },
+        },
+        openAll,
+        {
+          id: 'rename',
+          label: t('strip.menuRenameGroup'),
+          can: true,
+          divider: true,
+          run: () => {
+            // its list hangs from the entry the box is about to replace
+            close(false);
+            setRenaming({ where: 'group', id: e.key });
+          },
+        },
+        {
+          id: 'recolor',
+          label: t('strip.menuRecolor'),
+          can: props.palette.length > 0,
+          run: () => {
+            ran('group', e.key);
+            const i = props.palette.indexOf(e.color);
+            props.onRecolorGroup(groupId, props.palette[(i + 1) % props.palette.length]);
+          },
+        },
+        {
+          id: 'policy',
+          label: t('strip.menuGroupPolicy', {
+            policy: own ? t(`policy.${own}`) : t('policy.groupDefault'),
+          }),
+          can: true,
+          run: () => {
+            ran('group', e.key);
+            props.onCycleGroupPolicy(groupId);
+          },
+        },
+        {
+          id: 'delete',
+          label: t('rail.deleteGroup'),
+          can: true,
+          divider: true,
+          run: () => {
+            close(false);
+            props.onDeleteGroup(groupId);
+          },
+        },
+      ];
+      return { label: t('rail.groupMenuLabel', { name: e.name }), items };
+    }
+    return {
+      label: t('strip.menuLabel'),
+      items: [
+        {
+          id: 'place:left',
+          label: t('strip.menuPlaceLeft'),
+          can: true,
+          checked: false,
+          run: () => props.onPlace('left'),
+        },
+        { id: 'place:top', label: t('strip.menuPlaceTop'), can: true, checked: true, run: () => {} },
+        {
+          id: 'new-group',
+          label: t('strip.menuNewGroup'),
+          can: true,
+          divider: true,
+          run: () => props.onCreateGroup(t('rail.newGroup')),
+        },
+        { id: 'new-session', label: t('strip.menuNewSession'), can: true, run: props.onNewSession },
+      ],
+    };
+  })();
+
+  const menuHasNothing = menu !== null && menuItems === null;
+  React.useEffect(() => {
+    if (menuHasNothing) setMenu(null);
+  }, [menuHasNothing]);
+
   const total = needCount(order.flat, props.needing);
   const nothing = entries.length === 0 && order.loose.length === 0;
 
@@ -482,14 +806,19 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         ordinal={n !== undefined && n <= LAST_CHORD ? n : undefined}
         flash={flashing(s.id)}
         folded={props.folded.has(s.id)}
-        // NO RENAME FROM HERE YET. The row's own door to it is a double-click,
-        // and in this list the first click of a double-click is "go to this
-        // session", which closes the list before the second click lands. The
-        // menu's Rename is the door that works here, and it arrives with the
-        // menus; until then the row is told it is never being edited.
-        editing={false}
-        draft=""
-        onDraftChange={noRename}
+        // RENAME IS THE MENU'S HERE, never a double-click: in this list the
+        // first click of a double-click is "go to this session", which closes
+        // the list before the second click lands. So `onStartRename` (the
+        // row's double-click) does nothing, and the menu sets `renaming`.
+        editing={renaming?.where === 'row' && renaming.id === s.id}
+        draft={draft}
+        onDraftChange={setDraft}
+        onContextMenu={(e) => {
+          if (inTextBox(e)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setMenu({ kind: 'session', id: s.id, from: 'row', ...menuPoint(e) });
+        }}
         onFocus={() => {
           // Going to a session is what the list was opened for, so it closes:
           // left open it would sit over the very card you just asked for.
@@ -497,9 +826,12 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
           close(false);
         }}
         onClose={() => props.onClose(s.id)}
-        onRename={noRename}
-        onStartRename={noRename}
-        onEndRename={noRename}
+        onRename={(name) => props.onRename(s.id, name)}
+        onStartRename={() => {}}
+        onEndRename={() => {
+          ran('session', s.id);
+          setRenaming(null);
+        }}
       />
     );
   };
@@ -534,6 +866,15 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
     <div
       ref={stripRef}
       data-testid="sessions-strip"
+      onContextMenu={(e) => {
+        // the line above the row, and anything else that is not an entry: the
+        // strip's own menu. Entries, pills, rows and the row's empty part have
+        // already taken theirs and stopped it; a menu and a text box are left
+        // to themselves.
+        if (inTextBox(e) || (e.target as HTMLElement).closest?.('[role="menu"]')) return;
+        e.preventDefault();
+        setMenu({ kind: 'strip', ...menuPoint(e) });
+      }}
       role="group"
       aria-label={t('strip.label')}
       style={{
@@ -616,6 +957,13 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         <div
           ref={scrollerRef}
           data-strip-scroller
+          onContextMenu={(e) => {
+            // an EMPTY part of the row: the entries and pills take their own
+            // right-click and stop it before it gets here
+            if (inTextBox(e)) return;
+            e.preventDefault();
+            setMenu({ kind: 'strip', ...menuPoint(e) });
+          }}
           onScroll={() => {
             // a list that stayed open while its entry scrolled away would be
             // pointing at nothing
@@ -647,6 +995,21 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         >
           {entries.map((e) => {
             const groupId = e.groupId;
+            if (renaming?.where === 'group' && renaming.id === e.key && groupId !== undefined) {
+              return (
+                <StripRenameBox
+                  key={e.key}
+                  target={e.key}
+                  label={t('strip.renameGroupLabel', { name: e.name })}
+                  initial={e.name}
+                  onRename={(name) => props.onRenameGroup(groupId, name)}
+                  onEnd={() => {
+                    ran('group', e.key);
+                    setRenaming(null);
+                  }}
+                />
+              );
+            }
             return (
               <StripGroupEntry
                 key={e.key}
@@ -663,6 +1026,11 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
               folded={props.folded}
                 listId={listIdOf(e.key)}
                 onToggle={(anchor) => toggle(e.key, anchor)}
+                onContextMenu={(ev) => {
+                  ev.preventDefault();
+                  ev.stopPropagation();
+                  setMenu({ kind: 'group', key: e.key, ...menuPoint(ev) });
+                }}
                 {...(groupId !== undefined
                   ? {
                       onOpenInGroup: () => {
@@ -688,24 +1056,43 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
               }}
             />
           )}
-          {order.loose.map((s) => (
-            <StripPill
-              key={s.id}
-              session={s}
-              needsYou={props.needing.has(s.id)}
-              selected={s.id === props.selectedId}
-              pinned={props.pinned.has(s.id)}
-              waiting={waiting.get(s.id) ?? 0}
-              // THE ORDER'S OWN ANSWER, as in the rail: `depthOf` holds a
-              // session only if the order really put it straight after the one
-              // that dispatched it, so the mark never points at a pill that is
-              // not the one before it
-              nested={order.depthOf.has(s.id)}
-              folded={props.folded.has(s.id)}
-              flash={flashing(s.id)}
-              onFocus={() => props.onFocus(s.id)}
-            />
-          ))}
+          {order.loose.map((s) =>
+            renaming?.where === 'pill' && renaming.id === s.id ? (
+              <StripRenameBox
+                key={s.id}
+                target={s.id}
+                label={t('strip.renameSessionLabel', { name: s.title })}
+                initial={s.title}
+                onRename={(name) => props.onRename(s.id, name)}
+                onEnd={() => {
+                  ran('session', s.id);
+                  setRenaming(null);
+                }}
+              />
+            ) : (
+              <StripPill
+                key={s.id}
+                session={s}
+                needsYou={props.needing.has(s.id)}
+                selected={s.id === props.selectedId}
+                pinned={props.pinned.has(s.id)}
+                waiting={waiting.get(s.id) ?? 0}
+                // THE ORDER'S OWN ANSWER, as in the rail: `depthOf` holds a
+                // session only if the order really put it straight after the
+                // one that dispatched it, so the mark never points at a pill
+                // that is not the one before it
+                nested={order.depthOf.has(s.id)}
+                folded={props.folded.has(s.id)}
+                flash={flashing(s.id)}
+                onFocus={() => props.onFocus(s.id)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setMenu({ kind: 'session', id: s.id, from: 'pill', ...menuPoint(e) });
+                }}
+              />
+            )
+          )}
           {nothing && (
             <span data-strip-empty="none" style={{ color: 'var(--muted)', fontSize: 11 }}>
               {t('rail.empty')}
@@ -716,11 +1103,36 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
           <EdgeCell side="end" edge={edges.after} onScroll={() => scrollToward('end')} />
         )}
       </div>
+      {menu && menuItems && (
+        <RailGroupMenu
+          testId="strip-menu"
+          x={menu.x}
+          y={menu.y}
+          label={menuItems.label}
+          items={menuItems.items}
+          onClose={(restoreFocus) => {
+            const was = menu;
+            setMenu(null);
+            // Escape hands the keyboard back to what the menu was opened on.
+            // (A click elsewhere does not: the click chose where focus goes.
+            // An item that ran asks for it back itself — see `ran` below.)
+            if (restoreFocus) focusTarget(was);
+          }}
+        />
+      )}
       {open && openEntry && (
         <div
           ref={listRef}
           id={listIdOf(openEntry.key)}
           data-strip-list={openEntry.key}
+          onContextMenu={(e) => {
+            // its rows take their own right-click. The list's heading and
+            // padding are not "an empty part of the strip", so they must not
+            // open the strip's menu over the list; they open nothing.
+            if (inTextBox(e)) return;
+            e.preventDefault();
+            e.stopPropagation();
+          }}
           role="group"
           aria-label={t('strip.listLabel', { name: openEntry.name })}
           style={{

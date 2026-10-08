@@ -11,7 +11,7 @@ import {
 import { listThemes } from './extensibility/themes';
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, StatusBar } from './components/chrome';
-import { SessionsRail, RailGroup } from './components/SessionsRail';
+import { SessionsRail, RailGroup, RailSession } from './components/SessionsRail';
 import { SessionsStrip } from './components/SessionsStrip';
 import {
   DEFAULT_SESSIONS_PLACEMENT,
@@ -2295,6 +2295,45 @@ export function App(): React.JSX.Element {
   // flip together: the lamps row and the strip each run the post-jump beat,
   // and exactly one of them may be mounted.
   const stripShown = sessionsPlacement === 'top' && !railHidden;
+  // The rest of what a list of sessions can ask for, each defined once for the
+  // reason `createGroup` is: the strip's menus (#1143) are the rail's gestures
+  // made somewhere else, so they are the rail's functions.
+  const openChanges = (s: RailSession): void => {
+    if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
+  };
+  const renameGroup = (id: string, name: string): void => {
+    void bridge.groups?.update?.(id, { name }).then((next) => {
+      groupChangeLanded('rename', answered(next)); // #650, as `createGroup` below
+      return refreshGroups();
+    });
+  };
+  const recolorGroup = (id: string, color: string): void => {
+    void bridge.groups?.update?.(id, { color }).then((next) => {
+      groupChangeLanded('recolor', answered(next)); // #650, as `createGroup` below
+      return refreshGroups();
+    });
+  };
+  const moveToGroup = (cardId: string, gid: string | null): void => {
+    void bridge.groups?.setSessionGroup?.(cardId, gid).then(() => {
+      grid.current?.moveCardToGroup(cardId, gid);
+      void refreshSessions();
+    });
+  };
+  const moveGroup = (id: string, beforeId: string | null): void => {
+    // #1144. The order lives in main; the list redraws from what main
+    // answers, so a refused move simply leaves it as it was.
+    void bridge.groups?.move?.(id, beforeId).then((order) => {
+      groupChangeLanded('move', answered(order)); // #650, as `createGroup` below
+      return refreshGroups();
+    });
+  };
+  const deleteGroup = (id: string): void => {
+    // members fall back to ungrouped, so the session list changes too
+    void bridge.groups?.remove?.(id).then(() => {
+      void refreshGroups();
+      void refreshSessions();
+    });
+  };
   const createGroup = (name: string): void => {
     void bridge.groups?.create?.({ name }).then((made) => {
       // `answered` (#650): `groupChangeLanded` calls a change refused
@@ -2743,6 +2782,27 @@ export function App(): React.JSX.Element {
         onOpenInGroup={openInGroup}
         onFocus={(cardId) => focusSession(cardId)}
         onClose={(cardId) => grid.current?.closeCard(cardId)}
+        onDiff={openChanges}
+        onRename={renameCard}
+        onTogglePin={togglePin}
+        onMoveToGroup={moveToGroup}
+        onRenameGroup={renameGroup}
+        palette={palette}
+        onRecolorGroup={recolorGroup}
+        policies={policies}
+        onCycleGroupPolicy={cycleGroupPolicy}
+        onDeleteGroup={deleteGroup}
+        onOpenAll={(cardIds) => {
+          // The strip sends only the cards that are folded away. Each goes back
+          // to its full card in the slot it left — "undo the folding", not a
+          // rearrangement — and ONE AT A TIME: two transitions in flight race
+          // on the slot's group (see `jumpCardLadder`), which is why the layout
+          // sweep awaits each move too. Focus ends on the last one opened.
+          void (async () => {
+            for (const id of cardIds) await grid.current?.setLadder(id, 'expanded');
+          })();
+        }}
+        onPlace={(placement) => placeSessions(placement)}
       />
       {/* §5.8's batch prompt (P2-E9-11). LAST in the stack of bands, directly
           above the workspace, on purpose: it is the only one of them that comes
@@ -2784,9 +2844,7 @@ export function App(): React.JSX.Element {
             labelLines={LABEL_LINES[taskLabelSize]}
             onRename={renameCard}
             onFocus={(cardId) => focusSession(cardId)}
-            onDiff={(s) => {
-              if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
-            }}
+            onDiff={openChanges}
             onClose={(cardId) => grid.current?.closeCard(cardId)}
             selectedId={activeCard}
             /* These three (`createGroup` is the first, above the return) are
@@ -2800,18 +2858,8 @@ export function App(): React.JSX.Element {
                `remove` and `setSessionGroup` below answer nothing and refuse
                the same way — quietly, with a line in the log. */
             onCreateGroup={createGroup}
-            onRenameGroup={(id, name) => {
-              void bridge.groups?.update?.(id, { name }).then((next) => {
-                groupChangeLanded('rename', answered(next)); // #650, as above
-                return refreshGroups();
-              });
-            }}
-            onRecolorGroup={(id, color) => {
-              void bridge.groups?.update?.(id, { color }).then((next) => {
-                groupChangeLanded('recolor', answered(next)); // #650, as above
-                return refreshGroups();
-              });
-            }}
+            onRenameGroup={renameGroup}
+            onRecolorGroup={recolorGroup}
             policies={policies}
             pinned={pinned}
             onTogglePin={togglePin}
@@ -2822,28 +2870,10 @@ export function App(): React.JSX.Element {
             onCycleGroupPolicy={cycleGroupPolicy}
             focusPolicies={focusPolicies}
             onSetSessionFocusPolicy={setSessionFocusPolicy}
-            onMoveToGroup={(cardId, gid) => {
-              void bridge.groups?.setSessionGroup?.(cardId, gid).then(() => {
-                grid.current?.moveCardToGroup(cardId, gid);
-                void refreshSessions();
-              });
-            }}
+            onMoveToGroup={moveToGroup}
             onOpenInGroup={openInGroup}
-            onMoveGroup={(id, beforeId) => {
-              // #1144. The order lives in main; the rail redraws from what
-              // main answers, so a refused move simply leaves it as it was.
-              void bridge.groups?.move?.(id, beforeId).then((order) => {
-                groupChangeLanded('move', answered(order)); // #650, as above
-                return refreshGroups();
-              });
-            }}
-            onDeleteGroup={(id) => {
-              // members fall back to ungrouped, so the session list changes too
-              void bridge.groups?.remove?.(id).then(() => {
-                void refreshGroups();
-                void refreshSessions();
-              });
-            }}
+            onMoveGroup={moveGroup}
+            onDeleteGroup={deleteGroup}
           />
         )}
         <SessionGrid

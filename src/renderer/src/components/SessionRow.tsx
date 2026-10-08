@@ -60,6 +60,12 @@ function RenameField(props: {
          is what makes "blank" a rule you can state. */
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
+          // CONSUMED (#1143). In the strip's list, ending the edit hands the
+          // keyboard back to this row's button, and a button that gains focus
+          // while Enter is still going down is "clicked" by that same Enter —
+          // which there means "go to this session" and closes the list. See
+          // `StripRenameBox`, where it was found.
+          e.preventDefault();
           const name = draft.trim();
           if (name) props.onRename(name);
           props.onEnd();

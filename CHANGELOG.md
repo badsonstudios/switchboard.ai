@@ -109,8 +109,10 @@ on the floor, and say so in your PR.
   the same status looks as a row; a dashed pill is a session that is folded
   away, and a click brings it back. When they do not all fit, the strip scrolls
   and a cell at each end turns amber with a number when a session that needs
-  you is off that way. Left is still the default. Not there yet: right-click
-  menus and dragging on the strip. The two-part button replaces **▤ rail** and
+  you is off that way. Right-click a session, a group or an empty part of the
+  strip for everything you can do to it: rename, pin, close, move to a group,
+  recolour, delete. Left is still the default. Not there yet: dragging to
+  reorder on the strip. The two-part button replaces **▤ rail** and
   still shows and hides the list: click the lit half to hide it, click again to
   bring it back. `Ctrl+B` is unchanged.
 

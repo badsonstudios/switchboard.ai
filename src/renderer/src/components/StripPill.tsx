@@ -36,6 +36,7 @@ export function StripPill(props: {
   /** the last jump landed here, and its beat has not run out (§5.8) */
   flash: boolean;
   onFocus: () => void;
+  onContextMenu?: React.MouseEventHandler<HTMLButtonElement>;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const s = props.session;
@@ -74,6 +75,7 @@ export function StripPill(props: {
       aria-current={props.selected ? 'true' : undefined}
       title={props.folded ? t('strip.pillFoldedHint') : undefined}
       onClick={props.onFocus}
+      onContextMenu={props.onContextMenu}
       style={{
         position: 'relative',
         display: 'flex',
