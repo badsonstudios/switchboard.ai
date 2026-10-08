@@ -1579,8 +1579,8 @@
     "blurb": "Where your open sessions are listed.",
     "left": "On the left",
     "leftNote": "A list down the side, groups as cards.",
-    "top": "Across the top (in progress)",
-    "topNote": "One strip under the top bar, and the full width for your sessions. Not finished yet: your groups are there and open as lists, but sessions outside a group are not shown. Until they are, the row of lamps and the Collapsed strip stay with it."
+    "top": "Across the top",
+    "topNote": "One strip under the top bar, and the full width for your sessions. Groups open as lists; sessions outside a group are pills."
   },
   "strip": {
     "label": "Sessions",
@@ -1591,9 +1591,16 @@
     "groupLabelWaiting": "{name}, {count, plural, =0 {no sessions} one {# session} other {# sessions}}, {summary}, {waiting, plural, one {# message waiting from another session} other {# messages waiting from other sessions}}",
     "autoGroupName": "{name}, grouped automatically by folder",
     "groupWaiting": "· {count} waiting",
+    "groupFolded": "· {count} folded away",
     "openInGroupLabel": "New session in {name}",
     "listLabel": "Sessions in {name}",
-    "loosePending": "{count, plural, one {# session is not in a group and is} other {# sessions are not in a group and are}} not shown here yet. Click a lamp, in the row above, to go to one."
+    "pillFolded": "{name}, folded away",
+    "pillFoldedHint": "Folded away. Click to bring it back.",
+    "edgeStartIcon": "‹",
+    "edgeEndIcon": "›",
+    "edgeNeed": "{count, plural, one {# session that needs you is} other {# sessions that need you are}} past this end. Scroll there.",
+    "edgeMore": "More sessions past this end. Scroll there.",
+    "edgeNone": "Nothing more past this end"
   },
   "taskLabelSize": {
     "title": "Task label size",

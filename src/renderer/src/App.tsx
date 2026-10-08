@@ -449,6 +449,17 @@ export function App(): React.JSX.Element {
     (cardId: string, dir: 'up' | 'down') => sessionStore.reorderSession(cardId, dir === 'up' ? -1 : 1),
     []
   );
+  // The cards that are not on screen until asked for (#1143): what the strip
+  // draws with a dashed edge. Collapsed and hidden, and not tabbed — a tabbed
+  // card is one click away on a tab you can see.
+  const foldedCards = React.useMemo(() => {
+    const out = new Set<string>();
+    for (const s of railFlat) {
+      const rung = presentation.get(s.id)?.ladder;
+      if (rung === 'collapsed' || rung === 'hidden') out.add(s.id);
+    }
+    return out;
+  }, [railFlat, presentation]);
   const collapsed = React.useMemo(
     () =>
       collapsedRows(
@@ -2278,6 +2289,12 @@ export function App(): React.JSX.Element {
       if (folder) void grid.current?.addSessionCard(folder, gid);
     });
   };
+  // #1143. The strip is what is on screen: the sessions are listed across the
+  // top and the list has not been put away. ONE name, because three things
+  // hang off it — the strip, and the two rows it replaces — and they must
+  // flip together: the lamps row and the strip each run the post-jump beat,
+  // and exactly one of them may be mounted.
+  const stripShown = sessionsPlacement === 'top' && !railHidden;
   const createGroup = (name: string): void => {
     void bridge.groups?.create?.({ name }).then((made) => {
       // `answered` (#650): `groupChangeLanded` calls a change refused
@@ -2684,12 +2701,20 @@ export function App(): React.JSX.Element {
         onFocus={focusCard}
         onExpire={expireUrgency}
         onBeatStart={startUrgencyBeat}
+        // #1143: gone while the STRIP is on screen, which carries the total,
+        // lights what a jump landed on and runs the beat itself. Put the strip
+        // away and this row is back: `stripShown` is the one switch, so there
+        // is never a moment with both running the beat, or neither.
+        hidden={stripShown}
       />
       {/* §5.8's second rung. Outside the grid for the same reason the lamps
           are — the grid is what a collapsed card has just left. Renders
           nothing when nothing is collapsed. */}
       <CollapsedStrip
-        rows={collapsed}
+        // #1143: gone while the strip is on screen, where a folded-away
+        // session is drawn dashed. No rows is how this component already says
+        // "render nothing".
+        rows={stripShown ? [] : collapsed}
         activeCardId={activeCard}
         onExpand={(cardId) => focusCard(cardId)}
       />
@@ -2697,16 +2722,16 @@ export function App(): React.JSX.Element {
           Gated INSIDE like the banners above so the shell column stays a
           flat list.
 
-          ⚠️ THE TWO STRIPS ABOVE ARE MEANT TO GO in this placement, and they
-          have NOT gone yet on purpose. The design replaces the lamps row and
-          the collapsed row with this strip's own entries — but this is only
-          the frame, and until it lists sessions itself those two rows are the
-          only thing left to click. Focus, Queue and maximize collapse every
-          card but one; without the collapsed row those sessions would have no
-          mouse path at all, and past the ninth no keyboard one either. Each
-          row leaves in the change that lands what replaces it. */}
+          The two strips above are gone while this one is on screen: it carries
+          the total and the post-jump beat the lamps row had, and draws a
+          folded-away session dashed where the collapsed row had a row. Put
+          away with Ctrl+B, it is not there and they are back. */}
       <SessionsStrip
-        shown={sessionsPlacement === 'top' && !railHidden}
+        shown={stripShown}
+        folded={foldedCards}
+        urgency={urgency}
+        onExpire={expireUrgency}
+        onBeatStart={startUrgencyBeat}
         groups={groups}
         order={railOrderNow}
         needing={needing}

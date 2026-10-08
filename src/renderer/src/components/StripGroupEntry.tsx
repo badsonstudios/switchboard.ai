@@ -58,6 +58,11 @@ export function StripGroupEntry(props: {
   ordinalOf: ReadonlyMap<string, number>;
   /** its list is showing */
   open: boolean;
+  /** the last jump landed on one of its sessions, and the beat has not run out */
+  flash?: boolean;
+  /** the cards that are collapsed or hidden — so the entry can say how many of
+   *  ITS sessions are not on screen, now that no collapsed row lists them */
+  folded?: ReadonlySet<string>;
   /** the id of the list it opens, for `aria-controls` */
   listId: string;
   /** asked to open or close; the element is what the list is placed against */
@@ -75,6 +80,7 @@ export function StripGroupEntry(props: {
   const need = needCount(props.members, props.needing);
   const waitingHere = props.members.reduce((n, m) => n + (props.waiting.get(m.id) ?? 0), 0);
   const range = chordRange(props.members, props.ordinalOf);
+  const foldedHere = props.folded ? props.members.filter((m) => props.folded!.has(m.id)).length : 0;
   const summary =
     props.members.length === 0
       ? t('rail.groupEmpty')
@@ -91,6 +97,9 @@ export function StripGroupEntry(props: {
       data-strip-group={props.groupKey}
       data-strip-group-kind={props.kind}
       data-needs-you={need > 0}
+      // read back by the strip when it measures what is off each end
+      data-strip-item-need={need}
+      data-flash={props.flash ? 'true' : undefined}
       title={isAuto ? t('rail.autoGroupHint') : undefined}
       style={{
         display: 'flex',
@@ -101,6 +110,8 @@ export function StripGroupEntry(props: {
         border: `1px solid ${props.open ? props.color : 'var(--group-frame)'}`,
         background: isAuto ? 'var(--auto-surface)' : 'var(--rail-card)',
         overflow: 'hidden',
+        // the post-jump beat: the focus accent, as on a pill
+        boxShadow: props.flash ? '0 0 0 2px var(--status-working-ink)' : undefined,
       }}
     >
       <button
@@ -257,6 +268,21 @@ export function StripGroupEntry(props: {
               }}
             >
               {t('strip.groupWaiting', { count: waitingHere })}
+            </span>
+          )}
+          {foldedHere > 0 && (
+            // The collapsed row used to list these. In this placement nothing
+            // else does, so the group that holds them says how many.
+            <span
+              data-strip-group-folded
+              style={{
+                fontFamily: 'var(--font-ui)',
+                fontSize: 9.5,
+                color: 'var(--muted)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t('strip.groupFolded', { count: foldedHere })}
             </span>
           )}
         </span>

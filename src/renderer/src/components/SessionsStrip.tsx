@@ -2,26 +2,42 @@
 //
 // The other place the sessions can be listed: one line of controls and, under
 // it, one row that holds the groups and then the loose sessions. While it is
-// on, the left rail is gone. The lamps row and the collapsed row are meant to go
-// too and are replaced by this strip's own entries — once it has all of them.
-// Until then App keeps both, and says why where it mounts this.
+// on, the left rail, the lamps row and the collapsed row are all gone; this
+// strip is what replaces the three of them:
 //
-// WHAT IS HERE SO FAR: the line above, and the GROUPS — each one an entry that
-// drops down a list of its sessions as full rows, the same `SessionRow` the rail
-// draws. The loose sessions (pills), the arrow cells at each end, the menus and
-// the dragging each land in their own change; until the pills have, the row says
-// in words how many sessions it is not showing, because a strip that silently
-// leaves sessions out reads as "those sessions are gone".
+//  - the RAIL, by listing every session: a group is an entry that drops down a
+//    list of its sessions as full rows (the rail's own `SessionRow`), and a
+//    session outside any group is a pill;
+//  - the LAMPS ROW, by carrying the one "N need you" total, by lighting the
+//    entry the last jump landed on, and by running that beat itself
+//    (`useUrgencyBeat`) now that the lamps are not there to;
+//  - the COLLAPSED ROW, by drawing a folded-away session with a dashed edge —
+//    its pill, or its row in a group's list, with the group saying how many —
+//    and bringing it back on a click.
+//
+// PUT AWAY (Ctrl+B), IT IS SIMPLY NOT THERE, and App brings the lamps row and
+// the collapsed row back while it is gone: with nothing listing the sessions,
+// those two are the only "N need you" and the only way back to a collapsed
+// one. So exactly one of the lamps row and this strip is ever mounted, and
+// whichever it is runs the beat.
+//
+// The row scrolls sideways when it does not fit, and a fixed cell at each end
+// says what is past that edge — in amber, with a number, when it is a session
+// that needs you. The menus and the dragging each land in their own change.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
 import { autoGroupName, RailOrderResult } from '../lib/groups';
 import { needCount } from '../lib/rail-view';
 import { useHeldCounts } from '../lib/sibling-inbox';
+import { edgeOverflow, EdgeState, sameEdges } from '../lib/strip-overflow';
+import { isLit, UrgencyMarks } from '../lib/urgency';
+import { useUrgencyBeat } from '../lib/use-urgency-beat';
 import { tint } from '../lib/tint';
 import { directionOf } from '../lib/writing-direction';
 import { SessionRow } from './SessionRow';
 import { LAST_CHORD, StripGroupEntry } from './StripGroupEntry';
+import { StripPill } from './StripPill';
 
 /** see the row's `editing` prop below for why these are not wired yet */
 const noRename = (): void => {};
@@ -72,6 +88,14 @@ export interface SessionsStripProps {
   /** the cards with an outstanding demand (#621) — REQUIRED for the rail's reason */
   needing: ReadonlySet<string>;
   pinned: ReadonlySet<string>;
+  /** the cards that are collapsed or hidden: not on screen until asked for */
+  folded: ReadonlySet<string>;
+  /** card id -> when its post-jump highlight expires (store state, §5.8) */
+  urgency: UrgencyMarks;
+  /** a beat has passed — ask the store to put it out. Must be stable. */
+  onExpire: () => void;
+  /** these marks are on the screen — start their beat. Must be stable. */
+  onBeatStart: (cardIds: readonly string[]) => void;
   /** the card the grid is currently showing */
   selectedId?: string | null;
   /** how many lines a task label may take in a list's rows (#877) */
@@ -87,6 +111,69 @@ export interface SessionsStripProps {
 export function SessionsStrip(props: SessionsStripProps): React.JSX.Element | null {
   if (!props.shown) return null;
   return <Strip {...props} />;
+}
+
+const NO_EDGE: EdgeState = { cut: false, need: 0 };
+const NO_EDGES = { before: NO_EDGE, after: NO_EDGE };
+
+/**
+ * The fixed cell at one end of the row: what is past that edge.
+ *
+ * Amber with a number when a session that needs you is off that way; quiet
+ * when sessions are cut off but none is waiting; inert when nothing is. A
+ * click scrolls that way. It is a sibling of the scrolling row, never laid
+ * over it, so it cannot sit on top of a pill.
+ */
+function EdgeCell(props: {
+  side: 'start' | 'end';
+  edge: EdgeState;
+  onScroll: () => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const { cut, need } = props.edge;
+  const amber = 'var(--status-needs-input)';
+  return (
+    <button
+      type="button"
+      data-strip-edge={props.side}
+      data-strip-edge-need={need}
+      aria-disabled={cut ? undefined : true}
+      aria-label={
+        need > 0
+          ? t('strip.edgeNeed', { count: need })
+          : cut
+            ? t('strip.edgeMore')
+            : t('strip.edgeNone')
+      }
+      onClick={() => {
+        if (cut) props.onScroll();
+      }}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 1,
+        flexShrink: 0,
+        inlineSize: 30,
+        marginBlock: 4,
+        marginInline: 4,
+        padding: 0,
+        borderRadius: 6,
+        border: `1px solid ${need > 0 ? tint(amber, 55) : 'var(--border)'}`,
+        background: need > 0 ? tint(amber, 18) : 'transparent',
+        color: need > 0 ? 'var(--status-needs-input-ink)' : cut ? 'var(--muted)' : 'var(--faint)',
+        fontFamily: 'var(--font-ui)',
+        fontSize: 11,
+        fontWeight: 700,
+        lineHeight: 1.1,
+        cursor: cut ? 'pointer' : 'default',
+      }}
+    >
+      <span aria-hidden>{t(props.side === 'start' ? 'strip.edgeStartIcon' : 'strip.edgeEndIcon')}</span>
+      {need > 0 && <span aria-hidden>{need}</span>}
+    </button>
+  );
 }
 
 /** one entry on the strip, whichever kind of group it is */
@@ -105,6 +192,18 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   const { order } = props;
   const stripRef = React.useRef<HTMLDivElement | null>(null);
   const listRef = React.useRef<HTMLDivElement | null>(null);
+  const scrollerRef = React.useRef<HTMLDivElement | null>(null);
+  // what is past each end of the row, by INLINE direction: `before` is the
+  // start edge, wherever that is
+  const [edges, setEdges] = React.useState(NO_EDGES);
+
+  // The lamps row is not on screen in this placement, so the beat is ours.
+  useUrgencyBeat(props.urgency, props.onExpire, props.onBeatStart);
+  // One render's worth of "now", for the reason the lamps row gives: reading
+  // the clock per entry could put two of them on opposite sides of the same
+  // deadline within a single paint.
+  const now = Date.now();
+  const flashing = (id: string): boolean => isLit(props.urgency, id, now);
   // #654: an id is generated, never published — a literal one is a name that
   // rendered content could take away from the element it was meant for
   const uid = React.useId();
@@ -188,7 +287,20 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
       selectedAtOpen.current = selectedId;
       return;
     }
-    if (selectedId !== selectedAtOpen.current) close(false);
+    if (selectedId === selectedAtOpen.current) return;
+    // …unless the place you went is IN this list and you got there by the
+    // jump that lights things up: then the list is showing you where you
+    // landed, and its row is the thing that is lit.
+    const landedHere =
+      selectedId != null &&
+      props.urgency.has(selectedId) &&
+      (openEntry?.members.some((m) => m.id === selectedId) ?? false);
+    if (landedHere) {
+      selectedAtOpen.current = selectedId;
+      return;
+    }
+    close(false);
+    // `openEntry` and the marks are read as of the selection change, on purpose
   }, [openKey, selectedId, close]);
 
   // Outside clicks, Escape, and anything that moves the entry out from under
@@ -268,6 +380,90 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
     whiteSpace: 'nowrap',
   };
 
+  // ── what is past each end ──────────────────────────────────────────────────
+  //
+  // Measured, because it cannot be derived: it depends on how wide the window
+  // is, how long each name is and how far the row has been scrolled. Each entry
+  // carries `data-strip-item-need` — how many waiting sessions it stands for — so
+  // the measurement reads the same number the entry is showing.
+  const measure = React.useCallback((): void => {
+    const sc = scrollerRef.current;
+    if (!sc) return;
+    const view = sc.getBoundingClientRect();
+    const items = Array.from(sc.querySelectorAll<HTMLElement>('[data-strip-item-need]')).map((el) => {
+      const r = el.getBoundingClientRect();
+      return { from: r.left, to: r.right, need: Number(el.dataset.stripItemNeed) || 0 };
+    });
+    const physical = edgeOverflow(items, view.left, view.right);
+    // the arithmetic is in pixels, left to right; "start" is the right-hand
+    // end when the page reads the other way
+    const next =
+      directionOf(sc) === 'rtl'
+        ? { before: physical.after, after: physical.before }
+        : physical;
+    setEdges((was) => (sameEdges(was, next) ? was : next));
+  }, []);
+  // Re-measured when something that MOVES A BOX changed — who is where and
+  // what they are called (`order`), who is lit, folded, pinned or has messages
+  // waiting, and the cells themselves appearing — none of which is a resize
+  // or a scroll. Not on every render: this reads layout, and App re-renders
+  // this component for reasons that have nothing to do with the row.
+  // `setEdges` keeps the old object when nothing changed, so this settles.
+  React.useLayoutEffect(() => {
+    measure();
+  }, [measure, order, props.needing, props.folded, props.pinned, waiting, edges]);
+  React.useEffect(() => {
+    window.addEventListener('resize', measure);
+    // fail-open: no ResizeObserver costs the re-measure when a banner above
+    // changes the layout, and the next render or scroll catches that up
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    if (ro && scrollerRef.current) ro.observe(scrollerRef.current);
+    return () => {
+      window.removeEventListener('resize', measure);
+      ro?.disconnect();
+    };
+  }, [measure]);
+  const overflowing = edges.before.cut || edges.after.cut;
+  const scrollToward = (side: 'start' | 'end'): void => {
+    const sc = scrollerRef.current;
+    if (!sc) return;
+    // most of a screenful, so something you just read is still in view
+    const step = Math.max(120, sc.clientWidth * 0.8);
+    const towardRight = (side === 'end') !== (directionOf(sc) === 'rtl');
+    sc.scrollBy?.({ left: towardRight ? step : -step, behavior: 'smooth' });
+  };
+
+  // ── the jump lands somewhere you can see ───────────────────────────────────
+  //
+  // A jump lights the entry it landed on; if that entry is scrolled out of
+  // the row, the light is on something off screen. So a NEW mark also brings
+  // its entry into view: the pill, or the group that holds the session.
+  const seenMarks = React.useRef<ReadonlySet<string>>(new Set());
+  React.useEffect(() => {
+    const sc = scrollerRef.current;
+    const fresh = [...props.urgency.keys()].filter((id) => !seenMarks.current.has(id));
+    seenMarks.current = new Set(props.urgency.keys());
+    if (!sc || fresh.length === 0) return;
+    const id = fresh[fresh.length - 1];
+    const holder = entries.find((e) => e.members.some((m) => m.id === id));
+    const el = holder
+      ? Array.from(sc.querySelectorAll<HTMLElement>('[data-strip-group]')).find(
+          (n) => n.dataset.stripGroup === holder.key
+        )
+      : Array.from(sc.querySelectorAll<HTMLElement>('[data-strip-pill]')).find(
+          (n) => n.dataset.stripPill === id
+        );
+    if (!el) return;
+    // by hand, on this one scroller: `scrollIntoView` also scrolls every
+    // scrollable ancestor, and the only thing that should move is the row
+    const view = sc.getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    if (box.left < view.left) sc.scrollLeft -= view.left - box.left + 8;
+    else if (box.right > view.right) sc.scrollLeft += box.right - view.right + 8;
+    // `entries` is rebuilt every render and deliberately not a dependency:
+    // this runs when a mark ARRIVES, and reads whatever the row holds then
+  }, [props.urgency]);
+
   const total = needCount(order.flat, props.needing);
   const nothing = entries.length === 0 && order.loose.length === 0;
 
@@ -284,6 +480,8 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         depth={order.depthOf.get(s.id)}
         labelLines={props.labelLines}
         ordinal={n !== undefined && n <= LAST_CHORD ? n : undefined}
+        flash={flashing(s.id)}
+        folded={props.folded.has(s.id)}
         // NO RENAME FROM HERE YET. The row's own door to it is a double-click,
         // and in this list the first click of a double-click is "go to this
         // session", which closes the list before the second click lands. The
@@ -402,68 +600,120 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         )}
       </div>
       {/* THE ROW: groups first, then the loose sessions, scrolling sideways when
-          they do not fit. */}
+          they do not fit, with a fixed cell at each end for what is past it. */}
       <div
         data-strip-row
-        // a list that stayed open while its entry scrolled away would be
-        // pointing at nothing
-        onScroll={() => {
-          if (open) close(false);
-        }}
         style={{
           display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          paddingInline: 8,
-          paddingBlock: 4,
+          alignItems: 'stretch',
           minBlockSize: 53,
-          overflowX: 'auto',
           borderBlockStart: '1px solid var(--border)',
         }}
       >
-        {entries.map((e) => {
-          const groupId = e.groupId;
-          return (
-            <StripGroupEntry
-              key={e.key}
-              groupKey={e.key}
-              kind={e.kind}
-              name={e.name}
-              color={e.color}
-              members={e.members}
-              needing={props.needing}
-              waiting={waiting}
-              ordinalOf={ordinalOf}
-              open={open?.key === e.key}
-              listId={listIdOf(e.key)}
-              onToggle={(anchor) => toggle(e.key, anchor)}
-              {...(groupId !== undefined
-                ? {
-                    onOpenInGroup: () => {
-                      // a list left open would sit over the new session's card
-                      close(false);
-                      props.onOpenInGroup(groupId);
-                    },
-                  }
-                : {})}
-            />
-          );
-        })}
-        {nothing ? (
-          <span data-strip-empty="none" style={{ color: 'var(--muted)', fontSize: 11 }}>
-            {t('rail.empty')}
-          </span>
-        ) : (
-          order.loose.length > 0 && (
-            // NOT DRAWN YET, so it is said: these become pills. Leaving them out
-            // without a word would read as "those sessions are gone".
+        {overflowing && (
+          <EdgeCell side="start" edge={edges.before} onScroll={() => scrollToward('start')} />
+        )}
+        <div
+          ref={scrollerRef}
+          data-strip-scroller
+          onScroll={() => {
+            // a list that stayed open while its entry scrolled away would be
+            // pointing at nothing
+            if (open) close(false);
+            measure();
+          }}
+          onWheel={(e) => {
+            // a plain mouse wheel only has an up-and-down: here that means
+            // along the row, which is the only way this row goes
+            if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+            // wheel-down is "further along the row", which is leftward when
+            // the page reads right to left
+            const along = directionOf(e.currentTarget) === 'rtl' ? -e.deltaY : e.deltaY;
+            e.currentTarget.scrollLeft += along;
+          }}
+          style={{
+            flex: 1,
+            minInlineSize: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            paddingInline: 8,
+            paddingBlock: 4,
+            overflowX: 'auto',
+            // the cells at each end are the scrollbar: they say what is there
+            // to scroll to, which a bar under the row cannot
+            scrollbarWidth: 'none',
+          }}
+        >
+          {entries.map((e) => {
+            const groupId = e.groupId;
+            return (
+              <StripGroupEntry
+                key={e.key}
+                groupKey={e.key}
+                kind={e.kind}
+                name={e.name}
+                color={e.color}
+                members={e.members}
+                needing={props.needing}
+                waiting={waiting}
+                ordinalOf={ordinalOf}
+                open={open?.key === e.key}
+                flash={e.members.some((m) => flashing(m.id))}
+              folded={props.folded}
+                listId={listIdOf(e.key)}
+                onToggle={(anchor) => toggle(e.key, anchor)}
+                {...(groupId !== undefined
+                  ? {
+                      onOpenInGroup: () => {
+                        // a list left open would sit over the new session's card
+                        close(false);
+                        props.onOpenInGroup(groupId);
+                      },
+                    }
+                  : {})}
+              />
+            );
+          })}
+          {entries.length > 0 && order.loose.length > 0 && (
+            // groups | loose sessions: two kinds of thing, one hairline apart
             <span
-              data-strip-empty="pending"
-              style={{ color: 'var(--muted)', fontSize: 11, flexShrink: 0, paddingInline: 4 }}
-            >
-              {t('strip.loosePending', { count: order.loose.length })}
+              aria-hidden
+              style={{
+                alignSelf: 'stretch',
+                inlineSize: 1,
+                flexShrink: 0,
+                marginInline: 3,
+                background: 'var(--border)',
+              }}
+            />
+          )}
+          {order.loose.map((s) => (
+            <StripPill
+              key={s.id}
+              session={s}
+              needsYou={props.needing.has(s.id)}
+              selected={s.id === props.selectedId}
+              pinned={props.pinned.has(s.id)}
+              waiting={waiting.get(s.id) ?? 0}
+              // THE ORDER'S OWN ANSWER, as in the rail: `depthOf` holds a
+              // session only if the order really put it straight after the one
+              // that dispatched it, so the mark never points at a pill that is
+              // not the one before it
+              nested={order.depthOf.has(s.id)}
+              folded={props.folded.has(s.id)}
+              flash={flashing(s.id)}
+              onFocus={() => props.onFocus(s.id)}
+            />
+          ))}
+          {nothing && (
+            <span data-strip-empty="none" style={{ color: 'var(--muted)', fontSize: 11 }}>
+              {t('rail.empty')}
             </span>
-          )
+          )}
+        </div>
+        {overflowing && (
+          <EdgeCell side="end" edge={edges.after} onScroll={() => scrollToward('end')} />
         )}
       </div>
       {open && openEntry && (

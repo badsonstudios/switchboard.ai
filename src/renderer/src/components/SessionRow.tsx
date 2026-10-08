@@ -12,10 +12,12 @@
 // strip answer them differently.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { RailSession } from '../model/types';
 import { railDepthIndent } from '../lib/dispatch-lineage';
 import { attentionPaint, presentStatus } from '../lib/rail-view';
 import { tint } from '../lib/tint';
+import { StatusMark } from './StatusMark';
 import { DEFAULT_TASK_LABEL_SIZE, LABEL_LINES } from '../../../shared/task-label-size';
 
 /**
@@ -77,6 +79,38 @@ function RenameField(props: {
   );
 }
 
+/**
+ * What a session is called out loud: its name, pinned or not, what it is
+ * doing, what it is working on, and what other sessions have left in it.
+ *
+ * A function of its own since #1143: the strip's pill is a second control that
+ * stands for a session, and two controls for one session must not describe it
+ * differently.
+ */
+export function sessionSpokenName(
+  t: TFunction,
+  s: RailSession,
+  isPinned: boolean,
+  waiting: number
+): string {
+  const p = presentStatus(s.status);
+  return t(isPinned ? 'rail.rowLabelPinned' : 'rail.rowLabel', {
+    title: s.title,
+    state: ((): string => {
+      // #877: the label is announced WHENEVER there is one, including
+      // on a row that needs you. It used to be dropped in exactly
+      // that case — so the one moment you most want to know WHICH
+      // piece of work is asking, the row stopped saying. The ask
+      // (`p.labelKey`) still leads, because that is the demand; the
+      // label follows as the detail.
+      const state = s.taskLabel
+        ? t('rail.rowDetail', { detail: s.taskLabel, state: t(p.labelKey) })
+        : t(p.labelKey);
+      return waiting > 0 ? t('rail.rowWaiting', { state, count: waiting }) : state;
+    })(),
+  });
+}
+
 export function SessionRow(props: {
   session: RailSession;
   /** is this session one of the N its list's "N need you" is counting (#1137) */
@@ -112,6 +146,18 @@ export function SessionRow(props: {
    * the rows say which is which.
    */
   ordinal?: number;
+  /**
+   * This is the session the last jump landed on, for the beat that says so
+   * (§5.8). Only the strip's lists pass it: with the rail on screen the lamps
+   * row is what lights up, and with the strip on screen the lamps row is gone.
+   */
+  flash?: boolean;
+  /**
+   * Its card is collapsed or hidden: not on screen until asked for (#1143).
+   * Only the strip's lists pass it — with the rail on screen the collapsed row
+   * is what says so, and with the strip on screen the collapsed row is gone.
+   */
+  folded?: boolean;
   onFocus: () => void;
   onClose: () => void;
   /** a non-blank, trimmed name; the edit ends either way */
@@ -183,6 +229,8 @@ export function SessionRow(props: {
       // has to be able to ask — indentation is a few pixels of padding and
       // nothing else on the page can be asked whether it is right.
       data-rail-depth={depth ?? undefined}
+      data-flash={props.flash ? 'true' : undefined}
+      data-folded={props.folded ? 'true' : undefined}
       style={{
         position: 'relative',
         display: 'flex',
@@ -198,6 +246,13 @@ export function SessionRow(props: {
         borderRadius: 7,
         marginBlockEnd: 2,
         background: rowTint,
+        // the post-jump beat (§5.8): the focus accent, drawn INSIDE the row so
+        // it costs no layout and cannot be clipped by the list it is in
+        boxShadow: props.flash ? 'inset 0 0 0 2px var(--status-working-ink)' : undefined,
+        // folded away: the pill's dashed edge, on a row. An outline, so it
+        // costs no layout and a row that is not folded is untouched.
+        outline: props.folded ? '1px dashed var(--group-frame)' : undefined,
+        outlineOffset: props.folded ? -1 : undefined,
       }}
     >
       {props.dropEdge && (
@@ -278,21 +333,11 @@ export function SessionRow(props: {
             // exactly as `rowDetail` already does for the task label — and it
             // has to be here at all because the mark beside the row is
             // `aria-hidden` decoration like every other glyph on the row.
-            aria-label={t(isPinned ? 'rail.rowLabelPinned' : 'rail.rowLabel', {
-              title: s.title,
-              state: ((): string => {
-                // #877: the label is announced WHENEVER there is one, including
-                // on a row that needs you. It used to be dropped in exactly
-                // that case — so the one moment you most want to know WHICH
-                // piece of work is asking, the row stopped saying. The ask
-                // (`p.labelKey`) still leads, because that is the demand; the
-                // label follows as the detail.
-                const state = s.taskLabel
-                  ? t('rail.rowDetail', { detail: s.taskLabel, state: t(p.labelKey) })
-                  : t(p.labelKey);
-                return waiting > 0 ? t('rail.rowWaiting', { state, count: waiting }) : state;
-              })(),
-            })}
+            aria-label={
+              props.folded
+                ? t('strip.pillFolded', { name: sessionSpokenName(t, s, isPinned, waiting) })
+                : sessionSpokenName(t, s, isPinned, waiting)
+            }
             // "this is the session the grid is showing" — a fact about the
             // rail's own list, which is what aria-current is for
             aria-current={selected ? 'true' : undefined}
@@ -517,42 +562,7 @@ export function SessionRow(props: {
                 role-less span is ignored by every screen reader anyway, and
                 the state it was trying to announce is now in the row button's
                 own name. `title` stays — that one is for the mouse. */}
-            {p.spinner ? (
-              <span
-                aria-hidden
-                title={t(p.labelKey)}
-                style={{
-                  inlineSize: 12,
-                  blockSize: 12,
-                  borderRadius: '50%',
-                  flexShrink: 0,
-                  border: `1.6px solid ${tint(hue, 22)}`,
-                  borderBlockStartColor: hue,
-                  animation: 'sb-spin 1.1s linear infinite',
-                }}
-              />
-            ) : (
-              <span
-                aria-hidden
-                title={t(p.labelKey)}
-                style={{
-                  inlineSize: 16,
-                  blockSize: 16,
-                  borderRadius: 4,
-                  flexShrink: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontFamily: 'var(--font-ui)',
-                  fontWeight: 700,
-                  fontSize: 10,
-                  color: ink,
-                  background: tint(hue, 14),
-                }}
-              >
-                {p.glyphKey ? t(p.glyphKey) : ''}
-              </span>
-            )}
+            <StatusMark status={s.status} needsYou={props.needsYou} />
           </div>
         </>
       )}

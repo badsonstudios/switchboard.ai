@@ -63,21 +63,22 @@ top of the window while it is lit. Click it again to bring the list back.
 
 ### Listing sessions across the top instead
 
-> **In progress.** You can switch this on and work in it, but it is not
-> finished: your groups are on the strip, but a session that is not in a group
-> is not shown there yet, and groups can only be renamed, recoloured, reordered
-> or deleted with the list on the left.
+> **Nearly finished.** Everything is listed and you can work in it. What is
+> still missing is the right-click menus and dragging: to rename, pin, move,
+> reorder or recolour, switch to the list on the left for now.
 
 The list does not have to live on the left. Next to **▸ commands** in the bar
 along the top of the window there is a two-part button, **◧ left** and
 **⬒ top**. The lit half is where your sessions are listed.
 
-- Click **⬒ top** and the list on the left goes away. In its place is one strip
-  under the top bar, and your sessions get the whole width of the window.
+- Click **⬒ top** and the list on the left goes away, along with the row of
+  lamps and the **Collapsed** strip. In their place is one strip under the top
+  bar, and your sessions get the whole width of the window.
 - Click **◧ left** to go back.
 - Click whichever half is **lit** to put the list away altogether. Neither half
   is lit while it is away. Click either half to bring it back there, or press
-  `Ctrl+B` to bring it back where it was.
+  `Ctrl+B` to bring it back where it was. While it is away you see the row of
+  lamps and the **Collapsed** strip, whichever placement you put away.
 
 The same choice is in **Settings** (`Ctrl+,`) under **Appearance ▸ Sessions
 list**, as two pictures: **On the left** and **Across the top**. It takes
@@ -114,11 +115,37 @@ Click the group again, click anywhere else, or press `Esc` to close the list
 without going anywhere. (Renaming a session from this list is not there yet;
 for now, switch to the list on the left to rename one.)
 
-Sessions that are **not in a group** are not on the strip yet. When you have
-some, the strip says how many. Until they are shown, the row of lamps and the
-**Collapsed** strip stay above the strip, and they are how you get to one:
-click its lamp, or its row. When the strip shows every session itself, those
-two rows go.
+After the groups come the sessions that are **not in a group**, each as a
+two-line pill: its name and a word for what it is doing, what it is working
+on underneath, the status mark at the end, and its colour as a bar down the
+left edge. A pill looks the way that session's row does in the list on the
+left, in every state: a session that needs you is filled in and bold. Click a
+pill to go to that session.
+
+A pill with a **dashed** edge is a session that is folded away: collapsed or
+hidden, still running, but not in the workspace. Click it and it comes back.
+With the sessions across the top this replaces the **Collapsed** strip, and
+there is no "N idle sessions" row: each folded-away session keeps its own pill.
+A folded-away session that is **in a group** has no pill; its group says
+**· 2 folded away**, and its row in the group's list has the same dashed edge.
+Click the row to bring it back.
+
+A pinned session comes first among the pills and shows a 📌. A session that
+another session started sits straight after it, with a small **↳**. A number
+in a small bubble means that many messages from other sessions are waiting in
+it; on a group the same thing reads **· 3 waiting**. Waiting messages are
+separate from **need you** and are not counted in it.
+
+**When there are too many to fit**, the strip scrolls sideways: use the mouse
+wheel over it, or the cell that appears at each end. A cell turns **amber and
+shows a number** when that many sessions that need you are off that end; it
+is plain when sessions are cut off but none is waiting. Click a cell to scroll
+that way. The **N need you** total above never scrolls.
+
+When you press `Ctrl+Space` to go to the next session that needs you, its pill
+is outlined for a moment, and the strip scrolls so you can see it. For a
+session in a group, the group is outlined; if that group's list is open it
+stays open and the session's row is outlined too.
 
 ## Groups
 

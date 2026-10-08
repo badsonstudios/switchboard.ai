@@ -21,7 +21,7 @@
 > measured in time, sending only the new text saves megabytes and no
 > milliseconds.
 >
-> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 3 of 6 (PRs 1 and 2 merged 2026-10-08)
+> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 4 of 6 (PRs 1 to 3 merged 2026-10-08)
 >
 > **The design is SETTLED** (three mockup rounds, 2026-10-08). The spec is the
 > NEWEST comment on the issue ("DESIGN SETTLED WITH THE OWNER"); the pictures are
@@ -75,15 +75,15 @@
 >    and the Collapsed strip are STILL SHOWN in top mode.** A review found
 >    that removing them before the strip lists sessions leaves Focus, Queue
 >    and maximize with no mouse path back to the sessions they collapse.
->    **PR 4 must remove both** (and move the post-jump highlight, which the
->    lamps row times, onto the pills first), and flip the line in
->    `e2e/sessions-placement.spec.ts` that asserts the lamps are visible. The
+>    **PR 4 removed both** (and moved the post-jump highlight, which the
+>    lamps row timed, onto the pills first). The
 >    owner is told in the tracker row and the report. **NOT in this PR, moved to PR 5 with the other menus:**
 >    the right-click on an empty part of the strip.
-> 3. Groups and their drop-down lists. **← IN FLIGHT**, branch
->    `feature/1143-3-strip-groups`. *This line rides in that PR: if `main` has
->    `src/renderer/src/components/StripGroupEntry.tsx`, PR 3 has landed and
->    PR 4 is next. PR 4 carries the close-out.* In it: made groups then
+> 3. Groups and their drop-down lists. **DONE 2026-10-08, PR #1156
+>    (`a4ad21b`), merged, NOT released.** The review found that double-click
+>    rename cannot work in a list (the first click goes to the session and
+>    closes it), so rename waits for PR 5's menu, and that the list's Escape
+>    handler was taking the key from every dialog. In it: made groups then
 >    automatic ones, each an entry (dot or folder, Ctrl+N range, name, count,
 >    "N need you" / calm / empty, "· N waiting", ⊕, tinted arrow); a click
 >    drops a `position: fixed` list of `SessionRow`s with their Ctrl+N
@@ -95,7 +95,20 @@
 >    was all done"), then said to continue: so do not hand him another
 >    half-step to test without saying first, in the first sentence, how much
 >    of the six is in it.
-> 4. Pills and overflow.
+> 4. Pills and overflow. **← IN FLIGHT**, branch `feature/1143-4-strip-pills`.
+>    *This line rides in that PR: if `main` has
+>    `src/renderer/src/components/StripPill.tsx`, PR 4 has landed and PR 5 is
+>    next. PR 5 carries the close-out.* In it: loose sessions as pills (dashed
+>    when collapsed or hidden); a fixed cell at each end, amber with a count
+>    (`lib/strip-overflow`); the post-jump beat lifted out of the lamps row
+>    into `lib/use-urgency-beat` and run by the strip; **the lamps row and the
+>    Collapsed strip are now gone in top mode, which ends PR 2's departure
+>    from the design**; the Settings choice no longer says "(in progress)".
+>    **Put away with Ctrl+B, the strip is not mounted and the lamps row and
+>    Collapsed strip come back** (`stripShown` in App is the one switch):
+>    exactly one of lamps row / strip runs the beat, and "hidden" looks the
+>    same in both placements. A folded session INSIDE a group is counted on
+>    its group ("· N folded away") and dashed on its row in the list.
 > 5. Right-click menus. **Needs an independent review before it is pushed**
 >    (it carries "Close session").
 > 6. Dragging.
