@@ -58,7 +58,42 @@ list is the complete inventory. That includes a card whose session
 **Rename** and **Move to group** are the only two things it can't do.
 
 **Resize it** by dragging the right edge of the list. The width is remembered.
-To hide it entirely, press `Ctrl+B`.
+To hide it entirely, press `Ctrl+B`, or click **◧ left** in the bar along the
+top of the window while it is lit. Click it again to bring the list back.
+
+### Listing sessions across the top instead
+
+> **In progress.** You can switch this on and work in it, but it is not
+> finished: the strip does not list your groups or sessions yet, so groups can
+> only be seen and arranged with the list on the left.
+
+The list does not have to live on the left. Next to **▸ commands** in the bar
+along the top of the window there is a two-part button, **◧ left** and
+**⬒ top**. The lit half is where your sessions are listed.
+
+- Click **⬒ top** and the list on the left goes away. In its place is one strip
+  under the top bar, and your sessions get the whole width of the window.
+- Click **◧ left** to go back.
+- Click whichever half is **lit** to put the list away altogether. Neither half
+  is lit while it is away. Click either half to bring it back there, or press
+  `Ctrl+B` to bring it back where it was.
+
+The same choice is in **Settings** (`Ctrl+,`) under **Appearance ▸ Sessions
+list**, as two pictures: **On the left** and **Across the top**. It takes
+effect the moment you pick one, and it is remembered when you restart.
+
+What the strip has so far:
+
+- **+ group** makes a new group, exactly as it does in the list on the left.
+- **+ session** opens a new session.
+- **N need you** appears beside them when any session is waiting on you, and
+  is the same number the list on the left shows at its foot.
+
+Under those, where your groups and sessions will go, a line says how many
+sessions and groups are open and that they are not listed there yet. Until
+they are, the row of lamps and the **Collapsed** strip stay underneath, and
+they are how you get to a session you cannot see: click its lamp, or its row.
+When the strip lists sessions itself, those two rows go.
 
 ## Groups
 

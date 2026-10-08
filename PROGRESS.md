@@ -21,7 +21,7 @@
 > measured in time, sending only the new text saves megabytes and no
 > milliseconds.
 >
-> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 1 of 6 (started 2026-10-08)
+> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 2 of 6 (PR 1 merged 2026-10-08)
 >
 > **The design is SETTLED** (three mockup rounds, 2026-10-08). The spec is the
 > NEWEST comment on the issue ("DESIGN SETTLED WITH THE OWNER"); the pictures are
@@ -60,14 +60,28 @@
 > **The split he agreed to — six PRs, each leaving left mode unchanged:**
 >
 > 1. **The session row lifted out of the list file** (internal, no visible
->    change). **← IN FLIGHT**, branch `feature/1143-1-session-row`. *This line
->    rides in that PR, so it cannot say "merged" about itself: if `main` has
->    `src/renderer/src/components/SessionRow.tsx`, PR 1 has landed and PR 2 is
->    next. PR 2 carries the close-out.*
+>    change). **DONE 2026-10-08, PR #1154 (`1c8b132`), merged, NOT released.**
+>    An independent review caught that the first cut moved the rename box's
+>    draft text into the row, where a re-parented row would have lost a
+>    half-typed name; the draft stayed with the list and a test pins it.
 > 2. The setting (Settings, the top-bar button, hide / show), the line above
->    the strip, and the strip's frame with its empty state. **The Settings
->    choice is labelled "in progress" until PR 4 lands** — between PR 2 and
->    PR 4 top mode is selectable on main but incomplete, and he was told so.
+>    the strip, and the strip's frame. **← IN FLIGHT**, branch
+>    `feature/1143-2-placement-setting`. *This line rides in that PR: if `main`
+>    has `src/renderer/src/components/SessionsStrip.tsx`, PR 2 has landed and
+>    PR 3 is next. PR 3 carries the close-out.* **The Settings choice is
+>    labelled "in progress" until PR 4 lands** — between PR 2 and PR 4 top
+>    mode is selectable on main but incomplete, and he was told so. In this
+>    PR: the "▤ rail" chip became the "◧ left / ⬒ top" switch; the strip's
+>    row says the sessions are "not listed here yet" rather than sitting
+>    empty. **⚠️ DEPARTS FROM THE DESIGN ON PURPOSE, UNTIL PR 4: the lamps row
+>    and the Collapsed strip are STILL SHOWN in top mode.** A review found
+>    that removing them before the strip lists sessions leaves Focus, Queue
+>    and maximize with no mouse path back to the sessions they collapse.
+>    **PR 4 must remove both** (and move the post-jump highlight, which the
+>    lamps row times, onto the pills first), and flip the line in
+>    `e2e/sessions-placement.spec.ts` that asserts the lamps are visible. The
+>    owner is told in the tracker row and the report. **NOT in this PR, moved to PR 5 with the other menus:**
+>    the right-click on an empty part of the strip.
 > 3. Groups and their drop-down lists.
 > 4. Pills and overflow.
 > 5. Right-click menus. **Needs an independent review before it is pushed**

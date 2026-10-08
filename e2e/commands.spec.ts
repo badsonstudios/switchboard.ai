@@ -108,8 +108,10 @@ test.describe('keyboard commands (E9-01)', () => {
     await w.keyboard.press(`${MOD}+B`);
     await expect(w.locator('nav')).toBeVisible();
 
-    // the mouse path does the same thing (hiding chrome never removes capability)
-    const chip = w.getByTitle(/Show or hide the sessions rail/);
+    // the mouse path does the same thing (hiding chrome never removes capability).
+    // Since #1143 that is the LIT half of the left / top switch: by the
+    // attribute, because its tooltip changes with what the click would do.
+    const chip = w.locator('[data-placement="left"]');
     await chip.click();
     await expect(w.locator('nav')).toHaveCount(0);
     await chip.click();

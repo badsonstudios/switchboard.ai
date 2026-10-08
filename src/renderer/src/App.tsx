@@ -12,6 +12,14 @@ import { listThemes } from './extensibility/themes';
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, StatusBar } from './components/chrome';
 import { SessionsRail, RailGroup } from './components/SessionsRail';
+import { SessionsStrip } from './components/SessionsStrip';
+import {
+  DEFAULT_SESSIONS_PLACEMENT,
+  placementClick,
+  SESSIONS_PLACEMENT_KEY,
+  sessionsPlacementOf,
+  type SessionsPlacement,
+} from './lib/sessions-placement';
 import { SessionGrid, GridController } from './components/SessionGrid';
 import type { SwitchboardApi } from '../../preload';
 import type { HistoryRepairNotice } from '../../shared/history-repair';
@@ -104,6 +112,7 @@ import type {
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
+import { needCount } from './lib/rail-view';
 import { interpretPushAnswer } from './lib/push-answer';
 import {
   cycleGlobal,
@@ -238,6 +247,12 @@ export function App(): React.JSX.Element {
   // rail visibility (E9-01 'toggle rail' command) — persisted like the other
   // renderer prefs, read once the ui blob has loaded
   const [railHidden, setRailHidden] = useState(false);
+  // where the sessions are listed (#1143): the rail down the left, or the strip
+  // across the top. Stored beside `railHidden`, which now means "the list is
+  // put away" for whichever of the two is chosen.
+  const [sessionsPlacement, setSessionsPlacement] = useState<SessionsPlacement>(
+    DEFAULT_SESSIONS_PLACEMENT
+  );
   // The events drawer (P2-E14-01, Shape B). Collapsed by default and, unlike
   // the rail, DELIBERATELY NOT PERSISTED: the rail is a layout preference, this
   // is a surface you open to read the queue and shut again — the same category
@@ -671,6 +686,7 @@ export function App(): React.JSX.Element {
       initPresentation();
       setAutonomy(uiGet('autonomy', DEFAULT_AUTONOMY));
       setRailHidden(uiGet('railHidden', false));
+      setSessionsPlacement(sessionsPlacementOf(uiGet<unknown>(SESSIONS_PLACEMENT_KEY, undefined)));
       applyTabRows(loadTabRows()); // multi-row tab strip, default on (#84)
       setUiReady(true);
     });
@@ -1714,6 +1730,16 @@ export function App(): React.JSX.Element {
     uiSet('railHidden', next);
     setRailHidden(next);
   }, []);
+  // #1143. Choosing a placement SHOWS the list there: nobody picks where a
+  // thing goes in order to go on not seeing it, and a choice made in Settings
+  // with the list hidden would otherwise change nothing on screen.
+  const placeSessions = React.useCallback((placement: SessionsPlacement, hidden = false) => {
+    railHiddenRef.current = hidden;
+    uiSet('railHidden', hidden);
+    uiSet(SESSIONS_PLACEMENT_KEY, placement);
+    setRailHidden(hidden);
+    setSessionsPlacement(placement);
+  }, []);
   // Contributed commands, not imported ones (§5.23): App knows the app's
   // callbacks, the registry knows who wants them. Adding a command set means
   // registering it in bootstrap.ts — no edit here.
@@ -2229,6 +2255,26 @@ export function App(): React.JSX.Element {
 
   if (!uiReady) return <div style={{ blockSize: '100vh' }} />; // one-frame gate while UI state loads
 
+  // Shared by the rail and the strip (#1143): "+ group" is one gesture wherever
+  // the sessions are listed, so it is one function rather than two copies.
+  //
+  // It is one of the `groups:*` calls that come back with an ANSWER, and like
+  // every other bridge call in this file it is uncaught (#326). It no longer
+  // needs to be caught: main resolves `null` instead of throwing when it
+  // refuses a change, so a refusal is a value to read rather than a rejection
+  // nobody is listening for. `groupChangeLanded` reads it; the refresh runs
+  // either way, which is what makes a refused edit revert to the truth.
+  const createGroup = (name: string): void => {
+    void bridge.groups?.create?.({ name }).then((made) => {
+      // `answered` (#650): `groupChangeLanded` calls a change refused
+      // when its argument is null/undefined, and the brand is
+      // neither - so a broker refusal would log "created" for a group
+      // that is not there. The refresh below reverts the rail anyway.
+      groupChangeLanded('create', answered(made));
+      return refreshGroups();
+    });
+  };
+
   return (
     <div style={{ blockSize: '100vh', display: 'flex', flexDirection: 'column' }}>
       {/* #581 — the app's one live region outside any surface, so the window-scoped
@@ -2319,7 +2365,11 @@ export function App(): React.JSX.Element {
           void bridge.settings?.setAiLabels?.(wantAi).then((on) => setAiLabels(took(on)));
         }}
         railHidden={railHidden}
-        onToggleRail={toggleRail}
+        sessionsPlacement={sessionsPlacement}
+        onPlacementClick={(clicked) => {
+          const next = placementClick({ placement: sessionsPlacement, hidden: railHidden }, clicked);
+          placeSessions(next.placement, next.hidden);
+        }}
         railBinding={railBindingLabel}
         onOpenPalette={() => {
           measureToPaint('palette-open'); // #923
@@ -2380,6 +2430,8 @@ export function App(): React.JSX.Element {
         }}
         taskLabelSize={taskLabelSize}
         onSetTaskLabelSize={applyTaskLabelSize}
+        sessionsPlacement={sessionsPlacement}
+        onSetSessionsPlacement={(placement) => placeSessions(placement)}
         dispatchRetire={dispatchRetire}
         onSetDispatchRetire={(policy) => sessionStore.setDispatchRetire(policy)}
         quiet={quietState}
@@ -2627,6 +2679,26 @@ export function App(): React.JSX.Element {
         activeCardId={activeCard}
         onExpand={(cardId) => focusCard(cardId)}
       />
+      {/* #1143: the sessions, listed across the top instead of down the left.
+          Gated INSIDE like the banners above so the shell column stays a
+          flat list.
+
+          ⚠️ THE TWO STRIPS ABOVE ARE MEANT TO GO in this placement, and they
+          have NOT gone yet on purpose. The design replaces the lamps row and
+          the collapsed row with this strip's own entries — but this is only
+          the frame, and until it lists sessions itself those two rows are the
+          only thing left to click. Focus, Queue and maximize collapse every
+          card but one; without the collapsed row those sessions would have no
+          mouse path at all, and past the ninth no keyboard one either. Each
+          row leaves in the change that lands what replaces it. */}
+      <SessionsStrip
+        shown={sessionsPlacement === 'top' && !railHidden}
+        sessionCount={sessions.length}
+        groupCount={groups.length}
+        needCount={needCount(sessions, needing)}
+        onCreateGroup={createGroup}
+        onNewSession={() => void grid.current?.newSession()}
+      />
       {/* §5.8's batch prompt (P2-E9-11). LAST in the stack of bands, directly
           above the workspace, on purpose: it is the only one of them that comes
           and goes with events rather than with the user's own actions, and
@@ -2656,7 +2728,7 @@ export function App(): React.JSX.Element {
           very readouts that are supposed to stay legible while it is open.
           `always-visible-notices.test.ts` pins the pair. */}
       <div style={{ flex: 1, display: 'flex', minBlockSize: 0, position: 'relative' }}>
-        {!railHidden && (
+        {!railHidden && sessionsPlacement === 'left' && (
           <SessionsRail
             sessions={sessions}
             groups={groups}
@@ -2674,7 +2746,8 @@ export function App(): React.JSX.Element {
             }}
             onClose={(cardId) => grid.current?.closeCard(cardId)}
             selectedId={activeCard}
-            /* These three are the `groups:*` calls that come back with an
+            /* These three (`createGroup` is the first, above the return) are
+               the `groups:*` calls that come back with an
                ANSWER, and like every other bridge call in this file they are
                uncaught (#326). They no longer need to be caught: main resolves
                `null` instead of throwing when it refuses a change, so a refusal
@@ -2683,16 +2756,7 @@ export function App(): React.JSX.Element {
                which is what makes a refused edit revert to the truth.
                `remove` and `setSessionGroup` below answer nothing and refuse
                the same way — quietly, with a line in the log. */
-            onCreateGroup={(name) => {
-              void bridge.groups?.create?.({ name }).then((made) => {
-                // `answered` (#650): `groupChangeLanded` calls a change refused
-                // when its argument is null/undefined, and the brand is
-                // neither - so a broker refusal would log "created" for a group
-                // that is not there. The refresh below reverts the rail anyway.
-                groupChangeLanded('create', answered(made));
-                return refreshGroups();
-              });
-            }}
+            onCreateGroup={createGroup}
             onRenameGroup={(id, name) => {
               void bridge.groups?.update?.(id, { name }).then((next) => {
                 groupChangeLanded('rename', answered(next)); // #650, as above

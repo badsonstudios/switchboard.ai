@@ -164,6 +164,17 @@ const NOTICES: readonly Notice[] = [
     why: 'the only place a collapsed session is listed outside the rail (§5.8)',
   },
   {
+    component: 'SessionsStrip',
+    file: 'components/SessionsStrip.tsx',
+    from: 'data-testid="sessions-strip"',
+    to: '\n    >',
+    guard: INLINE_GUARD,
+    // the sessions listed across the top instead of down the left. It renders
+    // nothing unless that placement is chosen — like the collapsed strip — but
+    // when it IS there it has replaced the rail and both strips above.
+    why: 'the only list of sessions on screen while they are listed across the top',
+  },
+  {
     component: 'BatchApprovalBar',
     file: 'components/BatchApprovalBar.tsx',
     from: 'data-testid="batch-approval"',

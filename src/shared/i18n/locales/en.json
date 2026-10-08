@@ -24,8 +24,23 @@
     "speakOff": "🗣 silent",
     "speakHint": "Say out loud which session needs you — \"Add markdown preview needs your input\" — but only while switchboard isn't the window you're in.",
     "speakSample": "Announcements are on",
-    "rail": "▤ rail",
-    "railHint": "Show or hide the sessions rail ({binding})",
+    "placementLabel": "Where sessions are listed",
+    "placement": {
+      "left": "◧ left",
+      "top": "⬒ top"
+    },
+    "placementHide": {
+      "left": "Sessions are listed down the left. Click to hide the list ({binding})",
+      "top": "Sessions are listed across the top. Click to hide the strip ({binding})"
+    },
+    "placementShow": {
+      "left": "Show the sessions list, down the left ({binding} shows it where it was)",
+      "top": "Show the sessions strip, across the top ({binding} shows it where it was)"
+    },
+    "placementMove": {
+      "left": "List sessions down the left",
+      "top": "List sessions across the top"
+    },
     "palette": "▸ commands",
     "paletteHint": "Show every command, with its shortcut ({binding})",
     "buildLabel": "Version and build — click for details",
@@ -1558,6 +1573,20 @@
         "too-long": "That is too long."
       }
     }
+  },
+  "sessionsPlacement": {
+    "title": "Sessions list",
+    "blurb": "Where your open sessions are listed.",
+    "left": "On the left",
+    "leftNote": "A list down the side, groups as cards.",
+    "top": "Across the top (in progress)",
+    "topNote": "One strip under the top bar, and the full width for your sessions. Not finished yet: the strip has its buttons and the count, but does not list your groups or sessions. Until it does, the row of lamps and the Collapsed strip stay with it."
+  },
+  "strip": {
+    "label": "Sessions",
+    "addSession": "+ session",
+    "addSessionHint": "Open a new session",
+    "pending": "{count, plural, =0 {No sessions} one {# session} other {# sessions}} and {groups, plural, =0 {no groups} one {# group} other {# groups}} open. They are not listed here yet: use the lamps below, or the left / top button above to bring the list back."
   },
   "taskLabelSize": {
     "title": "Task label size",

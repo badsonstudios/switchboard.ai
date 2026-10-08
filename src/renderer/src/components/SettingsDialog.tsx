@@ -42,6 +42,8 @@ import type { SettingsSection } from '../lib/settings-sections';
 import { SettingsButton } from './settings/controls';
 import { ThemeSection } from './settings/ThemeSection';
 import { TaskLabelSizeSection } from './settings/TaskLabelSizeSection';
+import { SessionsPlacementSection } from './settings/SessionsPlacementSection';
+import type { SessionsPlacement } from '../lib/sessions-placement';
 import { QuietHoursSection } from './settings/QuietHoursSection';
 import { PushSection } from './settings/PushSection';
 import { AdvancedSection } from './settings/AdvancedSection';
@@ -69,6 +71,11 @@ export interface SettingsDialogProps {
   onLang: (l: LanguageChoice) => void;
   taskLabelSize: TaskLabelSize;
   onSetTaskLabelSize: (size: TaskLabelSize) => void;
+  /** where the sessions are listed (#1143). REQUIRED for `dispatchRetire`'s
+   *  reason below: it is renderer state with a default of its own, so an
+   *  omission could only be a caller that forgot. */
+  sessionsPlacement: SessionsPlacement;
+  onSetSessionsPlacement: (placement: SessionsPlacement) => void;
 
   // ── Attention ───────────────────────────────────────────────────────────
   quiet: QuietState | null;
@@ -248,6 +255,10 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
               onTheme={props.onTheme}
               lang={props.lang}
               onLang={props.onLang}
+            />
+            <SessionsPlacementSection
+              placement={props.sessionsPlacement}
+              onSet={props.onSetSessionsPlacement}
             />
             <TaskLabelSizeSection
               size={props.taskLabelSize}

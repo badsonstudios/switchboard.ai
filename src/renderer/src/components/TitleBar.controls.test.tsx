@@ -67,7 +67,8 @@ async function bar(): Promise<void> {
         speakOn={false}
         onToggleSpeak={noop}
         railHidden={false}
-        onToggleRail={noop}
+        sessionsPlacement="left"
+        onPlacementClick={noop}
         railBinding="Ctrl+B"
         onOpenPalette={noop}
         paletteBinding="Ctrl+K"

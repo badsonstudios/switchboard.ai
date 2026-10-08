@@ -11,6 +11,8 @@ import { ThemeDefinition } from '../theme/theme';
 import { BuildIdentity, commitStamp } from '../../../shared/build-identity';
 import type { PresentationPolicy } from '../lib/presentation-policy';
 import type { LayoutMode } from '../lib/layout-mode';
+import type { SessionsPlacement } from '../lib/sessions-placement';
+import { SessionsPlacementSwitch } from './SessionsPlacementSwitch';
 import { autonomyTooltip } from '../lib/autonomy';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
@@ -110,9 +112,13 @@ export function TitleBar(props: {
    *  sample sentence to say on the way ON — `t` lives here, not in App. */
   speakOn: boolean;
   onToggleSpeak: (sample: string) => void;
-  /** sessions-rail visibility — the mouse path for the Ctrl+B command (E9-01) */
+  /** sessions-list visibility — the mouse path for the Ctrl+B command (E9-01),
+   *  which since #1143 is a click on the LIT half of the left / top switch */
   railHidden: boolean;
-  onToggleRail: () => void;
+  /** where the sessions are listed (#1143) */
+  sessionsPlacement: SessionsPlacement;
+  /** one half of the switch was clicked; `placementClick` says what it means */
+  onPlacementClick: (clicked: SessionsPlacement) => void;
   railBinding: string;
   /** the palette's mouse path (E9-02) — the ONE way in from a terminal, where
    *  no binding may fire */
@@ -136,13 +142,12 @@ export function TitleBar(props: {
       >
         {t('titlebar.palette')}
       </Chip>
-      <Chip
-        selected={!props.railHidden}
-        onClick={props.onToggleRail}
-        title={t('titlebar.railHint', { binding: props.railBinding })}
-      >
-        {t('titlebar.rail')}
-      </Chip>
+      <SessionsPlacementSwitch
+        placement={props.sessionsPlacement}
+        hidden={props.railHidden}
+        onClick={props.onPlacementClick}
+        binding={props.railBinding}
+      />
       {/* ── NO FOLDER-TRUST CHIP SINCE #952 ───────────────────────────────
           It was INERT unless some card would spawn on the Terminal (#397):
           Claude Code raises no trust question at all on the Direct transport,
