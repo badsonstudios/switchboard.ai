@@ -54,6 +54,27 @@ This is the conversation, rendered to be read rather than scrolled past:
   lines in red and green.
 - **Commands** show what was run and why, with **IN** and **OUT** sections you
   can expand separately.
+- **A burst of looking around is one box.** When Claude reads files and
+  searches the project several times in a row — three or more **Read**,
+  **Grep** or **Glob** calls with nothing else between them — you get a single
+  box instead of a screenful: **Explored the code**, how many searches and how
+  many files read, and the most recent one. Click it (or press Enter on it) to
+  see every call, each drawn exactly as it would have been on its own; click
+  again to fold them away. While Claude is still looking, the counts go up in
+  place.
+
+  Only looking is folded. Anything that changes something or runs something —
+  an edit, a command, a helper being sent out — always gets its own box. So
+  does a single Read, or two. And a sentence from Claude in the middle of a
+  burst splits it into two boxes with the sentence between them.
+
+  `Ctrl+F` still finds text inside a folded burst: stepping to a match there
+  opens the box.
+
+  Opening one of these boxes stops the conversation following its newest
+  message, so the box stays where you clicked it while you read. **Jump to
+  latest** takes you back, and shutting the box at the bottom of the
+  conversation carries on following by itself.
 - **Thinking** collapses to "Thought for 4s" — expand if you care.
 - **Checklists** from Claude's own task tracking render as `[x]` / `[~]` / `[ ]`.
 - **Local commands** — `/usage`, `/cost`, `/context` and the like, which Claude

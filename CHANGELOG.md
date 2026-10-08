@@ -107,6 +107,13 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **A burst of Read, Grep and Glob calls is now one box in the conversation.**
+  When Claude looked around the code, every single read and search got a row of
+  its own, and one burst could fill two screens. Three or more in a row now
+  fold into one box — "Explored the code", with how many searches and files
+  read — that opens to show each call as before. Edits, commands and anything
+  else that does something are never folded, and `Ctrl+F` still finds text
+  inside a folded burst.
 - **File names in the Changes tab are no longer cut to a few letters.** Each
   row was keeping more than half its width empty for buttons that only appear
   when you point at it, which left a name like `PROGRESS.md` showing as

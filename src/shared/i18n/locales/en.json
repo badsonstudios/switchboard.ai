@@ -1009,6 +1009,15 @@
     "firehoseHint": "Everything, including thinking and subagent chatter",
     "clearedMarker": "Conversation cleared — context starts fresh",
     "turnMarker": "New prompt",
+    "fold": {
+      "title": "Explored the code",
+      "searches": "{count, plural, one {# search} other {# searches}}",
+      "reads": "{count, plural, one {# file read} other {# files read}}",
+      "join": ", ",
+      "latest": "· latest: {call}",
+      "caretOpen": "▾",
+      "caretClosed": "▸"
+    },
     "subagent": {
       "marker": "Subagent · {name}",
       "markerDiscriminated": "Subagent · {name} · {id}",

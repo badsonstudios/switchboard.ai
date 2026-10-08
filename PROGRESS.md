@@ -91,8 +91,8 @@
 > The name gets room before the folder path. Same probe after: every one of
 > those names fits in full at the default width (81, 72, 139, 146, 157px).
 >
-> **#1144 (reorder groups in the rail) — DONE ON `feature/1144-reorder-groups`**
-> (the PR that carries this line; NOT released). Menu first, drag second, as
+> **#1144 (reorder groups in the rail) — DONE 2026-10-08, PR #1151
+> (`0bffea7`), merged, NOT released.** Menu first, drag second, as
 > asked. The order was already there to be had: the rail draws groups in the
 > order main's array keeps them, so a move is a splice (`groups:move`, "put it
 > before this one, or last") and nothing else needed a new field. **Groups had
@@ -104,11 +104,37 @@
 > Only groups the user made can move; automatic groups and Ungrouped stay
 > below them.
 >
-> **NEXT: #1130** (fold consecutive Read/Grep/Glob calls into one expandable
-> block). It touches the conversation view, so it needs an independent review
-> before pushing, and a before/after on the #716 probe with the builds
-> ALTERNATED run by run. Then #1143 — **which is large: read it, then ASK the
-> owner the design questions before starting.**
+> **#1130 (fold consecutive Read/Grep/Glob calls into one expandable block) —
+> DONE ON `feature/1130-fold-exploration`** (the PR that carries this line;
+> NOT released). Three or more consecutive `category: 'read'` calls from one
+> speaker are one row, "Explored the code", opening onto the calls as they
+> always were. **A closed fold's members are left out of the list, not hidden
+> or nested** — that is what the off-screen skipping needs (every block a
+> direct child of its group) and it is why the row carries no block's seq.
+> Find opens a fold it lands in.
+>
+> **REVIEW (required: the conversation view) FOUND A BLOCKER AND THREE MORE,
+> all fixed:** opening a fold unpinned the tail-follow without recording a
+> reading position, so switching sessions and back landed at the TOP; opening
+> and shutting a fold at the tail left the conversation not following, with
+> "Jump to latest" offered over the latest; a row you had opened was folded
+> away when the third call arrived; and the open-fold set was not reset when
+> the card's session changed. The first two have e2e tests **verified red with
+> the fixes removed.**
+>
+> **MEASURED, builds alternated run by run** (four pairs, #716 probe, 980
+> blocks, 4x): no long tasks either way, same frames, same key-to-paint;
+> script +5 %, layout and style slightly down. Not the improvement the ticket
+> hoped for on that backlog — off-screen blocks were already free. Numbers in
+> `spike/findings/1130-fold-exploration-cost.md`.
+>
+> **Judgment calls, flagged in the tracker:** the threshold is three (two rows
+> stay two rows); opening a fold stops the conversation following.
+>
+> **THE LIST IS DONE EXCEPT #1143** (sessions strip across the top) — **which
+> is large and is the owner's STOP POINT: the design questions have to be put
+> to him before anything is built.** They are in this session's hand-off.
+> Then he says whether to cut 0.8.116.
 >
 > ## Earlier on 2026-10-07: #1126, then #1127 — the owner: "we can do 1126 and 1127 next".
 >
