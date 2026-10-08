@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Locator } from '@playwright/test';
 import path from 'path';
 import {
   launchApp,
@@ -14,8 +14,8 @@ import {
 // the real window the three doors (the title bar's switch, Ctrl+B and Settings)
 // move ONE thing, and that the choice is still there after a restart.
 //
-// It covers the frame, the groups, the pills, the two rows the strip replaces
-// and the right-click menus. Dragging arrives with its own tests.
+// It covers the frame, the groups, the pills, the two rows the strip replaces,
+// the right-click menus and dragging.
 test.describe('sessions list placement', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
@@ -242,6 +242,74 @@ test.describe('sessions list placement', () => {
     await menu.getByRole('menuitemradio', { name: 'Sessions on the left' }).click();
     await expect(window.locator('nav')).toBeVisible();
     await expect(strip).toHaveCount(0);
+  });
+
+  test('order is by dragging: a pill sideways, a pill onto a group, a group sideways', async () => {
+    // Dispatched drag events on a real DataTransfer, as rail-reorder.spec.ts
+    // does: Playwright's mouse cannot start an HTML5 drag in Electron, and what
+    // is under test is what the handlers do with one, through to the STORE —
+    // the order has to come back from main the way it was dropped.
+    const folders = [tempProjectFolder(), tempProjectFolder(), tempProjectFolder()];
+    const names = folders.map((f) => path.basename(f));
+    a = await launchApp({ seedFolder: folders[0] });
+    const { window } = a;
+    await window.locator('[data-placement="top"]').click();
+    const strip = window.getByTestId('sessions-strip');
+    const menu = window.getByTestId('strip-menu');
+    const pills = strip.locator('[data-strip-pill]');
+    const groups = strip.locator('[data-strip-group]');
+    for (const [i, folder] of folders.slice(1).entries()) {
+      await a.app.evaluate(({ dialog }, d) => {
+        dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
+      }, folder);
+      await strip.locator('[data-strip-add-session]').click();
+      await expect(pills).toHaveCount(i + 2, { timeout: 25_000 });
+    }
+    const titles = (): Promise<string[]> =>
+      strip.locator('[data-strip-pill-title]').allTextContents();
+    const pillOf = (name: string) =>
+      pills.filter({ has: window.locator('[data-strip-pill-title]', { hasText: name }) });
+    expect(await titles()).toEqual(names);
+
+    /** drag `from` onto the left or right half of `to` */
+    const dragOnto = async (from: Locator, to: Locator, half: 'left' | 'right'): Promise<void> => {
+      const box = (await to.boundingBox())!;
+      const clientX = box.x + box.width * (half === 'left' ? 0.25 : 0.75);
+      const dt = await window.evaluateHandle(() => new DataTransfer());
+      await from.dispatchEvent('dragstart', { dataTransfer: dt });
+      await to.dispatchEvent('dragover', { dataTransfer: dt, clientX });
+      await to.dispatchEvent('drop', { dataTransfer: dt, clientX });
+    };
+
+    // a pill sideways: the first to after the last
+    await dragOnto(pillOf(names[0]), pillOf(names[2]), 'right');
+    await expect.poll(titles).toEqual([names[1], names[2], names[0]]);
+
+    // two groups, made from the strip
+    for (const want of [1, 2]) {
+      await strip.locator('[data-strip-line]').click({ button: 'right', position: { x: 400, y: 8 } });
+      await menu.getByRole('menuitem', { name: '+ New group' }).click();
+      await expect(groups).toHaveCount(want);
+    }
+    await groups.nth(1).click({ button: 'right' });
+    await menu.getByRole('menuitem', { name: 'Rename group…' }).click();
+    await strip.locator('[data-strip-rename] input').fill('Second');
+    await strip.locator('[data-strip-rename] input').press('Enter');
+    const groupNames = (): Promise<string[]> => strip.locator('[data-strip-group-name]').allTextContents();
+    await expect.poll(groupNames).toEqual(['New group', 'Second']);
+
+    // a pill onto a group: it joins, and is a pill no longer
+    await dragOnto(pillOf(names[1]), groups.nth(1), 'left');
+    await expect(pills).toHaveCount(2);
+    await expect(groups.nth(1).locator('[data-strip-group-count]')).toHaveText('1');
+
+    // a group sideways: the second before the first
+    await dragOnto(groups.nth(1), groups.nth(0), 'left');
+    await expect.poll(groupNames).toEqual(['Second', 'New group']);
+
+    // …and it is the same order in the list on the left, because it is one order
+    await window.locator('[data-placement="left"]').click();
+    await expect(window.locator('[data-rail-group-toggle]').first()).toContainText('Second');
   });
 
   test('the lit half hides the strip, and Ctrl+B brings it back where it was', async () => {

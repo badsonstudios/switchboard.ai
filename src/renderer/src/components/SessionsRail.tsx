@@ -83,6 +83,7 @@ import { tint } from '../lib/tint';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { useHeldCounts } from '../lib/sibling-inbox';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
+import { DND_TYPE, GROUP_DND_TYPE } from '../lib/rail-dnd';
 import { MenuPlacement, placeMenu } from '../lib/menu-placement';
 import { dropGroup, stepGroup } from '../lib/group-order';
 import { RailGroupMenu } from './RailGroupMenu';
@@ -107,19 +108,6 @@ import {
 import { srOnly } from './sr-only';
 
 export type { RailSession, RailGroup } from '../model/types';
-
-const DND_TYPE = 'application/x-switchboard-card';
-/**
- * A GROUP being dragged by its header (#1144).
- *
- * ITS OWN TYPE, and that is the whole of how a group drag and a session drag
- * stay out of each other's way: every session-drop handler in this file tests
- * for `DND_TYPE` (or a dockview tab in flight) before it does anything, so a
- * group passing over a row, a card or the rail's background is simply not a
- * thing those handlers see. A group can never be read as "a session dropped
- * into the group next door" (#582's worry), because it never carries a card.
- */
-const GROUP_DND_TYPE = 'application/x-switchboard-group';
 
 /**
  * A group key made safe to put in an `id` (#197). An auto-group's key is a

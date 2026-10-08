@@ -21,7 +21,7 @@
 > measured in time, sending only the new text saves megabytes and no
 > milliseconds.
 >
-> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 5 of 6 (PRs 1 to 4 merged 2026-10-08)
+> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 6 of 6, THE LAST (PRs 1 to 5 merged 2026-10-08)
 >
 > **The design is SETTLED** (three mockup rounds, 2026-10-08). The spec is the
 > NEWEST comment on the issue ("DESIGN SETTLED WITH THE OWNER"); the pictures are
@@ -107,11 +107,13 @@
 >    exactly one of lamps row / strip runs the beat, and "hidden" looks the
 >    same in both placements. A folded session INSIDE a group is counted on
 >    its group ("· N folded away") and dashed on its row in the list.
-> 5. Right-click menus. **← IN FLIGHT**, branch `feature/1143-5-strip-menus`.
->    *This line rides in that PR: if `main` has
->    `src/renderer/src/components/StripRenameBox.tsx`, PR 5 has landed and
->    PR 6 is next. PR 6 carries the close-out.* It carries "Close session", so
+> 5. Right-click menus. **DONE 2026-10-08, PR #1158 (`7192198`), merged, NOT
+>    released.** It carries "Close session", so
 >    it had the independent review the owner requires before it was pushed.
+>    The real-app test then caught what the review and 11,000 unit tests did
+>    not: Enter in a rename box handed focus to a button mid-keypress and the
+>    same Enter "clicked" it (renaming a group opened its list). Both rename
+>    boxes now consume the Enter.
 >    In it: three menus through the rail's small shared menu (which gained
 >    headings and one-of-N ticks); a rename box that REPLACES a pill or a
 >    group entry, and in-place rename for a row in a list; the rail's own
@@ -120,9 +122,28 @@
 >    per-session "on submit" and "when it needs you" overrides the rail's
 >    menu has (the mockup's menu did not list them), and renaming the
 >    palette's "Toggle the sessions rail" command.
-> 6. Dragging.
+> 6. Dragging. **← IN FLIGHT**, branch `feature/1143-6-strip-dragging`. *This
+>    line rides in that PR: if `main` has
+>    `src/renderer/src/lib/strip-drag.ts`, PR 6 has landed, **#1143 is DONE
+>    and CLOSED**, and the next session should rewrite this whole block as a
+>    finished entry and pick the next item with the owner.* In it: a group
+>    sideways (`dropGroup`), a pill sideways (`planReorder`, bucket
+>    `ungrouped`), a pill or a workspace tab onto a made group; the rail's two
+>    drag types moved to `lib/rail-dnd`. A line or a lit edge is only ever
+>    drawn where the drop would really do something.
 >
-> **The issue stays OPEN until PR 6.** No PR before then may put a closing
+> **WHAT THE OWNER HAS NOT SEEN.** He test-drove step 2 only, from a scratch
+> instance, and took it for the whole feature. Steps 3 to 6 are untested by
+> hand. Six tracker rows are waiting, newest first; the top one (step 6) is
+> the one to start from. **Departures from the settled design, each flagged
+> in its tracker row for him to overrule:** the lamps row and Collapsed strip
+> come back while the strip is put away with Ctrl+B; "How its sessions are
+> shown" steps rather than opening a submenu; the per-session overrides are
+> not on the strip's menu; a row in an open list does not drag. **One thing
+> ADDED beyond the mockup:** Ctrl+Alt+Left / Right moves a focused group,
+> because a review found groups had no keyboard reorder path in top mode.
+>
+> **The issue stayed OPEN until PR 6.** No PR before then put a closing
 > keyword next to its number.
 >
 > **Seven of the eight tickets are merged and UNRELEASED**: #1140 (PR #1146),

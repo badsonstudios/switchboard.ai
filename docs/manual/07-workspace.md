@@ -63,10 +63,6 @@ top of the window while it is lit. Click it again to bring the list back.
 
 ### Listing sessions across the top instead
 
-> **Nearly finished.** Everything is listed, and everything you can do to a
-> session or a group is on a right-click. What is still missing is dragging:
-> to put groups or sessions in a different order, switch to the list on the
-> left for now.
 
 The list does not have to live on the left. Next to **▸ commands** in the bar
 along the top of the window there is a two-part button, **◧ left** and
@@ -180,8 +176,38 @@ app noticed, so there is nothing of it to rename, recolour or delete.
 **+ session**): **Sessions on the left** / **Sessions across the top**, with a
 tick on the one in use, then **+ New group** and **+ New session**.
 
-None of the menus has "Move up" or "Move down". Order is by dragging, which
-is not on the strip yet.
+None of the menus has "Move up" or "Move down". Order is by dragging, or
+from the keyboard: see the end of the next section.
+
+#### Dragging on the strip
+
+- **Drag a group sideways** to put it somewhere else among your groups. A
+  line shows where it will land. Only groups you made move; automatic groups
+  stay after yours.
+- **Drag a pill sideways** to put that session somewhere else among the
+  pills. A pinned session stays in front: a pill dropped ahead of it lands
+  just after it. A session that another session started moves with the one
+  that started it.
+- **Drag a pill onto a group** to put the session in that group. The group's
+  edge lights up while you hold it there. Automatic groups do not take a
+  session this way, and do not light up. You can drag a session's tab up from
+  the workspace onto a group, too.
+
+The line and the lit edge only appear where letting go would really change
+something. If neither shows, a drop there does nothing.
+
+When the place you want is off the end of the strip, hold what you are
+dragging over the cell at that end and the strip scrolls along.
+
+The order is the same one the list on the left uses. Put your groups in an
+order here and that is their order there, and `Ctrl+1` to `Ctrl+9` follow it.
+
+To take a session **out** of a group, use **Move to group ▸ No group** on its
+right-click menu; a row in an open list does not drag.
+
+**Without the mouse:** `Ctrl+Alt+↑` and `Ctrl+Alt+↓` move the session you are
+in earlier or later, as they do with the list on the left. To move a group,
+`Tab` to it on the strip and press `Ctrl+Alt+←` or `Ctrl+Alt+→`.
 
 When you press `Ctrl+Space` to go to the next session that needs you, its pill
 is outlined for a moment, and the strip scrolls so you can see it. For a

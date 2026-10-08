@@ -37,6 +37,10 @@ export function StripPill(props: {
   flash: boolean;
   onFocus: () => void;
   onContextMenu?: React.MouseEventHandler<HTMLButtonElement>;
+  /** the drag handlers: a pill is dragged sideways to reorder, or onto a group */
+  dragProps?: React.ButtonHTMLAttributes<HTMLButtonElement>;
+  /** a dragged pill would land on this side of it */
+  dropEdge?: 'before' | 'after';
 }): React.JSX.Element {
   const { t } = useTranslation();
   const s = props.session;
@@ -76,6 +80,8 @@ export function StripPill(props: {
       title={props.folded ? t('strip.pillFoldedHint') : undefined}
       onClick={props.onFocus}
       onContextMenu={props.onContextMenu}
+      {...props.dragProps}
+      data-drop-edge={props.dropEdge}
       style={{
         position: 'relative',
         display: 'flex',
@@ -101,6 +107,24 @@ export function StripPill(props: {
         opacity: props.folded && !paint.lit ? 0.72 : 1,
       }}
     >
+      {props.dropEdge && (
+        // The insertion line: where the thing you are dragging will land. The
+        // rail's own (#559), stood on end — same ink as the focus ring, because it
+        // is the same kind of statement.
+        <span
+          aria-hidden
+          data-drop-line={props.dropEdge}
+          style={{
+            position: 'absolute',
+            insetBlock: 2,
+            [props.dropEdge === 'before' ? 'insetInlineStart' : 'insetInlineEnd']: 0,
+            inlineSize: 2,
+            borderRadius: 1,
+            background: 'var(--status-working-ink)',
+            zIndex: 1,
+          }}
+        />
+      )}
       <span
         aria-hidden
         style={{

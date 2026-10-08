@@ -60,6 +60,24 @@ export function StripGroupEntry(props: {
   open: boolean;
   /** the last jump landed on one of its sessions, and the beat has not run out */
   flash?: boolean;
+  /** the drag handlers, and whether it can be picked up at all (only a group
+   *  you made can: an automatic one sits where its folder puts it) */
+  dragProps?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
+  /**
+   * Move this group one place earlier (`up`) or later (`down`) among your
+   * groups — the keyboard's way of doing what a drag does.
+   *
+   * The strip's menus have no ordering items, by design: order is by dragging.
+   * But a thing that can ONLY be done with a pointer is a thing some people
+   * cannot do (WCAG 2.1.1), and the sessions already have a chord for it. So
+   * a group has one too: Ctrl+Alt+Left / Right with the group focused. Absent
+   * for an automatic group, which does not move.
+   */
+  onStep?: (direction: 'up' | 'down') => void;
+  /** a dragged GROUP would land on this side of it */
+  dropEdge?: 'before' | 'after';
+  /** a dragged SESSION would join it */
+  dropInto?: boolean;
   /** the cards that are collapsed or hidden — so the entry can say how many of
    *  ITS sessions are not on screen, now that no collapsed row lists them */
   folded?: ReadonlySet<string>;
@@ -98,6 +116,9 @@ export function StripGroupEntry(props: {
       ref={cell}
       data-strip-group={props.groupKey}
       onContextMenu={props.onContextMenu}
+      {...props.dragProps}
+      data-drop-edge={props.dropEdge}
+      data-drop-into={props.dropInto ? 'true' : undefined}
       data-strip-group-kind={props.kind}
       data-needs-you={need > 0}
       // read back by the strip when it measures what is off each end
@@ -110,13 +131,33 @@ export function StripGroupEntry(props: {
         flexShrink: 0,
         minBlockSize: 43,
         borderRadius: 7,
-        border: `1px solid ${props.open ? props.color : 'var(--group-frame)'}`,
+        position: 'relative',
+        // lit while a session is held over it: "let go and it joins this group"
+        border: `1px solid ${props.dropInto ? 'var(--status-working-ink)' : props.open ? props.color : 'var(--group-frame)'}`,
         background: isAuto ? 'var(--auto-surface)' : 'var(--rail-card)',
         overflow: 'hidden',
         // the post-jump beat: the focus accent, as on a pill
         boxShadow: props.flash ? '0 0 0 2px var(--status-working-ink)' : undefined,
       }}
     >
+      {props.dropEdge && (
+        // The insertion line: where the thing you are dragging will land. The
+        // rail's own (#559), stood on end — same ink as the focus ring, because it
+        // is the same kind of statement.
+        <span
+          aria-hidden
+          data-drop-line={props.dropEdge}
+          style={{
+            position: 'absolute',
+            insetBlock: 2,
+            [props.dropEdge === 'before' ? 'insetInlineStart' : 'insetInlineEnd']: 0,
+            inlineSize: 2,
+            borderRadius: 1,
+            background: 'var(--status-working-ink)',
+            zIndex: 1,
+          }}
+        />
+      )}
       <button
         type="button"
         data-strip-group-open={props.groupKey}
@@ -140,6 +181,16 @@ export function StripGroupEntry(props: {
             : t('strip.groupLabel', { name, count: props.members.length, summary });
         })()}
         onClick={toggle}
+        aria-keyshortcuts={props.onStep ? 'Control+Alt+ArrowLeft Control+Alt+ArrowRight' : undefined}
+        onKeyDown={(e) => {
+          if (!props.onStep || !e.altKey || !(e.ctrlKey || e.metaKey)) return;
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          e.preventDefault();
+          e.stopPropagation();
+          // "left" is EARLIER in the row only when the page reads left to right
+          const rtl = getComputedStyle(e.currentTarget).direction === 'rtl';
+          props.onStep((e.key === 'ArrowLeft') !== rtl ? 'up' : 'down');
+        }}
         style={{
           display: 'flex',
           flexDirection: 'column',

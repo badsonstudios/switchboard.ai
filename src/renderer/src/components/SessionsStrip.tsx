@@ -28,11 +28,25 @@
 // RIGHT-CLICK IS THE MENU, everywhere on the strip, and there is no menu icon:
 // on a session (its pill, or its row in an open list), on a group, and on an
 // empty part of the strip. None of the three has an ordering item — order is
-// by dragging, which lands in its own change.
+// by dragging.
+//
+// DRAGGING IS THE ORDER. A group you made, sideways, to move it among your
+// groups; a pill, sideways, to move it among the pills; a pill onto a group
+// you made, to put the session in it. A line shows where a reorder will land
+// and a group lights up when a session would join it — and nothing is ever
+// shown that the drop would then not do: every "may I drop here" is answered
+// by the same function the drop itself calls (`dropGroup`, `planReorder`),
+// which are the rail's.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
 import { autoGroupName, RailOrderResult } from '../lib/groups';
+import { dropGroup, stepGroup } from '../lib/group-order';
+import { LOOSE_BUCKET, planReorder } from '../lib/rail-order';
+import { LineageMap, NO_LINEAGE } from '../lib/dispatch-lineage';
+import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
+import { DND_TYPE, GROUP_DND_TYPE } from '../lib/rail-dnd';
+import { edgeAtX, insertIndex } from '../lib/strip-drag';
 import { needCount } from '../lib/rail-view';
 import { useHeldCounts } from '../lib/sibling-inbox';
 import { edgeOverflow, EdgeState, sameEdges } from '../lib/strip-overflow';
@@ -133,6 +147,14 @@ export interface SessionsStripProps {
   onOpenAll: (cardIds: readonly string[]) => void;
   /** list the sessions somewhere else — the strip's own door to the setting */
   onPlace: (placement: SessionsPlacement) => void;
+  // ── dragging
+  /** which session dispatched which (#951): a reorder keeps a child with its
+   *  parent, exactly as the rail's does. Omitted reads as "nothing nested". */
+  lineage?: LineageMap;
+  /** the whole of one bucket's new order, after a drag */
+  onReorder: (bucketKey: string, orderedIds: string[]) => void;
+  /** put the group `id` just before `beforeId`, or last when that is `null` */
+  onMoveGroup: (id: string, beforeId: string | null) => void;
 }
 
 /** which of the strip's three menus is open, and where it was asked for */
@@ -180,6 +202,9 @@ function EdgeCell(props: {
   side: 'start' | 'end';
   edge: EdgeState;
   onScroll: () => void;
+  /** something is being dragged over it: nudge the row along, so a drop
+   *  target that is off this edge can be reached without letting go */
+  onDragNear: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const { cut, need } = props.edge;
@@ -188,6 +213,14 @@ function EdgeCell(props: {
     <button
       type="button"
       data-strip-edge={props.side}
+      onDragOver={(e) => {
+        // only for something that can be dropped on the strip: a folder from
+        // Explorer crossing this cell on its way in must not move the row
+        const t = e.dataTransfer.types;
+        if (cut && (t.includes(DND_TYPE) || t.includes(GROUP_DND_TYPE) || getDraggedCard())) {
+          props.onDragNear();
+        }
+      }}
       data-strip-edge-need={need}
       aria-disabled={cut ? undefined : true}
       aria-label={
@@ -249,6 +282,44 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   // start edge, wherever that is
   const [edges, setEdges] = React.useState(NO_EDGES);
   const [menu, setMenu] = React.useState<StripMenu | null>(null);
+  // ── dragging ───────────────────────────────────────────────────────────────
+  //
+  // WHAT is in flight is kept in a ref, because the browser will not say:
+  // `dataTransfer.getData` answers '' during dragover (Chromium's protected
+  // mode), so a handler that needs to know which thing is being dragged has
+  // to have been told at dragstart. The rail does the same (#559).
+  const dragging = React.useRef<{ kind: 'group' | 'card'; id: string } | null>(null);
+  /** the entry or pill a reorder would land against, and which side */
+  const [dropAt, setDropAt] = React.useState<{ id: string; edge: 'before' | 'after' } | null>(null);
+  /** the group a dragged session would join */
+  const [dropInto, setDropInto] = React.useState<string | null>(null);
+  const endDrag = (): void => {
+    dragging.current = null;
+    setDropAt(null);
+    setDropInto(null);
+  };
+  const lastNudge = React.useRef(0);
+  // HOWEVER THE DRAG ENDS, IT ENDS. `dragend` is dispatched at the element the
+  // drag started on, and that element may be gone by then: a pill unmounts
+  // mid-drag when a second session opens in its folder, or its session closes.
+  // Its `onDragEnd` then never runs, and a ref left saying "pill X is in
+  // flight" would be read by the NEXT drag — a tab brought up from the
+  // workspace would put X in the group it was dropped on. The window hears
+  // every drag end and every drop, wherever they land. (The rail does the
+  // same, for the same reason.)
+  React.useEffect(() => {
+    const over = (): void => {
+      dragging.current = null;
+      setDropAt(null);
+      setDropInto(null);
+    };
+    window.addEventListener('dragend', over);
+    window.addEventListener('drop', over);
+    return () => {
+      window.removeEventListener('dragend', over);
+      window.removeEventListener('drop', over);
+    };
+  }, []);
   // The keyboard goes back to what was acted on. A menu item usually changes
   // the very thing it was opened from — a pin re-sorts the pills, a move turns
   // a pill into a row, a rename swaps a box for a pill — so the element that
@@ -503,11 +574,11 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
     };
   }, [measure]);
   const overflowing = edges.before.cut || edges.after.cut;
-  const scrollToward = (side: 'start' | 'end'): void => {
+  const scrollToward = (side: 'start' | 'end', share = 0.8): void => {
     const sc = scrollerRef.current;
     if (!sc) return;
     // most of a screenful, so something you just read is still in view
-    const step = Math.max(120, sc.clientWidth * 0.8);
+    const step = Math.max(120, sc.clientWidth * share);
     const towardRight = (side === 'end') !== (directionOf(sc) === 'rtl');
     sc.scrollBy?.({ left: towardRight ? step : -step, behavior: 'smooth' });
   };
@@ -542,6 +613,178 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
     // `entries` is rebuilt every render and deliberately not a dependency:
     // this runs when a mark ARRIVES, and reads whatever the row holds then
   }, [props.urgency]);
+
+  // ── what a drag would do ───────────────────────────────────────────────────
+  const lineage = props.lineage ?? NO_LINEAGE;
+  const groupIds = order.groups.map((g) => g.id);
+  const looseIds = order.loose.map((s) => s.id);
+  const rtlOf = (el: Element): boolean => directionOf(el) === 'rtl';
+  const setDropAtIfNew = (id: string, edge: 'before' | 'after'): void =>
+    setDropAt((was) => (was?.id === id && was.edge === edge ? was : { id, edge }));
+
+  /** the move a dragged GROUP would make if dropped on this side of `groupId`,
+   *  or `null` for a drop that would change nothing */
+  const planGroupDrop = (groupId: string, edge: 'before' | 'after') => {
+    const d = dragging.current;
+    if (!d || d.kind !== 'group') return null;
+    return dropGroup(groupIds, d.id, groupId, edge === 'after');
+  };
+  /** the pills' new order if the dragged PILL were dropped on this side of
+   *  `pillId`, or `null`. A reorder is within the pills, full stop: a session
+   *  dragged out of somewhere else answers `null` here. `planReorder` re-applies
+   *  the pin sort and keeps a dispatched session with its parent, so a drop
+   *  aimed past a pinned pill settles against it rather than displacing it. */
+  const planPillDrop = (
+    types: readonly string[],
+    pillId: string,
+    edge: 'before' | 'after'
+  ): string[] | null => {
+    // ONLY a drag that started on one of this strip's pills, and says so. A
+    // tab from the workspace, a folder from Explorer, or anything else over a
+    // pill is not a reorder — and the ref alone must never be believed, since
+    // it describes the last drag that began here, not necessarily this one.
+    if (!types.includes(DND_TYPE)) return null;
+    const d = dragging.current;
+    if (!d || d.kind !== 'card' || d.id === pillId || !looseIds.includes(d.id)) return null;
+    return planReorder(looseIds, d.id, insertIndex(looseIds, d.id, pillId, edge), props.pinned, lineage);
+  };
+  /** may the session in flight join this group? Not one it is already in, and
+   *  not a card main has never heard of (#687): a group that lights up and
+   *  then does nothing is what wasted the owner's time the first time. */
+  const canJoin = (cardId: string | null, groupId: string): boolean => {
+    if (!cardId) return true; // dragged in from somewhere that did not say
+    const s = order.flat.find((x) => x.id === cardId);
+    return !!s && s.groupId !== groupId && s.status !== 'not-started';
+  };
+  /** the session being dragged: one of our pills if THIS drag carries our
+   *  type, otherwise whatever the workspace says it is dragging */
+  const cardInFlight = (types: readonly string[]): string | null =>
+    (types.includes(DND_TYPE) && dragging.current?.kind === 'card' ? dragging.current.id : null) ??
+    getDraggedCard();
+
+  const groupDrag = (
+    e: Entry
+  ): React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean } => {
+    const groupId = e.groupId;
+    return {
+      // only a group you made moves: an automatic one sits where its folder
+      // puts it, after yours
+      draggable: groupId !== undefined && groupIds.length > 1,
+      onDragStart: (ev) => {
+        if (groupId === undefined) return;
+        ev.dataTransfer.setData(GROUP_DND_TYPE, groupId);
+        ev.dataTransfer.effectAllowed = 'move';
+        dragging.current = { kind: 'group', id: groupId };
+        // its list hangs from where the entry WAS
+        close(false);
+      },
+      onDragOver: (ev) => {
+        if (ev.dataTransfer.types.includes(GROUP_DND_TYPE)) {
+          if (groupId === undefined) return;
+          const edge = edgeAtX(ev.currentTarget.getBoundingClientRect(), ev.clientX, rtlOf(ev.currentTarget));
+          if (!planGroupDrop(groupId, edge)) {
+            // nowhere to go from here: no line, and no drop cursor
+            setDropAt((was) => (was?.id === e.key ? null : was));
+            return;
+          }
+          ev.preventDefault();
+          ev.dataTransfer.dropEffect = 'move';
+          setDropAtIfNew(e.key, edge);
+          return;
+        }
+        // a session (a pill, or a card's tab dragged up from the workspace)
+        if (!ev.dataTransfer.types.includes(DND_TYPE) && !getDraggedCard()) return;
+        // an automatic group cannot be joined: its membership is the folder's
+        if (groupId === undefined || !canJoin(cardInFlight(ev.dataTransfer.types), groupId)) return;
+        ev.preventDefault();
+        setDropAt(null);
+        setDropInto(e.key);
+      },
+      onDragLeave: (ev) => {
+        // moving between the entry's own children fires this on the one being
+        // left; only a pointer that has left the ENTRY should clear it
+        if (ev.currentTarget.contains(ev.relatedTarget as Node | null)) return;
+        setDropInto((was) => (was === e.key ? null : was));
+        setDropAt((was) => (was?.id === e.key ? null : was));
+      },
+      onDrop: (ev) => {
+        if (ev.dataTransfer.types.includes(GROUP_DND_TYPE)) {
+          // recomputed from the live list, by the function the line was drawn
+          // from, so the line and the landing cannot disagree
+          const move =
+            groupId === undefined
+              ? null
+              : planGroupDrop(
+                  groupId,
+                  edgeAtX(ev.currentTarget.getBoundingClientRect(), ev.clientX, rtlOf(ev.currentTarget))
+                );
+          endDrag();
+          if (!move) return;
+          ev.preventDefault();
+          props.onMoveGroup(move.id, move.beforeId);
+          return;
+        }
+        const ours = dragging.current !== null && ev.dataTransfer.types.includes(DND_TYPE);
+        const cardId = ev.dataTransfer.getData(DND_TYPE) || cardInFlight(ev.dataTransfer.types);
+        endDrag();
+        if (!cardId || groupId === undefined || !canJoin(cardId, groupId)) return;
+        ev.preventDefault(); // claim it from the workspace's own drop targets
+        setDraggedCard(null);
+        // the keyboard follows only a drag that began HERE: a tab brought up
+        // from the workspace leaves it in the workspace, where it was
+        if (ours) ran('group', e.key);
+        props.onMoveToGroup(cardId, groupId);
+      },
+      onDragEnd: endDrag,
+    };
+  };
+
+  const pillDrag = (s: RailSession): React.ButtonHTMLAttributes<HTMLButtonElement> => ({
+    draggable: true,
+    onDragStart: (ev) => {
+      ev.dataTransfer.setData(DND_TYPE, s.id);
+      ev.dataTransfer.effectAllowed = 'move';
+      dragging.current = { kind: 'card', id: s.id };
+    },
+    onDragOver: (ev) => {
+      const edge = edgeAtX(ev.currentTarget.getBoundingClientRect(), ev.clientX, rtlOf(ev.currentTarget));
+      if (!planPillDrop(ev.dataTransfer.types, s.id, edge)) {
+        setDropAt((was) => (was?.id === s.id ? null : was));
+        return;
+      }
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      setDropInto(null);
+      setDropAtIfNew(s.id, edge);
+    },
+    onDragLeave: (ev) => {
+      if (ev.currentTarget.contains(ev.relatedTarget as Node | null)) return;
+      setDropAt((was) => (was?.id === s.id ? null : was));
+    },
+    onDrop: (ev) => {
+      const dragged = dragging.current;
+      const next = planPillDrop(
+        ev.dataTransfer.types,
+        s.id,
+        edgeAtX(ev.currentTarget.getBoundingClientRect(), ev.clientX, rtlOf(ev.currentTarget))
+      );
+      endDrag();
+      if (!next || !dragged) return;
+      ev.preventDefault();
+      ran('session', dragged.id);
+      props.onReorder(LOOSE_BUCKET, next);
+    },
+    onDragEnd: endDrag,
+  });
+
+  /** something dragged is held against an end cell: move the row along a
+   *  little, and not on every one of the dozens of dragovers a second */
+  const nudge = (side: 'start' | 'end'): void => {
+    const now = Date.now();
+    if (now - lastNudge.current < 350) return;
+    lastNudge.current = now;
+    scrollToward(side, 0.35);
+  };
 
   /** the control that stands for a session or a group, wherever it is now */
   const controlOf = (kind: 'session' | 'group' | 'strip', id: string): HTMLElement | undefined => {
@@ -952,7 +1195,12 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         }}
       >
         {overflowing && (
-          <EdgeCell side="start" edge={edges.before} onScroll={() => scrollToward('start')} />
+          <EdgeCell
+            side="start"
+            edge={edges.before}
+            onScroll={() => scrollToward('start')}
+            onDragNear={() => nudge('start')}
+          />
         )}
         <div
           ref={scrollerRef}
@@ -1026,6 +1274,19 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
               folded={props.folded}
                 listId={listIdOf(e.key)}
                 onToggle={(anchor) => toggle(e.key, anchor)}
+                dragProps={groupDrag(e)}
+                {...(e.groupId !== undefined
+                  ? {
+                      onStep: (direction: 'up' | 'down') => {
+                        const move = stepGroup(groupIds, e.groupId!, direction);
+                        if (!move) return;
+                        ran('group', e.key);
+                        props.onMoveGroup(move.id, move.beforeId);
+                      },
+                    }
+                  : {})}
+                {...(dropAt?.id === e.key ? { dropEdge: dropAt.edge } : {})}
+                dropInto={dropInto === e.key}
                 onContextMenu={(ev) => {
                   ev.preventDefault();
                   ev.stopPropagation();
@@ -1085,6 +1346,8 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
                 folded={props.folded.has(s.id)}
                 flash={flashing(s.id)}
                 onFocus={() => props.onFocus(s.id)}
+                dragProps={pillDrag(s)}
+                {...(dropAt?.id === s.id ? { dropEdge: dropAt.edge } : {})}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1100,7 +1363,12 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
           )}
         </div>
         {overflowing && (
-          <EdgeCell side="end" edge={edges.after} onScroll={() => scrollToward('end')} />
+          <EdgeCell
+            side="end"
+            edge={edges.after}
+            onScroll={() => scrollToward('end')}
+            onDragNear={() => nudge('end')}
+          />
         )}
       </div>
       {menu && menuItems && (

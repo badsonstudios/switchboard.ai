@@ -111,8 +111,9 @@ on the floor, and say so in your PR.
   and a cell at each end turns amber with a number when a session that needs
   you is off that way. Right-click a session, a group or an empty part of the
   strip for everything you can do to it: rename, pin, close, move to a group,
-  recolour, delete. Left is still the default. Not there yet: dragging to
-  reorder on the strip. The two-part button replaces **▤ rail** and
+  recolour, delete. Drag a group or a pill sideways to reorder it, or a pill
+  onto a group to put the session in it; a line shows where it will land.
+  Left is still the default. The two-part button replaces **▤ rail** and
   still shows and hides the list: click the lit half to hide it, click again to
   bring it back. `Ctrl+B` is unchanged.
 
