@@ -1580,13 +1580,20 @@
     "left": "On the left",
     "leftNote": "A list down the side, groups as cards.",
     "top": "Across the top (in progress)",
-    "topNote": "One strip under the top bar, and the full width for your sessions. Not finished yet: the strip has its buttons and the count, but does not list your groups or sessions. Until it does, the row of lamps and the Collapsed strip stay with it."
+    "topNote": "One strip under the top bar, and the full width for your sessions. Not finished yet: your groups are there and open as lists, but sessions outside a group are not shown. Until they are, the row of lamps and the Collapsed strip stay with it."
   },
   "strip": {
     "label": "Sessions",
     "addSession": "+ session",
     "addSessionHint": "Open a new session",
-    "pending": "{count, plural, =0 {No sessions} one {# session} other {# sessions}} and {groups, plural, =0 {no groups} one {# group} other {# groups}} open. They are not listed here yet: use the lamps below, or the left / top button above to bring the list back."
+    "range": "{from}–{to}",
+    "groupLabel": "{name}, {count, plural, =0 {no sessions} one {# session} other {# sessions}}, {summary}",
+    "groupLabelWaiting": "{name}, {count, plural, =0 {no sessions} one {# session} other {# sessions}}, {summary}, {waiting, plural, one {# message waiting from another session} other {# messages waiting from other sessions}}",
+    "autoGroupName": "{name}, grouped automatically by folder",
+    "groupWaiting": "· {count} waiting",
+    "openInGroupLabel": "New session in {name}",
+    "listLabel": "Sessions in {name}",
+    "loosePending": "{count, plural, one {# session is not in a group and is} other {# sessions are not in a group and are}} not shown here yet. Click a lamp, in the row above, to go to one."
   },
   "taskLabelSize": {
     "title": "Task label size",

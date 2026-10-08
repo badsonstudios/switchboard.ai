@@ -21,7 +21,7 @@
 > measured in time, sending only the new text saves megabytes and no
 > milliseconds.
 >
-> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 2 of 6 (PR 1 merged 2026-10-08)
+> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 3 of 6 (PRs 1 and 2 merged 2026-10-08)
 >
 > **The design is SETTLED** (three mockup rounds, 2026-10-08). The spec is the
 > NEWEST comment on the issue ("DESIGN SETTLED WITH THE OWNER"); the pictures are
@@ -65,10 +65,8 @@
 >    draft text into the row, where a re-parented row would have lost a
 >    half-typed name; the draft stayed with the list and a test pins it.
 > 2. The setting (Settings, the top-bar button, hide / show), the line above
->    the strip, and the strip's frame. **← IN FLIGHT**, branch
->    `feature/1143-2-placement-setting`. *This line rides in that PR: if `main`
->    has `src/renderer/src/components/SessionsStrip.tsx`, PR 2 has landed and
->    PR 3 is next. PR 3 carries the close-out.* **The Settings choice is
+>    the strip, and the strip's frame. **DONE 2026-10-08, PR #1155
+>    (`63e91ed`), merged, NOT released.** **The Settings choice is
 >    labelled "in progress" until PR 4 lands** — between PR 2 and PR 4 top
 >    mode is selectable on main but incomplete, and he was told so. In this
 >    PR: the "▤ rail" chip became the "◧ left / ⬒ top" switch; the strip's
@@ -82,7 +80,21 @@
 >    `e2e/sessions-placement.spec.ts` that asserts the lamps are visible. The
 >    owner is told in the tracker row and the report. **NOT in this PR, moved to PR 5 with the other menus:**
 >    the right-click on an empty part of the strip.
-> 3. Groups and their drop-down lists.
+> 3. Groups and their drop-down lists. **← IN FLIGHT**, branch
+>    `feature/1143-3-strip-groups`. *This line rides in that PR: if `main` has
+>    `src/renderer/src/components/StripGroupEntry.tsx`, PR 3 has landed and
+>    PR 4 is next. PR 4 carries the close-out.* In it: made groups then
+>    automatic ones, each an entry (dot or folder, Ctrl+N range, name, count,
+>    "N need you" / calm / empty, "· N waiting", ⊕, tinted arrow); a click
+>    drops a `position: fixed` list of `SessionRow`s with their Ctrl+N
+>    numbers; a row click goes to the session and closes the list. The strip
+>    takes the store's `getRailOrder()` whole rather than re-deriving it.
+>    Loose sessions are NOT drawn yet: the row says how many it is leaving
+>    out. **The owner test-drove PR 2 from a scratch instance on 2026-10-08
+>    and took the half-built strip for the finished feature** ("I thought it
+>    was all done"), then said to continue: so do not hand him another
+>    half-step to test without saying first, in the first sentence, how much
+>    of the six is in it.
 > 4. Pills and overflow.
 > 5. Right-click menus. **Needs an independent review before it is pushed**
 >    (it carries "Close session").

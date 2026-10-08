@@ -64,8 +64,9 @@ top of the window while it is lit. Click it again to bring the list back.
 ### Listing sessions across the top instead
 
 > **In progress.** You can switch this on and work in it, but it is not
-> finished: the strip does not list your groups or sessions yet, so groups can
-> only be seen and arranged with the list on the left.
+> finished: your groups are on the strip, but a session that is not in a group
+> is not shown there yet, and groups can only be renamed, recoloured, reordered
+> or deleted with the list on the left.
 
 The list does not have to live on the left. Next to **▸ commands** in the bar
 along the top of the window there is a two-part button, **◧ left** and
@@ -82,18 +83,42 @@ The same choice is in **Settings** (`Ctrl+,`) under **Appearance ▸ Sessions
 list**, as two pictures: **On the left** and **Across the top**. It takes
 effect the moment you pick one, and it is remembered when you restart.
 
-What the strip has so far:
+Along the top of the strip, in this order:
 
 - **+ group** makes a new group, exactly as it does in the list on the left.
 - **+ session** opens a new session.
 - **N need you** appears beside them when any session is waiting on you, and
   is the same number the list on the left shows at its foot.
 
-Under those, where your groups and sessions will go, a line says how many
-sessions and groups are open and that they are not listed there yet. Until
-they are, the row of lamps and the **Collapsed** strip stay underneath, and
-they are how you get to a session you cannot see: click its lamp, or its row.
-When the strip lists sessions itself, those two rows go.
+Under those, your **groups**, in the same order as the list on the left: the
+ones you made first, then any [automatic groups](#automatic-groups). Each
+group is one box:
+
+- a **coloured dot** (an automatic group has a **folder** instead, and the
+  word **auto** after its name),
+- a small number or range such as **1–4**: the `Ctrl+1` to `Ctrl+9` shortcuts
+  that reach the sessions inside it. The counting is the same as with the list
+  on the left, so a shortcut goes to the same session either way,
+- the group's name,
+- how many sessions it holds,
+- underneath, **N need you**, or **calm**, or **empty**,
+- **⊕** to open a new session in that group (not on automatic groups),
+- a tinted **▾** at the end.
+
+**Click a group** and a list of its sessions drops down. They are the same
+rows as in the list on the left: name, a word for what the session is doing,
+what it is working on, the status mark and **✕** to close it, plus the
+shortcut number. When a group says **2 need you**, exactly two rows in its
+list are highlighted. Click a row to go to that session; the list closes.
+Click the group again, click anywhere else, or press `Esc` to close the list
+without going anywhere. (Renaming a session from this list is not there yet;
+for now, switch to the list on the left to rename one.)
+
+Sessions that are **not in a group** are not on the strip yet. When you have
+some, the strip says how many. Until they are shown, the row of lamps and the
+**Collapsed** strip stay above the strip, and they are how you get to one:
+click its lamp, or its row. When the strip shows every session itself, those
+two rows go.
 
 ## Groups
 

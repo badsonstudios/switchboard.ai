@@ -63,7 +63,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
-import { railOrder } from '../lib/groups';
+import { autoGroupName, railOrder } from '../lib/groups';
 import {
   bucketLabel,
   canStep,
@@ -87,6 +87,7 @@ import { MenuPlacement, placeMenu } from '../lib/menu-placement';
 import { dropGroup, stepGroup } from '../lib/group-order';
 import { RailGroupMenu } from './RailGroupMenu';
 import { SessionRow } from './SessionRow';
+import { FolderGlyph } from './FolderGlyph';
 import { directionOf } from '../lib/writing-direction';
 import {
   cardOverride,
@@ -1372,9 +1373,7 @@ export function SessionsRail(props: {
                 flexShrink: 0,
               }}
             >
-              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden>
-                <path d="M1.9 4.1c0-.6.5-1.1 1.1-1.1h2.7c.35 0 .68.17.88.46l.7 1.04h6c.6 0 1.1.5 1.1 1.1v6c0 .6-.5 1.1-1.1 1.1H3c-.6 0-1.1-.5-1.1-1.1V4.1Z" />
-              </svg>
+              <FolderGlyph />
             </span>
           )}
           {g && editingGroup === g.id ? (
@@ -1790,7 +1789,7 @@ export function SessionsRail(props: {
           groupCard({
             key: `auto:${ag.key}`,
             // the folder's own name is what makes an emergent group legible
-            name: ag.key.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? ag.key,
+            name: autoGroupName(ag.key),
             color: 'var(--auto-ink)',
             members: ag.members,
             kind: 'auto',

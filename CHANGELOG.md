@@ -98,16 +98,18 @@ on the floor, and say so in your PR.
 
 ### Added
 
-- **A first look at listing your sessions across the top of the window (in
-  progress).** Next to **▸ commands** there is now a two-part button, **◧ left**
-  and **⬒ top**, and the same choice is in **Settings ▸ Appearance ▸ Sessions
-  list**. **⬒ top** swaps the list on the left for one strip under the top bar
-  and gives your sessions the full width. It is not finished: the strip has
-  **+ group**, **+ session** and the **N need you** total, but does not list
-  your groups or sessions yet, and says so. Until it does, the row of lamps and
-  the Collapsed strip stay with it. Left is still the default. The two-part
-  button replaces **▤ rail** and still shows and hides the list: click the lit
-  half to hide it, click again to bring it back. `Ctrl+B` is unchanged.
+- **Listing your sessions across the top of the window (in progress).** Next
+  to **▸ commands** there is now a two-part button, **◧ left** and **⬒ top**,
+  and the same choice is in **Settings ▸ Appearance ▸ Sessions list**. **⬒ top**
+  swaps the list on the left for one strip under the top bar and gives your
+  sessions the full width. Each of your groups is a box on the strip, with its
+  name, how many sessions it holds and its own "N need you"; click one and its
+  sessions drop down as the same rows the list on the left has. It is not
+  finished: sessions that are not in a group are not on the strip yet, and it
+  says how many. Until they are, the row of lamps and the Collapsed strip stay
+  with it. Left is still the default. The two-part button replaces **▤ rail**
+  and still shows and hides the list: click the lit half to hide it, click
+  again to bring it back. `Ctrl+B` is unchanged.
 
 - **Groups in the Sessions list can be put in the order you want.** Right-click
   a group's header for **Move group up** and **Move group down**, or drag the
