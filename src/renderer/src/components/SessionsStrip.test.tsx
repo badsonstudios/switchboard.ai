@@ -5,13 +5,14 @@
 // whole claim is that it draws from the one derivation the rail and `Ctrl+1..9`
 // use, so a test that invented its own grouping would be testing a strip that
 // does not exist.
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import type React from 'react';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import i18next from 'i18next';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { listStart, SessionsStrip } from './SessionsStrip';
+import { sessionSpokenName } from './SessionRow';
 import { railOrder } from '../lib/groups';
 import { RailGroup, RailSession } from '../model/types';
 
@@ -42,6 +43,10 @@ interface World {
   groups: RailGroup[];
   needing?: string[];
   pinned?: string[];
+  /** collapsed or hidden: not on screen until asked for */
+  folded?: string[];
+  /** card id -> when its post-jump highlight runs out; null is "not painted yet" */
+  urgency?: Array<[string, number | null]>;
 }
 
 async function mount(world: World, over: Partial<StripProps> = {}): Promise<HTMLElement> {
@@ -59,6 +64,10 @@ async function mount(world: World, over: Partial<StripProps> = {}): Promise<HTML
     root!.render(
       <SessionsStrip
         shown
+        folded={new Set(world.folded ?? [])}
+        urgency={new Map(world.urgency ?? [])}
+        onExpire={noop}
+        onBeatStart={noop}
         groups={world.groups}
         order={railOrder(world.sessions, world.groups, pinned)}
         needing={new Set(world.needing ?? [])}
@@ -84,6 +93,10 @@ const opener = (host: HTMLElement, key: string): HTMLButtonElement =>
 const list = (host: HTMLElement): HTMLElement | null =>
   host.querySelector<HTMLElement>('[data-strip-list]');
 const text = (el: Element | null | undefined): string => el?.textContent ?? '';
+const pill = (host: HTMLElement, id: string): HTMLElement =>
+  Array.from(host.querySelectorAll<HTMLElement>('[data-strip-pill]')).find(
+    (el) => el.dataset.stripPill === id
+  )!;
 
 async function click(el: HTMLElement): Promise<void> {
   await act(async () => {
@@ -221,14 +234,272 @@ describe('the groups on the strip', () => {
     expect(entry(oneGroup, BACK.id)).toBeTruthy();
   });
 
-  it('says how many loose sessions it is not showing yet, rather than hiding them', async () => {
+  it('says nothing about sessions it is not showing, because it shows them all', async () => {
     const host = await mount(WORLD);
-    const pending = host.querySelector<HTMLElement>('[data-strip-empty]')!;
-    expect(pending.dataset.stripEmpty).toBe('pending');
-    expect(pending.textContent).toBe(i18next.t('strip.loosePending', { count: 1 }));
+    expect(host.querySelector('[data-strip-empty]')).toBeNull();
   });
 });
 
+describe('sessions that are not in a group', () => {
+  it('are pills, after the groups, in the order Ctrl+N counts them', async () => {
+    const host = await mount({
+      groups: [BACK],
+      sessions: [s('loose-a'), s('api', { groupId: BACK.id }), s('loose-b')],
+    });
+    const row = Array.from(host.querySelectorAll<HTMLElement>('[data-strip-item-need]'));
+    expect(row.map((el) => el.dataset.stripGroup ?? el.dataset.stripPill)).toEqual([
+      BACK.id,
+      'loose-a',
+      'loose-b',
+    ]);
+  });
+
+  it('carry the name, the state word, what it is working on, and the status mark', async () => {
+    const host = await mount({ groups: [], sessions: [s('scratch', { taskLabel: 'Sync the skills folder' })] });
+    const p = pill(host, 'scratch');
+    expect(text(p.querySelector('[data-strip-pill-title]'))).toBe('scratch');
+    expect(text(p.querySelector('[data-strip-pill-state]'))).toBe(i18next.t('status.idle'));
+    expect(text(p.querySelector('[data-strip-pill-label]'))).toBe('Sync the skills folder');
+    // the row's own mark, not a second drawing of it
+    expect(p.querySelector('[title]')).not.toBeNull();
+  });
+
+  it('hold the second line open with a dash when there is no label yet', async () => {
+    const host = await mount({ groups: [], sessions: [s('scratch')] });
+    expect(text(pill(host, 'scratch').querySelector('[data-strip-pill-label]'))).toBe('—');
+  });
+
+  it('are filled in exactly when counted, whatever the status says', async () => {
+    // #1137 at the pill: the total and the pills are read from one set
+    const host = await mount({ groups: [], sessions: [s('a'), s('b'), s('c')], needing: ['b'] });
+    expect(text(host.querySelector('[data-strip-line] [data-strip-need]'))).toBe('1 needs you');
+    expect(['a', 'b', 'c'].map((id) => pill(host, id).dataset.needsYou)).toEqual([
+      'false',
+      'true',
+      'false',
+    ]);
+  });
+
+  it('go to their session on a click', async () => {
+    const focused: string[] = [];
+    const host = await mount({ groups: [], sessions: [s('a'), s('b')] }, { onFocus: (id) => focused.push(id) });
+    await click(pill(host, 'b'));
+    expect(focused).toEqual(['b']);
+  });
+
+  it('mark the one the grid is showing', async () => {
+    const host = await mount({ groups: [], sessions: [s('a'), s('b')] }, { selectedId: 'a' });
+    expect(pill(host, 'a').getAttribute('aria-current')).toBe('true');
+    expect(pill(host, 'b').getAttribute('aria-current')).toBeNull();
+  });
+
+  it('have a dashed edge when folded away, and say so', async () => {
+    const host = await mount({ groups: [], sessions: [s('a'), s('b')], folded: ['b'] });
+    expect(pill(host, 'a').dataset.folded).toBe('false');
+    expect(pill(host, 'a').getAttribute('style')).toContain('solid');
+    expect(pill(host, 'b').dataset.folded).toBe('true');
+    expect(pill(host, 'b').getAttribute('style')).toContain('dashed');
+    expect(pill(host, 'b').getAttribute('aria-label')).toContain('folded away');
+    expect(pill(host, 'b').title).toBe(i18next.t('strip.pillFoldedHint'));
+  });
+
+  it('a folded-away pill is brought back by the same click that goes to it', async () => {
+    // there is no second gesture: going to a session is what unfolds it
+    const focused: string[] = [];
+    const host = await mount(
+      { groups: [], sessions: [s('a')], folded: ['a'] },
+      { onFocus: (id) => focused.push(id) }
+    );
+    await click(pill(host, 'a'));
+    expect(focused).toEqual(['a']);
+  });
+
+  it('a folded-away pill that needs you is filled in all the same', async () => {
+    const host = await mount({ groups: [], sessions: [s('a')], folded: ['a'], needing: ['a'] });
+    expect(pill(host, 'a').dataset.needsYou).toBe('true');
+    expect(pill(host, 'a').style.opacity).toBe('1');
+  });
+
+  it('show a pin, and pinned ones come first', async () => {
+    const host = await mount({ groups: [], sessions: [s('a'), s('b'), s('c')], pinned: ['c'] });
+    expect(Array.from(host.querySelectorAll<HTMLElement>('[data-strip-pill]')).map((el) => el.dataset.stripPill)).toEqual([
+      'c',
+      'a',
+      'b',
+    ]);
+    expect(pill(host, 'c').dataset.pinned).toBe('true');
+  });
+
+  it('are called what a row in the list is called', async () => {
+    const host = await mount({ groups: [], sessions: [s('a', { taskLabel: 'Tray icon redraw' })] });
+    const session = s('a', { taskLabel: 'Tray icon redraw' });
+    expect(pill(host, 'a').getAttribute('aria-label')).toBe(
+      sessionSpokenName(i18next.t.bind(i18next), session, false, 0)
+    );
+  });
+});
+
+describe('the highlight after a jump', () => {
+  it('lights the pill the jump landed on, and only that one', async () => {
+    const host = await mount({ groups: [], sessions: [s('a'), s('b')], urgency: [['b', null]] });
+    expect(pill(host, 'a').dataset.flash).toBeUndefined();
+    expect(pill(host, 'b').dataset.flash).toBe('true');
+  });
+
+  it('lights the GROUP when the session is inside one, and its row if the list is open', async () => {
+    const host = await mount({ ...WORLD, urgency: [['worker', null]] });
+    expect(entry(host, BACK.id).dataset.flash).toBe('true');
+    expect(entry(host, DOCS.id).dataset.flash).toBeUndefined();
+    await click(opener(host, BACK.id));
+    const rows = Array.from(list(host)!.querySelectorAll<HTMLElement>('.rail-row'));
+    expect(rows.map((r) => r.dataset.flash)).toEqual([undefined, 'true', undefined]);
+  });
+
+  it('is out once its beat has run out', async () => {
+    const host = await mount({ groups: [], sessions: [s('a')], urgency: [['a', Date.now() - 1]] });
+    expect(pill(host, 'a').dataset.flash).toBeUndefined();
+  });
+
+  it('starts the beat itself, since the lamps row is not there to', async () => {
+    // without this a jump would leave its highlight lit for good: the mark
+    // arrives with no deadline and only whoever painted it can start the clock
+    const started: string[][] = [];
+    await mount(
+      { groups: [], sessions: [s('a')], urgency: [['a', null]] },
+      { onBeatStart: (ids) => started.push([...ids]) }
+    );
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+    });
+    expect(started).toEqual([['a']]);
+  });
+
+  it('put away, it is not there and starts nothing: the lamps row has the beat then', async () => {
+    // exactly one of the two runs the beat. If the strip went on running it
+    // while hidden, App bringing the lamps row back would make that two.
+    const started: string[][] = [];
+    const host = await mount(
+      { groups: [], sessions: [s('a')], urgency: [['a', null]] },
+      { shown: false, onBeatStart: (ids) => started.push([...ids]) }
+    );
+    expect(host.innerHTML).toBe('');
+    await act(async () => {
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
+    });
+    expect(started).toEqual([]);
+  });
+
+  it('a jump that lands in the open list leaves it open, with the row lit', async () => {
+    // the real sequence: the list is open, THEN the jump changes which card
+    // the grid is showing. Any other change of card closes the list; this one
+    // is the list showing you where you landed.
+    const host = await mount(WORLD, { selectedId: 'manual' });
+    await click(opener(host, BACK.id));
+    await mount({ ...WORLD, urgency: [['worker', null]] }, { selectedId: 'worker' });
+    expect(list(host)).not.toBeNull();
+    const rows = Array.from(list(host)!.querySelectorAll<HTMLElement>('.rail-row'));
+    expect(rows.map((r) => r.dataset.flash)).toEqual([undefined, 'true', undefined]);
+  });
+});
+
+describe('a folded-away session inside a group', () => {
+  it('is counted on the group, since no collapsed row lists it any more', async () => {
+    const host = await mount({ ...WORLD, folded: ['api', 'db', 'manual'] });
+    expect(text(entry(host, BACK.id).querySelector('[data-strip-group-folded]'))).toBe(
+      i18next.t('strip.groupFolded', { count: 2 })
+    );
+    expect(entry(host, 'auto:C:/proj/PropaneMon').querySelector('[data-strip-group-folded]')).toBeNull();
+  });
+
+  it('is marked on its row in the list, in looks and in words', async () => {
+    const host = await mount({ ...WORLD, folded: ['worker'] });
+    await click(opener(host, BACK.id));
+    const rows = Array.from(list(host)!.querySelectorAll<HTMLElement>('.rail-row'));
+    expect(rows.map((r) => r.dataset.folded)).toEqual([undefined, 'true', undefined]);
+    expect(rows[1].getAttribute('style')).toContain('dashed');
+    expect(rows[1].querySelector('[data-rail-open]')!.getAttribute('aria-label')).toContain('folded away');
+    expect(rows[0].querySelector('[data-rail-open]')!.getAttribute('aria-label')).not.toContain('folded away');
+  });
+});
+
+describe('the cell at each end of the row', () => {
+  // jsdom lays nothing out, so the boxes are given: the row is 400px wide and
+  // every entry is 150px with a 10px gap, in document order.
+  function layOut(host: HTMLElement, scrolledBy = 0): void {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement
+    ) {
+      const rect = (left: number, width: number): DOMRect =>
+        ({ left, right: left + width, top: 0, bottom: 43, width, height: 43, x: left, y: 0 }) as DOMRect;
+      if (this.hasAttribute('data-strip-scroller')) return rect(0, 400);
+      const items = Array.from(host.querySelectorAll('[data-strip-item-need]')).filter(
+        (el) => el.closest('[data-strip-scroller]') !== null
+      );
+      const i = items.indexOf(this);
+      return i === -1 ? rect(0, 0) : rect(i * 160 - scrolledBy, 150);
+    });
+  }
+  const cell = (host: HTMLElement, side: 'start' | 'end'): HTMLElement | null =>
+    host.querySelector<HTMLElement>(`[data-strip-edge="${side}"]`);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('is not there at all when everything fits', async () => {
+    const host = await mount({ groups: [], sessions: [s('a'), s('b')] });
+    layOut(host);
+    await mount({ groups: [], sessions: [s('a'), s('b')] });
+    expect(cell(host, 'start')).toBeNull();
+    expect(cell(host, 'end')).toBeNull();
+  });
+
+  it('appears at both ends once something is cut off, quiet when nothing off-edge needs you', async () => {
+    const world: World = { groups: [], sessions: ['a', 'b', 'c', 'd'].map((id) => s(id)) };
+    const host = await mount(world);
+    layOut(host);
+    await mount(world);
+    expect(cell(host, 'end')!.dataset.stripEdgeNeed).toBe('0');
+    expect(cell(host, 'end')!.getAttribute('aria-label')).toBe(i18next.t('strip.edgeMore'));
+    // nothing is past the start, so that cell is there (the row does not jump
+    // sideways when it appears) and inert
+    expect(cell(host, 'start')!.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('turns amber with the number of waiting sessions that are off that end', async () => {
+    const world: World = {
+      groups: [],
+      sessions: ['a', 'b', 'c', 'd', 'e'].map((id) => s(id)),
+      needing: ['a', 'd', 'e'],
+    };
+    const host = await mount(world);
+    layOut(host);
+    await mount(world);
+    // a is on screen; d (480-630) and e (640-790) are past the 400px edge
+    expect(cell(host, 'end')!.dataset.stripEdgeNeed).toBe('2');
+    expect(text(cell(host, 'end'))).toContain('2');
+    expect(cell(host, 'end')!.getAttribute('aria-label')).toBe(i18next.t('strip.edgeNeed', { count: 2 }));
+  });
+
+  it('counts a group that is off the edge by its own number', async () => {
+    const world: World = {
+      groups: [BACK],
+      sessions: [
+        s('api', { groupId: BACK.id }),
+        s('worker', { groupId: BACK.id }),
+        s('l1'),
+        s('l2'),
+        s('l3'),
+      ],
+      needing: ['api', 'worker'],
+    };
+    const host = await mount(world);
+    // scrolled 300px along: the group (0-150) is now wholly past the start
+    layOut(host, 300);
+    await mount(world);
+    expect(cell(host, 'start')!.dataset.stripEdgeNeed).toBe('2');
+  });
+});
 describe('a group’s drop-down list', () => {
   it('opens on a click with the group’s sessions as full rows, numbered', async () => {
     const host = await mount(WORLD);
