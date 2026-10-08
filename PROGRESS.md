@@ -21,135 +21,89 @@
 > measured in time, sending only the new text saves megabytes and no
 > milliseconds.
 >
-> # ▶ IN FLIGHT — #1143, the sessions strip across the top: PR 6 of 6, THE LAST (PRs 1 to 5 merged 2026-10-08)
+> # ✅ DONE, NOT RELEASED — #1143, sessions across the top (2026-10-08, six PRs, issue CLOSED)
 >
-> **The design is SETTLED** (three mockup rounds, 2026-10-08). The spec is the
-> NEWEST comment on the issue ("DESIGN SETTLED WITH THE OWNER"); the pictures are
-> on the owner's machine in the git-ignored `.claude/work_files/1143/`
-> (`sessions-strip-FINAL.html`, `shots-final/`). **Do not re-open it and do not
-> make another mockup.** *(This block said the design questions were "waiting on
-> his answer" for a session after he had answered them: the mockups live outside
-> the repo, so nothing was committed and this file was not touched.)*
+> **Nothing is in flight. No PR is open. `main` is at `d0044a2` plus this
+> close-out.** The owner has hand-tested NONE of it beyond a look at step 2.
 >
-> **The eight points the mockups never drew were put to him with a
-> recommendation each, and he took all eight ("Sounds good", 2026-10-08).**
-> They are recorded on the issue. In short:
+> **What it is.** A second placement for the sessions list: down the left (the
+> rail, still the default) or one strip across the top. Chosen from the
+> **◧ left / ⬒ top** switch in the title bar, Settings ▸ Appearance ▸ Sessions
+> list, or a right-click on an empty part of the strip. In top mode a group is
+> an entry that drops down a list of its sessions (the rail's own row), a
+> session outside any group is a two-line pill (dashed when folded away), the
+> row scrolls with an amber-counting cell at each end, everything else is on a
+> right-click, and order is by dragging.
 >
-> 1. **Pinned:** a pinned loose pill sorts first among the pills and carries the
->    pin mark, but scrolls with the strip. Inside a group's open list, pins
->    behave as in the left list.
-> 2. **Automatic groups:** the same entry as a made group, with the folder icon
->    and the word "auto", after the made groups and before the pills. Not
->    draggable, not a drop target, no rename / colour / delete.
-> 3. **A session started by another session:** indented under its parent in an
->    open list, as today. As a pill it sits just right of its parent with the
->    lineage mark, and moves with it.
-> 4. **"N waiting":** a small numbered chip on the pill, and "· N waiting" on
->    the group entry. Separate from "need you": not in the total, not in the
->    amber arrow numbers.
-> 5. **The highlight after a jump** moves to the pill; the strip scrolls it into
->    view. For a session in a group, the group entry flashes (and the row, if
->    the list is open).
-> 6. **The "N idle sessions" fold:** nothing replaces it.
-> 7. **Hiding:** stays, but not as a third state. Ctrl+B hides whichever
->    placement is active, and so does clicking the lit half of the left / top
->    button.
-> 8. **Empty:** an empty group shows 0 and "empty", and is still a drop target.
->    A strip with no sessions keeps its height and says "No sessions yet".
+> **The six PRs, in order, all merged on green CI:**
 >
-> **The split he agreed to — six PRs, each leaving left mode unchanged:**
+> | # | PR | What |
+> |---|---|---|
+> | 1 | #1154 `1c8b132` | `SessionRow` lifted out of the rail (no visible change) |
+> | 2 | #1155 `63e91ed` | the placement setting, the title-bar switch, the strip's frame |
+> | 3 | #1156 `a4ad21b` | groups on the strip, each opening a list |
+> | 4 | #1157 `27db5c3` | pills, the end cells, the post-jump beat; lamps row and Collapsed strip gone in top mode |
+> | 5 | #1158 `7192198` | right-click menus and renaming from them |
+> | 6 | #1159 `d0044a2` | dragging; closed the issue |
 >
-> 1. **The session row lifted out of the list file** (internal, no visible
->    change). **DONE 2026-10-08, PR #1154 (`1c8b132`), merged, NOT released.**
->    An independent review caught that the first cut moved the rename box's
->    draft text into the row, where a re-parented row would have lost a
->    half-typed name; the draft stayed with the list and a test pins it.
-> 2. The setting (Settings, the top-bar button, hide / show), the line above
->    the strip, and the strip's frame. **DONE 2026-10-08, PR #1155
->    (`63e91ed`), merged, NOT released.** **The Settings choice is
->    labelled "in progress" until PR 4 lands** — between PR 2 and PR 4 top
->    mode is selectable on main but incomplete, and he was told so. In this
->    PR: the "▤ rail" chip became the "◧ left / ⬒ top" switch; the strip's
->    row says the sessions are "not listed here yet" rather than sitting
->    empty. **⚠️ DEPARTS FROM THE DESIGN ON PURPOSE, UNTIL PR 4: the lamps row
->    and the Collapsed strip are STILL SHOWN in top mode.** A review found
->    that removing them before the strip lists sessions leaves Focus, Queue
->    and maximize with no mouse path back to the sessions they collapse.
->    **PR 4 removed both** (and moved the post-jump highlight, which the
->    lamps row timed, onto the pills first). The
->    owner is told in the tracker row and the report. **NOT in this PR, moved to PR 5 with the other menus:**
->    the right-click on an empty part of the strip.
-> 3. Groups and their drop-down lists. **DONE 2026-10-08, PR #1156
->    (`a4ad21b`), merged, NOT released.** The review found that double-click
->    rename cannot work in a list (the first click goes to the session and
->    closes it), so rename waits for PR 5's menu, and that the list's Escape
->    handler was taking the key from every dialog. In it: made groups then
->    automatic ones, each an entry (dot or folder, Ctrl+N range, name, count,
->    "N need you" / calm / empty, "· N waiting", ⊕, tinted arrow); a click
->    drops a `position: fixed` list of `SessionRow`s with their Ctrl+N
->    numbers; a row click goes to the session and closes the list. The strip
->    takes the store's `getRailOrder()` whole rather than re-deriving it.
->    Loose sessions are NOT drawn yet: the row says how many it is leaving
->    out. **The owner test-drove PR 2 from a scratch instance on 2026-10-08
->    and took the half-built strip for the finished feature** ("I thought it
->    was all done"), then said to continue: so do not hand him another
->    half-step to test without saying first, in the first sentence, how much
->    of the six is in it.
-> 4. Pills and overflow. **DONE 2026-10-08, PR #1157 (`27db5c3`), merged, NOT
->    released.** In it: loose sessions as pills (dashed
->    when collapsed or hidden); a fixed cell at each end, amber with a count
->    (`lib/strip-overflow`); the post-jump beat lifted out of the lamps row
->    into `lib/use-urgency-beat` and run by the strip; **the lamps row and the
->    Collapsed strip are now gone in top mode, which ends PR 2's departure
->    from the design**; the Settings choice no longer says "(in progress)".
->    **Put away with Ctrl+B, the strip is not mounted and the lamps row and
->    Collapsed strip come back** (`stripShown` in App is the one switch):
->    exactly one of lamps row / strip runs the beat, and "hidden" looks the
->    same in both placements. A folded session INSIDE a group is counted on
->    its group ("· N folded away") and dashed on its row in the list.
-> 5. Right-click menus. **DONE 2026-10-08, PR #1158 (`7192198`), merged, NOT
->    released.** It carries "Close session", so
->    it had the independent review the owner requires before it was pushed.
->    The real-app test then caught what the review and 11,000 unit tests did
->    not: Enter in a rename box handed focus to a button mid-keypress and the
->    same Enter "clicked" it (renaming a group opened its list). Both rename
->    boxes now consume the Enter.
->    In it: three menus through the rail's small shared menu (which gained
->    headings and one-of-N ticks); a rename box that REPLACES a pill or a
->    group entry, and in-place rename for a row in a list; the rail's own
->    handlers lifted to named functions in App and handed to both lists.
->    **Left out on purpose, and told to the owner in the tracker row:** the
->    per-session "on submit" and "when it needs you" overrides the rail's
->    menu has (the mockup's menu did not list them), and renaming the
->    palette's "Toggle the sessions rail" command.
-> 6. Dragging. **← IN FLIGHT**, branch `feature/1143-6-strip-dragging`. *This
->    line rides in that PR: if `main` has
->    `src/renderer/src/lib/strip-drag.ts`, PR 6 has landed, **#1143 is DONE
->    and CLOSED**, and the next session should rewrite this whole block as a
->    finished entry and pick the next item with the owner.* In it: a group
->    sideways (`dropGroup`), a pill sideways (`planReorder`, bucket
->    `ungrouped`), a pill or a workspace tab onto a made group; the rail's two
->    drag types moved to `lib/rail-dnd`. A line or a lit edge is only ever
->    drawn where the drop would really do something.
+> **Where the spec lives.** The "DESIGN SETTLED WITH THE OWNER" comment on the
+> issue, then the comment after it with his answers to the eight points the
+> mockups never drew. The pictures are on his machine only, git-ignored:
+> `.claude/work_files/1143/sessions-strip-FINAL.html` and `shots-final/`.
 >
-> **WHAT THE OWNER HAS NOT SEEN.** He test-drove step 2 only, from a scratch
-> instance, and took it for the whole feature. Steps 3 to 6 are untested by
-> hand. Six tracker rows are waiting, newest first; the top one (step 6) is
-> the one to start from. **Departures from the settled design, each flagged
-> in its tracker row for him to overrule:** the lamps row and Collapsed strip
-> come back while the strip is put away with Ctrl+B; "How its sessions are
-> shown" steps rather than opening a submenu; the per-session overrides are
-> not on the strip's menu; a row in an open list does not drag. **One thing
-> ADDED beyond the mockup:** Ctrl+Alt+Left / Right moves a focused group,
-> because a review found groups had no keyboard reorder path in top mode.
+> **WHAT THE OWNER HAS TO DO.** Six rows are in the dogfood tracker's Untested
+> table, newest first. **Start from the top one (step 6): it is the finished
+> feature.** He test-drove step 2 from a scratch instance and took the
+> half-built strip for the whole thing ("I thought it was all done"), so when
+> handing him this, say first that it is now complete.
 >
-> **The issue stayed OPEN until PR 6.** No PR before then put a closing
-> keyword next to its number.
+> **DEPARTURES FROM THE SETTLED DESIGN — each is flagged in a tracker row for
+> him to overrule, and none has been put to him directly yet:**
 >
-> **Seven of the eight tickets are merged and UNRELEASED**: #1140 (PR #1146),
-> #1137 (#1148), #1145 (#1149), #1142 (#1150), #1144 (#1151), #1130 (#1152),
-> on top of #1126 and #1127 from the day before. Each has a row in the dogfood
-> tracker. **DO NOT CUT 0.8.116 — the owner said to hold off (2026-10-08).**
+> 1. **The lamps row and the Collapsed strip come back while the strip is put
+>    away with Ctrl+B.** The design says top mode has neither. A review found
+>    that top mode + Focus + Ctrl+B otherwise leaves nothing on screen saying
+>    "N need you" or listing a collapsed session. `stripShown` in `App.tsx` is
+>    the one switch.
+> 2. **"How its sessions are shown" steps to the next choice** instead of
+>    opening the submenu the mockup drew (the rail steps the same way).
+> 3. **The per-session "on submit" / "when it needs you" overrides are not on
+>    the strip's session menu.** The mockup's menu did not list them; the
+>    rail's menu has them.
+> 4. **A row in a group's open list does not drag**, and a double-click does
+>    not rename it (the first click goes to the session). Both are on its
+>    right-click menu instead.
+> 5. **ADDED beyond the mockup: Ctrl+Alt+Left / Right moves a focused group.**
+>    The menus have no ordering items, as designed, but a review found groups
+>    then had no keyboard reorder path at all in top mode.
+>
+> **Known and left, small:** two "+ session" buttons in top mode (the strip's
+> and the workspace's own); the palette still calls Ctrl+B "Toggle the
+> sessions rail" and "Collapse session to a strip" (two ranking tests and a
+> spec key on those exact words); once the end cells appear they stay until the
+> content fits with them present (a band of about 76 px); the app prevents
+> default on every `dragover` at window level, so a refused drop target still
+> shows a move cursor (the rail has the same; the drop itself re-checks).
+>
+> **Three things worth knowing before touching this code again:**
+>
+> - **The strip draws from the store's `getRailOrder()` whole** and drops
+>   through the rail's own `dropGroup` / `planReorder`. It never re-derives who
+>   is where, so it cannot disagree with Ctrl+1..9 or with the rail.
+> - **Exactly one of the lamps row and the strip is mounted, and whichever it
+>   is runs the post-jump beat** (`lib/use-urgency-beat`). Two would double
+>   it; none would leave a highlight lit for good.
+> - **Every independent review found something the tests had not**, and the
+>   real-app spec found one the review had not: Enter in a rename box handed
+>   focus to a button mid-keypress and the same Enter "clicked" it. jsdom does
+>   not synthesize that click. For anything that moves focus on a keydown,
+>   the real app is the only witness.
+>
+> **ALL EIGHT of the 2026-10-07 tickets are now merged and UNRELEASED**: #1140
+> (PR #1146), #1137 (#1148), #1145 (#1149), #1142 (#1150), #1144 (#1151),
+> #1130 (#1152) and #1143 (above), on top of #1126 and #1127 from the day
+> before. Each has a row in the dogfood tracker. **DO NOT CUT 0.8.116 — the
+> owner said to hold off (2026-10-08). Ask him; do not decide it.**
 >
 > **Still open, untouched: #716 / #1013** (typing lag) until the owner has
 > tried v0.8.115 on the laptop. Asked a fourth and last time on 2026-10-08, no
