@@ -69,8 +69,15 @@ cut off the end when it didn't fit — which meant `…/components/FeedView.tsx`
 the part that got cut. Now the folder is what shortens, from the *front*, so what
 you can always read is the filename.
 
-Click a row to see that file before and after. Hover it — or Tab to it — and the
-line counts swap for buttons: **⧉** to open the diff in its own panel, **↗** to
+**If the names are still cut short, make the list wider.** Drag the list's
+right-hand edge — the thin line between the list and the diff. The pointer
+turns into a left-right arrow when you are on it. The width you leave it at is
+used by every session's Changes tab and is remembered when you restart.
+Double-click the edge to put it back. From the keyboard, Tab to the edge and
+use the left and right arrow keys; Home puts it back.
+
+Click a row to see that file before and after. Hover it — or Tab to it — and
+buttons appear over the right-hand end of the row, covering the line counts: **⧉** to open the diff in its own panel, **↗** to
 open the file itself in the reader, and **⏱** to see that one file's history.
 
 **⏱** switches the card to the **History** tab and filters it to the commits

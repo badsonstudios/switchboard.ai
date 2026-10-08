@@ -558,6 +558,7 @@
     "files": "{count, plural, one {# file} other {# files}}",
     "filesAtLeast": "{count, plural, one {# file} other {# files}} (some uncounted)",
     "filterPlaceholder": "Filter changed files…",
+    "resize": "Drag to resize the file list. Double-click to reset",
     "filterLabel": "Filter the changed files by path",
     "noMatches": "No changed file matches “{query}”",
     "caretOpen": "▾",
