@@ -21,7 +21,42 @@
 > measured in time, sending only the new text saves megabytes and no
 > milliseconds.
 >
-> # 🚧 NOW — 2026-10-07: **the new tickets, bugs first — #1140, #1137, #1145, #1142, #1144, #1130, #1143, in that order.**
+> # ⏸ WAITING ON THE OWNER — 2026-10-08: **#1143's design questions, and whether to cut 0.8.116.**
+>
+> **Seven of the eight tickets are merged and UNRELEASED**: #1140 (PR #1146),
+> #1137 (#1148), #1145 (#1149), #1142 (#1150), #1144 (#1151), #1130 (#1152),
+> on top of #1126 and #1127 from the day before. Each has a row in the dogfood
+> tracker. **Nothing is in flight, no PR is open.**
+>
+> **#1143 (sessions strip across the top) is NOT STARTED, by the owner's rule:
+> "read it, then ASK ME the design questions before starting."** The questions
+> were put to him at the end of the 2026-10-08 session and are waiting on his
+> answer:
+>
+> 1. **When there are too many groups and sessions to fit across the window**:
+>    scroll sideways, or a "more" menu at the end? (Recommended: a "more" menu;
+>    a sideways-scrolling strip hides sessions that need you.)
+> 2. **What a group's entry shows**: its name and its "N need you" count,
+>    opening on a click? (Recommended, with the count and the rows inside
+>    agreeing, as #1137 now guarantees.)
+> 3. **What the top strip can DO in its first version**: click to go to a
+>    session, see who needs you, open a group's list — and nothing else, with
+>    renaming, pinning, moving between groups and reordering done by switching
+>    back to the left list? Or does the right-click menu have to come along?
+> 4. **The two rows it replaces each do a job the pills would have to take
+>    over**: the row of lamps is what Ctrl+1 to 9 counts against and shows the
+>    "N need you" total; the collapsed row is how a folded-away session is
+>    brought back. Should a pill do both (numbered, and clicking one brings a
+>    hidden session back)?
+> 5. **In top mode, is the left list gone entirely**, and with it the place
+>    groups are made?
+> 6. **Tanner**: build a first version for him to react to, or wait for his
+>    design first?
+>
+> **Still open, untouched: #716 / #1013** (typing lag) until the owner has
+> tried v0.8.115 on the laptop. He had no result as of 2026-10-07.
+>
+> ## 2026-10-07 and 2026-10-08: the new tickets, bugs first — #1140, #1137, #1145, #1142, #1144, #1130, #1143, in that order.
 >
 > The owner's list and rules, 2026-10-07. Each is its own item through
 > `/next-item`; **reproduce or measure before changing anything**; one PR in CI
@@ -105,8 +140,7 @@
 > below them.
 >
 > **#1130 (fold consecutive Read/Grep/Glob calls into one expandable block) —
-> DONE ON `feature/1130-fold-exploration`** (the PR that carries this line;
-> NOT released). Three or more consecutive `category: 'read'` calls from one
+> DONE 2026-10-08, PR #1152 (`767623e`), merged, NOT released.** Three or more consecutive `category: 'read'` calls from one
 > speaker are one row, "Explored the code", opening onto the calls as they
 > always were. **A closed fold's members are left out of the list, not hidden
 > or nested** — that is what the off-screen skipping needs (every block a
