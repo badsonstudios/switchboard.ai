@@ -93,6 +93,8 @@ async function mount(
         onDeleteGroup={noop}
         onOpenAll={noop}
         onPlace={noop}
+        onReorder={noop}
+        onMoveGroup={noop}
         {...over}
       />
     );

@@ -90,6 +90,8 @@ async function mount(world: World, over: Partial<StripProps> = {}): Promise<HTML
         onDeleteGroup={noop}
         onOpenAll={noop}
         onPlace={noop}
+        onReorder={noop}
+        onMoveGroup={noop}
         {...over}
       />
     );

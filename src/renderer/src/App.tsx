@@ -2803,6 +2803,9 @@ export function App(): React.JSX.Element {
           })();
         }}
         onPlace={(placement) => placeSessions(placement)}
+        lineage={lineage}
+        onReorder={reorderBucket}
+        onMoveGroup={moveGroup}
       />
       {/* §5.8's batch prompt (P2-E9-11). LAST in the stack of bands, directly
           above the workspace, on purpose: it is the only one of them that comes
