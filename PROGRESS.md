@@ -68,8 +68,7 @@
 > are about the session's status, not about the count.
 >
 > **#1145 (card header: drop the duplicate "N changed" and the usage strip) —
-> DONE ON `feature/1145-header-decrowd`** (the PR that carries this line; NOT
-> released). Removal only, as asked: the branch line no longer repeats the
+> DONE 2026-10-07, PR #1149 (`30e3c1e`), merged, NOT released.** Removal only, as asked: the branch line no longer repeats the
 > Changes tab's count, and `UsageStrip` is unmounted from the header.
 > **`UsageStrip`, its tests, the usage state and the ledger are all still in
 > the tree** — DESIGN §5.13 now opens with a note that the header placement
@@ -77,12 +76,25 @@
 > manual's "Tokens and cost" section is cut down to say so and to point at
 > `/usage` and `/cost`. Where the figures go next is the owner's decision.
 >
-> **NEXT: #1142** (Changes tab file names too truncated). **STOP POINT BY THE
-> OWNER'S RULE: tell him the proposal before building.** The screenshot shows
-> names cut to about eight characters ("PROGR…", "CMakeLi…") in a 470px-wide
-> list with half of each row empty — the name column is being squeezed by the
-> row's layout, not by a lack of room. Then #1144, #1130, #1143 (ask the
-> design questions first).
+> **#1142 (Changes tab file names too truncated) — DONE ON
+> `feature/1142-changes-list-width`** (the PR that carries this line; NOT
+> released). **Measured first**, in the real app with the owner's own file
+> names: the list was a fixed 240px, a row was 232px, and the name got **57px**
+> while ~125px sat empty for buttons that only show on hover. Part of that was
+> a plain bug — the numbers and the buttons were meant to share one slot, and an
+> inline `display: flex` outranked the stylesheet's grid, so they sat side by
+> side. **The proposal was put to the owner (three parts) and he answered
+> "Continue" without picking**, so it was built with the two recommended
+> choices, both flagged in the tracker: all three parts, and ONE width for every
+> session. (1) The list's right edge drags, 180 to 640px, the diff always keeps
+> 200px, remembered, double-click or Home resets, arrow keys move it. (2) The
+> hover buttons are laid over the end of the row instead of holding room. (3)
+> The name gets room before the folder path. Same probe after: every one of
+> those names fits in full at the default width (81, 72, 139, 146, 157px).
+>
+> **NEXT: #1144** (reorder groups in the rail: Move up/down on the menu first,
+> drag second). Then #1130, then #1143 — **which is large: read it, then ASK
+> the owner the design questions before starting.**
 >
 > ## Earlier on 2026-10-07: #1126, then #1127 — the owner: "we can do 1126 and 1127 next".
 >

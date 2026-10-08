@@ -96,6 +96,21 @@ on the floor, and say so in your PR.
 
 ## 0.8.116 — unreleased
 
+### Added
+
+- **The Changes tab's file list can be made wider.** Drag its right-hand edge
+  to give long file names more room. The width applies to every session and is
+  remembered; double-click the edge to reset it.
+
+### Changed
+
+- **File names in the Changes tab are no longer cut to a few letters.** Each
+  row was keeping more than half its width empty for buttons that only appear
+  when you point at it, which left a name like `PROGRESS.md` showing as
+  `PROGR…`. The buttons now appear over the end of the row instead, and the
+  name gets room before the folder path does, so most names fit without
+  dragging anything.
+
 ### Removed
 
 - **The card header is less crowded.** The "·11 changed" text beside the branch

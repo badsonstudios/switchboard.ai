@@ -34,6 +34,18 @@ import {
 import { buildScmTree, type ScmTreeFolder } from '../lib/scm-tree';
 import { getScmViewMode, setScmViewMode, subscribeScmViewMode } from '../lib/scm-view-mode';
 import {
+  SCM_WIDTH_DEFAULT,
+  SCM_WIDTH_MAX,
+  SCM_WIDTH_MIN,
+  SCM_WIDTH_STEP,
+  clampScmWidth,
+  getScmWidth,
+  scmWidthFromDrag,
+  setScmWidth,
+  subscribeScmWidth,
+} from '../lib/scm-width';
+import { directionOf, type WritingDirection } from '../lib/writing-direction';
+import {
   type CommitFlags,
   type WriteOutcome,
   canCommit,
@@ -175,6 +187,38 @@ export function ScmSidebar(props: {
    * disagree. `lib/scm-view-mode` is the same shape as `lib/diff-layout`.
    */
   const mode = React.useSyncExternalStore(subscribeScmViewMode, getScmViewMode);
+  /**
+   * How wide the list is (#1142) — one value for every Changes tab, dragged on
+   * the list's own edge. See `lib/scm-width`.
+   */
+  const width = React.useSyncExternalStore(subscribeScmWidth, getScmWidth);
+  const sidebarRef = React.useRef<HTMLDivElement | null>(null);
+  const [drag, setDrag] = React.useState<{
+    startX: number;
+    startWidth: number;
+    direction: WritingDirection;
+    paneWidth?: number;
+  } | null>(null);
+  // One window-level listener per drag, so the pointer can leave the 4px edge
+  // (and the card) without the resize sticking to it — the Sessions list's own
+  // arrangement. Everything the arithmetic needs was read ONCE, at pointer
+  // down: a layout read inside a handler that also writes a width is a thrash.
+  React.useEffect(() => {
+    if (!drag) return;
+    const at = (e: PointerEvent): number =>
+      scmWidthFromDrag(drag.startWidth, drag.startX, e.clientX, drag.direction, drag.paneWidth);
+    const onMove = (e: PointerEvent): void => setScmWidth(at(e), { persist: false });
+    const onUp = (e: PointerEvent): void => {
+      setScmWidth(at(e));
+      setDrag(null);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [drag]);
   /**
    * Which FOLDERS are folded, keyed `<group>:<dir>`.
    *
@@ -355,8 +399,16 @@ export function ScmSidebar(props: {
   return (
     <div
       className="scm-sidebar"
+      ref={sidebarRef}
       style={{
-        inlineSize: 240,
+        // Was a fixed 240 (#1142). `maxInlineSize` is the diff's guarantee: a
+        // width dragged on a wide card must not swallow a narrow one's diff.
+        inlineSize: width,
+        maxInlineSize: 'max(180px, calc(100% - 200px))',
+        // the border is INSIDE the width, so the box a drag measures is the
+        // number it writes back — otherwise every drag would add the border
+        boxSizing: 'border-box',
+        position: 'relative',
         flexShrink: 0,
         borderInlineEnd: '1px solid var(--border)',
         display: 'flex',
@@ -890,6 +942,59 @@ export function ScmSidebar(props: {
             );
           })}
       </div>
+      {/* THE EDGE YOU DRAG (#1142). A `separator` with a value is the role for
+          exactly this, and it is what makes the width reachable without a
+          pointer: focus it and the arrow keys move it, Home puts it back. The
+          same 4px strip the Sessions list has on its own edge, so the two
+          resize the same way. Double-click resets, as a splitter usually does. */}
+      <div
+        className="rail-resize"
+        data-testid="scm-resize"
+        data-dragging={drag !== null}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={t('scm.resize')}
+        aria-valuemin={SCM_WIDTH_MIN}
+        aria-valuemax={SCM_WIDTH_MAX}
+        aria-valuenow={width}
+        tabIndex={0}
+        title={t('scm.resize')}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          const side = sidebarRef.current;
+          setDrag({
+            startX: e.clientX,
+            // measured, because `maxInlineSize` can hold the list narrower than
+            // the stored width on a small card — and a drag has to start from
+            // what is on screen
+            startWidth: side?.getBoundingClientRect().width || width,
+            direction: side ? directionOf(side) : 'ltr',
+            paneWidth: side?.parentElement?.getBoundingClientRect().width,
+          });
+        }}
+        onDoubleClick={() => setScmWidth(SCM_WIDTH_DEFAULT)}
+        onKeyDown={(e) => {
+          const side = sidebarRef.current;
+          const toEnd = side && directionOf(side) === 'rtl' ? 'ArrowLeft' : 'ArrowRight';
+          const toStart = toEnd === 'ArrowRight' ? 'ArrowLeft' : 'ArrowRight';
+          const pane = side?.parentElement?.getBoundingClientRect().width;
+          let next: number | null = null;
+          if (e.key === toEnd) next = clampScmWidth(width + SCM_WIDTH_STEP, pane);
+          else if (e.key === toStart) next = clampScmWidth(width - SCM_WIDTH_STEP, pane);
+          else if (e.key === 'Home') next = SCM_WIDTH_DEFAULT;
+          if (next === null) return;
+          e.preventDefault();
+          setScmWidth(next);
+        }}
+        style={{
+          position: 'absolute',
+          insetInlineEnd: 0,
+          insetBlockStart: 0,
+          insetBlockEnd: 0,
+          inlineSize: 4,
+          zIndex: 2,
+        }}
+      />
     </div>
   );
 }
@@ -1038,7 +1143,11 @@ function Row(props: {
         background: props.selected ? 'var(--rail-row-selected)' : 'transparent',
         minInlineSize: 0,
         paddingInlineStart: indentPx(props.depth),
+        // the verbs are laid OVER the row's end (`.scm-row-acts`), so the row
+        // is what they are positioned against
+        position: 'relative',
       }}
+      data-selected={props.selected ? 'true' : undefined}
     >
       <button
         type="button"
@@ -1094,7 +1203,12 @@ function Row(props: {
         </span>
         <span
           className="scm-name"
-          style={{ flexShrink: 0, maxInlineSize: '60%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          // THE NAME GETS ITS ROOM FIRST (#1142). It was `flex-shrink: 0` under
+          // a 60% cap, which sounds generous and measured at 57px of a 232px
+          // row — "PROGRESS.md" needs 81. It takes what it needs now, and only
+          // shrinks when it alone is wider than the row; the directory beside
+          // it has a zero basis, so it is the part that gives way.
+          style={{ flex: '0 1 auto', minInlineSize: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
         >
           {row.name}
         </span>
@@ -1111,7 +1225,7 @@ function Row(props: {
         <span
           className="scm-dir"
           style={{
-            flex: 1,
+            flex: '1 1 0%',
             minInlineSize: 0,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -1126,13 +1240,20 @@ function Row(props: {
         </span>
         )}
       </button>
-      {/* ⚠️ **THE NUMBERS AND THE ACTIONS SHARE ONE SLOT**, which is VS Code's
-          `inline@1` / `inline@2` arrangement and design §2.1's note: the row stays
-          readable at rest, and the verbs appear when you reach for them. Done with
-          CSS hover/focus-within rather than React state so it costs no render —
-          and `focus-within` is what makes it reachable by keyboard, which a
-          hover-only rule would not be. */}
-      <span className="scm-row-rest" style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+      {/* ⚠️ **THE NUMBERS SIT IN THE ROW; THE ACTIONS ARE LAID OVER ITS END**
+          (#1142). The row stays readable at rest and the verbs appear when you
+          reach for them — CSS hover/focus-within rather than React state, so it
+          costs no render, and `focus-within` is what makes them reachable by
+          keyboard.
+
+          They used to be described as "sharing one slot", and never did: this
+          span carried an inline `display: flex`, which outranked the
+          stylesheet's grid, so the numbers and the hidden buttons sat SIDE BY
+          SIDE and every row kept ~125px of a 232px list empty. Measured, with
+          the owner's own file names: 57px left for a name. That is the same
+          inline-beats-stylesheet trap the note on `.scm-row-acts` below
+          records, one element up. NO INLINE `display` HERE EITHER. */}
+      <span className="scm-row-rest" style={{ flexShrink: 0 }}>
         <span className="scm-row-stat" style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, paddingInlineEnd: 4 }}>
           {row.stat === null ? (
             ''

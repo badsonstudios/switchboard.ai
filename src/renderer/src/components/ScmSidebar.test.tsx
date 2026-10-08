@@ -24,6 +24,7 @@ import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { LETTER_INKS, ScmSidebar } from './ScmSidebar';
+import { SCM_WIDTH_DEFAULT, setScmWidth } from '../lib/scm-width';
 import { resetAllChangesOpener, setAllChangesOpener } from '../lib/allchanges-open';
 import { loadUiState } from '../lib/ui-state';
 import type { GitFileDto, GitStatusDto } from '../lib/git-status';
@@ -1479,5 +1480,130 @@ describe('the sync verbs (E24 Git v2 item 15)', () => {
     // …and the COUNTS are still drawn, which is what items 2 and 6 shipped
     expect(one('.scm-ahead')).not.toBeNull();
     expect(one('.scm-behind')).not.toBeNull();
+  });
+});
+
+// #1142 — the list's width, and where a row's width goes.
+//
+// The geometry itself (does a name fit, does anything move under the pointer)
+// is `e2e/changes-list-width.spec.ts`'s, because jsdom lays nothing out. What
+// is checkable here is the wiring: the edge is a real, focusable separator, it
+// moves the ONE shared width, and the two inline styles that starved the name
+// are gone.
+describe('the file list is resizable, and a name gets its room (#1142)', () => {
+  const status = { isRepo: true, files: [file({ path: 'src/deep/WrappedPayloadBuilder.cpp', xy: '.M' })] };
+  const sidebar = (): HTMLElement => one('.scm-sidebar')!;
+  const edge = (): HTMLElement => one('[data-testid="scm-resize"]')!;
+  async function press(key: string): Promise<void> {
+    await act(async () => {
+      edge().dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    });
+  }
+
+  afterEach(async () => {
+    await act(async () => setScmWidth(SCM_WIDTH_DEFAULT));
+  });
+
+  it('is the width it always was until someone drags it', async () => {
+    await mount(status);
+    expect(sidebar().style.inlineSize).toBe('240px');
+  });
+
+  it('has an edge a keyboard can reach, named and valued as a separator', async () => {
+    await mount(status);
+    expect(edge().getAttribute('role')).toBe('separator');
+    expect(edge().getAttribute('aria-orientation')).toBe('vertical');
+    expect(edge().tabIndex).toBe(0);
+    expect(edge().getAttribute('aria-valuenow')).toBe('240');
+    expect(edge().getAttribute('aria-label')).toMatch(/resize/i);
+  });
+
+  it('the arrow keys move it, Home and a double-click put it back', async () => {
+    await mount(status);
+    await press('ArrowRight');
+    await press('ArrowRight');
+    expect(sidebar().style.inlineSize).toBe('272px');
+    expect(edge().getAttribute('aria-valuenow')).toBe('272');
+    await press('ArrowLeft');
+    expect(sidebar().style.inlineSize).toBe('256px');
+    await press('Home');
+    expect(sidebar().style.inlineSize).toBe('240px');
+    await press('ArrowRight');
+    await act(async () => {
+      edge().dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    });
+    expect(sidebar().style.inlineSize).toBe('240px');
+  });
+
+  it('a drag follows the pointer and stops when it is released', async () => {
+    await mount(status);
+    await act(async () => {
+      edge().dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, clientX: 240 }));
+    });
+    expect(edge().dataset.dragging).toBe('true');
+    await act(async () => {
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 340 }));
+    });
+    // jsdom measures every box as 0 wide, so the drag starts from the width in
+    // state: 240 + 100
+    expect(sidebar().style.inlineSize).toBe('340px');
+    await act(async () => {
+      window.dispatchEvent(new MouseEvent('pointerup', { clientX: 360 }));
+    });
+    expect(sidebar().style.inlineSize).toBe('360px');
+    expect(edge().dataset.dragging).toBe('false');
+    // released: the pointer no longer moves it
+    await act(async () => {
+      window.dispatchEvent(new MouseEvent('pointermove', { clientX: 500 }));
+    });
+    expect(sidebar().style.inlineSize).toBe('360px');
+  });
+
+  // ONE width for every session: a second list on screen follows the first.
+  it('every list on screen takes the same width', async () => {
+    await mount(status);
+    const other = document.createElement('div');
+    document.body.appendChild(other);
+    const second = createRoot(other);
+    await act(async () => {
+      second.render(
+        <ScmSidebar folder="/other" status={status} selected={null} onSelect={() => undefined} onRefresh={() => undefined} />
+      );
+    });
+    try {
+      await press('ArrowRight');
+      const widths = all('.scm-sidebar').map((el) => el.style.inlineSize);
+      expect(widths.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(widths)).toEqual(new Set(['256px']));
+    } finally {
+      await act(async () => second.unmount());
+      other.remove();
+    }
+  });
+
+  // The two inline styles that left a name 57px of a 232px row.
+  it('⚠️ the row holds no room for its hidden buttons, and the name is not capped', async () => {
+    await mount(status);
+    // an inline `display` here outranks the stylesheet, which is how the
+    // numbers and the buttons ended up side by side
+    expect(one('.scm-row-rest')!.style.display).toBe('');
+    expect(one('.scm-row-acts')!.style.display).toBe('');
+    const name = one('.scm-name')!;
+    expect(name.style.maxInlineSize).toBe('');
+    expect(name.style.flex).toBe('0 1 auto');
+    // the directory is the part that gives way
+    expect(one('.scm-dir')!.style.flex).toBe('1 1 0%');
+
+    const css = fs.readFileSync(path.join(process.cwd(), 'src/renderer/src/theme/tokens.css'), 'utf8');
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.appendChild(style);
+    try {
+      // out of flow: laid over the row's end rather than given room in it
+      expect(getComputedStyle(one('.scm-row-acts')!).position).toBe('absolute');
+      expect(one('.scm-row')!.style.position).toBe('relative');
+    } finally {
+      style.remove();
+    }
   });
 });

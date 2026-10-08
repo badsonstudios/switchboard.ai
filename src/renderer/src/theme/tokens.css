@@ -1833,7 +1833,20 @@ mark[data-feed-match-current] {
  */
 .scm-row-acts {
   display: flex;
+  align-items: center;
   gap: 1px;
+  /* LAID OVER THE END OF THE ROW, not given room in it (#1142). Holding their
+   * width on every row at rest is what left a file name 57px of a 232px list.
+   * Out of flow they cost the row nothing, and still nothing moves on hover:
+   * they cover the numbers and the tail of the folder path, which is the part
+   * of a row you are not reading at the moment you reach for a button. Opaque,
+   * in the hovered row's own colour, so no text shows through. */
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  padding-inline: 6px 2px;
+  border-radius: 0 4px 4px 0;
+  background: var(--control-hover);
   /* ⚠️ **`visibility`, NOT `display: none`** — but NOT for the reason this comment
    * used to give, and the correction matters because these comments are the
    * institutional memory.
@@ -1865,20 +1878,17 @@ mark[data-feed-match-current] {
 .scm-row:focus-within .scm-row-acts {
   visibility: visible;
 }
-.scm-row:hover .scm-row-stat,
-.scm-row:focus-within .scm-row-stat {
-  display: none;
+/* A selected row keeps its own colour under the pointer (it is set inline), so
+ * the verbs laid over it match that instead. */
+.scm-row[data-selected='true'] .scm-row-acts {
+  background: var(--rail-row-selected);
 }
-/* The numbers and the verbs occupy the same column, so the row does not change
- * width when they swap — which would make the whole list twitch as the pointer
- * crosses it. */
+/* The numbers stay where they are on hover: the verbs cover them. Removing them
+ * instead would give the name and the path their width back and reflow the row
+ * under the pointer. */
 .scm-row-rest {
-  display: grid;
-}
-.scm-row-rest > * {
-  grid-area: 1 / 1;
-  justify-self: end;
-  align-self: center;
+  display: flex;
+  align-items: center;
 }
 .scm-row:hover,
 .scm-row:focus-within {
