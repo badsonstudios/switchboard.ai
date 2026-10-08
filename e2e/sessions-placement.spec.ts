@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import path from 'path';
 import { launchApp, LaunchedApp, openSettings, closeSettings, tempProjectFolder } from './fixtures/app';
 
 // Where the sessions are listed (#1143): the rail down the left, or one strip
@@ -6,8 +7,8 @@ import { launchApp, LaunchedApp, openSettings, closeSettings, tempProjectFolder 
 // the real window the three doors (the title bar's switch, Ctrl+B and Settings)
 // move ONE thing, and that the choice is still there after a restart.
 //
-// It covers the frame only. The strip's groups, pills, menus and dragging each
-// arrive with their own spec.
+// It covers the frame and the groups. The strip's pills, menus and dragging
+// each arrive with their own tests.
 test.describe('sessions list placement', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
@@ -44,6 +45,47 @@ test.describe('sessions list placement', () => {
     await expect(rail).toBeVisible();
     await expect(lamps).toBeVisible();
     await expect(strip).toHaveCount(0);
+  });
+
+  test('a group is an entry on the strip, and opens a list of its sessions', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const { window } = a;
+    const name = path.basename(folder);
+
+    // Arranged in the rail, which is where this could already be done: make a
+    // group and put the one session in it.
+    await window.getByTitle('Create a persistent group').click();
+    await expect(window.getByText('New group')).toBeVisible();
+    await window.locator('.rail-row').first().click({ button: 'right' });
+    await window.getByRole('menuitemradio', { name: 'New group' }).click();
+    await expect(window.locator('[data-group-card] .rail-row')).toHaveCount(1);
+
+    await window.locator('[data-placement="top"]').click();
+    const strip = window.getByTestId('sessions-strip');
+    const entry = strip.locator('[data-strip-group]');
+    await expect(entry).toHaveCount(1);
+    await expect(entry.locator('[data-strip-group-name]')).toHaveText('New group');
+    await expect(entry.locator('[data-strip-group-count]')).toHaveText('1');
+    // the first session in the first group is Ctrl+1, here as in the rail
+    await expect(entry.locator('[data-strip-group-range]')).toHaveText('1');
+    // nothing is loose any more, so there is nothing the strip is not showing
+    await expect(strip.locator('[data-strip-empty]')).toHaveCount(0);
+
+    const list = window.locator('[data-strip-list]');
+    await expect(list).toHaveCount(0);
+    await entry.locator('[data-strip-group-open]').click();
+    await expect(list).toBeVisible();
+    await expect(list.locator('.rail-row')).toHaveCount(1);
+    await expect(list.locator('[data-rail-title]')).toHaveText(name);
+    // not clipped by the strip's sideways scroll: it hangs BELOW the strip
+    const stripBox = (await strip.boundingBox())!;
+    const listBox = (await list.boundingBox())!;
+    expect(listBox.y + listBox.height).toBeGreaterThan(stripBox.y + stripBox.height);
+
+    // going to the session is what the list is for, and it gets out of the way
+    await list.locator('[data-rail-open]').click();
+    await expect(list).toHaveCount(0);
   });
 
   test('the lit half hides the strip, and Ctrl+B brings it back where it was', async () => {

@@ -50,6 +50,15 @@ export function computeAutoGroups(sessions: AutoGroupable[]): AutoGroup[] {
     .map(([key, memberIds]) => ({ key, memberIds }));
 }
 
+/**
+ * What an automatic group is called: its folder's own name, which is what
+ * makes an emergent group legible. One function because the rail's card and
+ * the strip's entry (#1143) both name the same group and must agree.
+ */
+export function autoGroupName(key: string): string {
+  return key.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? key;
+}
+
 // The rail's VISUAL order (P2-E9-01): persistent groups in their stored order,
 // each followed by its members, then the emergent auto-groups and their
 // members, then everything loose. "Jump to session N" (Ctrl+1..9) counts

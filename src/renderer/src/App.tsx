@@ -112,7 +112,6 @@ import type {
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
-import { needCount } from './lib/rail-view';
 import { interpretPushAnswer } from './lib/push-answer';
 import {
   cycleGlobal,
@@ -405,6 +404,10 @@ export function App(): React.JSX.Element {
   // stable identity (recomputed only when sessions/groups change), which is
   // what useSyncExternalStore requires.
   const railFlat = useSyncExternalStore(subscribeStore, () => sessionStore.getRailOrder().flat);
+  // The whole derivation, for the strip (#1143): which sessions each group
+  // holds, which are loose, and the order `Ctrl+1..9` counts in — one object,
+  // so the strip draws from exactly what the keyboard jumps by.
+  const railOrderNow = useSyncExternalStore(subscribeStore, () => sessionStore.getRailOrder());
   const urgency = useSyncExternalStore(subscribeStore, () => sessionStore.getState().urgency);
   const expireUrgency = React.useCallback(() => sessionStore.expireUrgency(), []);
   // #320: the lamps the strip just PAINTED lit — that is where their 1.5s beat
@@ -2264,6 +2267,17 @@ export function App(): React.JSX.Element {
   // refuses a change, so a refusal is a value to read rather than a rejection
   // nobody is listening for. `groupChangeLanded` reads it; the refresh runs
   // either way, which is what makes a refused edit revert to the truth.
+  // …and so are these two: renaming a session and opening one inside a group
+  // are the same gestures from a row in the rail and a row in a strip list.
+  const renameCard = (cardId: string, title: string): void => {
+    void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());
+  };
+  const openInGroup = (gid: string): void => {
+    void bridge.sessions?.pickFolder?.().then((picked) => {
+      const folder = answered(picked); // #440: a refusal is truthy
+      if (folder) void grid.current?.addSessionCard(folder, gid);
+    });
+  };
   const createGroup = (name: string): void => {
     void bridge.groups?.create?.({ name }).then((made) => {
       // `answered` (#650): `groupChangeLanded` calls a change refused
@@ -2693,11 +2707,17 @@ export function App(): React.JSX.Element {
           row leaves in the change that lands what replaces it. */}
       <SessionsStrip
         shown={sessionsPlacement === 'top' && !railHidden}
-        sessionCount={sessions.length}
-        groupCount={groups.length}
-        needCount={needCount(sessions, needing)}
+        groups={groups}
+        order={railOrderNow}
+        needing={needing}
+        pinned={pinned}
+        selectedId={activeCard}
+        labelLines={LABEL_LINES[taskLabelSize]}
         onCreateGroup={createGroup}
         onNewSession={() => void grid.current?.newSession()}
+        onOpenInGroup={openInGroup}
+        onFocus={(cardId) => focusSession(cardId)}
+        onClose={(cardId) => grid.current?.closeCard(cardId)}
       />
       {/* §5.8's batch prompt (P2-E9-11). LAST in the stack of bands, directly
           above the workspace, on purpose: it is the only one of them that comes
@@ -2737,9 +2757,7 @@ export function App(): React.JSX.Element {
             // #877 — the shared table turns the owner's chosen size into a line
             // count, so "full" cannot mean three lines here and two on a card.
             labelLines={LABEL_LINES[taskLabelSize]}
-            onRename={(cardId, title) => {
-              void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());
-            }}
+            onRename={renameCard}
             onFocus={(cardId) => focusSession(cardId)}
             onDiff={(s) => {
               if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
@@ -2785,12 +2803,7 @@ export function App(): React.JSX.Element {
                 void refreshSessions();
               });
             }}
-            onOpenInGroup={(gid) => {
-              void bridge.sessions?.pickFolder?.().then((picked) => {
-                const folder = answered(picked); // #440: a refusal is truthy
-                if (folder) void grid.current?.addSessionCard(folder, gid);
-              });
-            }}
+            onOpenInGroup={openInGroup}
             onMoveGroup={(id, beforeId) => {
               // #1144. The order lives in main; the rail redraws from what
               // main answers, so a refused move simply leaves it as it was.

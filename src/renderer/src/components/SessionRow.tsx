@@ -103,6 +103,15 @@ export function SessionRow(props: {
   onDraftChange: (draft: string) => void;
   /** draw the insertion line on this side of the row (#559) */
   dropEdge?: 'before' | 'after';
+  /**
+   * This session's place in the jump order — the N of `Ctrl+N` (#1143).
+   *
+   * Only the strip's drop-down lists pass it. The rail never has: there the
+   * position is the row's place on screen, where you can count it. A list that
+   * opens from a group entry has no such place — the entry shows a range and
+   * the rows say which is which.
+   */
+  ordinal?: number;
   onFocus: () => void;
   onClose: () => void;
   /** a non-blank, trimmed name; the edit ends either way */
@@ -151,7 +160,9 @@ export function SessionRow(props: {
       // by the e2e — an insertion line is a 2px bar and nothing else on the
       // page can be asked whether it is in the right place.
       data-drop-edge={props.dropEdge}
-      draggable
+      // only where the list has said what a drag means: a row that can be
+      // picked up and dropped nowhere is a gesture that goes nowhere
+      draggable={props.onDragStart !== undefined}
       onDragStart={props.onDragStart}
       onDragOver={props.onDragOver}
       onDrop={props.onDrop}
@@ -331,6 +342,28 @@ export function SessionRow(props: {
                 row button's accessible name, where nothing is lost to a
                 screen reader. */}
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, inlineSize: '100%' }}>
+              {props.ordinal !== undefined && (
+                // Decoration, like every other mark on the row: the chord is a
+                // fact about the keyboard, not part of the session's name.
+                <span
+                  aria-hidden
+                  data-rail-ordinal={props.ordinal}
+                  style={{
+                    flexShrink: 0,
+                    minInlineSize: 12,
+                    paddingInline: 3,
+                    borderRadius: 3,
+                    textAlign: 'center',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9,
+                    lineHeight: 1.4,
+                    color: 'var(--muted)',
+                    background: 'var(--chip)',
+                  }}
+                >
+                  {props.ordinal}
+                </span>
+              )}
               <span
                 // A NAMED hook, because the structural one broke here (#877).
                 // Four e2e specs read the rail's order through
