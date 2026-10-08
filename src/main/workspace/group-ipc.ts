@@ -142,6 +142,29 @@ export function registerGroupIpc(store: WorkspaceStore, broker: IpcBroker, log: 
     }
   );
 
+  /**
+   * Reorder the groups (#1144): put `id` just before `beforeId`, or last.
+   *
+   * Answers the NEW ORDER as a list of ids, or `null` when refused — the same
+   * "a result, not a silent swallow" shape as create and update, so the
+   * renderer can tell a move that landed from one that did not.
+   */
+  broker.handle('groups:move', (_e, id: string, beforeId: string | null) => {
+    if (typeof id !== 'string') return refuse('groups:move', 'id must be a string');
+    if (beforeId !== null && typeof beforeId !== 'string')
+      return refuse('groups:move', 'beforeId must be a string or null', { groupId: id });
+    if (!store.moveGroup(id, beforeId)) {
+      // Not shouted about, for the reason `groups:update` gives: a group
+      // deleted elsewhere while the menu was open lands here.
+      log.debug('groups:move named a group that is not there — ignored', {
+        groupId: id,
+        beforeId,
+      });
+      return null;
+    }
+    return store.listGroups().map((g) => g.id);
+  });
+
   broker.handle('groups:delete', (_e, id: string) => {
     if (typeof id !== 'string') {
       refuse('groups:delete', 'id must be a string');

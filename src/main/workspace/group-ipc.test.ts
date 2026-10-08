@@ -73,6 +73,16 @@ function harness(prior: PersistedGroup[] = []): Harness {
       else groups.push({ ...g });
     },
     removeGroup: (id: string) => removed.push(id),
+    // the real rule lives in `store.test.ts`; this is enough of it for the
+    // channel's own contract (what it validates, what it answers)
+    moveGroup: (id: string, beforeId: string | null) => {
+      const from = groups.findIndex((g) => g.id === id);
+      if (from < 0 || beforeId === id) return false;
+      if (beforeId !== null && !groups.some((g) => g.id === beforeId)) return false;
+      const [g] = groups.splice(from, 1);
+      groups.splice(beforeId === null ? groups.length : groups.findIndex((x) => x.id === beforeId), 0, g);
+      return true;
+    },
     setSessionGroup: (cardId: string, groupId: string | null) => moved.push({ cardId, groupId }),
   } as unknown as WorkspaceStore;
   const record =
@@ -266,5 +276,42 @@ describe('a refused group mutation answers null and says why — it never throws
     expect(h.call('groups:update', 'gone', { name: 'x' })).toBeNull();
     expect(h.warnings).toEqual([]);
     expect(h.logs.filter((l) => l.level === 'debug')).toHaveLength(1);
+  });
+});
+
+describe('groups:move reorders, and says whether it did (#1144)', () => {
+  const three: PersistedGroup[] = [
+    { id: 'a', name: 'A', color: '#4a90d9' },
+    { id: 'b', name: 'B', color: '#4a90d9' },
+    { id: 'c', name: 'C', color: '#4a90d9' },
+  ];
+
+  // the owner's literal example: take the bottom group and make it second
+  it('puts the last group second, and answers the new order', () => {
+    const h = harness(three);
+    expect(h.call('groups:move', 'c', 'b')).toEqual(['a', 'c', 'b']);
+    expect(h.groups.map((g) => g.id)).toEqual(['a', 'c', 'b']);
+  });
+
+  it('null means last', () => {
+    const h = harness(three);
+    expect(h.call('groups:move', 'a', null)).toEqual(['b', 'c', 'a']);
+  });
+
+  it('answers null, quietly, for a group or a neighbour that is not there', () => {
+    const h = harness(three);
+    expect(h.call('groups:move', 'nope', 'a')).toBeNull();
+    expect(h.call('groups:move', 'a', 'nope')).toBeNull();
+    expect(h.groups.map((g) => g.id)).toEqual(['a', 'b', 'c']);
+    expect(h.warnings).toEqual([]);
+  });
+
+  it('refuses arguments of the wrong shape, out loud', () => {
+    const h = harness(three);
+    expect(h.call('groups:move', 42, 'a')).toBeNull();
+    expect(h.call('groups:move', 'a', 42)).toBeNull();
+    expect(h.call('groups:move', 'a', undefined)).toBeNull();
+    expect(h.warnings).toHaveLength(3);
+    expect(h.groups.map((g) => g.id)).toEqual(['a', 'b', 'c']);
   });
 });

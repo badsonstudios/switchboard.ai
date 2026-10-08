@@ -86,6 +86,16 @@ a card with its own color and a **colored dot** beside its name.
   see [Getting out of the way by itself](#getting-out-of-the-way-by-itself).
 - **Delete:** the **✕** on the header. The sessions inside are kept — they just
   become ungrouped.
+- **Change the order of your groups:** right-click a group's header and choose
+  **Move group up** or **Move group down**. Or drag the group by its header:
+  a line appears between two groups to show where it will land, above or below
+  the one you are over. A folded group moves the same way as an open one. The
+  order is remembered when you restart, and the sessions inside a group are not
+  touched by moving it. From the keyboard, Tab to the group's name and press the
+  Menu key (or Shift+F10) for the same two choices.
+
+  Only groups you made can be moved. [Automatic groups](#automatic-groups) and
+  **Ungrouped** always sit below them.
 
 ## Automatic groups
 

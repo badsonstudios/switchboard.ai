@@ -2727,6 +2727,14 @@ export function App(): React.JSX.Element {
                 if (folder) void grid.current?.addSessionCard(folder, gid);
               });
             }}
+            onMoveGroup={(id, beforeId) => {
+              // #1144. The order lives in main; the rail redraws from what
+              // main answers, so a refused move simply leaves it as it was.
+              void bridge.groups?.move?.(id, beforeId).then((order) => {
+                groupChangeLanded('move', answered(order)); // #650, as above
+                return refreshGroups();
+              });
+            }}
             onDeleteGroup={(id) => {
               // members fall back to ungrouped, so the session list changes too
               void bridge.groups?.remove?.(id).then(() => {

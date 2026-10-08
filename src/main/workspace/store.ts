@@ -1261,6 +1261,37 @@ export class WorkspaceStore {
     this.saveSoon();
   }
 
+  /**
+   * Move a group to sit just BEFORE another one, or to the end (#1144).
+   *
+   * The order of `state.groups` IS the order the rail draws them in — there is
+   * no separate index to keep in step, which is why this is a splice and not a
+   * field. `beforeId: null` means "last".
+   *
+   * "Before this group" rather than "to index N" because an index means two
+   * different things depending on whether the moved group has been taken out
+   * yet, and the caller is a renderer whose copy of the list may be a refresh
+   * behind. A neighbour's id cannot be off by one.
+   *
+   * Returns false, and changes nothing, for a group that does not exist, a
+   * neighbour that does not exist, or a group moved before itself. Members are
+   * untouched: membership is `groupId` on the session, not position here.
+   */
+  moveGroup(id: string, beforeId: string | null): boolean {
+    const from = this.state.groups.findIndex((g) => g.id === id);
+    if (from < 0 || beforeId === id) return false;
+    if (beforeId !== null && !this.state.groups.some((g) => g.id === beforeId)) return false;
+    const next = this.state.groups.slice();
+    const [moved] = next.splice(from, 1);
+    const to = beforeId === null ? next.length : next.findIndex((g) => g.id === beforeId);
+    next.splice(to, 0, moved);
+    // a move to where it already is writes nothing
+    if (next.every((g, i) => g === this.state.groups[i])) return true;
+    this.state.groups = next;
+    this.saveSoon();
+    return true;
+  }
+
   /** Delete a group; its members fall back to ungrouped (empty ≠ gone, delete = gone). */
   removeGroup(id: string): void {
     this.state.groups = this.state.groups.filter((g) => g.id !== id);

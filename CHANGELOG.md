@@ -98,6 +98,9 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Groups in the Sessions list can be put in the order you want.** Right-click
+  a group's header for **Move group up** and **Move group down**, or drag the
+  group by its header to a new place. The order is remembered.
 - **The Changes tab's file list can be made wider.** Drag its right-hand edge
   to give long file names more room. The width applies to every session and is
   remembered; double-click the edge to reset it.
