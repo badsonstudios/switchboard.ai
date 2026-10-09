@@ -21,6 +21,7 @@ import {
   type FeedCodeLabels,
 } from '../lib/feed-code';
 import { FEED_COPY_ATTR, FEED_EXPANDER_ATTR } from '../lib/feed-keys';
+import { ToolIcon } from '../components/ToolIcon';
 import { useRevealed } from '../lib/feed-reveal';
 import { FeedBlockRendererContribution, manifestFor } from './contributions';
 import { decorateFeedMarkdown } from '../lib/feed-markdown';
@@ -267,7 +268,10 @@ function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
           controls={open ? diffId : undefined}
           style={{ display: 'flex', gap: 6, alignItems: 'baseline', inlineSize: '100%' }}
         >
-          <span style={{ fontWeight: 700, color: 'var(--text)' }}>{b.tool?.name}</span>
+          <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+            <span>{b.tool?.name}</span>
+            <ToolIcon name={b.tool?.name} />
+          </span>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minInlineSize: 0 }}>
             {b.tool?.filePath ?? b.tool?.summary}
           </span>
@@ -394,7 +398,10 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
           controls={hasOut ? `${inId} ${outId}` : inId}
           style={{ display: 'flex', gap: 6, alignItems: 'baseline', marginBlockEnd: 2, inlineSize: '100%' }}
         >
-          <span style={{ fontWeight: 700, color: 'var(--text)' }}>{b.tool?.name}</span>
+          <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+            <span>{b.tool?.name}</span>
+            <ToolIcon name={b.tool?.name} />
+          </span>
           <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{b.tool?.description ?? ''}</span>
         </FeedExpander>
         {section(inId, t('feedView.in'), b.tool?.summary ?? '', inOpen, () => setInExpanded(!inOpen))}
@@ -414,7 +421,10 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
     // cursor promising one would be a lie.
     <ToolBox kind="todos">
       <div style={{ fontSize: 11 }}>
-        <div style={{ fontWeight: 700, color: 'var(--text)', marginBlockEnd: 2 }}>{t('feedView.updateTodos')}</div>
+        <div style={{ fontWeight: 700, color: 'var(--text)', marginBlockEnd: 2, whiteSpace: 'nowrap' }}>
+          <span>{t('feedView.updateTodos')}</span>
+          <ToolIcon kind="todos" />
+        </div>
         {(b.todos ?? []).map((td, i) => (
           <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline', color: 'var(--muted)' }}>
             {/* -ink on both arms (#246): a checklist marker is 10px TEXT on the
@@ -581,7 +591,22 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
           most-repeated status-coloured word in the app after the pill. -ink
           because the hue is 2.33:1 on daylight's tool box and 4.52:1 on
           nordic's; the ink is 5.47:1 and 5.75:1 (#246). */}
-      <span style={{ color: 'var(--status-working-ink)', fontWeight: 600 }}>{b.tool?.name}</span>
+      <span style={{ color: 'var(--status-working-ink)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+        {/* THE NAME KEEPS A SPAN OF ITS OWN, and that is not tidiness (found in
+            review). Find-in-conversation only paints a match on a text node
+            that is its parent's ONLY child (`lib/feed-marks.ts`); with the
+            picture as a sibling of the bare text, searching for "Grep"
+            counted the name and highlighted nothing. `nowrap` on the outer
+            span keeps the picture on the name's line when a long summary
+            squeezes the row. */}
+        <span>{b.tool?.name}</span>
+        {/* the picture for this kind of tool, AFTER the name as the owner
+            asked (#757), and INSIDE the name's own span: that is what gives
+            it the name's ink. Beside the span it took the row's, which is a
+            different grey in the shell and edit blocks (caught by
+            e2e/tool-icons.spec.ts). Shape says which tool, never colour. */}
+        <ToolIcon name={b.tool?.name} />
+      </span>
       <span
         style={{
           overflow: 'hidden',

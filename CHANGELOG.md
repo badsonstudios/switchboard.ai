@@ -133,6 +133,12 @@ on the floor, and say so in your PR.
   moment you move or press anything. A session that is not running shows
   nothing.
 
+- **A small picture after each tool name in a conversation.** A robot for
+  a helper agent, a speech bubble for a question, a page for reading a
+  file, a magnifying glass for a search, a terminal for a command, a pencil
+  for an edit, and so on. You can tell what kind of step a box is by its
+  shape, without reading the name.
+
 ### Changed
 
 - **A new session shows which model it is on straight away.** The button

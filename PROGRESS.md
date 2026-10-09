@@ -53,10 +53,14 @@
 >    diff tab just closes. The only closable tabs are the dockview ones
 >    (sessions, documents, diffs); the card's inner Session / Changes /
 >    Files / History tabs have no ✕ and are untouched.
-> 4. **#631 — hover a session's tab or row to see its last prompt.
->    ← IN FLIGHT**, branch `feature/631-last-prompt-hover`. *This line
->    rides in that PR: if `main` has `e2e/last-prompt-hover.spec.ts`, it
->    has landed and the next item is #757.* No new source: main already
+> 4. **#631 — hover a session's tab or row to see its last prompt. DONE
+>    2026-10-09, PR #1185 (`0e037119`), merged, NOT released.** One CI
+>    re-run: an unrelated Windows timing flake in `watcher.test.ts`, filed
+>    as **#1186**, green on the re-run. The
+>    review found the first cut's premise wrong (a `user` block is not
+>    always typed by the user: slash-command markup, the interrupt marker,
+>    the compaction summary, a message from another session); all handled
+>    in `last-prompt.ts`, which now says so. No new source: main already
 >    holds each live session's blocks, and `transcripts:lastPrompt` picks
 >    the last `user` block out of them on demand (context the app
 >    attached is cut out; a subagent's prompt is skipped). ONE component
@@ -64,7 +68,13 @@
 >    the tab only carry `data-last-prompt-for`. **Choices flagged in the
 >    tracker:** a session that is not running shows nothing; popped-out
 >    windows' tabs are not covered.
-> 5. **#757 — a small icon beside each tool name in the conversation.**
+> 5. **#757 — a small icon beside each tool name in the conversation.
+>    ← IN FLIGHT**, branch `feature/757-tool-icons`. *This line rides in
+>    that PR: if `main` has `e2e/tool-icons.spec.ts`, it has landed and the
+>    next item is #695.* A second, finer classification beside
+>    `toolCategory` (`shared/tool-icon.ts`, ten kinds, always a fallback);
+>    ten inline SVGs in `currentColor`, placed INSIDE the name's element so
+>    they take its ink. Drawn, not typed glyphs: glyphs differ by machine.
 >    Independent review before pushing.
 > 6. **#695 — the card's "⋯" menu is cut off on narrow splits.**
 > 7. **#1166 — an empty workspace with the list hidden says nothing about

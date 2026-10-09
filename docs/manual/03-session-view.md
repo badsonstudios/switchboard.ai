@@ -139,6 +139,27 @@ Two things about that are worth knowing, because both are deliberate:
   waits. That's on purpose: copying a command that is still half-written would
   put half a command on your clipboard with nothing to tell you so.
 
+### The small picture after each tool name
+
+Every box for something Claude did has a small picture right after the tool's
+name, so you can tell what kind of step it was by its shape, without reading:
+
+| Picture | What it marks |
+|---|---|
+| A little robot | Claude handed work to a helper (an agent) |
+| A speech bubble with a question mark | Claude asked you a question |
+| A page | It read a file |
+| A magnifying glass | It searched (for files, or for text in them) |
+| A terminal window | It ran a command (the same picture for Bash and PowerShell) |
+| A pencil | It edited or wrote a file |
+| A ticked list | It updated its to-do list |
+| A globe | It fetched a web page or searched the web |
+| A plug | It used a tool from a connected server (an MCP tool) |
+| A diamond | Any other tool |
+
+The pictures are drawn in the same colour as the name beside them. The colour
+tells you nothing extra; the shape does.
+
 ### Expanding a box
 
 **Click anywhere on a box to open or close it.** You don't have to hit the
