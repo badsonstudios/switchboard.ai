@@ -179,4 +179,59 @@ test.describe('how a working session looks (#718)', () => {
     w = a.window;
     await expect(w.locator('html')).toHaveAttribute('data-working-look', 'bars', { timeout: 25_000 });
   });
+
+  test('a CLOSED group on the strip shows that a session inside it is working (#1179)', async () => {
+    // The owner: "I don't know if something's running in a group currently if
+    // my session window's at the top and the group is closed."
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const title = path.basename(folder);
+    await expect(row(w, title)).toBeVisible({ timeout: 25_000 });
+
+    // a group with the one session in it, arranged in the left list
+    await w.getByTitle('Create a persistent group').click();
+    await expect(w.getByText('New group')).toBeVisible();
+    await w.locator('.rail-row').first().click({ button: 'right' });
+    await w.getByRole('menuitemradio', { name: 'New group' }).click();
+    await expect(w.locator('[data-group-card] .rail-row')).toHaveCount(1);
+
+    const post = await hookPoster(a, 1);
+    await post(title, { hook_event_name: 'Stop' });
+
+    await w.locator('[data-placement="top"]').click();
+    const group = w.getByTestId('sessions-strip').locator('[data-strip-group]');
+    await expect(group).toHaveCount(1);
+    // finished and waiting for a look: the group needs you, and is NOT marked working
+    await expect(group).toHaveAttribute('data-needs-you', 'true', { timeout: 15_000 });
+    await expect(group).not.toHaveAttribute('data-session-status', 'working');
+    const quiet = await group.evaluate((el) => getComputedStyle(el).backgroundColor);
+
+    // now it is working. The group is closed: nothing inside it is on screen.
+    await post(title, { hook_event_name: 'UserPromptSubmit' });
+    await expect(group).toHaveAttribute('data-session-status', 'working', { timeout: 15_000 });
+    await expect(w.locator('[data-strip-list]')).toHaveCount(0);
+    await expect(group.locator('[data-strip-group-summary]')).toHaveText('1 working');
+    await expect(group.locator('.status-ring')).toBeVisible();
+    // painted by the default look: filled in the group's colour, name bold
+    await expect
+      .poll(() => group.evaluate((el) => getComputedStyle(el).backgroundColor))
+      .not.toBe(quiet);
+    expect(
+      await group.locator('[data-strip-group-name]').evaluate((el) => getComputedStyle(el).fontWeight)
+    ).toBe('700');
+
+    // and it follows the look chosen in Settings, like a session does
+    await choose(w, 'shimmer');
+    expect(
+      await group.evaluate((el) => getComputedStyle(el, '::after').animationName)
+    ).toBe('sb-work-sweep');
+    await choose(w, 'bars');
+    await expect(group.locator('.status-bars')).toBeVisible();
+    await expect(group.locator('.status-ring')).toBeHidden();
+
+    // when it finishes, the mark goes
+    await post(title, { hook_event_name: 'Stop' });
+    await expect(group).not.toHaveAttribute('data-session-status', 'working', { timeout: 15_000 });
+  });
 });

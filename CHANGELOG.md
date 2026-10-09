@@ -96,6 +96,15 @@ on the floor, and say so in your PR.
 
 ## 0.8.118 — unreleased
 
+### Added
+
+- **With the sessions across the top, a closed group shows when something
+  inside it is working.** It says "2 working" where it said "calm", gets a
+  spinner, and is marked the way a working session is (whichever look you
+  chose in Settings), in the group's own colour. You no longer have to open
+  a group to find out. A group with a session that needs you says that
+  instead.
+
 ## 0.8.117 — 2026-10-09
 
 ### Added

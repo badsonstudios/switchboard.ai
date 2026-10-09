@@ -1712,14 +1712,14 @@ mark[data-feed-match-current] {
 /* ---- 1 · BREATHING GLOW: an outline in the session's colour, and a soft glow
  * that fades in and out. The glow is a layer whose OPACITY moves; the shadow
  * itself never changes, so nothing is repainted. */
-[data-working-look='glow'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+[data-working-look='glow'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) {
   border-color: var(--work-accent) !important;
 }
 [data-working-look='glow'] .rail-row[data-session-status='working']:not([data-needs-you='true']) {
   outline: 1px solid var(--work-accent);
   outline-offset: -1px;
 }
-[data-working-look='glow'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+[data-working-look='glow'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true'])::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -1731,11 +1731,11 @@ mark[data-feed-match-current] {
 
 /* ---- 2 · MARQUEE SWEEP: a bright light running round the edge, and a faint
  * tint. The owner's first sketch. */
-[data-working-look='marquee'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+[data-working-look='marquee'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) {
   background: color-mix(in srgb, var(--work-accent) 8%, var(--rail-card)) !important;
   border-color: color-mix(in srgb, var(--work-accent) 35%, transparent) !important;
 }
-[data-working-look='marquee'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+[data-working-look='marquee'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true'])::after {
   content: '';
   position: absolute;
   inset: -1px;
@@ -1761,36 +1761,36 @@ mark[data-feed-match-current] {
 /* ---- 3 · BRIGHTER, A BIGGER SPINNER, AND THE WORD. THE DEFAULT. The row
  * filled with the session's colour, the name bold, the ring larger, the state
  * in blue. No moving frame at all. */
-[data-working-look='fill'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+[data-working-look='fill'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) {
   background: color-mix(in srgb, var(--work-accent) 20%, var(--rail-card)) !important;
   border-color: color-mix(in srgb, var(--work-accent) 70%, var(--group-frame)) !important;
 }
-[data-working-look='fill'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) [data-accent-bar] {
+[data-working-look='fill'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) [data-accent-bar] {
   inline-size: 4px !important;
   background: var(--work-accent) !important;
 }
-[data-working-look='fill'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) :is([data-rail-title], [data-strip-pill-title]) {
+[data-working-look='fill'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) :is([data-rail-title], [data-strip-pill-title], [data-strip-group-name]) {
   font-weight: 700 !important;
 }
-[data-working-look='fill'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) .status-ring {
+[data-working-look='fill'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) .status-ring {
   inline-size: 17px !important;
   block-size: 17px !important;
   border-width: 2.4px !important;
 }
-:is([data-working-look='fill'], [data-working-look='strip']) :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) :is([data-rail-state], [data-strip-pill-state]) {
+:is([data-working-look='fill'], [data-working-look='strip']) :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) :is([data-rail-state], [data-strip-pill-state], [data-strip-group-summary]) {
   color: var(--status-working-ink) !important;
 }
 
 /* ---- 4 · SHIMMER: a band of light sweeping across. `overflow: clip` keeps the
  * band inside the row; the clip MARGIN is so the line a drag draws just
  * outside a row (2px) is not cut off with it. */
-[data-working-look='shimmer'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+[data-working-look='shimmer'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) {
   overflow: clip;
   overflow-clip-margin: 3px;
   background: color-mix(in srgb, var(--work-accent) 10%, var(--rail-card)) !important;
   border-color: color-mix(in srgb, var(--work-accent) 55%, var(--group-frame)) !important;
 }
-[data-working-look='shimmer'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+[data-working-look='shimmer'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true'])::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -1805,11 +1805,11 @@ mark[data-feed-match-current] {
 }
 
 /* ---- 5 · PROGRESS STRIP: a thin bar running along the bottom edge. */
-[data-working-look='strip'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+[data-working-look='strip'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) {
   overflow: clip;
   overflow-clip-margin: 3px;
 }
-[data-working-look='strip'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+[data-working-look='strip'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true'])::after {
   content: '';
   position: absolute;
   inset-inline-start: 0;
@@ -1822,18 +1822,39 @@ mark[data-feed-match-current] {
 }
 
 /* ---- 6 · DANCING BARS in place of the spinner, and a steady outline. */
-[data-working-look='bars'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+[data-working-look='bars'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) {
   border-color: var(--work-accent) !important;
 }
 [data-working-look='bars'] .rail-row[data-session-status='working']:not([data-needs-you='true']) {
   outline: 1px solid color-mix(in srgb, var(--work-accent) 70%, transparent);
   outline-offset: -1px;
 }
-[data-working-look='bars'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) .status-ring {
+[data-working-look='bars'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) .status-ring {
   display: none !important;
 }
-[data-working-look='bars'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) .status-bars {
+[data-working-look='bars'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) .status-bars {
   display: flex;
+}
+
+/* ---- A GROUP ON THE STRIP (#1179) is painted by every rule above: it carries
+ * `data-session-status='working'` while a session inside it is working and
+ * none is waiting for you, and its `--work-accent` is the group's own colour.
+ * Three things about a group are different from a pill, and are put right
+ * here rather than by a second copy of the six looks:
+ *   - its box clips what is inside it (the two buttons share its rounded
+ *     corners), so a glow OUTSIDE it would be cut off: the glow is drawn
+ *     inside instead, and the marquee's ring sits on the edge, not past it;
+ *   - a session being dragged over it turns its edge blue to say "this will
+ *     land here", and a look's `border-color !important` must not hide that;
+ *   - it has no edge bar. */
+[data-working-look='glow'] [data-strip-group][data-session-status='working']:not([data-needs-you='true'])::after {
+  box-shadow: inset 0 0 9px 1px color-mix(in srgb, var(--work-accent) 70%, transparent);
+}
+[data-working-look='marquee'] [data-strip-group][data-session-status='working']:not([data-needs-you='true'])::after {
+  inset: 0;
+}
+[data-working-look] [data-strip-group][data-drop-into='true'][data-session-status='working']:not([data-needs-you='true']) {
+  border-color: var(--status-working-ink) !important;
 }
 
 /* ---- THE ONE YOU HAVE OPEN, under every look (found in review). A row shows
@@ -1851,22 +1872,22 @@ mark[data-feed-match-current] {
  * outline, the tint and the fill stay (they are what says "working"); what
  * moved becomes a steady mark in the same place. */
 @media (prefers-reduced-motion: reduce) {
-  :is(.rail-row, [data-strip-pill])[data-session-status='working']::after,
+  :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']::after,
   .status-bars i {
     animation: none !important;
   }
-  [data-working-look='glow'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+  [data-working-look='glow'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true'])::after {
     opacity: 0.6;
   }
-  [data-working-look='marquee'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+  [data-working-look='marquee'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true'])::after {
     background: var(--work-accent);
   }
-  [data-working-look='shimmer'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+  [data-working-look='shimmer'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true'])::after {
     transform: none;
     border-radius: inherit;
     background: color-mix(in srgb, var(--work-accent) 14%, transparent);
   }
-  [data-working-look='strip'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+  [data-working-look='strip'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true'])::after {
     /* inside the rounded corners, not across them */
     inset-inline: 7px;
     inline-size: auto;

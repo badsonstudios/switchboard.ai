@@ -206,6 +206,8 @@ Things that are true of all six:
 - **They use the session's own colour**, so two busy sessions do not blur into
   one. No session is yellow or orange, so a busy session never looks like one
   that needs you.
+- **A group on the strip is marked the same way** while a session inside it is
+  working, in the group's colour, so you can tell without opening it.
 - **A session that needs you looks the same whichever you pick.** These only
   change how a *working* session looks, and it stays the quieter of the two.
 - **If your system is set to reduce motion**, the moving ones hold still: the

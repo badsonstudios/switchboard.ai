@@ -144,6 +144,14 @@ in a small bubble means that many messages from other sessions are waiting in
 it; on a group the same thing reads **· 3 waiting**. Waiting messages are
 separate from **need you** and are not counted in it.
 
+**A group tells you when something inside it is working**, without your having
+to open it. Where it would say **calm** it says **2 working**, it gets a
+spinner, and the whole box is marked the way a working session is, in the
+group's own colour. Which way that is, is your choice:
+[How a working session looks](10-settings.md#how-a-working-session-looks).
+If any session in the group needs you, the group says that instead, in yellow,
+and is not marked as working: needing you always wins.
+
 **When there are too many to fit**, the strip scrolls sideways: use the mouse
 wheel over it, or the cell that appears at each end. A cell turns **amber and
 shows a number** when that many sessions that need you are off that end; it
