@@ -212,6 +212,15 @@ from the keyboard: see the end of the next section.
   pills. A pinned session stays in front: a pill dropped ahead of it lands
   just after it. A session that another session started moves with the one
   that started it.
+- **Drag a session up or down inside its group.** Open the group's list and
+  drag a row over another row: the top half of a row means "above it", the
+  bottom half "below it", and a line shows where it will land. The list
+  stays open while you do it, so you can move several. A pinned session
+  stays first.
+- **Drag a row from an open list onto another group** to move the session
+  to that group. (If the group you want is off the end of the strip and you
+  hold the row over the end cell to scroll to it, the list closes; keep
+  holding, and drop on the group when it comes into view.)
 - **Drag a pill onto a group** to put the session in that group. The group's
   edge lights up while you hold it there. Automatic groups do not take a
   session this way, and do not light up. You can drag a session's tab up from
@@ -226,8 +235,10 @@ dragging over the cell at that end and the strip scrolls along.
 The order is the same one the list on the left uses. Put your groups in an
 order here and that is their order there, and `Ctrl+1` to `Ctrl+9` follow it.
 
-To take a session **out** of a group, use **Move to group ▸ No group** on its
-right-click menu; a row in an open list does not drag.
+To take a session **out** of a group altogether, use **Move to group ▸ No
+group** on its right-click menu. (A row can be dragged within its list and
+onto another group, but there is nowhere on the strip to drop it that means
+"no group".)
 
 **Without the mouse:** `Ctrl+Alt+↑` and `Ctrl+Alt+↓` move the session you are
 in earlier or later, as they do with the list on the left. To move a group,

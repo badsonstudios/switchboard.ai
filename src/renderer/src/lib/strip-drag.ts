@@ -22,6 +22,16 @@ export function edgeAtX(
 }
 
 /**
+ * The same question for a list that runs DOWN the page (a group's open list,
+ * #1178): the top half of a row is "before" it, the bottom half "after". No
+ * direction to mirror — a list reads top to bottom in every writing mode this
+ * app lays out.
+ */
+export function edgeAtY(box: { top: number; bottom: number }, clientY: number): 'before' | 'after' {
+  return clientY < (box.top + box.bottom) / 2 ? 'before' : 'after';
+}
+
+/**
  * The position a dragged item takes among the OTHERS when dropped on that side
  * of `targetId` — the index `planReorder` asks for.
  *

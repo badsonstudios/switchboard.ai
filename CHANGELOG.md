@@ -98,6 +98,13 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **With the sessions across the top, you can drag a session up or down
+  inside its group.** Open the group's list and drag a row above or below
+  another; a line shows where it will land. Before, a row in that list did
+  not drag at all, and reordering a group meant switching the list to the
+  left and back. A row can also be dragged onto another group to move it
+  there.
+
 - **With the sessions across the top, a closed group shows when something
   inside it is working.** It says "2 working" where it said "calm", gets a
   spinner, and is marked the way a working session is (whichever look you
