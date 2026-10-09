@@ -69,10 +69,10 @@ export function modelLabel(m: CliModel): string {
  * the first resolved match — which is `default`, the right answer for a session
  * that never chose.
  *
- * `null` current means "not known yet" and must tick NOTHING — the CLI reports
- * the running model only on `system:init`, once per TURN, so a session that has
- * not replied has genuinely never said. Ticking `default` there would be
- * inventing the one fact these surfaces exist to report.
+ * `null` current means "not known yet" and must tick NOTHING. It is rarer since
+ * #1174 (a card asks its session when it appears), but a session that gave no
+ * answer and has not replied has genuinely never said. Ticking `default` there
+ * would be inventing the one fact these surfaces exist to report.
  */
 export function currentIndex(models: readonly CliModel[], current: string | null): number {
   if (!current) return -1;

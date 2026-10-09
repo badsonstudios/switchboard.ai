@@ -130,6 +130,7 @@ function harness(
     /** make the control channel REFUSE a `set_model`, so the no-news-on-refusal
      *  half of #746's push is assertable rather than assumed */
     setModelVerdict?: unknown;
+    effortVerdict?: unknown;
     /** the transport the manager reports for a live session (P2-E18-10) */
     transport?: TransportKind;
     // `preferredTransport` went with `SWITCHBOARD_TRANSPORT` (#952).
@@ -390,7 +391,9 @@ function harness(
       },
       effort: (id: string) => {
         controlCalls.push(['effort', id]);
-        return Promise.resolve({ ok: true, response: { effort: 'medium', levels: ['low', 'medium'] } });
+        return Promise.resolve(
+          opts.effortVerdict ?? { ok: true, response: { effort: 'medium', levels: ['low', 'medium'] } }
+        );
       },
       setEffort: (id: string, level: unknown) => {
         controlCalls.push(['setEffort', id, level]);
@@ -2005,6 +2008,49 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
       ]);
       // …and the pull the same surface uses on mount agrees with it
       expect(await h.call('sessions:currentModel', 'live-1')).toBe('haiku');
+    });
+
+    it('a fresh card learns its model from the effort read, with no second question (#1174)', async () => {
+      // `get_settings` answers which model a session is on before it has taken
+      // a turn. The card's one read when it appears carries it, and the model
+      // store is seeded from that — pushed, so the chip says it unasked.
+      const streamModel = new StreamModel();
+      const h = harness(undefined, dir, {
+        liveIds: ['live-1'],
+        known: curated,
+        streamModel,
+        effortVerdict: {
+          ok: true,
+          response: { effort: 'medium', levels: ['low', 'medium'], model: 'claude-opus-5-5' },
+        },
+      });
+
+      expect(await h.call('sessions:currentModel', 'live-1')).toBeNull();
+      expect(await h.call('sessions:effort', 'live-1')).toMatchObject({ ok: true });
+      expect(h.pushed.filter((p) => p.channel === 'sessions:model')).toEqual([
+        { channel: 'sessions:model', payload: { sessionId: 'live-1', model: 'claude-opus-5-5' } },
+      ]);
+      expect(await h.call('sessions:currentModel', 'live-1')).toBe('claude-opus-5-5');
+      expect(h.controlCalls).toEqual([['effort', 'live-1']]);
+
+      // ...and it never talks over a model that was SET: the read may have been
+      // in flight across the switch
+      await h.call('sessions:setModel', 'live-1', 'haiku');
+      await h.call('sessions:effort', 'live-1');
+      expect(await h.call('sessions:currentModel', 'live-1')).toBe('haiku');
+    });
+
+    it('an effort read with no model in it (an older CLI) leaves the model unknown (#1174)', async () => {
+      const streamModel = new StreamModel();
+      const h = harness(undefined, dir, {
+        liveIds: ['live-1'],
+        known: curated,
+        streamModel,
+        effortVerdict: { ok: true, response: { effort: null, levels: [], model: null } },
+      });
+      await h.call('sessions:effort', 'live-1');
+      expect(await h.call('sessions:currentModel', 'live-1')).toBeNull();
+      expect(h.pushed.filter((p) => p.channel === 'sessions:model')).toEqual([]);
     });
 
     it('pushes what the CLI says each turn, but says nothing when it has not moved', async () => {

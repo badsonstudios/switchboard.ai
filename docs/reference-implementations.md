@@ -215,6 +215,10 @@ answers `{subtype:"success", request_id}` with no `response` key — not `{}`.
    checked). The only source is `system:init.model`, which arrives **once per
    turn** — so before a session's first turn its model is genuinely unknown,
    and a picker must say so rather than defaulting to `default`.
+   **Corrected by #1174 (2026-10-09):** `get_settings.applied.model` answers
+   it on demand, on a cold session, on 2.1.226 and 2.1.288; `get_settings`
+   was not among the verbs dumped here. It is the same string
+   `system:init.model` then carries. `spike/findings/1174-applied-model.md`.
 4. **The channel is NOT blocked by a turn in flight.** Round trips measured at
    **0–2 ms while the model was mid-reply**. A consumer needs no busy state and
    must not serialise behind a turn.

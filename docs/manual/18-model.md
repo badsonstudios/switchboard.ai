@@ -26,8 +26,9 @@ the menu closes, and the name on the button becomes the model you picked.
 menu without changing anything. `Tab` closes it too. You can walk it from the
 keyboard with the arrow keys.
 
-If the session hasn't answered anything yet, the button reads **model?** — you
-can still open it and choose. See *When nothing is ticked* below for why.
+The name is there as soon as the session has started, before you have sent it
+anything. If the button reads **model?** instead, see *When nothing is ticked*
+below; you can still open it and choose.
 
 One thing it won't do: while a switch is actually going out, the menu stays put
 and won't close, and the button won't respond. That's deliberate — if Claude
@@ -69,17 +70,23 @@ and switchboard doesn't touch it.
 
 ## When nothing is ticked
 
-You'll sometimes open the menu or the picker and see no ✓, with a line
-explaining why — and the button at the bottom of the session will read
-**model?** rather than a name.
+This is rare now. The app asks each session which model it is on as soon as
+the session's card appears, so the button shows a name and the menu has a ✓
+from the start.
 
-That's not a fault. Claude Code only says which model it's running as part of
-replying to you, so a session that hasn't answered anything yet genuinely hasn't
-told anyone. switchboard would rather say "not known yet" than tick a likely
-guess and be wrong about the one thing you opened this to find out.
+You will still see no ✓ (and a line saying why) in two cases:
 
-Two ways to clear it up: switch to a model (then it's ticked, because you chose
-it), or send any prompt and look again.
+- **The button reads model?** The session did not answer the question. That
+  happens for a moment while a session is starting, and on an older Claude
+  Code that cannot be asked. It clears itself the first time the session
+  replies to you.
+- **The button shows a name, but nothing in the list is ticked.** The session
+  is on a model the list does not offer, for example one named in your Claude
+  Code settings.
+
+Either way, switchboard would rather tick nothing than tick a likely guess and
+be wrong about the one thing you opened this to find out. Switching to a model
+ticks it, because you chose it.
 
 ## How hard the model thinks
 

@@ -3,6 +3,57 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ 2026-10-09 — TEN SMALL ITEMS THE OWNER PICKED. In this order. NO RELEASE.
+>
+> **DO NOT CUT A RELEASE.** His words: *"let's hold off on a release"*. No
+> version bump, no tag. Everything here lands in `0.8.118 — unreleased`,
+> beside #1179 and #1178. Each is its own item through `/next-item`; one PR
+> in CI at a time, each PR folding in the close-out of the one before.
+>
+> He typed the numbers run together ("1174715619631757695166620731 and
+> 582"). **"166" is read as #1166**, the only ticket he was shown that fits.
+> Say so in each report until he confirms.
+>
+> 1. **#1174 — a fresh card shows its model straight away. ← IN FLIGHT**,
+>    branch `feature/1174-fresh-card-model`. *This line rides in that PR: if
+>    `main` has `spike/findings/1174-applied-model.md`, it has landed and
+>    the next item is #715.* Probed first: `get_settings.applied.model` is
+>    the same string `system:init.model` carries, on a cold, a switched and
+>    a resumed session, on 2.1.288 and on 2.1.226. The card's one existing
+>    read (the effort chip's) seeds the model store; it only fills a gap,
+>    never overwrites. No CLI without the `applied` block exists on this
+>    machine, so that fallback is unit-tested only.
+> 2. **#715 — a context-usage meter under the prompt box.** ⚠️ The ticket
+>    says "yellow at about 60%"; that breaks #1165 (yellow and orange mean
+>    "needs you" only). Build neutral, then blue, then red near full, and
+>    flag it for him to overrule.
+> 3. **#619 — middle-click a tab to close it** (through the ✕'s own path).
+> 4. **#631 — hover a session's tab or row to see its last prompt** (the
+>    left list's row AND the strip's pill).
+> 5. **#757 — a small icon beside each tool name in the conversation.**
+>    Independent review before pushing.
+> 6. **#695 — the card's "⋯" menu is cut off on narrow splits.**
+> 7. **#1166 — an empty workspace with the list hidden says nothing about
+>    how to start.** (Read from "166".)
+> 8. **#620 — drag a session's tab onto another group's tab strip to dock
+>    it there.**
+> 9. **#731 — a stacked session cannot be dragged out into its own
+>    full-height column.**
+> 10. **#582 — a session dragged into another group lands in arrival
+>     order; and the ungroup drop.**
+>
+> Items 8 to 10 are dockview drag behaviour: reproduce each in the real app
+> first, and read #702 (grid-drag group adoption looks dead in general).
+>
+> **Left open on purpose, do not ask, do not close:** #716, #1013, #719,
+> #1007, #904 (typing lag; waiting on a capture from his laptop); #528,
+> #529, #710, #717 (design sittings, his).
+>
+> **Flagged, not ticketed:** a closed group in the LEFT list still says
+> "calm" while a session in it works; Tanner has not seen the layout-preset
+> icons; #756 looks already shipped as "When it needs you" (verify, and
+> close with the evidence if so).
+>
 > # ✅ RELEASED: v0.8.117, 2026-10-09 (`8d1b9e0d`, PR #1177)
 >
 > The owner, after the report on the seven items below: *"Okay, I think we're
@@ -24,7 +75,8 @@
 >    working" where it said "calm"; needs-you wins. **Not done, flagged in
 >    the tracker: a closed group in the LEFT list.**
 > 2. **#1178 — drag a session up or down inside its group's list on the
->    strip. ← IN FLIGHT**, branch `feature/1178-drag-in-strip-list`. *This
+>    strip. DONE 2026-10-09, PR #1181 (`c104ec2a`), merged, NOT released.**
+>    Was: branch `feature/1178-drag-in-strip-list`. *This
 >    line rides in that PR: if `main` has `e2e/strip-row-drag.spec.ts`, it
 >    has landed and BOTH REQUESTS ARE DONE: merged, not released (0.8.118 is
 >    open with these two in it; he has not asked for a cut).* A row in the

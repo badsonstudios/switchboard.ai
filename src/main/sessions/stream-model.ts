@@ -13,6 +13,11 @@
 // that wants to show a tick beside the model you are on has exactly one source,
 // and it is a message that arrives unprompted — nobody can ask for it.
 //
+// (#1174: THAT LAST CLAUSE WAS WRONG. `get_settings.applied.model` answers it on
+// demand, on 2.1.226 and 2.1.288 both; `get_settings` was simply not one of the
+// things dumped when this was written. `seed` below uses it to fill the gap
+// before the first init. Everything else here still holds.)
+//
 // ── AND `system:init` IS ONCE PER *TURN*, NOT ONCE PER SESSION ───────────────
 //
 // S-11 measured 26 inits for 25 turns. Two consequences, and the second is the
@@ -20,8 +25,10 @@
 //
 //   1. REPLACE on every init, never append — `stream-commands.ts` does the same
 //      thing for the same reason.
-//   2. **A session that has run NO turn has never emitted one**, so its model is
-//      genuinely unknown, and `modelFor` answers `null` rather than guessing.
+//   2. **A session that has run NO turn has never emitted one**, so until
+//      something else says (see `seed`, #1174: on a newer CLI `get_settings`
+//      does) its model is unknown, and `modelFor` answers `null` rather than
+//      guessing.
 //      That is not a gap to paper over: on a fresh card the honest surface says
 //      "not known yet", because "default" would be a fabrication and the user
 //      might well be on something else from their settings.
@@ -115,6 +122,27 @@ export class StreamModel {
   noteSet(sessionId: string, model: string): void {
     if (!model.trim()) return;
     this.set(sessionId, model);
+  }
+
+  /**
+   * Record what `get_settings.applied.model` said — but ONLY when nothing is
+   * known yet (#1174). Returns whether it wrote.
+   *
+   * The header's "nobody can ask for it" stopped being true: on 2.1.288 (and
+   * on 2.1.226) `get_settings` answers the running model on a cold session,
+   * and the value is the same string `system:init.model` then carries
+   * (`spike/findings/1174-applied-model.md`). So a fresh card no longer has to
+   * wait a turn.
+   *
+   * IT FILLS THE GAP AND NOTHING ELSE. Once an init or our own `set_model` has
+   * written, this is a no-op: an answer to a question asked a moment ago must
+   * not be able to overwrite something newer, and a read that was in flight
+   * across a model switch is exactly that.
+   */
+  seed(sessionId: string, model: string): boolean {
+    if (!model.trim() || this.bySession.has(sessionId)) return false;
+    this.set(sessionId, model);
+    return true;
   }
 
   /**

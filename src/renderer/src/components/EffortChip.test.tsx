@@ -23,6 +23,12 @@ let host: HTMLElement;
 /** what the "session" is on, and what it lists */
 let applied: string | null;
 let levels: string[];
+/** the model the read says the session is on; `null` is a CLI that does not say */
+let toldModel: string | null;
+/** reads that are held open until a test lets them go */
+let held: Array<() => void> | null;
+/** `false` makes the read come back unanswered */
+let answers: boolean;
 let calls: Array<[string, ...unknown[]]>;
 /** what the next setEffort answers; `null` means "do what a real one does" */
 let setAnswer: ControlVerdict | null;
@@ -34,7 +40,15 @@ function installBridge(): void {
     sessions: {
       effort: (id: string) => {
         calls.push(['effort', id]);
-        return Promise.resolve(ok({ effort: applied, levels: applied === null ? [] : levels }));
+        if (!answers) return Promise.resolve({ ok: false, reason: 'timed-out', message: 'no answer' });
+        // captured NOW: what the session was on when it was asked
+        const answer = ok({
+          effort: applied,
+          levels: applied === null ? [] : levels,
+          model: toldModel,
+        });
+        if (held) return new Promise((resolve) => held!.push(() => resolve(answer)));
+        return Promise.resolve(answer);
       },
       setEffort: (id: string, level: string) => {
         calls.push(['setEffort', id, level]);
@@ -59,12 +73,20 @@ async function mount(
       <EffortChip
         liveId={props.liveId ?? 'live-1'}
         cardId={'cardId' in props ? props.cardId : 'card-1'}
-        model={props.model ?? 'claude-opus-5-5'}
+        model={'model' in props ? props.model : 'claude-opus-5-5'}
         working={props.working}
       />
     );
   });
   // the effect's promise chain: the read, and possibly a restore after it
+  for (let i = 0; i < 4; i++) await act(async () => Promise.resolve());
+}
+
+const reads = (): number => calls.filter((c) => c[0] === 'effort').length;
+/** let the oldest held read answer */
+async function release(): Promise<void> {
+  const next = held!.shift();
+  await act(async () => next?.());
   for (let i = 0; i < 4; i++) await act(async () => Promise.resolve());
 }
 
@@ -91,6 +113,9 @@ beforeEach(() => {
   document.body.innerHTML = '';
   applied = 'medium';
   levels = ['low', 'medium', 'high', 'xhigh', 'max'];
+  toldModel = null;
+  held = null;
+  answers = true;
   calls = [];
   setAnswer = null;
   uiDelete([effortKey('card-1')]);
@@ -148,6 +173,68 @@ describe('what the chip shows (issue 1115)', () => {
     await mount({ model: 'claude-haiku-4-5' });
     expect(calls.filter((c) => c[0] === 'effort')).toHaveLength(2);
     expect(chip()).toBeNull();
+  });
+
+  it('does NOT ask again when the model becomes the one its own read reported (issue 1174)', async () => {
+    // A fresh card: nothing is known, the chip asks, and main seeds the model
+    // store from the same answer. The model chip then says that model, and it
+    // must not send a second read for the level it was just told.
+    toldModel = 'claude-opus-5-5';
+    await mount({ model: null });
+    expect(chip()).not.toBeNull();
+    await mount({ model: 'claude-opus-5-5' });
+    expect(reads()).toBe(1);
+    // a model the read did not report is still a change
+    await mount({ model: 'claude-sonnet-5-5' });
+    expect(reads()).toBe(2);
+  });
+
+  it('the same when the model turns up BEFORE the answer does: the push beats the reply', async () => {
+    toldModel = 'claude-opus-5-5';
+    held = [];
+    await mount({ model: null });
+    await mount({ model: 'claude-opus-5-5' }); // the push, while the read is out
+    expect(reads()).toBe(1);
+    await release();
+    expect(chip()).not.toBeNull();
+    expect(reads()).toBe(1);
+  });
+
+  it('a switch that lands while the read is out IS read again (found in review)', async () => {
+    // asked on opus; before the answer is back the session is switched to a
+    // model with no effort levels. The answer in hand is for the old model.
+    toldModel = 'claude-opus-5-5';
+    held = [];
+    await mount({ model: null });
+    toldModel = 'claude-haiku-4-5-20251001';
+    applied = null;
+    await mount({ model: 'haiku' });
+    expect(reads()).toBe(1);
+    await release(); // the stale answer: opus, medium
+    expect(reads()).toBe(2);
+    await release();
+    expect(chip()).toBeNull(); // what the session is really on
+  });
+
+  it('a resumed card that already shows a name asks once, whatever the read calls the model', async () => {
+    // the transcript's name is on the chip from the start and does not move
+    toldModel = 'claude-opus-5-5';
+    await mount({ model: '<synthetic>' });
+    expect(reads()).toBe(1);
+    // then the seeded name replaces it: that is the model the read reported
+    await mount({ model: 'claude-opus-5-5' });
+    expect(reads()).toBe(1);
+  });
+
+  it('after a read nobody answered, a model turning up asks again', async () => {
+    answers = false;
+    await mount({ model: null });
+    expect(chip()).toBeNull();
+    answers = true;
+    toldModel = 'claude-opus-5-5';
+    await mount({ model: 'claude-opus-5-5' }); // the first reply's init
+    expect(reads()).toBe(2);
+    expect(chip()).not.toBeNull();
   });
 });
 

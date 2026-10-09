@@ -112,6 +112,15 @@ on the floor, and say so in your PR.
   a group to find out. A group with a session that needs you says that
   instead.
 
+### Changed
+
+- **A new session shows which model it is on straight away.** The button
+  under the prompt box used to read "model?" until the session had answered
+  you once, and the model menu ticked nothing. The app now asks the session
+  when its card appears, so the name and the tick are there before you send
+  anything. On an older Claude Code that cannot be asked, it reads "model?"
+  until the first reply, as before.
+
 ## 0.8.117 — 2026-10-09
 
 ### Added

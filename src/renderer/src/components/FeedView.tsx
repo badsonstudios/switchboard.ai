@@ -4313,7 +4313,9 @@ function Composer({
               because it is now the same kind of thing sitting right next to it,
               and a control that looks like a label does not get clicked.
             • switchable, model NOT known → the same button reading "model?".
-              The CLI only reports the running model once a session has replied,
+              A CLI that does not answer which model a session is on (an older
+              one; #1174 asks a newer one when the card appears) only says once
+              it has replied,
               and a fresh card is exactly when you want to choose before
               spending a turn on the wrong one — so the affordance is there
               before the answer is.

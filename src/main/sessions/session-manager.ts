@@ -43,6 +43,7 @@ import {
 } from '../../shared/stream-protocol';
 import { ControlChannel } from '../transport/control-channel';
 import {
+  appliedModel,
   effortLevelsFor,
   getSettingsRequest,
   readApplied,
@@ -357,16 +358,20 @@ export class SessionManager {
     const settings = await this.control.request(id, getSettingsRequest);
     if (!settings.ok) return settings;
     const applied = readApplied(settings.response);
+    // `model` rides along (#1174): this is the one `get_settings` a card makes
+    // when it appears, and the same answer says which model the session is on.
+    // The channel seeds the model store from it rather than asking twice.
+    const model = appliedModel(settings.response);
     if (!applied || applied.effort === null) {
       const none: EffortState = { effort: null, levels: [] };
-      return { ok: true, response: { ...none } };
+      return { ok: true, response: { ...none, model } };
     }
     const models = await this.control.request(id, listModelsRequest);
     if (!models.ok) return models;
     // the level in force is always offered, whatever the list says
     const levels = withLevel(effortLevelsFor(models.response, applied.model), applied.effort);
     const state: EffortState = { effort: applied.effort, levels };
-    return { ok: true, response: { ...state } };
+    return { ok: true, response: { ...state, model } };
   }
 
   /**

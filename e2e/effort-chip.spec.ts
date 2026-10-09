@@ -51,6 +51,11 @@ test.describe('the effort chip (#1115)', () => {
       'effort: max',
     ]);
 
+    // AND THE MODEL CHIP SAYS THE MODEL, with no turn taken (#1174): the read
+    // that filled the effort chip is the one that told the card its model. It
+    // used to read "model?" here until the first reply.
+    await expect(model(w)).toHaveText('claude-fake-1', { timeout: 10_000 });
+
     // RIGHT OF the model chip, on the same row
     const m = (await model(w).boundingBox())!;
     const e = (await chip(w).boundingBox())!;

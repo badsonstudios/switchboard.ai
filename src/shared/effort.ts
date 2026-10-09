@@ -23,8 +23,8 @@
 //    on a cold session, before any turn. `effort` is `null` on a model that has
 //    no effort levels (Haiku 4.5).
 //    (`applied.model` is also the answer to "which model is this session on",
-//    which `stream-model.ts` records as unanswerable. That is a different
-//    ticket; this file reads it only to pick the right list of levels.)
+//    which `stream-model.ts` recorded as unanswerable. #1174 took that up:
+//    `appliedModel` below, and `spike/findings/1174-applied-model.md`.)
 //  * `{effortLevel: null}` clears the setting and the level goes back to the
 //    model's default (`medium` here).
 //  * The level SURVIVES A MODEL SWITCH: set `max`, switch to Haiku (effort
@@ -87,6 +87,23 @@ export function readApplied(
     model: typeof a.model === 'string' && a.model ? a.model : null,
     effort: typeof a.effort === 'string' && a.effort ? a.effort : null,
   };
+}
+
+/**
+ * The model a `get_settings` answer says the session is running, or `null`
+ * (#1174).
+ *
+ * Read on its own, not through `readApplied`: that one answers `null` for an
+ * `applied` block with no `effort` key, and "which model" does not depend on
+ * whether this CLI reports effort. Measured to be the same string
+ * `system:init.model` carries, on a cold, a switched and a resumed session
+ * (`spike/findings/1174-applied-model.md`).
+ */
+export function appliedModel(response: Record<string, unknown>): string | null {
+  const applied = response.applied;
+  if (!applied || typeof applied !== 'object') return null;
+  const model = (applied as Record<string, unknown>).model;
+  return typeof model === 'string' && model.trim() ? model : null;
 }
 
 /** `claude-opus-5[1m]` and `claude-opus-5` are the same model for this purpose */
