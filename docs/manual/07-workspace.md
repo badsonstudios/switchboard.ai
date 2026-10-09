@@ -71,6 +71,28 @@ screen: bring the list back, or use `Ctrl+N` or **▸ commands ▸ New session�
 To hide it entirely, press `Ctrl+B`, or click **◧ left** in the bar along the
 top of the window while it is lit. Click it again to bring the list back.
 
+### Seeing what a session was last asked
+
+Rest the pointer on a session for about half a second and a small box appears
+with the **last prompt** you sent it, so you can tell what it is doing without
+switching to it. It works in three places:
+
+- a session's row in the Sessions list,
+- its pill (or its row in a group's list) when the sessions are across the top,
+- its tab above the card.
+
+The box shows the first few lines of the prompt; a long one ends in "…". It
+never gets in the way: it does not take clicks, and it goes away as soon as
+you move off, click, press a key, scroll or start dragging.
+
+- A session that is running but has not been asked anything says **No prompts
+  yet**.
+- If your last message was only a picture or a file, it says **An attachment,
+  with no text**.
+- A session that is **not running** (it never started, or it has stopped)
+  shows nothing. Start or resume it and the box works again.
+- Sessions in a popped-out window do not show the box on their tabs.
+
 ### Listing sessions across the top instead
 
 

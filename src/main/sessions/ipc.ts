@@ -52,6 +52,7 @@ import { StreamModel } from './stream-model';
 import type { StreamMode } from './stream-mode';
 import { StreamFeed } from '../feed/stream-feed';
 import { replayResumedHistory } from '../feed/history';
+import { lastPromptOf } from '../feed/last-prompt';
 import { HookListener } from '../hooks/hook-listener';
 import type { BusHost } from '../bus/host-channel';
 import { IpcBroker } from '../ipc/broker';
@@ -1443,6 +1444,18 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     return isStream(liveId) && deps.streamFeed
       ? deps.streamFeed.blocks(liveId)
       : transcripts.blocks(liveId);
+  });
+  // The last prompt, for the hover on a session (#631). The SAME source as the
+  // channel above, by the same transport rule, and picked out here so a hover
+  // costs a few hundred characters across IPC instead of the whole backlog.
+  broker.handle('transcripts:lastPrompt', (_e, liveId: string) => {
+    if (typeof liveId !== 'string') return null;
+    const stream = isStream(liveId) && !!deps.streamFeed;
+    const blocks = stream ? deps.streamFeed!.blocks(liveId) : transcripts.blocks(liveId);
+    // A Terminal session with NO blocks may simply not have found its
+    // transcript yet; "no prompts yet" would be a guess, so it is "cannot say".
+    if (!stream && blocks.length === 0) return null;
+    return lastPromptOf(blocks);
   });
   // Session find (P2-E17-01, §5.31): scan the transcript FILE, in main.
   //

@@ -240,6 +240,8 @@ export function SessionRow(props: {
       // nothing else on the page can be asked whether it is right.
       data-rail-depth={depth ?? undefined}
       data-flash={props.flash ? 'true' : undefined}
+      // hover shows this session's last prompt (#631, `LastPromptHover`)
+      data-last-prompt-for={s.id}
       data-folded={props.folded ? 'true' : undefined}
       // the pill's own hint: a dashed edge is not self-explanatory
       title={props.folded ? t('strip.pillFoldedHint') : undefined}

@@ -42,16 +42,28 @@
 >    YELLOW: plain below 60, blue from 60, red from 80. Flagged in the
 >    tracker row and the report for him to overrule.** Form (number / bar /
 >    both) is a Settings choice, default the number.
-> 3. **#619 — middle-click a tab to close it. ← IN FLIGHT**, branch
->    `feature/619-middle-click-tab`. *This line rides in that PR: if `main`
->    has `e2e/tab-middle-click.spec.ts`, it has landed and the next item is
->    #631.* One close routine in `IdentityTab` for the ✕ and `auxclick`
+> 3. **#619 — middle-click a tab to close it. DONE 2026-10-09, PR #1184
+>    (`fc1975f2`), merged, NOT released.** Green on the first CI run. The
+>    independent review found no way around the "ends the session"
+>    question and no double close (the tab library ignores the middle
+>    button). From it: middle-click is IGNORED in the drop-down of tabs
+>    that did not fit, where it would have left a dead row. One close
+>    routine in `IdentityTab` for the ✕ and `auxclick`
 >    button 1, so a session tab asks first either way and a document or
 >    diff tab just closes. The only closable tabs are the dockview ones
 >    (sessions, documents, diffs); the card's inner Session / Changes /
 >    Files / History tabs have no ✕ and are untouched.
-> 4. **#631 — hover a session's tab or row to see its last prompt** (the
->    left list's row AND the strip's pill).
+> 4. **#631 — hover a session's tab or row to see its last prompt.
+>    ← IN FLIGHT**, branch `feature/631-last-prompt-hover`. *This line
+>    rides in that PR: if `main` has `e2e/last-prompt-hover.spec.ts`, it
+>    has landed and the next item is #757.* No new source: main already
+>    holds each live session's blocks, and `transcripts:lastPrompt` picks
+>    the last `user` block out of them on demand (context the app
+>    attached is cut out; a subagent's prompt is skipped). ONE component
+>    (`LastPromptHover`) listens on the document; the row, the pill and
+>    the tab only carry `data-last-prompt-for`. **Choices flagged in the
+>    tracker:** a session that is not running shows nothing; popped-out
+>    windows' tabs are not covered.
 > 5. **#757 — a small icon beside each tool name in the conversation.**
 >    Independent review before pushing.
 > 6. **#695 — the card's "⋯" menu is cut off on narrow splits.**

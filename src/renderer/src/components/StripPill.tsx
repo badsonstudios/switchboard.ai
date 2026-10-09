@@ -67,6 +67,8 @@ export function StripPill(props: {
     <button
       type="button"
       data-strip-pill={s.id}
+      // hover shows this session's last prompt (#631, `LastPromptHover`)
+      data-last-prompt-for={s.id}
       data-needs-you={paint.lit}
       // read back by the strip when it measures what is off each end
       data-strip-item-need={paint.lit ? 1 : 0}

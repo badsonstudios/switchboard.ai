@@ -1455,6 +1455,13 @@ const api = {
   },
   transcripts: {
     blocks: (liveId: string): Promise<unknown[]> => ipcRenderer.invoke('transcripts:blocks', liveId),
+    /**
+     * The last thing the user asked this session (#631), for the hover on its
+     * tab, row or pill: `{text, cut, attachmentOnly}`, with `text: null` when
+     * it has not been asked anything. Asked on hover, not kept up to date.
+     */
+    lastPrompt: (liveId: string): Promise<unknown> =>
+      ipcRenderer.invoke('transcripts:lastPrompt', liveId),
     // binding state for a (re)mounting panel — the live pushes ride
     // `sessions:usage`, but a panel that mounts between transitions would
     // otherwise show "no conversation yet" over a session that failed to bind
