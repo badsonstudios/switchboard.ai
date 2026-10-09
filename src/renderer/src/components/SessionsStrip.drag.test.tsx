@@ -74,8 +74,6 @@ async function mount(
         shown
         folded={new Set()}
         urgency={new Map()}
-        onExpire={noop}
-        onBeatStart={noop}
         groups={groups}
         order={railOrder(sessions, groups, pinned)}
         needing={new Set()}
@@ -446,8 +444,6 @@ describe('what else a drag touches', () => {
           shown
           folded={new Set()}
           urgency={new Map()}
-          onExpire={noop}
-          onBeatStart={noop}
           groups={groups}
           order={railOrder(sessions, groups, new Set())}
           needing={new Set()}

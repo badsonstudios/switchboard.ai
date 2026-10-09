@@ -37,10 +37,14 @@ should be able to spot the ones that need you from across the room.
 
 Each group header counts its own waiting sessions (**"2 need you"**, or
 **"calm"** when none are), and the bar at the bottom of the list totals them
-for the whole workspace. Those counts — and the one on the strip across the top
-of the window — count exactly what the [Events
+for the whole workspace. When nobody is waiting, there is no total there at
+all. Those counts count exactly what the [Events
 drawer](09-notifications.md#the-events-drawer) is listing, so dismissing an
 entry there drops them straight away.
+
+A row with a **dashed** edge is a session that is folded away: collapsed or
+hidden, still running, but not in the workspace. Click it and it comes back to
+where it was. See [Getting a session out of the way](#getting-a-session-out-of-the-way).
 
 Click a row to jump to that session. Double-click to rename it — `Esc`, or Enter
 on an empty box, leaves the name alone. Right-click for
@@ -74,14 +78,15 @@ The list does not have to live on the left. Next to **▸ commands** in the bar
 along the top of the window there is a two-part button, **◧ left** and
 **⬒ top**. The lit half is where your sessions are listed.
 
-- Click **⬒ top** and the list on the left goes away, along with the row of
-  lamps and the **Collapsed** strip. In their place is one strip under the top
-  bar, and your sessions get the whole width of the window.
+- Click **⬒ top** and the list on the left goes away. In its place is one
+  strip under the top bar, and your sessions get the whole width of the window.
 - Click **◧ left** to go back.
 - Click whichever half is **lit** to put the list away altogether. Neither half
   is lit while it is away. Click either half to bring it back there, or press
-  `Ctrl+B` to bring it back where it was. While it is away you see the row of
-  lamps and the **Collapsed** strip, whichever placement you put away.
+  `Ctrl+B` to bring it back where it was. While it is away nothing lists your
+  sessions, and nothing in the main area says **N need you**. The status bar
+  at the very bottom still shows how many are waiting, the Events drawer still
+  lists what needs you, and `Ctrl+1` to `Ctrl+9` and `Ctrl+Space` still work.
 
 The same choice is in **Settings** (`Ctrl+,`) under **Appearance ▸ Sessions
 list**, as two pictures: **On the left** and **Across the top**. It takes
@@ -128,8 +133,7 @@ pill to go to that session.
 
 A pill with a **dashed** edge is a session that is folded away: collapsed or
 hidden, still running, but not in the workspace. Click it and it comes back.
-With the sessions across the top this replaces the **Collapsed** strip, and
-there is no "N idle sessions" row: each folded-away session keeps its own pill.
+Each folded-away session keeps its own pill.
 A folded-away session that is **in a group** has no pill; its group says
 **· 2 folded away**, and its row in the group's list has the same dashed edge.
 Click the row to bring it back.
@@ -351,14 +355,19 @@ a time as it needs less of your attention — and back up again in one click.
 | Rung | What you see | Space it takes |
 |---|---|---|
 | **Expanded** | the full card, where you put it | its own spot in the grid |
-| **Collapsed** | one slim row in the **Collapsed** strip near the top | almost none |
+| **Collapsed** | no card — its row or pill in the Sessions list, with a dashed edge | none at all |
 | **Tabbed** | stacked as a tab with the other tabbed sessions | shares one spot |
-| **Hidden** | nothing but its row in the Sessions list | none at all |
+| **Hidden** | no card — its row or pill in the Sessions list, with a dashed edge | none at all |
 
 **None of these stops anything.** At every rung the session keeps working, its
-conversation is untouched, and it stays in the Sessions list on the left with
-its status indicator. Only the card changes. Closing a session is a completely
+conversation is untouched, and it stays in the Sessions list with its status
+indicator. Only the card changes. Closing a session is a completely
 separate thing — it's the **✕**, and it asks first.
+
+**Collapsed and hidden look the same in the list.** Both are *folded away*:
+the card is out of the workspace, and the session's row or pill gets a dashed
+edge. They are still two rungs, so `Ctrl+Shift+↓` and `Ctrl+Shift+↑` still
+step through both, but nothing in the list tells them apart.
 
 ### Moving up and down
 
@@ -366,14 +375,14 @@ separate thing — it's the **✕**, and it asks first.
   (which collapses it straight away).
 - **Up a rung:** `Ctrl+Shift+↑`.
 - **Straight to a rung:** open the command palette (`Ctrl+Shift+P`) and run
-  **Collapse session to a strip**, **Stack session with the tabbed sessions**,
+  **Collapse session**, **Stack session with the tabbed sessions**,
   **Expand session to its full card**, or **Hide session (keeps it running)**.
 
 The two shortcuts act on the session you're currently *in*, so they work from
 the **Expanded** and **Tabbed** rungs — the two where the session still has a
 card to be focused. Once a session is collapsed or hidden it isn't focused any
-more, so bring it back with a click (its row in the Collapsed strip, the
-Sessions list, or its lamp) and carry on from there. Nothing becomes
+more, so bring it back with a click on its row or pill in the Sessions list
+and carry on from there. Nothing becomes
 unreachable: the palette can put any focused session on any rung by name.
 
 **Coming back up always lands somewhere you can see.** A session takes its old
@@ -383,43 +392,18 @@ to while nobody is in it. If the spot has become something else in the meantime
 — a document you have open, or a pane that has moved into its own window — the
 session gets a fresh spot instead, next to the others.
 
-The **Collapsed** strip appears near the top of the window only when something
-is actually collapsed, and disappears again when nothing is. Each row shows the
-session's color, its name and what it's doing. Click a row to bring that session
-straight back.
-
-### When the strip fills up with idle sessions
-
-Collapse enough sessions and the strip stops being useful: eight rows all saying
-*idle* crowd out the one that says *Wants permission to run*. So once **four or
-more** of the collapsed sessions are idle, they fold together into a single row
-that just says **"5 idle sessions"**.
-
-Click that row to list them all, and click it again to fold them back up. It's
-only a way of drawing the strip — nothing moves, nothing stops, and every one of
-those sessions is still in the Sessions list on the left, still on its own row,
-still one click away.
-
-**Three kinds of session never get folded in:**
-
-- **anything that isn't idle** — working, crashed, or one you've popped out;
-- **anything waiting on you** — asked a question, wants permission, or finished
-  and you haven't looked. The row you're looking for is never the one that
-  disappears;
-- **the session you're in.**
-
-It all follows live status, so a session that starts working comes straight back
-out as its own row while the rest stay folded — and drops back in when it goes
-idle again. Below four idle sessions there's no fold at all; they're just rows.
-
-Whether the fold is open or closed isn't remembered between restarts — it's a
-"let me look at that for a second", not part of your layout.
+A folded-away session is marked in the Sessions list with a **dashed** edge on
+its row or pill, which still shows the session's color, its name and what it's
+doing. Click it to bring that session straight back. Each folded-away session
+keeps its own row or pill, however many there are. With the list across the
+top, a group also says how many of its sessions are folded away, such as
+**· 2 folded away**.
 
 ### Coming back
 
-Click a session anywhere and it returns: its row in the Sessions list, its row
-in the Collapsed strip, its lamp in
-[the strip along the top](09-notifications.md#the-lamp-strip), or its entry in
+Click a session and it returns: its row or pill in
+[the Sessions list](09-notifications.md#who-needs-you-in-the-sessions-list),
+or its entry in
 Events. It comes back to the **exact spot it left** — the same position among
 its neighbours, on the same view tab you had open, and if it was in its own
 window, back into one. If the layout around it has changed enough that its old
@@ -431,7 +415,8 @@ reappears in its old spot without you doing anything.
 
 It reappears *without stealing your place*. Whatever you were typing in stays
 focused — the returning card waits for you rather than grabbing the screen. Its
-lamp and the Events list are what tell you it's waiting. (If you'd rather it
+highlighted row in the Sessions list and the Events list are what tell you it's
+waiting. (If you'd rather it
 *did* jump you straight there — or rather it didn't reappear at all — that's a
 setting: see [When a session interrupts you](#when-a-session-interrupts-you).)
 
@@ -450,8 +435,8 @@ workspace should look like, and then puts every session where it belongs.
 | Layout | What you get |
 |---|---|
 | **Grid** | every session gets its own card *(default)* |
-| **Focus** | one big card — the session you're in — and everything else as a row in the Collapsed strip |
-| **Queue** | only the sessions that need you get a card; the rest are rows |
+| **Focus** | one big card — the session you're in — and everything else folded away, shown with a dashed edge in the Sessions list |
+| **Queue** | only the sessions that need you get a card; the rest are folded away the same way |
 
 Nothing is closed and nothing stops: a layout mode only moves sessions up and
 down the same four-rung ladder described above, so everything is still in the
@@ -463,7 +448,7 @@ so a session you collapse by hand stays collapsed. Focus and Queue are the two
 that keep arranging as things change.
 
 **Focus follows you.** The big card is whichever session you're in, so clicking
-another session — in the Sessions list, in the Collapsed strip, or on its lamp —
+another session in the Sessions list
 hands the space to that one and folds the one you left. It's a composition of
 the same rungs, not a special full-screen mode, so everything else in this page
 keeps working exactly as it does in Grid.
@@ -506,7 +491,7 @@ you put it — it's out of the way already, and a mode won't drag it half-way ba
 
 Sometimes you just want one session, right now, without changing the mode.
 **Double-click a session's header** and it fills the workspace; everything else
-folds into the Collapsed strip. Double-click again — or press `Ctrl+Shift+M` —
+is folded away. Double-click again — or press `Ctrl+Shift+M` —
 and the workspace goes back as it was, including anything you'd hidden by hand
 before you maximized. Sessions you've *brought back since* are left where you
 put them: undoing a maximize puts back the parts of the arrangement you haven't
@@ -555,18 +540,20 @@ sending a prompt gets that card out of your way by itself:
 | Setting | When you submit a prompt |
 |---|---|
 | **Keep visible** | nothing happens — the card stays exactly where it is *(default)* |
-| **Collapse on submit** | the card becomes a row in the Collapsed strip |
+| **Collapse on submit** | the card is folded away; its row or pill in the Sessions list gets a dashed edge |
 | **Hide on submit** | the card leaves the workspace entirely |
 
 With either of those on, the session keeps running and **its card comes straight
 back to the spot it left** when it finishes, asks a question, or asks permission
 — the same reappearance described under *Coming back* above.
 
-**Collapse on submit** hands the space to the sessions you're still looking at
-while leaving a row you can see and click. **Hide on submit** is the tidiest and
-the least forgiving: the session vanishes from the workspace and lives only in
-the Sessions list, its lamp and Events — until it needs you, at which point it
-comes back like everything else. It suits running six or seven agents at once.
+**Collapse on submit** and **Hide on submit** both hand the space to the
+sessions you're still looking at. Either way the session leaves the workspace
+and lives only in the Sessions list, with a dashed edge, and in Events — until
+it needs you, at which point it comes back like everything else. The two look
+the same in the list; they differ only in which rung the session is on, so
+`Ctrl+Shift+↑` and `Ctrl+Shift+↓` step from a different place. It suits
+running six or seven agents at once.
 **Keep visible** is the default because watching your first prompt actually run
 matters more than the space it takes.
 
@@ -618,7 +605,7 @@ There are four settings, from loudest to quietest:
 |---|---|
 | **Always jump to it** | its card comes back if it isn't in the workspace, and you're taken straight to it |
 | **Jump if it's on screen** | you're taken to it *only* when you can already see its card. Otherwise your cursor stays where it is *(default)* |
-| **Never jump, just the lamp** | nothing on screen moves at all. Its lamp lights and it joins the Events list, and that's the whole of it |
+| **Never jump, just mark it** | nothing on screen moves at all. It is highlighted in the Sessions list and it joins the Events list, and that's the whole of it |
 | **Never jump, skip the queue** | as above, and it doesn't join the queue either: `Ctrl+Space` never stops there and it's never marked *next* |
 
 **Jump if it's on screen** is the default, and it's the one that reads as
@@ -632,7 +619,8 @@ hidden or stacked as a tabbed session, it **comes back to its spot** — that's
 [the reveal described above](#coming-back), and it happens without taking your
 cursor. Merely sitting behind another card's tab, nothing moves at all: it's
 already in the workspace, and flipping the tab you're working in would be the
-very interruption this setting exists to avoid. Either way its lamp lights.
+very interruption this setting exists to avoid. Either way it is highlighted in
+the Sessions list.
 
 **Never jump** is the setting for a long build you want to hear about but never
 be dragged to — and it stops the card reappearing as well, so the workspace
@@ -642,7 +630,7 @@ you're watching one thing and want to be pulled to whatever calls next.
 **Never jump, skip the queue** goes one further and takes the session off the
 to-do list entirely — worth knowing that a session on it can hold a permission
 indefinitely without ever showing up under `Ctrl+Space`. Its row in the Sessions
-list and its lamp still show what it's doing; nothing routes you there. It is
+list still shows what it's doing; nothing routes you there. It is
 **not** a mute button: sounds, the taskbar flash and OS toasts are the separate
 **🔔** notification switch in the title bar, not this setting.
 

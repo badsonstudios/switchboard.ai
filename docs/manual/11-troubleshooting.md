@@ -249,8 +249,8 @@ normally the whole time. The full explanation is in
 
 **A session's card disappeared when I clicked a different session.**
 Look in the Sessions list first: if the session is still listed, it is still
-running, and clicking it brings the card back — it was folded into the
-Collapsed strip, not closed. Then look at the layout chip in the title bar:
+running, and clicking it brings the card back — it was folded away (its
+row or pill has a dashed edge), not closed. Then look at the layout chip in the title bar:
 
 - **It ends in · maximized.** A session is still maximized, perhaps from long
   ago. Older versions folded every busy card you clicked away from while a

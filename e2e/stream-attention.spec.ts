@@ -31,8 +31,12 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 /** the dual-capable fake, asked for nothing — i.e. the app's own default */
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
 
-const strip = (w: Page) => w.getByTestId('urgency-strip');
-const lamp = (w: Page, title: string) => strip(w).locator(`[data-urgency-lamp][title^="${title}"]`);
+// The row of lamps is gone (#1164). What a lamp said — this session's status,
+// and whether it needs you — is said by its row in the Sessions list, which
+// is where the count is too. `lamp` keeps its name so the bodies read as they
+// always have; it is the list row.
+const lamp = (w: Page, title: string) => w.locator('nav .rail-row', { hasText: title }).first();
+const needCount = (w: Page) => w.locator('nav [data-rail-need]');
 const eventRows = (w: Page) => w.locator('aside [data-event-kind]');
 const activeTab = (w: Page) => w.locator('.dv-active-tab');
 const tabs = (w: Page) => w.locator('.dv-tabs-container .dv-tab');
@@ -88,7 +92,7 @@ test.describe('a Direct hold raises attention (P2-E18-14)', () => {
     // a calm Direct session is calm — the baseline, without which every
     // assertion below could be satisfied by the app simply doing nothing
     await expect(lamp(w, title)).toHaveAttribute('data-needs-you', 'false');
-    await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '0');
+    await expect(needCount(w)).toHaveCount(0); // nobody waiting: no count at all
     // read off the TAB, not the rows: the drawer is shut here (it is not opened
     // until after the hold arrives), and "no rows" in a drawer with no DOM is
     // true of a full queue too — which would gut the baseline this comment
@@ -101,11 +105,11 @@ test.describe('a Direct hold raises attention (P2-E18-14)', () => {
     await box.press('Enter');
 
     // 1. the lamp, by STATUS and by the "needs you" flag the strip counts
-    await expect(lamp(w, title)).toHaveAttribute('data-status', 'needs-permission', {
+    await expect(lamp(w, title)).toHaveAttribute('data-session-status', 'needs-permission', {
       timeout: 30_000,
     });
     await expect(lamp(w, title)).toHaveAttribute('data-needs-you', 'true');
-    await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '1');
+    await expect(needCount(w)).toHaveAttribute('data-rail-need', '1');
 
     // 2. the Events panel, and the attention QUEUE's head marker — the thing
     //    Ctrl+Space walks. A row with no `data-next` is a log entry, not a
@@ -135,7 +139,7 @@ test.describe('a Direct hold raises attention (P2-E18-14)', () => {
       'needs-permission',
       { timeout: 20_000 }
     );
-    await expect(lamp(w, title)).not.toHaveAttribute('data-status', 'needs-permission');
+    await expect(lamp(w, title)).not.toHaveAttribute('data-session-status', 'needs-permission');
   });
 
   test('Ctrl+Space jumps to the Direct session that is waiting', async () => {
@@ -182,7 +186,7 @@ test.describe('focus policy sees a Direct hold (P2-E18-14)', () => {
     const second = await addSession(a);
     await expect(tabs(w)).toHaveCount(2);
 
-    await palette(w, 'When any session needs you: never jump, just light its lamp');
+    await palette(w, 'When any session needs you: never jump, just mark it in the list');
 
     // take the second session out of the workspace entirely, then stand in the
     // first: anything that moved would be unmistakable
@@ -194,7 +198,7 @@ test.describe('focus policy sees a Direct hold (P2-E18-14)', () => {
 
     // it blocks on a gated call. Under `urgent` the lamp is the WHOLE response.
     await streamPrompter(a)(second, '!perm urgent.sh');
-    await expect(lamp(w, second)).toHaveAttribute('data-status', 'needs-permission', {
+    await expect(lamp(w, second)).toHaveAttribute('data-session-status', 'needs-permission', {
       timeout: 30_000,
     });
     await expect(lamp(w, second)).toHaveAttribute('data-needs-you', 'true');

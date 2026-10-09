@@ -1,5 +1,5 @@
 // #197 — the keyboard path across the surfaces #174 left behind: the sessions
-// rail, the urgency lamps, the card's view tabs, and the Events rows.
+// rail, the card's view tabs, and the Events rows.
 //
 // The unit tests hold the SHAPE (real buttons, honest roles, resolvable
 // aria-controls) off a jsdom tree. What only a real window can prove is that
@@ -253,7 +253,7 @@ test.describe('keyboard paths swept by #197', () => {
     );
   });
 
-  test('an Events row opens its session from the keyboard, and the lamps say where you are', async () => {
+  test('an Events row opens its session from the keyboard, and the list says where you are', async () => {
     const folders = [tempProjectFolder(), tempProjectFolder()];
     a = await launchApp({ seedFolder: folders[0] });
     const w = a.window;
@@ -263,12 +263,14 @@ test.describe('keyboard paths swept by #197', () => {
       dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
     }, folders[1]);
     await w.getByRole('button', { name: '+ session' }).click();
-    await expect(w.locator('[data-urgency-lamp]')).toHaveCount(2, { timeout: 25_000 });
+    await expect(w.locator('nav [data-rail-open]')).toHaveCount(2, { timeout: 25_000 });
 
-    // the lamps: named buttons, and "you are here" is not carried by color alone
-    const lamps = w.locator('[data-urgency-lamp]');
-    await expect(lamps.first()).toHaveJSProperty('tagName', 'BUTTON');
-    await expect(w.locator('[data-urgency-lamp][aria-current="true"]')).toHaveCount(1);
+    // the list's rows: named buttons, and "you are here" is not carried by
+    // colour alone. (This was the row of lamps until #1164 removed it; the
+    // Sessions list is the one place every session is listed now.)
+    const opens = w.locator('nav [data-rail-open]');
+    await expect(opens.first()).toHaveJSProperty('tagName', 'BUTTON');
+    await expect(w.locator('nav [data-rail-open][aria-current="true"]')).toHaveCount(1);
 
     // make the FIRST session ask for something, so it has an Events row
     // A REAL held request (#952): `PreToolUse` is no longer registered, and a
@@ -294,8 +296,11 @@ test.describe('keyboard paths swept by #197', () => {
     await expect(w.locator('.dv-active-tab')).toContainText(names[1]);
     await open.press('Enter');
     await expect(w.locator('.dv-active-tab')).toContainText(names[0]);
-    // the lamps followed, so "you are here" stayed true across the jump
-    await expect(w.locator('[data-urgency-lamp][aria-current="true"]')).toHaveCount(1);
+    // the list followed, so "you are here" stayed true across the jump — and
+    // it is the FIRST session it now points at
+    const here = w.locator('nav [data-rail-open][aria-current="true"]');
+    await expect(here).toHaveCount(1);
+    await expect(here.locator('[data-rail-title]')).toHaveText(names[0]);
   });
 
   test('the three chord families announce what they did (#581)', async () => {
@@ -366,14 +371,14 @@ test.describe('keyboard paths swept by #197', () => {
     // top of §5.8's ladder, so this is the refusal case — and it has to be tested
     // before the collapse, because a collapsed card has no dockview panel, which
     // makes it no card's `activeCardId` and every card-scoped chord inert. §5.8
-    // says so on purpose: the way back up is a reveal (the strip row, the lamp,
+    // says so on purpose: the way back up is a reveal (its row in the list,
     // the rail row), never a chord pressed at a card that is not in the
     // workspace. The round-trip rungs — expanded and tabbed — are covered in
     // `lib/session-voice.test.ts`, which can drive the store directly.
     await w.keyboard.press(`${MOD}+Shift+ArrowUp`);
     await expect.poll(spoken).toBe(`${names[1]} is already expanded`);
     await w.keyboard.press(`${MOD}+Shift+ArrowDown`);
-    await expect.poll(spoken).toBe(`${names[1]} collapsed to the strip`);
+    await expect.poll(spoken).toBe(`${names[1]} collapsed`);
 
     // EXACTLY ONE sentence is readable at any moment: two regions holding text
     // would be read as one run-on utterance with a stale half

@@ -21,7 +21,6 @@
 //
 // Pure by construction (no React, no DOM, no clock of its own — `now` is always
 // passed in) so every rule below is a unit test rather than an e2e guess.
-import { attentionPaint, presentStatus, StatusToken } from './rail-view';
 
 /**
  * How long the arrived-at lamp stays lit after a jump.
@@ -63,79 +62,8 @@ export const URGENCY_LINGER_MS = 1500;
  */
 export type UrgencyMarks = ReadonlyMap<string, number | null>;
 
-/** One lamp: a session reduced to what the strip paints. */
-export interface UrgencyLamp {
-  /** the durable card id — what a click focuses, and what survives a resume */
-  cardId: string;
-  title: string;
-  /** the six-way status ramp; var(--status-<token>) is the hue */
-  token: StatusToken;
-  /** a human is the only thing that can move this session on */
-  needsYou: boolean;
-  /** the delayed urgency reset — the session the last jump landed on */
-  lit: boolean;
-  /**
-   * Idle-hued, but NOT RUNNING — the fainter ring `tokens.css` draws for it
-   * says which. Named for the state that first needed it (restored, not yet
-   * resumed); since #687 a card whose start was refused is the second, and it
-   * has the better claim of the two: it never ran at all. The name is kept
-   * rather than widened to `notRunning` because it is also the `data-suspended`
-   * attribute the stylesheet keys off; the meaning is this sentence, not the
-   * word.
-   */
-  suspended: boolean;
-  /** i18n key for the state text (the ASK when it needs you, else the state) */
-  labelKey: string;
-}
-
-/** The shape the strip needs from a session — a structural subset of
- *  RailSession, so the strip is testable without the rail's whole model. */
-export interface LampSource {
-  id: string;
-  title: string;
-  status?: string;
-}
-
 /**
- * Sessions (in the order they should be painted) -> lamps.
- *
- * ORDER IS THE CALLER'S. The strip renders from the store's rail order, which
- * is also Ctrl+1..9's numbering authority — so the Nth lamp is the Nth hotkey,
- * for free and forever. That is also how "pinned first" (the item's wording,
- * E9-09's contract) arrives: §5.8 makes a pinned session sort first IN THE
- * RAIL, so once E9-09 lands, rail order already leads with the pinned sessions
- * and this function inherits it without a line of change here. Sorting pins
- * locally instead would have been a second ordering authority — the exact thing
- * lib/queue and lib/groups exist to avoid.
- */
-export function buildLamps(
-  sessions: readonly LampSource[],
-  lit: UrgencyMarks,
-  now: number,
-  /**
-   * The cards the strip's own "N need you" is counting (#1137). A lamp is
-   * filled exactly when its session is one of them, so the number beside the
-   * lamps is the number of filled lamps. Omitted = nobody is counted.
-   */
-  needing: ReadonlySet<string> = new Set()
-): UrgencyLamp[] {
-  return sessions.map((s) => {
-    const p = presentStatus(s.status);
-    const paint = attentionPaint(s.status, needing.has(s.id));
-    return {
-      cardId: s.id,
-      title: s.title,
-      token: paint.token,
-      needsYou: paint.lit,
-      lit: isLit(lit, s.id, now),
-      suspended: s.status === 'suspended' || s.status === 'not-started',
-      labelKey: p.labelKey,
-    };
-  });
-}
-
-/**
- * Is this card's lamp still lit?
+ * Is this card still highlighted?
  *
  * A `null` entry — marked, not yet painted — is lit unconditionally: its beat
  * has not started, so there is no deadline to be past. That is the property

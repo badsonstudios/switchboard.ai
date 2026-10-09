@@ -70,8 +70,6 @@ async function mount(
         shown
         folded={new Set(foldedIds)}
         urgency={new Map()}
-        onExpire={noop}
-        onBeatStart={noop}
         groups={groups}
         order={railOrder(sessions, groups, pinned)}
         needing={new Set()}

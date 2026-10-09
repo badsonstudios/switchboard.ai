@@ -154,14 +154,14 @@ export function SessionRow(props: {
   ordinal?: number;
   /**
    * This is the session the last jump landed on, for the beat that says so
-   * (§5.8). Only the strip's lists pass it: with the rail on screen the lamps
-   * row is what lights up, and with the strip on screen the lamps row is gone.
+   * (§5.8). The rail and the strip's lists both pass it: since #1164 there is
+   * no row of lamps, and this outline is the whole of that signal.
    */
   flash?: boolean;
   /**
    * Its card is collapsed or hidden: not on screen until asked for (#1143).
-   * Only the strip's lists pass it — with the rail on screen the collapsed row
-   * is what says so, and with the strip on screen the collapsed row is gone.
+   * The rail and the strip's lists both pass it: since #1164 there is no
+   * Collapsed strip, and this dashed edge is the only thing that says so.
    */
   folded?: boolean;
   onFocus: () => void;
@@ -237,6 +237,8 @@ export function SessionRow(props: {
       data-rail-depth={depth ?? undefined}
       data-flash={props.flash ? 'true' : undefined}
       data-folded={props.folded ? 'true' : undefined}
+      // the pill's own hint: a dashed edge is not self-explanatory
+      title={props.folded ? t('strip.pillFoldedHint') : undefined}
       style={{
         position: 'relative',
         display: 'flex',

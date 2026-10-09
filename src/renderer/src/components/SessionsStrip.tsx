@@ -8,18 +8,15 @@
 //  - the RAIL, by listing every session: a group is an entry that drops down a
 //    list of its sessions as full rows (the rail's own `SessionRow`), and a
 //    session outside any group is a pill;
-//  - the LAMPS ROW, by carrying the one "N need you" total, by lighting the
-//    entry the last jump landed on, and by running that beat itself
-//    (`useUrgencyBeat`) now that the lamps are not there to;
+//  - the LAMPS ROW, by carrying the one "N need you" total and by lighting the
+//    entry the last jump landed on (App times that highlight, #1164);
 //  - the COLLAPSED ROW, by drawing a folded-away session with a dashed edge —
 //    its pill, or its row in a group's list, with the group saying how many —
 //    and bringing it back on a click.
 //
-// PUT AWAY (Ctrl+B), IT IS SIMPLY NOT THERE, and App brings the lamps row and
-// the collapsed row back while it is gone: with nothing listing the sessions,
-// those two are the only "N need you" and the only way back to a collapsed
-// one. So exactly one of the lamps row and this strip is ever mounted, and
-// whichever it is runs the beat.
+// PUT AWAY (Ctrl+B), IT IS SIMPLY NOT THERE, and nothing takes its place:
+// the lamps row and the collapsed row no longer exist in the app at all
+// (#1164, the owner's call).
 //
 // The row scrolls sideways when it does not fit, and a fixed cell at each end
 // says what is past that edge — in amber, with a number, when it is a session
@@ -51,7 +48,6 @@ import { needCount } from '../lib/rail-view';
 import { useHeldCounts } from '../lib/sibling-inbox';
 import { edgeOverflow, EdgeState, sameEdges } from '../lib/strip-overflow';
 import { isLit, UrgencyMarks } from '../lib/urgency';
-import { useUrgencyBeat } from '../lib/use-urgency-beat';
 import { tint } from '../lib/tint';
 import { directionOf } from '../lib/writing-direction';
 import { groupOverride, PolicyBook } from '../lib/presentation-policy';
@@ -113,10 +109,6 @@ export interface SessionsStripProps {
   folded: ReadonlySet<string>;
   /** card id -> when its post-jump highlight expires (store state, §5.8) */
   urgency: UrgencyMarks;
-  /** a beat has passed — ask the store to put it out. Must be stable. */
-  onExpire: () => void;
-  /** these marks are on the screen — start their beat. Must be stable. */
-  onBeatStart: (cardIds: readonly string[]) => void;
   /** the card the grid is currently showing */
   selectedId?: string | null;
   /** how many lines a task label may take in a list's rows (#877) */
@@ -339,8 +331,6 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   } | null>(null);
   const [draft, setDraft] = React.useState('');
 
-  // The lamps row is not on screen in this placement, so the beat is ours.
-  useUrgencyBeat(props.urgency, props.onExpire, props.onBeatStart);
   // One render's worth of "now", for the reason the lamps row gives: reading
   // the clock per entry could put two of them on opposite sides of the same
   // deadline within a single paint.

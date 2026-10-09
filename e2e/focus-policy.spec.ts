@@ -7,7 +7,7 @@
 // idea of what is on screen, and the ui blob on disk.
 //
 // The done-when, in the item's own words:
-//   • under `urgent` nothing ever steals focus (lamp only);
+//   • under `urgent` nothing ever steals focus (its row is marked, and that is all);
 //   • under `smart` a visible card focuses while a hidden one only marks urgent;
 //   • the setting persists.
 import { test, expect, Page } from '@playwright/test';
@@ -33,8 +33,10 @@ const row = (w: Page, title: string) =>
   rail(w).locator('[draggable="true"]', { hasText: title }).first();
 const tabs = (w: Page) => w.locator('.dv-tabs-container .dv-tab');
 const groups = (w: Page) => w.locator('.dv-groupview');
-const lamp = (w: Page, title: string) =>
-  w.getByTestId('urgency-strip').locator(`[data-urgency-lamp][title^="${title}"]`);
+/** a session's row in the Sessions list — where "this one needs you" shows
+ *  since the row of lamps was removed (#1164) */
+const listed = (w: Page, title: string) =>
+  w.locator('nav .rail-row', { hasText: title }).first();
 const eventRows = (w: Page) => w.locator('[data-event-kind]');
 const nextUp = (w: Page) => w.locator('[data-event-kind][data-next="true"]');
 
@@ -139,15 +141,15 @@ test.describe('focus-stealing policy (E9-10)', () => {
     await expect(tabs(w)).toHaveCount(3);
     await expect(focused(w)).toHaveText(new RegExp(third), { timeout: 20_000 });
 
-    // the hidden-behind-a-tab session finishes: the lamp says so and NOTHING
+    // the hidden-behind-a-tab session finishes: its row says so and NOTHING
     // else moves. This is the case the naive rung test gets wrong.
     await post(first, { hook_event_name: 'Stop' });
-    await expect(lamp(w, first)).toHaveAttribute('data-needs-you', 'true', { timeout: 20_000 });
+    await expect(listed(w, first)).toHaveAttribute('data-needs-you', 'true', { timeout: 20_000 });
     await expect(focused(w)).toHaveText(new RegExp(third));
     await expect(tabs(w)).toHaveCount(3); // and no card was rearranged
   });
 
-  test('urgent: nothing ever steals focus (lamp only) — and `focus` always does', async () => {
+  test('urgent: nothing ever steals focus (the row is marked, no more) — and `focus` always does', async () => {
     // The done-when's headline, and its opposite in the same launch, so the two
     // are proved against the same workspace rather than two similar ones.
     const folder = tempProjectFolder();
@@ -159,7 +161,7 @@ test.describe('focus-stealing policy (E9-10)', () => {
     await expect(tabs(w)).toHaveCount(2);
     const post = await hookPoster(a, 2);
 
-    await palette(w, 'When any session needs you: never jump, just light its lamp');
+    await palette(w, 'When any session needs you: never jump, just mark it in the list');
 
     // take the second session out of the workspace entirely, then stand in the
     // first: anything that moved would be unmistakable
@@ -169,14 +171,14 @@ test.describe('focus-stealing policy (E9-10)', () => {
     await row(w, first).click();
     await expect(focused(w)).toHaveText(new RegExp(first));
 
-    // it blocks on a permission. Under `urgent` the lamp is the WHOLE response:
+    // it blocks on a permission. Under `urgent` the marked row is the WHOLE response:
     // no focus, and the workspace is not rearranged either — E9-05's reveal is
     // itself a rearrangement, and "never steal" cannot coexist with it.
     // A REAL held request (#952): `PreToolUse` is no longer registered, and a
     // permission `Notification` is dropped before it can move a badge (#313).
     // `!perm` is what a permission IS on this transport. Assertions unchanged.
     await permissionHolder(a)(second);
-    await expect(lamp(w, second)).toHaveAttribute('data-needs-you', 'true', { timeout: 20_000 });
+    await expect(listed(w, second)).toHaveAttribute('data-needs-you', 'true', { timeout: 20_000 });
     await expect(tabs(w)).toHaveCount(1);
     await expect(focused(w)).toHaveText(new RegExp(first));
 
@@ -184,7 +186,7 @@ test.describe('focus-stealing policy (E9-10)', () => {
     // not even in the workspace all the way back, and hands it the cursor.
     await palette(w, 'When any session needs you: always jump to it');
     await post(second, { hook_event_name: 'UserPromptSubmit' }); // answer the hold
-    await expect(lamp(w, second)).toHaveAttribute('data-needs-you', 'false', { timeout: 20_000 });
+    await expect(listed(w, second)).toHaveAttribute('data-needs-you', 'false', { timeout: 20_000 });
     await permissionHolder(a)(second);
     await expect(tabs(w)).toHaveCount(2, { timeout: 20_000 });
     await expect(focused(w)).toHaveText(new RegExp(second));

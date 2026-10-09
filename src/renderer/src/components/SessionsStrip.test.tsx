@@ -67,8 +67,6 @@ async function mount(world: World, over: Partial<StripProps> = {}): Promise<HTML
         shown
         folded={new Set(world.folded ?? [])}
         urgency={new Map(world.urgency ?? [])}
-        onExpire={noop}
-        onBeatStart={noop}
         groups={world.groups}
         order={railOrder(world.sessions, world.groups, pinned)}
         needing={new Set(world.needing ?? [])}
@@ -375,33 +373,11 @@ describe('the highlight after a jump', () => {
     expect(pill(host, 'a').dataset.flash).toBeUndefined();
   });
 
-  it('starts the beat itself, since the lamps row is not there to', async () => {
-    // without this a jump would leave its highlight lit for good: the mark
-    // arrives with no deadline and only whoever painted it can start the clock
-    const started: string[][] = [];
-    await mount(
-      { groups: [], sessions: [s('a')], urgency: [['a', null]] },
-      { onBeatStart: (ids) => started.push([...ids]) }
-    );
-    await act(async () => {
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
-    });
-    expect(started).toEqual([['a']]);
-  });
-
-  it('put away, it is not there and starts nothing: the lamps row has the beat then', async () => {
-    // exactly one of the two runs the beat. If the strip went on running it
-    // while hidden, App bringing the lamps row back would make that two.
-    const started: string[][] = [];
-    const host = await mount(
-      { groups: [], sessions: [s('a')], urgency: [['a', null]] },
-      { shown: false, onBeatStart: (ids) => started.push([...ids]) }
-    );
+  it('put away, it draws nothing at all', async () => {
+    // …and runs nothing either: the highlight's timing is App's (#1164), so
+    // there is no reason for a hidden strip to stay mounted
+    const host = await mount({ groups: [], sessions: [s('a')], urgency: [['a', null]] }, { shown: false });
     expect(host.innerHTML).toBe('');
-    await act(async () => {
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null))));
-    });
-    expect(started).toEqual([]);
   });
 
   it('a jump that lands in the open list leaves it open, with the row lit', async () => {

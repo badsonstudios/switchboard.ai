@@ -22,6 +22,7 @@ import {
   readWorkspaceFile,
   skipPopoutOnLinux,
   permissionHolder,
+  rungOf,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -30,10 +31,14 @@ const rail = (w: Page) => w.locator('nav');
 const row = (w: Page, title: string) =>
   rail(w).locator('[draggable="true"]', { hasText: title }).first();
 const tabs = (w: Page) => w.locator('.dv-tabs-container .dv-tab');
-const strip = (w: Page) => w.getByTestId('collapsed-strip');
-const stripRows = (w: Page) => strip(w).locator('[data-collapsed-row]');
-const stripRow = (w: Page, title: string) =>
-  strip(w).locator(`[data-collapsed-row][title^="${title}"]`);
+// THE COLLAPSED STRIP IS GONE (#1164). What it listed is marked in the Sessions
+// list instead: a session that is folded away (collapsed or hidden) has a dashed
+// edge on its row. So "the strip" below is the list's folded rows, and a click
+// on one brings the session back exactly as a click on a strip row did. The
+// names are kept so the bodies below read as they always have.
+const strip = (w: Page) => w.locator('nav .rail-row[data-folded="true"]');
+const stripRows = strip;
+const stripRow = (w: Page, title: string) => strip(w).filter({ hasText: title });
 const modeChip = (w: Page) => w.getByTestId('layout-mode');
 /**
  * The header of whichever card is on screen.
@@ -91,7 +96,7 @@ test.describe('layout modes (E9-07)', () => {
 
     await row(w, second).click();
     await expect(w.locator('.dv-active-tab')).toContainText(second);
-    await palette(w, 'Layout: Focus — one big card, the rest as strips');
+    await palette(w, 'Layout: Focus — one big card, the rest folded away');
 
     // one large + slim strips (§5.8), and the large one is the card you are in
     await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
@@ -218,13 +223,14 @@ test.describe('layout modes (E9-07)', () => {
     await expect(stripRow(w, second)).toBeVisible();
     // the hand-hidden session is still hidden: maximize put the rest away, it
     // did not go and fetch one
-    await expect(stripRows(w)).toHaveCount(1);
+    await expect(stripRows(w)).toHaveCount(2); // the folded one, and the hand-hidden one
+    await expect.poll(() => rungOf(w, third)).toBe('hidden');
 
     // A held maximize is not a trap: §5.8 says clicking a session anywhere
     // reveals it, so going to look at the folded one has to work — and stick.
     await stripRow(w, second).click();
     await expect(tabs(w)).toHaveCount(2, { timeout: 25_000 });
-    await expect(strip(w)).toHaveCount(0);
+    await expect(strip(w)).toHaveCount(1); // only the hand-hidden one is still away
     // give a stray reactive sweep a chance to undo it before we believe it
     await w.waitForTimeout(500);
     await expect(tabs(w)).toHaveCount(2);
@@ -238,20 +244,20 @@ test.describe('layout modes (E9-07)', () => {
     await expect(w.locator('.dv-active-tab')).toContainText(first);
     await w.waitForTimeout(500);
     await expect(tabs(w)).toHaveCount(2);
-    await expect(strip(w)).toHaveCount(0);
+    await expect(strip(w)).toHaveCount(1); // only the hand-hidden one is still away
     await row(w, second).click();
     await expect(w.locator('.dv-active-tab')).toContainText(second);
     await row(w, first).click();
     await expect(w.locator('.dv-active-tab')).toContainText(first);
     await w.waitForTimeout(500);
     await expect(tabs(w)).toHaveCount(2);
-    await expect(strip(w)).toHaveCount(0);
+    await expect(strip(w)).toHaveCount(1); // only the hand-hidden one is still away
 
     // ...and again puts it back exactly as it was — including the hidden one
     // STAYING hidden
     await cardHeader(w).dblclick({ position: { x: 4, y: 4 } });
     await expect(tabs(w)).toHaveCount(2, { timeout: 25_000 });
-    await expect(strip(w)).toHaveCount(0);
+    await expect(strip(w)).toHaveCount(1); // only the hand-hidden one is still away
     await expect(rail(w).locator('[draggable="true"]')).toHaveCount(3);
     expect(await liveCount(w)).toBe(3);
 
@@ -261,7 +267,7 @@ test.describe('layout modes (E9-07)', () => {
     await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
     await w.keyboard.press(`${MOD}+Shift+M`);
     await expect(tabs(w)).toHaveCount(2, { timeout: 25_000 });
-    await expect(strip(w)).toHaveCount(0);
+    await expect(strip(w)).toHaveCount(1); // only the hand-hidden one is still away
   });
 
   // #216 — the gesture on the one card that used to have nowhere to receive it.

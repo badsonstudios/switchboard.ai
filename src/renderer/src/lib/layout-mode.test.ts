@@ -18,7 +18,6 @@ import {
   withoutMaximized,
 } from './layout-mode';
 import type { Ladder } from './presentation';
-import { showsRow } from './ladder';
 
 /** a card at the default rung, needing nothing, in the main window */
 function card(cardId: string, over: Partial<LayoutCard> = {}): LayoutCard {
@@ -578,10 +577,10 @@ describe('a layout mode never hides a card outright (the E9-09 load-bearing inva
     // it has to have DONE something, or the loop above proves nothing
     expect(emitted.size).toBeGreaterThan(0);
     for (const rung of emitted) {
-      // `expanded` keeps its card; `collapsed` keeps a strip row (showsRow).
-      // Anything else — `tabbed`, `hidden` — takes the session out of the one
-      // list pinning promises to keep it in.
-      expect(rung === 'expanded' || showsRow(rung)).toBe(true);
+      // A layout mode only ever leaves a pinned card `expanded` or
+      // `collapsed`. It never stacks one behind a tab or hides it: those are
+      // things only the user does to a session they pinned.
+      expect(rung === 'expanded' || rung === 'collapsed').toBe(true);
     }
   });
 

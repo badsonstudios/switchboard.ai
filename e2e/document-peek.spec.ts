@@ -15,7 +15,7 @@
 //     assert it and not reason about it. Reasoning about it is exactly what
 //     produced E8-04.
 //   * a viewer really does move to its own OS window and really does come back.
-//   * a viewer is not a session: not in the rail, not in the urgency strip
+//   * a viewer is not a session: not in the Sessions list
 //     (which is the attention queue's membership, on screen), and not taken by
 //     a bulk close.
 //   * quitting with viewers open does not cost a session.
@@ -50,7 +50,8 @@ const tabs = (w: Page) => w.locator('.dv-tabs-container .dv-tab');
 const docTab = (w: Page, file: string) => tabs(w).filter({ hasText: file });
 const rail = (w: Page) => w.locator('nav');
 const railRows = (w: Page) => rail(w).locator('[draggable="true"]');
-const lamps = (w: Page) => w.getByTestId('urgency-strip').locator('[data-urgency-lamp]');
+/** the Sessions list's rows: the one place every session is listed (#1164) */
+const listed = (w: Page) => w.locator('nav .rail-row');
 
 /**
  * A repo with `files` committed and then modified — one Changes row each.
@@ -482,21 +483,21 @@ test.describe('a viewer is not a session (P2-E16-03, §5.30)', () => {
     await launched?.cleanup();
   });
 
-  test('it is absent from the rail and the urgency strip, and a bulk close spares it', async () => {
+  test('it is absent from the Sessions list, and a bulk close spares it', async () => {
     const dir = tempGitProject(['ONE.md']);
     a = await launchApp({ seedFolder: dir });
     const w = a.window;
     await expect(railRows(w)).toHaveCount(1, { timeout: 25_000 });
-    await expect(lamps(w)).toHaveCount(1);
+    await expect(listed(w)).toHaveCount(1);
 
     await openChanges(w, dir);
     await openInViewer(w, 'ONE.md');
     await expect(viewer(w)).toBeVisible();
 
-    // NOT IN THE RAIL, and NOT IN THE QUEUE — the urgency strip is the queue's
-    // membership rendered, one lamp per session that could ever need a human.
+    // NOT IN THE LIST, and so NOT IN THE QUEUE — the list is the queue's
+    // membership rendered, one row per session that could ever need a human.
     await expect(railRows(w)).toHaveCount(1);
-    await expect(lamps(w)).toHaveCount(1);
+    await expect(listed(w)).toHaveCount(1);
 
     // NOT IN A BULK CLOSE. The session goes; the document stays open, because
     // it was never the session's to close.

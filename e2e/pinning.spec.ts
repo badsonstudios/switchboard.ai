@@ -16,7 +16,7 @@
 // layout engine, a scrollbar and a window, so it exists nowhere but here.
 //
 // Statuses are driven through the REAL hook listener, exactly as
-// idle-collapse.spec.ts does: a spawned session is `starting`, which reads as
+// layout-modes.spec.ts does: a spawned session is `starting`, which reads as
 // working, and only the CLI's own SessionStart makes it idle.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
@@ -28,11 +28,6 @@ const rail = (w: Page) => w.locator('nav');
 const rows = (w: Page) => rail(w).locator('[draggable="true"]');
 const row = (w: Page, title: string) => rows(w).filter({ hasText: title }).first();
 const tabs = (w: Page) => w.locator('.dv-tabs-container .dv-tab');
-const strip = (w: Page) => w.getByTestId('collapsed-strip');
-const stripRows = (w: Page) => strip(w).locator('[data-collapsed-row]');
-const stripRow = (w: Page, title: string) =>
-  strip(w).locator(`[data-collapsed-row][title^="${title}"]`);
-const fold = (w: Page) => strip(w).locator('[data-idle-fold]');
 
 /** run a palette command by its visible title */
 async function palette(w: Page, title: string): Promise<void> {
@@ -145,39 +140,6 @@ test.describe('pinning contract (E9-09)', () => {
     expect(await railTitles(w2)).toEqual(before);
   });
 
-  test('a pinned IDLE session never folds into the aggregate', async () => {
-    // five idle sessions: stand in one, fold the other four away with focus
-    // mode, and they aggregate — unless one of them is pinned.
-    const ws = await workspace(6);
-    a = ws.a;
-    const w = a.window;
-    const [focused, ...others] = ws.titles;
-    const kept = others[2]; // in the middle of what would be the fold
-
-    await togglePin(w, kept);
-    await row(w, focused).click();
-    await expect(w.locator('.dv-active-tab')).toContainText(focused);
-    await palette(w, 'Layout: Focus — one big card, the rest as strips');
-
-    // §5.8's "pinned ≠ always-expanded" in one assertion: the pinned session
-    // was collapsed by the layout mode like everybody else — pinning protects
-    // existence and position, NOT size...
-    await expect(tabs(w)).toHaveCount(1, { timeout: 20_000 });
-    await expect(stripRow(w, kept)).toBeVisible({ timeout: 20_000 });
-
-    // ...and it kept a row OF ITS OWN while the other four folded into one
-    await expect(fold(w)).toHaveAttribute('data-idle-fold', '4');
-    await expect(stripRows(w)).toHaveCount(1);
-    await expect(stripRow(w, kept)).toHaveAttribute('data-status', 'idle');
-
-    // unpin it and it joins them — the fold is derived from the pin, not from a
-    // set someone remembered once
-    await togglePin(w, kept);
-    await expect(fold(w)).toHaveAttribute('data-idle-fold', '5', { timeout: 20_000 });
-    await expect(stripRows(w)).toHaveCount(0);
-    expect(await liveCount(w)).toBe(6);
-  });
-
   test('a pinned session survives a bulk close', async () => {
     const ws = await workspace(4);
     a = ws.a;
@@ -248,7 +210,7 @@ test.describe('pinning contract (E9-09)', () => {
     // shrunk into one - so the minimum is lifted first. This is the OS window,
     // not product code: nothing test-only is reachable inside the app.
     //
-    // 560, and the sessions do the overflowing rather than the shrinking. The
+    // 480, and the sessions do the overflowing rather than the shrinking. The
     // app's own chrome (title bar, the rail's header and footer, and whatever
     // strips and banners happen to be up) takes 240-300px before the scroll
     // region gets any, and it is NOT a constant between runs - a service-health
@@ -261,8 +223,12 @@ test.describe('pinning contract (E9-09)', () => {
     // it with.
     await a.app.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
-      win.setMinimumSize(600, 520);
-      win.setSize(1000, 560);
+      // 480, down from 560: the bar above the workspace (#1163) and the lamps
+      // and collapsed rows (#1164) are gone, which gave the list about 60px
+      // more, and on the shortest runner seven rows then FIT at 560 and there
+      // was nothing to scroll.
+      win.setMinimumSize(600, 440);
+      win.setSize(1000, 480);
     });
 
     // SCROLL THE RAIL TO ITS END, and assert the clause the way a person reads

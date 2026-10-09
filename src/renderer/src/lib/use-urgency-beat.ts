@@ -1,17 +1,21 @@
 // The post-jump highlight's BEAT (§5.8, #320, #426) — when it starts and when it
 // ends.
 //
-// This was the body of `UrgencyStrip`, and it moved here verbatim when the
-// sessions strip (#1143) became a second place a jump can light something up.
-// The lamps row is not on screen while the sessions are listed across the top,
-// and the beat cannot go with it: a mark arrives from the jump with no deadline,
-// and it is THIS code that gives it one once the lit thing has painted, and
-// this code that puts it out. With nothing running it, every jump would leave a
-// highlight lit for good.
+// This was the body of the row of lamps. It moved here when the sessions strip
+// (#1143) became a second thing a jump could light up, and since #1164 — when
+// the lamps were removed from the app — it is called ONCE, by App.
 //
-// EXACTLY ONE component may call this at a time. Two would each start the same
-// beat and each arm a timer for it, which is harmless today and a waste the
-// next reader would have to prove harmless again.
+// A mark arrives from the jump with no deadline. This code gives it one, two
+// frames after the commit that could have painted it, and puts it out when the
+// beat has passed. "Could have": App times the beat, a child (a row, a pill, a
+// group's box) paints it, and when the list of sessions is hidden nothing
+// paints it at all. The beat still starts and still ends then, unseen — on
+// purpose. Holding it for the list to come back would show an outline for a
+// jump made minutes ago. What IS waited for is a window that is not rendering
+// (rAF does not fire there): a mark made while minimised keeps until you look.
+//
+// EXACTLY ONE caller. Two would each start the same beat and each arm a timer
+// for it.
 import React from 'react';
 import { nextLitExpiry, UrgencyMarks } from './urgency';
 

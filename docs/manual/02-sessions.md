@@ -294,8 +294,9 @@ Every session shows one of these:
 
 A row that needs you is **highlighted**: tinted, with a thicker colored bar at
 its left edge and its name in bold. Each group's heading counts them — **"2 need
-you"**, or **"calm"** — and so do the bottom of the Sessions list and the strip
-across the top of the window. The count and the highlighted rows always match:
+you"**, or **"calm"** — and the Sessions list totals them: at its foot when it
+is on the left, on its first line when it is across the top. When nobody is
+waiting there is no total. The count and the highlighted rows always match:
 if a heading says 1, exactly one row under it is highlighted.
 
 A session stops needing you when you deal with it:
@@ -317,8 +318,9 @@ A **suspended** session is one whose pop-out window you closed. The card stays,
 with a **Resume** button. Nothing is lost.
 
 Click **Resume** and the session comes back straight away — and so does the
-rest of the app's picture of it: its row in the Sessions list and its lamp in
-[the strip along the top](09-notifications.md#the-lamp-strip) both stop saying
+rest of the app's picture of it: its row or pill in
+[the Sessions list](09-notifications.md#who-needs-you-in-the-sessions-list)
+stops saying
 "suspended" the moment it restarts, without you clicking anything else.
 
 ## Restarting a dead session
@@ -420,16 +422,14 @@ A pinned session:
   sessions go with it, because pinning promotes a session inside its group rather
   than lifting it out of it. With no groups at all there's no caveat: it's on
   screen wherever you scroll to.
-- **is never folded away.** When a pile of idle sessions collapses into a
-  single "4 idle sessions" row, the pinned one keeps its own row.
 - **is never minimized behind your back.** If you've turned on
   [auto-collapse or auto-hide](07-workspace.md), a pinned session ignores it
   and stays put when you send a prompt.
 - **survives Close all sessions.** See below.
 
 Pinning is *protection*, not a size. It doesn't force the session to stay big:
-you can still collapse it, tab it, hide it, or let a layout mode fold it into a
-strip. What pinning promises is that it will still be there, and still where
+you can still collapse it, tab it, hide it, or let a layout mode fold it
+away. What pinning promises is that it will still be there, and still where
 you left it in the list.
 
 ## Closing a session

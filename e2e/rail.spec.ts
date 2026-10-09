@@ -145,9 +145,9 @@ test.describe('sessions rail', () => {
 
     const r = row(w, title);
     await expect(r).toHaveAttribute('data-needs-you', 'true', { timeout: 15_000 });
-    // all three agree BEFORE: group summary + footer, and the strip's aggregate
+    // they agree BEFORE: the group summary and the footer, in words and as a number
     await expect(rail(w).getByText('1 need you')).toHaveCount(2);
-    await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '1');
+    await expect(w.locator('nav [data-rail-need]')).toHaveAttribute('data-rail-need', '1');
 
     await openEventsDrawer(w);
     const item = w.getByTestId('events-drawer').locator('[data-event-kind]').first();
@@ -157,11 +157,11 @@ test.describe('sessions rail', () => {
       timeout: 15_000,
     });
 
-    // ...and all three follow it down. This is the regression: before #621 they
+    // ...and they follow it down. This is the regression: before #621 they
     // stayed at 1 for as long as the session lived.
     await expect(rail(w).getByText('need you')).toHaveCount(0, { timeout: 15_000 });
     await expect(rail(w).getByText('calm')).toBeVisible();
-    await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '0');
+    await expect(w.locator('nav [data-rail-need]')).toHaveCount(0);
 
     // The row follows the count down too (#1137): "0 need you" over a lit row
     // is the same disagreement from the other side. What does NOT move is what
