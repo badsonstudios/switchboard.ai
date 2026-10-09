@@ -194,7 +194,7 @@ export function QuietHoursSection(props: QuietHoursSectionProps): React.JSX.Elem
           {problem && (
             <span
               data-quiet-problem={problem}
-              style={{ fontSize: 11, color: 'var(--status-needs-input-ink)' }}
+              style={{ fontSize: 11, color: 'var(--status-crashed-ink)' }}
             >
               {t(`quiet.problem.${problem}`)}
             </span>

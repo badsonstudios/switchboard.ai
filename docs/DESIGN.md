@@ -3190,6 +3190,31 @@ filesystem itself (✓), fail-open trivially (✓).
 
 ### 5.20 Theming — token-based design system
 
+> **Owner rule, 2026-10-08 (#1165): yellow, gold and orange mean "a session
+> needs you", and nothing else.** *"None of our colors should use yellow or a
+> yellowish color. We just use yellowish for a warning that you're needed for
+> something. That's the only time you see a yellow color."*
+>
+> - **What "yellowish" is:** a hue between 20° and 70° at 25% saturation or
+>   more. That is orange (the "needs permission" status), amber ("needs
+>   input"), gold, yellow and the olive-yellows. Orange is inside on purpose:
+>   wanting permission is a session needing you. `src/shared/reserved-hue.ts`.
+> - **Who may use it:** the four status tokens `--status-needs-input`,
+>   `--status-needs-permission` and their inks, on a session that is waiting
+>   for you, a panel that is the session asking, or a count of such sessions.
+> - **What everything else uses:** a failure is red (`--status-crashed-ink`).
+>   Something worth noticing that is not a failure (unpushed commits, a
+>   pending connection, a degraded provider, a message waiting to be read) is
+>   blue (`--status-working-ink`). Your own messages in a conversation are
+>   neutral.
+> - **Session and group colours:** none is in the band. Amber and orange left
+>   the session palette (amber was the same hex as "needs input", and was the
+>   colour a first session got) for indigo and magenta; two group colours
+>   were replaced. Saved colours are moved when the workspace file is read.
+> - **The guard:** `src/renderer/src/theme/reserved-hue.test.ts` fails on a
+>   yellowish colour declared under any other token, a yellowish palette
+>   entry, or a new file painting with the four tokens.
+
 Day-one architecture (retrofit is brutal); v1 ships dark + light only.
 
 - Every color resolves through semantic tokens (CSS custom properties): base

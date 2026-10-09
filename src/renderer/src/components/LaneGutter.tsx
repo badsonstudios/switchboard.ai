@@ -44,7 +44,7 @@ const VB_H = 26;
  */
 export const LANE_INKS = [
   '--accent-blue',
-  '--accent-amber',
+  '--accent-indigo',
   '--accent-violet',
   '--accent-green',
   '--accent-teal',

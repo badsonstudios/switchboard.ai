@@ -224,7 +224,7 @@ export function PushSection(props: PushSectionProps): React.JSX.Element | null {
       {props.write?.key === key && (
         <span
           data-push-problem={key}
-          style={{ fontSize: 11, color: 'var(--status-needs-input-ink)' }}
+          style={{ fontSize: 11, color: 'var(--status-crashed-ink)' }}
         >
           {t(`push.problem.${props.write.problem}`)}
         </span>
@@ -245,7 +245,7 @@ export function PushSection(props: PushSectionProps): React.JSX.Element | null {
             data-push-result={channel}
             style={{
               fontSize: 11.5,
-              color: r.ok ? 'var(--text)' : 'var(--status-needs-input-ink)',
+              color: r.ok ? 'var(--text)' : 'var(--status-crashed-ink)',
             }}
           >
             {r.ok
@@ -274,7 +274,7 @@ export function PushSection(props: PushSectionProps): React.JSX.Element | null {
       {!available && (
         <p
           data-push-field="unavailable"
-          style={{ margin: 0, fontSize: 11.5, color: 'var(--status-needs-input-ink)' }}
+          style={{ margin: 0, fontSize: 11.5, color: 'var(--status-crashed-ink)' }}
         >
           {t('push.unavailable')}
         </p>
@@ -338,7 +338,7 @@ export function PushSection(props: PushSectionProps): React.JSX.Element | null {
                     {props.write?.key === 'ntfyServer' && (
                       <span
                         data-push-problem="ntfyServer"
-                        style={{ fontSize: 11, color: 'var(--status-needs-input-ink)' }}
+                        style={{ fontSize: 11, color: 'var(--status-crashed-ink)' }}
                       >
                         {t(`push.problem.${props.write.problem}`)}
                       </span>

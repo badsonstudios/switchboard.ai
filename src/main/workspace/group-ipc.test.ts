@@ -198,6 +198,8 @@ describe('a refused group mutation answers null and says why — it never throws
     ['a whitespace rename', ['groups:update', 'g1', { name: ' \t ' }]],
     ['a non-string name', ['groups:update', 'g1', { name: 42 }]],
     ['a color that is not #rrggbb', ['groups:update', 'g1', { color: 'red' }]],
+    ['a yellowish color (#1165: reserved for a session that needs you)', ['groups:update', 'g1', { color: '#d98f3d' }]],
+    ['a create in a yellowish color', ['groups:create', { name: 'ok', color: '#e3b341' }]],
     ['a short-hex color', ['groups:update', 'g1', { color: '#fff' }]],
     ['an unknown notify scope', ['groups:update', 'g1', { notifyScope: 'loud' }]],
     ['a non-string id', ['groups:update', 42, { name: 'x' }]],

@@ -470,9 +470,10 @@ export function HistoryPane(props: {
         )}
         {/* A detached HEAD is a state people reach by accident and cannot explain,
             and every commit made there is one they can lose. Said plainly, in the
-            attention ink, rather than left to be inferred from a missing chip. */}
+            notice ink (blue; yellow is a session needing you, #1165), rather than
+            left to be inferred from a missing chip. */}
         {!branch && detached && (
-          <span className="history-detached" style={{ color: 'var(--status-needs-input-ink)' }}>
+          <span className="history-detached" style={{ color: 'var(--status-working-ink)' }}>
             {t('history.detached')}
           </span>
         )}
@@ -570,7 +571,7 @@ export function HistoryPane(props: {
               gap: 4,
               alignItems: 'center',
               flexShrink: 0,
-              color: 'var(--status-needs-input-ink)',
+              color: 'var(--status-crashed-ink)',
               fontSize: 9.5,
             }}
           >
@@ -679,7 +680,7 @@ export function HistoryPane(props: {
           </div>
         )}
         {state.kind === 'commits' && sync.hasUpstream && (sync.ahead ?? 0) > 0 && (
-          <div className="history-outgoing" style={syncRowStyle('var(--status-needs-input-ink)')}>
+          <div className="history-outgoing" style={syncRowStyle('var(--status-working-ink)')}>
             {t('history.outgoing', { count: sync.ahead ?? 0 })}
           </div>
         )}
@@ -696,7 +697,7 @@ export function HistoryPane(props: {
           <div
             className="history-branch-error"
             role="status"
-            style={{ padding: '4px 8px', color: 'var(--status-needs-input-ink)', fontSize: 10.5 }}
+            style={{ padding: '4px 8px', color: 'var(--status-crashed-ink)', fontSize: 10.5 }}
           >
             {t('scm.writeFailed', { reason: branchError })}
           </div>
@@ -707,7 +708,7 @@ export function HistoryPane(props: {
         {state.kind === 'unreadable' && (
           <div
             className="history-unreadable"
-            style={{ padding: 10, color: 'var(--status-needs-input-ink)', fontSize: 11 }}
+            style={{ padding: 10, color: 'var(--status-crashed-ink)', fontSize: 11 }}
           >
             {t('history.unreadable', { reason: state.reason })}
           </div>
@@ -788,7 +789,7 @@ export function HistoryPane(props: {
         {state.kind === 'commits' && moreError && (
           <div
             className="history-more-failed"
-            style={{ padding: '6px 8px', color: 'var(--status-needs-input-ink)', fontSize: 11 }}
+            style={{ padding: '6px 8px', color: 'var(--status-crashed-ink)', fontSize: 11 }}
           >
             {t('history.moreFailed', { reason: moreError })}
           </div>
@@ -915,7 +916,7 @@ function CommitFiles(props: {
       {props.files?.unreadable && (
         <div
           className="history-files-unreadable"
-          style={{ padding: '3px 6px', color: 'var(--status-needs-input-ink)', fontSize: 10.5 }}
+          style={{ padding: '3px 6px', color: 'var(--status-crashed-ink)', fontSize: 10.5 }}
         >
           {t('history.filesUnreadable', { reason: props.files.unreadable })}
         </div>
@@ -1254,7 +1255,7 @@ function RefChip(props: { ref_: GitRefDto }): React.JSX.Element {
       : r.kind === 'remote'
         ? 'var(--muted)'
         : r.isHead
-          ? 'var(--status-needs-input-ink)'
+          ? 'var(--status-working-ink)'
           : 'var(--text)';
   return (
     <span

@@ -208,9 +208,9 @@ export function AboutPanel(props: {
               margin: 0,
               padding: '0 14px 10px',
               fontSize: 11.5,
-              // amber, borrowed from the needs-input status ink: the only
-              // "heads up, but nothing is broken" hue the token set defines
-              color: 'var(--status-needs-input-ink)',
+              // blue: "heads up, but nothing is broken". It was the needs-input
+              // amber until #1165 kept yellow for a session that needs you.
+              color: 'var(--status-working-ink)',
             }}
           >
             {t('about.dirtyNote')}

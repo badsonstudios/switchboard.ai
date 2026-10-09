@@ -42,28 +42,29 @@
 // settled rather than pending: `shared/ipc/refusal.ts`.
 import { randomUUID } from 'crypto';
 import { PersistedGroup, WorkspaceStore } from './store';
+import { GROUP_PALETTE } from '../../shared/group-palette';
+import { isReservedColor } from '../../shared/reserved-hue';
 import { IpcBroker } from '../ipc/broker';
 import { LogFields, Logger } from '../log/logger';
 
 const NAME_MAX = 60;
 const SCOPES: ReadonlyArray<PersistedGroup['notifyScope']> = ['all', 'important', 'muted'];
 
-/** Group color palette — owned here (persisted DATA, not renderer styling;
- *  the renderer's token rule bans raw colors in TSX). Legible on both themes. */
-export const GROUP_PALETTE = [
-  '#4a90d9',
-  '#8f6fd8',
-  '#3aa675',
-  '#d98f3d',
-  '#d95f6a',
-  '#3fb6c4',
-  '#c96fb0',
-  '#a3a83e',
-];
+// The palette moved to `shared/group-palette.ts` in #1165 (the store needs it
+// to move saved groups off the two retired colours). Re-exported so nothing
+// that imports it from here has to change.
+export { GROUP_PALETTE };
 
-/** #rrggbb only — the renderer picks from the theme palette. */
+/**
+ * #rrggbb only — the renderer picks from the theme palette.
+ *
+ * AND NOT A YELLOWISH ONE (#1165). The palette offers none, but "not offered"
+ * is the renderer's promise and this is the door: a caller that sent the old
+ * orange would have had it saved until the next launch moved it. Refused here,
+ * the rule is "no group can be given one", which is what was asked for.
+ */
 function isColor(c: unknown): c is string {
-  return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c);
+  return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) && !isReservedColor(c);
 }
 
 /**

@@ -317,7 +317,7 @@ export function StripGroupEntry(props: {
               style={{
                 fontFamily: 'var(--font-ui)',
                 fontSize: 9.5,
-                color: 'var(--status-needs-input-ink)',
+                color: 'var(--status-working-ink)',
                 whiteSpace: 'nowrap',
               }}
             >

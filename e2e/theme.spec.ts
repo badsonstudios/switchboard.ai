@@ -131,8 +131,9 @@ const auditWords = (opts: { ramp: string[]; only?: string }): Audit => {
   }
   // §5.11 SESSION ACCENTS, read out of the stylesheet so a ninth needs no edit.
   //
-  // Four of the eight are byte-identical to a status hue — `--accent-amber` IS
-  // `--status-needs-input`, `--accent-blue` IS `--status-working` — and a
+  // Two of the eight are byte-identical to a status hue — `--accent-blue` IS
+  // `--status-working`, `--accent-green` IS `--status-done` (there were four
+  // until #1165 took amber and orange out of the palette) — and a
   // session's accent arrives as a raw hex from the main process
   // (sessions/identity.ts), so a card's identity badge is the same pixels as a
   // needs-input word with no name attached to tell them apart. Where there is

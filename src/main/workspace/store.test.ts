@@ -1,3 +1,4 @@
+import { GROUP_PALETTE } from '../../shared/group-palette';
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -3208,5 +3209,74 @@ describe("a card's persisted autonomy is the shared vocabulary (#618)", () => {
     // the workspace file as `undefined`.
     const stored: Exact<PersistedSession['autonomy'], AutonomyMode | undefined> = true;
     expect(stored).toBe(true);
+  });
+});
+
+describe('saved colours are moved off the family reserved for "needs you" (#1165)', () => {
+  const session = (id: string, accentColor?: string): Record<string, unknown> => ({
+    id,
+    layoutSlot: 0,
+    identity: { title: id, folder: 'C:/proj/' + id, providerId: 'claude', ...(accentColor ? { accentColor } : {}) },
+  });
+  const write = (body: Record<string, unknown>): void => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ version: CURRENT_VERSION, ...body }));
+  };
+
+  it('⭐ a session saved as amber or orange comes back indigo or magenta, each its own', () => {
+    write({
+      sessions: [session('a', '#e3b341'), session('b', '#f0883e'), session('c', '#39c5bb'), session('d')],
+    });
+    const st = makeStore(file);
+    st.load();
+    const colours = Object.fromEntries(
+      st.listSessions().map((s) => [s.id, s.identity.accentColor])
+    );
+    expect(colours).toEqual({
+      a: '#7c8cf8',
+      b: '#cf7bea',
+      c: '#39c5bb', // not reserved: untouched
+      d: undefined, // none saved: none invented
+    });
+  });
+
+  it('a group saved in a retired colour comes back in its successor', () => {
+    write({
+      sessions: [],
+      groups: [
+        { id: 'g1', name: 'Backend', color: '#d98f3d' },
+        { id: 'g2', name: 'Docs', color: '#a3a83e' },
+        { id: 'g3', name: 'Web', color: '#4a90d9' },
+      ],
+    });
+    const st = makeStore(file);
+    st.load();
+    expect(st.listGroups().map((g) => [g.id, g.color])).toEqual([
+      ['g1', '#5b6ee1'],
+      ['g2', '#a35fd0'],
+      ['g3', '#4a90d9'],
+    ]);
+  });
+
+  it('a yellow from nowhere (a hand-edited file) goes to the nearest allowed colour', () => {
+    write({ sessions: [session('a', '#ffff00')], groups: [{ id: 'g1', name: 'X', color: '#ffd700' }] });
+    const st = makeStore(file);
+    st.load();
+    // pure yellow is 60 degrees: coral (5) is nearer than green (128)
+    expect(st.listSessions()[0].identity.accentColor).toBe('#f0776b');
+    const group = st.listGroups()[0].color;
+    expect(group).not.toBe('#ffd700');
+    expect(GROUP_PALETTE as readonly string[]).toContain(group);
+  });
+
+  it('loading the moved file again changes nothing', () => {
+    write({ sessions: [session('a', '#e3b341')] });
+    const first = makeStore(file);
+    first.load();
+    const moved = first.listSessions()[0].identity.accentColor;
+    write({ sessions: [session('a', moved)] });
+    const second = makeStore(file);
+    second.load();
+    expect(second.listSessions()[0].identity.accentColor).toBe(moved);
   });
 });

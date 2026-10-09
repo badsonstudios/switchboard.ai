@@ -116,6 +116,16 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **Yellow and orange now mean one thing: a session needs you.** Nothing else
+  in the app is drawn in them. Sessions are no longer given amber or orange
+  as their own colour (a first session used to get the exact yellow of
+  "needs input"); the ones you already have become indigo and magenta, and
+  two group colours changed the same way. Messages that failed are red.
+  Things worth noticing that are not failures are blue: unpushed commits, a
+  connector still connecting, a provider having trouble, a message from
+  another session waiting to be read. Your own messages in a conversation
+  have a plain tint instead of a yellow one.
+
 - **The "▦ Grid" button is gone from the top bar while the layout is Grid.**
   The pictures above took its place. It comes back, in their place, while
   Focus or Queue is on or a session is maximized, so you can still see why
