@@ -2043,6 +2043,33 @@ Surfaces in switchboard.ai:
 > a thing to fix when usage work is scheduled; recorded here because it is a
 > spec violation that is live in the app today, not a plan note.
 
+**Context fill: the meter under the prompt box (#715, 2026-10-09).** A second
+number, distinct from spend: how full a session's context window is, 0 to
+100%. It is **not** worked out from the transcript. The CLI answers it
+directly (`get_context_usage`, measured: `spike/findings/715-context-usage.md`),
+so host-don't-reimplement applies: the app shows the CLI's own `percentage`
+and knows no model's window size. Rules:
+
+- **Placement:** the right-hand end of the composer's options row, beside
+  Compact and Clear (owner, 2026-10-02: "bottom right, under the prompt").
+  Stream sessions only; an ended session has no meter.
+- **Nothing rather than a guess.** No answer, or an answer with no usable
+  figure, draws no meter. Never 0%.
+- **Only four numbers cross IPC** (`percentage`, `totalTokens`, `maxTokens`,
+  the auto-compact threshold). The CLI's answer lists memory files by path;
+  that stays in main.
+- **Three states, none of them yellow.** The ticket asked for yellow from
+  about 60%. §5.32's later rule (#1165) reserves yellow and orange for "a
+  session needs you", and a full window is not that. So: plain ink below 60,
+  `--status-working-ink` (blue) from 60, `--status-crashed-ink` (red) from
+  80. **Owner to confirm or overrule.** The number carries the state; colour
+  is emphasis.
+- **Form is a user choice** (number, bar, both), one preference for the app.
+- **Nothing automatic.** The CLI compacts on its own below 100%; the app
+  does not pre-empt it. The hover says where that point is.
+- Out of scope, as the ticket says: a rules-engine event at a threshold, and
+  wiring §5.6's "window drained" trigger to this number.
+
 ### 5.14 Provider service status
 
 - Poll Anthropic's Statuspage JSON (`status.anthropic.com/api/v2/status.json`,

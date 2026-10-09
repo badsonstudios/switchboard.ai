@@ -79,6 +79,12 @@ import {
   workingLookOf,
   type WorkingLook,
 } from './lib/working-look';
+import {
+  CONTEXT_METER_KEY,
+  DEFAULT_CONTEXT_METER_FORM,
+  contextMeterFormOf,
+  type ContextMeterForm,
+} from './lib/context-meter';
 import { sayManualMissing, sayUnavailable } from './lib/command-voice';
 import { DEFAULT_SOUND } from '../../shared/sounds';
 // #440: a refused call RESOLVES a truthy object — read every bridge answer
@@ -267,6 +273,16 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     document.documentElement.dataset.workingLook = workingLook;
   }, [workingLook]);
+  // The context meter's form (#715): the same document-attribute route.
+  const [contextMeter, setContextMeter] = useState<ContextMeterForm>(DEFAULT_CONTEXT_METER_FORM);
+  useEffect(() => {
+    document.documentElement.dataset.contextMeter = contextMeter;
+    syncDocumentFlags(); // popped-out cards draw it too
+  }, [contextMeter]);
+  const chooseContextMeter = React.useCallback((form: ContextMeterForm) => {
+    uiSet(CONTEXT_METER_KEY, form);
+    setContextMeter(form);
+  }, []);
   const chooseWorkingLook = React.useCallback((look: WorkingLook) => {
     uiSet(WORKING_LOOK_KEY, look);
     setWorkingLook(look);
@@ -717,6 +733,7 @@ export function App(): React.JSX.Element {
       setRailHidden(uiGet('railHidden', false));
       setSessionsPlacement(sessionsPlacementOf(uiGet<unknown>(SESSIONS_PLACEMENT_KEY, undefined)));
       setWorkingLook(workingLookOf(uiGet<unknown>(WORKING_LOOK_KEY, undefined)));
+      setContextMeter(contextMeterFormOf(uiGet<unknown>(CONTEXT_METER_KEY, undefined)));
       applyTabRows(loadTabRows()); // multi-row tab strip, default on (#84)
       setUiReady(true);
     });
@@ -2538,6 +2555,8 @@ export function App(): React.JSX.Element {
         onSetSessionsPlacement={(placement) => placeSessions(placement)}
         workingLook={workingLook}
         onSetWorkingLook={chooseWorkingLook}
+        contextMeter={contextMeter}
+        onSetContextMeter={chooseContextMeter}
         dispatchRetire={dispatchRetire}
         onSetDispatchRetire={(policy) => sessionStore.setDispatchRetire(policy)}
         quiet={quietState}

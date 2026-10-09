@@ -46,6 +46,8 @@ import { SessionsPlacementSection } from './settings/SessionsPlacementSection';
 import type { SessionsPlacement } from '../lib/sessions-placement';
 import { WorkingLookSection } from './settings/WorkingLookSection';
 import type { WorkingLook } from '../lib/working-look';
+import { ContextMeterSection } from './settings/ContextMeterSection';
+import type { ContextMeterForm } from '../lib/context-meter';
 import { QuietHoursSection } from './settings/QuietHoursSection';
 import { PushSection } from './settings/PushSection';
 import { AdvancedSection } from './settings/AdvancedSection';
@@ -81,6 +83,9 @@ export interface SettingsDialogProps {
   /** how a working session looks in the list and on the strip (#718) */
   workingLook: WorkingLook;
   onSetWorkingLook: (look: WorkingLook) => void;
+  /** how the context meter under the prompt box is drawn (#715) */
+  contextMeter: ContextMeterForm;
+  onSetContextMeter: (form: ContextMeterForm) => void;
 
   // ── Attention ───────────────────────────────────────────────────────────
   quiet: QuietState | null;
@@ -266,6 +271,7 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
               onSet={props.onSetSessionsPlacement}
             />
             <WorkingLookSection look={props.workingLook} onSet={props.onSetWorkingLook} />
+            <ContextMeterSection form={props.contextMeter} onSet={props.onSetContextMeter} />
             <TaskLabelSizeSection
               size={props.taskLabelSize}
               onSet={props.onSetTaskLabelSize}

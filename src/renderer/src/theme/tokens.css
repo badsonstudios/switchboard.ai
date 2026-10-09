@@ -591,6 +591,84 @@ body {
   cursor: default;
 }
 
+/* THE CONTEXT METER (#715), at the right-hand end of the composer's row.
+ *
+ * Three states, and NONE OF THEM IS YELLOW: yellow and orange mean "a session
+ * needs you" and nothing else (#1165). Plain ink while the window is
+ * comfortable, the "worth noticing" blue from 60%, the failure red from 80%.
+ * The number says the state without the colour (DESIGN 5.32).
+ *
+ * WHICH PARTS SHOW is the user's choice (Settings, Appearance), written to the
+ * document as `data-context-meter` the way the working look is. The bar-only
+ * form brings the number back from 60%, so the two states that ask something
+ * of you always carry a figure.
+ *
+ * THE FORM TRAVELS AS TWO INHERITED PROPERTIES, not as descendant selectors
+ * (found in review). The Settings samples each sit inside a wrapper carrying
+ * its OWN form, under a document carrying the user's; a rule written
+ * `[data-context-meter=percent] .context-meter-bar` matched through the
+ * document and hid the bar in all three samples. An inherited property takes
+ * its value from the NEAREST ancestor that sets it.
+ *
+ * `margin-inline-start: auto` is what keeps it at the right when the row
+ * wraps: the spacer before it stays on the first line. */
+[data-context-meter='percent'] {
+  --context-meter-bar: none;
+  --context-meter-number: inline;
+}
+[data-context-meter='bar'] {
+  --context-meter-bar: inline-block;
+  --context-meter-number: none;
+}
+[data-context-meter='both'] {
+  --context-meter-bar: inline-block;
+  --context-meter-number: inline;
+}
+.context-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  /* `--muted`, not `--faint`: at 10px the fainter ink is under 3:1 on the
+   * light theme, which is why #1009 took the chips beside it off that ink */
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: default;
+  margin-inline-start: auto;
+}
+.context-meter-bar {
+  display: var(--context-meter-bar, inline-block);
+  inline-size: 44px;
+  block-size: 5px;
+  border-radius: 3px;
+  background: var(--chip);
+  border: 1px solid var(--control-edge);
+  overflow: hidden;
+}
+.context-meter-fill {
+  display: block;
+  block-size: 100%;
+  background: var(--muted);
+}
+.context-meter[data-context-level='filling'] {
+  color: var(--status-working-ink);
+}
+.context-meter[data-context-level='filling'] .context-meter-fill {
+  background: var(--status-working-ink);
+}
+.context-meter[data-context-level='nearly-full'] {
+  color: var(--status-crashed-ink);
+  font-weight: 700;
+}
+.context-meter[data-context-level='nearly-full'] .context-meter-fill {
+  background: var(--status-crashed-ink);
+}
+/* only a comfortable window can lose its number: from 60% it is always said */
+.context-meter[data-context-level='normal'] .context-meter-number {
+  display: var(--context-meter-number, inline);
+}
+
 /* THE FEED IS SKIPPED NOW, AND IT IS NOT DONE FROM HERE (#740).
  *
  * ⚠️ This block said "the feed is deliberately NOT skipped" until #740 shipped,

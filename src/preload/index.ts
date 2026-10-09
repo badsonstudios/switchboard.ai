@@ -636,6 +636,14 @@ const api = {
     setEffort: (sessionId: string, level: string): Promise<ControlVerdict> =>
       ipcRenderer.invoke('sessions:setEffort', sessionId, level),
     /**
+     * How full this session's context window is (#715). A success carries
+     * `ContextUsage` (`shared/context-usage.ts`): the percentage by the
+     * CLI's own count, and the token counts behind it. Only those numbers
+     * cross: the CLI's full answer names files on the user's machine.
+     */
+    contextUsage: (sessionId: string): Promise<ControlVerdict> =>
+      ipcRenderer.invoke('sessions:contextUsage', sessionId),
+    /**
      * Which model this session is running — or `null` for "it has not said
      * yet" (#721).
      *

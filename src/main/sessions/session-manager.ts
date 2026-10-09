@@ -51,6 +51,7 @@ import {
   withLevel,
   type EffortState,
 } from '../../shared/effort';
+import { getContextUsageRequest, readContextUsage } from '../../shared/context-usage';
 import type { ControlVerdict } from '../../shared/control';
 
 /**
@@ -372,6 +373,29 @@ export class SessionManager {
     const levels = withLevel(effortLevelsFor(models.response, applied.model), applied.effort);
     const state: EffortState = { effort: applied.effort, levels };
     return { ok: true, response: { ...state, model } };
+  }
+
+  /**
+   * How full this session's context window is, by the CLI's own count
+   * (#715). `shared/context-usage.ts` has the measured contract.
+   *
+   * ONLY THE NUMBERS LEAVE HERE. The answer lists every memory file by
+   * path and every tool by name; none of that is the renderer's business,
+   * and it is fifty times the size of the four figures that are.
+   *
+   * An answer with no usable fill is `refused`, not a success carrying
+   * zero: the surface shows nothing rather than a confident wrong number.
+   */
+  async contextUsage(id: string): Promise<ControlVerdict> {
+    const gone = this.controlPrecheck(id);
+    if (gone) return gone;
+    const answer = await this.control.request(id, getContextUsageRequest);
+    if (!answer.ok) return answer;
+    const usage = readContextUsage(answer.response);
+    if (!usage) {
+      return { ok: false, reason: 'refused', message: 'the session did not say how full its context is' };
+    }
+    return { ok: true, response: { ...usage } };
   }
 
   /**

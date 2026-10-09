@@ -938,6 +938,25 @@
     "unboundNothing": "Nothing has turned up in {path}.",
     "unboundFallbackDirect": "Your session is unaffected — in Direct mode the conversation arrives in this window as Claude replies, rather than being read from that file. Watch the status on the card header; the transcript is only needed for usage totals and for resuming this session later."
   },
+  "contextMeter": {
+    "label": "Context used",
+    "percent": "context {percent}%",
+    "valueText": "{percent} percent of this session's context is used",
+    "hoverCounts": "This session's context is {percent}% full: {used} of {max} tokens.",
+    "hoverPercent": "This session's context is {percent}% full.",
+    "hoverCompacts": "Claude Code compacts the conversation on its own at about {at} tokens.",
+    "hover": {
+      "filling": "It is filling up: Compact or Clear, on this row, make room.",
+      "nearly-full": "It is nearly full: Compact or Clear, on this row, make room."
+    },
+    "setting": "Context meter",
+    "settingBlurb": "How the meter under each prompt box shows how full that session's context is. It turns blue from 60% and red from 80%.",
+    "form": {
+      "percent": "A number",
+      "bar": "A bar",
+      "both": "A bar and a number"
+    }
+  },
   "effort": {
     "label": "How hard the model thinks",
     "hint": "How hard the model thinks before it answers. Higher is slower and uses more of your allowance. Applies from your next prompt.",

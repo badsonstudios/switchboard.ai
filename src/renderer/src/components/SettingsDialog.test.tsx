@@ -42,6 +42,7 @@ const handlers = {
   onSetTaskLabelSize: vi.fn(),
   onSetSessionsPlacement: vi.fn(),
   onSetWorkingLook: vi.fn(),
+  onSetContextMeter: vi.fn(),
   onSetQuietWindow: vi.fn(),
   onSetPushPrefs: vi.fn(),
   onSetDispatchRetire: vi.fn(),
@@ -83,6 +84,7 @@ async function render(open = true, over: Record<string, unknown> = {}): Promise<
         taskLabelSize="full"
         sessionsPlacement="left"
         workingLook="fill"
+        contextMeter="percent"
         dispatchRetire="linger"
         quiet={quiet}
         push={push}

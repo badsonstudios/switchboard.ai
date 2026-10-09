@@ -60,6 +60,8 @@ export function syncDocumentFlags(windows: Iterable<Window> = openPopoutWindows(
       if (src.themeId) dest.dataset.themeId = src.themeId;
       if (src.colorScheme) dest.dataset.colorScheme = src.colorScheme;
       if (src.tabRows) dest.dataset.tabRows = src.tabRows;
+      // a popped-out card has a composer, and so a context meter (#715)
+      if (src.contextMeter) dest.dataset.contextMeter = src.contextMeter;
       copyThemeOverlay(srcEl, dest);
     } catch {
       /* window closed mid-iteration — fail open, it's cosmetic */

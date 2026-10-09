@@ -1284,6 +1284,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     }
     return manager.setEffort(sessionId, level);
   });
+  // How full the context window is (#715). The same read-only shape as
+  // `sessions:effort`. The manager hands back the numbers alone.
+  broker.handle('sessions:contextUsage', (_e, sessionId: string) => {
+    if (typeof sessionId !== 'string') {
+      return { ok: false, reason: 'invalid', message: 'no session' } satisfies ControlVerdict;
+    }
+    return manager.contextUsage(sessionId);
+  });
   /**
    * Which model this session is running, or `null` for "it has not said yet".
    *
