@@ -155,7 +155,8 @@ that way. The **N need you** total above never scrolls.
 There are no menu buttons on the strip. **Right-click** the thing you want to
 change. (From the keyboard: move to it with `Tab`, then press `Shift+F10`.)
 
-**On a session** (its pill, or its row in an open list):
+**On a session** (its pill, or its row in an open list). This is the same menu
+you get by right-clicking a session in the list on the left:
 
 - **Open changes** shows what that session has changed.
 - **Rename…** puts a box where the name was. `Enter` keeps the new name;
@@ -163,7 +164,12 @@ change. (From the keyboard: move to it with `Tab`, then press `Shift+F10`.)
 - **Pin session** / **Unpin session**.
 - **Close session** asks first, exactly as the ✕ does.
 - **Move to group** lists your groups, with a tick on the one the session is
-  in now, and **No group**. Pick one to move it.
+  in now, and **No group**. Pick one to move it. (Not there if you have no
+  groups yet, or for a session that never started.)
+
+What one session does when you send a prompt, and when it needs you, is not on
+this menu. Those two are on the session's own card, in its **⋯** menu: see
+[Getting out of the way by itself](#getting-out-of-the-way-by-itself).
 
 **On a group:**
 
@@ -242,7 +248,7 @@ a card with its own color and a **colored dot** beside its name.
   to sit alongside its new siblings.
 - **Remove a session:** drag it onto empty space in the list, outside any group.
 - **Without dragging:** right-click a session row (or press `Shift+F10` on it)
-  and pick a group under **Move to group** — the same list, plus **Ungrouped**
+  and pick a group under **Move to group** — the same list, plus **No group**
   to take it out. See
   [Moving a session into a group without dragging](06-keyboard.md#moving-a-session-into-a-group-without-dragging).
 - **Start a session directly inside one:** click the **⊕** on the group header.
@@ -561,10 +567,12 @@ matters more than the space it takes.
 
 - **For everything:** the **⬍** chip in the title bar. Click it to cycle through
   the three; the label always says which one you're on.
-- **For one session:** right-click its row in the Sessions list. The **ON
-  SUBMIT** section at the bottom of the menu has all three, plus **Follow the
+- **For one session:** open the **⋯** menu at the top right of that session's
+  card. **On submit** is a drop-down there with all three, plus **Follow the
   default** — which is how you go back to whatever the global setting is,
-  including after you change it later.
+  including after you change it later. It shows the choice in force. (This
+  used to be on the right-click menu of the session's row in the list on the
+  left.) If the card is folded away, click the session in the list first.
 - **For a group:** the **⬍** button on the group header cycles that group's
   setting. It's dimmed while the group is just following the default. (Only on
   groups *you* made — [automatic groups](#automatic-groups) have nothing to
@@ -640,10 +648,12 @@ list still shows what it's doing; nothing routes you there. It is
   you*. All four are there. (No title-bar chip for this one: unlike the **⬍**
   chip, its default is what the app has always done, so there's nothing to
   explain at a glance.)
-- **For one session:** right-click its row in the Sessions list. The **WHEN IT
-  NEEDS YOU** section at the bottom of the menu has all four, plus **Follow the
-  default** — which is how you go back to the global setting, including after
-  you change it later.
+- **For one session:** open the **⋯** menu at the top right of that session's
+  card. **When it needs you** is a drop-down there with all four, plus
+  **Follow the default** — which is how you go back to the global setting,
+  including after you change it later. (This used to be on the right-click
+  menu of the session's row in the list on the left.) The command palette
+  has the same choices for the session you're in: search for *this session*.
 
 A session's own choice beats the global one, and both are remembered across
 restarts. There's no group level for this one.

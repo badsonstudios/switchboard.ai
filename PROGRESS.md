@@ -14,10 +14,10 @@
 >    released.** Filed from it: **#1166**, an empty workspace says nothing
 >    about how to start once the list is hidden.
 > 2. **#1164 — remove the row of lamps and the Collapsed strip from the app
->    ENTIRELY. ← IN FLIGHT**, branch `feature/1164-remove-lamps-and-collapsed`.
->    *This line rides in that PR: if `main` no longer has
->    `src/renderer/src/components/UrgencyStrip.tsx`, it has landed and #1147
->    is next.* The post-jump beat is now run ONCE, by App
+>    ENTIRELY. DONE 2026-10-08, PR #1169 (`ddb8b7a`), merged, NOT released.**
+>    Its first CI run was red on four real-app tests that leaned on the
+>    height the removed rows took (three on Linux only); fixed in the same
+>    PR. The post-jump beat is now run ONCE, by App
 >    (`useUrgencyBeat`), not by whichever row is on screen; the rail gained
 >    the dashed "folded away" edge and the after-jump outline the strip
 >    already had; the lamps row's seventeen beat tests moved to
@@ -28,7 +28,18 @@
 >    each job the two rows did and who has it afterwards. **This also ends
 >    departure 1 in the #1143 block below.**
 > 2b. **#1168 — one short right-click menu for a session in both places
->    (owner picked option C from a side-by-side mockup, 2026-10-08).** The
+>    (owner picked option C from a side-by-side mockup, 2026-10-08).
+>    ← IN FLIGHT**, branch `feature/1168-one-short-session-menu`. *This line
+>    rides in that PR: if `main` has
+>    `src/renderer/src/components/CardPolicyRows.tsx`, it has landed and
+>    #1147 is next.* Built as two DROP-DOWNS on the card menu, not two ticked
+>    lists (the card menu already clips on a narrow split, #695). The strip
+>    menu took the left list's rule for the Move set (absent with no groups,
+>    and for a never-started session) so the two are identical;
+>    `session-menu-parity.test.tsx` mounts both and holds them equal. The
+>    keyboard reorder path was checked BEFORE the menu items went: the chord
+>    and the command list go through the store's `reorderSession`, which has
+>    its own tests for every claim the retired menu tests made. The
 >    "On submit" and "When it needs you" sections and "Move up / Move down"
 >    come off the left list's menu; the two per-session settings MOVE to the
 >    card's "…" menu, where they are not today. Mockup, git-ignored:

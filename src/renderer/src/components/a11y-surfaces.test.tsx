@@ -25,7 +25,6 @@ import en from '../../../shared/i18n/locales/en.json';
 import { SessionsRail } from './SessionsRail';
 import { EventsPanel } from './EventsPanel';
 import { DEFAULT_BOOK } from '../lib/presentation-policy';
-import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { uiDelete } from '../lib/ui-state';
 import { RailGroup, RailSession, EventDto } from '../model/types';
 import { NO_ORDER } from '../lib/rail-order';
@@ -74,7 +73,6 @@ function rail(
       selectedId={'selectedId' in over ? (over.selectedId ?? null) : 'c1'}
       palette={['var(--status-working)', 'var(--status-crashed)']}
       policies={DEFAULT_BOOK}
-      focusPolicies={DEFAULT_FOCUS_BOOK}
       onRename={noop}
       onFocus={noop}
       onDiff={noop}
@@ -87,8 +85,6 @@ function rail(
       onMoveToGroup={over.onMoveToGroup ?? noop}
       pinned={new Set()}
       onTogglePin={noop}
-      onSetSessionPolicy={noop}
-      onSetSessionFocusPolicy={noop}
       onCycleGroupPolicy={noop}
         manualOrder={NO_ORDER}
         onReorder={noop}
@@ -261,54 +257,23 @@ describe('sessions rail rows (issue 197)', () => {
     expect(document.activeElement).toBe(items[0]);
   });
 
-  it("reads each override set as ONE choice, not as loose commands", async () => {
-    // The menu carries four grouped choices now — #559's "order in this
-    // group", #253's "move to group", E9-06's "on submit" and E9-10's "when it
-    // needs you" (the last two drawn by the same `OverrideGroup`). What the
-    // grouping is FOR: a dozen radio items after three commands, with no
-    // labelled groups, reads as fifteen unrelated things. The reorder pair is
-    // grouped for the same reason even though its items are plain commands —
-    // "Move up" alone in a flat list says nothing about what it moves through.
+  it('names its one set of choices, so it reads as one choice and not loose commands', async () => {
+    // The menu had four labelled sets once: order in the group, move to
+    // group, on submit, when it needs you. #1168 made it the same short menu
+    // the strip has, and move-to-group is the one set left. The two override
+    // sets are on the card's own menu now (CardPolicyRows, with its own tests).
     const host = await mountRail();
     const row = host.querySelector<HTMLElement>('.rail-row')!;
     await act(async () => {
       row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     });
     const menu = document.querySelector<HTMLElement>('[role="menu"]')!;
-    const named = Array.from(menu.querySelectorAll<HTMLElement>('[role="group"]')).map((g) =>
-      g.getAttribute('aria-label')
-    );
-    expect(named).toEqual([
-      en.rail.menuOrder,
-      en.rail.menuMove,
-      en.ladder.policyMenu,
-      en.ladder.focusMenu,
-    ]);
-
-    // The OverrideGroup assertions below are about OVERRIDE semantics —
-    // default-first, default-checked — which neither of the other two labelled
-    // sets shares. Move-to-group's checked member is wherever the session IS
-    // (and a one-group workspace legitimately offers just two destinations);
-    // #559's reorder pair holds plain commands and no radio at all. Both have
-    // their own describes; this loop holds the two override sets to their
-    // contract.
-    const notOverrides: Array<string> = [en.rail.menuMove, en.rail.menuOrder];
-    const overrideGroups = Array.from(
-      menu.querySelectorAll<HTMLElement>('[role="group"]')
-    ).filter((g) => !notOverrides.includes(g.getAttribute('aria-label') ?? ''));
-    expect(overrideGroups).toHaveLength(2);
-    for (const group of overrideGroups) {
-      const radios = Array.from(group.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
-      // every value plus "follow the default", which must be reachable by the
-      // same gesture that left it
-      expect(radios.length).toBeGreaterThan(2);
-      // EXACTLY one is checked, and with no override set it is the default —
-      // a set with none checked, or two, is a radio set that lies
-      const checked = radios.filter((r) => r.getAttribute('aria-checked') === 'true');
-      expect(checked).toHaveLength(1);
-      expect(checked[0]).toBe(radios[0]);
-      expect(radios[0].dataset.policyItem ?? radios[0].dataset.focusItem).toBe('default');
-    }
+    const groups = Array.from(menu.querySelectorAll<HTMLElement>('[role="group"]'));
+    expect(groups.map((g) => g.getAttribute('aria-label'))).toEqual([en.rail.menuMove]);
+    // one choice out of a known set: exactly one is ticked
+    const radios = Array.from(groups[0].querySelectorAll<HTMLElement>('[role="menuitemradio"]'));
+    expect(radios.length).toBeGreaterThan(1);
+    expect(radios.filter((r) => r.getAttribute('aria-checked') === 'true')).toHaveLength(1);
   });
 
   it('walks the menu with the arrows and wraps at both ends', async () => {

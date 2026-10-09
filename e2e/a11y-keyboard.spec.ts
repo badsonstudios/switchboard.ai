@@ -176,7 +176,7 @@ test.describe('keyboard paths swept by #197', () => {
     // and back out again — the keyboard equivalent of a drop on the rail
     await w.keyboard.press('Shift+F10');
     await arrowUntil(w, '[data-move-item="ungrouped"]');
-    expect((await focused(w)).label).toContain('Ungrouped');
+    expect((await focused(w)).label).toContain('No group'); // the menu's word for it since #1168; the LIST's heading is still "Ungrouped"
     await w.keyboard.press('Enter');
     await expect(w.getByText('empty', { exact: true })).toBeVisible();
     await expect(w.locator('nav [role="status"]')).toHaveText(

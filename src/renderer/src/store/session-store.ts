@@ -138,7 +138,7 @@ export interface SessionState {
   /**
    * §5.8's focus-stealing policy (P2-E9-10): the global setting plus the
    * per-session overrides. In `state` for the same pair of reasons `policies`
-   * is — the rail menu RENDERS from it, and the reveal-on-attention effect
+   * is — the card's own menu RENDERS from it, and the reveal-on-attention effect
    * reads it while deciding what an incoming event may do.
    */
   readonly focusPolicies: FocusBook;
@@ -926,7 +926,7 @@ export class SessionStore {
    * The policy governing this card, overrides resolved.
    *
    * The card's persistent GROUP is looked up here rather than passed in, so
-   * every caller — the submit path, the rail menu's tick, a future layout mode —
+   * every caller — the submit path, the card menu's choice, a future layout mode —
    * gets the same answer without each one remembering that groups are a level.
    * `sessions` is the rail's own list, which is where card membership lives; a
    * card whose rail entry has not landed yet therefore resolves as ungrouped.

@@ -15,7 +15,6 @@ import { SessionsRail } from './SessionsRail';
 import { RailGroup, RailSession } from '../model/types';
 import type { RailCardStatus } from '../../../shared/sessions';
 import { DEFAULT_BOOK } from '../lib/presentation-policy';
-import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { NO_ORDER } from '../lib/rail-order';
 import { initI18nForTests } from '../i18n/test-i18n';
 
@@ -48,7 +47,6 @@ async function mount(sessions: RailSession[], needing: string[]): Promise<void> 
         palette={['var(--status-working)']}
         selectedId={null}
         policies={DEFAULT_BOOK}
-        focusPolicies={DEFAULT_FOCUS_BOOK}
         pinned={new Set<string>()}
         manualOrder={NO_ORDER}
         onReorder={noop}
@@ -63,8 +61,6 @@ async function mount(sessions: RailSession[], needing: string[]): Promise<void> 
         onOpenInGroup={noop}
         onMoveToGroup={noop}
         onTogglePin={noop}
-        onSetSessionPolicy={noop}
-        onSetSessionFocusPolicy={noop}
         onCycleGroupPolicy={noop}
       />
     );

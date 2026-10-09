@@ -125,37 +125,9 @@ test.describe('reordering a group (#559)', () => {
     await expect.poll(() => railTitles(w2)).toEqual([before[0], before[2], before[1]]);
   });
 
-  test('the row menu moves a session without a mouse, and says so', async () => {
-    // §5.32's fifth rule — a drag is never the only way to do something. Driven
-    // from the keyboard end to end: Shift+F10 opens the menu the ContextMenu
-    // key opens, and the live region is what a screen reader would be told.
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    const titles = [path.basename(folder)];
-    await expect(rows(w)).toHaveCount(1, { timeout: 25_000 });
-    titles.push(await addSession(a));
-
-    const before = await railTitles(w);
-    // focus the LAST row's own button, then summon its menu from the keyboard
-    await w.locator(`[data-rail-open]`).last().focus();
-    await w.keyboard.press('Shift+F10');
-    const menu = w.getByRole('menu');
-    await expect(menu).toBeVisible();
-
-    // at the bottom of the list, "Move down" is present but unavailable — the
-    // arrow walk must never find a hole where an item used to be
-    await expect(menu.locator('[data-order-item="down"]')).toHaveAttribute(
-      'aria-disabled',
-      'true'
-    );
-    await menu.locator('[data-order-item="up"]').click();
-
-    await expect.poll(() => railTitles(w)).toEqual([before[1], before[0]]);
-    // the words a screen reader gets, carrying the position so a second press
-    // re-announces rather than repeating a string the region already holds
-    await expect(rail(w).locator('[role="status"]')).toHaveText(
-      `${before[1]} is now 1 of 2 in Ungrouped`
-    );
-  });
+  // "The row menu moves a session without a mouse, and says so" stood here. The
+  // menu's Move up / Move down went in #1168 (one short session menu in both
+  // placements). The keyboard path is the chord, exercised at the end of the
+  // test above; the sentence a screen reader is told is held by
+  // lib/session-voice.test.ts.
 });

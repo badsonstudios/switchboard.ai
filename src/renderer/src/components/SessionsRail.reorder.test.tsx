@@ -13,7 +13,6 @@ import { act } from 'react';
 import { SessionsRail } from './SessionsRail';
 import { RailGroup, RailSession } from '../model/types';
 import { DEFAULT_BOOK } from '../lib/presentation-policy';
-import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { ManualOrder, NO_ORDER } from '../lib/rail-order';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { uiDelete } from '../lib/ui-state';
@@ -69,7 +68,6 @@ async function mount(opts: {
         palette={['var(--status-working)']}
         selectedId={null}
         policies={DEFAULT_BOOK}
-        focusPolicies={DEFAULT_FOCUS_BOOK}
         pinned={new Set(opts.pinned ?? [])}
         manualOrder={opts.manualOrder ?? NO_ORDER}
         onReorder={reorder}
@@ -84,8 +82,6 @@ async function mount(opts: {
         onOpenInGroup={noop}
         onMoveToGroup={move}
         onTogglePin={noop}
-        onSetSessionPolicy={noop}
-        onSetSessionFocusPolicy={noop}
         onCycleGroupPolicy={noop}
       />
     );
@@ -142,16 +138,6 @@ async function drag(from: string, to: string, half: 'top' | 'bottom'): Promise<v
       })
     );
   });
-}
-
-/** open a row's context menu and return the two order commands */
-async function orderItems(id: string): Promise<Record<'up' | 'down', HTMLElement | null>> {
-  await act(async () => {
-    rowOf(id).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-  });
-  const at = (dir: string): HTMLElement | null =>
-    document.querySelector<HTMLElement>(`[data-order-item="${dir}"]`);
-  return { up: at('up'), down: at('down') };
 }
 
 beforeAll(async () => {
@@ -289,75 +275,28 @@ describe('reordering a group by dragging (#559)', () => {
   });
 });
 
-describe('reordering from the keyboard (#559, §5.32)', () => {
-  it('Move up and Move down write the same order a drop would', async () => {
-    const m = await mount({
-      sessions: [session('a', 'g1'), session('b', 'g1'), session('c', 'g1')],
-      groups: [backend],
+// REORDERING FROM THE KEYBOARD IS NOT ON THIS MENU ANY MORE (#1168).
+//
+// "Move up" and "Move down" were two items on the session's right-click menu
+// here, and six tests of them stood in this place. The owner chose one short
+// session menu for both placements, and the pair went. The keyboard still has
+// its way: `Ctrl+Alt+Up` / `Ctrl+Alt+Down` and the two "Move session" commands
+// in the command list, which go through the store's `reorderSession` — whose
+// own tests (store/session-store.test.ts, lib/session-voice.test.ts and
+// lib/command-set.test.ts) hold every claim the six made: the order written,
+// the ends of a group, the pin, the Ungrouped list, and the sentence spoken.
+describe('the session menu and order (issue 1168)', () => {
+  it('offers no Move up or Move down: order is by dragging, or by the chord', async () => {
+    await mount({ sessions: [session('a', 'g1'), session('b', 'g1'), session('c', 'g1')], groups: [backend] });
+    await act(async () => {
+      rowOf('b').dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+      );
     });
-    const items = await orderItems('c');
-    await act(async () => items.up!.click());
-    expect(m.reorder).toHaveBeenCalledWith('g1', ['a', 'c', 'b']);
-  });
-
-  it('says what happened, and where the session ended up', async () => {
-    // A move made from the keyboard is otherwise SILENT — the row simply
-    // appears somewhere else, which is a fact carried entirely by the screen.
-    // The POSITION is in the words so that a second press re-announces: a live
-    // region handed the same string twice says it once.
-    await mount({
-      sessions: [session('a', 'g1'), session('b', 'g1'), session('c', 'g1')],
-      groups: [backend],
-    });
-    const items = await orderItems('c');
-    await act(async () => items.up!.click());
-    const live = host.querySelector<HTMLElement>('[role="status"]')!;
-    expect(live.textContent).toBe('c is now 2 of 3 in Backend');
-  });
-
-  it('names the Ungrouped bucket rather than pretending it is a group', async () => {
-    await mount({ sessions: [session('a'), session('b')] });
-    const items = await orderItems('b');
-    await act(async () => items.up!.click());
-    expect(host.querySelector<HTMLElement>('[role="status"]')!.textContent).toBe(
-      'b is now 1 of 2 in Ungrouped'
-    );
-  });
-
-  it('is aria-disabled at the ends of the group — present, focusable, unavailable', async () => {
-    // `disabled` would take the item out of the menu's arrow walk (focus() on a
-    // disabled button does nothing), and the walk would stop dead on it.
-    const m = await mount({
-      sessions: [session('a', 'g1'), session('b', 'g1')],
-      groups: [backend],
-    });
-    const top = await orderItems('a');
-    expect(top.up!.getAttribute('aria-disabled')).toBe('true');
-    expect(top.up!.hasAttribute('disabled')).toBe(false);
-    expect(top.down!.getAttribute('aria-disabled')).toBe('false');
-    await act(async () => top.up!.click());
-    expect(m.reorder).not.toHaveBeenCalled();
-  });
-
-  it('is aria-disabled where a pin blocks the step, from the same rule the drag uses', async () => {
-    await mount({
-      sessions: [session('a', 'g1'), session('b', 'g1'), session('c', 'g1')],
-      groups: [backend],
-      pinned: ['a'],
-    });
-    // `b` is the top of the unpinned block: up is blocked, down is not
-    const items = await orderItems('b');
-    expect(items.up!.getAttribute('aria-disabled')).toBe('true');
-    expect(items.down!.getAttribute('aria-disabled')).toBe('false');
-  });
-
-  it('is absent entirely for a group of one — an offer that cannot act is noise', async () => {
-    await mount({
-      sessions: [session('a', 'g1')],
-      groups: [backend],
-    });
-    const items = await orderItems('a');
-    expect(items.up).toBeNull();
-    expect(items.down).toBeNull();
+    const menu = document.querySelector<HTMLElement>('[role="menu"]')!;
+    expect(menu).not.toBeNull();
+    expect(menu.querySelector('[data-order-item]')).toBeNull();
+    expect(menu.textContent).not.toContain('Move up');
+    expect(menu.textContent).not.toContain('Move down');
   });
 });

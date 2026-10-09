@@ -18,7 +18,6 @@ import { act } from 'react';
 import { SessionsRail } from './SessionsRail';
 import { RailGroup, RailSession } from '../model/types';
 import { DEFAULT_BOOK } from '../lib/presentation-policy';
-import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { NO_ORDER } from '../lib/rail-order';
 import { LineageMap } from '../lib/dispatch-lineage';
 import { initI18nForTests } from '../i18n/test-i18n';
@@ -60,7 +59,6 @@ async function mount(opts: {
         palette={['var(--status-working)']}
         selectedId={null}
         policies={DEFAULT_BOOK}
-        focusPolicies={DEFAULT_FOCUS_BOOK}
         pinned={new Set(opts.pinned ?? [])}
         manualOrder={NO_ORDER}
         {...(opts.lineage ? { lineage: opts.lineage } : {})}
@@ -76,8 +74,6 @@ async function mount(opts: {
         onOpenInGroup={noop}
         onMoveToGroup={noop}
         onTogglePin={noop}
-        onSetSessionPolicy={noop}
-        onSetSessionFocusPolicy={noop}
         onCycleGroupPolicy={noop}
       />
     );
@@ -203,65 +199,8 @@ describe('a dispatched session nests under the session that sent it', () => {
   });
 });
 
-// ⚠️ THE ROW MENU'S MOVE ITEMS, WITH A LINEAGE — the gap that hid a real defect.
-//
-// `stepRow` planned the move with `planReorder(ids, id, at + delta, …)` while the
-// item's own enabled state asked `canStep`, which is `stepReorder`. The two computed
-// the step differently the moment a row had a subtree to step over, so on any author
-// that had dispatched something **Move down was drawn enabled and then did nothing**
-// — no write, no announcement, silently breaking the invariant the menu asserts
-// about itself. Nothing covered the menu path with a lineage, which is why.
-describe('Move up / Move down on a nested pair', () => {
-  const lineage = new Map([['reviewer', 'author']]);
-
-  /** open the row's context menu and return its two order items */
-  const openOrderMenu = async (id: string): Promise<{ up: HTMLElement; down: HTMLElement }> => {
-    await act(async () => {
-      row(id).dispatchEvent(
-        new MouseEvent('contextmenu', { bubbles: true, clientX: 30, clientY: 30 })
-      );
-    });
-    return {
-      up: host.querySelector<HTMLElement>('[data-order-item="up"]')!,
-      down: host.querySelector<HTMLElement>('[data-order-item="down"]')!,
-    };
-  };
-
-  it('⭐ OFFERS Move down ON AN AUTHOR, AND IT ACTUALLY MOVES — with its child', async () => {
-    await mount({
-      sessions: [session('author'), session('reviewer'), session('other')],
-      lineage,
-    });
-    expect(painted()).toEqual(['author', 'reviewer', 'other']);
-    const { down } = await openOrderMenu('author');
-    expect(down.getAttribute('aria-disabled')).toBe('false');
-    await act(async () => down.click());
-    expect(reorders).toHaveLength(1);
-    expect(reorders[0].ids).toEqual(['other', 'author', 'reviewer']);
-  });
-
-  it('...and Move up on the row BELOW the pair clears the whole subtree', async () => {
-    // The mirror of the same defect: the row above `other` is somebody else's child,
-    // so a naive one-step lands between a parent and its child and the nesting pass
-    // undoes it — a command greyed out for no reason a user could see.
-    await mount({
-      sessions: [session('author'), session('reviewer'), session('other')],
-      lineage,
-    });
-    const { up } = await openOrderMenu('other');
-    expect(up.getAttribute('aria-disabled')).toBe('false');
-    await act(async () => up.click());
-    expect(reorders[0].ids).toEqual(['other', 'author', 'reviewer']);
-  });
-
-  it('a lone child is offered NEITHER — it cannot leave its author', async () => {
-    await mount({
-      sessions: [session('author'), session('reviewer'), session('other')],
-      lineage,
-    });
-    const { up, down } = await openOrderMenu('reviewer');
-    expect([up, down].map((el) => el.getAttribute('aria-disabled'))).toEqual(['true', 'true']);
-    await act(async () => down.click());
-    expect(reorders).toEqual([]);
-  });
-});
+// The row menu's Move up / Move down, with a lineage, were tested here: three
+// cases for a defect where the item was drawn enabled on an author and then
+// did nothing. The items left the menu in #1168. The rule they shared with the
+// chord is the store's, and `reorderSession respects the nesting` in
+// store/session-store.test.ts holds it.

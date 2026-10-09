@@ -121,7 +121,7 @@ function isFocusPolicy(v: unknown): v is FocusPolicy {
 /**
  * Which policy governs this card. Session beats global; there is nothing else.
  *
- * One function so the rail menu's tick, the palette and the thing that actually
+ * One function so the card menu's choice, the palette and the thing that actually
  * happens when a session calls are all reading the same answer.
  */
 export function resolveFocusPolicy(book: FocusBook, cardId: string | undefined): FocusPolicy {

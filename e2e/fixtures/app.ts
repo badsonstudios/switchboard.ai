@@ -1831,3 +1831,41 @@ export async function hookPoster(
     return r.text();
   };
 }
+
+/**
+ * Set one of the two per-session settings on the "…" menu of the card that is
+ * in front: `card-policy` (on submit) or `card-focus-policy` (when it needs
+ * you). `value` is the setting's own name, or `default`.
+ *
+ * They were ticked lists on the left list's right-click menu until #1168
+ * moved them to the session's own card, so a spec that sets one has to bring
+ * that session to the front first (click its row) and then call this.
+ */
+export async function setOnFrontCard(
+  w: Page,
+  which: 'card-policy' | 'card-focus-policy',
+  value: string
+): Promise<void> {
+  await w.locator('.dv-active-group').getByTestId('card-menu-button').click();
+  await w.getByTestId(which).selectOption(value);
+  await expect(w.getByTestId(which)).toHaveValue(value);
+  // the menu stays open on a change (the choice is shown where it was made),
+  // so it is closed here, the way a person would
+  await w.getByTestId(which).focus();
+  await w.keyboard.press('Escape');
+  await expect(w.getByTestId('card-menu')).toHaveCount(0);
+}
+
+/** What the front card's "…" menu says one of the two settings is. Leaves the
+ *  menu closed. */
+export async function readOnFrontCard(
+  w: Page,
+  which: 'card-policy' | 'card-focus-policy'
+): Promise<string> {
+  await w.locator('.dv-active-group').getByTestId('card-menu-button').click();
+  const value = await w.getByTestId(which).inputValue();
+  await w.getByTestId(which).focus();
+  await w.keyboard.press('Escape');
+  await expect(w.getByTestId('card-menu')).toHaveCount(0);
+  return value;
+}
