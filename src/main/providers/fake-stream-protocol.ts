@@ -39,15 +39,36 @@ export type OutMessage = Record<string, unknown>;
  * before anything is switched, and a list that omitted it would be a list you
  * could switch away from and never back to.
  */
+/** #1115: the levels the real CLI lists for its current models (2.1.288). */
+const FAKE_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+
 export const FAKE_MODELS = [
-  { value: 'claude-fake-1', resolvedModel: 'claude-fake-1', displayName: 'Fake (default)' },
+  {
+    value: 'claude-fake-1',
+    resolvedModel: 'claude-fake-1',
+    displayName: 'Fake (default)',
+    supportsEffort: true,
+    supportedEffortLevels: FAKE_LEVELS,
+  },
   {
     value: 'default',
     resolvedModel: 'claude-opus-5[1m]',
     displayName: 'Default (recommended)',
     description: 'Opus 5 with 1M context · Best for everyday, complex tasks',
+    supportsEffort: true,
+    supportedEffortLevels: FAKE_LEVELS,
   },
-  { value: 'sonnet', resolvedModel: 'claude-sonnet-5', displayName: 'Sonnet' },
+  {
+    value: 'sonnet',
+    resolvedModel: 'claude-sonnet-5',
+    displayName: 'Sonnet',
+    supportsEffort: true,
+    // one model with a SHORTER list, as the real 4.6 models have: a consumer
+    // that offered every model the same levels would not be caught otherwise
+    supportedEffortLevels: ['low', 'medium', 'high'],
+  },
+  // NO effort keys at all, which is the real Haiku 4.5 payload: not `false`,
+  // absent.
   { value: 'haiku', resolvedModel: 'claude-haiku-4-5-20251001', displayName: 'Haiku' },
 ] as const;
 
@@ -206,6 +227,21 @@ export class FakeStreamProtocol {
    * actually applies anything pass its tests.
    */
   private model = 'claude-fake-1';
+  /**
+   * The effort level the flag settings ask for, or `null` for "none set"
+   * (#1115). Kept apart from the model on purpose: the real CLI keeps it
+   * across a model switch (set `max`, go to Haiku, come back, still `max`).
+   */
+  private effortFlag: string | null = null;
+
+  /** what `get_settings.applied.effort` says: `null` on a model with no
+   *  levels, the model default (`medium`) with nothing set */
+  private appliedEffort(): string | null {
+    const entry = FAKE_MODELS.find((m) => m.value === this.model);
+    const levels: readonly string[] = entry && 'supportedEffortLevels' in entry ? entry.supportedEffortLevels : [];
+    if (!levels.length) return null;
+    return this.effortFlag ?? 'medium';
+  }
 
   constructor(
     private readonly host: FakeStreamHost,
@@ -1075,6 +1111,44 @@ export class FakeStreamProtocol {
           request_id: requestId,
           response: { models: FAKE_MODELS },
         },
+      });
+      return;
+    }
+    // #1115 — both verbs as MEASURED on 2.1.288 (shared/effort.ts):
+    //  * `get_settings` answers `{effective, sources, applied}`, and `applied`
+    //    carries the model and the effort actually in force;
+    //  * `apply_flag_settings` answers `success` WITH NO PAYLOAD, and — the
+    //    trap — does so for a level it does not know, changing nothing. A
+    //    fake that refused a bad level would hide a consumer that trusts the
+    //    acknowledgement.
+    if (req?.subtype === 'get_settings') {
+      this.emit({
+        type: 'control_response',
+        response: {
+          subtype: 'success',
+          request_id: requestId,
+          response: {
+            effective: this.effortFlag ? { effortLevel: this.effortFlag } : {},
+            sources: [],
+            applied: { model: this.model, effort: this.appliedEffort() },
+          },
+        },
+      });
+      return;
+    }
+    if (req?.subtype === 'apply_flag_settings') {
+      const settings = (req as { settings?: unknown }).settings;
+      if (settings && typeof settings === 'object' && 'effortLevel' in settings) {
+        const level = (settings as { effortLevel?: unknown }).effortLevel;
+        if (level === null) this.effortFlag = null;
+        else if (typeof level === 'string' && (FAKE_LEVELS as readonly string[]).includes(level)) {
+          this.effortFlag = level;
+        }
+        // anything else: success, and nothing changes
+      }
+      this.emit({
+        type: 'control_response',
+        response: { subtype: 'success', request_id: requestId },
       });
       return;
     }

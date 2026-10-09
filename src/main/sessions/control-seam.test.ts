@@ -264,6 +264,93 @@ describe('driven against the fake provider’s own implementation', () => {
     });
   });
 
+  it('reads the effort level and the levels the session’s model takes (#1115)', async () => {
+    const t = new DrivableTransport(true);
+    const m = managerOn('stream', t);
+    const rec = m.create(identity);
+
+    await expect(m.effort(rec.id)).resolves.toEqual({
+      ok: true,
+      response: { effort: 'medium', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+    });
+  });
+
+  it('sets the level, and the set is visible on the next read', async () => {
+    const t = new DrivableTransport(true);
+    const m = managerOn('stream', t);
+    const rec = m.create(identity);
+
+    await expect(m.setEffort(rec.id, 'high')).resolves.toEqual({
+      ok: true,
+      response: { effort: 'high' },
+    });
+    await expect(m.effort(rec.id)).resolves.toMatchObject({ response: { effort: 'high' } });
+  });
+
+  it('⚠️ a level the CLI ignores is REFUSED, although the CLI said success', async () => {
+    // the measured trap: `apply_flag_settings` acknowledges anything. The
+    // fake does the same, so only the read-back can produce this verdict.
+    const t = new DrivableTransport(true);
+    const m = managerOn('stream', t);
+    const rec = m.create(identity);
+    await m.setEffort(rec.id, 'high');
+
+    await expect(m.setEffort(rec.id, 'no-such-level')).resolves.toEqual({
+      ok: false,
+      reason: 'refused',
+      message: 'the session did not take "no-such-level"; it is still on "high"',
+    });
+    await expect(m.effort(rec.id)).resolves.toMatchObject({ response: { effort: 'high' } });
+  });
+
+  it('refuses an empty level without writing anything', async () => {
+    const t = new DrivableTransport(true);
+    const m = managerOn('stream', t);
+    const rec = m.create(identity);
+    const before = t.sent.length;
+    await expect(m.setEffort(rec.id, '  ')).resolves.toMatchObject({ ok: false, reason: 'invalid' });
+    await expect(m.setEffort(rec.id, undefined)).resolves.toMatchObject({
+      ok: false,
+      reason: 'invalid',
+    });
+    expect(t.sent.length).toBe(before);
+  });
+
+  it('a model with no effort levels answers null, and one with fewer lists fewer', async () => {
+    const t = new DrivableTransport(true);
+    const m = managerOn('stream', t);
+    const rec = m.create(identity);
+    await m.setEffort(rec.id, 'max');
+
+    await m.setModel(rec.id, 'haiku');
+    await expect(m.effort(rec.id)).resolves.toEqual({
+      ok: true,
+      response: { effort: null, levels: [] },
+    });
+
+    // back on a model that has levels, the level is the one set before the
+    // switch (measured: it survives) — and it is offered even though this
+    // model's own list does not carry it, so the menu can show what is on.
+    // ⚠️ NOT MEASURED: what the real CLI reports when the surviving level is
+    // one the new model lacks (the probe came back to a model that has
+    // `max`). This is the fake's choice, and what it pins is OUR handling of
+    // "the level in force is not in the list", not the CLI.
+    await m.setModel(rec.id, 'sonnet');
+    await expect(m.effort(rec.id)).resolves.toEqual({
+      ok: true,
+      response: { effort: 'max', levels: ['low', 'medium', 'high', 'max'] },
+    });
+  });
+
+  it('a session that is gone answers session-gone for both', async () => {
+    const m = managerOn('stream', new DrivableTransport(true));
+    await expect(m.effort('nope')).resolves.toMatchObject({ ok: false, reason: 'session-gone' });
+    await expect(m.setEffort('nope', 'high')).resolves.toMatchObject({
+      ok: false,
+      reason: 'session-gone',
+    });
+  });
+
   it('an unknown verb fails CLEAN and leaves the session usable (P6)', async () => {
     const t = new DrivableTransport(true);
     const m = managerOn('stream', t);

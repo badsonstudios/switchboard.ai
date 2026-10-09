@@ -42,6 +42,14 @@ import {
   type PromptAttachment,
 } from '../../shared/stream-protocol';
 import { ControlChannel } from '../transport/control-channel';
+import {
+  effortLevelsFor,
+  getSettingsRequest,
+  readApplied,
+  setEffortRequest,
+  withLevel,
+  type EffortState,
+} from '../../shared/effort';
 import type { ControlVerdict } from '../../shared/control';
 
 /**
@@ -331,6 +339,69 @@ export class SessionManager {
     );
     if (verdict.ok) this.log.info('model changed', { sessionId: id });
     return verdict;
+  }
+
+  /**
+   * How hard this session's model is thinking, and the levels it could be set
+   * to (#1115). `shared/effort.ts` has the measured contract.
+   *
+   * Two questions to the CLI, because neither answers both: `get_settings`
+   * says what is APPLIED (the level, and the model), `list_models` says which
+   * levels that model takes. A model with no effort levels answers
+   * `effort: null`, and so does a CLI whose `get_settings` has no `applied`
+   * block — in both cases the honest surface is no chip.
+   */
+  async effort(id: string): Promise<ControlVerdict> {
+    const gone = this.controlPrecheck(id);
+    if (gone) return gone;
+    const settings = await this.control.request(id, getSettingsRequest);
+    if (!settings.ok) return settings;
+    const applied = readApplied(settings.response);
+    if (!applied || applied.effort === null) {
+      const none: EffortState = { effort: null, levels: [] };
+      return { ok: true, response: { ...none } };
+    }
+    const models = await this.control.request(id, listModelsRequest);
+    if (!models.ok) return models;
+    // the level in force is always offered, whatever the list says
+    const levels = withLevel(effortLevelsFor(models.response, applied.model), applied.effort);
+    const state: EffortState = { effort: applied.effort, levels };
+    return { ok: true, response: { ...state } };
+  }
+
+  /**
+   * Set how hard this session's model thinks, mid-session (#1115).
+   *
+   * ⚠️ VERIFIED BY EFFECT, EVERY TIME, because the acknowledgement is worth
+   * nothing: `apply_flag_settings` answers `success` to a level the CLI has
+   * never heard of and changes nothing (measured). So after the set, the
+   * level is READ BACK, and a set that did not take is reported as `refused`
+   * with what the session is actually on. The read costs one more local
+   * round trip and is the difference between a control that works and one
+   * that says it did.
+   */
+  async setEffort(id: string, level: unknown): Promise<ControlVerdict> {
+    const gone = this.controlPrecheck(id);
+    if (gone) return gone;
+    const sent = await this.control.request(id, (requestId) =>
+      setEffortRequest(requestId, level)
+    );
+    if (!sent.ok) return sent;
+    const settings = await this.control.request(id, getSettingsRequest);
+    if (!settings.ok) return settings;
+    const applied = readApplied(settings.response);
+    const want = typeof level === 'string' ? level.trim() : '';
+    if (!applied || applied.effort !== want) {
+      return {
+        ok: false,
+        reason: 'refused',
+        message: applied?.effort
+          ? `the session did not take "${want}"; it is still on "${applied.effort}"`
+          : `the session did not take "${want}"`,
+      };
+    }
+    this.log.info('effort changed', { sessionId: id, effort: want });
+    return { ok: true, response: { effort: want } };
   }
 
   /**

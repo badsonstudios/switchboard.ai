@@ -1256,6 +1256,24 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     if (verdict.ok && typeof model === 'string') streamModel?.noteSet(sessionId, model.trim());
     return verdict;
   });
+  // How hard the model thinks (#1115). The same two-channel shape as the
+  // model: one read, one write, both answering a verdict so the four ways
+  // of not getting an answer stay distinguishable. The level is validated
+  // in `setEffortRequest` before the wire AND verified by effect after it
+  // (`SessionManager.setEffort`), because the CLI says `success` to a level
+  // it does not know.
+  broker.handle('sessions:effort', (_e, sessionId: string) => {
+    if (typeof sessionId !== 'string') {
+      return { ok: false, reason: 'invalid', message: 'no session' } satisfies ControlVerdict;
+    }
+    return manager.effort(sessionId);
+  });
+  broker.handle('sessions:setEffort', (_e, sessionId: string, level: unknown) => {
+    if (typeof sessionId !== 'string') {
+      return { ok: false, reason: 'invalid', message: 'no session' } satisfies ControlVerdict;
+    }
+    return manager.setEffort(sessionId, level);
+  });
   /**
    * Which model this session is running, or `null` for "it has not said yet".
    *

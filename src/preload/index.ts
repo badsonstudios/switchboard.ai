@@ -619,6 +619,20 @@ const api = {
     setModel: (sessionId: string, model: string): Promise<ControlVerdict> =>
       ipcRenderer.invoke('sessions:setModel', sessionId, model),
     /**
+     * How hard this session's model is thinking, and what it could be set to
+     * (#1115). A success carries `{effort, levels}` (`EffortState` in
+     * `shared/effort.ts`); `effort: null` means this model has no effort
+     * levels, and the surface shows nothing.
+     */
+    effort: (sessionId: string): Promise<ControlVerdict> =>
+      ipcRenderer.invoke('sessions:effort', sessionId),
+    /**
+     * Set the effort level, mid-session (#1115). Verified by reading it back:
+     * a level that did not take answers `refused`, never a hollow success.
+     */
+    setEffort: (sessionId: string, level: string): Promise<ControlVerdict> =>
+      ipcRenderer.invoke('sessions:setEffort', sessionId, level),
+    /**
      * Which model this session is running — or `null` for "it has not said
      * yet" (#721).
      *

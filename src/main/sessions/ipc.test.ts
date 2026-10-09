@@ -388,6 +388,14 @@ function harness(
         controlCalls.push(['setModel', id, model]);
         return Promise.resolve(opts.setModelVerdict ?? { ok: true, response: {} });
       },
+      effort: (id: string) => {
+        controlCalls.push(['effort', id]);
+        return Promise.resolve({ ok: true, response: { effort: 'medium', levels: ['low', 'medium'] } });
+      },
+      setEffort: (id: string, level: unknown) => {
+        controlCalls.push(['setEffort', id, level]);
+        return Promise.resolve({ ok: true, response: { effort: level } });
+      },
       // Driven by the same set `get` answers from, so a test cannot be told two
       // different things about which sessions exist (#170 needs `list` — it is
       // what the `sessions:cards` join reads). Note what this is NOT: a spawn
@@ -2038,6 +2046,37 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
       expect(await h.call('sessions:setModel', 'live-1', 'haiku')).toMatchObject({ ok: false });
       expect(h.pushed.filter((p) => p.channel === 'sessions:model')).toEqual([]);
       expect(await h.call('sessions:currentModel', 'live-1')).toBeNull();
+    });
+
+    it('the two effort channels reach the manager, and refuse a bad session id with a verdict (#1115)', async () => {
+      const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated });
+
+      expect(await h.call('sessions:effort', 'live-1')).toEqual({
+        ok: true,
+        response: { effort: 'medium', levels: ['low', 'medium'] },
+      });
+      expect(await h.call('sessions:setEffort', 'live-1', 'high')).toEqual({
+        ok: true,
+        response: { effort: 'high' },
+      });
+      expect(h.controlCalls).toEqual([
+        ['effort', 'live-1'],
+        ['setEffort', 'live-1', 'high'],
+      ]);
+
+      h.controlCalls.length = 0;
+      for (const bad of [42, null, undefined, { id: 'live-1' }]) {
+        expect(await h.call('sessions:effort', bad)).toEqual({
+          ok: false,
+          reason: 'invalid',
+          message: 'no session',
+        });
+        expect(await h.call('sessions:setEffort', bad, 'high')).toMatchObject({
+          ok: false,
+          reason: 'invalid',
+        });
+      }
+      expect(h.controlCalls).toEqual([]); // nothing reached the manager
     });
 
     it('refuses a non-string session id with a VERDICT, never a boolean or a throw', async () => {
