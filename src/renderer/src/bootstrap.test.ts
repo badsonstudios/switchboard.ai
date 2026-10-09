@@ -32,6 +32,8 @@ function noopDeps(): CommandDeps {
     setLayoutMode: () => {},
     cycleLayoutMode: () => {},
     toggleMaximize: () => {},
+    applyLayoutPreset: () => {},
+    equalizeLayout: () => {},
     toggleRail: () => {},
     toggleEventsDrawer: () => {},
     openPalette: () => {},

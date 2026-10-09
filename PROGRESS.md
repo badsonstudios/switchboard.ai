@@ -29,10 +29,11 @@
 >    departure 1 in the #1143 block below.**
 > 2b. **#1168 — one short right-click menu for a session in both places
 >    (owner picked option C from a side-by-side mockup, 2026-10-08).
->    ← IN FLIGHT**, branch `feature/1168-one-short-session-menu`. *This line
->    rides in that PR: if `main` has
->    `src/renderer/src/components/CardPolicyRows.tsx`, it has landed and
->    #1147 is next.* Built as two DROP-DOWNS on the card menu, not two ticked
+>    DONE 2026-10-09, PR #1170 (`0d627f6`), merged, NOT released.** Two CI
+>    rounds: the first was red on a real-app test that read the old word
+>    "Ungrouped" for the menu entry now called "No group"; the second on an
+>    unrelated Settings-dialog test on Windows, filed as **#1171** and
+>    green on a re-run. Built as two DROP-DOWNS on the card menu, not two ticked
 >    lists (the card menu already clips on a narrow split, #695). The strip
 >    menu took the left list's rule for the Move set (absent with no groups,
 >    and for a never-started session) so the two are identical;
@@ -44,7 +45,21 @@
 >    come off the left list's menu; the two per-session settings MOVE to the
 >    card's "…" menu, where they are not today. Mockup, git-ignored:
 >    `.claude/work_files/718/session-menu-difference.html`.
-> 3. **#1147 — layout preset icons** (2-up / 3-up / rows / grid, plus Equalize).
+> 3. **#1147 — layout preset icons. ← IN FLIGHT**, branch
+>    `feature/1147-layout-presets`. *This line rides in that PR: if `main`
+>    has `src/renderer/src/lib/layout-presets.ts`, it has landed and #1115
+>    is next.* Built with dockview's public API only; "even" is computed
+>    from the serialized grid and applied with each group's `setSize`,
+>    MEASURED in the real app before anything else was built on it
+>    (`e2e/layout-presets.spec.ts`). **The Grid chip question was taken as
+>    decided the way it was put to him** (he was told "I will build it that
+>    way unless you say otherwise" and said nothing against it): no chip in
+>    Grid; the chip returns IN PLACE OF the buttons while Focus / Queue / a
+>    maximize is on. **Flagged in the tracker row for him to overrule.**
+>    The bar's width decided two more things: five buttons not six ("one
+>    place" is command-list only) and 20px cells. Tanner has not passed the
+>    icons. Original line:
+>    **layout preset icons** (2-up / 3-up / rows / grid, plus Equalize).
 >    *"Sounds good to me."* **ANSWERED 2026-10-08: they go in the top bar, by
 >    the ▦ Grid button** (*"that's what I meant. It should go by the grid
 >    button"*). He then asked what the Grid button does and whether it is

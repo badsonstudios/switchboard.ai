@@ -42,6 +42,8 @@ function deps(): CommandDeps & DepMocks {
     setLayoutMode: vi.fn<CommandDeps['setLayoutMode']>(),
     cycleLayoutMode: vi.fn(),
     toggleMaximize: vi.fn(),
+    applyLayoutPreset: vi.fn(),
+    equalizeLayout: vi.fn(),
     toggleRail: vi.fn(),
     toggleEventsDrawer: vi.fn(),
     openPalette: vi.fn(),
@@ -192,6 +194,20 @@ describe('seed command set (E9-01)', () => {
     expect(d.reorderSession).toHaveBeenCalledWith('b', 'up');
     byId(cmds, 'session.reorder.down').run(ctxWith(['a', 'b'], 'b'));
     expect(d.reorderSession).toHaveBeenCalledWith('b', 'down');
+  });
+
+  it('every arrangement has a command, and "make them even" has one too (#1147)', () => {
+    // the top bar draws five of the six as pictures; the command list is
+    // where all six are in words, so nothing is in the mouse alone
+    const d = deps();
+    const cmds = buildCommands(d);
+    for (const preset of ['single', 'columns2', 'columns3', 'rows', 'grid'] as const) {
+      byId(cmds, `layout.preset.${preset}`).run(ctxWith([], null));
+      expect(d.applyLayoutPreset).toHaveBeenLastCalledWith(preset);
+    }
+    expect(d.applyLayoutPreset).toHaveBeenCalledTimes(5);
+    byId(cmds, 'layout.equalize').run(ctxWith([], null));
+    expect(d.equalizeLayout).toHaveBeenCalledTimes(1);
   });
 
   it('close-all routes to the bulk closer and has NO binding', () => {
@@ -643,7 +659,9 @@ describe('seed command set (E9-01)', () => {
       const cmds = buildCommands(deps()).filter(
         (c) => c.id.startsWith('layout.') || c.id === 'session.maximize'
       );
-      expect(cmds.length).toBe(LAYOUT_MODES.length + 2);
+      // the modes, their cycle, maximize; and (#1147) the five arrangements
+      // and "make them even"
+      expect(cmds.length).toBe(LAYOUT_MODES.length + 2 + 5 + 1);
       for (const c of cmds) expect(c.scope, c.id).toBe('app');
     });
   });

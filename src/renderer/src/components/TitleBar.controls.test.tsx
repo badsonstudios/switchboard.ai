@@ -59,6 +59,9 @@ async function bar(): Promise<void> {
         layoutMode="grid"
         layoutMaximized={false}
         onCycleLayoutMode={noop}
+        onLayoutPreset={() => {}}
+        onEqualizeLayout={() => {}}
+        layoutArrangeable
         layoutBinding="Ctrl+Alt+L"
         autoLabels
         onCycleLabels={noop}

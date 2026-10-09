@@ -27,6 +27,8 @@ import { listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
 import { ContributionBoundary } from '../extensibility/boundary';
 import { IdentityChip, identityBadgeStyle, identityWash } from './IdentityChip';
 import { CardPolicyRows } from './CardPolicyRows';
+import { applyPreset, arrangeablePanels, equalizeGrid } from './grid-presets';
+import type { LayoutPreset } from '../lib/layout-presets';
 import { DiffPane } from './DiffPane';
 import {
   StandingGrantsSection,
@@ -5237,6 +5239,34 @@ export function setLayoutMode(api: DockviewApi | null, mode: LayoutMode): void {
   applyLayout(api, 'switch');
 }
 
+/**
+ * Rearrange what is open into a named shape (#1147).
+ *
+ * FENCED LIKE A SWEEP (`layoutSweepPort.ready`): a boot restore replays the
+ * saved arrangement over several awaits, and a command landing inside that
+ * window would move panels the restore is still adding.
+ *
+ * AN ARRANGEMENT IS MADE IN THE PLAIN GRID. If Focus or Queue is on, or a
+ * session is maximized, the workspace is first switched to Grid the ordinary
+ * way — which brings back what the mode folded away, exactly as clicking the
+ * chip would — and only then arranged. Setting the mode without that sweep
+ * (the first version, found in review) left the folded sessions folded with
+ * the snapshot that would have restored them thrown away.
+ */
+export async function arrangeWorkspace(
+  api: DockviewApi | null,
+  preset: LayoutPreset
+): Promise<number> {
+  if (!api || !layoutSweepPort.ready()) return 0;
+  const cur = sessionStore.getLayout();
+  if (cur.mode !== 'grid' || cur.maximized) {
+    sessionStore.setLayout(withMode('grid'));
+    await layoutSweeper.request({ api, trigger: 'switch' });
+    if (!layoutSweepPort.ready()) return 0; // torn down while it ran
+  }
+  return applyPreset(api, preset);
+}
+
 /** Next mode in the cycle — the binding and the titlebar chip. */
 export function cycleLayoutMode(api: DockviewApi | null): void {
   setLayoutMode(api, cycleMode(sessionStore.getLayout().mode));
@@ -5816,6 +5846,12 @@ export interface GridController {
   cycleLayoutMode: () => void;
   /** blow one session up to fill the workspace, or put the prior layout back */
   toggleMaximize: (cardId: string) => void;
+  /** rearrange what is open into a named shape (#1147); how many places the
+   *  result has, 0 when there was nothing to arrange */
+  applyPreset: (preset: LayoutPreset) => Promise<number>;
+  /** make every split even without moving anything (#1147); false when it
+   *  already was */
+  equalize: () => boolean;
   /**
    * Re-apply the mode after something moved underneath it — a session started
    * needing a human, focus changed, a card arrived. A no-op unless a mode is
@@ -5830,6 +5866,9 @@ export function SessionGrid(props: {
   colorScheme: 'light' | 'dark';
   seedPanels: number;
   onCardsChanged: (ids: string[]) => void;
+  /** how many panels are in the main workspace (not popped out, not folded
+   *  away): fewer than two and there is nothing to arrange (#1147) */
+  onArrangeableChanged?: (count: number) => void;
   /** which card the grid is showing — the rail paints it as the selected row */
   onActiveCardChanged?: (cardId: string | null) => void;
   controller?: React.MutableRefObject<GridController | null>;
@@ -6313,6 +6352,8 @@ export function SessionGrid(props: {
       setLayoutMode: (mode) => setLayoutMode(apiRef.current, mode),
       cycleLayoutMode: () => cycleLayoutMode(apiRef.current),
       toggleMaximize: (cardId) => toggleMaximizeCard(apiRef.current, cardId),
+      applyPreset: (preset) => arrangeWorkspace(apiRef.current, preset),
+      equalize: () => (layoutSweepPort.ready() ? equalizeGrid(apiRef.current) : false),
       applyLayout: (trigger) => applyLayout(apiRef.current, trigger),
       focusSession: (liveId) => {
         const cardId = sessionStore.cardIdForLive(liveId);
@@ -6633,7 +6674,11 @@ export function SessionGrid(props: {
       // included, resolves the variables in theme/dockview-tokens.css.
       api.updateOptions({ theme: dockviewTheme(props.colorScheme) });
 
-      const report = () => props.onCardsChanged(api.panels.map((p) => p.id));
+      const report = () => {
+        props.onCardsChanged(api.panels.map((p) => p.id));
+        // what the arrangement buttons ask before offering anything (#1147)
+        props.onArrangeableChanged?.(arrangeablePanels(api));
+      };
       const saveLayout = () => {
         try {
           window.switchboard.workspace.setLayout(api.toJSON());

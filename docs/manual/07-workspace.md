@@ -467,9 +467,12 @@ with it and moved on.
 
 ### Changing it
 
-- **With the mouse:** the **▦** chip in the title bar. Click to cycle
-  Grid → Focus → Queue; the label always says which one you're on.
-- **From the keyboard:** `Ctrl+Shift+L` cycles the same three.
+- **From the keyboard:** `Ctrl+Shift+L` cycles Grid → Focus → Queue.
+- **With the mouse:** while Focus or Queue is on (or a session is maximized),
+  a **▦** chip in the title bar says so. Click it to step to the next one;
+  it goes away when you are back on Grid. In the ordinary Grid layout there
+  is no chip: its spot has the
+  [arrangement buttons](#arranging-cards-with-one-click) instead.
 - **By name:** the command palette (`Ctrl+Shift+P`) has **Layout: Grid**,
   **Layout: Focus** and **Layout: Queue**, so you can go straight to one.
 
@@ -663,6 +666,55 @@ restarts. There's no group level for this one.
 Drag a card's tab to split the grid, stack cards as tabs, or reorder them. The
 arrangement is saved and restored next launch, along with which session you had
 focused and which tab it was showing.
+
+### Arranging cards with one click
+
+In the title bar there is a block of five small pictures. Each one is a drawing
+of the arrangement it makes. Click one and the sessions that are open are put
+in that shape, at equal sizes:
+
+| Picture | What you get |
+|---|---|
+| A box split down the middle | **Two side by side** |
+| A box split in three | **Three side by side** |
+| A box split across | **Two rows**, one above the other |
+| A box split both ways | **Two by two** |
+| A line with two arrows pointing at it | **Make them even** (see below) |
+
+How your sessions are placed:
+
+- **In the order of the Sessions list.** The first session in the list goes top
+  left, the next one beside it, and so on, left to right and then down.
+- **Extra sessions become tabs in the last place.** Two side by side with five
+  sessions open is one session on the left and four as tabs on the right.
+- **Never an empty place.** Three side by side with two sessions open is two
+  columns. Two by two with three sessions is two on top and one across the
+  bottom.
+- **Nothing is closed and nothing is folded away.** Sessions that are already
+  folded away stay folded away, and popped-out windows are left alone.
+- **A changes or document tab stays with the session it was sitting with.** One
+  that was in a place of its own goes to the last place.
+
+With fewer than two sessions open the pictures are dimmed, and hovering says
+why.
+
+**Make them even** does not move anything. It puts every divider back in the
+middle: two cards side by side go back to half each, a two by two goes back to
+four equal quarters. Use it after you have dragged a divider and want the even
+split back without guessing where the middle is. If one side is itself split
+(one card on the left, two stacked on the right), the left and right get half
+each and the two on the right share their half.
+
+**From the keyboard:** all of these are in the command palette
+(`Ctrl+Shift+P`). Type *arrange*. There is one more there that has no picture:
+**Arrange: one place, every session as a tab**, which is how a workspace
+starts out.
+
+An arrangement is something you set up by hand, so choosing one while Focus or
+Queue is on (or a session is maximized) first puts the layout back to Grid,
+which brings back the sessions that layout had folded away, and then arranges
+them. While one of those is on the pictures are replaced by the **▦** chip;
+use the command palette, or click the chip until it goes away.
 
 ## When you have more tabs than fit
 

@@ -11,6 +11,8 @@ import { ThemeDefinition } from '../theme/theme';
 import { BuildIdentity, commitStamp } from '../../../shared/build-identity';
 import type { PresentationPolicy } from '../lib/presentation-policy';
 import type { LayoutMode } from '../lib/layout-mode';
+import type { LayoutPreset } from '../lib/layout-presets';
+import { LayoutPresets } from './LayoutPresets';
 import type { SessionsPlacement } from '../lib/sessions-placement';
 import { SessionsPlacementSwitch } from './SessionsPlacementSwitch';
 import { autonomyTooltip } from '../lib/autonomy';
@@ -77,6 +79,12 @@ export function TitleBar(props: {
   layoutMaximized: boolean;
   onCycleLayoutMode: () => void;
   layoutBinding: string;
+  /** the one-click arrangements and "make them even" (#1147) */
+  onLayoutPreset: (preset: LayoutPreset) => void;
+  onEqualizeLayout: () => void;
+  /** two or more sessions are open in the workspace, so there is something
+   *  to arrange */
+  layoutArrangeable: boolean;
   // `autoTrust` / `trustReaches` / `onToggleTrust` went with the chip (#952).
   /** whether the trust setting can change what any session does (#397) — false
    *  greys the chip out, because Direct-mode sessions are never asked */
@@ -248,22 +256,42 @@ export function TitleBar(props: {
           when you submit, this one is how the WHOLE workspace is arranged — and
           because "why is everything a strip all of a sudden?" has to be
           answerable by looking up, not by reading a settings page. */}
-      <Chip
-        /* lit for a MAXIMIZE too, even in grid: the chip's job is to answer
-           "why is everything a strip all of a sudden?", and a maximize is one
-           of the two ways that happens */
-        selected={props.layoutMode !== 'grid' || props.layoutMaximized}
-        onClick={props.onCycleLayoutMode}
-        title={t('layout.chipHint', {
-          mode: t(`layout.${props.layoutMode}`),
-          binding: props.layoutBinding,
-        })}
-        testId="layout-mode"
-      >
-        {t(props.layoutMaximized ? 'layout.chipMaximized' : 'layout.chip', {
-          mode: t(`layout.${props.layoutMode}`),
-        })}
-      </Chip>
+      {/* #1147: THE ARRANGEMENT BUTTONS TOOK THIS CHIP'S PLACE. The owner, of
+          the "▦ Grid" chip that used to sit here always: "What does the grid
+          button do? Do we even need it? I've never really used it." In the
+          ordinary state (Grid, nothing maximized) it said nothing anyone
+          needed, so it is not drawn then. It IS still drawn while Focus or
+          Queue is on, or a session is maximized — that is the question above
+          ("why is everything folded away?") and it still needs its answer,
+          and a click still steps the mode. The modes themselves are in the
+          command list and on their key, as before.
+
+          ONE OR THE OTHER, NEVER BOTH. The bar has no room for both (measured:
+          54px over at the CI width), and it does not need both: while a mode
+          or a maximize is on, the app is arranging the workspace, and the
+          chip is the way back to arranging it yourself. The arrangements are
+          still in the command list then, and choosing one ends the mode. */}
+      {props.layoutMode === 'grid' && !props.layoutMaximized ? (
+        <LayoutPresets
+          onPreset={props.onLayoutPreset}
+          onEqualize={props.onEqualizeLayout}
+          disabled={!props.layoutArrangeable}
+        />
+      ) : (
+        <Chip
+          selected
+          onClick={props.onCycleLayoutMode}
+          title={t('layout.chipHint', {
+            mode: t(`layout.${props.layoutMode}`),
+            binding: props.layoutBinding,
+          })}
+          testId="layout-mode"
+        >
+          {t(props.layoutMaximized ? 'layout.chipMaximized' : 'layout.chip', {
+            mode: t(`layout.${props.layoutMode}`),
+          })}
+        </Chip>
+      )}
       <Chip selected={props.notifEnabled} onClick={props.onToggleNotif}>
         {props.notifEnabled ? t('titlebar.notifOn') : t('titlebar.notifOff')}
       </Chip>

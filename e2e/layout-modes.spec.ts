@@ -171,11 +171,13 @@ test.describe('layout modes (E9-07)', () => {
     const second = await addSession(a);
     await expect(tabs(a.window)).toHaveCount(2);
 
-    // the chip is the mouse path: it cycles, and its label is the answer to
-    // "why is everything a strip all of a sudden?"
-    await expect(modeChip(a.window)).toContainText('Grid');
+    // The chip is the answer to "why is everything folded away all of a
+    // sudden?", so it is only drawn when there is something to answer: not
+    // in the plain grid (#1147 gave that spot to the arrangement buttons),
+    // and back the moment a mode is on. The key is how you get there.
+    await expect(modeChip(a.window)).toHaveCount(0);
     await row(a.window, first).click();
-    await modeChip(a.window).click();
+    await a.window.keyboard.press(`${MOD}+Shift+L`);
     await expect(modeChip(a.window)).toContainText('Focus');
     await expect(tabs(a.window)).toHaveCount(1, { timeout: 15_000 });
     await expect(stripRow(a.window, second)).toBeVisible();
