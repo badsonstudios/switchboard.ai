@@ -2778,7 +2778,7 @@ export function App(): React.JSX.Element {
         selectedId={activeCard}
         labelLines={LABEL_LINES[taskLabelSize]}
         onCreateGroup={createGroup}
-        onNewSession={() => void grid.current?.newSession()}
+        onNewSession={() => void grid.current?.newSessionHere()}
         onOpenInGroup={openInGroup}
         onFocus={(cardId) => focusSession(cardId)}
         onClose={(cardId) => grid.current?.closeCard(cardId)}
@@ -2861,6 +2861,7 @@ export function App(): React.JSX.Element {
                `remove` and `setSessionGroup` below answer nothing and refuse
                the same way — quietly, with a line in the log. */
             onCreateGroup={createGroup}
+            onNewSession={() => void grid.current?.newSessionHere()}
             onRenameGroup={renameGroup}
             onRecolorGroup={recolorGroup}
             policies={policies}

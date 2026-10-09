@@ -265,6 +265,15 @@ export function SessionsRail(props: {
   /** palette for the recolor cycle — persisted data owned by the main process */
   palette: string[];
   onCreateGroup: (name: string) => void;
+  /**
+   * Open a new session (#1163). The button used to sit in a bar above the
+   * workspace; it is here now, beside "+ group", because this is the list of
+   * sessions and that is where you look to add one.
+   *
+   * Optional, and absent draws no button: a render test that is not about
+   * opening sessions has no reason to supply it.
+   */
+  onNewSession?: () => void;
   onRenameGroup: (id: string, name: string) => void;
   onRecolorGroup: (id: string, color: string) => void;
   onDeleteGroup: (id: string) => void;
@@ -1733,27 +1742,61 @@ export function SessionsRail(props: {
             letterSpacing: 1.4,
             textTransform: 'uppercase',
             color: 'var(--faint)',
+            minInlineSize: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
           }}
         >
           {t('rail.eyebrow', { count: props.sessions.length })}
         </span>
-        <button
-          className="rail-add-group"
-          onClick={() => props.onCreateGroup(t('rail.newGroup'))}
-          title={t('rail.addGroupHint')}
-          style={{
-            fontFamily: 'var(--font-ui)',
-            fontSize: 10.5,
-            color: 'var(--muted)',
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            borderRadius: 5,
-            padding: '2px 8px',
-            cursor: 'pointer',
-          }}
-        >
-          {t('rail.addGroup')}
-        </button>
+        {/* "+ group", then "+ session": the same two, in the same order, as
+            on the strip across the top — one habit for both placements. */}
+        {/* never squeezed and never wrapped: at the list's narrowest it is
+            the "SESSIONS · N" beside them that gives way, with an ellipsis.
+            A count is a nicety; a button whose label has folded onto two
+            lines is a broken-looking header. */}
+        <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <button
+            className="rail-add-group"
+            onClick={() => props.onCreateGroup(t('rail.newGroup'))}
+            title={t('rail.addGroupHint')}
+            style={{
+              fontFamily: 'var(--font-ui)',
+              fontSize: 10.5,
+              color: 'var(--muted)',
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              borderRadius: 5,
+              padding: '2px 8px',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {t('rail.addGroup')}
+          </button>
+          {props.onNewSession && (
+            <button
+              className="rail-add-group"
+              data-rail-add-session
+              onClick={props.onNewSession}
+              title={t('rail.addSessionHint')}
+              style={{
+                fontFamily: 'var(--font-ui)',
+                fontSize: 10.5,
+                color: 'var(--muted)',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                borderRadius: 5,
+                padding: '2px 8px',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t('rail.addSession')}
+            </button>
+          )}
+        </span>
       </div>
 
       <div

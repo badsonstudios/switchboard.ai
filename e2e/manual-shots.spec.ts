@@ -474,8 +474,11 @@ test.describe('manual screenshots (#1082)', () => {
     await shot(
       w,
       'new-session-button',
-      [{ target: newSession, label: 'Start another session here', side: 'right' }],
-      { ...(await around(w, [newSession], 22)), width: 640, height: 190 }
+      // The button moved into the Sessions list, beside "+ group" (#1163), so
+      // the picture is framed from the list's own left edge and the label sits
+      // BELOW the button: to its right is the workspace, which it would cover.
+      [{ target: newSession, label: 'Start a session here', side: 'bottom' }],
+      { x: 0, y: Math.max(0, (await around(w, [newSession], 22)).y - 6), width: 640, height: 190 }
     );
 
     // ── a session that has done some work ────────────────────────────────────

@@ -1158,11 +1158,11 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         <button
           type="button"
           data-strip-add-session
-          title={t('strip.addSessionHint')}
+          title={t('rail.addSessionHint')}
           onClick={props.onNewSession}
           style={lineButton}
         >
-          {t('strip.addSession')}
+          {t('rail.addSession')}
         </button>
         {total > 0 && (
           <span

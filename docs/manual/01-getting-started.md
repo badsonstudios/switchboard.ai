@@ -27,11 +27,11 @@ yet).
 
 ## Your first session
 
-![The + session button, above the open session](img/new-session-button.png)
+![The + session button, beside + group at the top of the Sessions list](img/new-session-button.png)
 
 *Where a new session starts.*
 
-1. Click **+ session** in the middle of the window.
+1. Click **+ session** at the top of the Sessions list, on the left.
 2. Pick the project folder you want Claude to work in.
 3. A card appears and Claude starts up inside it. The first moments show
    *starting*; once it's ready the status changes to *idle*.

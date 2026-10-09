@@ -5612,6 +5612,17 @@ export interface GridController {
    */
   newSession: () => Promise<void>;
   /**
+   * The same gesture, asked for by a BUTTON IN THE MAIN WINDOW — "+ session" in
+   * the sessions list or on the strip (#1163).
+   *
+   * It does not ask which window has focus, because it does not need to: a
+   * click on a button that only exists in this window says where the card
+   * goes. `newSession` has to infer that, since a keystroke carries no such
+   * information — and inferring it here would put #434/#462 back within reach
+   * of a window manager that reports focus a moment late.
+   */
+  newSessionHere: () => Promise<void>;
+  /**
    * Would `newSession()` land its card in a popped-out window right now?
    *
    * Synchronous on purpose, and asked BEFORE the gesture starts: App's popout
@@ -5821,7 +5832,7 @@ export function SessionGrid(props: {
     []
   );
 
-  // Declared HERE and not beside the `+ session` button that calls it: the
+  // Declared HERE and not further down, beside what calls it: the
   // controller effect below lists it in a dep array, which is evaluated during
   // render, and a `const` further down the component would still be in its
   // temporal dead zone when that array is built.
@@ -5936,6 +5947,11 @@ export function SessionGrid(props: {
   );
   const newSession = useCallback(async () => {
     const api = apiRef.current;
+    // A RETRY STARTS CLEAN (#1163). The reason the last one failed used to sit
+    // in a bar that was on screen anyway; now it has a line of its own that
+    // exists only while there is something to say, so it has to stop saying it.
+    // Clearing first also means the same failure twice is announced twice.
+    setError(null);
     await newSessionIn(api, api ? focusedPopoutGroup(api) : null, setError, offerHistory);
   }, [offerHistory]);
   // The main window's own chrome does not INFER a destination — it knows one.
@@ -5944,10 +5960,10 @@ export function SessionGrid(props: {
   // window carries it, and asking anyway would put #434/#462's regression back
   // within reach of a window manager that reports focus a moment late. Same
   // argument the card ＋ makes by naming its own group (lib/new-session-target).
-  const newSessionInGrid = useCallback(
-    () => newSessionIn(apiRef.current, null, setError, offerHistory),
-    [offerHistory]
-  );
+  const newSessionInGrid = useCallback(() => {
+    setError(null); // a retry starts clean, as above
+    return newSessionIn(apiRef.current, null, setError, offerHistory);
+  }, [offerHistory]);
 
   // §5.8's presentation ladder (P2-E9-05). The verbs are MODULE functions on
   // (api, cardId) — see setCardLadder — for the reason popOutCardPanel is one:
@@ -6185,6 +6201,7 @@ export function SessionGrid(props: {
     props.controller.current = {
       addSessionCard,
       newSession,
+      newSessionHere: newSessionInGrid,
       // Reads `apiRef` at call time rather than closing over an api, so it
       // cannot answer from a stale grid; `focusedPopoutGroup` is the same
       // question `newSession` itself asks a tick later.
@@ -6544,7 +6561,7 @@ export function SessionGrid(props: {
         openAllChangesPanel(apiRef.current, cardId, folder, props.colorScheme, title),
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
-  }, [props.controller, addSessionCard, newSession, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
+  }, [props.controller, addSessionCard, newSession, newSessionInGrid, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
 
   // Dockview learns the light/dark verdict in onReady, which runs ONCE — so a
   // theme switch after mount left it on the scheme the app booted with. Every
@@ -6988,35 +7005,26 @@ export function SessionGrid(props: {
 
   return (
     <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minInlineSize: 0 }}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          padding: 'var(--grid-pad)',
-          paddingBlockEnd: 0,
-        }}
-      >
-        {error && (
-          <span style={{ color: 'var(--status-crashed-ink)', fontSize: 11, alignSelf: 'center' }}>
-            {error}
-          </span>
-        )}
-        <button
-          onClick={() => void newSessionInGrid()}
+      {/* NO BAR ABOVE THE CARDS (#1163, the owner: "we don't need that bar").
+          It used to hold "+ session", which now lives beside "+ group" in
+          whichever list of sessions is on screen, and the workspace has the
+          height back. What is left is the one thing the bar also carried and
+          nothing else does: the reason a session could not be opened. It
+          takes a line only while there is something to say. */}
+      {error && (
+        <div
+          data-testid="grid-error"
+          role="alert"
           style={{
-            background: 'var(--chip)',
-            color: 'var(--text)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-chip)',
-            padding: '3px 10px',
-            cursor: 'pointer',
+            padding: 'var(--grid-pad)',
+            paddingBlockEnd: 0,
+            color: 'var(--status-crashed-ink)',
             fontSize: 11,
-            fontFamily: 'var(--font-ui)',
           }}
         >
-          {t('grid.addCard')}
-        </button>
-      </div>
+          {error}
+        </div>
+      )}
       <div style={{ flex: 1, padding: 'var(--grid-pad)' }}>
         <DockviewReact
           components={components}
