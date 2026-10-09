@@ -57,7 +57,8 @@ have six tabs, all still there.
   — nothing in the app ever decides that for you.
 - **The tab's ✕ closes the one you point at.** Its tooltip says **Close
   document**, because that is all it does — no session ends, nothing is asked,
-  the tab simply goes. (To clear them all out at once, see below.)
+  the tab simply goes. **Middle-clicking the tab** (pressing the mouse wheel on
+  it) does the same. (To clear them all out at once, see below.)
 - **Opening a file that is already open just brings it to the front** — and if
   it is out in its own window, that window comes forward instead. (One
   exception: if you have followed a *link* inside a document, that panel is

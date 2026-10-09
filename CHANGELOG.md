@@ -121,6 +121,11 @@ on the floor, and say so in your PR.
   Context meter** shows it as a number, a bar, or both. It is never yellow:
   yellow and orange still mean only that a session is waiting for you.
 
+- **Middle-click a tab to close it**, as in a browser. Press the mouse wheel
+  on a tab and it closes. A session tab still asks first, exactly as the ✕
+  does; a document or diff tab just closes. Move off the tab before letting
+  go and nothing happens.
+
 ### Changed
 
 - **A new session shows which model it is on straight away.** The button
