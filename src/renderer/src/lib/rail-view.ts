@@ -276,6 +276,26 @@ export function attentionPaint(status: string | undefined, counted: boolean): At
  * A set rather than a predicate so all three call sites are provably reading
  * the same derivation — the store computes it once, per push.
  */
+/**
+ * How many of these sessions are WORKING: busy, and not one of the ones
+ * counted as needing you.
+ *
+ * For a group that is drawn as one box (#1179): the owner could not tell
+ * whether anything was running inside a closed group on the strip without
+ * opening it. A session that is working AND counted as needing you is a
+ * demand, not a status, and is left to `needCount`: the two never count the
+ * same session, so "1 needs you" and "2 working" add up.
+ */
+export function workingCount(
+  sessions: ReadonlyArray<{ id: string; status?: string }>,
+  needing: ReadonlySet<string>
+): number {
+  return sessions.reduce(
+    (n, s) => (!needing.has(s.id) && presentStatus(s.status).spinner ? n + 1 : n),
+    0
+  );
+}
+
 export function needCount(
   sessions: ReadonlyArray<{ id: string }>,
   needing: ReadonlySet<string>

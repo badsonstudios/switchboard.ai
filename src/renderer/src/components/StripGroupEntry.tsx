@@ -11,7 +11,8 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailSession } from '../model/types';
-import { needCount } from '../lib/rail-view';
+import { needCount, workingCount } from '../lib/rail-view';
+import { StatusMark } from './StatusMark';
 import { tint } from '../lib/tint';
 import { FolderGlyph } from './FolderGlyph';
 
@@ -98,6 +99,17 @@ export function StripGroupEntry(props: {
   // `needing` set the rows in the list are lit from, so "2 need you" is exactly
   // two highlighted rows. It is never re-derived from the members' statuses.
   const need = needCount(props.members, props.needing);
+  // #1179: something inside is working. The owner, with the sessions across
+  // the top: "I don't know if something's running in a group currently if …
+  // the group is closed. I have to open the group." So the group says so,
+  // and wears the same "working" look a session does (tokens.css, "a working
+  // session") — in the GROUP's colour, since it is the group being marked.
+  //
+  // NEEDS-YOU WINS. A group with one session working and one waiting for you
+  // is a group that needs you: it keeps its yellow words, and the look (which
+  // every rule gives only to what is NOT `data-needs-you`) stays off it.
+  const working = workingCount(props.members, props.needing);
+  const showsWorking = working > 0 && need === 0;
   const waitingHere = props.members.reduce((n, m) => n + (props.waiting.get(m.id) ?? 0), 0);
   const range = chordRange(props.members, props.ordinalOf);
   const foldedHere = props.folded ? props.members.filter((m) => props.folded!.has(m.id)).length : 0;
@@ -106,7 +118,9 @@ export function StripGroupEntry(props: {
       ? t('rail.groupEmpty')
       : need > 0
         ? t('rail.needSummary', { count: need })
-        : t('rail.calm');
+        : working > 0
+          ? t('rail.workingSummary', { count: working })
+          : t('rail.calm');
   const toggle = (): void => {
     if (cell.current) props.onToggle(cell.current);
   };
@@ -123,9 +137,13 @@ export function StripGroupEntry(props: {
       data-needs-you={need > 0}
       // read back by the strip when it measures what is off each end
       data-strip-item-need={need}
+      // the handle the "working" looks hang off, exactly as on a row or a pill
+      data-session-status={showsWorking ? 'working' : undefined}
+      data-strip-group-working={working}
       data-flash={props.flash ? 'true' : undefined}
       title={isAuto ? t('rail.autoGroupHint') : undefined}
       style={{
+        ['--work-accent' as string]: props.color,
         display: 'flex',
         alignItems: 'stretch',
         flexShrink: 0,
@@ -296,6 +314,10 @@ export function StripGroupEntry(props: {
           aria-hidden
           style={{ display: 'flex', alignItems: 'center', gap: 5, paddingInlineStart: 15 }}
         >
+          {/* the spinner (or, in look 6, the bars) a working session has, for
+              a group that has one inside. Not while the group needs you: its
+              one mark then is the yellow words. */}
+          {showsWorking && <StatusMark status="working" needsYou={false} />}
           <span
             data-strip-group-summary
             style={{

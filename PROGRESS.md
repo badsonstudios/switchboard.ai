@@ -3,7 +3,38 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶ 2026-10-08 (evening) — THE OWNER'S NEXT LIST, after updating to 0.8.116. In this order.
+> # ✅ RELEASED: v0.8.117, 2026-10-09 (`8d1b9e0d`, PR #1177)
+>
+> The owner, after the report on the seven items below: *"Okay, I think we're
+> good to cut a release. Go ahead."* A plain patch step, as 0.8.116 was.
+> Installer and `.sha256` both published; the published pair downloaded and
+> verified to match. `0.8.118 — unreleased` is open. All seven tracker rows
+> from the list below read "IN v0.8.117, installable now".
+>
+> # ▶ 2026-10-09 — TWO REQUESTS HE SENT WHILE 0.8.117 WAS BEING CUT. In this order.
+>
+> He is using the sessions ACROSS THE TOP. Neither is in 0.8.117.
+>
+> 1. **#1179 — a closed group on the strip shows that a session inside it is
+>    working. ← IN FLIGHT**, branch `feature/1179-group-shows-working`. *This
+>    line rides in that PR: if `main` has
+>    `src/renderer/src/components/StripGroupEntry.working.test.tsx`, it has
+>    landed and #1178 is next.* *"I don't know if something's running in a
+>    group currently if my session window's at the top and the group is
+>    closed."* The group carries the same handle a working row does, so the
+>    six looks paint it with no second copy; in the GROUP's colour; "N
+>    working" where it said "calm"; needs-you wins. **Not done, flagged in
+>    the tracker: a closed group in the LEFT list.**
+> 2. **#1178 — drag a session up or down inside its group's list on the
+>    strip.** *"If I have the sessions at the top, I can't move a session up
+>    or down in a group to relocate it. I have to move the session window to
+>    the left and then move it there."* Today a row in a group's open list
+>    does not drag; `Ctrl+Alt+↑/↓` is the only way from the strip.
+>
+> **Still open on purpose:** #716 / #1013 (typing lag, his laptop), #1166,
+> #1171 (a flake), #1174.
+>
+> # ✔ 2026-10-08 (evening) — THE OWNER'S LIST after updating to 0.8.116: ALL SEVEN DONE, in 0.8.117.
 >
 > He is on 0.8.116 and said of the strip: *"Everything looks good from what I
 > see."* Each of these is its own item through `/next-item`; one PR in CI at a
@@ -79,13 +110,8 @@
 >    "which model is this session on" on a cold session, which
 >    `stream-model.ts` records as impossible. Worth a ticket.
 >    *"Let's do this one too."*
-> 5. **#718 — how a working session looks. ← IN FLIGHT, the LAST item on this
->    list**, branch `feature/718-working-session-look`. *This line rides in
->    that PR: if `main` has `src/renderer/src/lib/working-look.ts`, it has
->    landed and THE LIST IS DONE: all seven items are merged, nothing is
->    released (the owner has not asked for 0.8.117), and the next thing is
->    whatever he says after testing. Left open on purpose: #716 / #1013
->    (typing lag, his laptop), #1166, #1171 (a flake), #1174.* Built as CSS
+> 5. **#718 — how a working session looks. DONE 2026-10-09, PR #1176
+>    (`50f3afec`), merged, in 0.8.117.** Green on the first CI run. Built as CSS
 >    keyed on `data-working-look` on the document; a row or pill only says
 >    it is working and what its colour is. The Settings samples are painted
 >    by the same rules as a real session. DECIDED from a moving mockup of six
