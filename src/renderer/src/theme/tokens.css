@@ -1628,3 +1628,252 @@ mark[data-feed-match-current] {
 .scm-group-head:hover {
   background: var(--control-hover);
 }
+
+/* ==========================================================================
+ * A WORKING SESSION (#718) — six looks, one in force.
+ *
+ * The owner's ask: a glance at the Sessions list should answer "which of my
+ * sessions are busy right now" without hunting for a 12px ring. Shown six
+ * treatments moving side by side, he kept all six: "we default to option 3,
+ * but in the settings, you can set one of the six". `lib/working-look.ts` is
+ * the list; App puts the choice on the document as `data-working-look`.
+ *
+ * WHAT A ROW OR A PILL HAS TO SAY, and it is all it has to say:
+ *   - `data-session-status="working"` (it already did);
+ *   - `--work-accent`, its session's own colour;
+ *   - `data-accent-bar` on its edge bar, `.status-ring` on its spinner, and the
+ *     `.status-bars` beside it (drawn only by look 6).
+ * Everything below hangs off an ANCESTOR's `data-working-look`, not `:root`
+ * alone, so the samples in Settings (each wrapped in its own look) are painted
+ * by the very rules a real session is.
+ *
+ * `!important` ON BACKGROUND AND BORDER, and only there: a row and a pill set
+ * both inline (they depend on selection, focus and attention), and a look that
+ * lost to an inline style would be a setting that does nothing.
+ *
+ * THREE RULES THAT BIND EVERY LOOK (the ticket's):
+ *  1. WORKING STAYS QUIETER THAN "NEEDS YOU". `:not([data-needs-you='true'])`
+ *     on every selector: a session that is waiting for you keeps its yellow and
+ *     nothing here touches it. The colour is the session's own, and since #1165
+ *     no session's colour is yellow or orange — which is why that had to land
+ *     first.
+ *  2. REDUCED MOTION: every moving look has a still one, at the end.
+ *  3. CHEAP TO ANIMATE. Looks 1, 4, 5 and 6 move only `opacity` or `transform`,
+ *     which the compositor does without repainting. Look 2 does not: a sweep
+ *     round a border has to repaint its own thin ring each frame (an animated
+ *     angle in a gradient). It is the owner's original sketch and it is opt-in;
+ *     the repaint is the ring, never the row's text.
+ * ========================================================================== */
+@property --work-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.status-bars {
+  display: none;
+  flex: none;
+  align-items: flex-end;
+  gap: 2px;
+  block-size: 16px;
+}
+.status-bars i {
+  inline-size: 3px;
+  block-size: 100%;
+  border-radius: 1px;
+  background: var(--work-accent, var(--status-working));
+  transform-origin: bottom;
+  animation: sb-work-dance 0.9s ease-in-out infinite;
+}
+.status-bars i:nth-child(2) { animation-delay: -0.3s; }
+.status-bars i:nth-child(3) { animation-delay: -0.6s; }
+.status-bars i:nth-child(4) { animation-delay: -0.15s; }
+
+@keyframes sb-work-breathe {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+@keyframes sb-work-orbit {
+  to { --work-angle: 360deg; }
+}
+@keyframes sb-work-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+@keyframes sb-work-slide {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(260%); }
+}
+@keyframes sb-work-dance {
+  0%, 100% { transform: scaleY(0.25); }
+  50% { transform: scaleY(1); }
+}
+
+/* ---- 1 · BREATHING GLOW: an outline in the session's colour, and a soft glow
+ * that fades in and out. The glow is a layer whose OPACITY moves; the shadow
+ * itself never changes, so nothing is repainted. */
+[data-working-look='glow'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+  border-color: var(--work-accent) !important;
+}
+[data-working-look='glow'] .rail-row[data-session-status='working']:not([data-needs-you='true']) {
+  outline: 1px solid var(--work-accent);
+  outline-offset: -1px;
+}
+[data-working-look='glow'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 10px 2px color-mix(in srgb, var(--work-accent) 60%, transparent);
+  animation: sb-work-breathe 2.2s ease-in-out infinite;
+}
+
+/* ---- 2 · MARQUEE SWEEP: a bright light running round the edge, and a faint
+ * tint. The owner's first sketch. */
+[data-working-look='marquee'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+  background: color-mix(in srgb, var(--work-accent) 8%, var(--rail-card)) !important;
+  border-color: color-mix(in srgb, var(--work-accent) 35%, transparent) !important;
+}
+[data-working-look='marquee'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 2px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--work-angle),
+    transparent 0 62%,
+    var(--work-accent) 78%,
+    var(--btn-primary-text) 86%,
+    var(--work-accent) 92%,
+    transparent 100%
+  );
+  -webkit-mask:
+    linear-gradient(var(--bg) 0 0) content-box,
+    linear-gradient(var(--bg) 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: sb-work-orbit 2.4s linear infinite;
+}
+
+/* ---- 3 · BRIGHTER, A BIGGER SPINNER, AND THE WORD. THE DEFAULT. The row
+ * filled with the session's colour, the name bold, the ring larger, the state
+ * in blue. No moving frame at all. */
+[data-working-look='fill'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+  background: color-mix(in srgb, var(--work-accent) 20%, var(--rail-card)) !important;
+  border-color: color-mix(in srgb, var(--work-accent) 70%, var(--group-frame)) !important;
+}
+[data-working-look='fill'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) [data-accent-bar] {
+  inline-size: 4px !important;
+  background: var(--work-accent) !important;
+}
+[data-working-look='fill'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) :is([data-rail-title], [data-strip-pill-title]) {
+  font-weight: 700 !important;
+}
+[data-working-look='fill'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) .status-ring {
+  inline-size: 17px !important;
+  block-size: 17px !important;
+  border-width: 2.4px !important;
+}
+:is([data-working-look='fill'], [data-working-look='strip']) :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) :is([data-rail-state], [data-strip-pill-state]) {
+  color: var(--status-working-ink) !important;
+}
+
+/* ---- 4 · SHIMMER: a band of light sweeping across. `overflow: clip` keeps the
+ * band inside the row; the clip MARGIN is so the line a drag draws just
+ * outside a row (2px) is not cut off with it. */
+[data-working-look='shimmer'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+  overflow: clip;
+  overflow-clip-margin: 3px;
+  background: color-mix(in srgb, var(--work-accent) 10%, var(--rail-card)) !important;
+  border-color: color-mix(in srgb, var(--work-accent) 55%, var(--group-frame)) !important;
+}
+[data-working-look='shimmer'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 0 35%,
+    color-mix(in srgb, var(--work-accent) 45%, transparent) 50%,
+    transparent 65% 100%
+  );
+  animation: sb-work-sweep 2.1s ease-in-out infinite;
+}
+
+/* ---- 5 · PROGRESS STRIP: a thin bar running along the bottom edge. */
+[data-working-look='strip'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+  overflow: clip;
+  overflow-clip-margin: 3px;
+}
+[data-working-look='strip'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-end: 0;
+  inline-size: 40%;
+  block-size: 3px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--work-accent) 40% 60%, transparent);
+  animation: sb-work-slide 1.5s linear infinite;
+}
+
+/* ---- 6 · DANCING BARS in place of the spinner, and a steady outline. */
+[data-working-look='bars'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) {
+  border-color: var(--work-accent) !important;
+}
+[data-working-look='bars'] .rail-row[data-session-status='working']:not([data-needs-you='true']) {
+  outline: 1px solid color-mix(in srgb, var(--work-accent) 70%, transparent);
+  outline-offset: -1px;
+}
+[data-working-look='bars'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) .status-ring {
+  display: none !important;
+}
+[data-working-look='bars'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) .status-bars {
+  display: flex;
+}
+
+/* ---- THE ONE YOU HAVE OPEN, under every look (found in review). A row shows
+ * which session is open by its tint and its edge bar, a pill by its fill and
+ * its edge — and those are exactly what a look repaints. Three busy sessions
+ * under the default look were three identical rows, with nothing to say which
+ * one the workspace was showing. So the open one keeps a ring of its own, in
+ * its own colour, inside the row. Not `!important`: the after-a-jump outline
+ * is an inline box-shadow and wins for the second and a half it lasts. */
+[data-working-look] :is(.rail-row[data-selected='true'], [data-strip-pill][aria-current='true'])[data-session-status='working']:not([data-needs-you='true']) {
+  box-shadow: inset 0 0 0 2px var(--work-accent);
+}
+
+/* ---- WHEN THE SYSTEM ASKS FOR LESS MOTION: each look's still version. The
+ * outline, the tint and the fill stay (they are what says "working"); what
+ * moved becomes a steady mark in the same place. */
+@media (prefers-reduced-motion: reduce) {
+  :is(.rail-row, [data-strip-pill])[data-session-status='working']::after,
+  .status-bars i {
+    animation: none !important;
+  }
+  [data-working-look='glow'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+    opacity: 0.6;
+  }
+  [data-working-look='marquee'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+    background: var(--work-accent);
+  }
+  [data-working-look='shimmer'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+    transform: none;
+    border-radius: inherit;
+    background: color-mix(in srgb, var(--work-accent) 14%, transparent);
+  }
+  [data-working-look='strip'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true'])::after {
+    /* inside the rounded corners, not across them */
+    inset-inline: 7px;
+    inline-size: auto;
+    transform: none;
+    background: var(--work-accent);
+  }
+  .status-bars i {
+    transform: scaleY(0.7);
+  }
+}

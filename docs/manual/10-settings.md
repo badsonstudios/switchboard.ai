@@ -24,7 +24,7 @@ click outside.
 
 | Section | Holds |
 |---|---|
-| **Appearance** | Theme, language, task label size |
+| **Appearance** | Theme, language, where the Sessions list goes, how a working session looks, task label size |
 | **Attention** | Quiet hours, phone push & webhooks |
 | **Advanced** | Fork sessions (experimental), automatic update checks, Anthropic status checks |
 | **Diagnostics** | Detailed performance capture, and the file it writes — see [When it feels slow](19-performance.md) |
@@ -183,6 +183,34 @@ other sessions.
 
 Turn it off and the spending stops at once. The full walk-through is in
 [Sessions › Letting Claude write the label instead](02-sessions.md#letting-claude-write-the-label-instead-and-keep-it-up-to-date).
+
+## How a working session looks
+
+A session that is busy is marked in the Sessions list (and on the strip, if
+your sessions are listed across the top), so a glance tells you which ones are
+working. **Settings ▸ Appearance ▸ How a working session looks** has six ways
+to mark it. Each choice is shown moving, on a sample, so you can see it before
+you pick. Pick one and it applies at once; there is no Save button.
+
+| | Look | What you see |
+|---|---|---|
+| 1 | **Breathing glow** | An outline in the session's colour that slowly glows and fades |
+| 2 | **Marquee sweep** | A light running round the edge, with a faint tint |
+| 3 | **Brighter, with a bigger spinner** *(what you get unless you change it)* | The row filled with the session's colour, the name in bold, a larger spinner, and "working" in blue. Nothing moves but the spinner |
+| 4 | **Shimmer** | A band of light sweeping across |
+| 5 | **Progress strip** | A thin bar running along the bottom edge |
+| 6 | **Dancing bars** | Four bouncing bars instead of the spinner, and a steady outline |
+
+Things that are true of all six:
+
+- **They use the session's own colour**, so two busy sessions do not blur into
+  one. No session is yellow or orange, so a busy session never looks like one
+  that needs you.
+- **A session that needs you looks the same whichever you pick.** These only
+  change how a *working* session looks, and it stays the quieter of the two.
+- **If your system is set to reduce motion**, the moving ones hold still: the
+  outline, tint or bar stays, and the movement stops.
+- The choice is remembered.
 
 ## Task label size
 
