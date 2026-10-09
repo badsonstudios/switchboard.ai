@@ -98,6 +98,16 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **A busy session is much easier to spot, and you choose how.** A working
+  session used to be marked only by a small spinning ring. Now its whole row
+  (or pill, with the sessions across the top) is filled with the session's
+  colour, its name is bold, the spinner is bigger and "working" is in blue.
+  That is one of six looks: **Settings ▸ Appearance ▸ How a working session
+  looks** also has a breathing glow, a light running round the edge, a
+  shimmer, a progress strip and dancing bars, each shown moving so you can
+  see it before you pick. A session that needs you looks the same whichever
+  you choose.
+
 - **Set how hard the model thinks.** Next to the model name at the bottom of
   a session there is now an **effort** button. Click it and pick low, medium,
   high, extra high or max (the levels Claude Code offers for that model); it

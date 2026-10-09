@@ -44,6 +44,8 @@ import { ThemeSection } from './settings/ThemeSection';
 import { TaskLabelSizeSection } from './settings/TaskLabelSizeSection';
 import { SessionsPlacementSection } from './settings/SessionsPlacementSection';
 import type { SessionsPlacement } from '../lib/sessions-placement';
+import { WorkingLookSection } from './settings/WorkingLookSection';
+import type { WorkingLook } from '../lib/working-look';
 import { QuietHoursSection } from './settings/QuietHoursSection';
 import { PushSection } from './settings/PushSection';
 import { AdvancedSection } from './settings/AdvancedSection';
@@ -76,6 +78,9 @@ export interface SettingsDialogProps {
    *  omission could only be a caller that forgot. */
   sessionsPlacement: SessionsPlacement;
   onSetSessionsPlacement: (placement: SessionsPlacement) => void;
+  /** how a working session looks in the list and on the strip (#718) */
+  workingLook: WorkingLook;
+  onSetWorkingLook: (look: WorkingLook) => void;
 
   // ── Attention ───────────────────────────────────────────────────────────
   quiet: QuietState | null;
@@ -260,6 +265,7 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
               placement={props.sessionsPlacement}
               onSet={props.onSetSessionsPlacement}
             />
+            <WorkingLookSection look={props.workingLook} onSet={props.onSetWorkingLook} />
             <TaskLabelSizeSection
               size={props.taskLabelSize}
               onSet={props.onSetTaskLabelSize}

@@ -204,6 +204,10 @@ export function SessionRow(props: {
       // except it from.
       data-needs-you={paint.lit}
       data-session-status={p.token}
+      // which row is the session you have open, for the stylesheet (#718): a
+      // "working" look repaints the tint and the edge bar that used to be the
+      // only things saying so
+      data-selected={selected ? 'true' : undefined}
       // §5.8's pinning contract (E9-09). An attribute rather than only a
       // glyph: the protection is a fact about the row that the e2e suite has
       // to be able to read, and styling may want it later.
@@ -240,6 +244,10 @@ export function SessionRow(props: {
       // the pill's own hint: a dashed edge is not self-explanatory
       title={props.folded ? t('strip.pillFoldedHint') : undefined}
       style={{
+        // the session's own colour, for whichever "working" look is in force
+        // (#718, tokens.css "a working session"). A row only says what its
+        // colour is; the look is CSS.
+        ['--work-accent' as string]: accent,
         position: 'relative',
         display: 'flex',
         alignItems: 'center',
@@ -283,6 +291,7 @@ export function SessionRow(props: {
       )}
       <span
         aria-hidden
+        data-accent-bar
         style={{
           position: 'absolute',
           insetInlineStart: 0,

@@ -79,15 +79,23 @@
 >    "which model is this session on" on a cold session, which
 >    `stream-model.ts` records as impossible. Worth a ticket.
 >    *"Let's do this one too."*
-> 5. **#718 — how a working session looks. DECIDED from a moving mockup of six
+> 5. **#718 — how a working session looks. ← IN FLIGHT, the LAST item on this
+>    list**, branch `feature/718-working-session-look`. *This line rides in
+>    that PR: if `main` has `src/renderer/src/lib/working-look.ts`, it has
+>    landed and THE LIST IS DONE: all seven items are merged, nothing is
+>    released (the owner has not asked for 0.8.117), and the next thing is
+>    whatever he says after testing. Left open on purpose: #716 / #1013
+>    (typing lag, his laptop), #1166, #1171 (a flake), #1174.* Built as CSS
+>    keyed on `data-working-look` on the document; a row or pill only says
+>    it is working and what its colour is. The Settings samples are painted
+>    by the same rules as a real session. DECIDED from a moving mockup of six
 >    treatments** (on his machine, git-ignored:
 >    `.claude/work_files/718/working-treatments.html`): *"I like all of these
 >    options. I think we default to option 3, but in the settings, you can set
 >    one of the six."* The decision and the six are on the issue.
-> 6. **#1165 — yellow and gold mean "needs you" and nothing else.
->    ← IN FLIGHT (done BEFORE #718, which it blocks)**, branch
->    `feature/1165-yellow-means-needs-you`. *This line rides in that PR: if
->    `main` has `src/shared/reserved-hue.ts`, it has landed and #718 is next.*
+> 6. **#1165 — yellow and gold mean "needs you" and nothing else. DONE
+>    2026-10-09, PR #1175 (`2ae7e834`), merged, NOT released (done BEFORE
+>    #718, which it blocked).** Green on the first CI run.
 >    **The audit changed the size of it:** the palettes were four colours;
 >    the "needs input" ink was ALSO the app's general warning colour in about
 >    forty places. Each was classified (a session needing you / a failure /

@@ -73,6 +73,12 @@ import {
   sayEvened,
 } from './lib/session-voice';
 import type { LayoutPreset } from './lib/layout-presets';
+import {
+  DEFAULT_WORKING_LOOK,
+  WORKING_LOOK_KEY,
+  workingLookOf,
+  type WorkingLook,
+} from './lib/working-look';
 import { sayManualMissing, sayUnavailable } from './lib/command-voice';
 import { DEFAULT_SOUND } from '../../shared/sounds';
 // #440: a refused call RESOLVES a truthy object — read every bridge answer
@@ -254,6 +260,17 @@ export function App(): React.JSX.Element {
   const [sessionsPlacement, setSessionsPlacement] = useState<SessionsPlacement>(
     DEFAULT_SESSIONS_PLACEMENT
   );
+  // How a working session looks in the list and on the strip (#718): one of
+  // six, chosen in Settings. It goes on the DOCUMENT as an attribute and the
+  // stylesheet does the rest, so no row or pill is told which look is on.
+  const [workingLook, setWorkingLook] = useState<WorkingLook>(DEFAULT_WORKING_LOOK);
+  useEffect(() => {
+    document.documentElement.dataset.workingLook = workingLook;
+  }, [workingLook]);
+  const chooseWorkingLook = React.useCallback((look: WorkingLook) => {
+    uiSet(WORKING_LOOK_KEY, look);
+    setWorkingLook(look);
+  }, []);
   // The events drawer (P2-E14-01, Shape B). Collapsed by default and, unlike
   // the rail, DELIBERATELY NOT PERSISTED: the rail is a layout preference, this
   // is a surface you open to read the queue and shut again — the same category
@@ -699,6 +716,7 @@ export function App(): React.JSX.Element {
       setAutonomy(uiGet('autonomy', DEFAULT_AUTONOMY));
       setRailHidden(uiGet('railHidden', false));
       setSessionsPlacement(sessionsPlacementOf(uiGet<unknown>(SESSIONS_PLACEMENT_KEY, undefined)));
+      setWorkingLook(workingLookOf(uiGet<unknown>(WORKING_LOOK_KEY, undefined)));
       applyTabRows(loadTabRows()); // multi-row tab strip, default on (#84)
       setUiReady(true);
     });
@@ -2518,6 +2536,8 @@ export function App(): React.JSX.Element {
         onSetTaskLabelSize={applyTaskLabelSize}
         sessionsPlacement={sessionsPlacement}
         onSetSessionsPlacement={(placement) => placeSessions(placement)}
+        workingLook={workingLook}
+        onSetWorkingLook={chooseWorkingLook}
         dispatchRetire={dispatchRetire}
         onSetDispatchRetire={(policy) => sessionStore.setDispatchRetire(policy)}
         quiet={quietState}

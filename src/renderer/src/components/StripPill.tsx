@@ -83,6 +83,8 @@ export function StripPill(props: {
       {...props.dragProps}
       data-drop-edge={props.dropEdge}
       style={{
+        // the session's own colour, for the "working" look in force (#718)
+        ['--work-accent' as string]: accent,
         position: 'relative',
         display: 'flex',
         alignItems: 'center',
@@ -127,6 +129,7 @@ export function StripPill(props: {
       )}
       <span
         aria-hidden
+        data-accent-bar
         style={{
           position: 'absolute',
           insetInlineStart: 0,

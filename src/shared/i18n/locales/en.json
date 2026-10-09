@@ -1601,6 +1601,25 @@
       }
     }
   },
+  "workingLook": {
+    "title": "How a working session looks",
+    "blurb": "What marks a session as busy, in the Sessions list and on the strip. Each one is drawn in the session's own colour. A session that needs you always looks the same, whichever you pick.",
+    "numbered": "{number}. {name}",
+    "glow": "Breathing glow",
+    "glowNote": "An outline that slowly glows and fades.",
+    "marquee": "Marquee sweep",
+    "marqueeNote": "A light running round the edge.",
+    "fill": "Brighter, with a bigger spinner",
+    "fillNote": "Filled in, the name bold, the state in blue. Nothing moves but the spinner.",
+    "shimmer": "Shimmer",
+    "shimmerNote": "A band of light sweeping across.",
+    "strip": "Progress strip",
+    "stripNote": "A thin bar running along the bottom edge.",
+    "bars": "Dancing bars",
+    "barsNote": "Four bouncing bars instead of the spinner, and a steady outline.",
+    "sampleName": "a session",
+    "sampleState": "working"
+  },
   "sessionsPlacement": {
     "title": "Sessions list",
     "blurb": "Where your open sessions are listed.",

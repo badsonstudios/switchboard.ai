@@ -22,7 +22,10 @@
 //  2. A session that needs you is loud: status-tinted row, 4px status-colored
 //     bar, name at 700, and its sub-label replaced by what it is actually
 //     asking for. Calm sessions stay plain. The contrast is the point.
-//  3. The working ring is the ONLY animation. Blinking status dots were an
+//  3. A WORKING session is the only thing that moves: the ring, and since #718
+//     whichever of the six looks is chosen in Settings. (The rest of this
+//     rule was written when that was the ring alone.) The working ring is the
+//     ONLY animation. Blinking status dots were an
 //     explicit rejection.
 //
 // KEYBOARD & SCREEN READER (#197, §5.32), following #174's rule:

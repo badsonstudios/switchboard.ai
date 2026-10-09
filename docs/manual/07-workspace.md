@@ -21,7 +21,7 @@ close it and a small indicator of its state:
 
 | You see | It means |
 |---|---|
-| a spinning ring | working — nothing needed from you |
+| a spinning ring (or bouncing bars), and the whole row marked as busy | working, or still starting up — nothing needed from you. How a busy row is marked is your choice: see [How a working session looks](10-settings.md#how-a-working-session-looks) |
 | **?** | it asked you a question |
 | **!** | it wants permission to do something |
 | **✓** | it finished, and you haven't looked yet |
