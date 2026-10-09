@@ -176,7 +176,7 @@ describe('right-click on a session', () => {
       i18next.t('rail.menuMove')
     );
     // order is by dragging: no "Move up" / "Move down" here
-    expect(menu(host)!.textContent).not.toContain(i18next.t('rail.menuMoveUp'));
+    expect(menu(host)!.textContent).not.toContain('Move up');
     expect(menu(host)!.getAttribute('aria-label')).toBe(
       i18next.t('rail.menuLabel', { title: 'scratch' })
     );
@@ -255,9 +255,11 @@ describe('right-click on a session', () => {
     expect(moves).toEqual([]);
   });
 
-  it('dims Rename and Move for a session that never started, and they do nothing', async () => {
+  it('dims Rename for a session that never started, and offers no move at all', async () => {
     // main has no record of such a card, and declines both writes: an item that
-    // is offered and then silently does nothing is the thing to avoid
+    // is offered and then silently does nothing is the thing to avoid. Rename
+    // is one item, so it dims; the move set could do nothing as a whole, so it
+    // is absent, which is what the list on the left does (#1168: one menu).
     const said: string[] = [];
     const host = await mount(
       { onMoveToGroup: () => said.push('move'), onRename: () => said.push('rename') },
@@ -265,9 +267,9 @@ describe('right-click on a session', () => {
     );
     await rightClick(pill(host, 'dud'));
     expect(item(host, 'rename').getAttribute('aria-disabled')).toBe('true');
-    expect(item(host, `move:${BACK.id}`).getAttribute('aria-disabled')).toBe('true');
+    expect(menu(host)!.querySelector('[data-group-menu-item^="move:"]')).toBeNull();
+    expect(menu(host)!.querySelector('[data-menu-heading]')).toBeNull();
     await click(item(host, 'rename'));
-    await click(item(host, `move:${BACK.id}`));
     expect(said).toEqual([]);
     expect(host.querySelector('[data-strip-rename]')).toBeNull();
     // closing one is still allowed

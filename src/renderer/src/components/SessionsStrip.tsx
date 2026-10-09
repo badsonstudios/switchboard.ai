@@ -888,30 +888,40 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         },
         // MOVE TO GROUP: one choice out of a known set — each of your groups,
         // and none. The current one is checked, and choosing it does nothing.
-        ...props.groups.map(
-          (g, i): RailGroupMenuItem => ({
-            id: `move:${g.id}`,
-            label: g.name,
-            can: started,
-            checked: s.groupId === g.id,
-            ...(i === 0 ? { heading: t('rail.menuMove') } : {}),
-            run: () => {
-              ran('session', s.id);
-              if (s.groupId !== g.id) props.onMoveToGroup(s.id, g.id);
-            },
-          })
-        ),
-        {
-          id: 'move:none',
-          label: t('strip.menuNoGroup'),
-          can: started,
-          checked: !s.groupId,
-          ...(props.groups.length === 0 ? { heading: t('rail.menuMove') } : {}),
-          run: () => {
-            ran('session', s.id);
-            if (s.groupId) props.onMoveToGroup(s.id, null);
-          },
-        },
+        //
+        // THE WHOLE SET IS ABSENT when it could do nothing, which is the left
+        // list's rule and (#1168) now this menu's too, so the two are the same
+        // menu: with no groups there is nowhere to move to, and a session that
+        // never started cannot be regrouped at all (main declines the write).
+        // One item that is unavailable right now dims; a set that can do
+        // nothing goes.
+        ...(props.groups.length > 0 && started
+          ? [
+              ...props.groups.map(
+                (g, i): RailGroupMenuItem => ({
+                  id: `move:${g.id}`,
+                  label: g.name,
+                  can: true,
+                  checked: s.groupId === g.id,
+                  ...(i === 0 ? { heading: t('rail.menuMove') } : {}),
+                  run: () => {
+                    ran('session', s.id);
+                    if (s.groupId !== g.id) props.onMoveToGroup(s.id, g.id);
+                  },
+                })
+              ),
+              {
+                id: 'move:none',
+                label: t('strip.menuNoGroup'),
+                can: true,
+                checked: !s.groupId,
+                run: () => {
+                  ran('session', s.id);
+                  if (s.groupId) props.onMoveToGroup(s.id, null);
+                },
+              },
+            ]
+          : []),
       ];
       return { label: t('rail.menuLabel', { title: s.title }), items };
     }

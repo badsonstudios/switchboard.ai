@@ -16,7 +16,6 @@ import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { SessionsRail } from './SessionsRail';
 import { DEFAULT_BOOK } from '../lib/presentation-policy';
-import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { uiDelete } from '../lib/ui-state';
 import { RailGroup, RailSession } from '../model/types';
 import { NO_ORDER } from '../lib/rail-order';
@@ -63,7 +62,6 @@ async function mountRail(
         selectedId="c1"
         palette={['var(--status-working)']}
         policies={DEFAULT_BOOK}
-        focusPolicies={DEFAULT_FOCUS_BOOK}
         onRename={(id, title) => renames.push([id, title])}
         onFocus={noop}
         onDiff={noop}
@@ -76,8 +74,6 @@ async function mountRail(
         onMoveToGroup={noop}
         pinned={pinned}
         onTogglePin={noop}
-        onSetSessionPolicy={noop}
-        onSetSessionFocusPolicy={noop}
         onCycleGroupPolicy={noop}
         manualOrder={NO_ORDER}
         onReorder={noop}

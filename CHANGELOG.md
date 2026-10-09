@@ -98,6 +98,16 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **Right-clicking a session gives the same short menu wherever your sessions
+  are listed.** Open changes, Rename, Pin, Close, and Move to group: that is
+  all of it, on the left and across the top. Three things came off the menu
+  in the list on the left. **On submit** and **When it needs you**, the two
+  settings for one session, are now in the **⋯** menu on that session's own
+  card, each as a drop-down that shows the choice in force. **Move up** and
+  **Move down** are gone from the menu: drag the session, or press
+  `Ctrl+Alt+↑` / `Ctrl+Alt+↓` while you are in it. The last entry under Move
+  to group reads **No group** in both places.
+
 - **The row of lamps and the Collapsed strip are gone.** The Sessions list —
   on the left, or across the top — is now the one place your sessions are
   listed, and it says what those two rows said. A session that needs you is

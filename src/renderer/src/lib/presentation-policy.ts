@@ -82,7 +82,7 @@ function isPolicy(v: unknown): v is PresentationPolicy {
  * Which policy governs this card.
  *
  * PRECEDENCE IS THE ITEM'S DONE-WHEN: session beats group beats global. Stated
- * as one function so the chip's label, the rail menu's tick and the thing that
+ * as one function so the chip's label, the card menu's choice and the thing that
  * actually happens on submit are all reading the same answer — three surfaces
  * deriving precedence separately is how two of them end up wrong.
  */

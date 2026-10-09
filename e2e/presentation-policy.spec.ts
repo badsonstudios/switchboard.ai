@@ -28,6 +28,8 @@ import {
   rungOf,
   readWorkspaceFile,
   permissionHolder,
+  setOnFrontCard,
+  readOnFrontCard,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -58,10 +60,12 @@ async function addSession(a: LaunchedApp): Promise<string> {
   return name;
 }
 
-/** Set ONE session's override from the rail's context menu. */
+/** Set ONE session's override, on its own card's "…" menu (#1168: it was on
+ *  the list's right-click menu). Brings that session to the front to do it. */
 async function setSessionPolicy(w: Page, title: string, value: string): Promise<void> {
-  await row(w, title).click({ button: 'right' });
-  await w.locator(`[data-policy-item="${value}"]`).click();
+  await row(w, title).click();
+  await expect(w.locator('.dv-active-tab')).toContainText(title);
+  await setOnFrontCard(w, 'card-policy', value);
 }
 
 /** Focus a session's card and send it a prompt, the way a user does. */
@@ -307,10 +311,10 @@ test.describe('presentation policy (E9-06)', () => {
     // ...and it comes back saying the same thing
     a = await launchApp({ home });
     await expect(policyChip(a.window)).toContainText('Collapse on submit', { timeout: 25_000 });
-    await row(a.window, second).click({ button: 'right' });
-    await expect(a.window.locator('[data-policy-item="auto-hide"]')).toHaveAttribute(
-      'aria-checked',
-      'true'
-    );
+    // its card was hidden when the app closed; going to it brings it back,
+    // and its own menu says what it was told
+    await row(a.window, second).click();
+    await expect(a.window.locator('.dv-active-tab')).toContainText(second, { timeout: 15_000 });
+    expect(await readOnFrontCard(a.window, 'card-policy')).toBe('auto-hide');
   });
 });

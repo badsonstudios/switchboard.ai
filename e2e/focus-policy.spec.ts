@@ -24,6 +24,8 @@ import {
   writeWorkspaceFile,
   openEventsDrawer,
   permissionHolder,
+  setOnFrontCard,
+  readOnFrontCard,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -72,10 +74,13 @@ async function railTitles(w: Page): Promise<string[]> {
   return cards.map((c) => c.title);
 }
 
-/** Set ONE session's focus-stealing override from the rail's context menu. */
+/** Set ONE session's focus-stealing override, on its own card's "…" menu
+ *  (#1168: it was on the list's right-click menu). Brings that session to the
+ *  front to do it. */
 async function setSessionFocusPolicy(w: Page, title: string, value: string): Promise<void> {
-  await row(w, title).click({ button: 'right' });
-  await w.locator(`[data-focus-item="${value}"]`).click();
+  await row(w, title).click();
+  await expect(focused(w)).toHaveText(new RegExp(title));
+  await setOnFrontCard(w, 'card-focus-policy', value);
 }
 
 /**
@@ -243,10 +248,8 @@ test.describe('focus-stealing policy (E9-10)', () => {
 
     a = await launchApp({ home });
     await expect(row(a.window, second)).toBeVisible({ timeout: 25_000 });
-    await row(a.window, second).click({ button: 'right' });
-    await expect(a.window.locator('[data-focus-item="none"]')).toHaveAttribute(
-      'aria-checked',
-      'true'
-    );
+    await row(a.window, second).click();
+    await expect(focused(a.window)).toHaveText(new RegExp(second));
+    expect(await readOnFrontCard(a.window, 'card-focus-policy')).toBe('none');
   });
 });

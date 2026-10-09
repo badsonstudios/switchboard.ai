@@ -361,11 +361,11 @@ you put it.
 - **With the mouse:** pick up a session's row and drag it over another row in
   the same group. A line shows where it will land — above that row if you're in
   the top half of it, below if you're in the bottom half. Let go.
-- **Without the mouse:** right-click the row (or press `Shift+F10` while it's
-  focused) and choose **Move up** or **Move down**, under *Order in this group*.
-  Or press **`Ctrl+Alt+↑`** / **`Ctrl+Alt+↓`** while you're in the session —
-  the same two commands are in the command palette as *Move session up/down in
-  its group*. Either way, the new position is
+- **Without the mouse:** press **`Ctrl+Alt+↑`** / **`Ctrl+Alt+↓`** while you're
+  in the session. The same two commands are in the command palette as *Move
+  session up/down in its group*. (They used to be on the right-click menu as
+  well; that menu is now the same short one wherever your sessions are
+  listed.) Either way, the new position is
   [read out](06-keyboard.md#shortcuts-that-move-things-say-what-they-did) —
   *"trading-app is now 2 of 5 in Backend"*.
 
@@ -386,8 +386,8 @@ A few things worth knowing:
   doesn't beat: a [pinned](#pinning-a-session-you-always-want-to-find) session
   stays at the top of its group. You can reorder freely among the pinned ones
   and freely among the rest, but you can't drag an ordinary session above a
-  pinned one — it stops just underneath, and **Move up** goes grey at that
-  point. If you want it higher, unpin the one above it.
+  pinned one — it stops just underneath, and `Ctrl+Alt+↑` says it is still
+  where it was. If you want it higher, unpin the one above it.
 - **Nothing reorders itself.** A session needing your attention gets loud — a
   tinted row, a colored bar, a place in the `Ctrl+Space` queue — but it does not
   jump the list. Where you put a session is where it stays.

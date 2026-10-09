@@ -27,7 +27,6 @@ import { act } from 'react';
 import { SessionsRail } from './SessionsRail';
 import { RailGroup, RailSession } from '../model/types';
 import { DEFAULT_BOOK } from '../lib/presentation-policy';
-import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { NO_ORDER } from '../lib/rail-order';
 import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../../../shared/i18n/locales/en.json';
@@ -69,7 +68,6 @@ async function mount(opts: {
         palette={['var(--status-working)']}
         selectedId={null}
         policies={DEFAULT_BOOK}
-        focusPolicies={DEFAULT_FOCUS_BOOK}
         pinned={new Set(opts.pinned ?? [])}
         manualOrder={NO_ORDER}
         onReorder={noop}
@@ -84,8 +82,6 @@ async function mount(opts: {
         onOpenInGroup={noop}
         onMoveToGroup={noop}
         onTogglePin={opts.onTogglePin ?? noop}
-        onSetSessionPolicy={noop}
-        onSetSessionFocusPolicy={noop}
         onCycleGroupPolicy={noop}
       />
     );

@@ -420,11 +420,11 @@ export function buildCommands(deps: CommandDeps): Command[] {
     // distinct modifiers because confusing them would collapse a card the user
     // was trying to file.
     //
-    // The rail's context menu carries the same two commands (§5.32's fifth
-    // rule: the keyboard equivalent belongs in the surface's existing menu).
-    // These exist ON TOP of that, exactly as Mod+Alt+P exists on top of the
-    // menu's Pin item — one keystroke instead of a menu walk, for the gesture
-    // you repeat while arranging a workspace.
+    // THESE ARE THE KEYBOARD'S ONLY WAY TO REORDER A SESSION since #1168. The
+    // rail's context menu carried the same two as `Move up` / `Move down`
+    // until the owner chose one short session menu for both placements; the
+    // drag is the mouse path, and these are the other one (§5.32: a drag is
+    // never the only way). Do not remove either without putting one back.
     //
     // NOTE ON THE LIVE REGION — SETTLED BY #581, AND THE PREDICTION HELD.
     //

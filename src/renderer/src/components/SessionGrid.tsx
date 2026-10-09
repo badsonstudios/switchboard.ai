@@ -26,6 +26,7 @@ import { DEFAULT_PANEL_ID, PanelContext, PanelId } from '../extensibility/contri
 import { listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
 import { ContributionBoundary } from '../extensibility/boundary';
 import { IdentityChip, identityBadgeStyle, identityWash } from './IdentityChip';
+import { CardPolicyRows } from './CardPolicyRows';
 import { DiffPane } from './DiffPane';
 import {
   StandingGrantsSection,
@@ -2272,6 +2273,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 if (e.key === 'Escape') {
                   setMenuOpen(false);
                   setConfirmClear(false);
+                  // back to the button that opened it (#1168). The manual now
+                  // sends a keyboard user into this menu for two settings, and
+                  // closing it used to drop them on the page with nowhere to be.
+                  e.currentTarget
+                    .querySelector<HTMLElement>('[data-testid="card-menu-button"]')
+                    ?.focus();
                 }
               }}
             >
@@ -2552,6 +2559,18 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                               next: soundName(nextCardSound(cardSound)),
                             })}
                           </button>
+                        )}
+                        {/* The two settings about THIS session (#1168): what
+                            happens to it on submit, and when it needs you.
+                            They moved here from the left list's right-click
+                            menu so that menu could be the same short one the
+                            strip has. Not locked with the session controls:
+                            they write a preference, not a slash command. */}
+                        {cardId && (
+                          <>
+                            <div style={{ borderBlockStart: '1px solid var(--border)', marginBlock: 3 }} />
+                            <CardPolicyRows cardId={cardId} />
+                          </>
                         )}
                         {/* §5.16's door back out (#974). ALWAYS rendered for a
                             live session, empty or not — the defect being fixed

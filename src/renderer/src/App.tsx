@@ -670,12 +670,9 @@ export function App(): React.JSX.Element {
       setGroupPolicy(groupId, cycleOverride(groupOverride(sessionStore.getPolicies(), groupId))),
     [setGroupPolicy]
   );
-  // §5.8's focus-stealing policy (E9-10). Read from the store for the reason
-  // the presentation policy is: the reveal effect below resolves it per event,
-  // and the rail menu renders the tick from the same book.
-  const focusPolicies = useSyncExternalStore(subscribeStore, () =>
-    sessionStore.getFocusPolicies()
-  );
+  // §5.8's focus-stealing policy (E9-10). The book itself is read from the
+  // store where it is used: by the reveal effect, per event, and by the card's
+  // own menu (#1168), which is where the per-session choice is made now.
   const setGlobalFocusPolicy = React.useCallback(
     (p: FocusPolicy) =>
       sessionStore.setFocusPolicies(withFocusGlobal(sessionStore.getFocusPolicies(), p)),
@@ -2840,10 +2837,7 @@ export function App(): React.JSX.Element {
             manualOrder={manualOrder}
             lineage={lineage}
             onReorder={reorderBucket}
-            onSetSessionPolicy={setSessionPolicy}
             onCycleGroupPolicy={cycleGroupPolicy}
-            focusPolicies={focusPolicies}
-            onSetSessionFocusPolicy={setSessionFocusPolicy}
             onMoveToGroup={moveToGroup}
             onOpenInGroup={openInGroup}
             onMoveGroup={moveGroup}

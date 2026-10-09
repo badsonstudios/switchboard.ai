@@ -216,18 +216,20 @@ test.describe('sessions rail', () => {
     // 655px viewport, and `click()` retried for 30s against an element
     // Playwright itself called "visible, enabled and stable".
     //
-    // Stated as geometry rather than inherited from the developer's monitor:
-    // the window is squeezed to its own 600px minimum, which is short enough
-    // that this menu cannot fit below row 2 on ANY machine — and the test
-    // asserts that precondition, so it can never quietly stop testing anything.
+    // THE MENU IS SHORT AGAIN (#1168 took those items and both ticked lists
+    // off it), so the app's own 600px minimum no longer squeezes it. The
+    // placement code is the same and still has to hold for the day the menu
+    // grows, so the squeeze is made here instead: the window is cut to end
+    // just under the row that is clicked, measured, with the OS minimum
+    // lifted for this test's window. The precondition is still asserted, so
+    // this can never quietly stop testing anything.
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     const first = path.basename(folder);
     await expect(row(w, first)).toBeVisible({ timeout: 25_000 });
 
-    // a second session, so the menu carries #559's `Order in this group`
-    // section — the shape that actually shipped, not a trimmed-down one
+    // a second session, so the row that is clicked is not the first one
     const second = tempProjectFolder();
     await a.app.evaluate(({ dialog }, d) => {
       dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
@@ -236,14 +238,43 @@ test.describe('sessions rail', () => {
     const title = path.basename(second);
     await expect(row(w, title)).toBeVisible({ timeout: 25_000 });
 
-    await a.app.evaluate(({ BrowserWindow }) => {
+    // cut the window to end ROOM_UNDER px below the middle of the row: less
+    // than the menu is tall, and enough that the row itself is still drawn
+    const ROOM_UNDER = 70;
+    const at = (await row(w, title).boundingBox())!;
+    const wanted = Math.round(at.y + at.height / 2 + ROOM_UNDER);
+    await a.app.evaluate(({ BrowserWindow }, h) => {
       const win = BrowserWindow.getAllWindows()[0];
-      const b = win.getBounds();
-      win.setBounds({ x: b.x, y: b.y, width: 1024, height: 600 }); // the app's own minimum
-    });
+      win.unmaximize();
+      win.setMinimumSize(600, 120);
+      win.setContentSize(1024, h);
+    }, wanted);
     await expect
       .poll(async () => w.evaluate(() => window.innerHeight), { timeout: 10_000 })
-      .toBeLessThan(600);
+      .toBeLessThanOrEqual(wanted + 8); // the OS rounds; the real precondition is asserted below
+    await expect(row(w, title)).toBeVisible();
+    // A resize CLOSES an open menu, and the OS can deliver one more after the
+    // height has already arrived. Wait until the size has held still.
+    await expect
+      .poll(
+        async () =>
+          w.evaluate(
+            () =>
+              new Promise<boolean>((done) => {
+                let moved = false;
+                const on = (): void => {
+                  moved = true;
+                };
+                window.addEventListener('resize', on);
+                setTimeout(() => {
+                  window.removeEventListener('resize', on);
+                  done(!moved);
+                }, 400);
+              })
+          ),
+        { timeout: 10_000 }
+      )
+      .toBe(true);
 
     // The click goes to the coordinate that was MEASURED, not to wherever
     // Playwright re-resolves the row's centre a moment later: `pointerY` is the
@@ -251,13 +282,28 @@ test.describe('sessions rail', () => {
     // change, a need count landing) would make it a lie.
     const rowBox = (await row(w, title).boundingBox())!;
     const pointerY = rowBox.y + rowBox.height / 2;
+    // ...and the row really is what is under that point: in a window this
+    // short, a row can be measured and still be cut off by what is below it
+    const under = await w.evaluate(
+      ([x, y]) => {
+        const el = document.elementFromPoint(x, y);
+        return {
+          inRow: !!el?.closest('.rail-row'),
+          what: el ? `${el.tagName}.${el.className}`.slice(0, 80) : 'nothing',
+          vh: window.innerHeight,
+        };
+      },
+      [rowBox.x + rowBox.width / 2, pointerY]
+    );
+    expect(under.inRow, `under the pointer: ${under.what} at y=${pointerY} of ${under.vh}`).toBe(true);
     await w.mouse.click(rowBox.x + rowBox.width / 2, pointerY, { button: 'right' });
     const menu = w.getByRole('menu');
     await expect(menu).toBeVisible();
 
     const geom = await w.evaluate(() => {
       const el = document.querySelector('[role="menu"]') as HTMLElement;
-      const last = document.querySelector('[data-focus-item="none"]') as HTMLElement;
+      const all = el.querySelectorAll<HTMLElement>('[role^="menuitem"]');
+      const last = all[all.length - 1];
       const m = el.getBoundingClientRect();
       const l = last.getBoundingClientRect();
       return {
@@ -281,10 +327,15 @@ test.describe('sessions rail', () => {
     // and it is OPERABLE, not merely on screen. A short timeout on purpose: the
     // failure this guards against is a 30s click retry, and a regression should
     // say so in seconds.
-    await w.locator('[data-focus-item="none"]').click({ timeout: 10_000 });
+    // The LAST item is "Close session", which is not something to click in
+    // passing; a trial click runs every check a real one does (on screen,
+    // not covered, receives the pointer) and stops short of pressing.
+    await menu.getByRole('menuitem').last().click({ trial: true, timeout: 10_000 });
+    await menu.getByRole('menuitem', { name: 'Pin session' }).click({ timeout: 10_000 });
     await expect(menu).toHaveCount(0);
+    // on the row, not at the old point: a pinned session moves to the top
     await row(w, title).click({ button: 'right' });
-    await expect(w.locator('[data-focus-item="none"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(w.getByRole('menuitem', { name: 'Unpin session' })).toBeVisible();
   });
 
   test('the right-click menu opens AT the pointer when the app reads right-to-left (#642)', async () => {
@@ -358,10 +409,10 @@ test.describe('sessions rail', () => {
 
     // and it is OPERABLE where it landed, which is the whole point. Short
     // timeout on purpose: an off-screen item fails by retrying for 30s.
-    await w.locator('[data-focus-item="none"]').click({ timeout: 10_000 });
+    await menu.getByRole('menuitem', { name: 'Pin session' }).click({ timeout: 10_000 });
     await expect(menu).toHaveCount(0);
     await row(w, title).click({ button: 'right' });
-    await expect(w.locator('[data-focus-item="none"]')).toHaveAttribute('aria-checked', 'true');
+    await expect(w.getByRole('menuitem', { name: 'Unpin session' })).toBeVisible();
   });
 
   test('a session can be dropped ANYWHERE on a group card, not just its header', async () => {

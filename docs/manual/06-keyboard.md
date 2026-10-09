@@ -356,17 +356,23 @@ and the same menu opens, with the first item already selected. `↑` and `↓` w
 it, `Enter` picks, and `Esc` closes it and puts you back on the row you started
 from. That menu is where **Open changes**, **Rename…**, **Pin session** and
 **Close session** live, so renaming or pinning a session doesn't need a
-double-click. Below them are two labelled groups of radio items — **ON
-SUBMIT** and **WHEN IT NEEDS YOU** — which read out as one choice each rather
-than as eight loose commands.
+double-click. It is the same menu whether your sessions are listed on the left
+or across the top.
+
+Two things that used to be on it have moved. **Move up** and **Move down** are
+the `Ctrl+Alt+↑` / `Ctrl+Alt+↓` shortcuts above. The two settings for one
+session, **On submit** and **When it needs you**, are on that session's own
+card: open its **⋯** menu. Each is an ordinary drop-down, so `Tab` reaches
+it and the arrow keys change it. Both are also in the command palette for
+the session you're in: search for *this session*.
 
 #### Moving a session into a group without dragging
 
 Keep walking that menu past **Close session** and you reach **Move to group** —
-every group you've made, then **Ungrouped**, with a tick beside the one the
+every group you've made, then **No group**, with a tick beside the one the
 session is in now. `Enter` on any of them moves it, exactly as
 [dragging the row onto that group](07-workspace.md#groups) would;
-`Enter` on **Ungrouped** takes it out of its group, the same as dropping it on
+`Enter` on **No group** takes it out of its group, the same as dropping it on
 empty space.
 
 The move is read out when it happens — *"trading-app moved to Backend"* — and

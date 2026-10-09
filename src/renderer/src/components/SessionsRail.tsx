@@ -44,14 +44,14 @@
 // Escape, focus restored to the row) rather than a wall of divs a keyboard
 // could open and then be stuck inside.
 //
-// #559 adds the second interaction of that shape, and answers it the same way:
-// a session can now be dragged UP AND DOWN inside its own group, so the same
-// menu grew `Move up` / `Move down`. They are COMMANDS and not radios because
-// the choice is a step, not a destination out of a known set — and they are
-// `aria-disabled` rather than absent at the ends of a group, so the arrow walk
-// never finds a hole where an item used to be. The order they write lives in
-// the workspace store (lib/rail-order), which also holds the decision about
-// what happens when an arrangement meets a pin: the pin wins.
+// #559 added the second interaction of that shape: a session can be dragged UP
+// AND DOWN inside its own group. Its keyboard answer was `Move up` / `Move
+// down` on this menu until #1168, when the owner chose one short session menu
+// for both placements; it is now the `Ctrl+Alt+Up` / `Ctrl+Alt+Down` chord and
+// the two commands in the command list, through the store's `reorderSession`.
+// The order lives in the workspace store (lib/rail-order), which also holds
+// the decision about what happens when an arrangement meets a pin: the pin
+// wins.
 //
 // It is also where the sweep's ONE remaining gap was closed (#253). Moving a
 // session between groups was drag-only — an interaction with no keyboard
@@ -65,12 +65,9 @@ import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
 import { autoGroupName, railOrder } from '../lib/groups';
 import {
-  bucketLabel,
-  canStep,
   LOOSE_BUCKET,
   ManualOrder,
   planReorder,
-  stepReorder,
 } from '../lib/rail-order';
 import { LineageMap, NO_LINEAGE } from '../lib/dispatch-lineage';
 import {
@@ -91,21 +88,7 @@ import { RailGroupMenu } from './RailGroupMenu';
 import { SessionRow } from './SessionRow';
 import { FolderGlyph } from './FolderGlyph';
 import { directionOf } from '../lib/writing-direction';
-import {
-  cardOverride,
-  groupOverride,
-  POLICY_ORDER,
-  PolicyBook,
-  PresentationPolicy,
-  resolvePolicy,
-} from '../lib/presentation-policy';
-import {
-  FOCUS_POLICY_ORDER,
-  FocusBook,
-  FocusPolicy,
-  focusOverride,
-  resolveFocusPolicy,
-} from '../lib/focus-policy';
+import { groupOverride, PolicyBook } from '../lib/presentation-policy';
 import { srOnly } from './sr-only';
 
 export type { RailSession, RailGroup } from '../model/types';
@@ -155,80 +138,6 @@ const menuSectionStyle: React.CSSProperties = {
 /* The rail's live region is invisible rather than absent (#253). The
    declarations moved to `./sr-only` when P2-E14-01 became the third copy, which
    is what #367 said would happen. */
-
-/**
- * One per-session OVERRIDE choice in the rail's context menu: a labelled radio
- * set of named values, with "follow the default" as its first and always-present
- * member.
- *
- * Shared by E9-06's presentation policy and E9-10's focus-stealing policy —
- * they are the same widget asking about two different settings, and writing the
- * second one out again is how the two would have drifted an aria attribute at a
- * time. Named values rather than one cycling row, because a menu closes when
- * you click it: a cycle would cost a right-click per step, and the point of an
- * override is to SAY what you want, not to walk past it.
- *
- * "Follow the default" is `undefined`, never the value the default happens to
- * hold today — otherwise leaving an override would silently pin the session to
- * whatever the global said at that moment.
- */
-function OverrideGroup<T extends string>(props: {
-  /** the group's heading, and its accessible name */
-  label: string;
-  values: readonly T[];
-  /** this session's own override, or undefined for "follow the default" */
-  own: T | undefined;
-  /** the e2e handle, e.g. `data-policy-item`; the value is the mode or 'default' */
-  itemAttr: string;
-  itemStyle: React.CSSProperties;
-  labelOf: (value: T) => string;
-  /** already composed, because what "the default" resolves to differs per
-   *  setting (the presentation policy has a group level in between) */
-  defaultLabel: string;
-  onPick: (value: T | undefined) => void;
-}): React.JSX.Element {
-  return (
-    <div role="group" aria-label={props.label}>
-      <div
-        aria-hidden
-        style={{
-          marginBlockStart: 4,
-          paddingBlock: '4px 2px',
-          paddingInline: 9,
-          borderBlockStart: '1px solid var(--border)',
-          color: 'var(--faint)',
-          fontSize: 9.5,
-          textTransform: 'uppercase',
-          letterSpacing: 0.4,
-        }}
-      >
-        {props.label}
-      </div>
-      {[undefined, ...props.values].map((value) => {
-        const chosen = props.own === value;
-        return (
-          <button
-            key={value ?? 'default'}
-            type="button"
-            role="menuitemradio"
-            aria-checked={chosen}
-            {...{ [props.itemAttr]: value ?? 'default' }}
-            className="rail-menu-item"
-            onClick={() => props.onPick(value)}
-            style={{ ...props.itemStyle, fontWeight: chosen ? 700 : 400 }}
-          >
-            {/* the tick keeps its column whether or not it is drawn, so the
-                labels do not shuffle sideways as the choice moves */}
-            <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }}>
-              {chosen ? '✓' : ''}
-            </span>
-            {value ? props.labelOf(value) : props.defaultLabel}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 export function SessionsRail(props: {
   sessions: readonly RailSession[];
@@ -309,24 +218,13 @@ export function SessionsRail(props: {
   /**
    * §5.8's presentation policy and its overrides (E9-06).
    *
-   * The rail is where the per-SESSION and per-GROUP overrides belong, because it
-   * is the only surface that lists both — the override sits next to the thing it
-   * overrides, while the global default is a titlebar chip.
+   * The rail carries the per-GROUP override, on the group header. The
+   * per-SESSION ones were on the session menu here until #1168 moved them to
+   * the card's own menu (`CardPolicyRows`), so that this menu and the strip's
+   * are the same short list.
    */
   policies: PolicyBook;
-  /** `undefined` clears the override and follows the default again */
-  onSetSessionPolicy: (cardId: string, policy: PresentationPolicy | undefined) => void;
   onCycleGroupPolicy: (groupId: string) => void;
-  /**
-   * §5.8's focus-stealing policy and its per-session overrides (E9-10).
-   *
-   * Here for the reason the presentation override is: the override belongs
-   * beside the row it governs. There is no group level — §5.8 specifies "a
-   * global setting with per-session override" for this one, and no more.
-   */
-  focusPolicies: FocusBook;
-  /** `undefined` clears the override and follows the default again */
-  onSetSessionFocusPolicy: (cardId: string, policy: FocusPolicy | undefined) => void;
   /**
    * §5.8's pinning contract (E9-09) — the pinned CARD ids.
    *
@@ -359,7 +257,7 @@ export function SessionsRail(props: {
    * the rail quietly answer a different question: there is simply no nesting.
    */
   lineage?: LineageMap;
-  /** the whole of one group's new order, after a drag or a Move up/down */
+  /** the whole of one group's new order, after a drag */
   onReorder: (bucketKey: string, orderedIds: string[]) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
@@ -656,6 +554,8 @@ export function SessionsRail(props: {
   // grew ~72px and the bottom radio landed off the windows-latest runner's
   // 655px viewport), but the menu was one taller section away from this at any
   // window size, so the fix belongs to the placement and not to that section.
+  // (That section, and two more, left the menu in #1168. The placement stays:
+  // a short window still cuts a short menu off.)
   //
   // A layout effect and not a render-time guess because the height is a fact
   // about laid-out text: measured here, the resulting setState re-renders
@@ -879,42 +779,6 @@ export function SessionsRail(props: {
   const edgeAt = (el: HTMLElement, clientY: number): 'before' | 'after' => {
     const box = el.getBoundingClientRect();
     return clientY < box.top + box.height / 2 ? 'before' : 'after';
-  };
-
-  /** what to call this bucket in a sentence a screen reader will read.
-   *  The rules moved to `lib/rail-order` when #581 gave the reorder CHORD a voice
-   *  of its own — see `bucketLabel` for why two copies could not stay. */
-  const bucketName = (bucket: string): string =>
-    bucketLabel(bucket, props.groups, t('rail.ungrouped'));
-
-  /** Move one row a step, from the keyboard (§5.32) — the SAME write the drop
-   *  makes, and the same rule deciding whether it may happen at all.
-   *
-   *  ⚠️ THROUGH `stepReorder`, NOT `planReorder` WITH A HAND-COMPUTED INDEX. This
-   *  called `planReorder(ids, s.id, at + delta, …)` and the menu's disabled state
-   *  asked `canStep` — which is `stepReorder` — so the two computed the STEP
-   *  differently the moment #951's nesting gave a row a subtree to step over
-   *  (`subtreeSpan`). The item was drawn enabled on any session that had
-   *  dispatched one and then did nothing: no write, and no announcement, which
-   *  breaks the invariant the menu asserts about itself ("an item can never be
-   *  offered and then decline"). One function decides both, exactly as
-   *  `SessionStore.reorderSession` already does. */
-  const stepRow = (s: RailSession, delta: -1 | 1): boolean => {
-    const bucket = order.bucketOf.get(s.id);
-    if (!bucket) return false;
-    const ids = order.buckets.get(bucket) ?? [];
-    const next = stepReorder(ids, s.id, delta, props.pinned, lineage);
-    if (!next) return false;
-    props.onReorder(bucket, next);
-    setMoveSaid(
-      t('rail.reordered', {
-        title: s.title,
-        position: next.indexOf(s.id) + 1,
-        count: next.length,
-        group: bucketName(bucket),
-      })
-    );
-    return true;
   };
 
   const now = Date.now();
@@ -2104,8 +1968,7 @@ export function SessionsRail(props: {
                 // `sessions:renameCard`, whose body is `if (prior) upsert(...)`
                 // — it writes nothing, answers nothing, and the next
                 // `sessions:cards` refresh paints the old name back. An offer
-                // that silently does nothing is worse than no offer, which is
-                // the same rule the reorder items below already follow.
+                // that silently does nothing is worse than no offer.
                 !notStartedRow,
               ],
               [
@@ -2121,7 +1984,7 @@ export function SessionsRail(props: {
                 // ...and pinning a not-started card DOES work, which is why it
                 // is not in the clause above: the pin set is renderer state,
                 // persisted in the ui blob and keyed by card id. Same for
-                // Close, and for both policy submenus further down.
+                // Close.
                 true,
               ],
               ['rail.menuClose', () => props.onClose(menu.session.id), false, true],
@@ -2131,8 +1994,8 @@ export function SessionsRail(props: {
               key={key}
               type="button"
               role="menuitem"
-              // `aria-disabled` and not `disabled`, for the reason spelled out
-              // at the reorder items: the arrow walk focuses `[role^="menuitem"]`
+              // `aria-disabled` and not `disabled`: the arrow walk focuses
+              // `[role^="menuitem"]`
               // and `focus()` on a disabled button does nothing, so a hard
               // disable would break the ring at this item.
               aria-disabled={!can}
@@ -2142,75 +2005,12 @@ export function SessionsRail(props: {
                 closeMenu(restoreFocus);
                 run();
               }}
-              // the same 0.45 the reorder items dim to, so one menu has one
-              // way of looking unavailable
+              // dimmed, and still in the ring: see `aria-disabled` above
               style={{ ...menuItemStyle, opacity: can ? 1 : 0.45 }}
             >
               {t(key)}
             </button>
           ))}
-          {/* #559 — the OTHER drag-only interaction, answered the same way.
-              Dragging a row up or down inside its group had no keyboard path at
-              all, which is 2.1.1 for the whole gesture (§5.32's fifth rule).
-
-              COMMANDS, not radios: a step is not a destination out of a known
-              set, so there is nothing for a tick to point at. They call the
-              same `onReorder` the drop calls and reach the same rule for
-              whether the move is allowed, so the two paths cannot drift.
-
-              `aria-disabled` and not `disabled` at the ends of a group: this
-              menu's arrow walk collects `[role^="menuitem"]` and focuses them,
-              and `focus()` on a disabled button does nothing at all — the walk
-              would stop dead on the row nobody can leave. Present, focusable,
-              announced as unavailable, is what APG asks for and what keeps the
-              ring whole.
-
-              Absent entirely for a group of one, which is the same rule that
-              hides the Move-to-group set when there are no groups: an offer
-              that cannot do anything wastes more time than a missing one. */}
-          {(order.buckets.get(order.bucketOf.get(menu.session.id) ?? '')?.length ?? 0) > 1 && (
-            <div role="group" aria-label={t('rail.menuOrder')}>
-              <div aria-hidden style={menuSectionStyle}>
-                {t('rail.menuOrder')}
-              </div>
-              {([
-                ['rail.menuMoveUp', -1],
-                ['rail.menuMoveDown', 1],
-              ] as const).map(([key, delta]) => {
-                const bucket = order.bucketOf.get(menu.session.id);
-                const ids = bucket ? (order.buckets.get(bucket) ?? []) : [];
-                // the SAME question the move itself asks, through the same
-                // function — an item can never be offered and then decline
-                const can = !!bucket && canStep(ids, menu.session.id, delta, props.pinned, lineage);
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    role="menuitem"
-                    aria-disabled={!can}
-                    data-order-item={delta < 0 ? 'up' : 'down'}
-                    className="rail-menu-item"
-                    onClick={() => {
-                      if (!can) return; // aria-disabled is a claim; this is the fact
-                      // Focus is restored NOW and not after the change lands,
-                      // which is the one place this differs from #253's move:
-                      // a reorder keeps the same keyed row, so React MOVES the
-                      // node rather than re-parenting it into another card, and
-                      // the button the menu was opened from is still mounted.
-                      closeMenu(true);
-                      stepRow(menu.session, delta);
-                    }}
-                    style={{ ...menuItemStyle, opacity: can ? 1 : 0.45 }}
-                  >
-                    {/* the same 12px gutter the ticked sets keep, so the labels
-                        in this menu all start at one margin */}
-                    <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }} />
-                    {t(key)}
-                  </button>
-                );
-              })}
-            </div>
-          )}
           {/* #253 — the keyboard's way to do what only a drag could do.
               A session's group was reachable by dragging its row onto a group
               card and no other way, so the whole interaction failed WCAG 2.1.1
@@ -2218,8 +2018,7 @@ export function SessionsRail(props: {
               not a label.
 
               RADIOS, not a "Move to group ▸" submenu: membership is exactly one
-              choice out of a known set, which is what `menuitemradio` means and
-              what the presentation set below already looks like. It also costs
+              choice out of a known set, which is what `menuitemradio` means. It also costs
               no new keyboard mode — the arrow walk on the menu selects
               `[role^="menuitem"]`, so these join the ring for free, where a
               submenu would have meant a second focus context to get right, and
@@ -2256,7 +2055,7 @@ export function SessionsRail(props: {
                 ...props.groups.map((g) => [g.id, g.name] as const),
                 // the trailing bucket, last for the same reason it is last in
                 // the rail itself: it is an absence, not a thing
-                [null, t('rail.ungrouped')] as const,
+                [null, t('strip.menuNoGroup')] as const,
               ].map(([gid, label]) => {
                 // read membership LIVE, exactly as the drop handler does: the
                 // menu's session is a snapshot from when it opened, and a card
@@ -2305,57 +2104,6 @@ export function SessionsRail(props: {
               })}
             </div>
           )}
-          {/* §5.8's per-SESSION presentation override (E9-06). Named values
-              rather than one cycling row: a menu closes when you click it, so a
-              cycle would cost a right-click per step — and the point of an
-              override is to say what you want, not to walk past it.
-              A labelled group, so the radio set reads as one choice to a screen
-              reader rather than four loose items after three commands. */}
-          <OverrideGroup
-            label={t('ladder.policyMenu')}
-            values={POLICY_ORDER}
-            own={cardOverride(props.policies, menu.session.id)}
-            itemAttr="data-policy-item"
-            itemStyle={menuItemStyle}
-            labelOf={(policy) => t(`policy.${policy}`)}
-            defaultLabel={t('ladder.policyDefault', {
-              // what following the default MEANS for this session right now —
-              // which may be its group's override, not the global
-              policy: t(
-                `policy.${resolvePolicy({ ...props.policies, cards: {} }, menu.session.id, menu.session.groupId)}`
-              ),
-            })}
-            onPick={(policy) => {
-              // this one DOES restore focus: the choice is a property of the
-              // row, and the row is still there afterwards
-              closeMenu(true);
-              props.onSetSessionPolicy(menu.session.id, policy);
-            }}
-          />
-          {/* §5.8's per-SESSION FOCUS-STEALING override (E9-10) — the same
-              widget, one question later: that group says what happens when YOU
-              submit, this one says what happens when the SESSION calls. They
-              are neighbours because "this session is allowed to interrupt me"
-              and "this session gets out of my way" are the two halves of how
-              loud one session is, and nobody should have to look in two places
-              for them. */}
-          <OverrideGroup
-            label={t('ladder.focusMenu')}
-            values={FOCUS_POLICY_ORDER}
-            own={focusOverride(props.focusPolicies, menu.session.id)}
-            itemAttr="data-focus-item"
-            itemStyle={menuItemStyle}
-            labelOf={(policy) => t(`focusPolicy.${policy}`)}
-            defaultLabel={t('ladder.focusDefault', {
-              policy: t(
-                `focusPolicy.${resolveFocusPolicy({ ...props.focusPolicies, cards: {} }, menu.session.id)}`
-              ),
-            })}
-            onPick={(policy) => {
-              closeMenu(true);
-              props.onSetSessionFocusPolicy(menu.session.id, policy);
-            }}
-          />
         </div>
       )}
     </nav>

@@ -11,7 +11,6 @@ import i18next from 'i18next';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { SessionsRail } from './SessionsRail';
 import { DEFAULT_BOOK } from '../lib/presentation-policy';
-import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { uiDelete } from '../lib/ui-state';
 import { NO_ORDER } from '../lib/rail-order';
 
@@ -34,7 +33,6 @@ async function mountRail(onNewSession?: () => void, groupsMade: string[] = []): 
         needing={new Set<string>()}
         palette={['var(--status-working)']}
         policies={DEFAULT_BOOK}
-        focusPolicies={DEFAULT_FOCUS_BOOK}
         onRename={noop}
         onFocus={noop}
         onDiff={noop}
@@ -48,8 +46,6 @@ async function mountRail(onNewSession?: () => void, groupsMade: string[] = []): 
         onMoveToGroup={noop}
         pinned={new Set()}
         onTogglePin={noop}
-        onSetSessionPolicy={noop}
-        onSetSessionFocusPolicy={noop}
         onCycleGroupPolicy={noop}
         manualOrder={NO_ORDER}
         onReorder={noop}
