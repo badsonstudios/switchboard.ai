@@ -435,9 +435,13 @@ you left it in the list.
 
 ## Closing a session
 
-Click the **✕** on the card's tab. Because this ends the session *and* forgets
-it, switchboard asks you to confirm first. A closed session does not come back
-next launch.
+Click the **✕** on the card's tab, or **middle-click the tab** (press the mouse
+wheel on it), as you would in a browser. Because this ends the session *and*
+forgets it, switchboard asks you to confirm first, whichever way you did it.
+A closed session does not come back next launch.
+
+Changed your mind with the wheel already pressed? Move the pointer off the tab
+before you let go, and nothing happens.
 
 ### Closing all of them at once
 

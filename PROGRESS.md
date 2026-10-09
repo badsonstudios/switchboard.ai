@@ -25,10 +25,16 @@
 >    read (the effort chip's) seeds the model store; it only fills a gap,
 >    never overwrites. No CLI without the `applied` block exists on this
 >    machine, so that fallback is unit-tested only.
-> 2. **#715 — a context-usage meter under the prompt box. ← IN FLIGHT**,
->    branch `feature/715-context-meter`. *This line rides in that PR: if
->    `main` has `e2e/context-meter.spec.ts`, it has landed and the next
->    item is #619.* Probed first (`spike/findings/715-context-usage.md`):
+> 2. **#715 — a context-usage meter under the prompt box. DONE 2026-10-09,
+>    PR #1183 (`d045b070`), merged, NOT released.** Green on the first CI
+>    run. **Found on the way and fixed there:** the effort chip, the model
+>    menu and the new meter shared one React key in the row, and with three
+>    the model menu stayed on screen for good after a switch
+>    (`e2e/effort-chip.spec.ts` caught it); each has its own key now. The
+>    independent review found five more (Settings samples identical on the
+>    default, popouts ignoring the choice, the meter falling left when the
+>    row wraps, the remaining shared key, no re-read after Clear); all
+>    fixed in the PR. Probed first (`spike/findings/715-context-usage.md`):
 >    `get_context_usage` gives the fill as the CLI's own whole-number
 >    `percentage`, cold, mid-turn and on a resumed session; only four
 >    numbers cross to the window (the answer carries file paths). ⚠️ **The
@@ -36,7 +42,14 @@
 >    YELLOW: plain below 60, blue from 60, red from 80. Flagged in the
 >    tracker row and the report for him to overrule.** Form (number / bar /
 >    both) is a Settings choice, default the number.
-> 3. **#619 — middle-click a tab to close it** (through the ✕'s own path).
+> 3. **#619 — middle-click a tab to close it. ← IN FLIGHT**, branch
+>    `feature/619-middle-click-tab`. *This line rides in that PR: if `main`
+>    has `e2e/tab-middle-click.spec.ts`, it has landed and the next item is
+>    #631.* One close routine in `IdentityTab` for the ✕ and `auxclick`
+>    button 1, so a session tab asks first either way and a document or
+>    diff tab just closes. The only closable tabs are the dockview ones
+>    (sessions, documents, diffs); the card's inner Session / Changes /
+>    Files / History tabs have no ✕ and are untouched.
 > 4. **#631 — hover a session's tab or row to see its last prompt** (the
 >    left list's row AND the strip's pill).
 > 5. **#757 — a small icon beside each tool name in the conversation.**

@@ -301,3 +301,120 @@ describe('the session tab paints the card identity (issue 312)', () => {
     expect(tabText()).toBe('Changes — acme');
   });
 });
+
+describe('closing a tab: the ✕ and a middle-click are one routine (issue 619)', () => {
+  beforeEach(async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    document.body.innerHTML = '';
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    close.mockReset();
+    sessionStore.setSessions([]);
+    await initI18nForTests();
+  });
+
+  afterEach(async () => {
+    if (root) {
+      const r = root;
+      root = null;
+      await act(async () => r.unmount());
+    }
+    vi.unstubAllGlobals();
+    sessionStore.setSessions([]);
+  });
+
+  const tab = (): HTMLElement => host.querySelector<HTMLElement>('.identity-tab')!;
+  /** a mouse event on the tab, with the button that made it */
+  function mouse(type: string, button: number, target: Element = tab()): MouseEvent {
+    const e = new MouseEvent(type, { bubbles: true, cancelable: true, button });
+    act(() => void target.dispatchEvent(e));
+    return e;
+  }
+  const confirmSays = (answer: boolean): ReturnType<typeof vi.fn> => {
+    const confirm = vi.fn(() => answer);
+    vi.stubGlobal('confirm', confirm);
+    return confirm;
+  };
+
+  it('a middle-click on a session tab ASKS, exactly as the ✕ does, and closes on yes', async () => {
+    const confirm = confirmSays(true);
+    await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
+    mouse('auxclick', 1);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(String(confirm.mock.calls[0][0])).toContain('acme');
+    expect(close).toHaveBeenCalledTimes(1);
+
+    // the ✕ says the same words and does the same thing
+    act(() => host.querySelector('button')!.click());
+    expect(confirm).toHaveBeenCalledTimes(2);
+    expect(confirm.mock.calls[1][0]).toBe(confirm.mock.calls[0][0]);
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it('⚠️ saying no to the question leaves the session running', async () => {
+    confirmSays(false);
+    await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
+    mouse('auxclick', 1);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('a document or diff tab closes on a middle-click with no question', async () => {
+    const confirm = confirmSays(true);
+    await mount('Changes — acme', { folder: 'C:\\Projects\\acme' });
+    mouse('auxclick', 1);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('a middle-click on the ✕ itself closes once, not twice', async () => {
+    confirmSays(true);
+    await mount('Changes — acme', { folder: 'C:\\Projects\\acme' });
+    mouse('auxclick', 1, host.querySelector('button')!);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing in the drop-down of tabs that did not fit: its row would be left behind', async () => {
+    confirmSays(true);
+    await act(async () => {
+      root!.render(
+        <IdentityTab
+          {...panelProps('Changes — acme', { folder: 'C:/Projects/acme' })}
+          {...({ tabLocation: 'headerOverflow' } as object)}
+        />
+      );
+    });
+    mouse('auxclick', 1);
+    expect(close).not.toHaveBeenCalled();
+    // the ✕ in that row still works
+    act(() => host.querySelector('button')!.click());
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('the RIGHT button does not close: that one is the context menu', async () => {
+    confirmSays(true);
+    await mount('Changes — acme', { folder: 'C:\\Projects\\acme' });
+    mouse('auxclick', 2);
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('pressing the middle button does not close; only the click it completes does', async () => {
+    confirmSays(true);
+    await mount('Changes — acme', { folder: 'C:\\Projects\\acme' });
+    const press = mouse('mousedown', 1);
+    expect(close).not.toHaveBeenCalled();
+    // and the press is swallowed, so Windows does not start its autoscroll
+    expect(press.defaultPrevented).toBe(true);
+  });
+
+  it('the LEFT press is left alone: it is how a tab is dragged', async () => {
+    await mount('Changes — acme', { folder: 'C:\\Projects\\acme' });
+    expect(mouse('mousedown', 0).defaultPrevented).toBe(false);
+  });
+
+  it('the middle-click’s own default is cancelled: Linux does not paste into what is behind', async () => {
+    confirmSays(true);
+    await mount('Changes — acme', { folder: 'C:\\Projects\\acme' });
+    expect(mouse('auxclick', 1).defaultPrevented).toBe(true);
+  });
+});

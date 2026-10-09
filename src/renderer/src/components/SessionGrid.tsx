@@ -508,6 +508,21 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
     : isDocumentPanelId(props.api.id ?? '')
       ? 'grid.closeDocumentTab'
       : 'grid.closeDerivedTab';
+  /**
+   * Close this tab. ONE ROUTINE, TWO TRIGGERS (#619): the ✕ and a
+   * middle-click both come here.
+   *
+   * For a session card this ends the session AND forgets the record
+   * (onDidRemovePanel -> closeCard), so it CONFIRMS first (Dan 2026-07-22),
+   * whichever way it was asked for; derived tabs (a diff, a document) just
+   * close.
+   */
+  const closeThisTab = (): void => {
+    if (cardId) {
+      if (!nativeConfirm(t('grid.closeConfirm', { title }))) return;
+    }
+    props.api.close();
+  };
   return (
     // `--tab-wash` rides on THIS element because a custom property only flows
     // down: `.dv-tab` is dockview's, above us, and cannot read a value set here.
@@ -516,6 +531,30 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
     // box always had, so a tab is exactly as wide as before.
     <div
       className="identity-tab"
+      // MIDDLE-CLICK CLOSES (#619), as it does in every browser and editor.
+      //
+      // `auxclick`, not `mousedown`: Chromium sends it for the middle button
+      // on RELEASE, and only when press and release were both over the tab.
+      // So pressing the wheel and dragging off cancels, and a press that
+      // started somewhere else and ended here does nothing.
+      onAuxClick={(e) => {
+        if (e.button !== 1) return; // the right button is the context menu
+        // NOT in the list of tabs that did not fit (found in review). Dockview
+        // draws this same component in each row of that drop-down and shuts the
+        // drop-down on `click` only, so a middle-click there would close the
+        // tab and leave its row behind, pointing at nothing. Pick the row, then
+        // close the tab; or use its ✕.
+        if ((props as { tabLocation?: string }).tabLocation === 'headerOverflow') return;
+        e.preventDefault(); // no paste-on-middle-click on Linux
+        e.stopPropagation();
+        closeThisTab();
+      }}
+      // the middle press itself: without this Windows starts its autoscroll
+      // (the round four-way cursor) under a tab that is about to close. The
+      // left button is left alone: it is dockview's tab drag.
+      onMouseDown={(e) => {
+        if (e.button === 1) e.preventDefault();
+      }}
       style={
         {
           '--tab-wash': identityWash(accent),
@@ -533,16 +572,13 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
       <IdentityChip title={title} accent={accent} badge={badge} compact />
       <button
         onClick={(e) => {
-          // close the tab: for a session card this ends the session AND
-          // forgets the record (onDidRemovePanel -> closeCard) — so it
-          // CONFIRMS first (Dan 2026-07-22); derived tabs (diff) just close
           e.stopPropagation();
-          if (cardId) {
-            if (!nativeConfirm(t('grid.closeConfirm', { title }))) return;
-          }
-          props.api.close();
+          closeThisTab();
         }}
-        onMouseDown={(e) => e.stopPropagation()} // don't start a tab drag
+        onMouseDown={(e) => {
+          e.stopPropagation(); // don't start a tab drag
+          if (e.button === 1) e.preventDefault(); // see the tab's own handler
+        }}
         title={t(closeLabelKey)}
         style={{
           background: 'transparent',
