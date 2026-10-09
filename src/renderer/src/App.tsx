@@ -86,6 +86,7 @@ import {
   type ContextMeterForm,
 } from './lib/context-meter';
 import { sayManualMissing, sayUnavailable } from './lib/command-voice';
+import { LastPromptHover } from './components/LastPromptHover';
 import { DEFAULT_SOUND } from '../../shared/sounds';
 // #440: a refused call RESOLVES a truthy object — read every bridge answer
 // through one of these, never as a bare boolean. See shared/ipc/refusal.ts.
@@ -2534,6 +2535,9 @@ export function App(): React.JSX.Element {
           them. Rendered BEFORE `SessionGrid`, like the dialogs it replaced, so
           the ids inside it are never later in tree order than feed or viewer
           content (#654 — `PushSection.tsx` carries the argument). */}
+      {/* hover a session to see its last prompt (#631): one listener on the
+          document, a portal, no ids */}
+      <LastPromptHover />
       <SettingsDialog
         open={settingsOpen}
         section={settingsSection}

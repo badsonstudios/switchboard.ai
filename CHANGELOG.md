@@ -126,6 +126,13 @@ on the floor, and say so in your PR.
   does; a document or diff tab just closes. Move off the tab before letting
   go and nothing happens.
 
+- **Hover a session to see the last thing you asked it.** Rest the pointer
+  on a session's row in the Sessions list, its pill on the strip, or its
+  tab, and a small box shows your last prompt to it, so you can tell what it
+  is doing without switching. It never takes a click and goes away the
+  moment you move or press anything. A session that is not running shows
+  nothing.
+
 ### Changed
 
 - **A new session shows which model it is on straight away.** The button

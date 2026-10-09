@@ -103,6 +103,13 @@
     "failedLaunch": "The installer downloaded and verified, but Windows would not start it.",
     "failedNetwork": "The download did not finish. Nothing was installed and nothing was left behind."
   },
+  "lastPrompt": {
+    "heading": "Last prompt",
+    "headingFrom": "Last message, from {name}",
+    "none": "No prompts yet",
+    "attachmentOnly": "An attachment, with no text",
+    "cut": "{text}…"
+  },
   "rail": {
     "eyebrow": "Sessions · {count}",
     "empty": "No sessions yet",

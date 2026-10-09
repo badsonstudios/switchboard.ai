@@ -562,6 +562,9 @@ export const CHANNEL_CAPABILITIES = {
   // deserve no capability of their own.
   'update:setPrefs': 'settings.write',
   'transcripts:blocks': 'transcripts.read',
+  // The last prompt of one session, for the hover (#631): a few hundred
+  // characters out of the blocks the line above already serves whole.
+  'transcripts:lastPrompt': 'transcripts.read',
   // Session history (P2-E20-01, §5.33): a folder's past conversations, each with
   // a short description. TRANSCRIPTS, not sessions, by `sessions:resolveMentions`'
   // argument above — the description is the conversation's own `ai-title` or, when

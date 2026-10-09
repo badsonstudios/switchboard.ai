@@ -531,6 +531,9 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
     // box always had, so a tab is exactly as wide as before.
     <div
       className="identity-tab"
+      // a SESSION's tab shows its last prompt on hover (#631); a document or
+      // diff tab has no card and so no attribute
+      data-last-prompt-for={cardId}
       // MIDDLE-CLICK CLOSES (#619), as it does in every browser and editor.
       //
       // `auxclick`, not `mousedown`: Chromium sends it for the middle button
