@@ -271,7 +271,12 @@ describe('driven against the fake provider’s own implementation', () => {
 
     await expect(m.effort(rec.id)).resolves.toEqual({
       ok: true,
-      response: { effort: 'medium', levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+      // the model rides on the same answer (#1174): one read serves both chips
+      response: {
+        effort: 'medium',
+        levels: ['low', 'medium', 'high', 'xhigh', 'max'],
+        model: 'claude-fake-1',
+      },
     });
   });
 
@@ -325,7 +330,7 @@ describe('driven against the fake provider’s own implementation', () => {
     await m.setModel(rec.id, 'haiku');
     await expect(m.effort(rec.id)).resolves.toEqual({
       ok: true,
-      response: { effort: null, levels: [] },
+      response: { effort: null, levels: [], model: 'haiku' },
     });
 
     // back on a model that has levels, the level is the one set before the
@@ -338,7 +343,7 @@ describe('driven against the fake provider’s own implementation', () => {
     await m.setModel(rec.id, 'sonnet');
     await expect(m.effort(rec.id)).resolves.toEqual({
       ok: true,
-      response: { effort: 'max', levels: ['low', 'medium', 'high', 'max'] },
+      response: { effort: 'max', levels: ['low', 'medium', 'high', 'max'], model: 'sonnet' },
     });
   });
 

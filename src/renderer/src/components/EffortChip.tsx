@@ -91,6 +91,30 @@ export function EffortChip(props: {
   /** bumped to ask again after a read nobody answered (once: see below) */
   const [attempt, setAttempt] = React.useState(0);
 
+  // WHEN A CHANGE IN THE MODEL IS A REASON TO ASK AGAIN (#1174).
+  //
+  // The read below is also what tells a fresh card its model: main seeds the
+  // model store from the same answer, and the model chip (and so `model` here)
+  // changes a moment later. Asking again on that would be the chip answering
+  // its own echo, twice per card. So the test is not "did `model` change" but
+  // "is the session on a model the last read did NOT report":
+  //
+  //  * a change while no read is out asks again unless it is the very model
+  //    the last read reported (`reported`). A read that got no answer reported
+  //    nothing, so any model turning up after it still asks.
+  //  * a change WHILE a read is out waits for it, and then asks again only if
+  //    the answer names a different model: a switch that landed between the
+  //    question and the answer (found in review).
+  //
+  // A model that was already different when the read went out and did not move
+  // (a resumed card showing the transcript's name) is not a change at all.
+  const [again, setAgain] = React.useState(0);
+  const latest = React.useRef<string | null>(model ?? null);
+  latest.current = model ?? null;
+  /** the model the last ANSWERED read said the session is on, if it said */
+  const reported = React.useRef<string | null>(null);
+  const inFlight = React.useRef(false);
+
   React.useEffect(() => {
     let alive = true;
     let retry: ReturnType<typeof setTimeout> | undefined;
@@ -105,6 +129,8 @@ export function EffortChip(props: {
       setState(null);
       return;
     }
+    inFlight.current = true;
+    const sentWith = latest.current;
     void sessions
       .effort(liveId)
       .catch(() => undefined)
@@ -113,6 +139,7 @@ export function EffortChip(props: {
       // in ModelQuickMenu for the defect that reading `.ok` raw once caused
       const v = answered(raw);
       if (!alive) return;
+      inFlight.current = false;
       if (!v?.ok) {
         // no answer is not "no effort levels", but the surface is the same:
         // nothing to show, and nothing claimed
@@ -126,6 +153,11 @@ export function EffortChip(props: {
         if (attempt === 0) retry = setTimeout(() => alive && setAttempt(1), EFFORT_RETRY_MS);
         return;
       }
+      const told = typeof v.response.model === 'string' && v.response.model ? v.response.model : null;
+      reported.current = told;
+      // the model moved while this was out, and not to what this answer says
+      const now = latest.current;
+      if (now && now !== sentWith && now !== told) setAgain((n) => n + 1);
       let next = readState(v.response);
       const saved = cardId ? uiGet<string>(effortKey(cardId), '') : '';
       if (
@@ -153,9 +185,17 @@ export function EffortChip(props: {
       .catch(() => alive && setState(null));
     return () => {
       alive = false;
+      inFlight.current = false;
       if (retry) clearTimeout(retry);
     };
-  }, [liveId, cardId, model, attempt]);
+  }, [liveId, cardId, again, attempt]);
+
+  // AFTER the effect above, on purpose: on mount that one has already marked
+  // its read as out, so this does not send a second.
+  React.useEffect(() => {
+    if (!model || inFlight.current) return;
+    if (model !== reported.current) setAgain((n) => n + 1);
+  }, [model]);
 
   if (!state || state.effort === null) return null;
 

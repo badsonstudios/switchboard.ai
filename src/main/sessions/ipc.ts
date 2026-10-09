@@ -1264,11 +1264,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // in `setEffortRequest` before the wire AND verified by effect after it
   // (`SessionManager.setEffort`), because the CLI says `success` to a level
   // it does not know.
-  broker.handle('sessions:effort', (_e, sessionId: string) => {
+  broker.handle('sessions:effort', async (_e, sessionId: string) => {
     if (typeof sessionId !== 'string') {
       return { ok: false, reason: 'invalid', message: 'no session' } satisfies ControlVerdict;
     }
-    return manager.effort(sessionId);
+    const verdict = await manager.effort(sessionId);
+    // THE SAME ANSWER SAYS WHICH MODEL (#1174). A card asks this once when it
+    // appears, so a fresh card's model button can say the model straight away
+    // instead of "model?" until the first reply. `seed` only fills a gap: an
+    // init, or a model we set ourselves, is never overwritten by it.
+    if (verdict.ok && typeof verdict.response.model === 'string') {
+      streamModel?.seed(sessionId, verdict.response.model);
+    }
+    return verdict;
   });
   broker.handle('sessions:setEffort', (_e, sessionId: string, level: unknown) => {
     if (typeof sessionId !== 'string') {
@@ -1279,11 +1287,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   /**
    * Which model this session is running, or `null` for "it has not said yet".
    *
-   * NULL IS A REAL ANSWER. `system:init` is the only message that carries the
-   * model and it arrives once per TURN, so a session that has run no turn has
-   * genuinely never reported one — which is the model picker's most common
-   * case, a fresh card. The renderer must render that as "not known yet", never
-   * as a default: see `stream-model.ts`.
+   * NULL IS A REAL ANSWER. Until a session has replied, the only thing that
+   * can have said its model is the read `sessions:effort` makes when its card
+   * appears (#1174). If that got no answer, or the CLI is one that does not
+   * say, nothing is known. The renderer must render that as "not known yet",
+   * never as a default: see `stream-model.ts`.
    */
   broker.handle('sessions:currentModel', (_e, sessionId: string) => {
     if (typeof sessionId !== 'string') return null;

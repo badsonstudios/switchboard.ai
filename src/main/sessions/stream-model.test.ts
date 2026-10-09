@@ -179,6 +179,44 @@ describe('announcing a change (#746)', () => {
   });
 });
 
+describe('seed: what get_settings said, for a session that has not replied (issue 1174)', () => {
+  it('fills the gap, announces it, and reports that it wrote', () => {
+    const s = new StreamModel();
+    const seen: string[] = [];
+    s.onChange((_id, m) => void seen.push(m));
+    expect(s.seed('L1', 'claude-opus-5-5')).toBe(true);
+    expect(s.modelFor('L1')).toBe('claude-opus-5-5');
+    expect(seen).toEqual(['claude-opus-5-5']);
+  });
+
+  it('never overwrites an init or a model we set: an older answer must not beat a newer one', () => {
+    const s = new StreamModel();
+    s.offer('L1', init('claude-haiku-4-5-20251001'));
+    expect(s.seed('L1', 'claude-opus-5-5')).toBe(false);
+    expect(s.modelFor('L1')).toBe('claude-haiku-4-5-20251001');
+
+    s.noteSet('L2', 'sonnet');
+    expect(s.seed('L2', 'claude-opus-5-5')).toBe(false);
+    expect(s.modelFor('L2')).toBe('sonnet');
+  });
+
+  it('the next init is still the authority over a seeded value', () => {
+    const s = new StreamModel();
+    s.seed('L1', 'claude-opus-5-5');
+    s.offer('L1', init('claude-sonnet-5-5'));
+    expect(s.modelFor('L1')).toBe('claude-sonnet-5-5');
+  });
+
+  it('ignores an empty answer, and seeds again after the session is forgotten', () => {
+    const s = new StreamModel();
+    expect(s.seed('L1', '  ')).toBe(false);
+    expect(s.modelFor('L1')).toBeNull();
+    s.seed('L1', 'claude-opus-5-5');
+    s.forgetSession('L1');
+    expect(s.seed('L1', 'claude-fable-5-1')).toBe(true);
+  });
+});
+
 describe('forgetSession', () => {
   it('drops the session’s model and nobody else’s', () => {
     const s = new StreamModel();

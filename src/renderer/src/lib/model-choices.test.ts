@@ -45,6 +45,22 @@ describe('currentIndex — exactly one row, and which', () => {
     expect(currentIndex(MODELS, 'opus[1m]')).toBe(at('opus[1m]'));
   });
 
+  it('ticks a row for what get_settings says on a session that has not replied (issue 1174)', () => {
+    // The 2.1.288 list, as captured (spike/findings/1174-applied-model.md):
+    // `applied.model` is some row's `resolvedModel`, character for character,
+    // so the two-field match needs nothing added. `default` and `opus` share
+    // one; the first wins, which is right for a session that never chose.
+    const list = [
+      { value: 'default', resolvedModel: 'claude-opus-5-5' },
+      { value: 'opus', resolvedModel: 'claude-opus-5-5' },
+      { value: 'sonnet', resolvedModel: 'claude-sonnet-5-5' },
+      { value: 'haiku', resolvedModel: 'claude-haiku-4-5-20251001' },
+    ];
+    expect(currentIndex(list, 'claude-opus-5-5')).toBe(0);
+    expect(currentIndex(list, 'claude-sonnet-5-5')).toBe(2);
+    expect(currentIndex(list, 'claude-haiku-4-5-20251001')).toBe(3);
+  });
+
   it('ticks NOTHING when the model is unknown', () => {
     expect(currentIndex(MODELS, null)).toBe(-1);
   });

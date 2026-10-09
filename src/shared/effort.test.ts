@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import {
   effortLevelsFor,
   getSettingsRequest,
+  appliedModel,
   readApplied,
   setEffortRequest,
   withLevel,
@@ -31,6 +32,26 @@ describe('the two requests', () => {
     for (const bad of [undefined, null, '', '   ', 3, {}, ['high']]) {
       expect(setEffortRequest('r', bad)).toBeNull();
     }
+  });
+});
+
+describe('which model a get_settings answer says the session is on (issue 1174)', () => {
+  it('reads it, whether or not the answer carries an effort level', () => {
+    expect(appliedModel({ applied: { model: 'claude-opus-5-5', effort: 'medium' } })).toBe(
+      'claude-opus-5-5'
+    );
+    expect(appliedModel({ applied: { model: 'claude-haiku-4-5-20251001', effort: null } })).toBe(
+      'claude-haiku-4-5-20251001'
+    );
+    // no `effort` key at all: `readApplied` says nothing, the model is still said
+    expect(appliedModel({ applied: { model: 'claude-opus-5[1m]' } })).toBe('claude-opus-5[1m]');
+  });
+
+  it('says nothing for a CLI with no applied block, or an unusable model in it', () => {
+    expect(appliedModel({ effective: { model: 'opus' } })).toBeNull();
+    expect(appliedModel({ applied: 'nope' })).toBeNull();
+    expect(appliedModel({ applied: { model: '' } })).toBeNull();
+    expect(appliedModel({ applied: { model: 42 } })).toBeNull();
   });
 });
 

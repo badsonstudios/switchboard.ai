@@ -622,7 +622,10 @@ const api = {
      * How hard this session's model is thinking, and what it could be set to
      * (#1115). A success carries `{effort, levels}` (`EffortState` in
      * `shared/effort.ts`); `effort: null` means this model has no effort
-     * levels, and the surface shows nothing.
+     * levels, and the surface shows nothing. It also carries `model`, the
+     * model the session said it is on (or `null`): main seeds the model
+     * store from the same answer (#1174), so asking this is what makes a
+     * fresh card show its model.
      */
     effort: (sessionId: string): Promise<ControlVerdict> =>
       ipcRenderer.invoke('sessions:effort', sessionId),
