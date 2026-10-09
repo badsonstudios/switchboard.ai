@@ -1192,6 +1192,27 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
   their own row.
 - **Urgency strip** (i3 urgency-hint pattern): a persistent global strip showing
   every session's urgency state at a glance, visible regardless of layout mode.
+
+  > **REMOVED, with the collapsed strip and the "N idle sessions" fold above
+  > *(amended 2026-10-08, Dan, #1164)*.** His words, after the sessions list
+  > gained a second placement across the top (#1143): *"The two rows that you
+  > remove when you put the sessions at the top, I want them completely removed.
+  > We no longer want them, and we no longer need them to exist."* Both rows are
+  > gone in every placement. **The Sessions list — the rail on the left, or the
+  > strip across the top — is now the one place sessions are listed, and it
+  > carries what the two rows said:** who needs you (the lit row or pill, and
+  > the one "N need you" total); which sessions are folded away (a dashed edge
+  > on the row or pill, collapsed and hidden alike — the list no longer tells
+  > those two rungs apart); and the session the last jump landed on (an outline
+  > for the beat described under "Delayed urgency reset" below, which the app
+  > shell now times itself rather than whichever row happened to be on screen).
+  > Wherever this section still says "lamp" or "collapsed strip", read "the
+  > session's row or pill in the Sessions list". **Given up on purpose:** with
+  > the list put away (`Ctrl+B`) nothing in the main area lists sessions or says
+  > how many need you — the status bar's count and the Events drawer remain —
+  > and idle sessions no longer aggregate; each folded-away session keeps its
+  > own entry. "Visible regardless of layout mode" is therefore no longer a
+  > promise this app makes.
 - **The queue is a persistent ordered work list**, not fire-and-forget toasts —
   distinguishing needs-permission / needs-input / completed-unreviewed / errored.
   Research (2026-07) verified no competitor ships a persistent prioritized queue;

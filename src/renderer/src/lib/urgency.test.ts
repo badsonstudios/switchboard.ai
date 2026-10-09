@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildLamps,
   isLit,
   markLit,
   nextLitExpiry,
@@ -10,114 +9,6 @@ import {
 } from './urgency';
 
 const T = 1_000_000; // an arbitrary "now"
-
-const session = (id: string, status?: string): { id: string; title: string; status?: string } => ({
-  id,
-  title: id.toUpperCase(),
-  status,
-});
-
-describe('buildLamps — one lamp per session, live status (E9-04)', () => {
-  it("keeps the caller's order, so the Nth lamp is the Nth Ctrl+1..9 target", () => {
-    const lamps = buildLamps([session('c'), session('a'), session('b')], new Map(), T);
-    expect(lamps.map((l) => l.cardId)).toEqual(['c', 'a', 'b']);
-  });
-
-  it('maps every status the rail knows onto the same six-way ramp', () => {
-    const lamps = buildLamps(
-      [
-        session('working', 'working'),
-        session('starting', 'starting'),
-        session('input', 'needs-input'),
-        session('perm', 'needs-permission'),
-        session('idle', 'idle'),
-        session('done', 'done'),
-        session('crash', 'crashed'),
-      ],
-      new Map(),
-      T
-    );
-    expect(lamps.map((l) => l.token)).toEqual([
-      'working',
-      'working',
-      'needs-input',
-      'needs-permission',
-      'idle',
-      'done',
-      'crashed',
-    ]);
-    // …and with nobody being counted, no lamp is filled, whatever its status
-    // (#1137): "needs you" is the count's answer, not the status's.
-    expect(lamps.filter((l) => l.needsYou)).toEqual([]);
-  });
-
-  // The strip prints "N need you" beside these lamps. N is the size of
-  // `needing`, so the filled lamps have to be exactly those cards.
-  it('fills exactly the lamps the count is counting (#1137)', () => {
-    const sessions = [
-      session('looked-at', 'done'),
-      session('waiting', 'done'),
-      session('dismissed', 'needs-permission'),
-      session('author', 'idle'),
-      session('busy', 'working'),
-    ];
-    const lamps = buildLamps(sessions, new Map(), T, new Set(['waiting', 'author']));
-    expect(lamps.filter((l) => l.needsYou).map((l) => l.cardId)).toEqual(['waiting', 'author']);
-    // a session counted for something its status does not show is painted as
-    // finished work to look at; everyone else keeps their own ramp
-    expect(lamps.map((l) => l.token)).toEqual([
-      'done',
-      'done',
-      'needs-permission',
-      'done',
-      'working',
-    ]);
-  });
-
-  it('shows a SUSPENDED session — it folds to the idle hue but says which it is', () => {
-    const [lamp] = buildLamps([session('s', 'suspended')], new Map(), T);
-    expect(lamp.token).toBe('idle');
-    expect(lamp.suspended).toBe(true);
-    expect(lamp.needsYou).toBe(false);
-    expect(lamp.labelKey).toBe('railStatus.suspended');
-    // and a genuinely idle one is NOT flagged suspended
-    expect(buildLamps([session('i', 'idle')], new Map(), T)[0].suspended).toBe(false);
-  });
-
-  it('fails open: an unknown status reads as idle, never as an alarm', () => {
-    const [lamp] = buildLamps([session('x', 'no-such-status')], new Map(), T);
-    expect(lamp.token).toBe('idle');
-    expect(lamp.needsYou).toBe(false);
-    // a missing status too
-    expect(buildLamps([session('y')], new Map(), T)[0].token).toBe('idle');
-  });
-
-  it('lights the lamp the last jump landed on, and only that one', () => {
-    const lit = new Map([['b', T + 500]]);
-    const lamps = buildLamps([session('a'), session('b'), session('c')], lit, T);
-    expect(lamps.map((l) => l.lit)).toEqual([false, true, false]);
-  });
-
-  it('lights a lamp that has not been painted yet — that is what it is for', () => {
-    // #320: a mark with no deadline is unconditionally lit, so the paint the
-    // beat is measured from is guaranteed to happen
-    const lamps = buildLamps([session('a'), session('b')], new Map([['b', null]]), T + 60_000);
-    expect(lamps.map((l) => l.lit)).toEqual([false, true]);
-  });
-
-  it('the lit beat is INDEPENDENT of status — an answered session stays lit', () => {
-    // the whole point of the delayed reset: you jumped to it, you answered it,
-    // it went back to work, and you can still see which one called you
-    const [lamp] = buildLamps([session('a', 'working')], new Map([['a', T + 500]]), T);
-    expect(lamp.needsYou).toBe(false);
-    expect(lamp.lit).toBe(true);
-  });
-
-  // The strip's "N need you" aggregate used to be `litCount(lamps)`, counted
-  // here. #621 moved it to `rail-view`'s `needCount` over the feed's
-  // needing-cards set — see rail-view.test.ts. The lamps keep `needsYou`
-  // because that is the lamp's HUE; it is no longer anybody's count.
-});
 
 describe('the delayed urgency reset (§5.8 force_display_urgency_hint)', () => {
   /** the two phases a jump goes through, as the app runs them: mark, then paint */

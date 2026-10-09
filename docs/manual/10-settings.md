@@ -100,8 +100,8 @@ individual colors.
 
 The **⬍** chip sets this for every session at once. The default, **Keep
 visible**, does nothing at all: the card stays put and you watch the turn come
-in. The other two are opt-in — **Collapse on submit** folds the card into the
-Collapsed strip the moment you send a prompt, **Hide on submit** takes it off the
+in. The other two are opt-in — **Collapse on submit** folds the card away
+the moment you send a prompt, **Hide on submit** takes it off the
 workspace entirely, and both bring it back when the session finishes or needs
 you, so the space goes to whatever you're actually looking at.
 
@@ -115,7 +115,7 @@ including what it deliberately won't do, is in
 The other half of the same question, and it isn't a chip — it lives in the
 command palette (`Ctrl+Shift+P`, search for *needs you*) and in the right-click
 menu of a session's row. Four settings: **always jump to it**, **jump only if
-its card is on screen** (the default), **never jump — just light its lamp**, and
+its card is on screen** (the default), **never jump, just mark it in the list**, and
 **never jump, skip the queue**. (None of them touches sound or the taskbar
 flash — that's the **🔔** switch above.) The full story is in
 [Organizing your workspace](07-workspace.md#when-a-session-interrupts-you).

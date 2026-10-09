@@ -148,22 +148,6 @@ const NOTICES: readonly Notice[] = [
     why: 'the only hint that a wall of failing sessions might not be your fault',
   },
   {
-    component: 'UrgencyStrip',
-    file: 'components/UrgencyStrip.tsx',
-    from: 'data-testid="urgency-strip"',
-    to: '\n    >',
-    guard: INLINE_GUARD,
-    why: 'every session at a glance — §5.8 calls it persistent',
-  },
-  {
-    component: 'CollapsedStrip',
-    file: 'components/CollapsedStrip.tsx',
-    from: 'data-testid="collapsed-strip"',
-    to: '\n    >',
-    guard: INLINE_GUARD,
-    why: 'the only place a collapsed session is listed outside the rail (§5.8)',
-  },
-  {
     component: 'SessionsStrip',
     file: 'components/SessionsStrip.tsx',
     from: 'data-testid="sessions-strip"',

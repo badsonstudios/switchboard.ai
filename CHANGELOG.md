@@ -98,6 +98,17 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **The row of lamps and the Collapsed strip are gone.** The Sessions list —
+  on the left, or across the top — is now the one place your sessions are
+  listed, and it says what those two rows said. A session that needs you is
+  highlighted there, with the "N need you" total at the foot of the list (or
+  on the strip). A session that is folded away has a dashed edge; click it
+  and it comes back. After `Ctrl+Space` sends you to a session, its entry is
+  outlined for a moment. What you no longer get: idle sessions folding into
+  one "N idle sessions" row, and any count of who needs you in the main area
+  while the list is hidden (the status bar and the Events drawer still have
+  it).
+
 - **"+ session" is now beside "+ group" in the Sessions list, and the bar it
   had to itself above your sessions is gone.** Your session cards start right
   under the top bar. With the sessions listed across the top there is one

@@ -25,6 +25,7 @@ import {
   tempProjectFolder,
   hookPoster,
   persistedUi,
+  rungOf,
   readWorkspaceFile,
   permissionHolder,
 } from './fixtures/app';
@@ -35,9 +36,13 @@ const rail = (w: Page) => w.locator('nav');
 const row = (w: Page, title: string) =>
   rail(w).locator('[draggable="true"]', { hasText: title }).first();
 const tabs = (w: Page) => w.locator('.dv-tabs-container .dv-tab');
-const strip = (w: Page) => w.getByTestId('collapsed-strip');
-const stripRow = (w: Page, title: string) =>
-  strip(w).locator(`[data-collapsed-row][title^="${title}"]`);
+// THE COLLAPSED STRIP IS GONE (#1164). What it listed is marked in the Sessions
+// list instead: a session that is folded away (collapsed or hidden) has a dashed
+// edge on its row. So "the strip" below is the list's folded rows, and a click
+// on one brings the session back exactly as a click on a strip row did. The
+// names are kept so the bodies below read as they always have.
+const strip = (w: Page) => w.locator('nav .rail-row[data-folded="true"]');
+const stripRow = (w: Page, title: string) => strip(w).filter({ hasText: title });
 const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
 const policyChip = (w: Page) => w.getByTestId('presentation-policy');
 
@@ -179,10 +184,11 @@ test.describe('presentation policy (E9-06)', () => {
     await setPresentationPolicy(w, 'Hide on submit');
     await submitIn(w, second);
 
-    // hidden means hidden: no card AND no strip row — only the rail, the lamp
-    // and the events list, which is the difference between the two rungs
+    // hidden means hidden: no card, and the rung says so by name. (The
+    // difference from collapsed used to be "no strip row"; the list marks
+    // both the same way now, so the rung is asked for.)
     await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
-    await expect(strip(w)).toHaveCount(0);
+    await expect.poll(() => rungOf(w, second)).toBe('hidden');
     await expect(row(w, second)).toBeVisible();
 
     // stand somewhere else, so a reveal that stole focus would be obvious
@@ -240,7 +246,7 @@ test.describe('presentation policy (E9-06)', () => {
     // ...and only for its members: the ungrouped session still follows the global
     await submitIn(w, loose);
     await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
-    await expect(strip(w)).toHaveCount(0);
+    await expect.poll(() => rungOf(w, loose)).toBe('hidden'); // hidden, as the global says
   });
 
   test('a per-session override beats the global, and both survive a relaunch', async () => {
@@ -263,11 +269,12 @@ test.describe('presentation policy (E9-06)', () => {
     await submitIn(w, third);
     await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
     await expect(stripRow(w, third)).toBeVisible();
+    await expect.poll(() => rungOf(w, third)).toBe('collapsed');
 
-    // the overridden one does not — it leaves entirely, strip row and all
+    // the overridden one does not — it is HIDDEN, not collapsed
     await submitIn(w, second);
     await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
-    await expect(stripRow(w, second)).toHaveCount(0); // auto-hide, not auto-collapse
+    await expect.poll(() => rungOf(w, second)).toBe('hidden'); // auto-hide, not auto-collapse
     await expect(row(w, second)).toBeVisible();
     await expect(tabs(w)).toContainText(first); // the untouched one is still a card
 

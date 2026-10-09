@@ -96,7 +96,7 @@ describe('the words, through the real ICU chain', () => {
 
   it('gives every rung words a person would use', () => {
     expect(ladderSaid(t, 'switchboard', 'expanded')).toBe('switchboard expanded');
-    expect(ladderSaid(t, 'switchboard', 'collapsed')).toBe('switchboard collapsed to the strip');
+    expect(ladderSaid(t, 'switchboard', 'collapsed')).toBe('switchboard collapsed');
     expect(ladderSaid(t, 'switchboard', 'tabbed')).toBe(
       'switchboard stacked with the tabbed sessions'
     );
@@ -269,7 +269,7 @@ describe('Mod+Shift+Arrow — the ladder', () => {
       sessionStore.setPresentation(c, { ladder: 'collapsed' });
     });
     await flush();
-    expect(heard).toEqual(['switchboard collapsed to the strip']);
+    expect(heard).toEqual(['switchboard collapsed']);
   });
 
   it('claims nothing while the transition is still in flight', async () => {
@@ -309,7 +309,7 @@ describe('Mod+Shift+Arrow — the ladder', () => {
       /* refused: laddering guard. Nothing is written. */
     });
     await flush();
-    expect(heard).toEqual(['switchboard is already collapsed to the strip']);
+    expect(heard).toEqual(['switchboard is already collapsed']);
 
     // ...and nothing is left listening: a later rung change is NOT attributed to
     // the keypress above
@@ -399,7 +399,7 @@ describe('Mod+Shift+Arrow — the ladder', () => {
       return Promise.reject(new Error('threw on the way out'));
     });
     await flush();
-    expect(heard).toEqual(['switchboard collapsed to the strip']);
+    expect(heard).toEqual(['switchboard collapsed']);
   });
 
   it('a throwing subscriber never becomes an unhandled rejection out of the chord', async () => {
@@ -449,7 +449,7 @@ describe('the four palette commands that jump to a named rung (#941)', () => {
       sessionStore.setPresentation(c, { ladder: 'collapsed' });
     });
     await flush();
-    expect(heard).toEqual(['switchboard collapsed to the strip']);
+    expect(heard).toEqual(['switchboard collapsed']);
   });
 
   it('session.tabbed waits for the round trip before it claims anything', async () => {
@@ -536,7 +536,7 @@ describe('the four palette commands that jump to a named rung (#941)', () => {
       sessionStore.setPresentation(c, { ladder: 'collapsed' });
     });
     await flush();
-    expect(heard).toEqual(['renamed mid-move collapsed to the strip']);
+    expect(heard).toEqual(['renamed mid-move collapsed']);
 
     heard = [];
     const gone = on('expanded');

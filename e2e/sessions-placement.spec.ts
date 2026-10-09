@@ -26,13 +26,11 @@ test.describe('sessions list placement', () => {
     const { window } = a;
     const rail = window.locator('nav');
     const strip = window.getByTestId('sessions-strip');
-    const lamps = window.getByTestId('urgency-strip');
     const left = window.locator('[data-placement="left"]');
     const top = window.locator('[data-placement="top"]');
 
-    // the default: the rail, and the two rows the strip will replace
+    // the default: the list on the left
     await expect(rail).toBeVisible();
-    await expect(lamps).toBeVisible();
     await expect(strip).toHaveCount(0);
     await expect(left).toHaveAttribute('aria-pressed', 'true');
     await expect(top).toHaveAttribute('aria-pressed', 'false');
@@ -48,10 +46,13 @@ test.describe('sessions list placement', () => {
     // …and still exactly one, now on the strip
     await expect(addSession).toHaveCount(1);
     await expect(strip.locator('[data-strip-add-session]')).toBeVisible();
-    // GONE, with the collapsed row: the strip lists every session itself now,
-    // carries the total, and lights what a jump landed on.
-    await expect(lamps).toHaveCount(0);
-    await expect(window.getByTestId('collapsed-strip')).toHaveCount(0);
+    // NOTHING ELSE is between the top bar and the workspace: the strip is the
+    // only thing that lists sessions up here (#1164 removed the row of lamps
+    // and the Collapsed strip from every placement). Measured, because their
+    // test ids no longer exist anywhere and "count 0" of one could not fail.
+    const stripBottom = (await strip.boundingBox())!;
+    const workspaceTop = (await window.locator('main').boundingBox())!;
+    expect(workspaceTop.y - (stripBottom.y + stripBottom.height)).toBeLessThan(4);
     await expect(top).toHaveAttribute('aria-pressed', 'true');
     await expect(left).toHaveAttribute('aria-pressed', 'false');
     // the one session, which is in no group, is a pill — and the row has
@@ -62,7 +63,6 @@ test.describe('sessions list placement', () => {
 
     await left.click();
     await expect(rail).toBeVisible();
-    await expect(lamps).toBeVisible();
     await expect(strip).toHaveCount(0);
   });
 
@@ -130,12 +130,11 @@ test.describe('sessions list placement', () => {
     const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
     await window.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
     await window.keyboard.press(`${mod}+Shift+P`);
-    await window.getByPlaceholder('Type a command or a session name…').fill('Collapse session to a strip');
+    await window.getByPlaceholder('Type a command or a session name…').fill('Collapse session');
     await window.keyboard.press('Enter');
 
     // the collapsed row is not where it went: in this placement its pill says so
     await expect(pillOf(second)).toHaveAttribute('data-folded', 'true');
-    await expect(window.getByTestId('collapsed-strip')).toHaveCount(0);
     await expect(pillOf(first)).toHaveAttribute('data-folded', 'false');
 
     await pillOf(second).click();
@@ -181,8 +180,8 @@ test.describe('sessions list placement', () => {
         delete w.__realNow;
       });
     }
-    // …and it ENDS. With the lamps row gone, the strip is the only thing that
-    // starts this beat and puts it out; a highlight lit for good is the failure.
+    // …and it ENDS. Nothing on screen times this any more: the app does, and
+    // a highlight lit for good is the failure.
     await expect(pill).not.toHaveAttribute('data-flash', 'true', { timeout: 10_000 });
   });
 
@@ -332,9 +331,11 @@ test.describe('sessions list placement', () => {
 
     await top.click(); // the lit half: put it away
     await expect(strip).toHaveCount(0);
-    // with nothing listing the sessions, the lamps row is back: put away
-    // looks the same whichever placement was put away
-    await expect(window.getByTestId('urgency-strip')).toBeVisible();
+    // and nothing takes its place: put away is put away (#1164). The
+    // workspace starts straight under the top bar.
+    const bar = (await window.locator('header').first().boundingBox())!;
+    const work = (await window.locator('main').boundingBox())!;
+    expect(work.y - (bar.y + bar.height)).toBeLessThan(4);
     await expect(window.locator('nav')).toHaveCount(0);
     // hidden is not a third half: neither is lit
     await expect(top).toHaveAttribute('aria-pressed', 'false');

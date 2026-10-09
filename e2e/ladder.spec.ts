@@ -23,6 +23,7 @@ import {
   gridLeafViews,
   persistedLayout,
   persistedUi,
+  rungOf,
   readWorkspaceFile,
   writeWorkspaceFile,
   permissionHolder,
@@ -34,10 +35,14 @@ const rail = (w: Page) => w.locator('nav');
 const row = (w: Page, title: string) =>
   rail(w).locator('[draggable="true"]', { hasText: title }).first();
 const tabs = (w: Page) => w.locator('.dv-tabs-container .dv-tab');
-const strip = (w: Page) => w.getByTestId('collapsed-strip');
-const stripRows = (w: Page) => strip(w).locator('[data-collapsed-row]');
-const stripRow = (w: Page, title: string) =>
-  strip(w).locator(`[data-collapsed-row][title^="${title}"]`);
+// THE COLLAPSED STRIP IS GONE (#1164). What it listed is marked in the Sessions
+// list instead: a session that is folded away (collapsed or hidden) has a dashed
+// edge on its row. So "the strip" below is the list's folded rows, and a click
+// on one brings the session back exactly as a click on a strip row did. The
+// names are kept so the bodies below read as they always have.
+const strip = (w: Page) => w.locator('nav .rail-row[data-folded="true"]');
+const stripRows = strip;
+const stripRow = (w: Page, title: string) => strip(w).filter({ hasText: title });
 /** dockview groups that currently hold a session card */
 const groups = (w: Page) => w.locator('.dv-groupview');
 
@@ -127,7 +132,7 @@ test.describe('presentation ladder (E9-05)', () => {
     // in a two-card test and is exactly the failure the slot record prevents
     await row(w, second).click();
     await expect(w.locator('.dv-active-tab')).toContainText(second);
-    await palette(w, 'Collapse session to a strip');
+    await palette(w, 'Collapse session');
 
     // out of the workspace, into the strip — and still running. Collapsed is a
     // rung, never a quiet close.
@@ -309,9 +314,11 @@ test.describe('presentation ladder (E9-05)', () => {
     await expect(w.locator('.dv-active-tab')).toContainText(second);
     await palette(w, 'Hide session (keeps it running)');
     await expect(tabs(w)).toHaveCount(2);
-    // hidden means hidden: no card AND no collapsed row, only the rail, the
-    // lamp and the events list
-    await expect(strip(w)).toHaveCount(0);
+    // hidden means hidden: no card, and its row in the list is marked folded
+    // away. (It used to be "no collapsed row"; with that strip gone the list
+    // marks hidden and collapsed alike, so the RUNG is asked for by name.)
+    await expect(stripRow(w, second)).toBeVisible();
+    await expect.poll(() => rungOf(w, second)).toBe('hidden');
 
     // stand somewhere else, so a reveal that stole focus would be obvious
     await row(w, third).click();
@@ -346,7 +353,7 @@ test.describe('presentation ladder (E9-05)', () => {
     await expect(tabs(w)).toHaveCount(2);
 
     await row(w, second).click();
-    await palette(w, 'Collapse session to a strip');
+    await palette(w, 'Collapse session');
     await expect(stripRow(w, second)).toBeVisible();
     await expect(tabs(w)).toHaveCount(1);
 
@@ -372,7 +379,7 @@ test.describe('presentation ladder (E9-05)', () => {
     await row(a.window, tabbed).click();
     await palette(a.window, 'Stack session with the tabbed sessions');
     await row(a.window, collapsed).click();
-    await palette(a.window, 'Collapse session to a strip');
+    await palette(a.window, 'Collapse session');
     await expect(stripRow(a.window, collapsed)).toBeVisible();
     await row(a.window, hidden).click();
     await palette(a.window, 'Hide session (keeps it running)');
@@ -384,13 +391,15 @@ test.describe('presentation ladder (E9-05)', () => {
     const w = a.window;
 
     // the workspace comes back exactly as it was left: two cards in the grid
-    // (one expanded, one tabbed), one row in the strip, one session that is
-    // only in the rail
+    // (one expanded, one tabbed), and two sessions marked folded away in the
+    // list — the collapsed one and the hidden one. The list draws those two
+    // alike (#1164); which is which is the ui blob's to say, just below.
     await expect(row(w, expanded)).toBeVisible({ timeout: 25_000 });
     await expect(rail(w).locator('[draggable="true"]')).toHaveCount(4);
     await expect(tabs(w)).toHaveCount(2);
-    await expect(stripRows(w)).toHaveCount(1);
+    await expect(stripRows(w)).toHaveCount(2);
     await expect(stripRow(w, collapsed)).toBeVisible();
+    await expect(stripRow(w, hidden)).toBeVisible();
 
     // The rung of each card, straight out of the ui blob on disk — which is
     // where the item's done-when says it lives. `tabbed` in particular is the
@@ -414,9 +423,10 @@ test.describe('presentation ladder (E9-05)', () => {
     // and everything is still one click from coming back
     await stripRow(w, collapsed).click();
     await expect(tabs(w)).toHaveCount(3, { timeout: 25_000 });
-    await expect(strip(w)).toHaveCount(0);
+    await expect(strip(w)).toHaveCount(1); // the hidden one is still away
     await row(w, hidden).click();
     await expect(tabs(w)).toHaveCount(4, { timeout: 25_000 });
+    await expect(strip(w)).toHaveCount(0);
   });
 });
 

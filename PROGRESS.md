@@ -10,20 +10,37 @@
 > time, with the previous close-out folded into the next PR.
 >
 > 1. **#1163 — "+ session" beside "+ group" in the left list; the bar above the
->    workspace goes. ← IN FLIGHT**, branch `feature/1163-plus-session`. *This
->    line rides in that PR: if `main` has
->    `src/renderer/src/components/SessionsRail.new-session.test.tsx`, it has
->    landed and #1164 is next.*
+>    workspace goes. DONE 2026-10-08, PR #1167 (`0f0be4b`), merged, NOT
+>    released.** Filed from it: **#1166**, an empty workspace says nothing
+>    about how to start once the list is hidden.
 > 2. **#1164 — remove the row of lamps and the Collapsed strip from the app
->    ENTIRELY.** His words: *"I want them completely removed. We no longer want
+>    ENTIRELY. ← IN FLIGHT**, branch `feature/1164-remove-lamps-and-collapsed`.
+>    *This line rides in that PR: if `main` no longer has
+>    `src/renderer/src/components/UrgencyStrip.tsx`, it has landed and #1147
+>    is next.* The post-jump beat is now run ONCE, by App
+>    (`useUrgencyBeat`), not by whichever row is on screen; the rail gained
+>    the dashed "folded away" edge and the after-jump outline the strip
+>    already had; the lamps row's seventeen beat tests moved to
+>    `lib/use-urgency-beat.test.tsx`; `e2e/idle-collapse.spec.ts` is deleted
+>    with the fold it tested. His words: *"I want them completely removed. We no longer want
 >    them, and we no longer need them to exist."* Read as both placements, not
 >    only "do not bring them back when the strip is hidden". The ticket lists
 >    each job the two rows did and who has it afterwards. **This also ends
 >    departure 1 in the #1143 block below.**
+> 2b. **#1168 — one short right-click menu for a session in both places
+>    (owner picked option C from a side-by-side mockup, 2026-10-08).** The
+>    "On submit" and "When it needs you" sections and "Move up / Move down"
+>    come off the left list's menu; the two per-session settings MOVE to the
+>    card's "…" menu, where they are not today. Mockup, git-ignored:
+>    `.claude/work_files/718/session-menu-difference.html`.
 > 3. **#1147 — layout preset icons** (2-up / 3-up / rows / grid, plus Equalize).
->    *"Sounds good to me."* **Its title says "above the sessions", and #1163
->    has just removed the bar that was there: where the icons go has to be
->    asked before it is built.**
+>    *"Sounds good to me."* **ANSWERED 2026-10-08: they go in the top bar, by
+>    the ▦ Grid button** (*"that's what I meant. It should go by the grid
+>    button"*). He then asked what the Grid button does and whether it is
+>    needed at all (*"I've never really used it"*): it cycles the layout mode
+>    Grid → Focus → Queue. **Put to him with a recommendation when #1147 is
+>    planned: the presets take the chip's place, and Focus / Queue stay
+>    reachable from the command list. Not decided.**
 > 4. **#1115 — the effort chip beside the model chip.** *"Let's do this one too."*
 > 5. **#718 — how a working session looks. DECIDED from a moving mockup of six
 >    treatments** (on his machine, git-ignored:
@@ -41,10 +58,11 @@
 >
 > **Answered and closed, from the #1143 departures:** the second "+ session"
 > button goes (#1163); the lamps row and Collapsed strip go entirely (#1164).
-> **Not understood, so not decided:** whether the per-session "on submit" /
-> "when it needs you" overrides belong on the strip's menu. He said he did not
-> know what that meant and that everything looked good; it is left as built
-> (not on the menu). Explain it in plain words if it comes up again.
+> **The per-session "on submit" / "when it needs you" overrides: decided, as
+> #1168 above.** He did not follow the question in words (*"I'm still unsure
+> what you're saying"*) and asked for a mockup; shown the two menus side by
+> side he picked at once. **When he does not follow a description of a UI
+> difference, draw it.**
 >
 > # ✅ RELEASED: v0.8.116, 2026-10-08 (`9980aa3`, PR #1161)
 >

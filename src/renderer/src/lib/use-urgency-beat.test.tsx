@@ -1,18 +1,12 @@
 // @vitest-environment jsdom
-// The component half of the urgency lamp's contrast promise (#267).
+// The post-jump beat: when the highlight starts, and when it ends.
 //
-// tokens.drift.test.ts measures the RULES — `color: var(--lamp-ink)` over 12%
-// (15% under the pointer) of `var(--lamp-hue)` mixed into `var(--panel2)`, for
-// every ramp position in every shipped theme. Two things it cannot see are
-// decided here:
-//
-//   1. WHICH pair each lamp receives. Swap the two lines in UrgencyStrip and a
-//      needing lamp writes the raw hue on a wash of itself — the #221 defect
-//      verbatim — with the whole drift suite still green.
-//   2. WHAT IS BEHIND THE WASH. The rules mix into `var(--panel2)` because the
-//      strip paints `--panel2`; move the strip onto some other surface and
-//      every ratio the drift test computes becomes a fiction while staying
-//      perfectly green. Same guard, and the same reason, as CollapsedStrip's.
+// These tests came out of the lamps row's test file (#1164). They were there
+// because the lamps row was what ran the beat; the row is gone from the app and
+// the timing is `use-urgency-beat`, called once by App. Every case below is the
+// case it always was — issues 284, 320 and 426 — carried over word for word.
+// The only new thing is what they mount: a PROBE that calls the hook and paints
+// one marked element per session, which is all the lamps row was to them.
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import {
   act,
@@ -25,14 +19,43 @@ import {
 } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
-import { UrgencyStrip } from './UrgencyStrip';
+import { useUrgencyBeat } from './use-urgency-beat';
 import { RailSession } from '../model/types';
-import { presentStatus, STATUS_TOKENS } from '../lib/rail-view';
-import { markLit, pruneLit, startBeat, URGENCY_LINGER_MS, type UrgencyMarks } from '../lib/urgency';
-import type { CardStatus } from '../../../shared/sessions';
+import { isLit, markLit, pruneLit, startBeat, URGENCY_LINGER_MS, type UrgencyMarks } from './urgency';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
+}
+
+/**
+ * The probe. It stands where the lamps row stood for these tests: it runs the
+ * beat, and paints `data-lit` per session from the same rule (`isLit`) and the
+ * same one-clock-read-per-render the real surfaces use. The name and the
+ * attributes are the old ones on purpose, so the cases below did not have to
+ * be touched to be carried over.
+ */
+function UrgencyStrip(props: {
+  sessions: readonly RailSession[];
+  needing: ReadonlySet<string>;
+  urgency: UrgencyMarks;
+  activeCardId: string | null;
+  onFocus: (cardId: string) => void;
+  onExpire: () => void;
+  onBeatStart: (cardIds: readonly string[]) => void;
+}): ReactElement {
+  useUrgencyBeat(props.urgency, props.onExpire, props.onBeatStart);
+  const now = Date.now();
+  return (
+    <div data-testid="urgency-strip">
+      {props.sessions.map((s) => (
+        <button
+          key={s.id}
+          data-urgency-lamp={s.id}
+          data-lit={isLit(props.urgency, s.id, now)}
+        />
+      ))}
+    </div>
+  );
 }
 
 // ALL of them, not just the last: a test that mounts twice would otherwise
@@ -87,21 +110,6 @@ async function mountStrip(opts: {
   return host;
 }
 
-/**
- * One session in whatever status is under test, and the lamp it produces.
- *
- * `status` is a plain `string` and the cast is deliberate: one test below hands
- * this `'compacting'`, a status this app does not have, to pin that an unknown
- * value still gets a lamp. `RailSession.status` is a `CardStatus` since #618 so
- * that nothing in the app can produce one; the tolerant reader still must.
- */
-async function mountLamp(status: string): Promise<HTMLElement> {
-  const host = await mountStrip({
-    sessions: [{ id: 'c1', title: 'switchboard', status: status as CardStatus }],
-  });
-  return host.querySelector<HTMLElement>('[data-urgency-lamp]')!;
-}
-
 beforeAll(async () => {
   await initI18nForTests();
 });
@@ -117,75 +125,6 @@ afterEach(async () => {
     for (const r of mounted) r.unmount();
   });
   document.body.innerHTML = '';
-});
-
-describe('the urgency lamp hands the rules the pair they promise', () => {
-  it.each(STATUS_TOKENS)('paints %s with that status’s ink, never its hue', async (token) => {
-    const el = await mountLamp(token);
-    expect(el.style.getPropertyValue('--lamp-ink')).toBe(`var(--status-${token}-ink)`);
-    expect(el.style.getPropertyValue('--lamp-hue')).toBe(`var(--status-${token})`);
-    expect(el.dataset.status).toBe(token);
-  });
-
-  it('folds the two statuses the ramp has no position for', async () => {
-    // `starting` and `suspended` are real session states with no hue of their
-    // own; both must still arrive as a real PAIR, or the lamp washes with an
-    // undefined property and writes an undefined colour on it
-    expect((await mountLamp('starting')).dataset.status).toBe(presentStatus('starting').token);
-    const suspended = await mountLamp('suspended');
-    expect(suspended.dataset.status).toBe('idle');
-    expect(suspended.style.getPropertyValue('--lamp-ink')).toBe('var(--status-idle-ink)');
-    expect(suspended.style.getPropertyValue('--lamp-hue')).toBe('var(--status-idle)');
-    // suspended is not idle, and the lamp has to keep saying so — the fainter
-    // dot ring is keyed off this attribute
-    expect(suspended.dataset.suspended).toBe('true');
-  });
-
-  it('fails open on a status nobody has heard of', async () => {
-    // §4: our blind spot reads as quiet, never as an alarm — and it is still a
-    // real pair, so the lamp paints rather than resolving to nothing
-    const el = await mountLamp('compacting');
-    expect(el.dataset.status).toBe('idle');
-    expect(el.style.getPropertyValue('--lamp-hue')).toBe('var(--status-idle)');
-    expect(el.style.getPropertyValue('--lamp-ink')).toBe('var(--status-idle-ink)');
-  });
-
-  it('never writes a colour of its own — the stylesheet owns every state', async () => {
-    // an inline `color` or `background` beats the :hover and state rules on
-    // specificity, which is how the lamp would quietly leave the audit
-    const el = await mountLamp('needs-permission');
-    expect(el.style.color).toBe('');
-    expect(el.style.background).toBe('');
-    expect(el.style.backgroundColor).toBe('');
-  });
-
-  it('carries the session’s name, not only a colour', async () => {
-    // legible before any colour is read (§5.20) — and it is what makes the lamp
-    // TEXT, so its states owe 4.5:1 rather than 1.4.11's 3:1
-    const el = await mountLamp('crashed');
-    expect(el.querySelector('.urgency-name')?.textContent).toBe('switchboard');
-  });
-});
-
-describe('the strip is the surface a lamp’s wash is measured against', () => {
-  it('stays on --panel2', async () => {
-    const el = await mountLamp('needs-permission');
-    const strip = document.querySelector<HTMLElement>('[data-testid="urgency-strip"]')!;
-    expect(strip.style.background).toBe('var(--panel2)');
-    expect(strip.contains(el)).toBe(true);
-  });
-
-  it('paints nothing between itself and a lamp', async () => {
-    // the lamps live in a scroller inside the strip. If that scroller ever
-    // takes a background of its own, the wash sits on THAT, and `--panel2` in
-    // the rules becomes a colour nobody sees through the lamp.
-    const el = await mountLamp('needs-permission');
-    const strip = document.querySelector<HTMLElement>('[data-testid="urgency-strip"]')!;
-    for (let n = el.parentElement; n && n !== strip; n = n.parentElement) {
-      expect(n.style.background, 'a layer between the strip and the lamp paints').toBe('');
-      expect(n.style.backgroundColor).toBe('');
-    }
-  });
 });
 
 // --- #284: the lit beat, on a clock the test owns --------------------------

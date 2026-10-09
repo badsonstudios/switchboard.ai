@@ -49,8 +49,6 @@ import {
 import type { PerfSummary } from '../../shared/perf';
 import { UpdateDialog } from './components/UpdateDialog';
 import type { UpdateInstallStatus, UpdateStatus } from '../../shared/update';
-import { UrgencyStrip } from './components/UrgencyStrip';
-import { CollapsedStrip } from './components/CollapsedStrip';
 import { BatchApprovalBar } from './components/BatchApprovalBar';
 import { memberViews } from './lib/permission-batches';
 import type { PermissionRequestDto } from '../../shared/ipc/permissions';
@@ -109,7 +107,8 @@ import type {
   PushSendResult,
   PushWriteResult,
 } from '../../shared/push';
-import { collapsedRows, revealTargets } from './lib/ladder';
+import { revealTargets } from './lib/ladder';
+import { useUrgencyBeat } from './lib/use-urgency-beat';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
 import { interpretPushAnswer } from './lib/push-answer';
@@ -410,14 +409,20 @@ export function App(): React.JSX.Element {
   const railOrderNow = useSyncExternalStore(subscribeStore, () => sessionStore.getRailOrder());
   const urgency = useSyncExternalStore(subscribeStore, () => sessionStore.getState().urgency);
   const expireUrgency = React.useCallback(() => sessionStore.expireUrgency(), []);
-  // #320: the lamps the strip just PAINTED lit — that is where their 1.5s beat
-  // starts, so a slow frame delays the beat instead of eating it.
+  // #320: the marks that have just been PAINTED — that is where their 1.5s
+  // beat starts, so a slow frame delays the beat instead of eating it.
   const startUrgencyBeat = React.useCallback(
     (cardIds: readonly string[]) => sessionStore.startUrgencyBeat(cardIds),
     []
   );
-  // §5.8's ladder (E9-05). The strip renders from rail order for the reason the
-  // lamps do — a session must not be third in one list and first in another.
+  // THE BEAT IS RUN HERE, ONCE (#1164). It used to be run by whichever row was
+  // on screen — the lamps row, then the strip — and that was two callers kept
+  // from overlapping by a switch, with a third state (the list put away) that
+  // needed a caller of its own. App is always mounted and there is one of it,
+  // so the highlight a jump starts always ends, wherever the sessions are
+  // listed and whether or not they are listed at all.
+  useUrgencyBeat(urgency, expireUrgency, startUrgencyBeat);
+  // §5.8's ladder (E9-05): which rung each card is on.
   const presentation = useSyncExternalStore(
     subscribeStore,
     () => sessionStore.getState().presentation
@@ -449,9 +454,11 @@ export function App(): React.JSX.Element {
     (cardId: string, dir: 'up' | 'down') => sessionStore.reorderSession(cardId, dir === 'up' ? -1 : 1),
     []
   );
-  // The cards that are not on screen until asked for (#1143): what the strip
-  // draws with a dashed edge. Collapsed and hidden, and not tabbed — a tabbed
-  // card is one click away on a tab you can see.
+  // The cards that are not on screen until asked for (#1143): drawn with a
+  // dashed edge wherever the sessions are listed. Collapsed and hidden, and
+  // not tabbed — a tabbed card is one click away on a tab you can see. Since
+  // #1164 this mark is the ONLY thing that says a session is folded away: the
+  // Collapsed strip that used to list them is gone.
   const foldedCards = React.useMemo(() => {
     const out = new Set<string>();
     for (const s of railFlat) {
@@ -460,15 +467,6 @@ export function App(): React.JSX.Element {
     }
     return out;
   }, [railFlat, presentation]);
-  const collapsed = React.useMemo(
-    () =>
-      collapsedRows(
-        railFlat,
-        (id) => presentation.get(id)?.ladder ?? 'expanded',
-        (id) => pinned.has(id)
-      ),
-    [railFlat, presentation, pinned]
-  );
   // §5.8's batch permission prompt (P2-E9-11). The store keeps the whole-fleet
   // ledger of held requests and derives the ONE group on screen; App owns the
   // subscription that fills it, because it is the only component that is always
@@ -2290,10 +2288,7 @@ export function App(): React.JSX.Element {
     });
   };
   // #1143. The strip is what is on screen: the sessions are listed across the
-  // top and the list has not been put away. ONE name, because three things
-  // hang off it — the strip, and the two rows it replaces — and they must
-  // flip together: the lamps row and the strip each run the post-jump beat,
-  // and exactly one of them may be mounted.
+  // top and the list has not been put away.
   const stripShown = sessionsPlacement === 'top' && !railHidden;
   // The rest of what a list of sessions can ask for, each defined once for the
   // reason `createGroup` is: the strip's menus (#1143) are the rail's gestures
@@ -2728,49 +2723,22 @@ export function App(): React.JSX.Element {
           exist before the push lands or the one sentence that says "this may
           not be you" is announced to nobody. */}
       <ServiceHealthBanner status={serviceHealth} />
-      {/* Outside the rail (which toggles) and outside the grid (whose cards
-          hide, pop out and — with E9-07 — rearrange by layout mode): the only
-          place a strip can be "always visible" without every one of those
-          surfaces remembering to draw it. §5.8. */}
-      <UrgencyStrip
-        sessions={railFlat}
-        needing={needing}
-        urgency={urgency}
-        activeCardId={activeCard}
-        onFocus={focusCard}
-        onExpire={expireUrgency}
-        onBeatStart={startUrgencyBeat}
-        // #1143: gone while the STRIP is on screen, which carries the total,
-        // lights what a jump landed on and runs the beat itself. Put the strip
-        // away and this row is back: `stripShown` is the one switch, so there
-        // is never a moment with both running the beat, or neither.
-        hidden={stripShown}
-      />
-      {/* §5.8's second rung. Outside the grid for the same reason the lamps
-          are — the grid is what a collapsed card has just left. Renders
-          nothing when nothing is collapsed. */}
-      <CollapsedStrip
-        // #1143: gone while the strip is on screen, where a folded-away
-        // session is drawn dashed. No rows is how this component already says
-        // "render nothing".
-        rows={stripShown ? [] : collapsed}
-        activeCardId={activeCard}
-        onExpand={(cardId) => focusCard(cardId)}
-      />
       {/* #1143: the sessions, listed across the top instead of down the left.
           Gated INSIDE like the banners above so the shell column stays a
           flat list.
 
-          The two strips above are gone while this one is on screen: it carries
-          the total and the post-jump beat the lamps row had, and draws a
-          folded-away session dashed where the collapsed row had a row. Put
-          away with Ctrl+B, it is not there and they are back. */}
+          NOTHING ELSE LISTS SESSIONS UP HERE ANY MORE (#1164). There used to
+          be a row of lamps and a Collapsed strip in this spot, in every
+          placement; the owner had both removed outright. What they did is
+          done by the list that is on screen — the rail or this strip: the
+          "N need you" total, one click to any session, a dashed edge on a
+          session that is folded away, and the outline on the one the last
+          jump landed on. With the list put away, none of that is on screen,
+          by his choice. */}
       <SessionsStrip
         shown={stripShown}
         folded={foldedCards}
         urgency={urgency}
-        onExpire={expireUrgency}
-        onBeatStart={startUrgencyBeat}
         groups={groups}
         order={railOrderNow}
         needing={needing}
@@ -2860,6 +2828,8 @@ export function App(): React.JSX.Element {
                which is what makes a refused edit revert to the truth.
                `remove` and `setSessionGroup` below answer nothing and refuse
                the same way — quietly, with a line in the log. */
+            folded={foldedCards}
+            urgency={urgency}
             onCreateGroup={createGroup}
             onNewSession={() => void grid.current?.newSessionHere()}
             onRenameGroup={renameGroup}

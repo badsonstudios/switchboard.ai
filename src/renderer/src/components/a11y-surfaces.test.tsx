@@ -24,7 +24,6 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../../../shared/i18n/locales/en.json';
 import { SessionsRail } from './SessionsRail';
 import { EventsPanel } from './EventsPanel';
-import { UrgencyStrip } from './UrgencyStrip';
 import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { uiDelete } from '../lib/ui-state';
@@ -650,39 +649,3 @@ describe('events panel notices (issue 314)', () => {
   });
 });
 
-describe('urgency lamps (issue 197)', () => {
-  it('are named buttons — one per session, each saying its state', async () => {
-    const host = await mount(
-      <UrgencyStrip
-        sessions={sessions}
-        needing={new Set<string>()}
-        urgency={new Map<string, number>()}
-        activeCardId="c2"
-        onFocus={noop}
-        onExpire={noop}
-        onBeatStart={noop}
-      />
-    );
-    const lamps = Array.from(host.querySelectorAll<HTMLElement>('[data-urgency-lamp]'));
-    expect(lamps).toHaveLength(sessions.length);
-    for (const l of lamps) expect(l.tagName).toBe('BUTTON');
-    expect(name(lamps[0])).toBe('switchboard — working');
-  });
-
-  it('says which lamp you are on, not only in color', async () => {
-    const host = await mount(
-      <UrgencyStrip
-        sessions={sessions}
-        needing={new Set<string>()}
-        urgency={new Map<string, number>()}
-        activeCardId="c2"
-        onFocus={noop}
-        onExpire={noop}
-        onBeatStart={noop}
-      />
-    );
-    const current = host.querySelectorAll('[data-urgency-lamp][aria-current="true"]');
-    expect(current).toHaveLength(1);
-    expect(current[0].getAttribute('data-urgency-lamp')).toBe('c2');
-  });
-});

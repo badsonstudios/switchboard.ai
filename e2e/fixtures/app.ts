@@ -1011,6 +1011,32 @@ export async function sessionStatuses(a: LaunchedApp): Promise<Map<string, strin
 }
 
 /**
+ * Which rung of §5.8's ladder a session's card is on: `expanded`, `collapsed`,
+ * `tabbed` or `hidden`.
+ *
+ * Since #1164 the screen no longer tells collapsed from hidden. Both used to
+ * differ by whether the Collapsed strip had a row for the session; that strip
+ * is gone, and the Sessions list marks both the same way (a dashed edge:
+ * "folded away"). A spec whose point is WHICH of the two a session went to —
+ * auto-hide versus auto-collapse, say — asks the app, through the same ui blob
+ * the relaunch tests read off disk. Poll it: the write is debounced.
+ */
+export async function rungOf(w: Page, title: string): Promise<string> {
+  return w.evaluate(async (t) => {
+    const cards = (await window.switchboard.sessions.cards()) as Array<{
+      cardId: string;
+      title: string;
+    }>;
+    const card = cards.find((c) => c.title === t);
+    if (!card) return `no card titled ${t}`;
+    const ui = (await window.switchboard.workspace.getUi()) as {
+      presentation?: Record<string, { ladder?: string }>;
+    } | null;
+    return ui?.presentation?.[card.cardId]?.ladder ?? 'expanded';
+  }, title);
+}
+
+/**
  * Put the app AWAY — no window of ours focused — and PROVE it stuck (#538).
  *
  * Every `WHEN_AWAY` rule (the toast, the voice, push) is gated on the user not

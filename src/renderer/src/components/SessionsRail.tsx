@@ -84,6 +84,7 @@ import { uiGet, uiSet } from '../lib/ui-state';
 import { useHeldCounts } from '../lib/sibling-inbox';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
 import { DND_TYPE, GROUP_DND_TYPE } from '../lib/rail-dnd';
+import { isLit, UrgencyMarks } from '../lib/urgency';
 import { MenuPlacement, placeMenu } from '../lib/menu-placement';
 import { dropGroup, stepGroup } from '../lib/group-order';
 import { RailGroupMenu } from './RailGroupMenu';
@@ -264,6 +265,24 @@ export function SessionsRail(props: {
   labelLines?: number;
   /** palette for the recolor cycle — persisted data owned by the main process */
   palette: string[];
+  /**
+   * The cards that are collapsed or hidden: not on screen until asked for
+   * (#1164). Their rows get a dashed edge, the same mark the strip across the
+   * top gives them. The Collapsed strip used to be what said this; it is gone,
+   * and without the mark nothing in this placement would say which sessions
+   * are folded away.
+   *
+   * Optional, and the omission reads as "nothing is folded" — the truth for
+   * every render test that predates it.
+   */
+  folded?: ReadonlySet<string>;
+  /**
+   * Card id -> when its post-jump highlight runs out (store state, §5.8). The
+   * row the last "go to the next session that needs you" landed on is
+   * outlined for a beat, which is what the row of lamps used to do (#1164).
+   * Optional for the same reason. The TIMING is App's; this only reads it.
+   */
+  urgency?: UrgencyMarks;
   onCreateGroup: (name: string) => void;
   /**
    * Open a new session (#1163). The button used to sit in a bar above the
@@ -898,6 +917,7 @@ export function SessionsRail(props: {
     return true;
   };
 
+  const now = Date.now();
   const sessionRow = (s: RailSession, bucket: string): React.JSX.Element => (
     <SessionRow
       key={s.id}
@@ -913,6 +933,10 @@ export function SessionsRail(props: {
       // group, an author on the other side of a pin. See lib/dispatch-lineage.
       depth={order.depthOf.get(s.id)}
       labelLines={props.labelLines}
+      folded={props.folded?.has(s.id) ?? false}
+      // one render's worth of "now", read once above: reading the clock per
+      // row could put two rows on opposite sides of the same deadline
+      flash={props.urgency ? isLit(props.urgency, s.id, now) : false}
       editing={editing === s.id}
       draft={draft}
       onDraftChange={setDraft}
@@ -1109,6 +1133,17 @@ export function SessionsRail(props: {
     // same rule for the same reason, and it is what lets the manual and the
     // sentence main tells a sending agent both stay true.
     const waitingHere = opts.members.reduce((n, m) => n + (waitingCounts.get(m.id) ?? 0), 0);
+    // FOR A GROUP THAT IS CLOSED, the header is all there is (#1164). Its rows
+    // are not drawn, so the dashed edge and the after-jump outline have
+    // nothing to sit on — and the Collapsed strip and the lamps, which used
+    // to show both whatever the group was doing, are gone. So the header
+    // carries them: how many of its sessions are folded away, and an outline
+    // when the last jump landed on one of them. The strip across the top
+    // does exactly this on a group's box.
+    const foldedHere = props.folded ? opts.members.filter((m) => props.folded!.has(m.id)).length : 0;
+    const flashHere = props.urgency
+      ? opts.members.some((m) => isLit(props.urgency!, m.id, now))
+      : false;
     const g = opts.group;
     const isAuto = opts.kind === 'auto';
     // Membership in an auto-group is DERIVED from the session's folder, so
@@ -1128,6 +1163,7 @@ export function SessionsRail(props: {
         key={opts.key}
         data-group-card={opts.key}
         data-group-kind={opts.kind}
+        data-flash={flashHere ? 'true' : undefined}
         // THE WHOLE CARD is the drop target, not just the header (Dan: "I have
         // to drag it to the little folder icon when really I should just be
         // able to drag it right into the group window anywhere"). The header
@@ -1215,6 +1251,9 @@ export function SessionsRail(props: {
           if (from !== to) props.onMoveToGroup(cardId, to);
         }}
         style={{
+          // the post-jump beat, on a group whose row for that session may not
+          // be drawn: the focus accent, as on a row
+          ...(flashHere ? { outline: '2px solid var(--status-working-ink)', outlineOffset: -2 } : {}),
           // an auto-group gets its own surface, not just its own icon — a card
           // you cannot drop into should not look like one you can
           background: isAuto ? 'var(--auto-surface)' : 'var(--rail-card)',
@@ -1581,6 +1620,27 @@ export function SessionsRail(props: {
               {t('rail.waitingChip', { count: waitingHere })}
             </span>
           )}
+          {foldedHere > 0 && (
+            <span
+              data-rail-group-folded={opts.key}
+              title={t('rail.groupFoldedHint', { count: foldedHere })}
+              style={{
+                fontFamily: 'var(--font-ui)',
+                fontSize: 9,
+                lineHeight: 1,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                marginInlineStart: 4,
+                paddingInline: 4,
+                paddingBlock: 2,
+                borderRadius: 7,
+                color: 'var(--muted)',
+                border: '1px dashed var(--group-frame)',
+              }}
+            >
+              {t('rail.groupFolded', { count: foldedHere })}
+            </span>
+          )}
           {g && (
             <span
               style={{
@@ -1876,7 +1936,9 @@ export function SessionsRail(props: {
       >
         <span>{t('rail.footerSessions', { count: props.sessions.length })}</span>
         {totalNeed > 0 && (
-          <span style={{ color: 'var(--status-needs-input-ink)' }}>
+          // the ONE total in this placement since the lamps row went (#1164);
+          // named so a spec can read the count without parsing the words
+          <span data-rail-need={totalNeed} style={{ color: 'var(--status-needs-input-ink)' }}>
             {t('rail.footerNeed', { count: totalNeed })}
           </span>
         )}

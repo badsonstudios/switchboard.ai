@@ -74,11 +74,11 @@ whichever row is marked **next** is exactly where `Ctrl+Space` will take you.
 Clicking a row there counts as visiting it, so the shortcut won't send you
 straight back to it.
 
-When you land, the session's lamp in the strip along the top stays ringed for
-about a second and a half — counted from when the ring appears on screen, so a
-busy machine delays it rather than eating it — and you can still see *which* one
-called you after the screen has changed. See
-[the lamp strip](09-notifications.md#the-lamp-strip).
+When you land, the session is outlined in the Sessions list for about a second
+and a half — counted from when the outline appears on screen, so a busy machine
+delays it rather than eating it — and you can still see *which* one called you
+after the screen has changed. Then the outline goes away by itself. See
+[Who needs you, in the Sessions list](09-notifications.md#who-needs-you-in-the-sessions-list).
 
 ## Moving between sessions
 
@@ -134,7 +134,7 @@ at roughly half size and double size, so you can't zoom the app out of reach;
 its card — the same confirmation you get from the tab's **✕**.
 
 `Ctrl+Alt+P` pins the session you're in. A pinned session sorts to the top of
-the Sessions list, keeps its own row when idle sessions fold together, is never
+the Sessions list, is never
 minimized behind your back, and is skipped by **Close all sessions** — see
 [Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
 It does not force the session to stay expanded; you can still collapse, tab or
@@ -151,13 +151,13 @@ Note the modifier: `Ctrl+Shift+↑`/`↓` above resize the *card*, `Ctrl+Alt+↑
 move the *row*.
 
 `Ctrl+Shift+↓` and `Ctrl+Shift+↑` walk the focused session down and up the
-four-rung ladder — full card, slim row, tab, gone. None of them stops the
+four-rung ladder — expanded, collapsed, tabbed, hidden. None of them stops the
 session. They act on the session you're *in*, so once it's collapsed or hidden
 it's a click that brings it back rather than a key; see
 [Organizing your workspace](07-workspace.md#getting-a-session-out-of-the-way).
 
 `Ctrl+Shift+M` blows the session you're in up to fill the workspace and folds
-everything else into the Collapsed strip; press it again — or double-click the
+everything else away; press it again — or double-click the
 card's header — and the workspace goes back exactly as it was.
 `Ctrl+Shift+L` cycles the three
 [layout modes](07-workspace.md#arranging-the-whole-workspace); the palette also
@@ -169,7 +169,7 @@ view**; **About this build**, which tells you exactly which version you're
 running (see
 [Troubleshooting](11-troubleshooting.md#which-version-am-i-running)); and the
 four that name a rung outright — **Expand session to its full card**,
-**Collapse session to a strip**, **Stack session with the tabbed sessions** and
+**Collapse session**, **Stack session with the tabbed sessions** and
 **Hide session (keeps it running)**.
 
 Search the palette for **on submit** and you also get the eleven entries that set
@@ -260,11 +260,11 @@ know it worked.
 | What you press | What you hear |
 |---|---|
 | `Ctrl+Alt+P` | *"trading-app pinned"*, or *"trading-app unpinned"* |
-| `Ctrl+Shift+↓` / `Ctrl+Shift+↑` | how much of it is showing now — *"trading-app collapsed to the strip"*, *"…stacked with the tabbed sessions"*, *"…expanded"* |
+| `Ctrl+Shift+↓` / `Ctrl+Shift+↑` | how much of it is showing now — *"trading-app collapsed"*, *"…stacked with the tabbed sessions"*, *"…expanded"* |
 | `Ctrl+Alt+↑` / `Ctrl+Alt+↓` | where the session sits in its group — *"trading-app is now 2 of 5 in Backend"* |
 
 **The four commands in the list that do the same thing say it too.** *Collapse
-session to a strip*, *Stack session with the tabbed sessions*, *Expand session to
+session*, *Stack session with the tabbed sessions*, *Expand session to
 its full card* and *Hide session* have no shortcut of their own — the two arrow
 shortcuts above are the quick way — so their only user is somebody who opened the
 command list, typed a title and pressed `Enter`. You now hear the same sentence
@@ -286,10 +286,10 @@ Four things about these that are deliberate:
   running — use Go to trading-app in the command list to bring it back"*. The
   session keeps working the whole time; it just isn't in the workspace.
 - **These act on the session you're in, so a session that has left the
-  workspace is out of their reach.** Once `Ctrl+Shift+↓` has collapsed a session
-  to a strip row, it isn't the session you're in any more and the shortcuts stop
+  workspace is out of their reach.** Once `Ctrl+Shift+↓` has collapsed a
+  session, it isn't the session you're in any more and the shortcuts stop
   applying to it — press one and you'll hear *"No session is focused"* (see the
-  next section). Bring it back by clicking its row in the strip, its row in the
+  next section). Bring it back by clicking its row or pill in the
   Sessions list, or `Ctrl+1`…`Ctrl+9`, and the shortcuts reach it again. That
   isn't new; it's
   [how the ladder has always worked](#working-with-the-focused-session).
@@ -327,7 +327,7 @@ greyed out with its reason beside it.
 ## Working the rest of the window with the keyboard
 
 Everything outside the conversation works from the keyboard too — the Sessions
-list, the lamp strip, the tabs across the top of a card, and the Events drawer.
+list, the tabs across the top of a card, and the Events drawer.
 `Tab` moves forward through them, `Shift+Tab` back, and whatever you're on is
 outlined so you can always see where you are. `Enter` or `Space` does what
 clicking would do.
@@ -347,7 +347,8 @@ clicking would do.
 A session row reads out as its name and its state together — *"trading-app —
 Wants permission to run"* — so you don't have to see the little status square
 to know what it's asking for. The session you're currently looking at is
-announced as the current one.
+announced as the current one. With the list across the top, each pill is a
+button in the same way: `Tab` reaches it and `Enter` goes to that session.
 
 The right-click menu on a row is on the keyboard too: with a session's name
 selected, press **`Shift+F10`** (or the **Menu** key, if your keyboard has one)
@@ -376,12 +377,6 @@ that group's name instead, which tells you it's closed; `Enter` opens it.
 [Automatic groups](07-workspace.md#automatic-groups) aren't on the list. Their
 membership is worked out from the session's folder rather than chosen, so there
 is nothing there to pick — the same reason you can't drag a session into one.
-
-### The lamp strip
-
-Each lamp along the top is a button: `Tab` reaches it, `Enter` jumps to that
-session. Every lamp says its session's name and state, and the one you're
-currently on is announced as the current one.
 
 ### The tabs on a card
 

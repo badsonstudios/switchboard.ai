@@ -8,23 +8,14 @@ import { describe, it, expect } from 'vitest';
 import type { AttentionEvent } from './queue';
 import type { AttentionResponse } from './focus-policy';
 import {
-  collapsedRows,
-  foldableRow,
   hasPanel,
-  IDLE_FOLD_MIN,
   LADDER_ORDER,
   revealTargets,
   REVEAL_KINDS,
-  showsRow,
   slotIsLive,
   stepDown,
   stepUp,
-  stripItems,
 } from './ladder';
-import type { CollapsedRow, StripItem } from './ladder';
-import en from '../../../shared/i18n/locales/en.json';
-import type { CardStatus } from '../../../shared/sessions';
-import type { RailSession } from '../model/types';
 
 describe('the ladder itself', () => {
   it('runs from most screen to none', () => {
@@ -59,14 +50,6 @@ describe('the ladder itself', () => {
     // SessionGrid adds a panel when this turns true and removes one when it
     // turns false
     expect(LADDER_ORDER.filter(hasPanel)).toEqual(['expanded', 'tabbed']);
-  });
-
-  it('shows a collapsed row for exactly one rung', () => {
-    // the whole difference between the two panel-less rungs: §5.8 says hidden
-    // leaves the session in "the sidebar, urgency lamps, and event feed" and
-    // nowhere else, so a hidden session must NOT get a strip row
-    expect(LADDER_ORDER.filter(showsRow)).toEqual(['collapsed']);
-    expect(showsRow('hidden')).toBe(false);
   });
 
   it('treats only an expanded card as being AT its slot', () => {
@@ -257,217 +240,3 @@ describe('revealTargets (§5.8 reveal triggers)', () => {
   });
 });
 
-// ── the collapsed strip's rows ──────────────────────────────────────────────
-
-describe('collapsedRows', () => {
-  // An opaque sentinel, not a real color: the rule under test is "the accent is
-  // carried through untouched", and a literal color here would only be asserting
-  // that strings are strings (and would trip the no-raw-color lint besides — a
-  // session's accent is DATA the main process minted, never a themeable token).
-  const ACCENT = 'accent-sentinel';
-  const sessions: RailSession[] = [
-    { id: 'a', title: 'alpha', status: 'idle', accent: ACCENT },
-    { id: 'b', title: 'bravo', status: 'needs-permission' },
-    { id: 'c', title: 'charlie', status: 'working' },
-  ];
-
-  it('lists only the collapsed sessions, in the order it was given', () => {
-    const rows = collapsedRows(sessions, (id) =>
-      id === 'a' || id === 'c' ? 'collapsed' : 'expanded'
-    );
-    // rail order in, rail order out: the strip must not become a second
-    // ordering authority alongside the rail and Ctrl+1..9
-    expect(rows.map((r) => r.cardId)).toEqual(['a', 'c']);
-  });
-
-  it('leaves a HIDDEN session out — that is the difference between the rungs', () => {
-    expect(collapsedRows(sessions, () => 'hidden')).toEqual([]);
-  });
-
-  it('describes a session in the rail vocabulary, not one of its own', () => {
-    const rows = collapsedRows(sessions, () => 'collapsed');
-    const bravo = rows.find((r) => r.cardId === 'b')!;
-    expect(bravo.token).toBe('needs-permission');
-    expect(bravo.needsYou).toBe(true);
-    expect(rows.find((r) => r.cardId === 'c')!.needsYou).toBe(false);
-    // and the label key it hands the view actually resolves
-    for (const r of rows) {
-      const [ns, key] = r.labelKey.split('.');
-      expect((en as Record<string, Record<string, unknown>>)[ns]?.[key]).toBeTruthy();
-    }
-  });
-
-  it('carries the identity accent through when the session has one', () => {
-    const rows = collapsedRows(sessions, () => 'collapsed');
-    expect(rows.find((r) => r.cardId === 'a')!.accent).toBe(ACCENT);
-    // and omits it rather than inventing one — the CSS has the fallback
-    expect(rows.find((r) => r.cardId === 'b')!.accent).toBeUndefined();
-  });
-});
-
-// ── idle aggregation (P2-E9-08) ─────────────────────────────────────────────
-//
-// §5.8: "more than ~3 idle aggregate into a single 'N idle sessions' row.
-// Working / errored / currently-focused sessions always keep their own row."
-// Every clause of that sentence is one test below, plus the two things the
-// done-when asks for that the sentence does not spell out: four folds, and a
-// status change takes the right session — and only that one — back out.
-
-describe('stripItems (idle aggregation)', () => {
-  /** a collapsed row for a session in `status`, described the way the strip is */
-  // `status` stays a plain `string` here, and the cast is the point: one test
-  // below hands this `'no-such-status'` deliberately, to pin that an unknown
-  // value — a card written by an older build — is PAINTED rather than dropped.
-  // `RailSession.status` is a `CardStatus` since #618 precisely so nothing in
-  // the app can produce one of these; the tolerant reader still has to.
-  const rowOf = (cardId: string, status: string): CollapsedRow => {
-    const [only] = collapsedRows(
-      [{ id: cardId, title: cardId, status: status as CardStatus }],
-      () => 'collapsed'
-    );
-    return only;
-  };
-  const idles = (n: number, from = 0): CollapsedRow[] =>
-    Array.from({ length: n }, (_, i) => rowOf(`idle${i + from}`, 'idle'));
-  /** what the strip would actually draw, as a flat description */
-  const shape = (items: StripItem[]): string[] =>
-    items.map((i) => (i.kind === 'row' ? i.row.cardId : `fold:${i.rows.length}`));
-
-  it('leaves three idle sessions alone — the fold has to earn its click', () => {
-    expect(IDLE_FOLD_MIN).toBe(4);
-    expect(shape(stripItems(idles(3)))).toEqual(['idle0', 'idle1', 'idle2']);
-  });
-
-  it('folds FOUR idle sessions into one row (the item, verbatim)', () => {
-    const items = stripItems(idles(4));
-    expect(shape(items)).toEqual(['fold:4']);
-    // the fold carries the rows themselves, in rail order — the strip lists
-    // them on disclosure rather than deriving the same list a second time
-    const fold = items[0];
-    expect(fold.kind).toBe('fold');
-    if (fold.kind !== 'fold') return;
-    expect(fold.rows.map((r) => r.cardId)).toEqual(['idle0', 'idle1', 'idle2', 'idle3']);
-  });
-
-  it('never swallows a session that is working, errored, or waiting on you', () => {
-    // one of each, so a status the fold should keep out cannot pass by being
-    // grouped with a status that is already handled
-    const rows = [
-      rowOf('working', 'working'),
-      rowOf('starting', 'starting'),
-      rowOf('crashed', 'crashed'),
-      rowOf('asking', 'needs-input'),
-      rowOf('held', 'needs-permission'),
-      rowOf('finished', 'done'),
-      ...idles(4),
-    ];
-    expect(shape(stripItems(rows))).toEqual([
-      'working',
-      'starting',
-      'crashed',
-      'asking',
-      'held',
-      'finished',
-      'fold:4',
-    ]);
-  });
-
-  it('never swallows the session you are IN', () => {
-    const rows = idles(4);
-    // four idle sessions, but one of them is the focused card: three are
-    // foldable, which is not enough, so nothing folds at all
-    expect(shape(stripItems(rows, { activeCardId: 'idle1' }))).toEqual([
-      'idle0',
-      'idle1',
-      'idle2',
-      'idle3',
-    ]);
-    // ...and with a fifth it folds around the focused one rather than over it
-    expect(shape(stripItems(idles(5), { activeCardId: 'idle1' }))).toEqual(['fold:4', 'idle1']);
-  });
-
-  it('pops the right one back out when its status changes, and keeps the rest folded', () => {
-    const before = idles(5);
-    expect(shape(stripItems(before))).toEqual(['fold:5']);
-    // idle2 starts working — that one row comes back, the other four stay folded
-    const after = before.map((r) => (r.cardId === 'idle2' ? rowOf('idle2', 'working') : r));
-    expect(shape(stripItems(after))).toEqual(['fold:4', 'idle2']);
-    // and when enough of them wake up, the fold dissolves rather than lingering
-    // as a summary of two things
-    const awake = after.map((r) =>
-      r.cardId === 'idle3' || r.cardId === 'idle4' ? rowOf(r.cardId, 'working') : r
-    );
-    expect(shape(stripItems(awake))).toEqual(['idle0', 'idle1', 'idle2', 'idle3', 'idle4']);
-  });
-
-  it('puts the fold where the first row it swallows was, keeping rail order', () => {
-    // the strip is ordered by the rail (the Ctrl+1..9 authority); a fold that
-    // shunted itself to one end would reorder everything around it
-    const rows = [
-      rowOf('held', 'needs-permission'),
-      ...idles(2),
-      rowOf('working', 'working'),
-      ...idles(2, 2),
-    ];
-    expect(shape(stripItems(rows))).toEqual(['held', 'fold:4', 'working']);
-  });
-
-  it('describes foldability from the row alone', () => {
-    // the predicate the view never re-derives — one rule, asserted directly
-    expect(foldableRow(rowOf('a', 'idle'), null)).toBe(true);
-    expect(foldableRow(rowOf('a', 'suspended'), null)).toBe(true); // idle by any reading
-    expect(foldableRow(rowOf('a', 'idle'), 'a')).toBe(false);
-    expect(foldableRow(rowOf('a', 'done'), null)).toBe(false);
-    // an UNKNOWN status reads as idle (rail-view fails open) — and a fold is a
-    // safe place for a session nothing is claiming about
-    expect(foldableRow(rowOf('a', 'no-such-status'), null)).toBe(true);
-  });
-
-  it('is a no-op on an empty strip', () => {
-    expect(stripItems([])).toEqual([]);
-  });
-
-  // ── §5.8's pinning contract (E9-09) ───────────────────────────────────────
-  //
-  // "exempt from EVERY bulk operation — ... idle aggregation ...". The fold is
-  // the operation that takes a session's PLACE IN THE LIST away, which is
-  // exactly what pinning protects — and note the pinned row is still a strip
-  // row, i.e. still collapsed: "protects existence and position, not size".
-
-  /** the same row, but pinned — built through collapsedRows so the flag travels
-   *  the real path rather than being pasted onto the object */
-  const pinnedRowOf = (cardId: string, status: CardStatus): CollapsedRow => {
-    const [only] = collapsedRows(
-      [{ id: cardId, title: cardId, status }],
-      () => 'collapsed',
-      () => true
-    );
-    return only;
-  };
-
-  it('a pinned IDLE row never folds', () => {
-    expect(pinnedRowOf('a', 'idle').pinned).toBe(true);
-    expect(foldableRow(pinnedRowOf('a', 'idle'), null)).toBe(false);
-    // ...and the flag is absent, not false, on an unpinned row: a card at the
-    // default must not accrete a property
-    expect(rowOf('a', 'idle').pinned).toBeUndefined();
-  });
-
-  it('keeps its own row while the rest of the idle sessions fold around it', () => {
-    const rows = [pinnedRowOf('pinned', 'idle'), ...idles(4)];
-    expect(shape(stripItems(rows))).toEqual(['pinned', 'fold:4']);
-  });
-
-  it('a pin can drop the fold below the threshold, which is the point', () => {
-    // four idle rows fold; pin one and only three are foldable, so the strip
-    // lists all four again rather than hiding three behind a summary
-    const rows = [pinnedRowOf('pinned', 'idle'), ...idles(3)];
-    expect(shape(stripItems(rows))).toEqual(['pinned', 'idle0', 'idle1', 'idle2']);
-  });
-
-  it('collapsedRows defaults to nothing pinned, so every existing caller is unmoved', () => {
-    const rows = collapsedRows([{ id: 'a', title: 'a', status: 'idle' }], () => 'collapsed');
-    expect(rows[0].pinned).toBeUndefined();
-    expect(foldableRow(rows[0], null)).toBe(true);
-  });
-});

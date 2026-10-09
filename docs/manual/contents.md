@@ -43,7 +43,7 @@ page at a time.
 |---|---|
 | [Organizing your workspace](07-workspace.md) | The sidebar, groups, pop-out windows, layout |
 | [Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette |
-| [Notifications & events](09-notifications.md) | Sounds, the Events drawer, the lamp strip, when you get told what |
+| [Notifications & events](09-notifications.md) | Sounds, the Events drawer, who needs you, when you get told what |
 | [Settings](10-settings.md) | The Settings window (`Ctrl+,`), the chips that stayed on the title bar, and why |
 | [MCP servers](17-mcp-servers.md) | `/mcp`: what tools a session is wired to, which scope each comes from, adding and removing them, and why one is waiting on you |
 

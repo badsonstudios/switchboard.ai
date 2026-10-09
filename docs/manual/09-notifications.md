@@ -20,9 +20,9 @@ ID.
 
 - **Click an entry** to jump straight to that session.
 - **✕** dismisses it. The entry goes, and so does its share of every
-  **"N need you"** count — the tab's number, the strip along the top of the
-  window, and the Sessions list's group headers and footer all drop by one, and
-  the text disappears altogether at zero.
+  **"N need you"** count — the tab's number and the Sessions list's group
+  headers and total all drop by one, and the total disappears altogether at
+  zero.
 - Entries read **needs permission**, **needs input**, **crashed**, or **Done.**
   A finished session relaxes from **Done.** to **Ready** once you've looked at
   it.
@@ -171,62 +171,81 @@ The three buttons under the drawer's heading change what's listed:
 Your choice sticks while the app is open, even when you close and reopen the
 drawer. The app starts on **All** each time you launch it.
 
-## The lamp strip
+## Who needs you, in the Sessions list
 
-Across the top of the window, under the title bar, there's a thin row of
-**lamps** — one per session, always there.
+The [Sessions list](07-workspace.md#the-sessions-list) is where you see every
+session you have and what each one is doing. It works the same whether you keep
+it down the left or
+[across the top](07-workspace.md#listing-sessions-across-the-top-instead).
 
-Each lamp is a small dot plus the session's name, and the dot is colored by what
-that session is doing right now:
+Each session is a row, or a pill when the list is across the top, and each one
+carries a mark for what that session is doing right now:
 
-| The lamp | It means |
+| You see | It means |
 |---|---|
-| a hollow ring, name in grey | calm — working, idle, or suspended |
-| a **filled** dot, name in bold and tinted | it needs you |
+| a spinning ring | working |
+| the row or pill **filled in**, name in bold, and the words **needs you** | it needs you |
+| a tick | done |
+| a dash | idle |
+| an **✕** mark | it crashed |
+| the word **suspended** | suspended |
 
-The filled-versus-hollow difference is deliberate: you can read the strip
-without relying on the color at all. At the right-hand end it totals things up
-— **"2 need you"**, or **"all calm"** when nothing is outstanding.
+The filled-versus-plain difference is deliberate: you can pick out the sessions
+that need you without relying on the color at all. The list also totals them
+up as **"2 need you"**: at the foot of the list on the left, or on the strip's
+first line when the list is across the top. When nobody is waiting there is no
+total at all.
 
-**Click any lamp to jump to that session.** If you'd hidden its card, clicking
-the lamp brings it back to exactly where it was. If the session is in its own
-pop-out window, clicking the lamp raises that window rather than pulling the
-card back into the main one.
+**Click any row or pill to go to that session.** If its card was folded away
+(the row or pill has a **dashed** edge), clicking brings it back to exactly
+where it was. If the session is in its own pop-out window, clicking raises that
+window rather than pulling the card back into the main one.
 
-The strip never goes away. Hide the sessions list, switch a card to its Changes
-tab, take a card out of the workspace entirely — the lamps stay put. It's
-the one place that always shows you every session you have, so you never have to
-wonder whether something is out of sight and shouting.
+**With the list hidden, nothing lists your sessions.** Press `Ctrl+B`, or click
+the lit half of the **◧ left** / **⬒ top** button, and the list goes away;
+nothing in the main area shows who needs you or says **N need you**. The
+[status bar](#the-count-in-the-status-bar) at the very bottom still shows how
+many are waiting, and the Events drawer still lists what needs you. `Ctrl+1` to
+`Ctrl+9` and `Ctrl+Space` still work. Press `Ctrl+B` again to bring the list
+back.
 
-### The lamp that called you stays lit
+### The session that called you is outlined
 
 When you press **`Ctrl+Space`** to jump to whatever needs you next, you arrive
 at a session — but which one was it? By the time the screen has changed, the
 thing that told you is gone.
 
-So it isn't. The lamp you were just sent to gets a **ring around it for about a
-second and a half** after you land, then quietly fades out. Long enough to see
-where you were sent, short enough not to become part of the furniture.
+So it isn't. The session you were just sent to is **outlined in the list for
+about a second and a half** after you land, then the outline goes away by
+itself. The outline is on its row, or on its pill when the list is across the
+top. For a session inside a group across the top, it is on the group's box;
+for a session inside a group you have closed in the list on the left, it is
+on that group.
+Long enough to see where you were sent, short enough not to become part of the
+furniture.
 
-The second and a half is counted **from the moment the ring is actually on your
-screen**, not from the moment you pressed the key. If the machine is busy and
-the window takes a while to catch up, you still get the full beat once it does —
-you never arrive to find that the thing meant to show you where you are has
-already come and gone. A ring that hasn't appeared yet waits for the window to
-come back rather than counting down behind your back; once it's up, it fades on
-its own schedule like anything else.
+The second and a half is counted **from the moment the outline is actually on
+your screen**, not from the moment you pressed the key. If the machine is busy
+and the window takes a while to catch up, you still get the full beat once it
+does. An outline for a window that is minimised or behind another waits for
+the window to come back rather than counting down behind your back; once it's
+up, it goes away on its own schedule like anything else.
 
-**Only ever one ring is kept waiting** — the last one. `Ctrl+Space` works from a
-pop-out window, but the strip it rings is on the main window, so if that window
-is behind something you can make several jumps before it gets a chance to draw
-anything. You come back to a single ring on the session you actually landed on,
-not a firework display of every jump you made while it was hidden. A ring that
-is already *up on your screen* is left alone: jump to one session, then a moment
-later to another, and both rings are there together, each fading on its own
-count.
+**It does not wait for the list.** If you have hidden the Sessions list, the
+second and a half passes with nothing to draw the outline on, and it is over
+by the time you bring the list back. That is deliberate: an outline that
+appeared for a jump you made minutes ago would be pointing at old news.
 
-Nothing on the strip blinks or animates for attention. It's a readout, not an
-alarm.
+**Only ever one outline is kept waiting** — the last one. `Ctrl+Space` works
+from a pop-out window, but the list it marks is on the main window, so if that
+window is behind something you can make several jumps before it gets a chance
+to draw anything. You come back to a single outline on the session you actually
+landed on, not one for every jump you made while it was hidden. An outline that
+is already *up on your screen* is left alone: jump to one session, then a
+moment later to another, and both are outlined together, each going away on its
+own count.
+
+Nothing in the list blinks for attention. It's a readout, not an alarm.
 
 ## What you'll hear and see
 
