@@ -80,6 +80,7 @@ import {
 } from '../lib/sibling-inbox';
 import { ModelQuickMenu } from './ModelQuickMenu';
 import { EffortChip } from './EffortChip';
+import { ContextMeter } from './ContextMeter';
 import {
   Attachment,
   AttachmentRejection,
@@ -2564,6 +2565,10 @@ function Composer({
    * rather than about what the code says, and it is the kind that survives
    * until someone memoises a callback. The ref says what is meant.
    */
+  /** bumped when Compact or Clear has been sent from this row: the two things
+   *  that EMPTY the context, so the meter asks again rather than waiting for a
+   *  turn to notice (#715) */
+  const [contextRefresh, setContextRefresh] = React.useState(0);
   const modelBusyRef = React.useRef(false);
   const [modelBusy, setModelBusy] = React.useState(false);
   const noteModelBusy = (busy: boolean): void => {
@@ -4406,7 +4411,7 @@ function Composer({
             what the old one was on is not what this one is on. */}
         {canSwitchModel && (
           <EffortChip
-            key={sessionId}
+            key={`effort-${sessionId}`}
             liveId={sessionId}
             cardId={cardId}
             model={model ?? null}
@@ -4422,7 +4427,7 @@ function Composer({
             sitting ending with its component. */}
         {canSwitchModel && modelMenuAt && (
           <ModelQuickMenu
-            key={sessionId}
+            key={`model-menu-${sessionId}`}
             liveId={sessionId}
             // WHAT THE CHIP SAYS, not a second question to main. The menu grew
             // out of this text and must never tick something else; `undefined`
@@ -4482,7 +4487,7 @@ function Composer({
                 data-testid="composer-clear-go"
                 onClick={() => {
                   setConfirmClear(false);
-                  void clearConversation(sessionId);
+                  void clearConversation(sessionId).finally(() => setContextRefresh((n) => n + 1));
                 }}
                 title={t('grid.menuClearHint')}
                 // DELIBERATELY NOT `grid.menuClear`. Naming this the same as
@@ -4543,6 +4548,7 @@ function Composer({
                     void compactConversation(sessionId).finally(() => {
                       compactInFlight.current = false;
                       setCompactBusy(false);
+                      setContextRefresh((n) => n + 1);
                     });
                   }}
                   className={CHIP_CLASS}
@@ -4566,6 +4572,29 @@ function Composer({
           )}
         </span>
         <span style={{ flex: 1 }} />
+        {/* HOW FULL THE CONTEXT WINDOW IS (#715), bottom right, where the
+            owner asked for it: beside Compact and Clear, which are what you
+            reach for when it fills. Behind `canSwitchModel` for the effort
+            chip's reason: it asks a live session over the control channel.
+            It draws nothing until the session has answered.
+
+            THE KEY IS NOT THE BARE `sessionId`, and that is not style. The
+            effort chip and the model menu, siblings in this row, were both
+            keyed by it; a third child with the same key made React lose track
+            of the menu, which then stayed on screen for good after a switch
+            (caught by e2e/effort-chip.spec.ts). All three now carry their
+            own prefix: two siblings sharing a key was a stranded node waiting
+            for the right re-render (review). Still per session: a resumed
+            card starts from nothing. */}
+        {canSwitchModel && (
+          <ContextMeter
+            key={`context-${sessionId}`}
+            liveId={sessionId}
+            model={model ?? null}
+            working={status === 'working'}
+            refresh={contextRefresh}
+          />
+        )}
         {status === 'working' && (
           <span
             title={t('status.working')}

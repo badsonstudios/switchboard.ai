@@ -214,6 +214,24 @@ Things that are true of all six:
   outline, tint or bar stays, and the movement stops.
 - The choice is remembered.
 
+## Context meter
+
+Under each prompt box, at the bottom right, a small meter shows how full that
+session's context is (see
+[The context meter](03-session-view.md#the-context-meter)).
+**Settings ▸ Appearance ▸ Context meter** chooses how it is drawn. Each choice
+has a small sample beside it. Pick one and it applies at once, to every
+session; there is no Save button.
+
+| Choice | What you see |
+|---|---|
+| **A number** *(what you get unless you change it)* | `context 62%` |
+| **A bar** | A short bar that fills from the left. The number joins it from 60% |
+| **A bar and a number** | Both, always |
+
+Whichever you choose, it is plain grey below 60%, blue from 60% and red from
+80%.
+
 ## Task label size
 
 *This changes one thing: how big each session's task label is. To make

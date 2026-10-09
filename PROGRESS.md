@@ -14,19 +14,28 @@
 > 582"). **"166" is read as #1166**, the only ticket he was shown that fits.
 > Say so in each report until he confirms.
 >
-> 1. **#1174 — a fresh card shows its model straight away. ← IN FLIGHT**,
->    branch `feature/1174-fresh-card-model`. *This line rides in that PR: if
->    `main` has `spike/findings/1174-applied-model.md`, it has landed and
->    the next item is #715.* Probed first: `get_settings.applied.model` is
+> 1. **#1174 — a fresh card shows its model straight away. DONE 2026-10-09,
+>    PR #1182 (`0a545a42`), merged, NOT released.** Green on the first CI
+>    run. An independent review before the push found three things in the
+>    effort chip's "ask again?" rule (a switch landing mid-read was missed;
+>    a resumed card still asked twice; two branches untested); all fixed
+>    and tested in the same PR. Probed first: `get_settings.applied.model` is
 >    the same string `system:init.model` carries, on a cold, a switched and
 >    a resumed session, on 2.1.288 and on 2.1.226. The card's one existing
 >    read (the effort chip's) seeds the model store; it only fills a gap,
 >    never overwrites. No CLI without the `applied` block exists on this
 >    machine, so that fallback is unit-tested only.
-> 2. **#715 — a context-usage meter under the prompt box.** ⚠️ The ticket
->    says "yellow at about 60%"; that breaks #1165 (yellow and orange mean
->    "needs you" only). Build neutral, then blue, then red near full, and
->    flag it for him to overrule.
+> 2. **#715 — a context-usage meter under the prompt box. ← IN FLIGHT**,
+>    branch `feature/715-context-meter`. *This line rides in that PR: if
+>    `main` has `e2e/context-meter.spec.ts`, it has landed and the next
+>    item is #619.* Probed first (`spike/findings/715-context-usage.md`):
+>    `get_context_usage` gives the fill as the CLI's own whole-number
+>    `percentage`, cold, mid-turn and on a resumed session; only four
+>    numbers cross to the window (the answer carries file paths). ⚠️ **The
+>    ticket says "yellow at about 60%"; that breaks #1165. BUILT WITH NO
+>    YELLOW: plain below 60, blue from 60, red from 80. Flagged in the
+>    tracker row and the report for him to overrule.** Form (number / bar /
+>    both) is a Settings choice, default the number.
 > 3. **#619 — middle-click a tab to close it** (through the ✕'s own path).
 > 4. **#631 — hover a session's tab or row to see its last prompt** (the
 >    left list's row AND the strip's pill).

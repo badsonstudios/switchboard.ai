@@ -280,6 +280,22 @@ describe('driven against the fake provider’s own implementation', () => {
     });
   });
 
+  it('reads how full the context window is, and hands back ONLY the numbers (#715)', async () => {
+    const t = new DrivableTransport(true);
+    const m = managerOn('stream', t);
+    const rec = m.create(identity);
+
+    // the stand-in answers the way the real CLI was measured to, with a
+    // memory file path in it. None of that may come back.
+    const v = await m.contextUsage(rec.id);
+    expect(v).toEqual({
+      ok: true,
+      response: { percentage: 4, totalTokens: 8000, maxTokens: 200000, autoCompactAt: 167000 },
+    });
+    expect(JSON.stringify(v)).not.toContain('CLAUDE.md');
+    await expect(m.contextUsage('nope')).resolves.toMatchObject({ ok: false, reason: 'session-gone' });
+  });
+
   it('sets the level, and the set is visible on the next read', async () => {
     const t = new DrivableTransport(true);
     const m = managerOn('stream', t);

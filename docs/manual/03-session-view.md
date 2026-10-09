@@ -371,6 +371,10 @@ confirm first, right there in the row. Both are also in the card's **⋯** menu
 under their full names; see
 [Clearing and compacting](05-slash-commands.md#clearing-and-compacting).
 
+At the right-hand end of the same row is the **context meter**: how full this
+session's memory of the conversation is, from 0 to 100%. See
+[The context meter](#the-context-meter) below.
+
 All four are buttons and now look like it: each one sits in its own small
 filled box with a visible edge, they are all written in the same colour, and
 hovering over one lights it up. When a button can't be used — while a session
@@ -633,6 +637,43 @@ on those, run `claude` yourself in a terminal for that piece of work.
   it without it disappearing.
 - The boxes and the margin dots are drawn from your theme, so they stay legible
   whichever one you're on.
+
+## The context meter
+
+Claude can only keep so much of a conversation in mind at once. That space is
+its **context**, and a long session fills it. Under the prompt box, at the
+bottom right, each session shows how full its context is: **context 18%**.
+
+- **The number is Claude Code's own.** The app asks the session; it does not
+  estimate. It is there as soon as the session has started, and a brand-new
+  session is not at zero, because Claude Code's own instructions and tools
+  already take up some room.
+- **It updates when a turn starts and ends**, about every 20 seconds while
+  Claude is working, and when you change the model (a different model can
+  have a different amount of room, so the same conversation is a different
+  percentage).
+- **Below 60% it is plain grey.** Nothing to do.
+- **From 60% it turns blue.** This is the point to make room: **Compact**
+  (summarise the conversation so far) and **Clear** (start it again) are on
+  the same row.
+- **From 80% it turns red and bold.** It is nearly full.
+- **Hover over it** for the detail: how many tokens are in use out of how
+  many, and the point at which Claude Code will compact the conversation on
+  its own. It does that before 100%, so you may never see the meter reach
+  the top.
+- **It is not yellow at any point.** In this app yellow and orange mean one
+  thing only: a session is waiting for you.
+
+Nothing happens automatically because of the meter. The app never compacts or
+clears for you; Claude Code does its own compacting, as it always has.
+
+You can show it as **a number**, **a bar**, or **both**: see
+[Settings › Context meter](10-settings.md#context-meter). With the bar on its
+own, the number appears beside it once the context reaches 60%.
+
+There is no meter on a session that has stopped, and none for a moment while
+a session is starting. If Claude Code does not answer, the app shows nothing
+rather than a guess.
 
 ---
 

@@ -465,6 +465,8 @@ export const CHANNEL_CAPABILITIES = {
   // thinks from the next turn on.
   'sessions:effort': 'sessions.read',
   'sessions:setEffort': 'sessions.write',
+  // How full the context window is (#715): one question, changes nothing.
+  'sessions:contextUsage': 'sessions.read',
   'sessions:dropLive': 'sessions.spawn',
   // Move a card to a past conversation picked from ITS OWN history (#1090).
   // `sessions.spawn` like `dropLive`: it ends the card's live session and

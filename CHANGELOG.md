@@ -112,6 +112,15 @@ on the floor, and say so in your PR.
   a group to find out. A group with a session that needs you says that
   instead.
 
+- **A context meter under each prompt box.** At the bottom right of every
+  session, "context 18%" shows how full that session's memory of the
+  conversation is, by Claude Code's own count. It is plain grey below 60%,
+  turns blue from 60% (the point to use Compact or Clear, which are on the
+  same row) and red from 80%. Hover over it for the token counts and the
+  point where Claude Code compacts on its own. **Settings ▸ Appearance ▸
+  Context meter** shows it as a number, a bar, or both. It is never yellow:
+  yellow and orange still mean only that a session is waiting for you.
+
 ### Changed
 
 - **A new session shows which model it is on straight away.** The button

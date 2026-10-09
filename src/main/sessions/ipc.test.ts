@@ -395,6 +395,13 @@ function harness(
           opts.effortVerdict ?? { ok: true, response: { effort: 'medium', levels: ['low', 'medium'] } }
         );
       },
+      contextUsage: (id: string) => {
+        controlCalls.push(['contextUsage', id]);
+        return Promise.resolve({
+          ok: true,
+          response: { percentage: 42, totalTokens: 84000, maxTokens: 200000, autoCompactAt: 167000 },
+        });
+      },
       setEffort: (id: string, level: unknown) => {
         controlCalls.push(['setEffort', id, level]);
         return Promise.resolve({ ok: true, response: { effort: level } });
@@ -2123,6 +2130,24 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
         });
       }
       expect(h.controlCalls).toEqual([]); // nothing reached the manager
+    });
+
+    it('the context-usage channel reaches the manager, and refuses a bad session id (#715)', async () => {
+      const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated });
+      expect(await h.call('sessions:contextUsage', 'live-1')).toEqual({
+        ok: true,
+        response: { percentage: 42, totalTokens: 84000, maxTokens: 200000, autoCompactAt: 167000 },
+      });
+      expect(h.controlCalls).toEqual([['contextUsage', 'live-1']]);
+      h.controlCalls.length = 0;
+      for (const bad of [42, null, undefined, { id: 'live-1' }]) {
+        expect(await h.call('sessions:contextUsage', bad)).toEqual({
+          ok: false,
+          reason: 'invalid',
+          message: 'no session',
+        });
+      }
+      expect(h.controlCalls).toEqual([]);
     });
 
     it('refuses a non-string session id with a VERDICT, never a boolean or a throw', async () => {

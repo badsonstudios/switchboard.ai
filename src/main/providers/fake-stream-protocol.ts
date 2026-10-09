@@ -234,6 +234,13 @@ export class FakeStreamProtocol {
    */
   private effortFlag: string | null = null;
 
+  /**
+   * How full the context window says it is, 0 to 100 (#715). A cold real
+   * session is not at zero (4% of a million on Opus, measured), so neither
+   * is this. `!context <n>` moves it, the way a long turn would.
+   */
+  private contextPercent = 4;
+
   /** what `get_settings.applied.effort` says: `null` on a model with no
    *  levels, the model default (`medium`) with nothing set */
   private appliedEffort(): string | null {
@@ -571,6 +578,16 @@ export class FakeStreamProtocol {
     if (text.startsWith('!stderr ')) {
       this.host.stderr(text.slice(8));
       this.emitAssistantText('wrote to stderr');
+      this.emitResult();
+      return;
+    }
+    // Fill the context window to a figure (#715): `!context 72`. An ordinary
+    // turn otherwise, so the meter is seen to move at the END of a turn, which
+    // is when the app asks.
+    if (text.startsWith('!context ')) {
+      const n = Number(text.slice(9).trim());
+      if (Number.isFinite(n)) this.contextPercent = Math.max(0, Math.min(100, Math.round(n)));
+      this.emitAssistantText('context set');
       this.emitResult();
       return;
     }
@@ -1136,6 +1153,33 @@ export class FakeStreamProtocol {
       });
       return;
     }
+    // #715 — `get_context_usage` as MEASURED on 2.1.288
+    // (shared/context-usage.ts): the fill as a whole-number `percentage`
+    // with the counts behind it, among much else. `memoryFiles` is here
+    // with a path in it on purpose: the real answer carries paths, and the
+    // app must not pass them on.
+    if (req?.subtype === 'get_context_usage') {
+      const maxTokens = 200000;
+      this.emit({
+        type: 'control_response',
+        response: {
+          subtype: 'success',
+          request_id: requestId,
+          response: {
+            categories: [],
+            totalTokens: Math.round((this.contextPercent / 100) * maxTokens),
+            maxTokens,
+            rawMaxTokens: maxTokens,
+            percentage: this.contextPercent,
+            model: this.model,
+            memoryFiles: [{ path: '/fake/home/.claude/CLAUDE.md', type: 'User', tokens: 1 }],
+            autoCompactThreshold: 167000,
+            isAutoCompactEnabled: true,
+          },
+        },
+      });
+      return;
+    }
     if (req?.subtype === 'apply_flag_settings') {
       const settings = (req as { settings?: unknown }).settings;
       if (settings && typeof settings === 'object' && 'effortLevel' in settings) {
@@ -1407,6 +1451,8 @@ export class FakeStreamProtocol {
   private onClear(cwd: string): void {
     const gone = this.sessionId;
     this.clears += 1;
+    // a cleared conversation is an empty window again (#715)
+    this.contextPercent = 4;
     this.emit({
       type: 'conversation_reset',
       session_id: gone,
