@@ -109,6 +109,8 @@
     "addGroup": "+ group",
     "addGroupHint": "Create a persistent group",
     "newGroup": "New group",
+    "addSession": "+ session",
+    "addSessionHint": "Open a new session",
     "groupEmpty": "empty",
     "deleteGroup": "Delete group (its sessions become ungrouped)",
     "openInGroup": "New session in this group",
@@ -219,7 +221,6 @@
     "maximizeHint": "Double-click to maximize this session; double-click again to put the layout back"
   },
   "grid": {
-    "addCard": "+ session",
     "empty": "Add a session card to begin",
     "cardBody": "{title} — session card; terminal arrives with E3-02",
     "resuming": "Resuming {title}…",
@@ -1584,8 +1585,6 @@
   },
   "strip": {
     "label": "Sessions",
-    "addSession": "+ session",
-    "addSessionHint": "Open a new session",
     "range": "{from}–{to}",
     "groupLabel": "{name}, {count, plural, =0 {no sessions} one {# session} other {# sessions}}, {summary}",
     "groupLabelWaiting": "{name}, {count, plural, =0 {no sessions} one {# session} other {# sessions}}, {summary}, {waiting, plural, one {# message waiting from another session} other {# messages waiting from other sessions}}",

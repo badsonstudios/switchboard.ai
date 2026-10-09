@@ -3,6 +3,49 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ 2026-10-08 (evening) — THE OWNER'S NEXT LIST, after updating to 0.8.116. In this order.
+>
+> He is on 0.8.116 and said of the strip: *"Everything looks good from what I
+> see."* Each of these is its own item through `/next-item`; one PR in CI at a
+> time, with the previous close-out folded into the next PR.
+>
+> 1. **#1163 — "+ session" beside "+ group" in the left list; the bar above the
+>    workspace goes. ← IN FLIGHT**, branch `feature/1163-plus-session`. *This
+>    line rides in that PR: if `main` has
+>    `src/renderer/src/components/SessionsRail.new-session.test.tsx`, it has
+>    landed and #1164 is next.*
+> 2. **#1164 — remove the row of lamps and the Collapsed strip from the app
+>    ENTIRELY.** His words: *"I want them completely removed. We no longer want
+>    them, and we no longer need them to exist."* Read as both placements, not
+>    only "do not bring them back when the strip is hidden". The ticket lists
+>    each job the two rows did and who has it afterwards. **This also ends
+>    departure 1 in the #1143 block below.**
+> 3. **#1147 — layout preset icons** (2-up / 3-up / rows / grid, plus Equalize).
+>    *"Sounds good to me."* **Its title says "above the sessions", and #1163
+>    has just removed the bar that was there: where the icons go has to be
+>    asked before it is built.**
+> 4. **#1115 — the effort chip beside the model chip.** *"Let's do this one too."*
+> 5. **#718 — how a working session looks. DECIDED from a moving mockup of six
+>    treatments** (on his machine, git-ignored:
+>    `.claude/work_files/718/working-treatments.html`): *"I like all of these
+>    options. I think we default to option 3, but in the settings, you can set
+>    one of the six."* The decision and the six are on the issue.
+> 6. **#1165 — yellow and gold mean "needs you" and nothing else.** A rule he
+>    stated with #718: *"None of our colors should use yellow or a yellowish
+>    color… only used when that session needs you."* Every #718 treatment
+>    paints in the session's own colour and the session palette has yellows,
+>    so **#1165 has to land before or with #718.**
+>
+> **#716 / #1013 (typing lag) stay OPEN.** He will not be on the laptop for a
+> few days (said 2026-10-08). Do not ask; do not close.
+>
+> **Answered and closed, from the #1143 departures:** the second "+ session"
+> button goes (#1163); the lamps row and Collapsed strip go entirely (#1164).
+> **Not understood, so not decided:** whether the per-session "on submit" /
+> "when it needs you" overrides belong on the strip's menu. He said he did not
+> know what that meant and that everything looked good; it is left as built
+> (not on the menu). Explain it in plain words if it comes up again.
+>
 > # ✅ RELEASED: v0.8.116, 2026-10-08 (`9980aa3`, PR #1161)
 >
 > The owner, after trying the finished sessions strip in a test copy: *"Seems

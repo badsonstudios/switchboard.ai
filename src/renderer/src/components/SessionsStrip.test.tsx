@@ -162,7 +162,7 @@ describe('the line above the strip', () => {
     const line = host.querySelector('[data-strip-line]')!;
     expect(Array.from(line.children).map((c) => c.textContent)).toEqual([
       i18next.t('rail.addGroup'),
-      i18next.t('strip.addSession'),
+      i18next.t('rail.addSession'),
       '2 need you',
     ]);
   });

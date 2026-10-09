@@ -66,11 +66,11 @@ a version, and restart switchboard.
 
 ## 2. Open a project and start a session
 
-![The + session button, above the open session](img/new-session-button.png)
+![The + session button, beside + group at the top of the Sessions list](img/new-session-button.png)
 
 *Where a new session starts.*
 
-1. Click **+ session** in the middle of the window.
+1. Click **+ session** at the top of the Sessions list, on the left.
 2. Pick your project folder.
 3. A card appears. It says *starting* for a moment, then *idle*.
 4. Type what you want into the box at the bottom of the card and press

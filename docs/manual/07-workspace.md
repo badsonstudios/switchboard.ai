@@ -57,6 +57,12 @@ list is the complete inventory. That includes a card whose session
 [didn't start](11-troubleshooting.md#sessions): it shows as *not started*, and
 **Rename** and **Move to group** are the only two things it can't do.
 
+At the top of the list are **+ group**, which makes a new group, and
+**+ session**, which opens a new session: you pick a folder and its card
+appears in the workspace. `Ctrl+N` does the same whenever you are not typing
+in a prompt box. While the list is hidden there is no **+ session** button on
+screen: bring the list back, or use `Ctrl+N` or **▸ commands ▸ New session…**.
+
 **Resize it** by dragging the right edge of the list. The width is remembered.
 To hide it entirely, press `Ctrl+B`, or click **◧ left** in the bar along the
 top of the window while it is lit. Click it again to bring the list back.
@@ -84,7 +90,7 @@ effect the moment you pick one, and it is remembered when you restart.
 Along the top of the strip, in this order:
 
 - **+ group** makes a new group, exactly as it does in the list on the left.
-- **+ session** opens a new session.
+- **+ session** opens a new session. It is the only "+ session" button there is.
 - **N need you** appears beside them when any session is waiting on you, and
   is the same number the list on the left shows at its foot.
 

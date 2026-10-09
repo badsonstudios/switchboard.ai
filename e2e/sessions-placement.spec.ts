@@ -36,10 +36,18 @@ test.describe('sessions list placement', () => {
     await expect(strip).toHaveCount(0);
     await expect(left).toHaveAttribute('aria-pressed', 'true');
     await expect(top).toHaveAttribute('aria-pressed', 'false');
+    // ONE "+ session", and it is in the list beside "+ group" (#1163): the bar
+    // it used to have to itself above the workspace is gone
+    const addSession = window.getByRole('button', { name: '+ session' });
+    await expect(addSession).toHaveCount(1);
+    await expect(rail.locator('[data-rail-add-session]')).toBeVisible();
 
     await top.click();
     await expect(strip).toBeVisible();
     await expect(rail).toHaveCount(0);
+    // …and still exactly one, now on the strip
+    await expect(addSession).toHaveCount(1);
+    await expect(strip.locator('[data-strip-add-session]')).toBeVisible();
     // GONE, with the collapsed row: the strip lists every session itself now,
     // carries the total, and lights what a jump landed on.
     await expect(lamps).toHaveCount(0);

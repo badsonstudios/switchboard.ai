@@ -10,13 +10,13 @@ on the left.
 
 ## Starting a session
 
-![The + session button, above the open session](img/new-session-button.png)
+![The + session button, beside + group at the top of the Sessions list](img/new-session-button.png)
 
 *Where a new session starts.*
 
 Three ways, all equivalent:
 
-- Click **+ session** and pick a folder.
+- Click **+ session**, at the top of the Sessions list beside **+ group**, and pick a folder.
 - Drag a folder from your file manager onto the window.
 - Click the **⊕** on a group header to start one inside that group (see
   [Organizing your workspace](07-workspace.md)).

@@ -84,7 +84,7 @@ test.describe('keyboard paths swept by #197', () => {
     await w.getByTitle('Create a persistent group').click();
     await expect(w.getByText('New group', { exact: true })).toBeVisible();
 
-    // 1. one Tab off the header reaches the group's disclosure, and it says so
+    // 1. Tab on from the header's buttons reaches the group's disclosure, and it says so
     await tabUntil(w, '[data-rail-group-toggle]');
     let f = await focused(w);
     expect(f.tag).toBe('BUTTON');

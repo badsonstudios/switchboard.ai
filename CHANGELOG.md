@@ -96,6 +96,15 @@ on the floor, and say so in your PR.
 
 ## 0.8.117 — unreleased
 
+### Changed
+
+- **"+ session" is now beside "+ group" in the Sessions list, and the bar it
+  had to itself above your sessions is gone.** Your session cards start right
+  under the top bar. With the sessions listed across the top there is one
+  "+ session", on the strip. While the list is hidden there is no button;
+  `Ctrl+N` (when you are not typing in a prompt box) and **▸ commands** still
+  open one.
+
 ## 0.8.116 — 2026-10-08
 
 ### Added
