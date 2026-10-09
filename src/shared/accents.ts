@@ -35,20 +35,35 @@
  * §5.11's distinguishable accents, in assignment order. Token names match
  * `renderer/src/theme/tokens.css`.
  *
- * The ORDER is `assignAccent`'s preference order — a first session gets amber —
+ * The ORDER is `assignAccent`'s preference order — a first session gets indigo —
  * so appending here is safe and reordering is a visible change to every fresh
  * workspace.
+ *
+ * NONE IS YELLOWISH (#1165, `shared/reserved-hue.ts`). Two were: `amber`, the
+ * same hex as the "needs input" status and the colour a first session got, and
+ * `orange`, the same hex as "needs permission". `indigo` and `magenta` sit in
+ * their two places, so the order of everything else is unchanged.
  */
 export const ACCENTS = [
-  { name: 'amber', value: '#e3b341' },
+  { name: 'indigo', value: '#7c8cf8' },
   { name: 'teal', value: '#39c5bb' },
   { name: 'violet', value: '#a78bfa' },
   { name: 'green', value: '#3fb950' },
   { name: 'blue', value: '#58a6ff' },
   { name: 'coral', value: '#f0776b' },
   { name: 'pink', value: '#db61a2' },
-  { name: 'orange', value: '#f0883e' },
+  { name: 'magenta', value: '#cf7bea' },
 ] as const;
+
+/**
+ * The two retired accents and what a session that had one becomes (#1165).
+ * One-to-one, so two sessions that were amber and orange are still two
+ * different colours. Applied when the workspace file is read.
+ */
+export const RETIRED_ACCENTS: Readonly<Record<string, string>> = {
+  '#e3b341': '#7c8cf8',
+  '#f0883e': '#cf7bea',
+};
 
 /** One of the eight names above. Derived from the values, not hand-written. */
 export type AccentName = (typeof ACCENTS)[number]['name'];

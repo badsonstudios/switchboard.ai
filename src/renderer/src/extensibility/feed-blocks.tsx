@@ -895,8 +895,8 @@ function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
   return (
     <div
       style={{
-        background: 'color-mix(in srgb, var(--status-needs-input) 10%, var(--panel2))',
-        border: '1px solid color-mix(in srgb, var(--status-needs-input) 28%, transparent)',
+        background: 'color-mix(in srgb, var(--text) 7%, var(--panel2))',
+        border: '1px solid color-mix(in srgb, var(--text) 22%, transparent)',
         borderRadius: 10,
         padding: '6px 10px',
         whiteSpace: 'pre-wrap',

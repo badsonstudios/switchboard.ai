@@ -227,7 +227,7 @@ export function PerfSummaryPanel(props: {
                   // dirty tree: PR #739's guarantee is that typing reads no
                   // layout, so any number here is that fix having regressed.
                   color:
-                    s.detail.layoutReads > 0 ? 'var(--status-needs-input-ink)' : 'var(--muted)',
+                    s.detail.layoutReads > 0 ? 'var(--status-working-ink)' : 'var(--muted)',
                 }}
               >
                 {s.detail.layoutReads > 0

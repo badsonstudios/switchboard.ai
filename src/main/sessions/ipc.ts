@@ -72,6 +72,8 @@ import type { TranscriptQuery, TranscriptSearchRequest } from '../../shared/tran
 import type { ConversationHistoryRequest } from '../../shared/session-history';
 import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
+import { ACCENTS, RETIRED_ACCENTS } from '../../shared/accents';
+import { outOfReserved } from '../../shared/reserved-hue';
 import { summariesFrom } from './queries';
 import type { ContextOffer } from '../../shared/context-drop';
 import type { MentionPrompt } from '../../shared/mention-prompt';
@@ -1979,10 +1981,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         // colour was CHOSEN, and the auto-assigner picks the least-used one instead.
         // A template with no colour falls through to exactly what any new session
         // gets, which is the right answer for a user template nobody coloured.
-        accentColor:
+        // ...and whichever of the three chose it, it is not yellowish (#1165).
+        // The palette has none and saved sessions are moved when the file is
+        // read, but a role template is a hand-editable record with its own
+        // colour, and this is the one place all three sources meet.
+        accentColor: outOfReserved(
           prior?.identity.accentColor ??
-          dispatch?.template.accentColor ??
-          assignAccent(manager.list().map((s) => s.identity.accentColor ?? '')),
+            dispatch?.template.accentColor ??
+            assignAccent(manager.list().map((s) => s.identity.accentColor ?? '')),
+          ACCENTS.map((a) => a.value),
+          RETIRED_ACCENTS
+        ),
         langBadge: prior?.identity.langBadge ?? detectProjectType(opts.folder),
       };
 

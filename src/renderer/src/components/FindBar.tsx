@@ -735,7 +735,7 @@ export function FindBar(props: {
           {notices.map(({ groupIndex, notice }) => (
             <div
               key={view.groups[groupIndex]?.id ?? groupIndex}
-              style={{ color: notice.tone === 'error' ? 'var(--status-needs-input-ink)' : 'var(--muted)' }}
+              style={{ color: notice.tone === 'error' ? 'var(--status-crashed-ink)' : 'var(--muted)' }}
             >
               {view.groups.length > 1
                 ? t('find.noticeInGroup', {

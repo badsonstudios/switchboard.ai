@@ -458,7 +458,7 @@ export function controlFailure(
 const TOKEN_HUE: Record<ReturnType<typeof rowStatus>['token'], string> = {
   connected: 'var(--status-done)',
   failed: 'var(--status-crashed)',
-  pending: 'var(--status-needs-input)',
+  pending: 'var(--status-working)',
   disabled: 'var(--faint)',
   unknown: 'var(--faint)',
 };
@@ -466,7 +466,7 @@ const TOKEN_HUE: Record<ReturnType<typeof rowStatus>['token'], string> = {
 const TOKEN_INK: Record<ReturnType<typeof rowStatus>['token'], string> = {
   connected: 'var(--status-done-ink)',
   failed: 'var(--status-crashed-ink)',
-  pending: 'var(--status-needs-input-ink)',
+  pending: 'var(--status-working-ink)',
   disabled: 'var(--faint)',
   unknown: 'var(--faint)',
 };
@@ -1416,7 +1416,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
               what there is, is the CLI's own picker, and Reconnect is how you
               get to it. Saying so here beats a state word the user cannot act on. */}
           {s.approval === 'pending' && (
-            <div style={{ fontSize: 10, color: 'var(--status-needs-input-ink)', marginBlockStart: 2 }}>
+            <div style={{ fontSize: 10, color: 'var(--status-working-ink)', marginBlockStart: 2 }}>
               {t('mcp.approveHint')}
             </div>
           )}
@@ -1995,7 +1995,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             {hasProject &&
               (confirmReset ? (
                 <>
-                  <span style={{ fontSize: 11, color: 'var(--status-needs-input-ink)' }}>
+                  <span style={{ fontSize: 11, color: 'var(--status-crashed-ink)' }}>
                     {t('mcp.resetConfirmPrompt')}
                   </span>
                   <Btn onClick={() => void doReset()} disabled={busy !== null}>

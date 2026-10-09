@@ -228,8 +228,8 @@ export function StripPill(props: {
             fontWeight: 700,
             fontSize: 9.5,
             lineHeight: 1,
-            color: 'var(--status-needs-input-ink)',
-            background: tint('var(--status-needs-input)', 18),
+            color: 'var(--status-working-ink)',
+            background: tint('var(--status-working)', 18),
           }}
         >
           {props.waiting}

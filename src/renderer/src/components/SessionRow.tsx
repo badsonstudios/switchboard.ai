@@ -537,10 +537,13 @@ export function SessionRow(props: {
                 independent facts, and a working session with a message in it
                 is the normal case rather than a corner. It sits ABOVE the
                 glyph so the status column still ends on the glyph every row
-                has, and it borrows `--status-needs-input` — the same ink the
-                Session tab's badge uses, so one colour means "a person has to
-                do something here" on both surfaces. Rule 3 of SessionsRail.tsx's
-                header holds: no animation. */}
+                has, and it is BLUE, the same ink the Session tab's badge
+                uses. It was the "needs input" yellow until #1165: a message
+                waiting to be read is something to read, not a session
+                blocked on you (it is kept out of the "N need you" count for
+                the same reason), and yellow is now for that and nothing
+                else. Rule 3 of SessionsRail.tsx's header holds: no
+                animation. */}
             {waiting > 0 && (
               <span
                 aria-hidden
@@ -559,8 +562,8 @@ export function SessionRow(props: {
                   fontWeight: 700,
                   fontSize: 9.5,
                   lineHeight: 1,
-                  color: 'var(--status-needs-input-ink)',
-                  background: tint('var(--status-needs-input)', 18),
+                  color: 'var(--status-working-ink)',
+                  background: tint('var(--status-working)', 18),
                 }}
               >
                 {waiting}

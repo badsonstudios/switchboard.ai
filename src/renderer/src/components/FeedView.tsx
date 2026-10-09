@@ -411,7 +411,7 @@ const Block = React.memo(function Block({ b }: { b: FeedBlockDto }): React.JSX.E
           ...(dot
             ? {
                 borderRadius: '50%',
-                background: b.kind === 'user' ? 'var(--status-needs-input)' : 'var(--faint)',
+                background: b.kind === 'user' ? 'var(--muted)' : 'var(--faint)',
               }
             : {}),
         }}

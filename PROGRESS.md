@@ -66,9 +66,9 @@
 >    Grid → Focus → Queue. **Put to him with a recommendation when #1147 is
 >    planned: the presets take the chip's place, and Focus / Queue stay
 >    reachable from the command list. Not decided.**
-> 4. **#1115 — the effort chip beside the model chip. ← IN FLIGHT**, branch
->    `feature/1115-effort-chip`. *This line rides in that PR: if `main` has
->    `src/shared/effort.ts`, it has landed and #1165 then #718 are next.*
+> 4. **#1115 — the effort chip beside the model chip. DONE 2026-10-09, PR
+>    #1173 (`765dd5f`), merged, NOT released.** Green on the first CI run.
+>    Filed from it: **#1174**, a fresh card can show its model straight away.
 >    **The ticket's premise was stale and a probe found it:** on the
 >    installed CLI (2.1.288) `set_thinking_level` is gone; effort is set
 >    with `apply_flag_settings {effortLevel}`, says `success` to a level it
@@ -84,7 +84,18 @@
 >    `.claude/work_files/718/working-treatments.html`): *"I like all of these
 >    options. I think we default to option 3, but in the settings, you can set
 >    one of the six."* The decision and the six are on the issue.
-> 6. **#1165 — yellow and gold mean "needs you" and nothing else.** A rule he
+> 6. **#1165 — yellow and gold mean "needs you" and nothing else.
+>    ← IN FLIGHT (done BEFORE #718, which it blocks)**, branch
+>    `feature/1165-yellow-means-needs-you`. *This line rides in that PR: if
+>    `main` has `src/shared/reserved-hue.ts`, it has landed and #718 is next.*
+>    **The audit changed the size of it:** the palettes were four colours;
+>    the "needs input" ink was ALSO the app's general warning colour in about
+>    forty places. Each was classified (a session needing you / a failure /
+>    worth noticing / other) and moved to red or blue accordingly; the
+>    classification is in the PR. "Yellowish" is hue 20°–70° (orange
+>    included, because "needs permission" is orange). Saved session and
+>    group colours are remapped on load. A guard test holds all three.
+>    A rule he
 >    stated with #718: *"None of our colors should use yellow or a yellowish
 >    color… only used when that session needs you."* Every #718 treatment
 >    paints in the session's own colour and the session palette has yellows,

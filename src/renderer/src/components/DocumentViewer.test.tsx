@@ -199,7 +199,7 @@ describe('a markdown file opens RENDERED by default', () => {
     expect(q('[data-testid="doc-attribution"]')).toBeNull();
     expect(q('[data-testid="document-viewer"]')?.className).not.toContain('doc-attributed');
 
-    await mount('/p/PROGRESS.md', 'dark', { session: { name: 'api-work', accent: 'var(--accent-amber)' } });
+    await mount('/p/PROGRESS.md', 'dark', { session: { name: 'api-work', accent: 'var(--accent-indigo)' } });
     const chip = q('[data-testid="doc-attribution"]');
     expect(chip?.textContent).toContain('api-work');
     expect(chip?.textContent).toContain('↳');
@@ -209,7 +209,7 @@ describe('a markdown file opens RENDERED by default', () => {
     expect(chip?.querySelector('[aria-hidden="true"]')?.textContent).toBe('↳');
     const viewer = q('[data-testid="document-viewer"]');
     expect(viewer?.className).toContain('doc-attributed');
-    expect(viewer?.style.getPropertyValue('--doc-accent')).toBe('var(--accent-amber)');
+    expect(viewer?.style.getPropertyValue('--doc-accent')).toBe('var(--accent-indigo)');
   });
 
   it('Open externally and Reveal in folder go through the bridge', async () => {

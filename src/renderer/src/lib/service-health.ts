@@ -39,7 +39,7 @@ export function healthTone(status: ServiceHealthStatus): HealthTone {
     case 'degraded':
       return {
         glyph: '●',
-        colorVar: 'var(--status-needs-input-ink)',
+        colorVar: 'var(--status-working-ink)',
         labelKey: 'health.state.degraded',
         shortKey: 'health.short.degraded',
       };

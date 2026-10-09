@@ -2312,7 +2312,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                       inlineSize: 5,
                       blockSize: 5,
                       borderRadius: '50%',
-                      background: 'var(--status-needs-permission)',
+                      background: 'var(--status-working)',
                     }}
                   />
                 )}
@@ -2691,7 +2691,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   >
                     {t(p.titleKey)}
                     {badge !== null && (
-                      <span style={{ color: 'var(--status-needs-input-ink)', marginInlineStart: 4 }}>{badge}</span>
+                      <span style={{ color: 'var(--status-working-ink)', marginInlineStart: 4 }}>{badge}</span>
                     )}
                   </button>
                 );

@@ -255,7 +255,7 @@ export function AllChangesView(props: {
           <div style={{ padding: 10, color: 'var(--muted)', fontSize: 11 }}>{t('diff.loading')}</div>
         )}
         {paneState?.kind === 'unreadable' && (
-          <div style={{ padding: 10, color: 'var(--status-needs-input-ink)', fontSize: 11 }}>
+          <div style={{ padding: 10, color: 'var(--status-crashed-ink)', fontSize: 11 }}>
             {t('diff.unreadable', { reason: paneState.reason })}
           </div>
         )}

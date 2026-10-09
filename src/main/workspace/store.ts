@@ -23,6 +23,9 @@ import { Rectangle } from 'electron';
 import { LogFields, Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
 import { sanitizeLineage } from '../sessions/lineage';
+import { ACCENTS, RETIRED_ACCENTS } from '../../shared/accents';
+import { GROUP_PALETTE, RETIRED_GROUP_COLORS } from '../../shared/group-palette';
+import { outOfReserved } from '../../shared/reserved-hue';
 import { UntangleChange, untangleDuplicateConversations } from '../sessions/untangle';
 // #877: the size is a NAMED value shared with the renderer, so the rail and the
 // card header cannot come to disagree about what "full" means.
@@ -714,7 +717,20 @@ export class WorkspaceStore {
           fields: { sessions: lifted },
         });
       }
-      const groups = keepSane(raw.groups, isSaneGroup, 'group', note).map((g) => {
+      // YELLOW AND ORANGE MEAN "A SESSION NEEDS YOU" (#1165). Groups and
+      // sessions are saved with their colour, so a workspace from before the
+      // rule carries colours no palette offers any more. They are moved here,
+      // once, as the file is read: a retired colour to its named successor,
+      // anything else in the reserved family to the nearest allowed colour.
+      // Idempotent (a colour that is not reserved comes back as the same
+      // string), so it costs one pass and changes nothing on every launch
+      // after the first. Not `note`d: it is the app changing its own palette,
+      // not a damaged file, and a warning on every upgraded workspace would be
+      // noise about nothing the user did.
+      const accentValues = ACCENTS.map((a) => a.value);
+      const groups = keepSane(raw.groups, isSaneGroup, 'group', note).map((g0) => {
+        const moved = outOfReserved(g0.color, GROUP_PALETTE, RETIRED_GROUP_COLORS);
+        const g = moved === g0.color ? g0 : { ...g0, color: moved };
         const repaired = repairGroupName(g);
         // identity compare: the repair hands BACK the same object when the
         // name was fine, so a new one means it stepped in
@@ -728,7 +744,15 @@ export class WorkspaceStore {
       const groupIds = new Set(groups.map((g) => g.id));
       // a dangling groupId (group gone, e.g. hand-edited file) degrades to ungrouped
       const orphaned: string[] = [];
-      const loaded = keepSane(raw.sessions, isSaneSession, 'session', note).map((s) => {
+      const loaded = keepSane(raw.sessions, isSaneSession, 'session', note).map((s0) => {
+        // the session's own colour, off the reserved family (see the groups above)
+        const accent = s0.identity.accentColor;
+        const movedAccent =
+          typeof accent === 'string' ? outOfReserved(accent, accentValues, RETIRED_ACCENTS) : accent;
+        const s =
+          movedAccent === accent
+            ? s0
+            : { ...s0, identity: { ...s0.identity, accentColor: movedAccent } };
         // Normalized on the way IN, once, so nothing downstream has to defend
         // against a hand-edited chain (#484). Silent rather than `note`d: an
         // absent or ragged lineage is the NORMAL state of every card written

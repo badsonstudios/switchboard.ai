@@ -20,7 +20,7 @@ Anthropic's public status page, which switchboard checks every few minutes.
 | What you see | What it means |
 |---|---|
 | **●** green, no words | All systems operational. Nothing to worry about. |
-| **●** amber, *"provider degraded"* | The status page reports degraded performance. |
+| **●** blue, *"provider degraded"* | The status page reports degraded performance. |
 | **●** red, *"provider outage"* | The status page reports an outage. |
 | **○** hollow grey | We don't know — see below. |
 
@@ -44,7 +44,7 @@ for you to decide. It disappears on its own when the incident is resolved.
 Status pages lag reality. They're written by people, after somebody notices.
 
 So switchboard also watches your own sessions. If **three different sessions hit
-errors within about five minutes**, an amber strip appears across the window:
+errors within about five minutes**, a red strip appears across the window:
 
 > Several sessions just hit errors — this may be a problem at the provider
 > rather than anything you did.

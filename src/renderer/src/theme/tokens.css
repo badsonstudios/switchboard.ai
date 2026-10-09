@@ -193,14 +193,18 @@
   --btn-primary-text: #ffffff;
 
   /* session identity accent palette (§5.11) — auto-assigned, user-overridable */
-  --accent-amber: #e3b341;
+  /* NO YELLOW AND NO ORANGE HERE (#1165, shared/reserved-hue.ts). There were:
+     `--accent-amber` was the same hex as `--status-needs-input` and was the
+     colour a FIRST session got, so a brand-new workspace opened looking like
+     it needed you. Indigo and magenta took their two places. */
+  --accent-indigo: #7c8cf8;
   --accent-teal: #39c5bb;
   --accent-violet: #a78bfa;
   --accent-green: #3fb950;
   --accent-blue: #58a6ff;
   --accent-coral: #f0776b;
   --accent-pink: #db61a2;
-  --accent-orange: #f0883e;
+  --accent-magenta: #cf7bea;
 
   /* Ink for words on an ACCENT FIELD — the §5.11 identity badge (#269, Dan's
      call 2026-08-10: an accent is a FIELD colour, never a text ink at badge
@@ -345,8 +349,12 @@ body {
  * of this rule and asserts the ratio in every shipped theme, so putting a
  * different token back here fails the suite instead of shipping. */
 .preflight-banner {
-  background: var(--status-needs-permission);
-  color: var(--status-needs-permission-ink-on-fill);
+  /* RED since #1165: this says why nothing will start, which is a failure,
+     and orange is reserved for a session that needs you. The ink is the one
+     neutral dark the accent fields use; the drift test still measures the
+     pair in every theme. */
+  background: var(--status-crashed);
+  color: var(--accent-ink-on-fill);
   /* The window is a 100vh flex COLUMN whose main area is `flex: 1` with a
    * basis of 0, so every pixel of negative free space in a short window lands
    * on the auto-basis children above it — this strip among them. Without this
@@ -362,9 +370,10 @@ body {
   /* The SAME fill/ink pair as `.preflight-banner` above, deliberately: it is
      the only pair in the sheet with a per-theme contrast floor asserted against
      it (#206), and a second warning strip inventing its own would be a second
-     pair to keep legible in four themes. One warning colour, two warnings. */
-  background: var(--status-needs-permission);
-  color: var(--status-needs-permission-ink-on-fill);
+     pair to keep legible in four themes. One warning colour, two warnings.
+     (Red since #1165; it was the "needs permission" orange.) */
+  background: var(--status-crashed);
+  color: var(--accent-ink-on-fill);
   /* the roster's guard (#274, always-visible-notices.test.ts): the shell column
    * shares negative free space out to the auto-basis children, and without this
    * a short window squeezes the one strip that says "this may not be you"
@@ -1240,7 +1249,9 @@ mark[data-feed-match-current] {
    under it is still readable and still true, so this borrows the "something
    wants a look" ink rather than the crashed one. */
 .doc-gone {
-  box-shadow: inset 3px 0 0 0 var(--status-needs-input-ink);
+  /* blue since #1165: still a notice and not an alarm, but the "something
+     wants a look" yellow now means a SESSION wants you, and this is a file */
+  box-shadow: inset 3px 0 0 0 var(--status-working-ink);
 }
 /* The viewer's private find bar is gone (#533) — it publishes a find surface
    and the shared §5.31 bar draws itself over the panel. The MARK styles it

@@ -350,7 +350,7 @@ function BuildStamp(props: {
       <span>{t('titlebar.version', { version: props.version })}</span>
       {/* raw git data, not a sentence — but "unknown" IS a word, so that one
           path goes through i18n like everything else (§5.21) */}
-      <span style={{ color: props.identity.dirty ? 'var(--status-needs-input-ink)' : 'var(--faint)' }}>
+      <span style={{ color: props.identity.dirty ? 'var(--status-working-ink)' : 'var(--faint)' }}>
         {stamp ?? t('about.unknown')}
       </span>
     </button>

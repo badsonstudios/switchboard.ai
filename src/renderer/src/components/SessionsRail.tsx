@@ -1477,8 +1477,8 @@ export function SessionsRail(props: {
                 paddingInline: 4,
                 paddingBlock: 2,
                 borderRadius: 7,
-                color: 'var(--status-needs-input-ink)',
-                background: tint('var(--status-needs-input)', 18),
+                color: 'var(--status-working-ink)',
+                background: tint('var(--status-working)', 18),
               }}
             >
               {t('rail.waitingChip', { count: waitingHere })}

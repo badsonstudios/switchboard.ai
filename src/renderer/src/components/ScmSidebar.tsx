@@ -109,7 +109,7 @@ function defaultConfirm(message: string): boolean {
 export const LETTER_INKS: Record<string, string> = {
   A: '--diff-added',
   D: '--diff-removed',
-  M: '--accent-amber',
+  M: '--accent-indigo',
   R: '--accent-violet',
   C: '--accent-violet',
   // untracked — the most harmless row there is, so the calmest ink
@@ -118,7 +118,7 @@ export const LETTER_INKS: Record<string, string> = {
   '!': '--status-crashed-ink',
   // a TYPE change: a file replaced by a symlink or a directory. Named because it
   // fell through to `--muted` — indistinguishable from "no colour at all".
-  T: '--accent-orange',
+  T: '--accent-magenta',
 };
 
 function letterInk(letter: string): string {
@@ -454,7 +454,7 @@ export function ScmSidebar(props: {
         {(props.status?.ahead ?? 0) > 0 && (
           <span
             className="scm-ahead"
-            style={{ flexShrink: 0, fontFamily: 'var(--font-mono)', color: 'var(--status-needs-input-ink)' }}
+            style={{ flexShrink: 0, fontFamily: 'var(--font-mono)', color: 'var(--status-working-ink)' }}
             title={t('scm.aheadTitle', { count: props.status?.ahead ?? 0 })}
           >
             {t('scm.ahead', { count: props.status?.ahead ?? 0 })}
@@ -736,9 +736,9 @@ export function ScmSidebar(props: {
         {/* ONE decision, in `lib/git-status` — see `gitPaneState` for why
             `unreadable` has to be checked before `clean` and not after. */}
         {paneState?.kind === 'unreadable' && (
-          // The attention ink, not `--muted`: this is something being WRONG, where
+          // The failure ink, not `--muted`: this is something being WRONG, where
           // the other two are ordinary facts about a folder.
-          <div style={{ color: 'var(--status-needs-input-ink)', padding: 4 }}>
+          <div style={{ color: 'var(--status-crashed-ink)', padding: 4 }}>
             {t('diff.unreadable', { reason: paneState.reason })}
           </div>
         )}
@@ -762,7 +762,7 @@ export function ScmSidebar(props: {
           <div
             className="scm-write-error"
             role="status"
-            style={{ color: 'var(--status-needs-input-ink)', padding: 4, fontSize: 10.5 }}
+            style={{ color: 'var(--status-crashed-ink)', padding: 4, fontSize: 10.5 }}
           >
             {t('scm.writeFailed', { reason: writeError })}
           </div>
@@ -1584,7 +1584,7 @@ function CommitBox(props: {
       {flags.amend && !menuOpen && (
         <span
           className="scm-amend-on"
-          style={{ color: 'var(--status-needs-input-ink)', fontSize: 9.5 }}
+          style={{ color: 'var(--status-working-ink)', fontSize: 9.5 }}
         >
           {t('scm.amendOn')}
         </span>
@@ -1768,7 +1768,7 @@ function HunkList(props: {
         </button>
       </div>
       {failed !== null && (
-        <span role="status" style={{ color: 'var(--status-needs-input-ink)', fontSize: 10 }}>
+        <span role="status" style={{ color: 'var(--status-crashed-ink)', fontSize: 10 }}>
           {failed}
         </span>
       )}

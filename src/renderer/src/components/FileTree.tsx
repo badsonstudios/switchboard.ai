@@ -405,7 +405,7 @@ export function FileTree(props: {
                 paddingInlineStart: 8 + row.depth * INDENT + 14,
                 paddingBlock: 2,
                 fontSize: 11,
-                color: row.notice === 'error' ? 'var(--status-needs-input-ink)' : 'var(--faint)',
+                color: row.notice === 'error' ? 'var(--status-crashed-ink)' : 'var(--faint)',
               }}
               data-testid={`file-tree-notice-${row.notice}`}
             >

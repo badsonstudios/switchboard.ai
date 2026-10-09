@@ -17,7 +17,9 @@ const base: ServiceHealthStatus = {
 describe('the dot', () => {
   it.each([
     ['operational', '●', 'var(--status-done-ink)', null],
-    ['degraded', '●', 'var(--status-needs-input-ink)', 'health.short.degraded'],
+    // blue, not amber, since #1165: yellow means a SESSION needs you, and a
+    // provider having a bad day is not that
+    ['degraded', '●', 'var(--status-working-ink)', 'health.short.degraded'],
     ['outage', '●', 'var(--status-crashed-ink)', 'health.short.outage'],
     ['unknown', '○', 'var(--status-idle-ink)', null],
   ] as const)('%s', (state, glyph, colorVar, shortKey) => {

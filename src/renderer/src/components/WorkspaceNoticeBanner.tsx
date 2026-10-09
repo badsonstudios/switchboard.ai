@@ -27,7 +27,7 @@ const banner: React.CSSProperties = {
   // the only decoration — an accent edge in the "wants something from you"
   // status color, on a surface that carries --text at 9:1 (dark) / 14:1
   // (light), so the words never depend on the accent to be legible
-  borderBlockEnd: '2px solid var(--status-needs-permission)',
+  borderBlockEnd: '2px solid var(--status-crashed)',
   color: 'var(--text)',
   fontFamily: 'var(--font-ui)',
   fontSize: 12,
