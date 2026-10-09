@@ -43,7 +43,7 @@ import { LOOSE_BUCKET, planReorder } from '../lib/rail-order';
 import { LineageMap, NO_LINEAGE } from '../lib/dispatch-lineage';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
 import { DND_TYPE, GROUP_DND_TYPE } from '../lib/rail-dnd';
-import { edgeAtX, insertIndex } from '../lib/strip-drag';
+import { edgeAtX, edgeAtY, insertIndex } from '../lib/strip-drag';
 import { needCount } from '../lib/rail-view';
 import { useHeldCounts } from '../lib/sibling-inbox';
 import { edgeOverflow, EdgeState, sameEdges } from '../lib/strip-overflow';
@@ -729,6 +729,99 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
     };
   };
 
+  /** a group's sessions in their list order, and the key that order is saved
+   *  under — the row's own bucket, as the list on the left reads it */
+  const bucketFor = (cardId: string): { key: string; ids: string[] } | null => {
+    const key = order.bucketOf.get(cardId);
+    const ids = key === undefined ? undefined : order.buckets.get(key);
+    return key === undefined || !ids ? null : { key, ids };
+  };
+  /** the list's new order if the dragged ROW were dropped on this side of
+   *  `rowId`, or `null`. Within one group only: a row over a row of another
+   *  group's list cannot happen (one list is open at a time), and a pill
+   *  dragged over a row is not a reorder of this list. Through `planReorder`,
+   *  like every other reorder, so a pinned session is still not passed and a
+   *  dispatched session still moves with the one that sent it. */
+  const planRowDrop = (
+    types: readonly string[],
+    rowId: string,
+    edge: 'before' | 'after'
+  ): { key: string; next: string[] } | null => {
+    if (!types.includes(DND_TYPE)) return null;
+    const d = dragging.current;
+    if (!d || d.kind !== 'card' || d.id === rowId) return null;
+    const bucket = bucketFor(rowId);
+    if (!bucket || !bucket.ids.includes(d.id)) return null;
+    const next = planReorder(
+      bucket.ids,
+      d.id,
+      insertIndex(bucket.ids, d.id, rowId, edge),
+      props.pinned,
+      lineage
+    );
+    return next ? { key: bucket.key, next } : null;
+  };
+
+  /**
+   * A ROW IN A GROUP'S OPEN LIST CAN BE DRAGGED UP AND DOWN (#1178).
+   *
+   * It could not: the owner, with the sessions across the top, had to switch
+   * the list to the left to reorder a group and switch back. ("I can't move a
+   * session up or down in a group to relocate it. I have to move the session
+   * window to the left and then move it there.") The keyboard could
+   * (`Ctrl+Alt+↑/↓`); the mouse could not.
+   *
+   * The same drag a pill has, turned on its side: which HALF of the row the
+   * pointer is in says "before" or "after", a line is drawn there, and the drop
+   * writes the group's order through the same `onReorder` the list on the left
+   * calls. It also carries the strip's card type, so the row can be dropped on
+   * ANOTHER group's box to move it there — that part was already how a pill is
+   * moved into a group, and comes for free.
+   *
+   * The list stays open for a drag within it: a press inside the list is not
+   * "a click elsewhere", and its own scroll does not close it. ONE THING DOES
+   * CLOSE IT MID-DRAG, and is left that way: holding the row over the cell at
+   * an end of the strip scrolls the strip along, and a list hanging under an
+   * entry that has just slid away would be pointing at nothing. The drag
+   * itself goes on, and a drop on a group still lands.
+   */
+  const rowDrag = (
+    s: RailSession
+  ): Pick<React.HTMLAttributes<HTMLDivElement>, 'onDragStart' | 'onDragOver' | 'onDrop'> => ({
+    onDragStart: (ev) => {
+      ev.dataTransfer.setData(DND_TYPE, s.id);
+      ev.dataTransfer.effectAllowed = 'move';
+      dragging.current = { kind: 'card', id: s.id };
+    },
+    onDragOver: (ev) => {
+      const edge = edgeAtY(ev.currentTarget.getBoundingClientRect(), ev.clientY);
+      if (!planRowDrop(ev.dataTransfer.types, s.id, edge)) {
+        setDropAt((was) => (was?.id === s.id ? null : was));
+        return;
+      }
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      setDropInto(null);
+      setDropAtIfNew(s.id, edge);
+    },
+    onDrop: (ev) => {
+      const dragged = dragging.current;
+      const plan = planRowDrop(
+        ev.dataTransfer.types,
+        s.id,
+        edgeAtY(ev.currentTarget.getBoundingClientRect(), ev.clientY)
+      );
+      endDrag();
+      if (!plan || !dragged) return;
+      ev.preventDefault();
+      // the keyboard goes back to the session that moved, as it does after a
+      // pill is dropped: the reorder MOVES the row's node, and focus that was
+      // on its button would otherwise fall to the page
+      ran('session', dragged.id);
+      props.onReorder(plan.key, plan.next);
+    },
+  });
+
   const pillDrag = (s: RailSession): React.ButtonHTMLAttributes<HTMLButtonElement> => ({
     draggable: true,
     onDragStart: (ev) => {
@@ -1071,6 +1164,11 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         onClose={() => props.onClose(s.id)}
         onRename={(name) => props.onRename(s.id, name)}
         onStartRename={() => {}}
+        // dragged up and down within its group (#1178). Not while its name is
+        // being typed: a draggable row would take a drag that was meant to
+        // select text in the box.
+        {...(renaming?.where === 'row' && renaming.id === s.id ? {} : rowDrag(s))}
+        dropEdge={dropAt?.id === s.id ? dropAt.edge : undefined}
         onEndRename={() => {
           ran('session', s.id);
           setRenaming(null);
@@ -1393,6 +1491,35 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
           ref={listRef}
           id={listIdOf(openEntry.key)}
           data-strip-list={openEntry.key}
+          // THE 2px BETWEEN TWO ROWS IS THIS BOX, NOT A ROW (found in review),
+          // and it is exactly where the insertion line is drawn. With no
+          // handlers here, letting go ON the line — the most natural place
+          // to let go — was a drop on nothing, and the drag was cancelled.
+          // So while a line is showing, the list takes the drop for the row
+          // the line belongs to.
+          onDragOver={(ev) => {
+            if (!dropAt || !planRowDrop(ev.dataTransfer.types, dropAt.id, dropAt.edge)) return;
+            ev.preventDefault();
+            ev.dataTransfer.dropEffect = 'move';
+          }}
+          onDrop={(ev) => {
+            // a drop on a ROW was the row's, and it has already ended the drag
+            // (`dragging` is cleared), so this plans nothing and does nothing
+            const dragged = dragging.current;
+            const plan = dropAt ? planRowDrop(ev.dataTransfer.types, dropAt.id, dropAt.edge) : null;
+            endDrag();
+            if (!plan || !dragged) return;
+            ev.preventDefault();
+            ran('session', dragged.id);
+            props.onReorder(plan.key, plan.next);
+          }}
+          // leaving the list altogether takes the line with it: a line left
+          // painted while the pointer is over the workspace promises a drop
+          // that will not happen there
+          onDragLeave={(ev) => {
+            if (ev.currentTarget.contains(ev.relatedTarget as Node | null)) return;
+            setDropAt(null);
+          }}
           onContextMenu={(e) => {
             // its rows take their own right-click. The list's heading and
             // padding are not "an empty part of the strip", so they must not

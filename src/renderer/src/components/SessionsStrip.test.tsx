@@ -599,10 +599,14 @@ describe('a group’s drop-down list', () => {
     expect(host.querySelector('.rail-row input')).toBeNull();
   });
 
-  it('rows in a list cannot be picked up: nothing here says what a drag means yet', async () => {
+  it('rows in a list CAN be picked up: a drag reorders the group (#1178)', async () => {
+    // This said the opposite until #1178 ("nothing here says what a drag means
+    // yet"). It means something now: up and down within the group, which the
+    // owner could only do by switching the list to the left and back. What a
+    // drag does is held in SessionsStrip.row-drag.test.tsx.
     const host = await mount(WORLD);
     await click(opener(host, BACK.id));
-    expect(list(host)!.querySelector<HTMLElement>('.rail-row')!.draggable).toBe(false);
+    expect(list(host)!.querySelector<HTMLElement>('.rail-row')!.draggable).toBe(true);
   });
 
   it('closes by itself when you go somewhere another way', async () => {

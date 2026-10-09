@@ -16,17 +16,22 @@
 > He is using the sessions ACROSS THE TOP. Neither is in 0.8.117.
 >
 > 1. **#1179 — a closed group on the strip shows that a session inside it is
->    working. ← IN FLIGHT**, branch `feature/1179-group-shows-working`. *This
->    line rides in that PR: if `main` has
->    `src/renderer/src/components/StripGroupEntry.working.test.tsx`, it has
->    landed and #1178 is next.* *"I don't know if something's running in a
+>    working. DONE 2026-10-09, PR #1180 (`69d2456e`), merged, NOT released.**
+>    Green on the first CI run. *"I don't know if something's running in a
 >    group currently if my session window's at the top and the group is
 >    closed."* The group carries the same handle a working row does, so the
 >    six looks paint it with no second copy; in the GROUP's colour; "N
 >    working" where it said "calm"; needs-you wins. **Not done, flagged in
 >    the tracker: a closed group in the LEFT list.**
 > 2. **#1178 — drag a session up or down inside its group's list on the
->    strip.** *"If I have the sessions at the top, I can't move a session up
+>    strip. ← IN FLIGHT**, branch `feature/1178-drag-in-strip-list`. *This
+>    line rides in that PR: if `main` has `e2e/strip-row-drag.spec.ts`, it
+>    has landed and BOTH REQUESTS ARE DONE: merged, not released (0.8.118 is
+>    open with these two in it; he has not asked for a cut).* A row in the
+>    open list gets the same drag a pill has, by Y instead of X, through
+>    `planReorder` and the same `onReorder`; it also carries the card type,
+>    so dropping it on another group moves it there.
+>    *"If I have the sessions at the top, I can't move a session up
 >    or down in a group to relocate it. I have to move the session window to
 >    the left and then move it there."* Today a row in a group's open list
 >    does not drag; `Ctrl+Alt+↑/↓` is the only way from the strip.
