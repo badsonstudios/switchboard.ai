@@ -352,8 +352,10 @@ export function controlRequest(
  *     // …plus "opus[1m]" and "claude-fable-5[1m]", same shape
  *
  * `supportsEffort` / `supportedEffortLevels` / `supportsFastMode` also ride
- * along and are deliberately NOT modelled — nothing consumes them yet, and a
- * type that claims them invites a surface that half-supports them.
+ * along and are deliberately NOT modelled HERE. The effort pair is read by
+ * `shared/effort.ts` (#1115) straight off the raw payload, for the effort
+ * chip; the model picker has no use for it, and a type that claims it here
+ * invites a picker that half-supports it.
  *
  * NOTHING IN THE PAYLOAD MARKS THE CURRENT MODEL. Neither does `initialize`
  * (its keys were dumped; there is no current-model field). The only place the

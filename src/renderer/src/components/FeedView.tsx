@@ -79,6 +79,7 @@ import {
   withForwarded,
 } from '../lib/sibling-inbox';
 import { ModelQuickMenu } from './ModelQuickMenu';
+import { EffortChip } from './EffortChip';
 import {
   Attachment,
   AttachmentRejection,
@@ -4393,6 +4394,22 @@ function Composer({
               {model}
             </span>
           )
+        )}
+        {/* HOW HARD THE MODEL THINKS (#1115), right of the model chip, which is
+            where the owner asked for it. Behind `canSwitchModel` for the
+            model chip's own reason: it talks to a live session over the
+            control channel, and a session that has ended (or has none) has
+            nobody to ask. It draws nothing for a model with no effort
+            levels. `key={sessionId}`: a resumed card is a new session, and
+            what the old one was on is not what this one is on. */}
+        {canSwitchModel && (
+          <EffortChip
+            key={sessionId}
+            liveId={sessionId}
+            cardId={cardId}
+            model={model ?? null}
+            working={status === 'working'}
+          />
         )}
         {/* `canSwitchModel` again, and it is not redundant with the chip above:
             the session can END while the menu is open, at which point the chip

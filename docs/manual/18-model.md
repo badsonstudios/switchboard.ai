@@ -81,6 +81,36 @@ guess and be wrong about the one thing you opened this to find out.
 Two ways to clear it up: switch to a model (then it's ticked, because you chose
 it), or send any prompt and look again.
 
+## How hard the model thinks
+
+Right of the model name there is a second small button: **effort: medium**, or
+whatever level the session is on. It sets how hard the model thinks before it
+answers. Higher levels are slower and use more of your allowance; lower ones
+are quicker.
+
+**Click it and pick a level.** There is no OK button. The new level applies
+from your next prompt; you do not have to restart the session.
+
+- **The levels are the ones Claude Code offers for that model.** Usually low,
+  medium, high, extra high and max. Some models have fewer.
+- **It shows what the session is really on.** The app asks the session,
+  rather than remembering what you last clicked. If a level does not take,
+  the button stays on the level that is in force and a short note beside it
+  says so.
+- **A model with no effort levels has no button.** Haiku 4.5 is one. Switch
+  to a model that has them and the button comes back, on the level you had
+  chosen before.
+- **Your choice is remembered for that session's card.** Close the app, or
+  let the session stop and start again, and the level is put back **when the
+  card's conversation is next on screen**. A session that restarts while its
+  card is folded away, or behind another tab, is on the default level until
+  you look at it.
+- **While the session is working the button is dimmed.** Change the level
+  when the turn is over.
+- **From the keyboard:** `Tab` to the button, then the arrow keys change the
+  level.
+- Like the model name, it is only there while the session is running.
+
 ## When the name is plain text
 
 The model name at the bottom is **plain text, not a button**, on a session that

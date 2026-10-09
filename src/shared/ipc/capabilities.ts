@@ -460,6 +460,11 @@ export const CHANNEL_CAPABILITIES = {
   // Pure app-side state too: the mode the session last announced (#1072).
   'sessions:currentMode': 'sessions.read',
   'sessions:setModel': 'sessions.write',
+  // Effort (#1115): the same split as the model. Reading asks the live CLI
+  // two questions and changes nothing; setting changes how the session
+  // thinks from the next turn on.
+  'sessions:effort': 'sessions.read',
+  'sessions:setEffort': 'sessions.write',
   'sessions:dropLive': 'sessions.spawn',
   // Move a card to a past conversation picked from ITS OWN history (#1090).
   // `sessions.spawn` like `dropLive`: it ends the card's live session and

@@ -125,6 +125,10 @@ The SDK's outbound requests all take the same shape —
 grep -o -E 'subtype:"[a-z_]+"' extension.js | sort -u
 ```
 
+⚠️ **`set_thinking_level` was in this list for 2.1.245 and is GONE on 2.1.288**
+(#1115, `spike/findings/1115-effort.md`). A verb listed here was present on the
+version named, which is not a promise about the version installed: probe it.
+
 Observed in `anthropic.claude-code-2.1.226` and confirmed present in the PATH
 CLI 2.1.245: `set_model`, `set_permission_mode`, `set_thinking_level`,
 `set_max_thinking_tokens`, `set_cwd`, `mcp_toggle`, `mcp_reconnect`,
@@ -174,11 +178,14 @@ answers `{subtype:"success", request_id}` with no `response` key — not `{}`.
 | verb | measured result |
 |---|---|
 | `initialize` | Works, repeatable, ~28 KB. Keys: `commands` (60, **with `description` and `argumentHint`**), `agents`, `models`, `output_style`, `available_output_styles`, `account`, `pid`, `current_permission_mode`, `fast_mode_state`, `session_state`, `analytics_disabled`, `remote_control_*`. |
-| `list_models` | **In no grep list on either ticket.** Returns `{models:[…]}` alone — the right call for a picker. 5 entries, each `{value, resolvedModel, displayName, description, supportsEffort, supportedEffortLevels, …}`. |
+| `list_models` | **In no grep list on either ticket.** Returns `{models:[…]}` alone — the right call for a picker. 5 entries on 2.1.245 (13 on 2.1.288), each `{value, resolvedModel, displayName, description, supportsEffort, supportedEffortLevels, …}`. |
 | `set_model` | Genuinely switches the model mid-session, no restart — verified BY EFFECT (below), not by its ack. |
+| `get_settings` | **(2.1.288, #1115)** `{effective, sources, applied}`. **`applied` is `{model, effort, …}`: what the session is actually running**, readable on a cold session. `effort` is `null` on a model with no effort levels. This is the on-demand answer to "which model is this session on" that the row above says does not exist. `spike/findings/1115-effort.md`. |
+| `apply_flag_settings` | **(2.1.288, #1115)** `{settings:{effortLevel}}` sets how hard the model thinks, session-scoped. All of `low` / `medium` / `high` / `xhigh` / `max` take. ⚠️ **A level it does not know answers `success` and changes nothing**: read it back with `get_settings`. |
+| `set_thinking_level` | ⚠️ **GONE on 2.1.288** (`Unsupported control request subtype`), though listed above as present on 2.1.245. Effort is `apply_flag_settings` now. |
 | `get_context_usage` | Works. `{categories[], …}` with a `percentage` — #715 is served directly. |
 | `mcp_status` | Works. `{mcpServers:[{name, status, serverInfo, config, scope, tools[]}]}` — structured, and strictly richer than parsing `claude mcp list`. This is #723's real fix. |
-| `set_permission_mode`, `get_settings`, `get_usage` | All work. |
+| `set_permission_mode`, `get_usage` | All work. (`get_settings` has its own row above.) |
 | `supported_models`, `get_models`, `status` | **Do not exist** — `Unsupported control request subtype: …` |
 
 ##### Four findings that change how you write a consumer

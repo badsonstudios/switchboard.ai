@@ -45,10 +45,9 @@
 >    come off the left list's menu; the two per-session settings MOVE to the
 >    card's "…" menu, where they are not today. Mockup, git-ignored:
 >    `.claude/work_files/718/session-menu-difference.html`.
-> 3. **#1147 — layout preset icons. ← IN FLIGHT**, branch
->    `feature/1147-layout-presets`. *This line rides in that PR: if `main`
->    has `src/renderer/src/lib/layout-presets.ts`, it has landed and #1115
->    is next.* Built with dockview's public API only; "even" is computed
+> 3. **#1147 — layout preset icons. DONE 2026-10-09, PR #1172 (`1c3c09f`),
+>    merged, NOT released.** Green on the first CI run.
+>    Built with dockview's public API only; "even" is computed
 >    from the serialized grid and applied with each group's `setSize`,
 >    MEASURED in the real app before anything else was built on it
 >    (`e2e/layout-presets.spec.ts`). **The Grid chip question was taken as
@@ -67,7 +66,19 @@
 >    Grid → Focus → Queue. **Put to him with a recommendation when #1147 is
 >    planned: the presets take the chip's place, and Focus / Queue stay
 >    reachable from the command list. Not decided.**
-> 4. **#1115 — the effort chip beside the model chip.** *"Let's do this one too."*
+> 4. **#1115 — the effort chip beside the model chip. ← IN FLIGHT**, branch
+>    `feature/1115-effort-chip`. *This line rides in that PR: if `main` has
+>    `src/shared/effort.ts`, it has landed and #1165 then #718 are next.*
+>    **The ticket's premise was stale and a probe found it:** on the
+>    installed CLI (2.1.288) `set_thinking_level` is gone; effort is set
+>    with `apply_flag_settings {effortLevel}`, says `success` to a level it
+>    does not know, and the level in force is READABLE from
+>    `get_settings.applied.effort` — so the chip shows what the session
+>    says, and every set is read back. `spike/findings/1115-effort.md`.
+>    **Found on the way, not fixed:** `get_settings.applied.model` answers
+>    "which model is this session on" on a cold session, which
+>    `stream-model.ts` records as impossible. Worth a ticket.
+>    *"Let's do this one too."*
 > 5. **#718 — how a working session looks. DECIDED from a moving mockup of six
 >    treatments** (on his machine, git-ignored:
 >    `.claude/work_files/718/working-treatments.html`): *"I like all of these

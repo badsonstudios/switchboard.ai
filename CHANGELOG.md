@@ -98,6 +98,13 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Set how hard the model thinks.** Next to the model name at the bottom of
+  a session there is now an **effort** button. Click it and pick low, medium,
+  high, extra high or max (the levels Claude Code offers for that model); it
+  applies from your next prompt, with no restart. It shows the level the
+  session is really on, and your choice is remembered for that session. A
+  model with no effort levels (Haiku 4.5) has no button.
+
 - **Arrange your sessions with one click.** The top bar has five small
   pictures: two side by side, three side by side, two rows, two by two, and
   **make them even**. Click a shape and the sessions that are open are put

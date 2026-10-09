@@ -937,6 +937,21 @@
     "unboundNothing": "Nothing has turned up in {path}.",
     "unboundFallbackDirect": "Your session is unaffected — in Direct mode the conversation arrives in this window as Claude replies, rather than being read from that file. Watch the status on the card header; the transcript is only needed for usage totals and for resuming this session later."
   },
+  "effort": {
+    "label": "How hard the model thinks",
+    "hint": "How hard the model thinks before it answers. Higher is slower and uses more of your allowance. Applies from your next prompt.",
+    "hintWorking": "How hard the model thinks. It can be changed when this turn is over.",
+    "chip": "effort: {level}",
+    "level": {
+      "low": "low",
+      "medium": "medium",
+      "high": "high",
+      "xhigh": "extra high",
+      "max": "max"
+    },
+    "failed": "Still not on {level}: {reason}",
+    "noAnswer": "the session did not answer"
+  },
   "feedView": {
     "notice": {
       "backgroundTask": "Background task",
