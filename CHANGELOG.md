@@ -148,6 +148,16 @@ on the floor, and say so in your PR.
   anything. On an older Claude Code that cannot be asked, it reads "model?"
   until the first reply, as before.
 
+### Fixed
+
+- **A card's ⋯ menu is no longer cut off on a small card.** With several
+  sessions stacked in rows on a short window, the menu of a card in the
+  bottom row ran off the bottom of the window and its last entries could
+  not be reached. It now opens above the button when there is no room
+  below, and scrolls if the window is too short for it either way. An entry
+  that lay on the line between two cards could not be clicked either (the
+  divider was drawn over it); the menu is now on top.
+
 ## 0.8.117 — 2026-10-09
 
 ### Added
