@@ -210,7 +210,7 @@ test.describe('pinning contract (E9-09)', () => {
     // shrunk into one - so the minimum is lifted first. This is the OS window,
     // not product code: nothing test-only is reachable inside the app.
     //
-    // 560, and the sessions do the overflowing rather than the shrinking. The
+    // 480, and the sessions do the overflowing rather than the shrinking. The
     // app's own chrome (title bar, the rail's header and footer, and whatever
     // strips and banners happen to be up) takes 240-300px before the scroll
     // region gets any, and it is NOT a constant between runs - a service-health
@@ -223,8 +223,12 @@ test.describe('pinning contract (E9-09)', () => {
     // it with.
     await a.app.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
-      win.setMinimumSize(600, 520);
-      win.setSize(1000, 560);
+      // 480, down from 560: the bar above the workspace (#1163) and the lamps
+      // and collapsed rows (#1164) are gone, which gave the list about 60px
+      // more, and on the shortest runner seven rows then FIT at 560 and there
+      // was nothing to scroll.
+      win.setMinimumSize(600, 440);
+      win.setSize(1000, 480);
     });
 
     // SCROLL THE RAIL TO ITS END, and assert the clause the way a person reads

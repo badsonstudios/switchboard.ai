@@ -794,12 +794,20 @@ test.describe('Feed view (E12-06)', () => {
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
     /**
-     * Under the app's own 600px minimum, so Electron clamps to it: the SHORTEST
-     * window a user can make, and shorter than any CI runner's (Linux CI is
-     * 1008x655 on a 1024x768 desktop, measured 2026-08-11). Whatever branch a
-     * runner lands on, this reaches it or one stricter.
+     * A window SHORT ENOUGH THAT THE PANEL, NOT THE TWELVE-LINE CAP, DECIDES
+     * the composer's height — which is the branch this half of the test is for.
+     *
+     * It used to be "under the app's own 600px minimum, so Electron clamps to
+     * it": the shortest window a user can make was short enough. It stopped
+     * being so when the bar above the workspace (#1163) and the rows of lamps
+     * and collapsed sessions (#1164) were removed — about 60px came back to the
+     * cards, and on the Linux runner twelve lines then fit even at the
+     * minimum, so there was nothing to re-fit and the assertion below had
+     * nothing to see. The OS minimum is lifted for this window (the test's
+     * window, not product code — pinning.spec.ts does the same) and the
+     * height is set to one that squeezes on every runner.
      */
-    const SHORTEST_CONTENT_HEIGHT = 400;
+    const SHORTEST_CONTENT_HEIGHT = 480;
     /** MIN_FEED_PX in FeedView.tsx — the conversation's floor */
     const MIN_FEED = 60;
 
@@ -884,6 +892,7 @@ test.describe('Feed view (E12-06)', () => {
     await a.app.evaluate(({ BrowserWindow }, height) => {
       const win = BrowserWindow.getAllWindows()[0];
       win.unmaximize();
+      win.setMinimumSize(600, 300);
       win.setContentSize(win.getContentSize()[0], height);
     }, SHORTEST_CONTENT_HEIGHT);
     await expect
@@ -967,6 +976,9 @@ test.describe('Feed view (E12-06)', () => {
       await a.app.evaluate(({ BrowserWindow }, h) => {
         const win = BrowserWindow.getAllWindows()[0];
         win.unmaximize();
+        // the app's own 600px minimum would clamp the shorter heights the
+        // search below now needs (#1164: see the note on the range)
+        win.setMinimumSize(600, 300);
         win.setContentSize(win.getContentSize()[0], h);
       }, px);
       await w.waitForTimeout(250);
@@ -1021,7 +1033,12 @@ test.describe('Feed view (E12-06)', () => {
     };
 
     let found = 0;
-    for (const height of [560, 600, 640, 680, 720, 760, 800]) {
+    // The range starts lower than it used to. Removing the bar above the
+    // workspace (#1163) and the lamps and collapsed rows (#1164) gave the
+    // cards about 60px back, so on the shortest runner the old bottom of the
+    // range (560) no longer put the panel in charge, and the precondition
+    // below failed for want of a short enough window.
+    for (const height of [440, 480, 520, 560, 600, 640, 680, 720, 760, 800]) {
       await setHeight(height);
       // SETTLE, don't sample: the box grows over several frames, and an early read was
       // worth about a coin flip (#952 found that the hard way).

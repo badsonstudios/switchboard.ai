@@ -331,11 +331,11 @@ test.describe('sessions list placement', () => {
 
     await top.click(); // the lit half: put it away
     await expect(strip).toHaveCount(0);
-    // and nothing takes its place: put away is put away (#1164). The
-    // workspace starts straight under the top bar.
-    const bar = (await window.locator('header').first().boundingBox())!;
-    const work = (await window.locator('main').boundingBox())!;
-    expect(work.y - (bar.y + bar.height)).toBeLessThan(4);
+    // and nothing takes its place: put away is put away (#1164). No list of
+    // sessions of any kind is left in the window. (Not measured as "the
+    // workspace starts under the top bar": on CI a notice that `claude` is
+    // missing sits between them, which is not this test's business.)
+    await expect(window.locator('[data-rail-open], [data-strip-pill], [data-strip-group]')).toHaveCount(0);
     await expect(window.locator('nav')).toHaveCount(0);
     // hidden is not a third half: neither is lit
     await expect(top).toHaveAttribute('aria-pressed', 'false');
