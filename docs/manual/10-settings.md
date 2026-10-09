@@ -54,7 +54,8 @@ opening a window:
 |---|---|
 | **🛡 ask / plan / auto-edit / full-auto** | The autonomy mode *new* sessions start at — click to cycle |
 | **⬍ Keep visible / Collapse on submit / Hide on submit** | What happens to a session's card when you send it a prompt — click to cycle. See below |
-| **▦ Grid / Focus / Queue** | How the whole workspace is arranged |
+| **Five small pictures of split boxes** | Arrange the open sessions in that shape with one click, or make the current arrangement even. See [Arranging cards with one click](07-workspace.md#arranging-cards-with-one-click) |
+| **▦ Focus / Queue** | Only shown while one of those layouts is on (or a session is maximized), in place of the pictures. Click to step to the next layout |
 
 ## Language
 

@@ -149,6 +149,21 @@ const t: Translate = (key, vars) => String(i18next.t(key, vars));
  *  more than one reader" (see `getCardTitle`); this is another reader. */
 const titleOf = (cardId: string): string | undefined => sessionStore.getCardTitle(cardId);
 
+/** A one-click arrangement has been applied (#1147): say which, or that there
+ *  was nothing to arrange. `places` is the grid's own answer. `shapeKey` is
+ *  the wording key of the shape, so this file does not need the shape list. */
+export function sayArranged(shapeKey: string, places: number): void {
+  announce(
+    places === 0 ? t('layout.presetsNothing') : t('layout.presetSaid', { shape: t(shapeKey) })
+  );
+}
+
+/** "Make them even" has run (#1147). "Already even" is the answer to a click
+ *  that visibly changed nothing, which would otherwise look like a dead button. */
+export function sayEvened(changed: boolean): void {
+  announce(t(changed ? 'layout.equalizeSaid' : 'layout.equalizeAlready'));
+}
+
 /** `Mod+Alt+P` has landed (the store write is synchronous): say which way. */
 export function sayPinToggled(cardId: string): void {
   const title = titleOf(cardId);

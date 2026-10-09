@@ -96,7 +96,24 @@ on the floor, and say so in your PR.
 
 ## 0.8.117 — unreleased
 
+### Added
+
+- **Arrange your sessions with one click.** The top bar has five small
+  pictures: two side by side, three side by side, two rows, two by two, and
+  **make them even**. Click a shape and the sessions that are open are put
+  in it, at equal sizes, in the order of the Sessions list; extra sessions
+  become tabs in the last place, and nothing is closed. **Make them even**
+  moves nothing: it puts every divider back in the middle, for when you
+  have dragged one and want the even split back. All of them are in
+  **▸ commands** too (type "arrange").
+
 ### Changed
+
+- **The "▦ Grid" button is gone from the top bar while the layout is Grid.**
+  The pictures above took its place. It comes back, in their place, while
+  Focus or Queue is on or a session is maximized, so you can still see why
+  sessions are folded away and click your way back. `Ctrl+Shift+L` and
+  **▸ commands** switch layouts as before.
 
 - **Right-clicking a session gives the same short menu wherever your sessions
   are listed.** Open changes, Rename, Pin, Close, and Move to group: that is

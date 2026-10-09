@@ -63,6 +63,9 @@ function bar(autonomy: string): React.JSX.Element {
       layoutMode="grid"
       layoutMaximized={false}
       onCycleLayoutMode={noop}
+      onLayoutPreset={() => {}}
+      onEqualizeLayout={() => {}}
+      layoutArrangeable
       layoutBinding="Ctrl+Alt+L"
       autoLabels={true}
       onCycleLabels={noop}

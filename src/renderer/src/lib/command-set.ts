@@ -12,6 +12,7 @@ import type { Ladder } from './presentation';
 import { POLICY_ORDER, PresentationPolicy } from './presentation-policy';
 import { FOCUS_POLICY_ORDER, FocusPolicy } from './focus-policy';
 import { LAYOUT_MODES, LayoutMode } from './layout-mode';
+import { LAYOUT_PRESETS, LayoutPreset } from './layout-presets';
 import type { SettingsSection } from './settings-sections';
 
 export interface CommandDeps {
@@ -54,6 +55,10 @@ export interface CommandDeps {
   cycleLayoutMode: () => void;
   /** blow one session up to fill the workspace, or put the prior layout back */
   toggleMaximize: (cardId: string) => void;
+  /** rearrange what is open into a named shape (#1147) */
+  applyLayoutPreset: (preset: LayoutPreset) => void;
+  /** make every split even without moving anything (#1147) */
+  equalizeLayout: () => void;
   /** show/hide the sessions rail */
   toggleRail: () => void;
   /** open or shut the events drawer (P2-E14-01, Shape B) */
@@ -615,6 +620,27 @@ export function buildCommands(deps: CommandDeps): Command[] {
         run: () => deps.setLayoutMode(mode),
       })
     ),
+    // #1147 — the one-click arrangements and "make them even". The top bar
+    // has a picture for each; these are the same six in words, so nothing
+    // is in the mouse alone. Generated from LAYOUT_PRESETS for the reason
+    // the modes above are: a sixth shape cannot ship with a button and no
+    // command.
+    ...LAYOUT_PRESETS.map(
+      (preset): Command => ({
+        id: `layout.preset.${preset}`,
+        titleKey: `commands.layoutPreset.${preset}`,
+        categoryKey: CATEGORY_VIEW,
+        scope: 'app' as const,
+        run: () => deps.applyLayoutPreset(preset),
+      })
+    ),
+    {
+      id: 'layout.equalize',
+      titleKey: 'commands.equalizeLayout',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app',
+      run: () => deps.equalizeLayout(),
+    },
     {
       id: 'layout.cycleMode',
       titleKey: 'commands.cycleLayout',

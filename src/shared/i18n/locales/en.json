@@ -207,6 +207,20 @@
     "chip": "▦ {mode}",
     "chipMaximized": "▦ {mode} · maximized",
     "chipHint": "Layout: {mode}. Click to cycle Grid → Focus → Queue ({binding}).",
+    "presetsLabel": "Arrange the open sessions",
+    "presetsNothing": "Nothing to arrange: fewer than two sessions are open in the workspace",
+    "preset": {
+      "single": "One place: every session as a tab",
+      "columns2": "Two side by side",
+      "columns3": "Three side by side",
+      "rows": "Two rows, one above the other",
+      "grid": "Two by two"
+    },
+    "presetSaid": "Arranged: {shape}",
+    "equalize": "Make them even",
+    "equalizeHint": "Make them even: every split back to the middle, nothing moves",
+    "equalizeSaid": "Sizes evened out",
+    "equalizeAlready": "Already even",
     "maximizeHint": "Double-click to maximize this session; double-click again to put the layout back"
   },
   "grid": {
@@ -1219,6 +1233,14 @@
       "queue": "Layout: Queue — only the sessions that need you"
     },
     "cycleLayout": "Layout: next mode (Grid → Focus → Queue)",
+    "layoutPreset": {
+      "single": "Arrange: one place, every session as a tab",
+      "columns2": "Arrange: two side by side",
+      "columns3": "Arrange: three side by side",
+      "rows": "Arrange: two rows, one above the other",
+      "grid": "Arrange: two by two"
+    },
+    "equalizeLayout": "Arrange: make them even",
     "maximize": "Maximize this session / put the layout back",
     "toggleChanges": "Toggle Changes view",
     "toggleFiles": "Toggle Files view",

@@ -69,7 +69,10 @@ import {
   sayReordered,
   setLadderAloud,
   stepLadderAloud,
+  sayArranged,
+  sayEvened,
 } from './lib/session-voice';
+import type { LayoutPreset } from './lib/layout-presets';
 import { sayManualMissing, sayUnavailable } from './lib/command-voice';
 import { DEFAULT_SOUND } from '../../shared/sounds';
 // #440: a refused call RESOLVES a truthy object — read every bridge answer
@@ -1705,6 +1708,22 @@ export function App(): React.JSX.Element {
   // rather than opening a picker, exactly as the presentation-policy chip does:
   // three states, and the label always says which one you are on.
   const cycleLayoutMode = React.useCallback(() => grid.current?.cycleLayoutMode(), []);
+  // #1147 — the one-click arrangements. Both SAY what they did: nothing else
+  // tells a screen reader the workspace was rearranged, and "already even"
+  // is the answer to a click that visibly changed nothing.
+  const applyLayoutPreset = React.useCallback((preset: LayoutPreset) => {
+    // async: an arrangement asked for while Focus or Queue is on waits for
+    // the switch back to Grid to finish first
+    void (grid.current?.applyPreset(preset) ?? Promise.resolve(0)).then((places) =>
+      sayArranged(`layout.preset.${preset}`, places)
+    );
+  }, []);
+  // how many panels the main workspace holds — the grid's own count, because
+  // "sessions minus folded" counts a popped-out window and misses a document
+  const [arrangeable, setArrangeable] = useState(0);
+  const equalizeLayout = React.useCallback(() => {
+    sayEvened(grid.current?.equalize() ?? false);
+  }, []);
 
   const jumpToNextAttention = React.useCallback(() => {
     // synchronous read AND write: two presses in one frame advance two steps
@@ -1815,6 +1834,8 @@ export function App(): React.JSX.Element {
           setSessionFocusPolicy,
           setLayoutMode: (mode) => grid.current?.setLayoutMode(mode),
           cycleLayoutMode: () => grid.current?.cycleLayoutMode(),
+          applyLayoutPreset,
+          equalizeLayout,
           toggleMaximize: (cardId) => grid.current?.toggleMaximize(cardId),
           toggleRail,
           // A toggle, not an open: the same chord that shows the queue puts it
@@ -2361,6 +2382,9 @@ export function App(): React.JSX.Element {
         layoutMode={layout.mode}
         layoutMaximized={layout.maximized !== null}
         onCycleLayoutMode={cycleLayoutMode}
+        onLayoutPreset={applyLayoutPreset}
+        onEqualizeLayout={equalizeLayout}
+        layoutArrangeable={arrangeable >= 2}
         layoutBinding={layoutBindingLabel}
         soundsOn={soundsOn}
         onToggleSounds={() => {
@@ -2848,6 +2872,7 @@ export function App(): React.JSX.Element {
           colorScheme={theme.colorScheme}
           seedPanels={bridge.seedPanels ?? 0}
           onCardsChanged={(c) => sessionStore.setCards(c)}
+          onArrangeableChanged={setArrangeable}
           onActiveCardChanged={(c) => sessionStore.setActiveCard(c)}
           controller={grid}
         />
