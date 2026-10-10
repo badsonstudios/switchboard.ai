@@ -3,7 +3,31 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶ 2026-10-09 — TEN SMALL ITEMS THE OWNER PICKED. In this order. NO RELEASE.
+> # ✔ 2026-10-09 — TEN SMALL ITEMS THE OWNER PICKED: ALL TEN DONE. MERGED, NOT RELEASED.
+>
+> **NOTHING IS IN FLIGHT.** Every item below is on `main` in
+> `0.8.118 — unreleased`, with #1179 and #1178. **No release was cut and
+> none may be until he asks.** Ten rows are at the top of the dogfood
+> tracker's Untested table, each saying "needs a version bump before you
+> can install it".
+>
+> **Waiting on him (asked in the tracker and the report, none blocks):**
+> - "166" was read as #1166. Confirm or correct.
+> - #715: built with NO yellow (plain, blue from 60%, red from 80%),
+>   against the ticket, because of his #1165 rule. Overrule if wanted.
+> - #620: the drop already worked; only its marker was invisible. Was his
+>   trouble "does not work" or "cannot tell"?
+> - #731: is a 40px edge zone the right depth?
+> - #1166: should the middle stay quiet while the Sessions list is showing?
+>
+> **Filed or noted on the way:** #1186 (a Windows CI timing flake in
+> `watcher.test.ts`); a note with timings on #768 (`win-cmd.test.ts` timed
+> out in full local runs for part of the day, passes alone); a note on
+> #756 (only the in-app half has shipped; left open).
+>
+> **Next:** nothing is queued. Ask him, or read the open milestones.
+>
+> The list as it was worked, in order:
 >
 > **DO NOT CUT A RELEASE.** His words: *"let's hold off on a release"*. No
 > version bump, no tag. Everything here lands in `0.8.118 — unreleased`,
@@ -132,10 +156,8 @@
 >    is called with `?.` because a test's stand-in dock has no such event
 >    and the workspace must still start.
 > 10. **#582 — a session dragged into another group lands in arrival
->     order; and the ungroup drop. ← IN FLIGHT**, branch
->     `feature/582-group-landing`. *This line rides in that PR: if `main`
->     has `e2e/group-landing.spec.ts`, it has landed and ALL TEN ARE DONE
->     (merged, not released; he has not asked for a cut).* NOT a dockview
+>     order; and the ungroup drop. DONE 2026-10-09, PR #1192 (`380a7f98`),
+>     merged, NOT released.** Green on the first CI run. NOT a dockview
 >     item, despite the prompt grouping it with 8 and 9: it is the Sessions
 >     list's own order. `SessionStore.landAtEndOf` writes the destination
 >     group's on-screen order plus the newcomer, called from the one
