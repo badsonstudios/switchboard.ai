@@ -31,7 +31,9 @@ yet).
 
 *Where a new session starts.*
 
-1. Click **+ session** at the top of the Sessions list, on the left.
+1. Click **+ session** at the top of the Sessions list, on the left. (With
+   nothing open yet, the middle of the window also says **No sessions open**
+   and has a **Start a session** button that does the same thing.)
 2. Pick the project folder you want Claude to work in.
 3. A card appears and Claude starts up inside it. The first moments show
    *starting*; once it's ready the status changes to *idle*.

@@ -77,10 +77,11 @@
 >    ten inline SVGs in `currentColor`, placed INSIDE the name's element so
 >    they take its ink. Drawn, not typed glyphs: glyphs differ by machine.
 >    Independent review before pushing.
-> 6. **#695 — the card's "⋯" menu is cut off on narrow splits. ← IN
->    FLIGHT**, branch `feature/695-card-menu-fit`. *This line rides in that
->    PR: if `main` has `e2e/card-menu-fit.spec.ts`, it has landed and the
->    next item is #1166.* REPRODUCED FIRST: at the 800×600 minimum with
+> 6. **#695 — the card's "⋯" menu is cut off on narrow splits. DONE
+>    2026-10-09, PR #1188 (`27b09fed`), merged, NOT released.** Green on the first CI run.
+>    ⚠️ The LOCAL full unit suite was red three runs in a row on one test,
+>    `win-cmd.test.ts` (#768, load-sensitive, passes alone, untouched by
+>    this work); timings are on that ticket. REPRODUCED FIRST: at the 800×600 minimum with
 >    four cards in two rows, the bottom-row menu ended 100px below the
 >    window (it was `absolute` under its button). Now `position: fixed`
 >    and placed by a new `placeMenuAtBox` (below, else above, else the
@@ -92,7 +93,14 @@
 >    now. `ModelQuickMenu` (50) has the same latent overlap and was NOT
 >    changed: not asked for, and it opens near the bottom of a card.
 > 7. **#1166 — an empty workspace with the list hidden says nothing about
->    how to start.** (Read from "166".)
+>    how to start. ← IN FLIGHT**, branch `feature/1166-empty-workspace`.
+>    (Read from "166".) *This line rides in that PR: if `main` has
+>    `e2e/empty-workspace.spec.ts`, it has landed and the next item is
+>    #620.* Built as dockview's own watermark (`EmptyWorkspace`), which
+>    shows exactly when no panel is open: so it shows with the list
+>    showing or hidden, not over a document-only workspace, and goes when
+>    the first card is added. Its button is "Start a session" (its own
+>    name, not "+ session") and runs the grid's new-session path.
 > 8. **#620 — drag a session's tab onto another group's tab strip to dock
 >    it there.**
 > 9. **#731 — a stacked session cannot be dragged out into its own

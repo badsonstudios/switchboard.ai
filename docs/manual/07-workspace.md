@@ -93,6 +93,18 @@ you move off, click, press a key, scroll or start dragging.
   shows nothing. Start or resume it and the box works again.
 - Sessions in a popped-out window do not show the box on their tabs.
 
+### When nothing is open
+
+With no session and no document open, the middle of the window says **No
+sessions open** and has one button, **Start a session**. It does exactly what
+**+ session** in the Sessions list does: you pick a folder and the session
+opens.
+
+It is there whether the Sessions list is showing or hidden, so a window with
+the list hidden is never blank. It goes as soon as anything is open, and it
+comes back when you close the last thing. A workspace that holds only a
+document or a diff is not empty, and does not show it.
+
 ### The ⋯ menu on a small card
 
 Each session's card has a **⋯** menu at the top right. When the card is short

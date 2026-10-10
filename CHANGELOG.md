@@ -139,6 +139,11 @@ on the floor, and say so in your PR.
   for an edit, and so on. You can tell what kind of step a box is by its
   shape, without reading the name.
 
+- **An empty workspace says how to start.** With nothing open, the middle
+  of the window now says "No sessions open" and has a "Start a session"
+  button. Before, hiding the Sessions list with nothing open left a blank
+  window with no sign of how to begin.
+
 ### Changed
 
 - **A new session shows which model it is on straight away.** The button
