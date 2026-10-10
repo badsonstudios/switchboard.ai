@@ -110,6 +110,11 @@
     "attachmentOnly": "An attachment, with no text",
     "cut": "{text}…"
   },
+  "emptyWorkspace": {
+    "title": "No sessions open",
+    "start": "Start a session",
+    "blurb": "Start a session to begin. You pick a folder, and Claude Code works in it."
+  },
   "rail": {
     "eyebrow": "Sessions · {count}",
     "empty": "No sessions yet",
@@ -232,7 +237,6 @@
     "maximizeHint": "Double-click to maximize this session; double-click again to put the layout back"
   },
   "grid": {
-    "empty": "Add a session card to begin",
     "cardBody": "{title} — session card; terminal arrives with E3-02",
     "resuming": "Resuming {title}…",
     "taskLabelEmpty": "+ task label",

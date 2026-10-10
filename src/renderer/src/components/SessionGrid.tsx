@@ -20,6 +20,7 @@ import 'dockview-react/dist/styles/dockview.css';
 import '../theme/dockview-tokens.css';
 import { nativeAlert, nativeConfirm } from '../lib/native-dialog';
 import { placeMenuAtBox, type MenuPlacement } from '../lib/menu-placement';
+import { EmptyWorkspace, EmptyWorkspaceActions } from './EmptyWorkspace';
 import { directionOf } from '../lib/writing-direction';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { sessionStore } from '../store/session-store';
@@ -6148,6 +6149,11 @@ export function SessionGrid(props: {
     setError(null); // a retry starts clean, as above
     return newSessionIn(apiRef.current, null, setError, offerHistory);
   }, [offerHistory]);
+  // the empty workspace's button: the same gesture as "+ session" in the list
+  const emptyWorkspaceActions = React.useMemo(
+    () => ({ onNewSession: () => void newSessionInGrid() }),
+    [newSessionInGrid]
+  );
 
   // §5.8's presentation ladder (P2-E9-05). The verbs are MODULE functions on
   // (api, cardId) — see setCardLadder — for the reason popOutCardPanel is one:
@@ -7216,13 +7222,19 @@ export function SessionGrid(props: {
         </div>
       )}
       <div style={{ flex: 1, padding: 'var(--grid-pad)' }}>
+        {/* what the workspace says when nothing at all is open (#1166). The
+            dock draws its watermark exactly then; the context is how that
+            component reaches this grid's own "new session". */}
+        <EmptyWorkspaceActions.Provider value={emptyWorkspaceActions}>
         <DockviewReact
           components={components}
           defaultTabComponent={IdentityTab}
+          watermarkComponent={EmptyWorkspace}
           onReady={(e: DockviewReadyEvent) => void onReady(e)}
           /* the theme lives on the SHELL, set via api.updateOptions in onReady
              (#84) — a class here never reached the popups */
         />
+        </EmptyWorkspaceActions.Provider>
       </div>
       {/* §5.33's `+ session` picker. Mounted at the GRID rather than inside a
           card: the folder has been chosen but no card exists yet, so there is

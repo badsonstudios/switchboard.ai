@@ -70,7 +70,9 @@ a version, and restart switchboard.
 
 *Where a new session starts.*
 
-1. Click **+ session** at the top of the Sessions list, on the left.
+1. Click **+ session** at the top of the Sessions list, on the left. (With
+   nothing open yet, the middle of the window also says **No sessions open**
+   and has a **Start a session** button that does the same thing.)
 2. Pick your project folder.
 3. A card appears. It says *starting* for a moment, then *idle*.
 4. Type what you want into the box at the bottom of the card and press
