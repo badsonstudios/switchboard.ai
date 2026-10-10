@@ -2335,6 +2335,9 @@ describe('content cannot NAME one of the app’s own controls (#654)', () => {
       // #1071: the same boundary around the PLAN's Markdown body, so a plan
       // that fails to render falls back to the plain panes rather than a gap.
       'components/ApprovalPreview.tsx: id="approval-plan"',
+      // #1022: the boundary around what is drawn into popped-out windows. It
+      // sits at the renderer root, so a throw there would blank every session.
+      'components/PopoutSurfaces.tsx: id="popout-surfaces"',
       // ⚠️ E24 Git v2 item 9: the `allchanges-` panel, and it needs the boundary
       // MORE than either of the two below — it mounts up to ten Monaco diff
       // editors at once, so it is the surface in this epic with the most ways to

@@ -64,6 +64,8 @@ import { installAnnouncer, setAudioMuted, sharedAnnouncer } from './lib/announce
 // ...and its namesake for the OTHER sense (#581): `lib/announcer` is the sound,
 // `LiveRegion` is the words a screen reader reads.
 import { LiveRegion } from './components/LiveRegion';
+import { PopoutSurfaces } from './components/PopoutSurfaces';
+import { holdAnnouncements } from './lib/live-region';
 import {
   sayPinToggled,
   sayReordered,
@@ -2210,10 +2212,24 @@ export function App(): React.JSX.Element {
       if (popoutKeys.has(win)) return;
       const handler = (e: KeyboardEvent): void => {
         raisedOtherWindowRef.current = false;
-        // `win` — which window this was typed in. A popped-out DOCUMENT is the
-        // one thing a command can act on THERE rather than here (#533), and
-        // dockview's active panel cannot tell us which window that is.
-        if (onKey(e, win) && !raisedOtherWindowRef.current) window.focus();
+        // WHERE WHAT IT DID IS SAID (#1022). The command speaks in the middle
+        // of this, while the popout still has the keyboard; whether the main
+        // window is about to come forward is only known once it has run. So
+        // its sentences are held and released to the window the user will be
+        // in: the main one if it is raised, this popout if the chord was
+        // refused or did nothing here. (A command that raised ANOTHER popout
+        // names no window, and falls to whichever has the keyboard by then.)
+        const say = holdAnnouncements();
+        let raiseMain = false;
+        try {
+          // `win` — which window this was typed in. A popped-out DOCUMENT is the
+          // one thing a command can act on THERE rather than here (#533), and
+          // dockview's active panel cannot tell us which window that is.
+          raiseMain = onKey(e, win) && !raisedOtherWindowRef.current;
+          if (raiseMain) window.focus();
+        } finally {
+          say(raiseMain ? window : raisedOtherWindowRef.current ? undefined : win);
+        }
       };
       popoutKeys.set(win, handler);
       win.addEventListener('keydown', handler);
@@ -2298,23 +2314,32 @@ export function App(): React.JSX.Element {
       // in THIS window would name a window that is not one, and
       // `activeDocumentId` would answer null for a docked viewer.
       const sourceWindow = fromPopout ? (target?.ownerDocument.defaultView ?? undefined) : undefined;
-      const result = dispatchAccelerator(
-        commandId,
-        commands,
-        commandContext(sourceWindow),
-        target,
-        (err, id) => console.error(`[commands] ${id} failed`, err),
-      );
-      // #942, and this is the path that needs it most: these two chords are
-      // claimed above the renderer precisely so they reach a user who is inside
-      // a session terminal, where nothing else they press has any effect at all.
-      if (result.outcome === 'unavailable') sayUnavailable(result.command);
-      const ran = result.outcome === 'ran';
-      // Pressed in a popped-out window: what these commands show — the palette,
-      // the grid — is in THIS window, so bring it forward. Unless the command
-      // deliberately raised a different one (jumping to another popped-out
-      // session), which is the same exception the keydown bridge makes.
-      if (fromPopout && ran && !raisedOtherWindowRef.current) window.focus();
+      // held until we know which window the user ends up in: the keydown
+      // bridge's rule, for its reason (#1022)
+      const say = fromPopout ? holdAnnouncements() : undefined;
+      let raiseMain = false;
+      try {
+        const result = dispatchAccelerator(
+          commandId,
+          commands,
+          commandContext(sourceWindow),
+          target,
+          (err, id) => console.error(`[commands] ${id} failed`, err),
+        );
+        // #942, and this is the path that needs it most: these two chords are
+        // claimed above the renderer precisely so they reach a user who is inside
+        // a session terminal, where nothing else they press has any effect at all.
+        if (result.outcome === 'unavailable') sayUnavailable(result.command);
+        const ran = result.outcome === 'ran';
+        // Pressed in a popped-out window: what these commands show — the palette,
+        // the grid — is in THIS window, so bring it forward. Unless the command
+        // deliberately raised a different one (jumping to another popped-out
+        // session), which is the same exception the keydown bridge makes.
+        raiseMain = fromPopout && ran && !raisedOtherWindowRef.current;
+        if (raiseMain) window.focus();
+      } finally {
+        say?.(raiseMain ? window : raisedOtherWindowRef.current ? undefined : sourceWindow);
+      }
     });
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, [commands, commandContext]);
@@ -2406,6 +2431,9 @@ export function App(): React.JSX.Element {
           unconditionally: it has to pre-date the news, and it belongs to no panel
           that could be collapsed out of the tree the way P2-E14-01's notices were. */}
       <LiveRegion />
+      {/* ...and the same again in each popped-out window, with the last-prompt
+          box: a popout is a document of its own (#1022) */}
+      <PopoutSurfaces />
       <TitleBar
         version={bridge.appVersion}
         identity={BUILD_IDENTITY}

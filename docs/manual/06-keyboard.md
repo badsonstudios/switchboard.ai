@@ -295,9 +295,13 @@ Four things about these that are deliberate:
   isn't new; it's
   [how the ladder has always worked](#working-with-the-focused-session).
 
-Using these from a **popped-out session window** is the exception: the shortcut
-is handed back to the main window and acts there, so the announcement happens in
-the main window too.
+Using these from a **popped-out session window**: the shortcut is handed back to
+the main window and acts there. What happens next is **said in the window you
+end up in**. If the shortcut did something, the main window comes forward and
+says it. If it could not be used, you stay in the pop-out and the reason is
+said there. A screen reader in a pop-out used to hear nothing at all; now every
+pop-out has the same announcements the main window has, and only one window
+ever speaks, so nothing is said twice.
 
 ## A shortcut that can't be used right now tells you why
 

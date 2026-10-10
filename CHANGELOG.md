@@ -121,6 +121,13 @@ on the floor, and say so in your PR.
   and why, with a **Follow again** button; and when you open a session in
   that folder the document picks up by itself and shows what it missed.
 
+- **A popped-out window is no longer silent to a screen reader.** What a
+  shortcut did, or why it could not be used, was only ever said in the main
+  window, so someone using a screen reader in a pop-out heard nothing. Every
+  pop-out now has the same announcements, and only the window you are in
+  speaks.
+- **Resting the pointer on a session's tab in a popped-out window shows its
+  last prompt**, as it does in the main window. It used to do nothing there.
 - **Small grey text is easier to read.** The notes under each setting, the
   hints in the MCP servers and Dispatch windows, token counts, section
   labels, the time on each row of the Events panel and the little arrows

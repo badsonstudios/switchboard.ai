@@ -4320,6 +4320,56 @@ a pointer where they left.)*
   > these sentences were written under and two gestures landing a card in one state
   > must not describe it two ways.
 
+  > **As built (#1022, 2026-10-10) — a region in every window, and ONE voice.**
+  > Rule 6 (a gesture that rearranges the window says what it did) was delivered
+  > through one live region at the app's root, so a screen reader in a
+  > popped-out window heard none of it. The ticket's premise needed one
+  > correction first: a popout is NOT a second renderer with its own root. It
+  > is a second DOCUMENT; dockview adopts the card's DOM into it and the
+  > card's React tree goes on running in the main window. So the announcement
+  > was being made, in a document the user was not in.
+  >
+  > The ticket listed three shapes. **None was chosen as written:**
+  >
+  > | shape | why not |
+  > |---|---|
+  > | a region per window, each speaking | one gesture said twice, once in a window the user is not in |
+  > | one region in the main window, popouts forwarding to it | one voice, in the wrong window: for a screen reader that is silence, which is the bug |
+  > | "announcements are per-window by nature" | true of where they are HEARD, not of where they are made: every announcement is made in the one JavaScript context |
+  >
+  > **What was built: a region in every window, and exactly one of them speaks:
+  > the window the user ENDS UP in.** Each popout gets the same two polite
+  > regions, portalled into its own `<body>` (`PopoutSurfaces`). The bus
+  > (`lib/live-region`) addresses each announcement to one window:
+  >
+  > 1. the window a caller NAMES. The popout key bridge is the case, and review
+  >    is what found it: a chord that RUNS brings the main window forward, and
+  >    its sentence is made mid-dispatch, while the popout still has focus.
+  >    Routed by focus it went to the window the user was leaving. So the
+  >    bridge HOLDS announcements while it dispatches and releases them to the
+  >    main window if it raised it, or to the popout if the chord was refused;
+  > 2. otherwise the window that has the keyboard;
+  > 3. otherwise the main window (nobody focused: the app is in the
+  >    background), which is what happened before;
+  >
+  > and never a window with no region mounted in it, so a sentence cannot be
+  > addressed to nobody.
+  >
+  > `PopoutSurfaces` is also now THE place for anything mounted at the root of
+  > the app that a popped-out card needs. The last-prompt box joined it the
+  > same day (it listened for the pointer on one document, and tested a node
+  > with `instanceof Element`, which is false for every node of another
+  > window). Document-wide FLAGS travel differently, as attributes copied
+  > across (`syncDocumentFlags`); the context meter's form was already on that
+  > list and is now tested, in a real popout, to arrive and to follow a change.
+  >
+  > **Not solved here, and visible in the new test:** a chord pressed in a
+  > popout still ACTS in the main window. With a session's only card popped
+  > out, `Ctrl+Alt+P` is refused ("No session is focused"), because the main
+  > window has no focused card. The refusal is now heard, which is this item;
+  > whether the chord should act on the popout's own card is a separate
+  > question and is filed.
+
   > **As built (#685, 2026-10-10) — the three neutral inks, and what each is for.**
   > Three residues of the contrast sweeps each got a decision, measured from the
   > shipped token files and pinned in `tokens.drift.test.ts`.

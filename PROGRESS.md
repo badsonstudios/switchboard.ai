@@ -70,8 +70,16 @@
 >    were the real gap: all 24 dated from 0.8.116. All retaken (29 now), five
 >    new close-ups, a dozen passages corrected. #965 stays OPEN: the full
 >    audit and the HTML render are not done.
-> 5. **Popped-out windows: close the gaps** (#1022, the last-prompt hover on
->    popout tabs, the context meter's form reaching a popout). Not started.
+>    **DONE 2026-10-10, PR #1213, merged, NOT released.** #965 is still
+>    OPEN, with a comment saying what the reduced pass did and what is left.
+> 5. **Popped-out windows: close the gaps. IN PROGRESS, started 2026-10-10,
+>    branch `feature/1022-popout-surfaces`.** #1022: every popout gets the two
+>    live regions of its own and only the window with the keyboard speaks (a
+>    fourth shape, not one of the ticket's three; DESIGN §5.32 says why). The
+>    last-prompt box works on a popout's tabs (it listened on one document and
+>    used `instanceof Element`, false across windows). The context meter's
+>    form reaching a popout was already wired and is now tested in a real
+>    second window, including a change made while the popout is open.
 >
 > **Decided, and not to be worked on:** #756 (tentative), #722 (needs a
 > sitting with him), #966 (hold), #851 (not now), #1196 (later).

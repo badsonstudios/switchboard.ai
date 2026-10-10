@@ -4,7 +4,8 @@
 // show its last prompt, so "we know exactly what's going on in that session"
 // without clicking into it.
 //
-// ONE COMPONENT, MOUNTED ONCE, AND THE MOUNT POINTS ONLY CARRY AN ATTRIBUTE.
+// ONE COMPONENT, ONE INSTANCE PER WINDOW (the main one, and each popout through
+// `PopoutSurfaces`), AND THE MOUNT POINTS ONLY CARRY AN ATTRIBUTE.
 // A tab, a row in the list and a pill on the strip each say
 // `data-last-prompt-for="<card id>"` and nothing else; this listens on the
 // document and finds the nearest one under the pointer. So the three surfaces
@@ -82,8 +83,13 @@ function readAnswer(raw: unknown): Answer | null {
  * NOT when the pointer is on something inside it that has a tooltip of its own
  * (the ✕, the pin, the waiting count): two hints at once is worse than one.
  */
-function targetOf(node: EventTarget | null): HTMLElement | null {
-  if (!(node instanceof Element)) return null;
+function targetOf(target: EventTarget | null): HTMLElement | null {
+  // BY SHAPE, NOT `instanceof Element` (#1022's sibling). A node in a
+  // popped-out window belongs to THAT window's `Element`, so the main
+  // window's `instanceof` says no to every one of them, and this returned
+  // null for every tab in a popout however the listeners were attached.
+  const node = target as Element | null;
+  if (!node || typeof node.closest !== 'function') return null;
   const el = node.closest<HTMLElement>(`[${LAST_PROMPT_ATTR}]`);
   if (!el) return null;
   const titled = node.closest('[title]');
@@ -96,9 +102,18 @@ const boxOf = (el: Element): Shown['box'] => {
   return { left: Math.round(r.left), top: Math.round(r.top), bottom: Math.round(r.bottom) };
 };
 
-export function LastPromptHover(): React.JSX.Element | null {
+export function LastPromptHover(props: {
+  /**
+   * The window to watch and draw in. Absent means the main one. A popped-out
+   * window is a document of its own, so it needs an instance of its own
+   * (`PopoutSurfaces`): the pointer events never reach this document, and a
+   * box drawn here would be in the wrong window.
+   */
+  win?: Window;
+}): React.JSX.Element | null {
   const { t } = useTranslation();
   const [shown, setShown] = React.useState<Shown | null>(null);
+  const win = props.win ?? window;
 
   React.useEffect(() => {
     let over: HTMLElement | null = null;
@@ -169,41 +184,61 @@ export function LastPromptHover(): React.JSX.Element | null {
     };
 
     const capture = { capture: true, passive: true } as const;
-    document.addEventListener('pointerover', onOver, capture);
-    document.addEventListener('pointerout', onLeaveDocument, capture);
-    document.addEventListener('pointerdown', drop, capture);
-    document.addEventListener('keydown', drop, true);
-    document.addEventListener('wheel', drop, capture);
-    document.addEventListener('scroll', drop, capture);
-    document.addEventListener('dragstart', drop, capture);
-    window.addEventListener('blur', drop);
-    window.addEventListener('resize', drop);
+    // THIS window's document, which for a popout is not `document`. Read once:
+    // a window that closes takes its document with it, and the cleanup must
+    // still be able to name what it attached to.
+    let doc: Document;
+    try {
+      doc = win.document;
+    } catch {
+      return; // closed under us — nothing to watch
+    }
+    doc.addEventListener('pointerover', onOver, capture);
+    doc.addEventListener('pointerout', onLeaveDocument, capture);
+    doc.addEventListener('pointerdown', drop, capture);
+    doc.addEventListener('keydown', drop, true);
+    doc.addEventListener('wheel', drop, capture);
+    doc.addEventListener('scroll', drop, capture);
+    doc.addEventListener('dragstart', drop, capture);
+    win.addEventListener('blur', drop);
+    win.addEventListener('resize', drop);
     return () => {
       drop();
-      document.removeEventListener('pointerover', onOver, capture);
-      document.removeEventListener('pointerout', onLeaveDocument, capture);
-      document.removeEventListener('pointerdown', drop, capture);
-      document.removeEventListener('keydown', drop, true);
-      document.removeEventListener('wheel', drop, capture);
-      document.removeEventListener('scroll', drop, capture);
-      document.removeEventListener('dragstart', drop, capture);
-      window.removeEventListener('blur', drop);
-      window.removeEventListener('resize', drop);
+      try {
+        doc.removeEventListener('pointerover', onOver, capture);
+        doc.removeEventListener('pointerout', onLeaveDocument, capture);
+        doc.removeEventListener('pointerdown', drop, capture);
+        doc.removeEventListener('keydown', drop, true);
+        doc.removeEventListener('wheel', drop, capture);
+        doc.removeEventListener('scroll', drop, capture);
+        doc.removeEventListener('dragstart', drop, capture);
+        win.removeEventListener('blur', drop);
+        win.removeEventListener('resize', drop);
+      } catch {
+        /* the window is gone, and its listeners with it */
+      }
     };
-  }, []);
+  }, [win]);
 
   if (!shown) return null;
 
   // Below the session when there is room, above it when there is not; kept
   // inside the window sideways. Measured against the viewport, not guessed.
-  const root = document.documentElement;
+  let host: Document;
+  try {
+    host = win.document;
+  } catch {
+    return null;
+  }
+  if (!host?.body) return null;
+  const root = host.documentElement;
   const vw = root.clientWidth;
   const vh = root.clientHeight;
   const width = Math.min(POPUP_WIDTH, vw - EDGE * 2);
   const left = Math.max(EDGE, Math.min(shown.box.left, vw - width - EDGE));
   // `insetInlineStart` counts from the RIGHT in a right-to-left layout, and
   // `left` above is physical (#642 is the same correction for the model menu)
-  const rtl = getComputedStyle(root).direction === 'rtl';
+  const rtl = win.getComputedStyle(root).direction === 'rtl';
   const inlineStart = rtl ? vw - left - width : left;
   const below = vh - shown.box.bottom;
   const placeAbove = below < 120 && shown.box.top > below;
@@ -273,6 +308,6 @@ export function LastPromptHover(): React.JSX.Element | null {
         {shown.text && shown.cut ? t('lastPrompt.cut', { text: body }) : body}
       </div>
     </div>,
-    document.body
+    host.body
   );
 }

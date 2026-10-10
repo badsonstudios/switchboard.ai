@@ -95,7 +95,8 @@ you move off, click, press a key, scroll or start dragging.
   with no text**.
 - A session that is **not running** (it never started, or it has stopped)
   shows nothing. Start or resume it and the box works again.
-- Sessions in a popped-out window do not show the box on their tabs.
+- It works in a popped-out window too: rest the pointer on a session's tab
+  there and the box opens in that window.
 
 ### When nothing is open
 

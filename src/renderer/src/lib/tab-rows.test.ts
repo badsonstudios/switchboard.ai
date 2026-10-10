@@ -95,6 +95,36 @@ describe('syncDocumentFlags (#84 + P2-E15-05)', () => {
     );
   });
 
+  // #715 changed this function to copy the context meter's form "by reading
+  // the code", with no test. A popped-out card has a prompt box and so a
+  // meter; without the attribute on ITS document the stylesheet shows the
+  // default form there whatever Settings says.
+  it("carries the context meter's form, and follows it when it changes", () => {
+    const { window: win, root } = fakeWindow();
+    try {
+      document.documentElement.dataset.contextMeter = 'bar';
+      syncDocumentFlags([win]);
+      expect(root.dataset.contextMeter).toBe('bar');
+
+      document.documentElement.dataset.contextMeter = 'both';
+      syncDocumentFlags([win]);
+      expect(root.dataset.contextMeter).toBe('both');
+    } finally {
+      // a failed assertion must not leave the next test a form to inherit
+      delete document.documentElement.dataset.contextMeter;
+    }
+  });
+
+  it('leaves a popout its last form rather than blanking it when ours is unset', () => {
+    // before the app has applied a form there is nothing to copy, and an
+    // empty attribute would match none of the three rules
+    const { window: win, root } = fakeWindow();
+    root.dataset.contextMeter = 'percent';
+    delete document.documentElement.dataset.contextMeter;
+    syncDocumentFlags([win]);
+    expect(root.dataset.contextMeter).toBe('percent');
+  });
+
   it('clears an overlay the app has switched away from', () => {
     const { window: win, root } = fakeWindow();
     applyTheme(findTheme(builtinThemes, 'high-contrast')!);
