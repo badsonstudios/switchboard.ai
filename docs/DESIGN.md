@@ -4320,6 +4320,69 @@ a pointer where they left.)*
   > these sentences were written under and two gestures landing a card in one state
   > must not describe it two ways.
 
+  > **As built (#685, 2026-10-10) — the three neutral inks, and what each is for.**
+  > Three residues of the contrast sweeps each got a decision, measured from the
+  > shipped token files and pinned in `tokens.drift.test.ts`.
+  >
+  > | ink | what it is for | the floor it is held to |
+  > |---|---|---|
+  > | `--text` | what you read | 7:1 on every surface (the contrast themes), unchanged |
+  > | `--muted` | everything ELSE you read: secondary labels, hints, notes, counts, timestamps, section labels | **4.5:1 on the seven neutral surfaces words are written on (bg, panel, panel2, chip, rail-card, the two auto-group fills), in every shipped theme.** Not a promise about a fill tinted with a group's or a session's colour: those are measured where they are painted |
+  > | `--faint` | a control that is DISABLED, and a mark that is not text | none, on purpose (2.3 to 3.2:1) |
+  >
+  > 1. **`--muted` on `--chip` was 4.10:1 on nordic. FIXED at the token.**
+  >    Nordic's `--muted` went from `#9aa4b8` to `#a5aec0`, the least that
+  >    clears with room (4.61 on chip, 5.12 on panel2, 5.85 on panel). The other
+  >    three themes already cleared. Two chips had been moved to `--text` one at
+  >    a time to escape this; they were left where they are.
+  > 2. **`--faint` timestamps. STEPPED UP, and the ticket was out of date in both
+  >    directions.** Only ONE timestamp was still written in `--faint` (the
+  >    Events row; the rest had moved since the ticket was filed). But 98 other
+  >    pieces of text were: every Settings note, the MCP and Dispatch hints,
+  >    token counts, section labels, expander carets. `--faint` was not retuned,
+  >    because it is also the DISABLED ink and a disabled control that reads as
+  >    enabled is its own defect; lifting it to AA would also have put it on top
+  >    of `--muted` and collapsed the ladder to two rungs. Instead everything
+  >    meant to be read moved to `--muted` (87 uses, plus four the sweep's
+  >    pattern could not see: the words "disabled" and "unknown" in the MCP
+  >    list, and two status words in the Events tab and the status bar), and
+  >    what is left (34 uses in 16 files) is a disabled control or a non-text
+  >    mark. One went the OTHER way: the find bar's buttons wore the same ink
+  >    enabled and disabled, and the disabled ones now wear `--faint`. **The
+  >    pin is a count per file with a reason beside it**, because "is this
+  >    informational?" is a judgement no scan can make; what a scan can do is
+  >    make somebody make it.
+  >    **NOT DONE, and not to be read as done:** text can be dimmed below AA
+  >    with no `--faint` in sight, by `opacity` on an ancestor. Five places do
+  >    (a folded pill on the strip, sidechain rows in a conversation, a find
+  >    hit that cannot be jumped to, a rolled-up status letter in the file
+  >    tree, a group's policy button). They are older than this item, the
+  >    count cannot see them, and they are filed rather than fixed here.
+  > 3. **A hand-made group's header colour. THE MECHANISM IS AN INK PAIRING PER
+  >    THEME, not a runtime clamp.** The colour is data, so no token can be
+  >    pinned for it. But the set it comes from is `GROUP_PALETTE`, and
+  >    `.rail-group-ink` already blended whichever one it is toward the theme's
+  >    extreme. Measured across all eight colours and four themes, that blend
+  >    FAILED on nordic: three names (4.04, 4.19, 4.42:1; a fourth exactly on
+  >    the line) and seven of the eight counts (3.59 to 4.32:1) were under AA.
+  >    The dark blend went from 78% to 60% (worst name 5.39, worst count 4.78).
+  >    On the strip across the top, the same group's member count sits on a
+  >    heavier tint (18%), where `--muted` was 4.27:1 for the teal: that count
+  >    is `--text` now. The existing real-app check had measured
+  >    one colour of eight, against the card and not the tinted header, which
+  >    is how this stood. Main now refuses a group colour that is not in the
+  >    palette, so "every colour a group can have" is the eight that are
+  >    measured. A colour already on disk from before is left alone.
+  >
+  > **A fourth, recorded on the ticket and decided here: `--border`.** It is
+  > 1.13 to 1.31:1 on nordic and daylight, and it stays: it is the app's
+  > hairline between regions (card edges, table rules, the code fence), which
+  > is separation, not a control's boundary, and 1.4.11 does not ask 3:1 of it.
+  > **What it may not be is the ONLY thing that says "this is a control".** The
+  > composer's option chips were that case and got `--control-edge` (#1009).
+  > Whether other controls still rest on a `--border` hairline alone has NOT
+  > been audited; that is filed separately (1209) rather than claimed here.
+
 ### 5.33 Session history — opening a past conversation
 
 *Added 2026-09-16 (owner request; issue #836, plan E20).*

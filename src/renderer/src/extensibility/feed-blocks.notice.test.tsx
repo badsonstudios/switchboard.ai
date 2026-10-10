@@ -113,16 +113,16 @@ describe('a background-task notification is a row, not a prompt', () => {
 
   // The CLI's task enums carry `stopped`, `killed` and `paused` as well as the
   // two in the fixture. A killed task is not a failure, but it is not the quiet
-  // "it finished" the faint ink promises either — and the row is the only place
-  // that is ever said.
+  // "it finished" the plain ink promises either — and the row is the only place
+  // that is ever said. (Plain is `--muted` since #685: the word is read.)
   it('colours `killed` like a failure and `completed` like an ending', () => {
     const colourOf = (status: string): string => {
       const host = draw({ ...NOTICE, notice: { ...NOTICE.notice!, status } });
       return host.querySelector<HTMLElement>('[data-notice-status]')?.style.color ?? '';
     };
     expect(colourOf('killed')).toBe('var(--status-crashed-ink)');
-    expect(colourOf('completed')).toBe('var(--faint)');
-    expect(colourOf('paused')).toBe('var(--faint)');
+    expect(colourOf('completed')).toBe('var(--muted)');
+    expect(colourOf('paused')).toBe('var(--muted)');
   });
 
   // A status the CLI grows tomorrow is still the truest thing we have to show.

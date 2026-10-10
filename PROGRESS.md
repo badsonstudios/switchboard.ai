@@ -34,13 +34,31 @@
 >      1.3s alone, 5.2 to 6.1s in a full run. Its own 30s budget, and a 10s
 >      limit per spawn (a synchronous body cannot be timed out by the runner).
 > 2. **#506 — closing a session silently stops its document viewer updating.
->    IN PROGRESS, started 2026-10-10, branch `feature/506-viewer-unfollowed`.**
+>    DONE 2026-10-10, PR #1208 (`338d1305`), merged, NOT released.** Green on
+>    the first CI run. One unrelated real-app test (the ↗ beside a changed
+>    file, which depends on a mouse hover) failed once in a 33-test LOCAL run
+>    and passed alone and on CI; not touched.
 >    Main tells the viewer once that it stopped following (`unfollowed`); the
 >    viewer shows a strip with **Follow again**; it resumes by itself when a
 >    session opens over the folder, or when the file is picked again with
 >    Open File…. Two independent reviews; the first changed the design (the
 >    strip is decided by main's answer to the watch, not inferred from a read).
-> 3. **#685 — readability stragglers** (three decisions, measured). Not started.
+>    The second review found four more (focus going to a disabled control;
+>    a press overtaken by a link click; a refusal's reason being discarded;
+>    a re-open poking a panel about the wrong file), all fixed in the PR.
+> 3. **#685 — readability stragglers. IN PROGRESS, started 2026-10-10, branch
+>    `feature/685-readability-stragglers`.** Measured first, and the ticket was
+>    out of date both ways: only ONE timestamp was still in the pale grey, but
+>    98 other pieces of text were. Decisions: (1) `--muted` on `--chip` FIXED
+>    at the token (nordic `#9aa4b8` to `#a5aec0`); (2) `--faint` NOT retuned
+>    (it is the disabled ink) and everything meant to be read STEPPED UP to
+>    `--muted`, about ninety uses, pinned by a count per file; (3) a group's
+>    colour: the mechanism is the per-theme ink pairing that already existed,
+>    which measured UNDER AA on nordic and went from 78% to 60%; main now
+>    refuses a colour outside the palette. `--border` (from the ticket's
+>    comment): stays, as a hairline between regions. **Filed on the way:
+>    #1209** (controls whose only edge is that hairline) and **#1211** (five
+>    places that dim text with opacity, which no colour rule can see).
 > 4. **The manual: a catch-up pass (#965, REDUCED; do not close it).** What
 >    shipped in 0.8.116 to 0.8.118, plus the missing screenshots. Not started.
 > 5. **Popped-out windows: close the gaps** (#1022, the last-prompt hover on

@@ -52,7 +52,7 @@ export function TaskLabelSizeSection(props: TaskLabelSizeSectionProps): React.JS
       />
       <span style={{ fontSize: 11.5 }}>{t(`taskLabelSize.${size}`)}</span>
       <span />
-      <span style={{ fontSize: 11, color: 'var(--faint)' }}>{t(`taskLabelSize.${size}Note`)}</span>
+      <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t(`taskLabelSize.${size}Note`)}</span>
     </label>
   );
 

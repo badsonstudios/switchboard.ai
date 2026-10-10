@@ -183,7 +183,7 @@ export function PushSection(props: PushSectionProps): React.JSX.Element | null {
         style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', gap: 8 }}
       >
         {label}
-        <span data-push-status={key} style={{ color: isSet(key) ? 'var(--text)' : 'var(--faint)' }}>
+        <span data-push-status={key} style={{ color: isSet(key) ? 'var(--text)' : 'var(--muted)' }}>
           {isSet(key) ? t('push.set') : t('push.notSet')}
         </span>
       </label>
@@ -233,7 +233,7 @@ export function PushSection(props: PushSectionProps): React.JSX.Element | null {
           {t(`push.problem.${props.write.problem}`)}
         </span>
       )}
-      {hint && <span style={{ fontSize: 11, color: 'var(--faint)' }}>{hint}</span>}
+      {hint && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{hint}</span>}
     </div>
   );
 
@@ -347,7 +347,7 @@ export function PushSection(props: PushSectionProps): React.JSX.Element | null {
                         {t(`push.problem.${props.write.problem}`)}
                       </span>
                     )}
-                    <span style={{ fontSize: 11, color: 'var(--faint)' }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {t('push.ntfyServerHint')}
                     </span>
                   </div>
@@ -369,7 +369,7 @@ export function PushSection(props: PushSectionProps): React.JSX.Element | null {
             />
             {t('push.enablePush')}
           </label>
-          <span style={{ fontSize: 11, color: 'var(--faint)' }}>{t('push.enablePushHint')}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('push.enablePushHint')}</span>
           {testRow('push')}
         </div>
       </SettingItem>
@@ -388,12 +388,12 @@ export function PushSection(props: PushSectionProps): React.JSX.Element | null {
             />
             {t('push.enableWebhook')}
           </label>
-          <span style={{ fontSize: 11, color: 'var(--faint)' }}>{t('push.enableWebhookHint')}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('push.enableWebhookHint')}</span>
           {testRow('webhook')}
         </div>
       </SettingItem>
 
-      <span style={{ fontSize: 11, color: 'var(--faint)' }}>{t('push.secretNote')}</span>
+      <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('push.secretNote')}</span>
     </div>
   );
 }

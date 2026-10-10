@@ -467,8 +467,11 @@ const TOKEN_INK: Record<ReturnType<typeof rowStatus>['token'], string> = {
   connected: 'var(--status-done-ink)',
   failed: 'var(--status-crashed-ink)',
   pending: 'var(--status-working-ink)',
-  disabled: 'var(--faint)',
-  unknown: 'var(--faint)',
+  // `--muted`, not `--faint` (#685): these are WORDS ("disabled", "unknown")
+  // about a server, not the ink of a disabled control. The dot beside them
+  // (`TOKEN_HUE`) keeps the faint grey; it is a mark, and the word says it.
+  disabled: 'var(--muted)',
+  unknown: 'var(--muted)',
 };
 
 /**
@@ -1409,7 +1412,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
               answerable without opening a config file — and without the value
               ever crossing the IPC boundary. */}
           {(s.envKeys.length > 0 || s.headerKeys.length > 0) && (
-            <div style={{ fontSize: 10, color: 'var(--faint)', marginBlockStart: 2 }}>
+            <div style={{ fontSize: 10, color: 'var(--muted)', marginBlockStart: 2 }}>
               {t('mcp.carries', { keys: [...s.envKeys, ...s.headerKeys].join(', ') })}
             </div>
           )}
@@ -1500,7 +1503,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             {/* The server's own version, once it has connected. Absent for the
                 whole pending window — see `McpRuntimeStatus`. */}
             {s.version && (
-              <span style={{ fontWeight: 400, color: 'var(--faint)', marginInlineStart: 6 }}>
+              <span style={{ fontWeight: 400, color: 'var(--muted)', marginInlineStart: 6 }}>
                 {s.version}
               </span>
             )}
@@ -1530,7 +1533,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
               title={s.tools.join(', ')}
               style={{
                 fontSize: 10,
-                color: 'var(--faint)',
+                color: 'var(--muted)',
                 marginBlockStart: 2,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -1541,7 +1544,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             </div>
           )}
           {(s.envKeys.length > 0 || s.headerKeys.length > 0) && (
-            <div style={{ fontSize: 10, color: 'var(--faint)', marginBlockStart: 2 }}>
+            <div style={{ fontSize: 10, color: 'var(--muted)', marginBlockStart: 2 }}>
               {t('mcp.carries', { keys: [...s.envKeys, ...s.headerKeys].join(', ') })}
             </div>
           )}
@@ -1641,7 +1644,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             "not ever, and here is why". */}
         {s.readOnly ? (
           <span
-            style={{ fontSize: 10, color: 'var(--faint)', flexShrink: 0 }}
+            style={{ fontSize: 10, color: 'var(--muted)', flexShrink: 0 }}
             title={t('mcp.readOnlyWhy')}
           >
             {t('mcp.readOnly')}
@@ -1681,7 +1684,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             fontSize: 10,
             textTransform: 'uppercase',
             letterSpacing: 0.6,
-            color: 'var(--faint)',
+            color: 'var(--muted)',
           }}
         >
           {t(`mcp.scope.${scope}`)}
@@ -1702,7 +1705,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             fontSize: 10,
             textTransform: 'uppercase',
             letterSpacing: 0.6,
-            color: 'var(--faint)',
+            color: 'var(--muted)',
           }}
         >
           {t(`mcp.scope.${scope}`)}
@@ -1798,7 +1801,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             style={{
               background: 'transparent',
               border: 'none',
-              color: 'var(--faint)',
+              color: 'var(--muted)',
               cursor: 'pointer',
               fontSize: 12,
               lineHeight: 1,
@@ -1878,12 +1881,12 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
                     fontSize: 10,
                     textTransform: 'uppercase',
                     letterSpacing: 0.6,
-                    color: 'var(--faint)',
+                    color: 'var(--muted)',
                   }}
                 >
                   {t('mcp.scope.notLoaded')}
                 </div>
-                <div style={{ padding: '0 14px 4px', fontSize: 10, color: 'var(--faint)' }}>
+                <div style={{ padding: '0 14px 4px', fontSize: 10, color: 'var(--muted)' }}>
                   {t('mcp.notLoadedHint')}
                 </div>
                 {/* WITH A BUTTON, not just advice (#729 PR 2). PR 1 could only
@@ -1927,7 +1930,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             style={{
               padding: '10px 14px',
               fontSize: 10.5,
-              color: 'var(--faint)',
+              color: 'var(--muted)',
               borderBlockStart: '1px solid var(--border)',
             }}
           >
@@ -2055,7 +2058,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
               padding: '10px 14px',
               borderBlockStart: '1px solid var(--border)',
               fontSize: 10.5,
-              color: 'var(--faint)',
+              color: 'var(--muted)',
             }}
           >
             {t('mcp.configuredOnly')}{' '}
@@ -2075,7 +2078,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             padding: '10px 14px',
             borderBlockStart: '1px solid var(--border)',
             fontSize: 10.5,
-            color: 'var(--faint)',
+            color: 'var(--muted)',
           }}
         >
           {t('mcp.cliNote')}

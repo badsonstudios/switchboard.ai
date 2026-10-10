@@ -65,7 +65,27 @@
   --chip: #39414f;
   --bar: #20252e;
   --text: #e5e9f0;
-  --muted: #9aa4b8;
+  /* THE SECONDARY INK, and it clears AA (4.5:1) on the seven NEUTRAL surfaces
+     words are written on, in every theme: bg, panel, panel2, chip, rail-card
+     and the two auto-group fills (#685; pinned in tokens.drift.test.ts). Was
+     #9aa4b8, which was 4.10:1 on `--chip`: every filled chip that wrote in it
+     was under AA on this theme, and two of them had already been moved to
+     `--text` one at a time to get away from it. Lifted 14% toward `--text`,
+     the least that clears with room: 4.61 on chip, 5.12 on panel2, 5.85 on
+     panel. NOT a promise about a TINTED fill: on a group's colour at 18% it is
+     still under for one of the eight, which is why that count is `--text`.
+     Comments elsewhere that quote a ratio for this ink or for something mixed
+     from it (4.10, 4.55, 5.20; `--control-edge`, `--control-hover`) are the
+     history of why something was decided, and predate this value. */
+  --muted: #a5aec0;
+  /* THE DISABLED AND DECORATIVE INK. NOT AN INK FOR WORDS YOU ARE MEANT TO
+     READ (#685): it is 2.25 to 3.20:1 here and 2.47 to 2.91:1 on daylight, by
+     design, and it stays there, because a disabled control that reads as
+     enabled is its own defect. What may wear it: a control that is disabled,
+     and a mark that is not text (a dashed rule, a dot, a fallback swatch, a
+     scrollbar). Timestamps, hints, notes, counts and section labels are
+     information and are written in `--muted`. tokens.drift.test.ts counts
+     every use, per file, so a new one is a decision somebody made. */
   --faint: #6d7689;
   /* NOT WIRED, on purpose (Dan 2026-07-31): xterm is constructed with no theme
      at all, so terminal output renders in its own default palette — the CLI
@@ -442,7 +462,7 @@ body {
  * on one theme, i.e. a regression rather than a win.
  *
  * `--muted` is the app's SECONDARY INK and the only neutral that clears AA on
- * the feed's surface in all four themes: 5.20:1 nordic, 6.00:1 daylight,
+ * the feed's surface in all four themes: 5.85:1 nordic, 6.00:1 daylight,
  * 15.57:1 high contrast, 8.76:1 soft contrast. The two obvious alternatives do
  * not — `--border` is a hairline value (1.30:1) and `--group-frame`, the app's
  * "make the split obvious" edge, lands at 2.91:1 on nordic, under 1.4.11's 3:1.
@@ -1126,9 +1146,21 @@ mark[data-feed-match-current] {
  * dark theme needs the mirror of it — #4a90d9 on the Nordic card is only
  * 3.9:1 — so each theme blends the color toward its own extreme. The vivid
  * original still drives the 7% header tint and the 12% chip backplate, where
- * a hue is all that is wanted. --g is set inline by the group header. */
+ * a hue is all that is wanted. --g is set inline by the group header.
+ *
+ * THE DARK BLEND WAS 78% AND THAT WAS NOT ENOUGH (#685, measured): on nordic
+ * three of the eight palette colours were under AA for the name (4.04, 4.19
+ * and 4.42:1 on the tinted header, a fourth exactly on the line) and seven
+ * of the eight for the 9px count on its backplate (3.59 to 4.32:1). At 60%
+ * the worst name is 5.39:1 and the worst count 4.78:1. The light blend
+ * already cleared (5.55 and 5.06).
+ *
+ * THIS RULE IS THE MECHANISM for a colour that is data: not a clamp at
+ * runtime, but an ink PAIRING per theme, held for every colour a group can
+ * have. That set is `GROUP_PALETTE` and nothing else (main refuses any other
+ * colour), which is what lets tokens.drift.test.ts measure all of it. */
 .rail-group-ink {
-  color: color-mix(in srgb, var(--g) 78%, #ffffff);
+  color: color-mix(in srgb, var(--g) 60%, #ffffff);
 }
 /* keyed on the light/dark VERDICT, not on the base preset: a theme is free to
    invert the preset it builds on, and then `[data-theme='daylight']` would be

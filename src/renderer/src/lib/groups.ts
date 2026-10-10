@@ -226,7 +226,7 @@ export function railOrder<T extends AutoGroupable>(
  * Did a `groups:*` mutation land? (#326)
  *
  * `groups:create` and `groups:update` resolve `null` when main refused the
- * change — a blank name, a color that is not `#rrggbb`, an unknown group. They
+ * change — a blank name, a color that is not in the palette, an unknown group. They
  * no longer THROW for it, so an ordinary UI gesture can no longer become an
  * unhandled renderer rejection over one of App's uncaught `void
  * bridge.groups...then(...)` calls. See `main/workspace/group-ipc.ts` for why

@@ -405,7 +405,7 @@ export function FileTree(props: {
                 paddingInlineStart: 8 + row.depth * INDENT + 14,
                 paddingBlock: 2,
                 fontSize: 11,
-                color: row.notice === 'error' ? 'var(--status-crashed-ink)' : 'var(--faint)',
+                color: row.notice === 'error' ? 'var(--status-crashed-ink)' : 'var(--muted)',
               }}
               data-testid={`file-tree-notice-${row.notice}`}
             >
@@ -464,7 +464,7 @@ export function FileTree(props: {
                 {row.name}
               </span>
               {row.kind === 'link' && (
-                <span style={{ flex: '0 0 auto', fontSize: 10, color: 'var(--faint)' }}>
+                <span style={{ flex: '0 0 auto', fontSize: 10, color: 'var(--muted)' }}>
                   {t('files.linkTag')}
                 </span>
               )}

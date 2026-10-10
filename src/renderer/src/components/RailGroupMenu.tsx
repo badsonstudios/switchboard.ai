@@ -156,7 +156,7 @@ export function RailGroupMenu(props: {
                 paddingBlock: '4px 2px',
                 paddingInline: 9,
                 borderBlockStart: '1px solid var(--border)',
-                color: 'var(--faint)',
+                color: 'var(--muted)',
                 fontSize: 9.5,
                 textTransform: 'uppercase',
                 letterSpacing: 0.4,

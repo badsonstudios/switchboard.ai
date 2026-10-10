@@ -437,7 +437,7 @@ export function ModelPickerDialog(props: ModelPickerDialogProps): React.JSX.Elem
                       assistive: while running Sonnet and staging Haiku, Sonnet
                       was indistinguishable from a model you had never used. */}
                   {i === ticked && !on && (
-                    <span data-model-running style={{ fontSize: 10.5, color: 'var(--faint)' }}>
+                    <span data-model-running style={{ fontSize: 10.5, color: 'var(--muted)' }}>
                       {t('model.runningNow')}
                     </span>
                   )}
@@ -468,7 +468,7 @@ export function ModelPickerDialog(props: ModelPickerDialogProps): React.JSX.Elem
               padding: '10px 14px',
               borderBlockStart: '1px solid var(--border)',
               fontSize: 10.5,
-              color: 'var(--faint)',
+              color: 'var(--muted)',
             }}
           >
             {currentUnlisted
@@ -498,7 +498,7 @@ export function ModelPickerDialog(props: ModelPickerDialogProps): React.JSX.Elem
             padding: '10px 14px',
             borderBlockStart: '1px solid var(--border)',
             fontSize: 10.5,
-            color: 'var(--faint)',
+            color: 'var(--muted)',
           }}
         >
           {t('model.cliNote')}
@@ -529,7 +529,7 @@ export function ModelPickerDialog(props: ModelPickerDialogProps): React.JSX.Elem
                 flex: 1,
                 minInlineSize: 0,
                 fontSize: 10.5,
-                color: 'var(--faint)',
+                color: 'var(--muted)',
               }}
             >
               {!dirty

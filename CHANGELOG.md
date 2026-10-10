@@ -111,6 +111,21 @@ on the floor, and say so in your PR.
   and why, with a **Follow again** button; and when you open a session in
   that folder the document picks up by itself and shows what it missed.
 
+- **Small grey text is easier to read.** The notes under each setting, the
+  hints in the MCP servers and Dispatch windows, token counts, section
+  labels, the time on each row of the Events panel and the little arrows
+  that open and close things were written in the palest grey, which is meant
+  for controls that are switched off. They are now in the ordinary secondary
+  grey. On the Nordic theme that grey is also a touch brighter, so it reads
+  on the filled chips too.
+- **A group's name and its count are easier to read on the Nordic theme.**
+  The coloured name of a group you made, and the number beside it, were too
+  close to their own tinted background in most of the eight colours. They
+  now lean further toward white. Daylight was already fine.
+- **In the find bar, a button you cannot press looks like one.** Previous,
+  Next and the results list used to look the same whether or not there was
+  anything to step through.
+
 ### Internal
 
 - Three tests that failed now and then for reasons of timing, and cost a

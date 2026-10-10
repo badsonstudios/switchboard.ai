@@ -199,7 +199,7 @@ export function QuietHoursSection(props: QuietHoursSectionProps): React.JSX.Elem
               {t(`quiet.problem.${problem}`)}
             </span>
           )}
-          <span style={{ fontSize: 11, color: 'var(--faint)' }}>{t('quiet.overnightHint')}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('quiet.overnightHint')}</span>
         </div>
       </SettingItem>
 
@@ -210,7 +210,7 @@ export function QuietHoursSection(props: QuietHoursSectionProps): React.JSX.Elem
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('quiet.machineFacing')}</span>
           {/* A feature whose whole job is to do nothing is one the user cannot
               tell is working. This line is the proof it is. */}
-          <span data-quiet-status style={{ fontSize: 11, color: 'var(--faint)' }}>
+          <span data-quiet-status style={{ fontSize: 11, color: 'var(--muted)' }}>
             {!props.state
               ? t('quiet.status.unknown')
               : props.state.active

@@ -529,7 +529,7 @@ export function ModelQuickMenu(props: ModelQuickMenuProps): React.JSX.Element {
               marginBlockStart: 2,
               borderBlockStart: '1px solid var(--border)',
               fontSize: 10,
-              color: 'var(--faint)',
+              color: 'var(--muted)',
               whiteSpace: 'normal',
             }}
           >

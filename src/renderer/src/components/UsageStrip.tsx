@@ -38,14 +38,14 @@ export function UsageStrip(props: {
             {' '}
             <span
               title={t('usage.thinkingTitle', { pct: thinking.pct })}
-              style={{ color: 'var(--faint)' }}
+              style={{ color: 'var(--muted)' }}
             >
               {t('usage.thinking', { n: formatTokens(thinking.tokens) })}
             </span>
           </>
         )}
       </span>
-      <span title={t('usage.cacheTitle')} style={{ color: 'var(--faint)' }}>
+      <span title={t('usage.cacheTitle')} style={{ color: 'var(--muted)' }}>
         {t('usage.cache', { n: formatTokens(u.cacheRead) })}
       </span>
       <span title={costTitle}>{t('usage.cost', { cost: cost.text })}</span>

@@ -154,7 +154,7 @@ export function StandingGrantsSection(props: {
       {rows === 0 && (
         <div
           data-testid="card-standing-grants-empty"
-          style={{ padding: '2px 8px 4px', fontSize: 10.5, color: 'var(--faint)' }}
+          style={{ padding: '2px 8px 4px', fontSize: 10.5, color: 'var(--muted)' }}
         >
           {t('grants.none')}
         </div>

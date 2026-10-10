@@ -289,7 +289,10 @@ export function StripGroupEntry(props: {
               fontSize: 9.5,
               fontWeight: 700,
               lineHeight: 1.5,
-              color: 'var(--muted)',
+              // `--text`, not `--muted` (#685): on an 18% tint of the group's
+              // colour the secondary ink is 4.27:1 for the teal on nordic.
+              // Measured for all eight colours in tokens.drift.test.ts.
+              color: 'var(--text)',
               background: tint(props.color, 18),
             }}
           >

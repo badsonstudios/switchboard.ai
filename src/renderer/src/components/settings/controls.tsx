@@ -70,7 +70,7 @@ export function SettingItem(props: {
         <span style={{ fontSize: 12, fontWeight: 600 }}>{props.label}</span>
       )}
       {props.blurb && (
-        <span style={{ fontSize: 11, color: 'var(--faint)', maxInlineSize: '46em' }}>
+        <span style={{ fontSize: 11, color: 'var(--muted)', maxInlineSize: '46em' }}>
           {props.blurb}
         </span>
       )}

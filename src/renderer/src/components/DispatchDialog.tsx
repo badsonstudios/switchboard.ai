@@ -98,7 +98,7 @@ const labelStyle: React.CSSProperties = {
 const hintStyle: React.CSSProperties = {
   display: 'block',
   fontSize: 10.5,
-  color: 'var(--faint)',
+  color: 'var(--muted)',
   marginBlockStart: 4,
 };
 
@@ -356,7 +356,7 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
                         <span
                           style={{
                             fontWeight: 400,
-                            color: 'var(--faint)',
+                            color: 'var(--muted)',
                             fontSize: 10.5,
                             marginInlineStart: 6,
                           }}
@@ -383,7 +383,7 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
                           invisible. Three words, because the refusal underneath
                           is already the paragraph. */}
                       {t(`dispatch.policy.${x.contextPolicy}`)}
-                      <span style={{ color: 'var(--faint)', marginInlineStart: 5 }}>
+                      <span style={{ color: 'var(--muted)', marginInlineStart: 5 }}>
                         {/* THE DOT IS A SEPARATE, `aria-hidden` SPAN, and both
                             halves of that matter. A bare `{' · '}` is a JSX
                             string literal, which §5.21's lint rule refuses; a
@@ -421,7 +421,7 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
                   <span
                     style={{
                       fontSize: 10.5,
-                      color: 'var(--faint)',
+                      color: 'var(--muted)',
                       flexShrink: 0,
                       fontFamily: 'var(--font-mono)',
                     }}
@@ -465,7 +465,7 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
                 padding: '9px 14px',
                 borderBlockEnd: '1px solid var(--border)',
                 fontSize: 10.5,
-                color: 'var(--faint)',
+                color: 'var(--muted)',
                 // A path has no spaces to break at, and this dialog caps at
                 // 600px — the same reason `FeedView` breaks the paths it renders.
                 overflowWrap: 'anywhere',
@@ -547,7 +547,7 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
               padding: '12px 14px',
               borderBlockEnd: '1px solid var(--border)',
               fontSize: 10.5,
-              color: 'var(--faint)',
+              color: 'var(--muted)',
             }}
           >
             {t('dispatch.noTaskFields')}
@@ -582,7 +582,7 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
             gap: 8,
           }}
         >
-          <span style={{ flex: 1, minInlineSize: 0, fontSize: 10.5, color: 'var(--faint)' }}>
+          <span style={{ flex: 1, minInlineSize: 0, fontSize: 10.5, color: 'var(--muted)' }}>
             {chosen?.contextPolicy === 'full' ? t('dispatch.handsOverFork') : null}
           </span>
           <button

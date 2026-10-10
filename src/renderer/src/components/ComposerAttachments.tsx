@@ -191,7 +191,7 @@ function AttachmentChip({
         style={{
           background: 'transparent',
           border: 'none',
-          color: 'var(--faint)',
+          color: 'var(--muted)',
           cursor: 'pointer',
           fontSize: 11,
           lineHeight: 1,

@@ -263,7 +263,7 @@ export function McpAddForm(props: McpAddFormProps): React.JSX.Element {
           )}
           {/* THE SENTENCE THAT MAKES `args` TRACTABLE. Said here, where the
               decision is being made, rather than in the manual afterwards. */}
-          <div style={{ fontSize: 10.5, color: 'var(--faint)', marginBlockStart: -4 }}>
+          <div style={{ fontSize: 10.5, color: 'var(--muted)', marginBlockStart: -4 }}>
             {t('mcp.form.argsSecretNote')}
           </div>
         </>

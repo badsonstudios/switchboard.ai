@@ -237,7 +237,7 @@ export function ContextDropDialog(props: ContextDropDialogProps): React.JSX.Elem
                     {o.id === DEFAULT_FIDELITY && (
                       <span
                         data-context-default
-                        style={{ fontWeight: 400, color: 'var(--faint)', fontSize: 10.5, marginInlineStart: 6 }}
+                        style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 10.5, marginInlineStart: 6 }}
                       >
                         {t('contextDrop.defaultMark')}
                       </span>
@@ -257,7 +257,7 @@ export function ContextDropDialog(props: ContextDropDialogProps): React.JSX.Elem
                     row would make an empty option indistinguishable from one
                     that was never offered. */}
                 <span
-                  style={{ fontSize: 10.5, color: 'var(--faint)', flexShrink: 0, fontFamily: 'var(--font-mono)' }}
+                  style={{ fontSize: 10.5, color: 'var(--muted)', flexShrink: 0, fontFamily: 'var(--font-mono)' }}
                 >
                   {o.empty
                     ? t('contextDrop.emptyMark')
@@ -275,7 +275,7 @@ export function ContextDropDialog(props: ContextDropDialogProps): React.JSX.Elem
             padding: '10px 14px',
             borderBlockStart: '1px solid var(--border)',
             fontSize: 10.5,
-            color: 'var(--faint)',
+            color: 'var(--muted)',
           }}
         >
           {t('contextDrop.note')}
