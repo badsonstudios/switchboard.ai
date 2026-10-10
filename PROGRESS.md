@@ -68,15 +68,29 @@
 >    the tab only carry `data-last-prompt-for`. **Choices flagged in the
 >    tracker:** a session that is not running shows nothing; popped-out
 >    windows' tabs are not covered.
-> 5. **#757 — a small icon beside each tool name in the conversation.
->    ← IN FLIGHT**, branch `feature/757-tool-icons`. *This line rides in
->    that PR: if `main` has `e2e/tool-icons.spec.ts`, it has landed and the
->    next item is #695.* A second, finer classification beside
+> 5. **#757 — a small icon beside each tool name in the conversation. DONE
+>    2026-10-09, PR #1187 (`a871cfd0`), merged, NOT released.** Green on the first CI run.
+>    The review caught that find-in-conversation stopped highlighting tool
+>    names with the picture as a sibling of the bare text; the name has a
+>    span of its own now. A second, finer classification beside
 >    `toolCategory` (`shared/tool-icon.ts`, ten kinds, always a fallback);
 >    ten inline SVGs in `currentColor`, placed INSIDE the name's element so
 >    they take its ink. Drawn, not typed glyphs: glyphs differ by machine.
 >    Independent review before pushing.
-> 6. **#695 — the card's "⋯" menu is cut off on narrow splits.**
+> 6. **#695 — the card's "⋯" menu is cut off on narrow splits. ← IN
+>    FLIGHT**, branch `feature/695-card-menu-fit`. *This line rides in that
+>    PR: if `main` has `e2e/card-menu-fit.spec.ts`, it has landed and the
+>    next item is #1166.* REPRODUCED FIRST: at the 800×600 minimum with
+>    four cards in two rows, the bottom-row menu ended 100px below the
+>    window (it was `absolute` under its button). Now `position: fixed`
+>    and placed by a new `placeMenuAtBox` (below, else above, else the
+>    roomier side and scroll; never over the button). What reproduced was
+>    SHORT cards, not narrow ones; said so in the tracker. **A second fault
+>    the new e2e found:** dockview's splitter bars are `z-index: 99` and
+>    were drawn over the menu (31), so an entry on the line between two rows
+>    could not be clicked; the menu and its click-away layer are at 101/100
+>    now. `ModelQuickMenu` (50) has the same latent overlap and was NOT
+>    changed: not asked for, and it opens near the bottom of a card.
 > 7. **#1166 — an empty workspace with the list hidden says nothing about
 >    how to start.** (Read from "166".)
 > 8. **#620 — drag a session's tab onto another group's tab strip to dock

@@ -93,6 +93,14 @@ you move off, click, press a key, scroll or start dragging.
   shows nothing. Start or resume it and the box works again.
 - Sessions in a popped-out window do not show the box on their tabs.
 
+### The ⋯ menu on a small card
+
+Each session's card has a **⋯** menu at the top right. When the card is short
+(several sessions stacked in rows, or a small window) there may be no room for
+the menu under its button. It then opens **above** the button instead, and if
+the window is too short for it either way, the menu scrolls. Every entry is
+always reachable, and the menu never covers the **⋯** you opened it from.
+
 ### Listing sessions across the top instead
 
 

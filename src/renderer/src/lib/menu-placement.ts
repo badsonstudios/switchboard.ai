@@ -116,3 +116,79 @@ export function placeMenu(
     maxBlockSize: Math.max(0, viewport.height - margin * 2),
   };
 }
+
+/** A box on screen, in viewport pixels: what `getBoundingClientRect` gives. */
+export interface AnchorBox {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export interface PlaceAtBoxOptions extends PlaceMenuOptions {
+  /** the space left between the box and the menu */
+  gap?: number;
+}
+
+/**
+ * Where a menu that hangs off a BUTTON goes (#695): under it when it fits,
+ * over it when it does not, and inside the window either way.
+ *
+ * `placeMenu` above is for a menu opened at a POINT (a right-click): it may
+ * cover the point, and flipping puts its far corner on it. A menu opened from
+ * a button must never cover the button — that is how you close it again — so
+ * this one works from the button's whole box:
+ *
+ *  * BLOCK AXIS. Below the box if the whole menu fits there. Otherwise above
+ *    it, if it fits there. If it fits on neither side it goes on the side
+ *    with MORE room and is given exactly that room as `maxBlockSize`, to
+ *    scroll inside. It is never laid over the box and never off the window.
+ *  * INLINE AXIS. The menu's END edge lines up with the box's end edge (the
+ *    right-hand edge, left to right), which is where a menu under a button at
+ *    the end of a header belongs; then it is pushed back inside the window if
+ *    that would run off the start.
+ *
+ * The answer is in the same terms as `placeMenu`, for a `position: fixed` box.
+ * Fixed, not absolute, is the other half of the fix: an absolute menu is cut
+ * off by, or runs out of, whatever it happens to be inside.
+ */
+export function placeMenuAtBox(
+  box: AnchorBox,
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+  options: PlaceAtBoxOptions
+): MenuPlacement {
+  const { direction, margin = MENU_EDGE_MARGIN, gap = 4 } = options;
+
+  // A box partly or wholly OUTSIDE the window is treated as sitting at the
+  // window's edge. Unclamped, a button below the window has enormous room
+  // "above" it and the menu is placed off screen with it (found in review).
+  const clampY = (v: number): number => Math.min(Math.max(v, 0), viewport.height);
+  box = { ...box, top: clampY(box.top), bottom: clampY(box.bottom) };
+  const roomBelow = Math.max(0, viewport.height - margin - (box.bottom + gap));
+  const roomAbove = Math.max(0, box.top - gap - margin);
+  let insetBlockStart: number;
+  let maxBlockSize: number;
+  if (size.height <= roomBelow) {
+    insetBlockStart = box.bottom + gap;
+    maxBlockSize = roomBelow;
+  } else if (size.height <= roomAbove) {
+    insetBlockStart = box.top - gap - size.height;
+    maxBlockSize = roomAbove;
+  } else if (roomBelow >= roomAbove) {
+    insetBlockStart = box.bottom + gap;
+    maxBlockSize = roomBelow;
+  } else {
+    insetBlockStart = margin;
+    maxBlockSize = roomAbove;
+  }
+
+  // inline: stated once, in inline-start terms (the space the CSS property is
+  // in), by mirroring the box under RTL as `placeMenu` mirrors its point
+  const boxEnd = direction === 'rtl' ? viewport.width - box.left : box.right;
+  const width = Math.min(size.width, Math.max(0, viewport.width - margin * 2));
+  const last = Math.max(margin, viewport.width - margin - width);
+  const insetInlineStart = Math.min(Math.max(boxEnd - width, margin), last);
+
+  return { insetInlineStart, insetBlockStart, maxBlockSize };
+}

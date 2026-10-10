@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { placeMenu, MENU_EDGE_MARGIN as M } from './menu-placement';
+import { placeMenu, placeMenuAtBox, MENU_EDGE_MARGIN as M } from './menu-placement';
 
 /** the windows-latest runner's client area, measured in #416/#524 */
 const CI = { width: 1008, height: 655 };
@@ -127,4 +127,83 @@ describe('placeMenu — right-to-left (#642)', () => {
     }
   });
 
+});
+
+describe('placeMenuAtBox: a menu that hangs off a button (#695)', () => {
+  /** the client area the squeeze spec measured at the 800×600 minimum window */
+  const SMALL = { width: 771, height: 523 };
+  /** the "⋯" button of a card in the bottom row there */
+  const BOTTOM_ROW = { left: 730, top: 322, right: 752, bottom: 344 };
+  const MENU = { width: 220, height: 275 };
+
+  it('goes under the button, its end edge on the button’s end edge, when it fits', () => {
+    const top = { left: 730, top: 60, right: 752, bottom: 82 };
+    const p = placeMenuAtBox(top, MENU, SMALL, LTR);
+    expect(p.insetBlockStart).toBe(82 + 4);
+    expect(p.insetInlineStart + MENU.width).toBe(752);
+    expect(p.insetBlockStart + MENU.height).toBeLessThanOrEqual(SMALL.height - M);
+  });
+
+  it('the regression itself: from the bottom row it goes ABOVE the button, wholly on screen', () => {
+    // measured before the fix: top 348, bottom 623 in a 523px client area
+    const p = placeMenuAtBox(BOTTOM_ROW, MENU, SMALL, LTR);
+    expect(p.insetBlockStart + MENU.height).toBe(BOTTOM_ROW.top - 4);
+    expect(p.insetBlockStart).toBeGreaterThanOrEqual(M);
+  });
+
+  it('never covers the button it opened from, wherever the button is', () => {
+    for (let top = 0; top <= SMALL.height - 22; top += 13) {
+      const box = { left: 400, top, right: 422, bottom: top + 22 };
+      const p = placeMenuAtBox(box, MENU, SMALL, LTR);
+      const shown = Math.min(MENU.height, p.maxBlockSize);
+      const menuTop = p.insetBlockStart;
+      const menuBottom = menuTop + shown;
+      const overlaps = menuTop < box.bottom && menuBottom > box.top;
+      expect(overlaps, `button at ${top}: menu ${menuTop}..${menuBottom}`).toBe(false);
+      expect(menuTop, `button at ${top}`).toBeGreaterThanOrEqual(M);
+      expect(menuBottom, `button at ${top}`).toBeLessThanOrEqual(SMALL.height - M);
+    }
+  });
+
+  it('a menu taller than either side takes the roomier side and scrolls inside it', () => {
+    const mid = { left: 400, top: 200, right: 422, bottom: 222 };
+    const tall = { width: 220, height: 900 };
+    const p = placeMenuAtBox(mid, tall, SMALL, LTR);
+    // below has 523 - 4 - 226 = 293, above has 200 - 4 - 4 = 192
+    expect(p.insetBlockStart).toBe(226);
+    expect(p.maxBlockSize).toBe(293);
+    const high = { left: 400, top: 400, right: 422, bottom: 422 };
+    const q = placeMenuAtBox(high, tall, SMALL, LTR);
+    expect(q.insetBlockStart).toBe(M);
+    expect(q.maxBlockSize).toBe(400 - 4 - M);
+  });
+
+  it('a button that is off the window is treated as at its edge: the menu stays ON screen', () => {
+    for (const top of [-400, -30, SMALL.height + 30, SMALL.height + 900]) {
+      const box = { left: 400, top, right: 422, bottom: top + 22 };
+      const p = placeMenuAtBox(box, MENU, SMALL, LTR);
+      const shown = Math.min(MENU.height, p.maxBlockSize);
+      expect(p.insetBlockStart, `button at ${top}`).toBeGreaterThanOrEqual(M);
+      expect(p.insetBlockStart + shown, `button at ${top}`).toBeLessThanOrEqual(SMALL.height - M);
+    }
+  });
+
+  it('a button near the start edge: the menu is pushed back inside the window', () => {
+    const near = { left: 10, top: 60, right: 32, bottom: 82 };
+    const p = placeMenuAtBox(near, MENU, SMALL, LTR);
+    expect(p.insetInlineStart).toBe(M);
+  });
+
+  it('right to left: the END edge is the button’s LEFT edge, counted from the right', () => {
+    const box = { left: 40, top: 60, right: 62, bottom: 82 };
+    const p = placeMenuAtBox(box, MENU, SMALL, { direction: 'rtl' });
+    // the menu's physical left edge is the box's left edge: 40. In inline-start
+    // terms that is 771 - (40 + 220).
+    expect(p.insetInlineStart).toBe(SMALL.width - (40 + MENU.width));
+  });
+
+  it('a window too narrow for the menu gives it the whole width, not a negative offset', () => {
+    const p = placeMenuAtBox(BOTTOM_ROW, { width: 900, height: 100 }, SMALL, LTR);
+    expect(p.insetInlineStart).toBe(M);
+  });
 });

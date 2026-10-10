@@ -19,6 +19,8 @@ import 'dockview-react/dist/styles/dockview.css';
 // shell, popups and popout windows can't fall back to a foreign theme (#84)
 import '../theme/dockview-tokens.css';
 import { nativeAlert, nativeConfirm } from '../lib/native-dialog';
+import { placeMenuAtBox, type MenuPlacement } from '../lib/menu-placement';
+import { directionOf } from '../lib/writing-direction';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { sessionStore } from '../store/session-store';
 import { LABEL_LINES } from '../../../shared/task-label-size';
@@ -447,6 +449,10 @@ export function overlaySaid(card: {
   }
   return null;
 }
+
+/** the card's "⋯" menu: over the dock's splitter bars (99), under its drag
+ *  overlays (999). See the note at the menu's click-away layer. */
+const CARD_MENU_Z = 101;
 
 export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
   const { t } = useTranslation();
@@ -961,6 +967,58 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const standingGrants = useStandingGrants(live?.id ?? null);
   const standingCount = grantCount(standingGrants);
   const [confirmClear, setConfirmClear] = React.useState(false);
+  // WHERE THE "⋯" MENU GOES (#695): see `placeMenuAtBox`. A layout effect,
+  // because the place is a fact about laid-out boxes and correcting it after
+  // a paint is a visible jump. Re-taken when what is IN the menu changes its
+  // height (the Clear confirm swaps the list for two buttons) and when the
+  // window is resized under it.
+  const cardMenuBox = React.useRef<HTMLDivElement | null>(null);
+  const [cardMenuPlace, setCardMenuPlace] = React.useState<MenuPlacement | null>(null);
+  React.useLayoutEffect(() => {
+    if (!menuOpen) {
+      setCardMenuPlace(null);
+      return;
+    }
+    const first = cardMenuBox.current;
+    if (!first) return;
+    const place = (): void => {
+      // read afresh each time: the card can be popped out (another
+      // document) or its header redrawn while the menu is open
+      const el = cardMenuBox.current;
+      const button = el?.parentElement?.querySelector<HTMLElement>(
+        '[data-testid="card-menu-button"]'
+      );
+      if (!el || !button || !button.isConnected) return;
+      // `ownerDocument`, not the global one: a popped-out card lives in
+      // another window, and that window's size is the one that counts
+      const root = el.ownerDocument.documentElement;
+      const b = button.getBoundingClientRect();
+      setCardMenuPlace(
+        placeMenuAtBox(
+          { left: b.left, top: b.top, right: b.right, bottom: b.bottom },
+          // its natural size: `scrollHeight` is the whole list even when a
+          // previous placement capped the box
+          { width: el.offsetWidth, height: el.scrollHeight + (el.offsetHeight - el.clientHeight) },
+          { width: root.clientWidth, height: root.clientHeight },
+          { direction: directionOf(el) }
+        )
+      );
+    };
+    place();
+    const view = first.ownerDocument.defaultView;
+    view?.addEventListener('resize', place);
+    // THE MENU CHANGES HEIGHT AFTER IT OPENS (found in review): its sound row
+    // is fetched BECAUSE it opened and arrives a moment later. Placed above
+    // the button from the shorter height, the taller menu would grow down
+    // over the button. An identical place gives an identical box, so this
+    // cannot loop.
+    const sizes = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null;
+    sizes?.observe(first);
+    return () => {
+      view?.removeEventListener('resize', place);
+      sizes?.disconnect();
+    };
+  }, [menuOpen, confirmClear]);
   /**
    * Whatever went wrong creating a session from THIS card's ＋ (#531).
    *
@@ -2358,10 +2416,18 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               </button>
               {menuOpen && (
                 <>
-                  {/* click-away closes; sits under the menu itself */}
+                  {/* click-away closes; sits under the menu itself.
+
+                      ABOVE THE DOCK'S SPLITTERS, both of them (#695). The bars
+                      between cards are `z-index: 99` in the docking library, and
+                      nothing between here and them makes a layer of its own, so
+                      at 30 and 31 a splitter was drawn OVER the menu: an entry
+                      lying on the line between two rows could not be clicked
+                      (found by e2e/card-menu-fit.spec.ts). It went unnoticed
+                      while the menu could only hang inside its own card. */}
                   <div
                     onClick={() => setMenuOpen(false)}
-                    style={{ position: 'fixed', inset: 0, zIndex: 30 }}
+                    style={{ position: 'fixed', inset: 0, zIndex: CARD_MENU_Z - 1 }}
                   />
                   <div
                     // NAMES this menu (#903). Its Clear and Compact entries now
@@ -2371,12 +2437,27 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                     // conversation" ambiguous to a test. A spec that means the
                     // MENU one scopes to this.
                     data-testid="card-menu"
+                    ref={cardMenuBox}
                     style={{
-                      position: 'absolute',
-                      insetBlockStart: '100%',
-                      insetInlineEnd: 0,
-                      marginBlockStart: 4,
-                      zIndex: 31,
+                      // FIXED, and placed from the button's box (#695). It used
+                      // to be `absolute` under the button, inside the card: on
+                      // a short window split into rows the bottom card's menu
+                      // ran a hundred pixels off the window, and its last
+                      // entries could not be reached. `placeMenuAtBox` puts it
+                      // under the button, or over it, or lets it scroll.
+                      position: 'fixed',
+                      insetInlineStart: cardMenuPlace?.insetInlineStart ?? 0,
+                      insetBlockStart: cardMenuPlace?.insetBlockStart ?? 0,
+                      maxBlockSize: cardMenuPlace?.maxBlockSize,
+                      // the cap is on the WHOLE box, edge and padding included:
+                      // without this it is ten pixels taller than the room it
+                      // was given, off the window or over the button (review)
+                      boxSizing: 'border-box',
+                      overflowY: 'auto',
+                      // measured before it is shown: one frame at the wrong
+                      // place would be a visible jump
+                      visibility: cardMenuPlace ? 'visible' : 'hidden',
+                      zIndex: CARD_MENU_Z,
                       minInlineSize: 200,
                       background: 'var(--panel)',
                       border: '1px solid var(--border)',
@@ -2519,6 +2600,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                               // the way the history picker places one: into
                               // this window when the card is popped out, and by
                               // the grid's own rules when it is not (#531).
+                              //
+                              // The menu SHUTS first (#695): a new card moves
+                              // this one, and a menu that is now placed in the
+                              // window rather than under its button would be
+                              // left where the button used to be.
+                              setMenuOpen(false);
                               void addSessionCardTo(props.containerApi, folder, {
                                 into: poppedOut ? props.api.group : null,
                                 forkFrom: {
