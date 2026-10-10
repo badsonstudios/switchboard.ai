@@ -2004,6 +2004,41 @@ describe('discovery I/O is off the hot thread (P2-E15-11 / AR-P1-8)', () => {
     }
   });
 
+  /**
+   * A card opened and never typed into, WAITED for until its root has really
+   * gone quiet (#1186) -- the state both tests below are about.
+   *
+   * This used to be `sleep(300)`: "past the 60ms window and the start-up
+   * reprieve". But the reprieve is counted in SWEEPS, not in time, and a sweep
+   * needs a poll tick. On a starved runner the 300ms went by with the ticks
+   * still owed, the test wrote its transcript, and the sweeps the start-up had
+   * bought ran AFTERWARDS and found it -- "expected true to be false" on
+   * Windows CI, and reproduced here by blocking the event loop for the length
+   * of the sleep. So this waits for the thing itself: the root reporting the
+   * quiet rung, which `slowRung` only does once the card has stopped voting
+   * AND every bought sweep is spent.
+   *
+   * And the quiet rung is a MINUTE here, not the 5s the other tests in this
+   * block use. Each test below goes on to assert that nothing is found in a
+   * window of wall time; with the next sweep a minute away that is true on any
+   * machine that is running at all, where 5s was merely a long stall.
+   */
+  const QUIET_MS = 60_000;
+  async function unpromptedAndQuiet(): Promise<TranscriptWatcher> {
+    const w = blindGiveUpWatcher({
+      unpromptedFastMs: 60,
+      discovery: { watchFactory: () => null, watchFailedMs: 50, givenUpMs: QUIET_MS, backoffMs: [25, 50] },
+    });
+    try {
+      w.watch('s1', { cwd }); // opened, never typed into
+      await waitFor(() => w.discoveryStats(root)!.backoffMs === QUIET_MS);
+    } catch (err) {
+      w.stop();
+      throw err;
+    }
+    return w;
+  }
+
   it('a card nobody ever prompted stops holding its root fast', async () => {
     // The second half of the item. `awaiting-prompt` never times out as a
     // VERDICT, deliberately — a card you opened and walked away from is not
@@ -2011,11 +2046,9 @@ describe('discovery I/O is off the hot thread (P2-E15-11 / AR-P1-8)', () => {
     // life of the process while doing exactly what a given-up card does: walking
     // 2,090 entries to look for a transcript the CLI does not write until the
     // first prompt.
-    const w = blindGiveUpWatcher({ unpromptedFastMs: 60 });
+    const w = await unpromptedAndQuiet();
     try {
-      w.watch('s1', { cwd }); // opened, never typed into
-      await sleep(300); // past the 60ms window and the start-up reprieve
-
+      const swept = w.discoveryStats(root)!.sweeps;
       const spy = countWalks(root);
       let atRoot = 0;
       try {
@@ -2027,7 +2060,10 @@ describe('discovery I/O is off the hot thread (P2-E15-11 / AR-P1-8)', () => {
       // This card is alone on the root, so both halves of the item point the
       // same way: it stops voting, so #129's rung applies to the root, and it
       // would be gated even if the root were fast for somebody else.
-      expect(atRoot).toBeLessThan(2);
+      // NOT ONE, where this used to allow "the one sweep a slow machine might
+      // still owe": the helper has waited those out, so there is nothing owed.
+      expect(atRoot).toBe(0);
+      expect(w.discoveryStats(root)!.sweeps).toBe(swept);
       // ...and the card still says what it always said. This is a scheduling
       // change, not a verdict: nobody has prompted it, so nothing is wrong.
       expect(w.snapshot('s1')!.binding).toBe('awaiting-prompt');
@@ -2037,13 +2073,16 @@ describe('discovery I/O is off the hot thread (P2-E15-11 / AR-P1-8)', () => {
   });
 
   it('...and it picks the conversation up the moment you do prompt it', async () => {
-    const w = blindGiveUpWatcher({ unpromptedFastMs: 60 });
+    const w = await unpromptedAndQuiet();
     try {
-      w.watch('s1', { cwd });
-      await sleep(300);
+      const swept = w.discoveryStats(root)!.sweeps;
       writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
       await sleep(300);
-      expect(w.snapshot('s1')!.bound).toBe(false); // quiet, with no watch to help
+      // Quiet, with no watch to help. Said twice on purpose, cause first: the
+      // first line is WHY the second holds -- nothing looked -- so a failure
+      // here names its cause instead of reporting a boolean.
+      expect(w.discoveryStats(root)!.sweeps).toBe(swept);
+      expect(w.snapshot('s1')!.bound).toBe(false);
 
       w.noteConversationStarted('s1'); // the first prompt
       await waitFor(() => w.snapshot('s1')!.bound === true, 1_000);

@@ -371,9 +371,33 @@ test.describe('the File menu (#569)', () => {
     await box.fill('half a prompt');
     await expect(box).toBeFocused();
 
+    // WHERE THE KEYBOARD IS AT THE INSTANT THE DIALOG ENTERS THE PAGE (#1171).
+    // Read by a MutationObserver, which runs in the same task as the commit:
+    // nothing this test does from outside can be timed to land there, and that
+    // is exactly why the Escape below was a flake rather than a failure. The
+    // dialog used to take focus one task AFTER it appeared, and on Windows CI
+    // Escape arrived 1ms after "visible", inside the gap, and went to the
+    // prompt box. This turns "sometimes loses a race" into an assertion.
+    await w.evaluate(() => {
+      const g = window as unknown as { __focusAtOpen?: string };
+      new MutationObserver((_m, self) => {
+        const d = document.querySelector('[role="dialog"][aria-label="Settings"]');
+        if (!d) return;
+        self.disconnect();
+        const at = document.activeElement;
+        // INSIDE it is the requirement: Escape is handled on the dialog and
+        // a key bubbles there from any control within
+        g.__focusAtOpen = d.contains(at) ? 'dialog' : (at?.tagName ?? 'nothing');
+      }).observe(document.body, { childList: true, subtree: true });
+    });
+
     expect(await clickSettings(a), 'the File menu should carry a Settings item').toBe(true);
     const dialog = w.getByRole('dialog', { name: 'Settings' });
     await expect(dialog).toBeVisible({ timeout: 15_000 });
+    expect(
+      await w.evaluate(() => (window as unknown as { __focusAtOpen?: string }).__focusAtOpen),
+      'Settings must hold the keyboard in the commit that shows it, not a task later'
+    ).toBe('dialog');
     await w.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     // ...and what was being typed is untouched

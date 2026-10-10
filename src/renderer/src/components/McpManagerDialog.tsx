@@ -872,7 +872,8 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
     };
   }, [open, folder, props.liveId, status, generation]);
 
-  React.useEffect(() => {
+  // a LAYOUT effect: focused in the commit that shows it (#1171, `lib/modal-dismiss.ts`)
+  React.useLayoutEffect(() => {
     if (!props.open) return;
     // remembered BEFORE we take focus, or we would remember ourselves
     returnFocusTo.current = document.activeElement as HTMLElement | null;

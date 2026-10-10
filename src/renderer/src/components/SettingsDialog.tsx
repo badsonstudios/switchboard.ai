@@ -129,7 +129,11 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
   const dialog = React.useRef<HTMLDivElement | null>(null);
   const sections = React.useRef<Partial<Record<SettingsSection, HTMLElement | null>>>({});
 
-  React.useEffect(() => {
+  // A LAYOUT effect, so the dialog has the keyboard in the same commit that
+  // shows it (#1171). As a passive effect it ran a task later, and an Escape
+  // pressed in between went to the prompt box. `lib/modal-dismiss.ts` has the
+  // measurement.
+  React.useLayoutEffect(() => {
     if (!props.open) return;
     returnFocusTo.current = document.activeElement as HTMLElement | null;
     dialog.current?.focus();

@@ -96,6 +96,22 @@ on the floor, and say so in your PR.
 
 ## 0.8.119 — unreleased
 
+### Fixed
+
+- **A dialog has the keyboard the instant it appears.** Settings, About, the
+  command palette, the model picker and the other pop-up windows used to
+  take the keyboard a moment after they were drawn. A key pressed in that
+  moment went to whatever was behind: Escape, typed fast, could reach the
+  prompt box and leave the dialog open.
+
+### Internal
+
+- Three tests that failed now and then for reasons of timing, and cost a
+  re-run each this week, no longer do: the Settings test in the File menu
+  (the fix above is its cause), a transcript-watcher test that counted on
+  300ms being long enough on a busy machine, and the command-line escaping
+  test, which starts 26 real programs and was held to a 5 second budget.
+
 ## 0.8.118 — 2026-10-10
 
 ### Added

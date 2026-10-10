@@ -142,7 +142,8 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
   const [failed, setFailed] = React.useState<DispatchPrepared & { ok: false } | null>(null);
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
 
-  React.useEffect(() => {
+  // a LAYOUT effect: focused in the commit that shows it (#1171, `lib/modal-dismiss.ts`)
+  React.useLayoutEffect(() => {
     returnFocusTo.current = document.activeElement as HTMLElement | null; // before we take it
     dialog.current?.focus();
   }, []);

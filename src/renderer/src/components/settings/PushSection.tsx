@@ -129,7 +129,11 @@ export function PushSection(props: PushSectionProps): React.JSX.Element | null {
    *    opened scrolled down to the credential fields. Measured, not reasoned
    *    about: the focus events arrive `["push", "dialog"]`. The three palette
    *    aliases hid it, because their `scrollIntoView` runs afterwards and papers
-   *    over it — so the two most common ways in were the two that broke;
+   *    over it — so the two most common ways in were the two that broke.
+   *    SINCE #1171 THAT ORDER IS GONE: `SettingsDialog` focuses itself in a
+   *    layout effect, which runs before every passive one, so on the first
+   *    commit focus is already on the dialog and this would not fire anyway.
+   *    The guard stays as a second lock, not because the race is still there;
    *  - **`preventScroll`.** `focus()` scrolls its element into view inside the
    *    nearest scroller, and the nearest scroller here is the whole modal. The
    *    rescue's job is to keep Escape working, not to move the page.

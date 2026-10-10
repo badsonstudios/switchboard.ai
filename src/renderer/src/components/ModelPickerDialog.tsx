@@ -168,7 +168,8 @@ export function ModelPickerDialog(props: ModelPickerDialogProps): React.JSX.Elem
     // they are actually needed.
   }, [open, liveId]);
 
-  React.useEffect(() => {
+  // a LAYOUT effect: focused in the commit that shows it (#1171, `lib/modal-dismiss.ts`)
+  React.useLayoutEffect(() => {
     if (!open) return;
     returnFocusTo.current = document.activeElement as HTMLElement | null; // before we take it
     dialog.current?.focus();
