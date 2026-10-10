@@ -3,12 +3,36 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶ 2026-10-10 — FIVE THINGS THE OWNER PICKED (after 0.8.118). IN FLIGHT.
+> # ✔ 2026-10-10 — FIVE THINGS THE OWNER PICKED (after 0.8.118): ALL FIVE DONE.
 >
-> He was shown ten candidates and chose these five, in this order. Each is
-> its own item through `/next-item`; one PR in CI at a time; each PR folds in
-> the close-out of the one before. Everything lands in `0.8.119 — unreleased`.
-> **DO NOT CUT A RELEASE** unless he asks (he asked for 0.8.118 himself).
+> Merged, NOT released: all of it is in `0.8.119 — unreleased`. **DO NOT CUT A
+> RELEASE** unless he asks (he asked for 0.8.118 himself). Five PRs, each
+> green on its first CI run: #1205, #1208, #1212, #1213, #1215.
+>
+> **Nothing is in flight. Nothing is queued:** ask him, or read the open
+> milestones.
+>
+> **Waiting on him (in the report and the tracker; none blocks):**
+> - #685 reached further than the ticket: about ninety pieces of small grey
+>   text moved to the readable grey, not one timestamp. Does anything now
+>   look too loud?
+> - #1214: should a shortcut pressed in a popped-out window act on that
+>   window's own session? Today it is refused ("No session is focused").
+> - The wording of the new "No longer following this file" strip (#506) is
+>   long. Shorter?
+> - Two things the #1022 review found and that are NOT filed: a pop-out does
+>   not show the standing warning strips or the batch approval bar; and 22
+>   card-level files use the main window's own "element" and "focus", which
+>   is the mistake that broke the last-prompt box in pop-outs. Tickets?
+> - His five questions from 2026-10-09 are still open (the block below).
+>
+> **Filed on the way:** #1204 (a lint-rule test pays ESLint's cold start),
+> #1209 (controls whose only edge is a hairline), #1211 (text dimmed with
+> opacity), #1214 (shortcuts in a pop-out).
+>
+> He was shown ten candidates and chose these five, in this order. Each was
+> its own item through `/next-item`; one PR in CI at a time; each PR folded in
+> the close-out of the one before.
 >
 > 1. **The three flaky tests (#1171 with #1029, #768, #1186). DONE 2026-10-10,
 >    PR #1205 (`1d8a663c`), merged, NOT released.** Green on the first CI
@@ -72,9 +96,14 @@
 >    audit and the HTML render are not done.
 >    **DONE 2026-10-10, PR #1213, merged, NOT released.** #965 is still
 >    OPEN, with a comment saying what the reduced pass did and what is left.
-> 5. **Popped-out windows: close the gaps. IN PROGRESS, started 2026-10-10,
->    branch `feature/1022-popout-surfaces`.** #1022: every popout gets the two
->    live regions of its own and only the window with the keyboard speaks (a
+> 5. **Popped-out windows: close the gaps. DONE 2026-10-10, PR #1215, merged,
+>    NOT released.** The independent review changed the routing: a shortcut
+>    that RUNS from a pop-out raises the main window, so its sentence is held
+>    and said there; a refusal is said in the pop-out. Under the test harness
+>    every window reports focus at once, so only the refusal can be tested in
+>    a real window; the rest is unit-tested with an iframe as the second
+>    window. #1022: every popout gets the two
+>    live regions of its own and only ONE window speaks (a
 >    fourth shape, not one of the ticket's three; DESIGN §5.32 says why). The
 >    last-prompt box works on a popout's tabs (it listened on one document and
 >    used `instanceof Element`, false across windows). The context meter's

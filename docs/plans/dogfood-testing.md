@@ -8,7 +8,9 @@
 > When Dan asks "what should I test?", answer FROM this file: the UNTESTED
 > and RE-TEST sections, phrased as steps + expected result.
 
-Last updated: 2026-10-10 — **✅ v0.8.118 IS RELEASED (Help ▸ Check for updates). The top twelve rows of the Untested table are all in it and installable now:** the ten you picked on 2026-10-09 (#1174, #715, #619, #631, #757, #695, #1166, #620, #731, #582) and the two strip requests before them (#1178, #1179). Five of the rows ask you something; they are marked ⚠️ or "say if".
+Last updated: 2026-10-10 (second pass) — **FOUR NEW ROWS at the top of the Untested table, all merged and NOT yet released (they will be in 0.8.119):** a pop-out window gets announcements and the last-prompt box (#1022), the manual's catch-up and new pictures (#965, reduced), small grey text made readable (#685: **this one is your eyes, and it reaches further than the ticket**), and a document that says when it has stopped updating (#506). The three flaky tests (#1171, #768, #1186) have no row: there is nothing to click.
+
+Previously 2026-10-10 — **✅ v0.8.118 IS RELEASED (Help ▸ Check for updates). The top twelve rows of the Untested table are all in it and installable now:** the ten you picked on 2026-10-09 (#1174, #715, #619, #631, #757, #695, #1166, #620, #731, #582) and the two strip requests before them (#1178, #1179). Five of the rows ask you something; they are marked ⚠️ or "say if".
 
 Previously 2026-10-09 — the same ten rows, merged and not yet released.
 
