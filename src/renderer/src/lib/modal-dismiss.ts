@@ -25,7 +25,19 @@ export function useModalDismiss(open: boolean, onClose: () => void): ModalDismis
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
   const dialogRef = React.useRef<HTMLDivElement | null>(null);
 
-  React.useEffect(() => {
+  // A LAYOUT EFFECT, NOT A PASSIVE ONE (#1171). When the open did not come from
+  // a click or a key press in this window (a native menu item, a chord main
+  // claimed, anything after an `await`), a passive effect runs in a later task
+  // than the commit that puts the dialog on screen, so for that long the
+  // dialog was visible and the keyboard was still wherever it had been. A key
+  // pressed in the gap went there: Escape reached the prompt box and the dialog
+  // stayed open. Measured, not reasoned about: at the moment the dialog entered
+  // the document, `document.activeElement` was the prompt box, three runs of
+  // three; and the Windows CI trace has Escape 1ms after the dialog was first
+  // seen. A layout effect runs inside the commit, so "on screen" and "has the
+  // keyboard" are the same moment. Every modal that takes focus on open does
+  // it this way; `e2e/file-menu.spec.ts` holds Settings to it.
+  React.useLayoutEffect(() => {
     if (!open) return;
     returnFocusTo.current = document.activeElement as HTMLElement | null;
     dialogRef.current?.focus();

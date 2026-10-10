@@ -52,7 +52,8 @@ export function AboutPanel(props: {
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
   const dialog = React.useRef<HTMLDivElement | null>(null);
 
-  React.useEffect(() => {
+  // a LAYOUT effect: focused in the commit that shows it (#1171, `lib/modal-dismiss.ts`)
+  React.useLayoutEffect(() => {
     if (!props.open) return;
     setCopied(false); // a re-open must not still be boasting about the last copy
     returnFocusTo.current = document.activeElement as HTMLElement | null;

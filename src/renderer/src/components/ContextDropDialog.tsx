@@ -74,7 +74,8 @@ export function ContextDropDialog(props: ContextDropDialogProps): React.JSX.Elem
   /** where focus goes on close — a drop means the pointer was just here */
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
 
-  React.useEffect(() => {
+  // a LAYOUT effect: focused in the commit that shows it (#1171, `lib/modal-dismiss.ts`)
+  React.useLayoutEffect(() => {
     returnFocusTo.current = document.activeElement as HTMLElement | null; // before we take it
     dialog.current?.focus();
   }, []);

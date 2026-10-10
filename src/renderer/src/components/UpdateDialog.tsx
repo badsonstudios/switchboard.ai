@@ -117,7 +117,8 @@ export function UpdateDialog(props: {
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
   const dialog = React.useRef<HTMLDivElement | null>(null);
 
-  React.useEffect(() => {
+  // a LAYOUT effect: focused in the commit that shows it (#1171, `lib/modal-dismiss.ts`)
+  React.useLayoutEffect(() => {
     if (!props.open) return;
     returnFocusTo.current = document.activeElement as HTMLElement | null;
     dialog.current?.focus();

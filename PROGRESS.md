@@ -3,6 +3,41 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ 2026-10-10 — FIVE THINGS THE OWNER PICKED (after 0.8.118). IN FLIGHT.
+>
+> He was shown ten candidates and chose these five, in this order. Each is
+> its own item through `/next-item`; one PR in CI at a time; each PR folds in
+> the close-out of the one before. Everything lands in `0.8.119 — unreleased`.
+> **DO NOT CUT A RELEASE** unless he asks (he asked for 0.8.118 himself).
+>
+> 1. **The three flaky tests (#1171 with #1029, #768, #1186). IN PROGRESS,
+>    started 2026-10-10, branch `feature/1171-flaky-tests`, one PR for all
+>    three.** Each was reproduced or measured before it was changed:
+>    - **#1171 / #1029** was a real, if tiny, product defect and not a test
+>      problem: a dialog took the keyboard one task AFTER it appeared, so a
+>      key pressed in the gap went to the prompt box. The Windows CI trace has
+>      Escape 1ms after "visible". Fixed in all eleven modals that take focus
+>      on open (a layout effect); the test now asserts where focus is at the
+>      instant the dialog enters the page, and fails on the old build.
+>    - **#1186** was the test: it slept 300ms to let the start-up sweeps run,
+>      but those are counted in sweeps, not time. Reproduced 3 of 3 by
+>      starving the event loop for the length of the sleep. It now waits for
+>      the root to report the quiet rung. Its sibling had the same hole.
+>    - **#768** is the budget: thirteen payloads, two real processes each.
+> 2. **#506 — closing a session silently stops its document viewer updating.**
+>    Not started.
+> 3. **#685 — readability stragglers** (three decisions, measured). Not started.
+> 4. **The manual: a catch-up pass (#965, REDUCED; do not close it).** What
+>    shipped in 0.8.116 to 0.8.118, plus the missing screenshots. Not started.
+> 5. **Popped-out windows: close the gaps** (#1022, the last-prompt hover on
+>    popout tabs, the context meter's form reaching a popout). Not started.
+>
+> **Decided, and not to be worked on:** #756 (tentative), #722 (needs a
+> sitting with him), #966 (hold), #851 (not now), #1196 (later).
+> **Open on purpose:** #716, #1013, #719, #1007, #904 (waiting on his laptop
+> capture); #528, #529, #710, #717 (design sittings, his).
+> **His five questions from 2026-10-09 are still open** (the block below).
+>
 > # ✅ RELEASED: v0.8.118, 2026-10-10 (`f7203096`, PR #1194)
 >
 > The owner, after the report on the ten items: *"Cut a release."* A plain

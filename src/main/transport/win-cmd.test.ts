@@ -277,6 +277,8 @@ onWindows('end to end through the real cmd.exe', () => {
     return { dir, cmd };
   }
 
+  const PER_SPAWN_MS = 10_000;
+
   /** the raw output, because "did anything else run" is not visible in argv */
   function runRaw(cmd: string, args: readonly string[]): string {
     const spec = execSpec(cmd, args, 'win32');
@@ -285,6 +287,11 @@ onWindows('end to end through the real cmd.exe', () => {
         execFileSync(spec.file, spec.argv, {
           encoding: 'utf8',
           windowsHide: true,
+          // A payload that broke out into something that waits for ever would
+          // otherwise block this thread for good (#768): the `catch` below then
+          // returns whatever was printed, `argvOf` finds no ARGV line, and the
+          // case fails by name. Twenty times the slowest spawn under full load.
+          timeout: PER_SPAWN_MS,
           // `@types/node` omits this from the SYNC options (it is declared on
           // the async `execFile` and on `spawn`), but libuv honours it on all
           // three — and the byte-exact round-trips below are the proof: without
@@ -309,6 +316,32 @@ onWindows('end to end through the real cmd.exe', () => {
 
   const runThrough = (cmd: string, args: readonly string[]): string[] | null =>
     argvOf(runRaw(cmd, args));
+
+  // ITS OWN BUDGET, AND THE NUMBERS BEHIND IT (#768). The tests after this one
+  // start a real `cmd.exe` too, once or twice; this one does it thirteen times,
+  // and the cost is not ours to cut: every payload is two REAL processes,
+  // `cmd.exe` and then the `node` that reports what it was handed, and a cheaper
+  // stand-in for either would stop it being the test of what cmd.exe does.
+  //
+  // Measured on the desktop, 2026-10-10, thirteen payloads:
+  //   - alone:               1,342ms  (about 100ms a payload; a bare `cmd /c
+  //                                    echo` is 34ms of that)
+  //   - in a full `npm test`: 5,210 / 5,504 / 6,071ms, three runs of three RED
+  //
+  // So the body always finished and always passed its assertions; it was
+  // reported failed for taking four times as long with every core busy running
+  // the other 430 files, against a 5s default that is a budget for a unit test.
+  // Running the payloads side by side would not help: under that load there is
+  // no idle core to run them on. 30s is five times the slowest run measured
+  // above, and four times the slowest ever recorded for the whole file (7.5s,
+  // 2026-09-19).
+  //
+  // THE BUDGET CANNOT CATCH A PAYLOAD THAT NEVER EXITS, and nothing here should
+  // read as if it did: the body is synchronous, so the runner's clock cannot
+  // fire while `execFileSync` is blocked. That case is `PER_SPAWN_MS` in
+  // `runRaw`, which gives the child up and lets the assertion fail with the
+  // payload's own label instead of hanging the worker with no name on it.
+  const REAL_CMD_BUDGET_MS = 30_000;
 
   it('every recorded payload round-trips byte-exact, and nothing else runs', () => {
     const { dir, cmd } = makeShim();
@@ -340,7 +373,7 @@ onWindows('end to end through the real cmd.exe', () => {
       fs.rmSync(dir, { recursive: true, force: true });
       fs.rmSync(cwdPwned, { force: true });
     }
-  });
+  }, REAL_CMD_BUDGET_MS);
 
   it('carries an argument that is a lone metacharacter, and an empty one', () => {
     const { dir, cmd } = makeShim();
