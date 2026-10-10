@@ -306,7 +306,10 @@ a card with its own color and a **colored dot** beside its name.
 - **Add sessions:** drag a session row **anywhere onto the group card** — the
   header, a session already in it, or the empty space inside. The card lights
   up in the group's color to show where the session will land. Its window moves
-  to sit alongside its new siblings.
+  to sit alongside its new siblings. **The session joins at the bottom of the
+  group**, whichever way you moved it there (dragging, the menu, or the
+  keyboard); drag it up from there if you want it higher. A pinned session is
+  the one exception: it goes to the front, with the other pinned ones.
 - **Remove a session:** drag it onto empty space in the list, outside any group.
 - **Without dragging:** right-click a session row (or press `Shift+F10` on it)
   and pick a group under **Move to group** — the same list, plus **No group**

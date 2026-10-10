@@ -120,10 +120,8 @@
 >    ticket names, is not in 7.0.2. #702 (adoption handler) is about
 >    GROUP MEMBERSHIP, not dock layout, and is not the cause of either.
 > 9. **#731 — a stacked session cannot be dragged out into its own
->    full-height column. ← IN FLIGHT**, branch `feature/731-root-edge-drop`.
->    *This line rides in that PR: if `main` has
->    `e2e/root-edge-drop.spec.ts`, it has landed and the next item is
->    #582.* `dndEdges` widened to 40px with a 30% marker
+>    full-height column. DONE 2026-10-09, PR #1191 (`2d369c59`), merged,
+>    NOT released.** Green on the first CI run. `dndEdges` widened to 40px with a 30% marker
 >    (`lib/root-edge-drop.ts`). ⚠️ The library takes ONE size for all four
 >    edges, and at 40px the TOP edge swallowed every top-row tab strip:
 >    #620's e2e went red. So `onWillShowOverlay` refuses the top and bottom
@@ -134,7 +132,16 @@
 >    is called with `?.` because a test's stand-in dock has no such event
 >    and the workspace must still start.
 > 10. **#582 — a session dragged into another group lands in arrival
->     order; and the ungroup drop.**
+>     order; and the ungroup drop. ← IN FLIGHT**, branch
+>     `feature/582-group-landing`. *This line rides in that PR: if `main`
+>     has `e2e/group-landing.spec.ts`, it has landed and ALL TEN ARE DONE
+>     (merged, not released; he has not asked for a cut).* NOT a dockview
+>     item, despite the prompt grouping it with 8 and 9: it is the Sessions
+>     list's own order. `SessionStore.landAtEndOf` writes the destination
+>     group's on-screen order plus the newcomer, called from the one
+>     `moveToGroup` in App that every move goes through. The nav's ungroup
+>     drop got the `from !== to` guard. The e2e FAILED with the fix
+>     switched off and passes with it on.
 >
 > Items 8 to 10 are dockview drag behaviour: reproduce each in the real app
 > first, and read #702 (grid-drag group adoption looks dead in general).

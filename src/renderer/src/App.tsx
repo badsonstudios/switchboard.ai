@@ -2363,6 +2363,11 @@ export function App(): React.JSX.Element {
     });
   };
   const moveToGroup = (cardId: string, gid: string | null): void => {
+    // it lands at the BOTTOM of the group it joins (#582). Written before the
+    // move is sent, from the order on screen; every way of moving a session
+    // (a drop in the list, a drop on the strip, the menu, the keyboard) comes
+    // through here, so they all land the same way.
+    sessionStore.landAtEndOf(cardId, gid);
     void bridge.groups?.setSessionGroup?.(cardId, gid).then(() => {
       grid.current?.moveCardToGroup(cardId, gid);
       void refreshSessions();

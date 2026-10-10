@@ -300,3 +300,43 @@ describe('the session menu and order (issue 1168)', () => {
     expect(menu.textContent).not.toContain('Move down');
   });
 });
+
+describe('a drop on the empty part of the list takes a session out of its group (issue 582)', () => {
+  /** drop a session on the list itself, outside every group card */
+  async function dropOnList(id: string): Promise<void> {
+    const nav = host.querySelector<HTMLElement>('nav')!;
+    const dataTransfer = {
+      setData: noop,
+      getData: () => id,
+      types: ['application/x-switchboard-card'],
+      effectAllowed: '',
+    };
+    await act(async () => {
+      nav.dispatchEvent(
+        Object.assign(new MouseEvent('drop', { bubbles: true, cancelable: true }), { dataTransfer })
+      );
+    });
+  }
+  const G = { id: 'g1', name: 'Backend', color: 'var(--status-working)' };
+  const row = (id: string, groupId?: string): RailSession =>
+    ({ id, title: id, folder: `/p/${id}`, status: 'idle', groupId });
+
+  it('a session in a group is moved out', async () => {
+    const { move } = await mount({ sessions: [row('a', 'g1'), row('b')], groups: [G] });
+    await dropOnList('a');
+    expect(move).toHaveBeenCalledTimes(1);
+    expect(move).toHaveBeenCalledWith('a', null);
+  });
+
+  it('⚠️ a session that is ALREADY in no group is not sent anywhere: no round trip for nothing', async () => {
+    const { move } = await mount({ sessions: [row('a', 'g1'), row('b')], groups: [G] });
+    await dropOnList('b');
+    expect(move).not.toHaveBeenCalled();
+  });
+
+  it('a drop naming a session the list does not have does nothing', async () => {
+    const { move } = await mount({ sessions: [row('b')], groups: [G] });
+    await dropOnList('nobody');
+    expect(move).not.toHaveBeenCalled();
+  });
+});

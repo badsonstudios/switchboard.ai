@@ -1223,6 +1223,87 @@ describe('SessionStore — the manual rail order (#559)', () => {
     expect(persisted.at(-1)).toEqual({ ungrouped: ['c', 'b', 'a'] });
   });
 
+  describe('a session moved into a group lands at the bottom of it (issue 582)', () => {
+    const G1 = { id: 'g1', name: 'Backend', color: 'var(--status-working)' };
+    const G2 = { id: 'g2', name: 'Frontend', color: 'var(--status-done)' };
+    const inGroup = (id: string, groupId?: string) => ({ ...session(id), groupId });
+    const order = (): string[] => store.getRailOrder().flat.map((s) => s.id);
+
+    it('THE DEFECT, shown first: with nothing written, it lands in the middle, where it was opened', () => {
+      // opened in this order: a, x, b. `x` starts in the other group.
+      store.setGroups([G1, G2]);
+      store.setSessions([inGroup('a', 'g1'), inGroup('x', 'g2'), inGroup('b', 'g1')]);
+      // main moves `x` into g1 and says so; nobody told the store where it lands
+      store.setSessions([inGroup('a', 'g1'), inGroup('x', 'g1'), inGroup('b', 'g1')]);
+      expect(order()).toEqual(['a', 'x', 'b']); // between two strangers
+    });
+
+    it('with landAtEndOf called before the move, it is last', () => {
+      store.setGroups([G1, G2]);
+      store.setSessions([inGroup('a', 'g1'), inGroup('x', 'g2'), inGroup('b', 'g1')]);
+      store.landAtEndOf('x', 'g1');
+      // not a member yet: nothing on screen has moved
+      expect(order()).toEqual(['a', 'b', 'x']);
+      expect(store.getRailOrder().bucketOf.get('x')).toBe('g2');
+      store.setSessions([inGroup('a', 'g1'), inGroup('x', 'g1'), inGroup('b', 'g1')]);
+      expect(order()).toEqual(['a', 'b', 'x']);
+      expect(store.getRailOrder().bucketOf.get('x')).toBe('g1');
+      expect(persisted.at(-1)).toEqual({ g1: ['a', 'b', 'x'] });
+    });
+
+    it('keeps the order the group was ALREADY in on screen, arranged or not', () => {
+      store.setGroups([G1, G2]);
+      store.setSessions([inGroup('a', 'g1'), inGroup('x', 'g2'), inGroup('b', 'g1'), inGroup('c', 'g1')]);
+      store.setBucketOrder('g1', ['c', 'a', 'b']); // the user's own arrangement
+      store.landAtEndOf('x', 'g1');
+      store.setSessions([inGroup('a', 'g1'), inGroup('x', 'g1'), inGroup('b', 'g1'), inGroup('c', 'g1')]);
+      expect(order()).toEqual(['c', 'a', 'b', 'x']);
+    });
+
+    it('a session that came back to a group it had been in before is last again, not where it used to be', () => {
+      store.setGroups([G1, G2]);
+      store.setSessions([inGroup('x', 'g2'), inGroup('a', 'g1'), inGroup('b', 'g1')]);
+      store.setBucketOrder('g1', ['x', 'a', 'b']); // a stale place for x from an earlier stay
+      store.landAtEndOf('x', 'g1');
+      store.setSessions([inGroup('x', 'g1'), inGroup('a', 'g1'), inGroup('b', 'g1')]);
+      expect(order()).toEqual(['a', 'b', 'x']);
+    });
+
+    it('a move that is not a move reorders nothing and writes nothing', () => {
+      store.setGroups([G1]);
+      store.setSessions([inGroup('a', 'g1'), inGroup('b', 'g1'), inGroup('c', 'g1')]);
+      const before = persisted.length;
+      store.landAtEndOf('a', 'g1'); // already in g1
+      expect(order()).toEqual(['a', 'b', 'c']);
+      expect(persisted.length).toBe(before);
+    });
+
+    it('the first session into an empty group writes nothing: there is nothing to be after', () => {
+      store.setGroups([G1, G2]);
+      store.setSessions([inGroup('x', 'g2')]);
+      const before = persisted.length;
+      store.landAtEndOf('x', 'g1');
+      expect(persisted.length).toBe(before);
+    });
+
+    it('moving OUT of every group is left to main: nothing is guessed', () => {
+      store.setGroups([G1]);
+      store.setSessions([inGroup('a', 'g1'), session('loose')]);
+      const before = persisted.length;
+      store.landAtEndOf('a', null);
+      expect(persisted.length).toBe(before);
+    });
+
+    it('a PINNED newcomer still shows first: that is the pin’s rule, and it is untouched', () => {
+      store.setGroups([G1, G2]);
+      store.setSessions([inGroup('a', 'g1'), inGroup('x', 'g2'), inGroup('b', 'g1')]);
+      store.togglePin('x');
+      store.landAtEndOf('x', 'g1');
+      store.setSessions([inGroup('a', 'g1'), inGroup('x', 'g1'), inGroup('b', 'g1')]);
+      expect(order()).toEqual(['x', 'a', 'b']);
+    });
+  });
+
   it('steps one session and answers whether it moved', () => {
     store.setSessions([session('a'), session('b'), session('c')]);
     expect(store.reorderSession('c', -1)).toBe(true);
