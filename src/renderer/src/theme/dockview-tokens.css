@@ -60,7 +60,14 @@
   --dv-scrollbar-background-color: var(--faint);
   --dv-tabs-container-scrollbar-color: var(--faint);
   --dv-icon-hover-background-color: var(--chip);
-  --dv-drag-over-background-color: var(--chip);
+  /* WHERE A DRAGGED TAB WILL LAND (#620). This was `var(--chip)`: a pale grey
+     wash, on a tab strip that is itself pale grey. Measured in a screenshot of
+     a real drag, the indicator could not be seen at all, which made a drop
+     that works look like one that does not. A tint of the link blue reads on
+     every surface a tab can be dropped on (a strip, a card, the workspace
+     edge), in all four themes, and blue is this app's "worth noticing" hue;
+     it is not the yellow or orange that mean a session needs you. */
+  --dv-drag-over-background-color: color-mix(in srgb, var(--link) 24%, transparent);
   --dv-drag-over-border-color: var(--link);
   --dv-floating-border: 1px solid var(--border);
   --dv-floating-box-shadow: var(--window-shadow);
@@ -301,4 +308,19 @@
 }
 :root[data-tab-rows='wrap'] .dv-tab {
   margin-block-end: 3px;
+}
+
+/* DROPPING A TAB ON ANOTHER TAB (#620): a firm line on the side it will land.
+ *
+ * Over a tab the docking library tints the half that takes the drop. On a tab
+ * a hundred pixels wide that tint alone is easy to read as a hover; the line
+ * is what says "between these two". `left` and `right` here are the library's
+ * own class names for the two halves, and physical on purpose: they follow
+ * where its indicator is drawn.
+ */
+.dv-tabs-and-actions-container .dv-drop-target-selection.dv-drop-target-left {
+  box-shadow: inset 2px 0 0 var(--link);
+}
+.dv-tabs-and-actions-container .dv-drop-target-selection.dv-drop-target-right {
+  box-shadow: inset -2px 0 0 var(--link);
 }
