@@ -94,7 +94,9 @@ on the floor, and say so in your PR.
 
 ---
 
-## 0.8.119 — unreleased
+## 0.8.120 — unreleased
+
+## 0.8.119 — 2026-10-10
 
 ### Changed
 
@@ -120,7 +122,6 @@ on the floor, and say so in your PR.
   the front did not help. Now a strip says "No longer following this file"
   and why, with a **Follow again** button; and when you open a session in
   that folder the document picks up by itself and shows what it missed.
-
 - **A popped-out window is no longer silent to a screen reader.** What a
   shortcut did, or why it could not be used, was only ever said in the main
   window, so someone using a screen reader in a pop-out heard nothing. Every
