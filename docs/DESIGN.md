@@ -3842,6 +3842,22 @@ notes). This is the attention-ROI argument (litmus #2) and the one thing an
 external editor does badly: reading `PROGRESS.md` as it is being written should
 not need a reload, and a silently stale render is worse than no render at all.
 
+*(**"Silently stale" was shipped anyway, and fixed 2026-10-10, #506.** A viewer
+outlives its session, but the read scope is the folders of the sessions that
+are OPEN. Close the last one over a file's folder and main, correctly, stops
+reporting on the path; the viewer froze on its last content and said nothing,
+which is exactly the stale render this paragraph rules out. Now main tells the
+viewer once that it has stopped (a third notice state, `unfollowed`, about the
+WATCH and not the file) and the viewer says so in a strip over the document,
+with **Follow again**. Three ways back, none of which lets the page widen its
+own access: a session opening over the folder (tried quietly whenever the set
+of open folders changes), the button (asks again; the scope as it stands
+answers), and picking the file again with Open File…, which is a grant and is
+routed to the panel that already has the file. The strip is decided by main's
+answer to the watch, never inferred from a read. A scope that cannot answer
+(a lock, a failed realpath) is not a scope that said no: nothing is told and
+the watch is kept.)*
+
 **Markdown rendering, aimed at what AIs actually emit.** GFM — tables, task-list
 checkboxes (agents write plans as `- [ ]`), strikethrough, autolinks.
 *(Amended by #612, 2026-08-20: this said "rendered as disabled checkboxes", and

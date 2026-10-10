@@ -1331,6 +1331,23 @@ mark[data-feed-match-current] {
      wants a look" yellow now means a SESSION wants you, and this is a file */
   box-shadow: inset 3px 0 0 0 var(--status-working-ink);
 }
+/* Main stopped following the file (#506). The same ink as "deleted", because
+   it is the same kind of news: about a file, not about a session, and nothing
+   is broken. A row, so the one thing you can do about it sits at the end of
+   the sentence that explains it and never wraps under it into a second strip. */
+.doc-unfollowed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: inset 3px 0 0 0 var(--status-working-ink);
+}
+.doc-unfollowed > span {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+.doc-unfollowed > .doc-btn {
+  flex: 0 0 auto;
+}
 /* The viewer's private find bar is gone (#533) — it publishes a find surface
    and the shared §5.31 bar draws itself over the panel. The MARK styles it
    painted with are still below, under `.doc-main mark[data-doc-match]`, because

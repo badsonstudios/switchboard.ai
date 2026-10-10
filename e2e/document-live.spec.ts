@@ -104,6 +104,81 @@ test.describe('live re-render (P2-E16-04)', () => {
     await expect(w.locator('[data-testid="doc-gone"]')).toHaveCount(0);
   });
 
+  // #506. The whole path, through the real scope and the real watch: no unit
+  // test can show that closing a CARD is what narrows the scope, or that main
+  // notices on a file nobody is writing to.
+  test('closing the session it came from says so, and a new session there resumes it', async () => {
+    test.setTimeout(120_000);
+    const { folder, doc } = seeded();
+    a = await launchApp({ seedFolder: folder, seedDocument: doc });
+    const w = a.window;
+    await expect(rendered(w).locator('h1')).toHaveText('Before');
+    const strip = w.locator('[data-testid="doc-unfollowed"]');
+    await expect(strip).toHaveCount(0);
+
+    // End the session the document was opened from. The file is QUIET, so the
+    // only thing that can notice is main's own floor (two seconds).
+    w.once('dialog', (d) => void d.accept());
+    await w.getByTitle('Close (ends the session)').click();
+    await expect(w.getByTitle('Close (ends the session)')).toHaveCount(0, { timeout: 15_000 });
+    await expect(strip).toBeVisible({ timeout: 20_000 });
+    await expect(strip).toContainText('No longer following this file');
+    // the document outlived its session, and is still a document
+    await expect(rendered(w).locator('h1')).toHaveText('Before');
+
+    // A write now reaches nobody: that is what the strip is telling the truth
+    // about. Asking again is refused, and says what would change the answer.
+    fs.writeFileSync(doc, document('Written while nobody followed'), 'utf8');
+    await strip.getByRole('button', { name: 'Follow again' }).click();
+    await expect(strip).toContainText('Still not following this file');
+    await expect(rendered(w).locator('h1')).toHaveText('Before');
+
+    // A session over the same folder opens: following resumes BY ITSELF, and
+    // the write that was missed is on screen.
+    await a.app.evaluate(({ dialog }, dir) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
+    }, folder);
+    await w.getByRole('button', { name: '+ session' }).click();
+    await expect(strip).toHaveCount(0, { timeout: 30_000 });
+    await expect(rendered(w).locator('h1')).toHaveText('Written while nobody followed');
+
+    // ...and it is live again, not merely re-read once
+    fs.writeFileSync(doc, document('Live again'), 'utf8');
+    await expect(rendered(w).locator('h1')).toHaveText('Live again', { timeout: 15_000 });
+  });
+
+  // The other way back, and the one that needs no session at all: picking the
+  // file yourself grants it. The file is ALREADY open, so the pick focuses the
+  // panel that had stopped rather than opening a second one, and that panel
+  // has to take the hint.
+  test('picking the file again with Open File… brings a stopped document back', async () => {
+    test.setTimeout(120_000);
+    const { folder, doc } = seeded();
+    a = await launchApp({ seedFolder: folder, seedDocument: doc });
+    const w = a.window;
+    await expect(rendered(w).locator('h1')).toHaveText('Before');
+    const strip = w.locator('[data-testid="doc-unfollowed"]');
+
+    w.once('dialog', (d) => void d.accept());
+    await w.getByTitle('Close (ends the session)').click();
+    await expect(strip).toBeVisible({ timeout: 20_000 });
+
+    fs.writeFileSync(doc, document('Picked'), 'utf8');
+    await a.app.evaluate(({ dialog, Menu }, file) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [file] });
+      const menu = Menu.getApplicationMenu()?.items.find((i) => i.label === 'File');
+      const item = menu?.submenu?.items.find((i) => i.label.startsWith('Open File'));
+      (item!.click as unknown as () => void)();
+    }, doc);
+
+    await expect(strip).toHaveCount(0, { timeout: 30_000 });
+    await expect(rendered(w).locator('h1')).toHaveText('Picked');
+    // one panel, not two: the pick went to the document that was already open
+    await expect(viewer(w)).toHaveCount(1);
+    fs.writeFileSync(doc, document('Live again'), 'utf8');
+    await expect(rendered(w).locator('h1')).toHaveText('Live again', { timeout: 15_000 });
+  });
+
   test('closing the panel tears the watch down in MAIN', async () => {
     const { folder, doc } = seeded();
     a = await launchApp({ seedFolder: folder, seedDocument: doc });

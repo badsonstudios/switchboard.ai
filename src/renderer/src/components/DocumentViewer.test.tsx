@@ -21,7 +21,7 @@ vi.mock('./DocumentSource', () => ({
   },
 }));
 
-import { DocumentViewer, formatBytes } from './DocumentViewer';
+import { DocumentViewer, documentReopened, formatBytes } from './DocumentViewer';
 import {
   findSurfaceFor,
   findSurfaceKey,
@@ -30,6 +30,7 @@ import {
 } from '../lib/find-surfaces';
 import { openFindBar, resetFindBarState, setFindTerm } from '../lib/find-bar-state';
 import { setDocumentOutline } from '../lib/document-outline';
+import { sessionStore } from '../store/session-store';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -40,6 +41,8 @@ let root: Root | null = null;
 let reads: string[] = [];
 let calls: Array<{ what: string; arg: string }> = [];
 let answer: (p: string) => FileReadResult;
+/** what main says to `fs:watch` (#506); yes unless a test says otherwise */
+let watchAnswer: (p: string) => unknown;
 /** Every `files.watch` this mount asked for (P2-E16-04), and whether it was
  *  released. The teardown assertion the done-when names lives on `stopped`. */
 let watches: Array<{
@@ -80,9 +83,12 @@ function stubBridge(): void {
         calls.push({ what: 'openExternal', arg: u });
         return Promise.resolve(true);
       },
-      watch: (p: string, notify: (n: FileWatchNotice) => void) => {
+      watch: (p: string, notify: (n: FileWatchNotice) => void, onAnswer?: (a: unknown) => void) => {
         const entry = { path: p, notify, stopped: false };
         watches.push(entry);
+        // main's reply to the ask, a tick later like the IPC it stands in for
+        const reply = watchAnswer(p);
+        void Promise.resolve().then(() => onAnswer?.(reply));
         return () => {
           entry.stopped = true;
         };
@@ -102,6 +108,7 @@ beforeEach(async () => {
   watches = [];
   sourceProps.length = 0;
   answer = () => ok('');
+  watchAnswer = (p) => ({ ok: true, path: p });
   stubBridge();
   // BEFORE anything mounts, both of them: each drops SUBSCRIBERS as well as
   // state, so calling one with a component already up leaves a live
@@ -893,6 +900,466 @@ describe('following the file it has open (P2-E16-04)', () => {
     // Monaco keeps its own scroll across a model swap (`DocumentSource`); what
     // this owns is that the new text reached it at all.
     expect(sourceProps.at(-1)).toMatchObject({ text: 'export const a = 2;\n' });
+  });
+});
+
+describe('saying so when main stops following the file (#506)', () => {
+  const NO = { ok: false, reason: 'out-of-scope' };
+  const strip = (): HTMLElement | null => q('[data-testid="doc-unfollowed"]');
+  const again = (): HTMLButtonElement | null =>
+    q('[data-testid="doc-follow-again"]') as HTMLButtonElement | null;
+  const page = (): string => q('[data-testid="doc-rendered"]')?.textContent ?? '';
+  const settle = async (): Promise<void> => {
+    await act(async () => {});
+    await act(async () => {});
+  };
+  /** Main let the watch go: the last session over this folder closed. */
+  const unfollow = async (): Promise<void> => {
+    await act(async () => {
+      watches.at(-1)!.notify({ token: 't', state: 'unfollowed' });
+    });
+    await settle();
+  };
+  /** The rail's list as the store holds it; only the folders matter here. */
+  const openSessions = async (...folders: string[]): Promise<void> => {
+    await act(async () => {
+      sessionStore.setSessions(
+        folders.map((folder, i) => ({ id: `s${i}`, title: `s${i}`, folder }))
+      );
+    });
+    await settle();
+  };
+
+  beforeEach(() => {
+    sessionStore.setSessions([]);
+  });
+  afterEach(() => {
+    sessionStore.setSessions([]);
+  });
+
+  it('says it stopped and why, over the document it still shows', async () => {
+    answer = () => ok('# Doc\n\nthe last thing we read\n');
+    await mount('/p/PROGRESS.md');
+    expect(strip()).toBeNull();
+
+    const before = reads.length;
+    await unfollow();
+    expect(strip()?.textContent).toContain('No longer following this file');
+    expect(strip()?.textContent).toContain('No open session works in its folder');
+    // the page is still there: this is a strip, not a replacement
+    expect(page()).toContain('the last thing we read');
+    // ...and nothing was re-read on the way, because that read would be refused
+    expect(reads.length).toBe(before);
+  });
+
+  it('announces the sentence, and not the button with it', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    const live = strip()!.querySelector('[role="status"]')!;
+    expect(live.textContent).toContain('No longer following this file');
+    expect(live.contains(again())).toBe(false);
+    expect(strip()!.getAttribute('role')).toBeNull();
+  });
+
+  it('Follow again asks main afresh, picks up what was missed, and clears the strip', async () => {
+    let text = '# Doc\n\nold\n';
+    answer = () => ok(text);
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+
+    text = '# Doc\n\nwritten while nobody was following\n';
+    await click(again());
+    await settle();
+    // a NEW watch, and the old one released: main dropped the first token
+    expect(watches).toHaveLength(2);
+    expect(watches[0].stopped).toBe(true);
+    expect(watches[1]).toMatchObject({ path: '/p/PROGRESS.md', stopped: false });
+    expect(strip()).toBeNull();
+    expect(page()).toContain('written while nobody was following');
+
+    // and it is live again on the new watch
+    text = '# Doc\n\nand again\n';
+    await act(async () => {
+      watches[1].notify({ token: 't', state: 'changed' });
+    });
+    await settle();
+    expect(page()).toContain('and again');
+  });
+
+  it('Follow again that main still refuses says what would change the answer, and keeps the page', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+
+    watchAnswer = () => NO;
+    const before = reads.length;
+    await click(again());
+    await settle();
+    expect(strip()?.textContent).toContain('Still not following this file');
+    expect(strip()?.textContent).toContain('Open a session in its folder');
+    expect(strip()?.textContent).not.toContain('No longer following');
+    expect(again()).not.toBeNull(); // and can be asked again
+    expect(page()).toContain('body');
+    // a refusal is not a deletion, and no read was spent finding that out
+    expect(q('[data-testid="doc-gone"]')).toBeNull();
+    expect(reads.length).toBe(before);
+  });
+
+  // WHY it was a no decides what may be said: only `out-of-scope` is about
+  // sessions, and advice that cannot help is worse than none.
+  it.each([
+    ['a call that was rejected', () => null],
+    ['a broker refusal', () => ipcRefusal('fs:watch', 'capability-not-held')],
+    ['a file somebody is holding', () => ({ ok: false, reason: 'unreadable' })],
+    ['a path that is not a file', () => ({ ok: false, reason: 'not-a-file' })],
+  ])('%s is a no that promises nothing about sessions', async (_what, reply) => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    watchAnswer = reply;
+    await click(again());
+    await settle();
+    expect(strip()?.textContent).toContain("Couldn't follow this file just now");
+    expect(strip()?.textContent).not.toContain('Open a session');
+    expect(again()).not.toBeNull();
+    expect(page()).toContain('body');
+  });
+
+  it('an ask that finds the file GONE says deleted, and keeps the button', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    watchAnswer = () => ({ ok: false, reason: 'not-found' });
+    // quietly, too: a session opening is how most people will find out
+    await openSessions('/p');
+    expect(q('[data-testid="doc-gone"]')?.textContent).toContain('deleted or moved');
+    // one strip, not two sentences about one file
+    expect(strip()).toBeNull();
+    // nothing is watching for the file to come back, so there is still a way
+    // to ask, on the strip that is up
+    expect(q('[data-testid="doc-gone"]')!.contains(again())).toBe(true);
+    expect(q('[data-testid="doc-gone"] [role="status"]')?.contains(again())).toBe(false);
+
+    // it comes back, and the reader asks
+    watchAnswer = (p) => ({ ok: true, path: p });
+    await click(again());
+    await settle();
+    expect(q('[data-testid="doc-gone"]')).toBeNull();
+    expect(strip()).toBeNull();
+  });
+
+  it('a press that a link overtook is not answered on the NEXT file', async () => {
+    answer = (p) => (p.endsWith('other.md') ? ok('# Other\n\nbody\n') : ok('# Doc\n\n[go](other.md)\n'));
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    // main never answers this press...
+    const files = (window as unknown as { switchboard: { files: Record<string, unknown> } }).switchboard.files;
+    const real = files.watch;
+    files.watch = (p: string, notify: (n: FileWatchNotice) => void) => {
+      const entry = { path: p, notify, stopped: false };
+      watches.push(entry);
+      return () => {
+        entry.stopped = true;
+      };
+    };
+    await click(again());
+    // ...and the reader follows a link instead of waiting
+    await click(q('[data-testid="doc-rendered"] a'));
+    await settle();
+    files.watch = real;
+    expect(q('[data-testid="doc-rendered"]')!.querySelector('h1')?.textContent).toBe('Other');
+
+    await unfollow(); // the new file stops too
+    watchAnswer = () => NO;
+    await openSessions('/elsewhere'); // a QUIET try, refused
+    // nobody asked about THIS file, so the words are the notice's
+    expect(strip()?.textContent).toContain('No longer following this file');
+    expect(strip()?.textContent).not.toContain('Still not following');
+  });
+
+  // The strip is decided by the WATCH. The first cut inferred it from a read,
+  // and review found both directions wrong.
+  it('a watch main granted clears the strip even when the catch-up read fails', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    // a writer is holding the file: readable in a moment, not now
+    answer = () => ({ ok: false, reason: 'unreadable' });
+    await click(again());
+    await settle();
+    expect(strip()).toBeNull(); // we ARE following; the next change will show
+    expect(page()).toContain('body'); // and the page was kept
+  });
+
+  it('a read that would succeed does not clear a strip main has not lifted', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    watchAnswer = () => NO; // the scope moved between the two messages
+    await click(again());
+    await settle();
+    expect(strip()).not.toBeNull();
+  });
+
+  it('a change arriving on the watch we hold clears the strip by itself', async () => {
+    let text = '# Doc\n\nold\n';
+    answer = () => ok(text);
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    // a quiet try that main granted, whose own answer is slow to arrive...
+    let late: ((a: unknown) => void) | undefined;
+    const files = (window as unknown as { switchboard: { files: Record<string, unknown> } }).switchboard.files;
+    files.watch = (p: string, notify: (n: FileWatchNotice) => void, onAnswer?: (a: unknown) => void) => {
+      const entry = { path: p, notify, stopped: false };
+      watches.push(entry);
+      late = onAnswer;
+      return () => {
+        entry.stopped = true;
+      };
+    };
+    await openSessions('/p');
+    expect(strip()).not.toBeNull(); // no answer yet
+    // ...and the file changes first
+    text = '# Doc\n\nnew\n';
+    await act(async () => {
+      watches.at(-1)!.notify({ token: 't', state: 'changed' });
+    });
+    await settle();
+    expect(strip()).toBeNull();
+    expect(page()).toContain('new');
+    await act(async () => late?.({ ok: true, path: '/p/PROGRESS.md' }));
+    await settle();
+    expect(strip()).toBeNull();
+  });
+
+  it('resumes by itself when a session opens, with nothing pressed', async () => {
+    let text = '# Doc\n\nold\n';
+    answer = () => ok(text);
+    await openSessions('/p');
+    await mount('/p/PROGRESS.md');
+    await openSessions(); // the card closed...
+    await unfollow(); // ...and main let go
+    expect(strip()).not.toBeNull();
+
+    text = '# Doc\n\nnew\n';
+    await openSessions('/p'); // a session over that folder opens again
+    expect(strip()).toBeNull();
+    expect(watches).toHaveLength(2);
+    expect(page()).toContain('new');
+  });
+
+  it('a quiet try that is refused changes NOTHING on screen', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    watchAnswer = () => NO;
+    await openSessions('/somewhere/else'); // a session opened, but not over this file
+    expect(strip()?.textContent).toContain('No longer following this file');
+    // the other wording is for someone who ASKED
+    expect(strip()?.textContent).not.toContain('Still not following');
+    expect(page()).toContain('body');
+  });
+
+  it('a quiet try that overtakes a press does not swallow the answer the reader is owed', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    // main answers when THIS TEST says so, so the order is not left to luck
+    const owed: Array<(a: unknown) => void> = [];
+    const files = (window as unknown as { switchboard: { files: Record<string, unknown> } }).switchboard.files;
+    files.watch = (p: string, notify: (n: FileWatchNotice) => void, onAnswer?: (a: unknown) => void) => {
+      const entry = { path: p, notify, stopped: false };
+      watches.push(entry);
+      if (onAnswer) owed.push(onAnswer);
+      return () => {
+        entry.stopped = true;
+      };
+    };
+    await click(again()); // pressed...
+    await openSessions('/elsewhere'); // ...and before main answers, a session opens somewhere else
+    // two asks after the first watch, and neither answered yet
+    expect(watches).toHaveLength(3);
+    expect(owed).toHaveLength(2);
+    expect(strip()?.textContent).toContain('No longer following this file');
+
+    // the press's own answer arrives for a watch we no longer hold: dropped
+    await act(async () => owed[0](NO));
+    await settle();
+    expect(strip()?.textContent).toContain('No longer following this file');
+    // the quiet try's answer is the one that lands, and the reader is still owed
+    await act(async () => owed[1](NO));
+    await settle();
+    expect(strip()?.textContent).toContain('Still not following this file');
+
+    // ...and owed ONCE: the next quiet refusal is quiet
+    await act(async () => {
+      again()!.click();
+    });
+    await settle();
+    await act(async () => owed[2]({ ok: true, path: '/p/PROGRESS.md' }));
+    await settle();
+    expect(strip()).toBeNull();
+  });
+
+  it('does not try on store writes that leave the open folders alone', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await openSessions('/a');
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    const watched = watches.length;
+    const read = reads.length;
+    // the same folders again, as a session working writes the store many times
+    await openSessions('/a');
+    await openSessions('/a');
+    expect(watches.length).toBe(watched);
+    expect(reads.length).toBe(read);
+  });
+
+  it('never tries while it IS being followed, however the sessions change', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    const watched = watches.length;
+    const read = reads.length;
+    await openSessions('/a');
+    await openSessions('/a', '/b');
+    await openSessions();
+    expect(watches.length).toBe(watched);
+    expect(reads.length).toBe(read);
+  });
+
+  it('opening the same file again is the reader asking for it back', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await act(async () => {
+      root!.render(<DocumentViewer path="/p/PROGRESS.md" panelId="doc-7" colorScheme="dark" />);
+    });
+    await settle();
+    // while it is being followed, a re-open is just a focus: nothing is asked
+    await act(async () => documentReopened('doc-7', '/p/PROGRESS.md'));
+    await settle();
+    expect(watches).toHaveLength(1);
+
+    await unfollow();
+    watchAnswer = () => NO;
+    await act(async () => documentReopened('doc-7', '/p/PROGRESS.md'));
+    await settle();
+    // it counts as a press: a refusal is said
+    expect(strip()?.textContent).toContain('Still not following this file');
+
+    watchAnswer = (p) => ({ ok: true, path: p }); // Open File… granted it
+    await act(async () => documentReopened('doc-7', '/p/PROGRESS.md'));
+    await settle();
+    expect(strip()).toBeNull();
+    // somebody else's panel is not ours to poke
+    await act(async () => documentReopened('doc-8', '/p/PROGRESS.md'));
+  });
+
+  it('re-opening the file a panel was OPENED on is no request about the one it shows now', async () => {
+    // The panel is found by the path it was opened on, and a viewer follows
+    // links. Picking A grants A; it says nothing about B.
+    answer = (p) => (p.endsWith('other.md') ? ok('# Other\n\nbody\n') : ok('# Doc\n\n[go](other.md)\n'));
+    await act(async () => {
+      root!.render(<DocumentViewer path="/p/PROGRESS.md" panelId="doc-7" colorScheme="dark" />);
+    });
+    await settle();
+    await click(q('[data-testid="doc-rendered"] a'));
+    await settle();
+    await unfollow(); // other.md stops being followed
+    watchAnswer = () => NO;
+    await act(async () => documentReopened('doc-7', '/p/PROGRESS.md'));
+    await settle();
+    // tried, quietly: a refusal is not "an answer" to a question about B
+    expect(watches.at(-1)!.path).toBe('/p/other.md');
+    expect(strip()?.textContent).toContain('No longer following this file');
+    expect(strip()?.textContent).not.toContain('Still not following');
+  });
+
+  it('hands the keyboard to a control that stays when the button goes', async () => {
+    // NO headings to speak of, so the outline toggle is DISABLED: the first
+    // cut focused that toggle by name, which does nothing on a disabled
+    // button, and most documents are this one.
+    answer = () => ok('just a paragraph\n');
+    await mount('/p/notes.md');
+    expect((q('[data-testid="doc-outline-toggle"]') as HTMLButtonElement).disabled).toBe(true);
+    await unfollow();
+    again()!.focus();
+    expect(document.activeElement).toBe(again());
+    await click(again());
+    await settle();
+    expect(strip()).toBeNull();
+    const now = document.activeElement as HTMLElement;
+    expect(now.tagName).toBe('BUTTON');
+    expect((now as HTMLButtonElement).disabled).toBe(false);
+    expect(q('[data-testid="document-viewer"]')!.contains(now)).toBe(true);
+  });
+
+  it('leaves the keyboard alone when it was somewhere else', async () => {
+    answer = () => ok('just a paragraph\n');
+    await mount('/p/notes.md');
+    await unfollow();
+    const elsewhere = document.createElement('input');
+    document.body.appendChild(elsewhere);
+    elsewhere.focus();
+    await openSessions('/p'); // resumes with nothing pressed
+    expect(strip()).toBeNull();
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
+  it('a deleted file that comes back out of reach swaps "deleted" for the truth', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await mount('/p/PROGRESS.md');
+    await act(async () => {
+      watches.at(-1)!.notify({ token: 't', state: 'gone' });
+    });
+    expect(q('[data-testid="doc-gone"]')).not.toBeNull();
+    // main only says `unfollowed` about a file that is THERE, so over the
+    // deleted strip it means the file returned where we may no longer read it
+    await unfollow();
+    expect(q('[data-testid="doc-gone"]')).toBeNull();
+    expect(strip()).not.toBeNull();
+    expect(again()).not.toBeNull(); // and there is a way out
+  });
+
+  it('says nothing about a "last version" when there is no document on screen', async () => {
+    answer = () => ({ ok: false, reason: 'out-of-scope' });
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    expect(strip()).toBeNull();
+  });
+
+  it('following a link out of a stopped document starts clean', async () => {
+    answer = (p) => (p.endsWith('other.md') ? ok('# Other\n\nbody\n') : ok('# Doc\n\n[go](other.md)\n'));
+    await mount('/p/PROGRESS.md');
+    await unfollow();
+    expect(strip()).not.toBeNull();
+    await click(q('[data-testid="doc-rendered"] a'));
+    await settle();
+    expect(q('[data-testid="doc-rendered"]')!.querySelector('h1')?.textContent).toBe('Other');
+    // the strip was about the file that is no longer on screen
+    expect(strip()).toBeNull();
+    // and the link was not mistaken for a "follow again": one watch per path
+    expect(watches.map((w) => w.path)).toEqual(['/p/PROGRESS.md', '/p/other.md']);
+  });
+
+  it('two viewers of one file: only the one that asked is answered', async () => {
+    answer = () => ok('# Doc\n\nbody\n');
+    await act(async () => {
+      root!.render(
+        <>
+          <DocumentViewer path="/p/PROGRESS.md" colorScheme="dark" />
+          <DocumentViewer path="/p/PROGRESS.md" colorScheme="dark" />
+        </>
+      );
+    });
+    await settle();
+    await act(async () => {
+      for (const w of watches) w.notify({ token: 't', state: 'unfollowed' });
+    });
+    await settle();
+    expect(host.querySelectorAll('[data-testid="doc-unfollowed"]')).toHaveLength(2);
+    await click(host.querySelector('[data-testid="doc-follow-again"]'));
+    await settle();
+    expect(host.querySelectorAll('[data-testid="doc-unfollowed"]')).toHaveLength(1);
   });
 });
 

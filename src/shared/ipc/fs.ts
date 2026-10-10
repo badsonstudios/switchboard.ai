@@ -167,8 +167,19 @@ export interface FileWatchNotice {
    * `changed` — re-read it. `gone` — the file is not there any more, which the
    * viewer shows as a strip over the last thing it read rather than as an error
    * or a blank pane (§5.30: a deleted file is news, not a failure).
+   *
+   * `unfollowed` (#506) — main has STOPPED following this file for this
+   * viewer, and it is the last notice the token will ever get. Today there is
+   * one cause: the path left the read scope, which is what closing the session
+   * card a document was opened from does to it. The file is still there; main
+   * may simply no longer look. Said, because the alternative was a document
+   * that stopped updating with nothing on screen to tell it from one nobody is
+   * writing to. The viewer is told about its own watch, not about the file
+   * (with one accepted exception, a deleted file that returns: `leftScope` in
+   * `file-watch.ts`). To follow again the viewer asks again (`fs:watch`), and
+   * is answered by the scope as it stands then.
    */
-  readonly state: 'changed' | 'gone';
+  readonly state: 'changed' | 'gone' | 'unfollowed';
 }
 
 /**

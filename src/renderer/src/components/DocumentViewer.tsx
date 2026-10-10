@@ -58,6 +58,7 @@ import { findSurfaceKey, publishFindSurface, type DocumentFindSurface } from '..
 import { openMonacoFind, type FindableEditor } from '../lib/monaco-find';
 import { answered } from '../../../shared/ipc/refusal';
 import { runCopy } from '../lib/feed-code';
+import { sessionStore } from '../store/session-store';
 
 const DocumentSource = React.lazy(() => import('./DocumentSource'));
 
@@ -154,8 +155,18 @@ interface FilesBridge {
   openPath?(path: string): Promise<boolean>;
   reveal?(path: string): Promise<boolean>;
   openExternal?(url: string): Promise<boolean>;
-  /** follow the file; returns the unsubscribe (P2-E16-04) */
-  watch?(path: string, onChange: (notice: FileWatchNotice) => void): () => void;
+  /**
+   * Follow the file; returns the unsubscribe (P2-E16-04).
+   *
+   * `onAnswer` is main's reply to the ask itself (#506): whether it agreed to
+   * follow. `unknown`, because a channel can answer with a refusal instead of
+   * its payload (#650) and because a rejected call reports as `null`.
+   */
+  watch?(
+    path: string,
+    onChange: (notice: FileWatchNotice) => void,
+    onAnswer?: (answer: unknown) => void
+  ): () => void;
 }
 
 /**
@@ -167,6 +178,17 @@ const UNREADABLE: FileReadResult = { ok: false, reason: 'unreadable' };
 
 function files(): FilesBridge | undefined {
   return (window as unknown as { switchboard?: { files?: FilesBridge } }).switchboard?.files;
+}
+
+/**
+ * "This file was opened again while a panel already had it" (#506), by panel
+ * id. One listener per mounted viewer; `SessionGrid` is the only caller. A map
+ * and not the session store, because this is one panel being poked, not state
+ * anybody else reads.
+ */
+const reopenListeners = new Map<string, (path: string) => void>();
+export function documentReopened(panelId: string, path: string): void {
+  reopenListeners.get(panelId)?.(path);
 }
 
 export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
@@ -216,6 +238,66 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
    * need not be.
    */
   const [missing, setMissing] = React.useState(false);
+
+  /**
+   * Main has stopped following this file, and the reader is told (#506).
+   *
+   * How it happens: the last open session working in the file's folder was
+   * closed, so the path left the read scope and main let the watch go. The
+   * document stays on screen and stays readable. It has simply stopped
+   * updating, and until this existed NOTHING SAID SO: a frozen document and a
+   * document nobody is writing to looked the same, and bringing the panel back
+   * to the front did not help.
+   *
+   * `'stopped'` is the notice. `'refused'` is the same strip after the reader
+   * asked to follow again and the scope still said no, which earns different
+   * words saying what would change the answer. `'failed'` is an ask that could
+   * not be answered either way (a lock, a call that never came back): the
+   * words then promise nothing about sessions, because sessions were not the
+   * reason. SEPARATE from `missing` for the reason `missing` is separate from
+   * `result`: different things can be true of a document that is still on
+   * screen. The two can be true TOGETHER (the file is gone and we are not
+   * watching for its return), and then "deleted" is the sentence and this
+   * state contributes the button.
+   *
+   * WHAT SAYS WE ARE FOLLOWING AGAIN IS THE WATCH, never a read: main's own
+   * answer to a fresh `fs:watch`, or a `changed` notice arriving on the watch
+   * we hold. (A link followed to another file also clears it, because the
+   * strip was about the file that left the screen.) A read
+   * coming back proves the file is readable NOW, and the two can disagree (a
+   * writer holding the file, the scope moving between two messages); the first
+   * cut inferred one from the other and review found the strip could then sit
+   * over a live document, or clear over a dead one.
+   */
+  const [unfollowed, setUnfollowed] = React.useState<false | 'stopped' | 'refused' | 'failed'>(
+    false
+  );
+  const unfollowedNow = React.useRef(unfollowed);
+  unfollowedNow.current = unfollowed;
+  const currentNow = React.useRef(current);
+  currentNow.current = current;
+
+  /**
+   * "Ask main to follow this file again", as a number the watch effect is
+   * keyed on: each bump is a new ask, made under a new token.
+   */
+  const [followAsk, setFollowAsk] = React.useState(0);
+  /** the last ask the watch effect has acted on, so a path change is not one */
+  const followAskDone = React.useRef(0);
+  /**
+   * A PERSON is waiting for an answer (they pressed the button, or opened the
+   * file again), as opposed to a session opening and us trying quietly. A
+   * refusal is only worth saying to someone who asked.
+   *
+   * A ref that the ANSWER consumes, not a field on the ask: a quiet try can
+   * overtake a press that is still in flight, and the press must still get its
+   * answer from whichever ask lands.
+   */
+  const readerAsked = React.useRef(false);
+  const followBtn = React.useRef<HTMLButtonElement | null>(null);
+  /** what is on screen, for a callback that outlives the render it was made in */
+  const resultNow = React.useRef(result);
+  resultNow.current = result;
 
   /**
    * Which read is the CURRENT one.
@@ -292,32 +374,192 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     // three methods it cared about. The viewer is simply not live; nothing else
     // about it changes.
     if (!bridge?.watch) return;
-    return bridge.watch(current, (notice) => {
-      if (notice.state === 'gone') {
-        setMissing(true);
-        return;
-      }
-      const mine = ++readSeq.current;
-      void bridge
-        .read(current)
-        // `answered` (#650). On THIS path (`keep`) a refusal was already
-        // harmless — `applyRead` reads `.ok`, the brand has none, and a failed
-        // reload keeps what is on screen. Laundered anyway, because the OPEN
-        // path below is the same call with the opposite `keep` and there a
-        // refusal was NOT harmless; two spellings of one rule is how the next
-        // person picks the wrong one.
-        .then((r) => applyRead(mine, answered(r) ?? UNREADABLE, true))
-        .catch(() => {
-          /* keep showing what we have */
-        });
+    // Is THIS run of the effect a fresh ask to follow (#506), as opposed to
+    // the first watch or a link moving it to a new path?
+    const asked = followAsk !== followAskDone.current;
+    followAskDone.current = followAsk;
+    let current_ = true; // this run's watch is still the one we hold
+    const stop = bridge.watch(
+      current,
+      (notice) => {
+        if (notice.state === 'gone') {
+          setMissing(true);
+          return;
+        }
+        if (notice.state === 'unfollowed') {
+          // No re-read: it would be refused, for the reason the watch ended.
+          //
+          // AND "DELETED" COMES DOWN. Main only checks the scope of a file that
+          // is THERE (a deleted one keeps its watch, so its return can be
+          // seen), so this notice arriving over the deleted strip can mean one
+          // thing: the file came back, in a folder we may no longer read.
+          // Leaving "deleted" up would be a strip that is no longer true with
+          // no way to get rid of it.
+          setMissing(false);
+          setUnfollowed('stopped');
+          return;
+        }
+        // A `changed` on the watch we hold is proof that it is live, whatever
+        // the strip currently says.
+        setUnfollowed(false);
+        const mine = ++readSeq.current;
+        // KEEP what is on screen if this fails, WHEN THERE IS SOMETHING ON
+        // SCREEN. This read has just retired the open read's stamp, so if the
+        // notice beat the open read and this one then fails, nobody is left to
+        // clear "Opening…" (found in the #506 review, and older than it):
+        // with no document to keep, the failure has to be allowed to show.
+        const keep = resultNow.current?.ok === true;
+        void bridge
+          .read(current)
+          // `answered` (#650). On THIS path (`keep`) a refusal was already
+          // harmless — `applyRead` reads `.ok`, the brand has none, and a failed
+          // reload keeps what is on screen. Laundered anyway, because the OPEN
+          // path below is the same call with the opposite `keep` and there a
+          // refusal was NOT harmless; two spellings of one rule is how the next
+          // person picks the wrong one.
+          .then((r) => applyRead(mine, answered(r) ?? UNREADABLE, keep))
+          .catch(() => {
+            if (!keep) applyRead(mine, UNREADABLE, false);
+          });
+      },
+      // MAIN'S OWN ANSWER to the ask, and the only thing that decides the
+      // strip. Only listened to for a fresh ask: the first watch of a path
+      // has the open read to say what went wrong.
+      asked
+        ? (answer) => {
+            if (!current_) return;
+            const byReader = readerAsked.current;
+            readerAsked.current = false;
+            // `null` is a call that was rejected; a broker refusal has no `ok`
+            const said = answered(answer) as { ok?: unknown; reason?: unknown } | null | undefined;
+            if (said?.ok !== true) {
+              // WHY it was a no decides what may be said. Three answers, and
+              // only one of them is about sessions:
+              if (said?.reason === 'not-found') {
+                // The file is not there. That is news whoever asked, and it
+                // is the deleted strip's to give; this state stays, so the
+                // button stays, because nothing is watching for its return.
+                setMissing(true);
+              } else if (!byReader) {
+                // a QUIET try that failed leaves the strip exactly as it was
+              } else if (said?.reason === 'out-of-scope') {
+                setUnfollowed('refused');
+              } else {
+                // a lock, a path that is not a file, a call that never landed:
+                // "open a session there" would be advice that cannot help
+                setUnfollowed('failed');
+              }
+              return;
+            }
+            // The button is about to unmount with the strip. If it holds the
+            // keyboard, hand that to a control that stays rather than to
+            // <body>: the first button in this viewer that can take it. NOT
+            // the outline toggle by name, which is what the outline's own
+            // rescue uses: it is disabled on every document without three
+            // headings, and focusing a disabled button does nothing.
+            const btn = followBtn.current;
+            if (btn && btn.ownerDocument.activeElement === btn) {
+              btn
+                .closest('[data-testid="document-viewer"]')
+                ?.querySelector<HTMLButtonElement>(
+                  'button:not(:disabled):not([data-testid="doc-follow-again"])'
+                )
+                ?.focus();
+            }
+            setUnfollowed(false);
+            setMissing(false);
+            // ...then fetch whatever was written while nobody was looking.
+            // AFTER the watch was granted, for the reason the open read comes
+            // after its watch: main has seeded the file's signature. `keep`
+            // only if there is a document to keep; with none (the ask overtook
+            // the open read) a failure has to be allowed to say so.
+            const mine = ++readSeq.current;
+            const keep = resultNow.current?.ok === true;
+            void bridge
+              .read(current)
+              .then((r) => applyRead(mine, answered(r) ?? UNREADABLE, keep))
+              .catch(() => {
+                if (!keep) applyRead(mine, UNREADABLE, false);
+              });
+          }
+        : undefined
+    );
+    return () => {
+      current_ = false;
+      stop();
+    };
+  }, [current, applyRead, followAsk]);
+
+  /**
+   * A session opening is the moment following can resume by itself (#506): the
+   * read scope is the open sessions' folders, so a new card over this file's
+   * folder puts the file back in reach. Try once, quietly, whenever the set of
+   * open folders changes while this viewer is not being followed.
+   *
+   * Keyed on the FOLDERS, not on the store changing: the store is written to
+   * many times a second while a session works, and each try costs main a
+   * scope check (and, if granted, a watch and a read). A session CLOSING
+   * changes the key too and buys one try that
+   * will be refused, which is the price of not teaching this viewer which
+   * folder would help (main decides that, on the real path, with symlinks
+   * resolved; a guess made here would be a second copy of the rule).
+   */
+  React.useEffect(() => {
+    if (!unfollowed) return;
+    const folders = (): string =>
+      sessionStore
+        .getState()
+        .sessions.map((s) => s.folder)
+        .sort()
+        .join('\n');
+    let seen = folders();
+    return sessionStore.subscribe(() => {
+      const now = folders();
+      if (now === seen) return;
+      seen = now;
+      setFollowAsk((n) => n + 1);
     });
-  }, [current, applyRead]);
+  }, [unfollowed]);
+
+  /**
+   * Opening a file that is already open focuses its panel instead of making a
+   * second one. If that panel is THIS one and it had stopped, the person has
+   * just done the most direct thing there is to ask for it back (and through
+   * **Open File…** they have also just granted the file), so it counts as a
+   * press of the button. `SessionGrid` calls this by panel id.
+   *
+   * ONLY IF IT IS THE FILE ON SCREEN. The panel is found by the path it was
+   * OPENED on, and a viewer follows links: a panel opened on A that is now
+   * showing B is still "the panel for A". Re-opening A is then no request
+   * about B at all, and granted nothing about B, so it is a quiet try and a
+   * refusal says nothing.
+   */
+  React.useEffect(() => {
+    const id = props.panelId;
+    if (!id) return;
+    const ask = (path: string): void => {
+      if (!unfollowedNow.current) return;
+      if (path === currentNow.current) readerAsked.current = true;
+      setFollowAsk((n) => n + 1);
+    };
+    reopenListeners.set(id, ask);
+    return () => {
+      if (reopenListeners.get(id) === ask) reopenListeners.delete(id);
+    };
+  }, [props.panelId]);
 
   React.useEffect(() => {
     const mine = ++readSeq.current;
     setLoading(true);
     setResult(null);
     setMissing(false);
+    // a link followed out of a document that had stopped: the new path gets
+    // its own watch and its own answer, and the old strip is about a file
+    // that is no longer on screen. So is a press that main had not answered
+    // yet: left set, it would make some later QUIET refusal on the new file
+    // read as an answer to a question nobody asked about it.
+    setUnfollowed(false);
+    readerAsked.current = false;
     const bridge = files();
     if (!bridge) {
       // Fail-open (litmus #3): no bridge is a viewer that says so, not a throw
@@ -646,6 +888,21 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   // --- header -------------------------------------------------------------
   const canRender = meta.kind === 'markdown';
   const truncated = ok?.truncated === true;
+  /** the one thing to do about a file we are not following (#506) */
+  const followAgain = (
+    <button
+      ref={followBtn}
+      type="button"
+      className="doc-btn"
+      data-testid="doc-follow-again"
+      onClick={() => {
+        readerAsked.current = true;
+        setFollowAsk((n) => n + 1);
+      }}
+    >
+      {t('document.unfollowed.again')}
+    </button>
+  );
   const encoding = ok?.encoding;
 
   const switchMode = (next: DocumentMode): void => {
@@ -857,9 +1114,31 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
           document, not in place of it: what you were reading is still the last
           true thing anyone wrote, and losing your place as well as the file
           would be this feature costing more than it gives. */}
-      {missing ? (
+      {missing && !unfollowed ? (
         <div className="doc-notice doc-gone" role="status" data-testid="doc-gone">
           {t('document.gone')}
+        </div>
+      ) : null}
+      {/* ...and when we are ALSO not watching for it to come back (#506): the
+          same sentence, plus the one thing that can be done about that. */}
+      {missing && unfollowed ? (
+        <div className="doc-notice doc-gone doc-unfollowed" data-testid="doc-gone">
+          <span role="status">{t('document.gone')}</span>
+          {followAgain}
+        </div>
+      ) : null}
+
+      {/* Main stopped following the file (#506). The same shape as the strip
+          above and for its reason: the document under it is still the last
+          true thing we read. Only over a document (`ok`): with nothing on
+          screen there is no "last version" for it to be talking about.
+          THE BUTTON IS OUTSIDE THE LIVE REGION, so a screen reader is told the
+          sentence and not the sentence plus a button's name, and so the words
+          changing after a refused ask re-announce only the words. */}
+      {unfollowed && ok && !missing ? (
+        <div className="doc-notice doc-unfollowed" data-testid="doc-unfollowed">
+          <span role="status">{t(`document.unfollowed.${unfollowed}`)}</span>
+          {followAgain}
         </div>
       ) : null}
 
