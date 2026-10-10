@@ -3,13 +3,22 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✔ 2026-10-09 — TEN SMALL ITEMS THE OWNER PICKED: ALL TEN DONE. MERGED, NOT RELEASED.
+> # ✅ RELEASED: v0.8.118, 2026-10-10 (`f7203096`, PR #1194)
 >
-> **NOTHING IS IN FLIGHT.** Every item below is on `main` in
-> `0.8.118 — unreleased`, with #1179 and #1178. **No release was cut and
-> none may be until he asks.** Ten rows are at the top of the dogfood
-> tracker's Untested table, each saying "needs a version bump before you
-> can install it".
+> The owner, after the report on the ten items: *"Cut a release."* A plain
+> patch step, as 0.8.117 was. It carries the twelve items merged since
+> 0.8.117: #1179 and #1178 (the strip requests) and the ten below.
+> `0.8.119 — unreleased` is open. All twelve tracker rows read "IN
+> v0.8.118, installable now". The release PR's Windows e2e job hit the
+> known #1171 flake once and was green on the re-run.
+>
+> **Nothing is in flight. Nothing is queued:** ask him, or read the open
+> milestones. The five questions in the block below are still his.
+>
+> # ✔ 2026-10-09 — TEN SMALL ITEMS THE OWNER PICKED: ALL TEN DONE. IN v0.8.118.
+>
+> Every item below is in **v0.8.118** (released 2026-10-10), with #1179 and
+> #1178.
 >
 > **Waiting on him (asked in the tracker and the report, none blocks):**
 > - "166" was read as #1166. Confirm or correct.
