@@ -21,6 +21,7 @@ import '../theme/dockview-tokens.css';
 import { nativeAlert, nativeConfirm } from '../lib/native-dialog';
 import { placeMenuAtBox, type MenuPlacement } from '../lib/menu-placement';
 import { EmptyWorkspace, EmptyWorkspaceActions } from './EmptyWorkspace';
+import { ROOT_EDGE_DROP, rootEdgeDropAllowed } from '../lib/root-edge-drop';
 import { directionOf } from '../lib/writing-direction';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { sessionStore } from '../store/session-store';
@@ -6819,6 +6820,32 @@ export function SessionGrid(props: {
           // geometry is nice-to-have, never a reason to throw in an IPC callback
         }
       };
+      // THE WORKSPACE-EDGE DROP (#731): wide along the sides, where it gives a
+      // dragged session a full-height column; kept narrow along the top and
+      // bottom, where a card's row of tabs lives. `lib/root-edge-drop.ts` has
+      // the measurements and why both halves are needed.
+      //
+      // `?.`: FAIL OPEN. A dock that has no such event (an older library, a
+      // test's stand-in) simply keeps the library's own zones; it must not
+      // stop the workspace from starting.
+      api.onWillShowOverlay?.((e) => {
+        if (e.kind !== 'edge') return;
+        const native = e.nativeEvent;
+        const under = native.target as Element | null;
+        // `.dv-dockview` is the same box the library measures its zones
+        // against today (its host element's only child)
+        const dock = under?.closest?.('.dv-dockview');
+        // no box to measure against: leave the library's decision alone
+        if (!dock) return;
+        const overTabRow = !!under?.closest?.('.dv-tabs-and-actions-container');
+        const allowed = rootEdgeDropAllowed(
+          e.position,
+          { x: native.clientX, y: native.clientY },
+          dock.getBoundingClientRect(),
+          overTabRow
+        );
+        if (!allowed) e.preventDefault();
+      });
       api.onDidLayoutChange(() => {
         report();
         saveLayout();
@@ -7230,6 +7257,7 @@ export function SessionGrid(props: {
           components={components}
           defaultTabComponent={IdentityTab}
           watermarkComponent={EmptyWorkspace}
+          dndEdges={ROOT_EDGE_DROP}
           onReady={(e: DockviewReadyEvent) => void onReady(e)}
           /* the theme lives on the SHELL, set via api.updateOptions in onReady
              (#84) — a class here never reached the popups */

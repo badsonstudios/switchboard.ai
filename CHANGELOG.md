@@ -162,6 +162,13 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A stacked session can be dragged out into a full-height column.** Drag
+  a session's tab to the left or right side of the workspace and it gets
+  that whole side, top to bottom. This was possible before only if you let
+  go within about eight pixels of the edge, with a sliver of a marker, so
+  in practice the session always landed back inside the stack. The strip
+  is now about 40 pixels deep and the marker is a tall blue block.
+
 - **A card's ⋯ menu is no longer cut off on a small card.** With several
   sessions stacked in rows on a short window, the menu of a card in the
   bottom row ran off the bottom of the window and its last entries could
