@@ -183,15 +183,16 @@ carries a mark for what that session is doing right now:
 
 | You see | It means |
 |---|---|
-| a spinning ring | working |
-| the row or pill **filled in**, name in bold, and the words **needs you** | it needs you |
+| a spinning ring, **working** in blue, and the row or pill marked as busy in the session's own colour | working. How a busy session is marked is your choice: see [How a working session looks](10-settings.md#how-a-working-session-looks) |
+| the words **needs you** in orange, with a **?** or a **!** | it needs you |
 | a tick | done |
 | a dash | idle |
 | an **✕** mark | it crashed |
 | the word **suspended** | suspended |
 
-The filled-versus-plain difference is deliberate: you can pick out the sessions
-that need you without relying on the color at all. The list also totals them
+Yellow and orange are used for nothing else in the app, so anything in those
+colours is a session waiting for you; and the words **needs you** say it without
+the colour at all. The list also totals them
 up as **"2 need you"**: at the foot of the list on the left, or on the strip's
 first line when the list is across the top. When nobody is waiting there is no
 total at all.

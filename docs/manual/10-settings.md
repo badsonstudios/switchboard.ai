@@ -24,7 +24,7 @@ click outside.
 
 | Section | Holds |
 |---|---|
-| **Appearance** | Theme, language, where the Sessions list goes, how a working session looks, task label size |
+| **Appearance** | Theme, language, where the Sessions list goes, how a working session looks, the context meter, task label size |
 | **Attention** | Quiet hours, phone push & webhooks |
 | **Advanced** | Fork sessions (experimental), automatic update checks, Anthropic status checks |
 | **Diagnostics** | Detailed performance capture, and the file it writes — see [When it feels slow](19-performance.md) |
@@ -46,12 +46,13 @@ hunting through a window.
 | **🗣 announce / 🗣 silent** | Whether switchboard says out loud which session needs you |
 | **🔓 auto-trust / 🔒 ask trust** | Whether new folders are trusted automatically. Greyed out, because nothing can ask any more — see below |
 
-Three more chips are on the bar because they answer "why does the window look
+Four more chips are on the bar because they answer "why does the window look
 like this?", and you need to be able to answer that by looking up rather than by
 opening a window:
 
 | Chip | Does |
 |---|---|
+| **◧ left / ⬒ top** | Where your sessions are listed: down the left, or across the top. The same choice as **Appearance ▸ Sessions list**. See [Listing sessions across the top instead](07-workspace.md#listing-sessions-across-the-top-instead) |
 | **🛡 ask / plan / auto-edit / full-auto** | The autonomy mode *new* sessions start at — click to cycle |
 | **⬍ Keep visible / Collapse on submit / Hide on submit** | What happens to a session's card when you send it a prompt — click to cycle. See below |
 | **Five small pictures of split boxes** | Arrange the open sessions in that shape with one click, or make the current arrangement even. See [Arranging cards with one click](07-workspace.md#arranging-cards-with-one-click) |

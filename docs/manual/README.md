@@ -45,7 +45,7 @@ anywhere else.
 | [04 — Approvals & autonomy](04-approvals-and-autonomy.md) | Allowing/denying tool use, answering Claude's questions, the four autonomy modes | draft |
 | [05 — Slash commands](05-slash-commands.md) | `/clear`, `/compact`, autocomplete, the Clear and Compact buttons, the ⋯ menu | draft |
 | [06 — Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette | draft |
-| [07 — Organizing your workspace](07-workspace.md) | The sidebar, groups, pop-out windows, layout | draft |
+| [07 — Organizing your workspace](07-workspace.md) | The Sessions list (down the left or across the top), groups, pop-out windows, layout, arranging cards with one click | draft |
 | [08 — Changes & git](08-changes-and-git.md) | The Changes tab: the four groups, name-first rows, per-file line counts, the branch and push/pull line, filtering, giving a diff its own panel or window, syntax colouring | draft |
 | [09 — Notifications & events](09-notifications.md) | Sounds, the Events drawer, who needs you, when you get told what | draft |
 | [10 — Settings](10-settings.md) | The Settings window (`Ctrl+,`), the chips that stayed on the title bar, and why | current |
@@ -56,7 +56,7 @@ anywhere else.
 | [15 — Reading files in the app](15-document-viewer.md) | Opening a file, rendered Markdown, source view, find, reading this manual in the app, what won't be shown | draft |
 | [16 — Finding something](16-find.md) | `Ctrl+F` over a session: the find bar, the results list, what it searches that you can't see | draft |
 | [17 — MCP servers](17-mcp-servers.md) | `/mcp`: what tools a session is wired to, which scope each comes from, adding and removing them, and why one is waiting on you | current |
-| [18 — Choosing a model](18-model.md) | Switching a session between Opus, Sonnet and Haiku mid-conversation — the one-click menu on the model name and the fuller `/model` picker — and why the tick is sometimes missing | draft |
+| [18 — Choosing a model](18-model.md) | Switching a session between Opus, Sonnet and Haiku mid-conversation — the one-click menu on the model name and the fuller `/model` picker, why the tick is sometimes missing, and the effort button that sets how hard the model thinks | draft |
 | [19 — When it feels slow](19-performance.md) | The performance summary (`Ctrl+Shift+P`), the detailed capture switch in Settings, what it records and what it never touches, and how to send the file | current |
 | [20 — Handing work to a fresh session](20-dispatch.md) | Dispatch: ⋯ → Dispatch… and the palette's per-role entries, why a reviewer deliberately does not get your conversation, the task line worth reading before you send it, getting the findings back, where a dispatched session sits in the list and when it closes itself | draft |
 | [21 — The Files tab](21-files.md) | Browsing the session's folder: git badges on files and folders, opening files from the tree, what the keyboard does, why the list doesn't update by itself, and the entries it deliberately leaves out | draft |
@@ -81,5 +81,7 @@ Status is `stub` (skeleton only), `draft` (written, unreviewed), or `current`
   not theirs. If a term must appear, define it once in plain English.
 - **Short sections with headings** — people scan manuals, they don't read them.
 - Mark anything unfinished with `TODO:` so the compiler can flag it later.
-- Screenshots: not yet. Leave `<!-- screenshot: description -->` where one
-  should go, and we'll capture a set before the manual ships.
+- Screenshots are generated, never drawn or edited by hand: `npm run
+  manual:shots` drives the real app and rewrites every picture in `img/`.
+  Run it after the interface changes. To add one, add a `shot(...)` to
+  `e2e/manual-shots.spec.ts` and reference the file from the page.

@@ -48,8 +48,10 @@ where it was. See [Getting a session out of the way](#getting-a-session-out-of-t
 
 Click a row to jump to that session. Double-click to rename it — `Esc`, or Enter
 on an empty box, leaves the name alone. Right-click for
-**Open changes**, **Rename**, **Pin session**, **Close session**, and
-[what this session does when you submit a prompt](#changing-it).
+**Open changes**, **Rename…**, **Pin session**, **Close session** and
+**Move to group**. (What a session does when you send it a prompt is not on
+this menu any more; it is on the card's own **⋯** menu. See
+[Getting out of the way by itself](#getting-out-of-the-way-by-itself).)
 
 A **pinned** session (📌) sorts to the top of the list — of its group, if it is
 in one — stays put at the top while the rest of the list scrolls underneath it,
@@ -73,6 +75,8 @@ top of the window while it is lit. Click it again to bring the list back.
 
 ### Seeing what a session was last asked
 
+![The pointer resting on a session in the list, and a small box under it headed "Last prompt" with the words that were typed](img/last-prompt-hover.png)
+
 Rest the pointer on a session for about half a second and a small box appears
 with the **last prompt** you sent it, so you can tell what it is doing without
 switching to it. It works in three places:
@@ -94,6 +98,8 @@ you move off, click, press a key, scroll or start dragging.
 - Sessions in a popped-out window do not show the box on their tabs.
 
 ### When nothing is open
+
+![An empty window: "No sessions open" in the middle, with a green Start a session button](img/empty-workspace.png)
 
 With no session and no document open, the middle of the window says **No
 sessions open** and has one button, **Start a session**. It does exactly what
@@ -371,7 +377,7 @@ for a second monitor. The session keeps running throughout; nothing restarts.
   tabs on the second monitor.
 - **Click ＋ to start a new session in the pop-out itself.** It sits next to ⤢
   in the card header and only appears once the card is out in its own window —
-  the main window already has **+ session** in its sidebar. The new session
+  the main window already has **+ session** in its Sessions list. The new session
   arrives as a tab right beside the one you asked from, on the same monitor, and
   the folder picker opens over that window rather than yanking the main window
   in front of you. `Ctrl+N` (`Cmd+N` on a Mac) does the same thing when you
@@ -738,6 +744,8 @@ other card's row of tabs.** You do not have to aim for the middle of the card:
   the **right half**, just after it. A blue tint on that half, with a blue line
   on the side it will land, shows which.
 - Drop it on the **empty part** of the row and it goes on the end.
+
+![A tab being dragged onto another session's tab: the right half of that tab is tinted blue, with a blue line on its right edge](img/tab-drop-marker.png)
 
 While you drag, wherever the tab can be dropped is tinted blue: over a row of
 tabs, over half a card (to split it), or along an edge of the workspace.

@@ -59,8 +59,17 @@
 >    comment): stays, as a hairline between regions. **Filed on the way:
 >    #1209** (controls whose only edge is that hairline) and **#1211** (five
 >    places that dim text with opacity, which no colour rule can see).
-> 4. **The manual: a catch-up pass (#965, REDUCED; do not close it).** What
->    shipped in 0.8.116 to 0.8.118, plus the missing screenshots. Not started.
+>    **DONE 2026-10-10, PR #1212, merged, NOT released.** The independent
+>    review found the find bar's disabled buttons now looked enabled (fixed),
+>    a claim that was too wide (narrowed, two more surfaces measured, the
+>    strip's group count fixed), and two miscounted numbers (corrected).
+> 4. **The manual: a catch-up pass (#965, REDUCED; do not close it). IN
+>    PROGRESS, started 2026-10-10, branch `docs/965-manual-catch-up`.** Checked
+>    entry by entry against the changelog for 0.8.116 to 0.8.118: of 30
+>    entries, 20 were covered, 8 partly, 2 stale, none missing. The pictures
+>    were the real gap: all 24 dated from 0.8.116. All retaken (29 now), five
+>    new close-ups, a dozen passages corrected. #965 stays OPEN: the full
+>    audit and the HTML render are not done.
 > 5. **Popped-out windows: close the gaps** (#1022, the last-prompt hover on
 >    popout tabs, the context meter's form reaching a popout). Not started.
 >

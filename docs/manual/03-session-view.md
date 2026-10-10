@@ -101,7 +101,7 @@ bug worth reporting: **Help ▸ Report a problem…** sends the app's log, and t
 log records what the view thought you did.
 
 That holds across the things that move a card around, too: quitting and
-reopening switchboard, clicking a session in the sidebar, and dragging cards
+reopening switchboard, clicking a session in the Sessions list, and dragging cards
 into a different arrangement all leave each conversation showing its latest
 message rather than its first. The one thing that doesn't put you at the
 bottom is scrolling up yourself — which is the point, and which the button
@@ -140,6 +140,8 @@ Two things about that are worth knowing, because both are deliberate:
   put half a command on your clipboard with nothing to tell you so.
 
 ### The small picture after each tool name
+
+![Four steps in a conversation, each with a small picture after its name: a page after Read, a pencil after Edit, a terminal after Bash, a checklist after Update Todos](img/tool-icons.png)
 
 Every box for something Claude did has a small picture right after the tool's
 name, so you can tell what kind of step it was by its shape, without reading:
@@ -386,7 +388,9 @@ The box at the bottom sends straight to the real Claude Code session:
 
 Under the box is a row showing this session's **autonomy mode** (click to
 cycle) and the **model** it's running — click that to switch it, or see
-[Choosing a model](18-model.md). Beside them are **Compact** and **Clear**,
+[Choosing a model](18-model.md). Next to the model is **effort**, which sets
+[how hard the model thinks](18-model.md#how-hard-the-model-thinks). Beside
+them are **Compact** and **Clear**,
 which summarize or restart this session's conversation — Clear asks you to
 confirm first, right there in the row. Both are also in the card's **⋯** menu
 under their full names; see
@@ -396,7 +400,7 @@ At the right-hand end of the same row is the **context meter**: how full this
 session's memory of the conversation is, from 0 to 100%. See
 [The context meter](#the-context-meter) below.
 
-All four are buttons and now look like it: each one sits in its own small
+All five are buttons and look like it: each one sits in its own small
 filled box with a visible edge, they are all written in the same colour, and
 hovering over one lights it up. When a button can't be used — while a session
 is still starting, has ended, or is busy with the thing you just asked for —
@@ -660,6 +664,8 @@ on those, run `claude` yourself in a terminal for that piece of work.
   whichever one you're on.
 
 ## The context meter
+
+![The row under the prompt box, with "context 4%" at its right-hand end](img/context-meter.png)
 
 Claude can only keep so much of a conversation in mind at once. That space is
 its **context**, and a long session fills it. Under the prompt box, at the

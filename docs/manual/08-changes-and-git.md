@@ -349,7 +349,7 @@ about 400 pixels and two columns would hold roughly 18 characters each, which
 isn't a diff. Below that width it's drawn inline whatever you chose, and the
 tab tells you so — *Too narrow for two columns*. The button stays selected;
 **the quickest fix is the ⧉ button described below** — or widen the card, hide
-the sessions rail with **Ctrl+B**, or pop the session out into its own window,
+the Sessions list with **Ctrl+B**, or pop the session out into its own window,
 and the second column comes back on its own.
 
 ## Giving a diff its own space — ⧉
@@ -359,6 +359,9 @@ you can't see the conversation that produced it. The **⧉** button, beside the
 side-by-side / inline pair, fixes that. Click it with a file selected and that
 file's diff opens as **its own panel** next to your sessions — so the diff and
 the conversation are on screen together, and the diff gets the width it wants.
+When you're done with it, click the **✕** on its tab, or **middle-click the
+tab** (press the mouse wheel on it), as in a browser. It closes at once:
+a diff is not a session, so there is nothing to confirm.
 
 Inside that panel there's a **⧉** of its own, which moves it to **a separate
 window** — another monitor, if you have one. The same button then reads **⇤** to

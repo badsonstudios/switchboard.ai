@@ -264,7 +264,8 @@ row or pill has a dashed edge), not closed. Then look at the layout chip in the 
   from the command palette — which also brings back every
   session you'd folded or hidden.
 - **It says Focus or Queue.** Folding the card you leave is that layout doing
-  its job. Click the chip until it says **Grid**.
+  its job. Click the chip until it goes away: there is no chip while the
+  layout is Grid, and the five arrangement pictures are back in its place.
 
 If a card still goes missing, [the log](#where-the-logs-are) has a `[ladder]`
 line every time a card is folded, hidden or tabbed, saying which rule did it —
