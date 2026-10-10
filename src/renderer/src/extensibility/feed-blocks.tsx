@@ -276,7 +276,7 @@ function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
             {b.tool?.filePath ?? b.tool?.summary}
           </span>
         </FeedExpander>
-        <div style={{ fontSize: 9.5, color: 'var(--faint)', marginBlock: 2 }}>
+        <div style={{ fontSize: 9.5, color: 'var(--muted)', marginBlock: 2 }}>
           {t('feedView.editStats', { added, removed })}
         </div>
         {open && (
@@ -346,7 +346,7 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
         // the <pre> is always rendered — collapsed it shows the first line —
         // so the controlled element exists in both states
         controls={id}
-        style={{ fontSize: 8.5, fontWeight: 700, color: 'var(--faint)', flexShrink: 0, inlineSize: 26 }}
+        style={{ fontSize: 8.5, fontWeight: 700, color: 'var(--muted)', flexShrink: 0, inlineSize: 26 }}
       >
         {open ? '▾' : '▸'} {label}
       </FeedExpander>
@@ -430,7 +430,7 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
             {/* -ink on both arms (#246): a checklist marker is 10px TEXT on the
                 tool box's --panel2, where the two raw hues it uses measure
                 2.33-2.35:1 on daylight and 4.49-4.52:1 on nordic */}
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, flexShrink: 0, color: td.status === 'completed' ? 'var(--status-done-ink)' : td.status === 'in_progress' ? 'var(--status-working-ink)' : 'var(--faint)' }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, flexShrink: 0, color: td.status === 'completed' ? 'var(--status-done-ink)' : td.status === 'in_progress' ? 'var(--status-working-ink)' : 'var(--muted)' }}>
               {td.status === 'completed' ? t('feedView.todoDone') : td.status === 'in_progress' ? t('feedView.todoActive') : t('feedView.todoPending')}
             </span>
             <span style={{ minInlineSize: 0, textDecoration: td.status === 'completed' ? 'line-through' : 'none' }}>
@@ -496,7 +496,7 @@ function NoticeBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
           controls={open ? rawId : undefined}
           style={{ display: 'flex', gap: 6, alignItems: 'baseline', inlineSize: '100%' }}
         >
-          <span style={{ fontSize: 8, color: 'var(--faint)', flexShrink: 0 }}>
+          <span style={{ fontSize: 8, color: 'var(--muted)', flexShrink: 0 }}>
             {open ? t('feedView.expandedIcon') : t('feedView.collapsedIcon')}
           </span>
           {/* The kind of thing this is, said in words. The row is otherwise a
@@ -525,7 +525,7 @@ function NoticeBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
               style={{
                 fontSize: 9.5,
                 fontFamily: 'var(--font-ui)',
-                color: wrong ? 'var(--status-crashed-ink)' : 'var(--faint)',
+                color: wrong ? 'var(--status-crashed-ink)' : 'var(--muted)',
                 // ELLIPSISED, not `flexShrink: 0`. A status is whatever word
                 // the CLI wrote, capped at the summary budget rather than at a
                 // chip's width — an unshrinkable one would push the summary it
@@ -586,7 +586,7 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
   };
   const header = (
     <>
-      <span style={{ color: 'var(--faint)', fontSize: 8 }}>{open ? '▾' : '▸'}</span>
+      <span style={{ color: 'var(--muted)', fontSize: 8 }}>{open ? '▾' : '▸'}</span>
       {/* the tool's NAME — the header of every tool block in the feed, and the
           most-repeated status-coloured word in the app after the pill. -ink
           because the hue is 2.33:1 on daylight's tool box and 4.52:1 on
@@ -674,7 +674,7 @@ function ThinkingRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
     ? t('feedView.thoughtFor', { s: Math.max(1, Math.round(b.durationMs / 1000)) })
     : t('feedView.thinking');
   return (
-    <div style={{ fontSize: 10.5, color: 'var(--faint)', fontStyle: 'italic' }}>
+    <div style={{ fontSize: 10.5, color: 'var(--muted)', fontStyle: 'italic' }}>
       <FeedExpander open={open} onToggle={() => setExpanded(!open)} controls={open ? textId : undefined}>
         {open ? '▾' : '▸'} {label}
       </FeedExpander>
@@ -799,7 +799,7 @@ function InjectedContextRow({
           controls={open ? bodyId : undefined}
           style={{ display: 'flex', gap: 6, alignItems: 'baseline', inlineSize: '100%' }}
         >
-          <span style={{ fontSize: 8, color: 'var(--faint)', flexShrink: 0 }}>
+          <span style={{ fontSize: 8, color: 'var(--muted)', flexShrink: 0 }}>
             {open ? t('feedView.expandedIcon') : t('feedView.collapsedIcon')}
           </span>
           <span
@@ -814,7 +814,7 @@ function InjectedContextRow({
           >
             {t('feedView.injectedContext.label', { name })}
           </span>
-          <span style={{ fontSize: 9.5, color: 'var(--faint)', flexShrink: 0 }}>
+          <span style={{ fontSize: 9.5, color: 'var(--muted)', flexShrink: 0 }}>
             {t('feedView.injectedContext.hint')}
           </span>
         </FeedExpander>
@@ -950,7 +950,7 @@ function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
           controls={open ? bodyId : undefined}
           style={{ display: 'flex', gap: 6, alignItems: 'baseline', inlineSize: '100%' }}
         >
-          <span style={{ fontSize: 8, color: 'var(--faint)' }}>
+          <span style={{ fontSize: 8, color: 'var(--muted)' }}>
             {open ? t('feedView.expandedIcon') : t('feedView.collapsedIcon')}
           </span>
           <span
@@ -966,7 +966,7 @@ function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
             {label}
           </span>
           {!open && (
-            <span style={{ fontSize: 9.5, color: 'var(--faint)', flexShrink: 0 }}>
+            <span style={{ fontSize: 9.5, color: 'var(--muted)', flexShrink: 0 }}>
               {t('feedView.expandHint')}
             </span>
           )}

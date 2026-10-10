@@ -201,6 +201,10 @@ describe('a refused group mutation answers null and says why — it never throws
     ['a yellowish color (#1165: reserved for a session that needs you)', ['groups:update', 'g1', { color: '#d98f3d' }]],
     ['a create in a yellowish color', ['groups:create', { name: 'ok', color: '#e3b341' }]],
     ['a short-hex color', ['groups:update', 'g1', { color: '#fff' }]],
+    // #685: a group's colour is painted as text, and only the palette's
+    // colours are measured for that
+    ['a well-formed color that is not in the palette', ['groups:update', 'g1', { color: '#123456' }]],
+    ['a create in a color that is not in the palette', ['groups:create', { name: 'ok', color: '#0b0b0b' }]],
     ['an unknown notify scope', ['groups:update', 'g1', { notifyScope: 'loud' }]],
     ['a non-string id', ['groups:update', 42, { name: 'x' }]],
     ['a create with no name', ['groups:create', { name: '' }]],

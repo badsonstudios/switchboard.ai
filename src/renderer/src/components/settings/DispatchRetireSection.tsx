@@ -57,7 +57,7 @@ export function DispatchRetireSection(props: DispatchRetireSectionProps): React.
       />
       <span style={{ fontSize: 11.5 }}>{t(`dispatchRetire.${policy}`)}</span>
       <span />
-      <span style={{ fontSize: 11, color: 'var(--faint)' }}>
+      <span style={{ fontSize: 11, color: 'var(--muted)' }}>
         {t(`dispatchRetire.${policy}Note`)}
       </span>
     </label>

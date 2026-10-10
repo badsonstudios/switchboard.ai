@@ -30,7 +30,7 @@ export function GitContext(props: { status: GitStatusDto | null }): React.JSX.El
       >
         {t('git.branch', { branch: s.branch ?? '?' })}
       </span>
-      {!!s.ahead && <span style={{ color: 'var(--faint)' }}>{t('git.ahead', { n: s.ahead })}</span>}
+      {!!s.ahead && <span style={{ color: 'var(--muted)' }}>{t('git.ahead', { n: s.ahead })}</span>}
     </span>
   );
 }

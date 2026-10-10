@@ -271,7 +271,7 @@ const FoldRow = React.memo(function FoldRow(props: {
                 inlineSize: '100%',
               }}
             >
-              <span style={{ color: 'var(--faint)', fontSize: 8 }}>
+              <span style={{ color: 'var(--muted)', fontSize: 8 }}>
                 {props.open ? t('feedView.fold.caretOpen') : t('feedView.fold.caretClosed')}
               </span>
               <span style={{ color: 'var(--status-working-ink)', fontWeight: 600, flexShrink: 0 }}>
@@ -297,7 +297,7 @@ const FoldRow = React.memo(function FoldRow(props: {
                 <span
                   style={{
                     flex: '1 1 0%',
-                    color: 'var(--faint)',
+                    color: 'var(--muted)',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
@@ -485,7 +485,7 @@ function EmptyState({
     <div
       data-binding={binding}
       style={{
-        color: 'var(--faint)',
+        color: 'var(--muted)',
         fontSize: 11,
         textAlign: 'center',
         marginBlockStart: 24,
@@ -1364,7 +1364,7 @@ export function FeedView(props: {
             flex: 1,
             minInlineSize: 0,
             fontSize: 9.5,
-            color: 'var(--faint)',
+            color: 'var(--muted)',
             fontFamily: 'var(--font-ui)',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -1381,7 +1381,7 @@ export function FeedView(props: {
             style={{
               background: verbosity === v ? 'var(--chip)' : 'transparent',
               border: '1px solid var(--border)',
-              color: verbosity === v ? 'var(--text)' : 'var(--faint)',
+              color: verbosity === v ? 'var(--text)' : 'var(--muted)',
               borderRadius: 'var(--radius-chip)',
               fontSize: 9.5,
               padding: '0 6px',
@@ -3941,7 +3941,7 @@ function Composer({
               >
                 {row.detail}
               </span>
-              <span style={{ fontSize: 9, color: 'var(--faint)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+              <span style={{ fontSize: 9, color: 'var(--muted)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
                 {row.badge}
               </span>
             </div>
@@ -4384,14 +4384,17 @@ function Composer({
               // pointed at a tab it never had. No session has one now, so the
               // plain statement of fact is the only true thing to say.
               title={t('feedView.modelHintInactive')}
-              // DELIBERATELY NOT `.composer-chip`, and it keeps `--faint`. It
-              // is not a control — dressing an inert label in a button's fill
-              // and edge is #747's mistake pointed the other way. It takes the
-              // row's 10px so the row has one type size, and nothing else.
+              // DELIBERATELY NOT `.composer-chip`. It is not a control —
+              // dressing an inert label in a button's fill and edge is #747's
+              // mistake pointed the other way. It takes the row's 10px so the
+              // row has one type size, and nothing else. `--muted`, where it
+              // was `--faint` until #685: inert is not the same as unreadable,
+              // and this is the only place an ended session says which model
+              // it ran on.
               style={{
                 fontFamily: 'var(--font-mono)',
                 fontSize: 10,
-                color: 'var(--faint)',
+                color: 'var(--muted)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',

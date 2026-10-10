@@ -283,11 +283,12 @@ describe('the chip is dressed as what it is (issue 1009)', () => {
   it('leaves an unswitchable session its label — a chip there would be a lie', async () => {
     // The inverse of #747, and the reason this span is NOT given the class: it
     // is not a control, so dressing it with a button's fill and edge would
-    // invite exactly the click the branch exists to prevent. It keeps `--faint`
-    // because it is genuinely inert.
+    // invite exactly the click the branch exists to prevent. Inert, and
+    // still READABLE (#685): it is a model's name, which is information, so it
+    // is written in the secondary ink and not in the disabled one.
     await mount({ transport: 'stream', sessionId: '', model: 'claude-sonnet-5' });
     expect(chip()!.tagName).toBe('SPAN');
     expect(chip()!.classList.contains('composer-chip')).toBe(false);
-    expect(chip()!.style.color).toBe('var(--faint)');
+    expect(chip()!.style.color).toBe('var(--muted)');
   });
 });

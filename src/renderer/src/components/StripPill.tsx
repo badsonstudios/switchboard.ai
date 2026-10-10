@@ -147,7 +147,7 @@ export function StripPill(props: {
         <span
           aria-hidden
           data-strip-lineage={s.id}
-          style={{ fontSize: 11, lineHeight: 1, color: 'var(--faint)', flex: 'none' }}
+          style={{ fontSize: 11, lineHeight: 1, color: 'var(--muted)', flex: 'none' }}
         >
           {t('rail.lineageMark')}
         </span>

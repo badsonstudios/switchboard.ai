@@ -90,7 +90,7 @@ export function SessionsPlacementSection(
             {t(`sessionsPlacement.${placement}`)}
           </span>
         </span>
-        <span id={`${fieldId}d-${placement}`} style={{ fontSize: 11, color: 'var(--faint)' }}>
+        <span id={`${fieldId}d-${placement}`} style={{ fontSize: 11, color: 'var(--muted)' }}>
           {t(`sessionsPlacement.${placement}Note`)}
         </span>
       </label>

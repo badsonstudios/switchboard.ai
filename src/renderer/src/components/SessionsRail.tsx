@@ -132,7 +132,7 @@ const menuSectionStyle: React.CSSProperties = {
   paddingBlock: '4px 2px',
   paddingInline: 9,
   borderBlockStart: '1px solid var(--border)',
-  color: 'var(--faint)',
+  color: 'var(--muted)',
   fontSize: 9.5,
   textTransform: 'uppercase',
   letterSpacing: 0.4,
@@ -1224,7 +1224,7 @@ export function SessionsRail(props: {
             aria-hidden
             style={{
               fontSize: 8,
-              color: 'var(--faint)',
+              color: 'var(--muted)',
               inlineSize: 8,
               flexShrink: 0,
               display: 'inline-block',
@@ -1573,7 +1573,7 @@ export function SessionsRail(props: {
             measured or focusable — the members themselves are still skipped. */}
         <div id={bodyId} data-rail-body hidden={isCollapsed} style={{ padding: 5 }}>
           {isCollapsed ? null : opts.members.length === 0 && opts.showEmpty ? (
-            <div style={{ color: 'var(--faint)', fontSize: 10, padding: '4px 8px' }}>
+            <div style={{ color: 'var(--muted)', fontSize: 10, padding: '4px 8px' }}>
               {t('rail.groupEmpty')}
             </div>
           ) : (
@@ -1674,7 +1674,7 @@ export function SessionsRail(props: {
             fontSize: 9,
             letterSpacing: 1.4,
             textTransform: 'uppercase',
-            color: 'var(--faint)',
+            color: 'var(--muted)',
             minInlineSize: 0,
             overflow: 'hidden',
             textOverflow: 'ellipsis',

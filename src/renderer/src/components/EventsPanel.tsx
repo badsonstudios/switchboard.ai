@@ -365,7 +365,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
             fontSize: 9,
             letterSpacing: 1.3,
             fontWeight: 600,
-            color: 'var(--faint)',
+            color: 'var(--muted)',
             textTransform: 'uppercase',
           }}
         >
@@ -897,7 +897,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                     >
                       {s?.title ?? t('events.unknownSession')}
                     </span>
-                    <span style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
+                    <span style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
                       {new Date(e.at).toLocaleTimeString()}
                     </span>
                   </span>
@@ -959,7 +959,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                           fontSize: 9,
                           letterSpacing: 0.6,
                           textTransform: 'uppercase',
-                          color: 'var(--faint)',
+                          color: 'var(--muted)',
                           fontFamily: 'var(--font-mono)',
                         }}
                       >

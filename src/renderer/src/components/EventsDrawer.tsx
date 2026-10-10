@@ -104,7 +104,7 @@ const Z_DRAWER = 40;
  */
 const BADGE_INK: Record<EventDto['kind'], string> = {
   done: 'var(--status-done-ink)',
-  ready: 'var(--faint)',
+  ready: 'var(--muted)',
   'needs-input': 'var(--status-needs-input-ink)',
   'needs-permission': 'var(--status-needs-permission-ink)',
   crashed: 'var(--status-crashed-ink)',

@@ -108,7 +108,7 @@ export function PerfSummaryPanel(props: {
           {t('perf.title')}
         </div>
 
-        <p style={{ margin: 0, padding: '12px 14px 0', fontSize: 11.5, color: 'var(--faint)' }}>
+        <p style={{ margin: 0, padding: '12px 14px 0', fontSize: 11.5, color: 'var(--muted)' }}>
           {t('perf.intro')}
         </p>
 
@@ -195,7 +195,7 @@ export function PerfSummaryPanel(props: {
           {worstCtx && (
             <p
               data-perf-field="longTasksCtx"
-              style={{ margin: 0, marginBlockStart: -4, paddingInlineStart: 14, color: 'var(--faint)' }}
+              style={{ margin: 0, marginBlockStart: -4, paddingInlineStart: 14, color: 'var(--muted)' }}
             >
               {t('perf.longTasksCtx', { what: worstCtx })}
             </p>
@@ -237,7 +237,7 @@ export function PerfSummaryPanel(props: {
               </p>
             </>
           ) : (
-            <p data-perf-field="detail" style={{ margin: 0, color: 'var(--faint)' }}>
+            <p data-perf-field="detail" style={{ margin: 0, color: 'var(--muted)' }}>
               {t('perf.detailOff')}
             </p>
           )}

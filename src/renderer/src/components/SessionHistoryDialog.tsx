@@ -501,7 +501,7 @@ export function SessionHistoryDialog(props: {
               >
                 <span style={{ flex: 1, minInlineSize: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {row.descriptionFrom === 'none' ? (
-                    <span style={{ color: 'var(--faint)' }}>{t('sessionHistory.noDescription')}</span>
+                    <span style={{ color: 'var(--muted)' }}>{t('sessionHistory.noDescription')}</span>
                   ) : (
                     // A first prompt is the user's own words, so it is quoted; a
                     // title is the CLI's summary of them and is not.

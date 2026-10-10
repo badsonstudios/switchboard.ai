@@ -87,12 +87,24 @@ const chip: React.CSSProperties = {
   border: '1px solid var(--border)',
   borderRadius: 'var(--radius-chip)',
   background: 'transparent',
-  color: 'var(--faint)',
+  color: 'var(--muted)',
   fontFamily: 'var(--font-ui)',
   fontSize: 10,
   lineHeight: '16px',
   padding: '0 6px',
   cursor: 'pointer',
+};
+
+/**
+ * A button that cannot be pressed right now (nothing found to step through,
+ * a surface that cannot match case). It wore the SAME ink as a live one,
+ * before #685 and after it; now that the live ink is the readable one, the
+ * disabled ink is the faint one, which is what `--faint` is for.
+ */
+const chipOff: React.CSSProperties = {
+  ...chip,
+  color: 'var(--faint)',
+  cursor: 'default',
 };
 
 const chipOn: React.CSSProperties = {
@@ -604,7 +616,7 @@ export function FindBar(props: {
           aria-label={t('find.previous')}
           disabled={steps.length === 0}
           onClick={() => step(-1)}
-          style={chip}
+          style={steps.length === 0 ? chipOff : chip}
         >
           {t('find.iconPrevious')}
         </button>
@@ -615,7 +627,7 @@ export function FindBar(props: {
           data-testid="find-next"
           disabled={steps.length === 0}
           onClick={() => step(1)}
-          style={chip}
+          style={steps.length === 0 ? chipOff : chip}
         >
           {t('find.iconNext')}
         </button>
@@ -626,7 +638,7 @@ export function FindBar(props: {
           aria-pressed={caseSensitive}
           disabled={!!unavailableKey}
           onClick={() => setFindOptions({ caseSensitive: !caseSensitive })}
-          style={caseSensitive ? chipOn : chip}
+          style={unavailableKey ? chipOff : caseSensitive ? chipOn : chip}
         >
           {t('find.iconCase')}
         </button>
@@ -637,7 +649,7 @@ export function FindBar(props: {
           aria-pressed={wholeWord}
           disabled={!!unavailableKey}
           onClick={() => setFindOptions({ wholeWord: !wholeWord })}
-          style={wholeWord ? chipOn : chip}
+          style={unavailableKey ? chipOff : wholeWord ? chipOn : chip}
         >
           {t('find.iconWholeWord')}
         </button>
@@ -650,7 +662,7 @@ export function FindBar(props: {
           data-testid="find-results-toggle"
           disabled={steps.length === 0}
           onClick={() => setFindListOpen(!bar.listOpen)}
-          style={bar.listOpen ? chipOn : chip}
+          style={steps.length === 0 ? chipOff : bar.listOpen ? chipOn : chip}
         >
           {t(listOpen ? 'find.iconListOpen' : 'find.iconListClosed')}
         </button>
@@ -773,7 +785,7 @@ export function FindBar(props: {
                   data-testid="find-group-header"
                   style={{
                     fontSize: 9,
-                    color: 'var(--faint)',
+                    color: 'var(--muted)',
                     textTransform: 'uppercase',
                     letterSpacing: 0.4,
                     padding: '4px 5px 2px',
@@ -820,7 +832,7 @@ function HitRow({
         <mark style={{ background: 'var(--chip)', color: 'var(--text)', fontWeight: 700 }}>{match}</mark>
         {after}
       </div>
-      <div style={{ fontSize: 9, color: 'var(--faint)', marginBlockStart: 1 }}>
+      <div style={{ fontSize: 9, color: 'var(--muted)', marginBlockStart: 1 }}>
         {hit.metaKey ? t(hit.metaKey, hit.metaParams) : ''}
         {hit.earlierThanLoaded && (
           <span data-testid="find-earlier" style={{ marginInlineStart: 6, fontStyle: 'italic' }}>

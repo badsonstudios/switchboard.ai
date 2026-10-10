@@ -62,9 +62,22 @@ export { GROUP_PALETTE };
  * is the renderer's promise and this is the door: a caller that sent the old
  * orange would have had it saved until the next launch moved it. Refused here,
  * the rule is "no group can be given one", which is what was asked for.
+ *
+ * AND ONE OF THE PALETTE'S (#685), for the same reason one level up. A group's
+ * colour is painted as TEXT (its name, its count), and whether that text can
+ * be read is measured for the palette's colours in every theme
+ * (`tokens.drift.test.ts`). "The renderer only offers those" made that
+ * measurement a promise about a menu; refusing anything else here makes it a
+ * promise about every colour a group can have. A colour already on disk from
+ * before this is left alone: this is the door, not a migration.
  */
 function isColor(c: unknown): c is string {
-  return typeof c === 'string' && /^#[0-9a-fA-F]{6}$/.test(c) && !isReservedColor(c);
+  return (
+    typeof c === 'string' &&
+    /^#[0-9a-fA-F]{6}$/.test(c) &&
+    !isReservedColor(c) &&
+    (GROUP_PALETTE as readonly string[]).includes(c.toLowerCase())
+  );
 }
 
 /**
@@ -105,8 +118,10 @@ export function registerGroupIpc(store: WorkspaceStore, broker: IpcBroker, log: 
     const name = cleanName(opts?.name);
     if (!name) return refuse('groups:create', 'a group needs a non-empty name');
     if (opts?.color !== undefined && !isColor(opts.color))
-      return refuse('groups:create', 'color must be #rrggbb');
-    const color = opts?.color ?? GROUP_PALETTE[store.listGroups().length % GROUP_PALETTE.length];
+      return refuse('groups:create', 'color must be one of the group palette');
+    // lower-cased: the rail finds a group's place in the palette by `indexOf`
+    const color =
+      opts?.color?.toLowerCase() ?? GROUP_PALETTE[store.listGroups().length % GROUP_PALETTE.length];
     const group: PersistedGroup = { id: randomUUID(), name, color };
     store.upsertGroup(group);
     return group;
@@ -130,8 +145,8 @@ export function registerGroupIpc(store: WorkspaceStore, broker: IpcBroker, log: 
       }
       if (patch?.color !== undefined) {
         if (!isColor(patch.color))
-          return refuse('groups:update', 'color must be #rrggbb', { groupId: id });
-        next.color = patch.color;
+          return refuse('groups:update', 'color must be one of the group palette', { groupId: id });
+        next.color = patch.color.toLowerCase();
       }
       if (patch?.notifyScope !== undefined) {
         if (!SCOPES.includes(patch.notifyScope as PersistedGroup['notifyScope']))

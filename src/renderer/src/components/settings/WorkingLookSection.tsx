@@ -128,7 +128,7 @@ export function WorkingLookSection(props: WorkingLookSectionProps): React.JSX.El
             {t('workingLook.numbered', { number: index + 1, name: t(`workingLook.${look}`) })}
           </span>
         </span>
-        <span id={`${fieldId}d-${look}`} style={{ fontSize: 11, color: 'var(--faint)' }}>
+        <span id={`${fieldId}d-${look}`} style={{ fontSize: 11, color: 'var(--muted)' }}>
           {t(`workingLook.${look}Note`)}
         </span>
       </label>

@@ -137,7 +137,8 @@ describe('UsageStrip thinking breakdown (#789)', () => {
     const inner = outputSpan().querySelector<HTMLElement>('span[title]');
     expect(inner).toBeTruthy();
     expect(inner!.getAttribute('title')).toBe(en.usage.thinkingTitle.replace('{pct}', '69'));
-    expect(inner!.getAttribute('style')).toContain('var(--faint)');
+    // a number somebody reads, so the secondary ink and not the disabled one (#685)
+    expect(inner!.getAttribute('style')).toContain('var(--muted)');
   });
 
   it('shows nothing extra for a session with no thinking recorded', () => {

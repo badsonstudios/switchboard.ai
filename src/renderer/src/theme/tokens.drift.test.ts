@@ -33,6 +33,7 @@ import { builtinThemes } from './builtin-themes';
 import { statusVars, STATUS_TOKENS, type StatusToken } from '../lib/rail-view';
 // #946: the §5.11 palette's other home. See the drift assertion further down.
 import { ACCENTS } from '../../../shared/accents';
+import { GROUP_PALETTE } from '../../../shared/group-palette';
 
 const cssPath = path.join(__dirname, 'tokens.css');
 // normalized: a selector spanning two lines would never match against CRLF.
@@ -1227,6 +1228,217 @@ describe('a status hue is never spent on words', () => {
     expect(accented('  color: var(--accent-pink);\n')).toHaveLength(1);
     expect(accented('  background: var(--accent-pink);\n')).toEqual([]);
     expect(accented(`  color: 'var(${ACCENT_INK})',\n`)).toEqual([]);
+  });
+});
+
+// --- The three readability stragglers (#685) ---------------------------------
+//
+// Three residues of the AA sweeps, each given a decision and each pinned here.
+// The numbers in the comments were MEASURED from these files on 2026-10-10.
+
+describe('the secondary ink is readable wherever words are written in it (#685)', () => {
+  // DECISION 1: FIX, at the token. `--muted` on `--chip` was 4.10:1 on nordic,
+  // so every filled chip that wrote in the secondary ink was under AA there.
+  // Nordic's `--muted` was lifted until it cleared; the other three already
+  // did. Held on the seven NEUTRAL surfaces text sits on and in EVERY shipped
+  // theme, which is the claim the earlier lists could not make: `PAIRS` is the
+  // two contrast themes only, and deliberately so.
+  //
+  // NOT A CLAIM ABOUT TINTED FILLS, and review caught the first draft making
+  // it: a fill mixed from a group's or a session's colour is a different
+  // surface for every colour. Those are measured where they are painted (the
+  // group header below; the status pills in TINTED_RULES).
+  const SURFACES = ['--bg', '--panel', '--panel2', '--chip', '--rail-card'];
+  // the two auto-group fills are mixed from tokens, so they are resolved from
+  // the file per theme; `--auto-head` is the tight one (4.52:1 on nordic)
+  const DERIVED = ['--auto-surface', '--auto-head'];
+
+  describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s', (id, theme) => {
+    const tokens = resolved(theme);
+    it.each(SURFACES)('--muted on %s clears 4.5:1', (surface) => {
+      for (const token of ['--muted', surface]) {
+        expect(tokens[token], `${token} must be #rrggbb to be measured`).toMatch(/^#[0-9a-f]{6}$/i);
+      }
+      expect(ratio(tokens['--muted'], tokens[surface])).toBeGreaterThanOrEqual(4.5);
+    });
+    it.each(DERIVED)('--muted on %s clears 4.5:1', (surface) => {
+      expect(tokens['--muted'], '--muted must be #rrggbb to be measured').toMatch(/^#[0-9a-f]{6}$/i);
+      expect(ratio(tokens['--muted'], derivedSurface(surface, id, tokens))).toBeGreaterThanOrEqual(4.5);
+    });
+  });
+});
+
+describe('--faint is the disabled and decorative ink, and every use of it is counted (#685)', () => {
+  // DECISION 2: STEP UP. `--faint` is 2.25 to 3.20:1 on nordic and 2.47 to
+  // 2.91:1 on daylight, on purpose: it is what a DISABLED control wears, and a
+  // disabled control that reads as enabled is its own defect. So the token was
+  // not retuned. What moved is everything that was written in it and is meant
+  // to be READ: the last timestamp (the Events row), and with it some ninety
+  // hints, notes, counts, section labels and expander carets, all `--muted`.
+  //
+  // "Decorative" was not available for a timestamp, and it was not claimed for
+  // anything else that says something either. What is left is the table below:
+  // a control that is disabled, or a mark that is not text.
+  //
+  // A COUNT PER FILE, because "is this use informational?" is a judgement no
+  // scan can make. What a scan CAN do is make the judgement happen: a new
+  // `var(--faint)` anywhere in the renderer fails here, and the person adding
+  // it has to come and say which of the two it is.
+  //
+  // WHAT THIS DOES NOT SEE, said so nobody reads it as more than it is: a
+  // file that swaps one use for another keeps its count; and text can be
+  // dimmed below AA with no `--faint` at all, by `opacity` on an ancestor. Five
+  // places do that today (a folded pill, sidechain rows, a find hit that
+  // cannot be jumped to, a rolled-up status letter, a group's policy button).
+  // They are older than this item and are filed, not fixed here.
+  const ALLOWED: Record<string, [count: number, why: string]> = {
+    'components/BatchApprovalBar.tsx': [1, 'the swatch of a session with no colour of its own'],
+    'components/CommandPalette.tsx': [1, "a disabled command's title"],
+    'components/EventsPanel.tsx': [2, 'the OUTLINE hue of a dealt-with row; a swatch fallback'],
+    'components/FeedView.tsx': [
+      6,
+      'two dashed rules, two rail marks, a swatch fallback, and the send button with nothing to send',
+    ],
+    'components/FileTree.tsx': [1, 'an aria-hidden file glyph'],
+    'components/FindBar.tsx': [1, 'a find button that cannot be pressed (nothing to step through)'],
+    'components/IdentityChip.tsx': [1, 'a swatch fallback'],
+    'components/McpManagerDialog.tsx': [2, 'the status DOT of a disabled or unknown server (the word is --muted)'],
+    'components/QuestionPanel.tsx': [1, 'the dot for a question not answered yet'],
+    'components/SessionGrid.tsx': [3, 'a disabled menu item, a disabled view tab, an accent fallback on an edge'],
+    'components/SessionHistoryDialog.tsx': [2, 'an unarmed confirm button; a conversation another card holds'],
+    'components/SessionRow.tsx': [2, 'an accent fallback; the dash where a task label would be'],
+    'components/SessionsStrip.tsx': [1, 'a scroll arrow with nothing to scroll to'],
+    'components/StripPill.tsx': [2, 'an accent fallback; the dash where a task label would be'],
+    'theme/dockview-tokens.css': [2, 'the two scrollbar colours'],
+    'theme/tokens.css': [4, 'a dashed rule, a disabled chip, and two accent fallbacks on edges'],
+  };
+
+  const SRC = path.join(__dirname, '..');
+  /** every `var(--faint)` in the renderer that is CODE: comments and tests are prose about it */
+  function usesByFile(): Record<string, number> {
+    const out: Record<string, number> = {};
+    const walk = (dir: string): void => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!/\.(tsx?|css)$/.test(e.name) || /\.test\./.test(e.name)) continue;
+        const code = fs
+          .readFileSync(full, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, '');
+        const n = code.split('var(--faint)').length - 1;
+        if (n > 0) out[path.relative(SRC, full).split(path.sep).join('/')] = n;
+      }
+    };
+    walk(SRC);
+    return out;
+  }
+
+  it('is used only where the table says, and only that many times', () => {
+    const found = usesByFile();
+    const want = Object.fromEntries(Object.entries(ALLOWED).map(([f, [n]]) => [f, n]));
+    expect(
+      found,
+      '`--faint` is the DISABLED and DECORATIVE ink (2.3 to 3.2:1): words meant to be read are ' +
+        'written in `--muted`. If this new use is a disabled control or a mark that is not text, ' +
+        'add it to ALLOWED with the reason; otherwise use `--muted`.'
+    ).toEqual(want);
+  });
+
+  it('really is too faint to read, which is the reason for the table', () => {
+    // If somebody retunes `--faint` up to AA, this whole block is the wrong
+    // shape and should be deleted rather than left guarding nothing.
+    for (const theme of builtinThemes.filter((t) => t.id === 'nordic' || t.id === 'daylight')) {
+      const tokens = resolved(theme);
+      expect(ratio(tokens['--faint'], tokens['--panel']), theme.id).toBeLessThan(4.5);
+    }
+  });
+
+  it('gives every reason in the table something to say', () => {
+    for (const [file, [n, why]] of Object.entries(ALLOWED)) {
+      expect(n, file).toBeGreaterThan(0);
+      expect(why.length, file).toBeGreaterThan(8);
+    }
+  });
+});
+
+describe("a hand-made group's name and count are readable in every colour it can have (#685)", () => {
+  // DECISION 3: THE MECHANISM IS AN INK PAIRING PER THEME, not a clamp at
+  // runtime. A group's colour is data, so no token can be pinned for it; but
+  // the set it is drawn from is `GROUP_PALETTE` and nothing else (main refuses
+  // any other), and `.rail-group-ink` blends whichever one it is toward the
+  // theme's own extreme. So the whole space is eight colours by four themes
+  // and can simply be measured. It was, and it failed: at the old 78% blend,
+  // three names and seven of the eight counts were under AA on nordic.
+  //
+  // Read from the rules, never restated: change a percentage in tokens.css and
+  // this measures the new one.
+  // Called INSIDE each case, never at collection: a reworded rule should fail
+  // the cases that read it, not take the whole file down (`derivedSurface`'s
+  // stated reason, above).
+  const blend = (selector: string): { pct: number; toward: string } => {
+    const m = /color-mix\(in srgb,\s*var\(--g\)\s*([\d.]+)%,\s*(#[0-9a-f]{6})\)/i.exec(block(selector));
+    expect(m, `${selector} must blend var(--g) toward a #rrggbb`).not.toBeNull();
+    return { pct: Number(m![1]) / 100, toward: m![2] };
+  };
+  const ruleFor = (scheme: string): { pct: number; toward: string } =>
+    scheme === 'light'
+      ? blend(":root[data-color-scheme='light'] .rail-group-ink {")
+      : // the leading newline is what tells the base rule from the light one below it
+        blend('\n.rail-group-ink {');
+
+  // what SessionsRail paints: the header is the colour at 7% over the card,
+  // and the count's backplate is the colour at 12% over that header
+  const HEADER_PCT = 7;
+  const COUNT_PCT = 12;
+  const STRIP_COUNT_PCT = 18;
+  const HEADER_TINT = HEADER_PCT / 100;
+  const COUNT_TINT = COUNT_PCT / 100;
+
+  it('paints the tints this measures (SessionsRail.tsx)', () => {
+    const rail = fs.readFileSync(path.join(__dirname, '..', 'components', 'SessionsRail.tsx'), 'utf8');
+    expect(rail).toContain(`tint(opts.color, ${HEADER_PCT})`);
+    expect(rail).toContain(`background: tint(opts.color, ${COUNT_PCT})`);
+    expect(rail).toContain("'rail-group-ink'");
+  });
+
+  describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s', (_id, theme) => {
+    const tokens = resolved(theme);
+    const card = tokens['--rail-card'];
+
+    it.each([...GROUP_PALETTE])('%s: the name clears 4.5:1 on its header', (color) => {
+      const rule = ruleFor(theme.colorScheme);
+      const ink = mix(color, rule.toward, rule.pct);
+      const header = mix(color, card, HEADER_TINT);
+      expect(ratio(ink, header)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it.each([...GROUP_PALETTE])('%s: the 9px count clears 4.5:1 on its backplate', (color) => {
+      const rule = ruleFor(theme.colorScheme);
+      const ink = mix(color, rule.toward, rule.pct);
+      const backplate = mix(color, mix(color, card, HEADER_TINT), COUNT_TINT);
+      expect(ratio(ink, backplate)).toBeGreaterThanOrEqual(4.5);
+    });
+
+    // The SAME group, drawn on the strip across the top: its member count sits
+    // on the colour at 18%, a heavier tint than the header's. `--muted` there
+    // was 4.27:1 for the teal on nordic, so the count is written in `--text`.
+    it.each([...GROUP_PALETTE])('%s: the strip count clears 4.5:1 on its 18% tint', (color) => {
+      expect(ratio(tokens['--text'], mix(color, card, STRIP_COUNT_PCT / 100))).toBeGreaterThanOrEqual(4.5);
+    });
+  });
+
+  it('paints the strip count the way this measures it (StripGroupEntry.tsx)', () => {
+    const strip = fs
+      .readFileSync(path.join(__dirname, '..', 'components', 'StripGroupEntry.tsx'), 'utf8')
+      .replace(/\r\n/g, '\n')
+      .replace(/^\s*\/\/.*\n/gm, '');
+    expect(strip).toMatch(
+      new RegExp(`color: 'var\\(--text\\)',\\s*background: tint\\(props\\.color, ${STRIP_COUNT_PCT}\\)`)
+    );
   });
 });
 

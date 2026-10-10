@@ -237,7 +237,7 @@ export function CommandPalette(props: {
               <span style={{ flex: 1, minInlineSize: 0 }}>
                 <Highlighted text={row.title} indices={row.indices} />
                 {!row.enabled && row.disabledReasonKey && (
-                  <span style={{ marginInlineStart: 8, fontSize: 10.5, color: 'var(--faint)' }}>
+                  <span style={{ marginInlineStart: 8, fontSize: 10.5, color: 'var(--muted)' }}>
                     {t(row.disabledReasonKey)}
                   </span>
                 )}
