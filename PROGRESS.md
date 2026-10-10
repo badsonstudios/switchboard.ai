@@ -100,9 +100,8 @@
 >    the first card is added. Its button is "Start a session" (its own
 >    name, not "+ session") and runs the grid's new-session path.
 > 8. **#620 — drag a session's tab onto another group's tab strip to dock
->    it there. ← IN FLIGHT**, branch `feature/620-tab-strip-drop`. *This
->    line rides in that PR: if `main` has `e2e/tab-strip-drop.spec.ts`, it
->    has landed and the next item is #731.* **REPRODUCED FIRST, AND IT DID
+>    it there. DONE 2026-10-09, PR #1190 (`858a5bf8`), merged, NOT
+>    released.** Green on the first CI run. **REPRODUCED FIRST, AND IT DID
 >    NOT REPRODUCE: the drop already works** on dockview 7.0.2 with no code
 >    of ours (on a tab: before or after by which half; on the empty strip:
 >    appended). What WAS wrong: the drop marker was `var(--chip)`, a pale
@@ -121,7 +120,19 @@
 >    ticket names, is not in 7.0.2. #702 (adoption handler) is about
 >    GROUP MEMBERSHIP, not dock layout, and is not the cause of either.
 > 9. **#731 — a stacked session cannot be dragged out into its own
->    full-height column.**
+>    full-height column. ← IN FLIGHT**, branch `feature/731-root-edge-drop`.
+>    *This line rides in that PR: if `main` has
+>    `e2e/root-edge-drop.spec.ts`, it has landed and the next item is
+>    #582.* `dndEdges` widened to 40px with a 30% marker
+>    (`lib/root-edge-drop.ts`). ⚠️ The library takes ONE size for all four
+>    edges, and at 40px the TOP edge swallowed every top-row tab strip:
+>    #620's e2e went red. So `onWillShowOverlay` refuses the top and bottom
+>    edge marker unless the pointer is within the old 10px; a refused
+>    marker is not "used", so the tab underneath still gets the drag. The
+>    review found the same corner on the SIDES (the first and last 40px of
+>    the outer cards' tab rows); narrow there too. `api.onWillShowOverlay`
+>    is called with `?.` because a test's stand-in dock has no such event
+>    and the workspace must still start.
 > 10. **#582 — a session dragged into another group lands in arrival
 >     order; and the ungroup drop.**
 >

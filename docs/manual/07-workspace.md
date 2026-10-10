@@ -739,6 +739,19 @@ other card's row of tabs.** You do not have to aim for the middle of the card:
 While you drag, wherever the tab can be dropped is tinted blue: over a row of
 tabs, over half a card (to split it), or along an edge of the workspace.
 
+**To give a session a column of its own, the full height of the window, drag
+its tab to the left or right side of the workspace.** Anywhere in the outer
+finger-width (about 40 pixels) will do. A tall blue block appears down that
+whole side; let go and the session takes that column, top to bottom, whatever
+was stacked there before. This is how you pull one session out of a stack of
+two.
+
+- A little further in, over a card, you get that card's own halves instead:
+  left or right of it, or above or below it.
+- The very top and very bottom edges of the workspace work the same way, for a
+  full-width row, but the strip is much thinner there (so that it does not get
+  in the way of dropping a tab onto a row of tabs).
+
 ### Arranging cards with one click
 
 In the title bar there is a block of five small pictures. Each one is a drawing
