@@ -125,7 +125,10 @@ That is a label, not a leash. The document is not part of the session:
 - it is never one of the sessions waiting for you in the attention queue;
 - **Close all sessions** does not close it;
 - and it stays open after the session it came from is closed — at which point
-  the chip goes away, because there is nothing left for it to point at.
+  the chip goes away, because there is nothing left for it to point at. If
+  that was the only session working in the file's folder, the document also
+  stops updating, and says so: see
+  [When a document stops following its file](#when-a-document-stops-following-its-file).
 
 Files opened from **Open file…** have no chip at all — they came from you, not
 from a session.
@@ -264,6 +267,50 @@ get a small card naming the file, its type and its size, with two buttons:
 Those two buttons are in the header of *every* document too, so getting a file
 into your own tools is always one click away.
 
+## When a document stops following its file
+
+A document normally updates as its file is written. It can do that because
+switchboard.ai is allowed to read the folders your open sessions are working
+in, and the files you picked yourself with **Open file…**.
+
+So if you close the session a document was opened from, and no other open
+session works in that folder, the file is out of reach. The document stays
+open and you can go on reading it, but it has stopped updating. A strip
+appears across the top of it:
+
+> No longer following this file. No open session works in its folder any
+> more, so switchboard.ai may not read it. You're reading the last version it
+> saw.
+
+What you can do:
+
+- **Open a session in that folder.** The document notices, the strip goes
+  away, and it shows whatever was written in the meantime. You don't have to
+  press anything.
+- **Press Follow again** on the strip. If a session in that folder is open by
+  now, the document is live again. If not, the strip changes to "Still not
+  following this file" and tells you the two things that would help.
+- **Pick the file again with File › Open File…**. Picking a file yourself is
+  permission to read it, so the document you already have open comes back to
+  life. You don't get a second copy.
+
+Good to know:
+
+- The strip can take a couple of seconds to appear after you close the
+  session. A file nobody is writing to is only looked at every two seconds.
+- If two sessions work in the same folder, closing one changes nothing. The
+  document goes on updating.
+- This is different from **"This file has been deleted or moved"**, which is
+  about the file. This strip is about switchboard.ai: the file is still
+  there, and may well be changing.
+- A file that is briefly locked, or on a drive that drops out for a moment,
+  does not trigger this. The document just waits and carries on.
+- If **Follow again** answers "Couldn't follow this file just now", the file
+  was in use at that moment. Press it again.
+- If the file was deleted while nothing was following it, the strip says
+  "This file has been deleted or moved" and keeps the **Follow again**
+  button, so you can ask once the file is back.
+
 ## Good to know
 
 - **Nothing is ever saved from here.** The viewer cannot edit, and there is no
@@ -371,12 +418,11 @@ into your own tools is always one click away.
   binary file, so it gets the "open externally" card.
 - **The viewer is not a session.** It doesn't appear in the sidebar, it doesn't
   count towards anything, and closing sessions doesn't close it.
-- **A document stops updating if the session it came from is closed** and the
-  file was inside that session's folder. Nothing disappears — you keep reading
-  what is on screen — but switchboard.ai may no longer look at that folder, so
-  it stops following the file. To get it live again, close the document panel
-  and open the file afresh (through a session in that folder, or **Open
-  file…**); bringing the existing panel back to the front is not enough.
+- **A document can only follow a file switchboard.ai is allowed to read.**
+  Close the last session working in a file's folder and the document stays
+  open but stops updating. It tells you when that happens and picks up again
+  by itself when it can:
+  [When a document stops following its file](#when-a-document-stops-following-its-file).
 - **Open documents are not restored when you restart.** Your sessions come back
   exactly as you left them; the documents you were reading do not. Reopening one
   is two clicks, and reopening six you had finished with is a chore. Remembering

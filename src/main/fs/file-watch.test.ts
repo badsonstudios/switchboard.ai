@@ -93,12 +93,20 @@ function fakeFs() {
 }
 
 /** Only `resolve` is ever called; a real scope needs a real filesystem. */
-function fakeScope(allowed: () => string[]): ReadScope {
+function fakeScope(
+  allowed: () => string[],
+  /** what a refusal SAYS; the real scope has more than one way to say no (#506) */
+  reason: () => 'out-of-scope' | 'unreadable' | 'not-found' = () => 'out-of-scope',
+  /** runs inside every resolve: the gap between a probe and the scope check */
+  during: () => void = () => {}
+): ReadScope {
   return {
-    resolve: (target: unknown) =>
-      typeof target === 'string' && allowed().includes(target)
+    resolve: (target: unknown) => {
+      during();
+      return typeof target === 'string' && allowed().includes(target)
         ? { ok: true as const, path: target }
-        : { ok: false as const, reason: 'out-of-scope' as const },
+        : { ok: false as const, reason: reason() };
+    },
   } as unknown as ReadScope;
 }
 
@@ -111,6 +119,8 @@ describe('FileWatchService (P2-E16-04)', () => {
   let rec: ReturnType<typeof recordingLog>;
   let notices: Array<{ callerId: number; notice: FileWatchNotice }>;
   let allowed: string[];
+  let refusal: 'out-of-scope' | 'unreadable' | 'not-found';
+  let duringResolve: () => void;
   let svc: FileWatchService;
 
   beforeEach(() => {
@@ -119,9 +129,15 @@ describe('FileWatchService (P2-E16-04)', () => {
     rec = recordingLog();
     notices = [];
     allowed = [FILE, OTHER];
+    refusal = 'out-of-scope';
+    duringResolve = () => {};
     svc = new FileWatchService({
       log: rec.log,
-      scope: fakeScope(() => allowed),
+      scope: fakeScope(
+        () => allowed,
+        () => refusal,
+        () => duringResolve()
+      ),
       push: (callerId, notice) => notices.push({ callerId, notice }),
       debounceMs: DEBOUNCE,
       maxWaitMs: MAX_WAIT,
@@ -329,15 +345,163 @@ describe('FileWatchService (P2-E16-04)', () => {
     expect(states()).toEqual(['gone']);
   });
 
-  it('a path that LEAVES the read scope stops being reported on at all', () => {
+  it('a path that LEAVES the read scope is let go, and its viewer is told so ONCE', () => {
     svc.watch(1, 'tok', FILE);
     allowed = []; // the card this folder belonged to was closed
     fs.write();
     fs.fire('PROGRESS.md');
     vi.advanceTimersByTime(DEBOUNCE);
-    expect(states()).toEqual([]);
+    // NOT 'changed', though the file did change: that would be reporting on a
+    // path the caller may no longer read. What it is told about is its WATCH
+    // (#506), which until then ended in silence and a document that looked
+    // exactly like one nobody was writing to.
+    expect(states()).toEqual(['unfollowed']);
     expect(svc.stats()).toMatchObject({ files: 0, viewers: 0 });
     expect(fs.live()).toBe(0);
+
+    // ...and that really is the last word: more writes, more ticks, nothing
+    fs.write();
+    fs.fire('PROGRESS.md');
+    vi.advanceTimersByTime(POLL * 3);
+    expect(states()).toEqual(['unfollowed']);
+  });
+
+  it('EVERY viewer of a file that left the scope is told, each under its own token', () => {
+    svc.watch(1, 'a', FILE);
+    svc.watch(1, 'b', FILE);
+    svc.watch(2, 'c', FILE);
+    allowed = [];
+    vi.advanceTimersByTime(POLL);
+    expect(notices.map((n) => `${n.callerId}:${n.notice.token}:${n.notice.state}`).sort()).toEqual([
+      '1:a:unfollowed',
+      '1:b:unfollowed',
+      '2:c:unfollowed',
+    ]);
+  });
+
+  it('a file ANOTHER open session still covers goes on being followed', () => {
+    // The scope is the union of the open sessions' folders, so closing one of
+    // two cards over the same folder narrows nothing. `allowed` is that union
+    // here; what matters is that a narrowing that does not reach this file
+    // says nothing and closes nothing.
+    svc.watch(1, 'tok', FILE);
+    allowed = [FILE]; // OTHER's session closed; FILE's is still open
+    vi.advanceTimersByTime(POLL);
+    expect(states()).toEqual([]);
+    fs.write();
+    fs.fire('PROGRESS.md');
+    vi.advanceTimersByTime(DEBOUNCE);
+    expect(states()).toEqual(['changed']);
+  });
+
+  // What a viewer is TOLD has to be true, so the three ways the scope says
+  // "not ok" stopped being one (#506, found in review).
+  it('a scope that cannot ANSWER is not a scope that said no: nothing is told, the watch is kept', () => {
+    svc.watch(1, 'tok', FILE);
+    allowed = [];
+    refusal = 'unreadable'; // a realpath that failed, a lock, a drive that blinked
+    fs.write();
+    fs.fire('PROGRESS.md');
+    vi.advanceTimersByTime(DEBOUNCE);
+    vi.advanceTimersByTime(POLL * 2);
+    // not "the session closed", which would be a lie; and not `changed`, which
+    // would be reporting on a path we could not place
+    expect(states()).toEqual([]);
+    expect(svc.stats()).toMatchObject({ files: 1, viewers: 1 });
+
+    // it clears: the write that was held back is told now
+    allowed = [FILE];
+    vi.advanceTimersByTime(POLL + DEBOUNCE);
+    expect(states()).toEqual(['changed']);
+  });
+
+  it('a change carried by the EVENT alone survives a scope that could not answer', () => {
+    // A rewrite that does not move the signature (same size, same clock tick)
+    // is known only because the OS named the file. `settle` consumes that
+    // before it asks the scope, so if the scope cannot say, it has to be put
+    // back, or the one change nothing else will ever notice is dropped.
+    svc.watch(1, 'tok', FILE);
+    allowed = [];
+    refusal = 'unreadable';
+    fs.fire('PROGRESS.md'); // named, and the signature did NOT move
+    vi.advanceTimersByTime(DEBOUNCE);
+    expect(states()).toEqual([]);
+
+    allowed = [FILE];
+    vi.advanceTimersByTime(POLL + DEBOUNCE);
+    expect(states()).toEqual(['changed']);
+    // and it is told once, not on every tick after
+    vi.advanceTimersByTime(POLL * 3);
+    expect(states()).toEqual(['changed']);
+  });
+
+  it('a file deleted BETWEEN the probe and the scope check is a deletion, not a closed session', () => {
+    svc.watch(1, 'tok', FILE);
+    // the delete half of a temp-and-rename save lands in the gap, and a
+    // picked file then reads as out-of-scope (the grant was the file)
+    duringResolve = () => {
+      fs.remove();
+      allowed = [];
+    };
+    fs.write();
+    fs.fire('PROGRESS.md');
+    vi.advanceTimersByTime(DEBOUNCE * 2);
+    expect(states()).toEqual(['gone']);
+    expect(svc.stats()).toMatchObject({ files: 1, viewers: 1 });
+
+    // ...and the watch is still there for the rename that completes the save
+    duringResolve = () => {};
+    allowed = [FILE];
+    fs.write();
+    vi.advanceTimersByTime(POLL + DEBOUNCE);
+    expect(states()).toEqual(['gone', 'changed']);
+  });
+
+  it('the same race on a QUIET file, found by the floor, is a deletion too', () => {
+    svc.watch(1, 'tok', FILE);
+    duringResolve = () => {
+      fs.remove();
+      allowed = [];
+    };
+    vi.advanceTimersByTime(POLL + DEBOUNCE);
+    expect(states()).toEqual(['gone']);
+    expect(svc.stats()).toMatchObject({ files: 1, viewers: 1 });
+  });
+
+  it('a deleted file that comes BACK after its session closed is let go, and said so', () => {
+    // The one place the notice says something about the file (it exists
+    // again), accepted in `leftScope`. Pinned so it is a decision and not an
+    // accident: the alternative is a viewer saying "deleted" for ever.
+    svc.watch(1, 'tok', FILE);
+    fs.remove();
+    fs.fire('PROGRESS.md');
+    vi.advanceTimersByTime(DEBOUNCE);
+    allowed = []; // the session closes while the file is gone
+    vi.advanceTimersByTime(POLL * 2);
+    expect(states()).toEqual(['gone']); // a gone file is not scope-checked
+
+    fs.write(); // it is written again
+    vi.advanceTimersByTime(POLL + DEBOUNCE);
+    expect(states()).toEqual(['gone', 'unfollowed']);
+    expect(svc.stats()).toMatchObject({ files: 0, viewers: 0 });
+  });
+
+  it('asking again after the scope comes back follows the file again', () => {
+    svc.watch(1, 'tok', FILE);
+    allowed = [];
+    vi.advanceTimersByTime(POLL);
+    expect(states()).toEqual(['unfollowed']);
+
+    // still out of scope: the ask is refused like any other, and opens nothing
+    expect(svc.watch(1, 'tok-2', FILE)).toEqual({ ok: false, reason: 'out-of-scope' });
+    expect(fs.live()).toBe(0);
+
+    allowed = [FILE]; // a session over that folder is open again
+    expect(svc.watch(1, 'tok-3', FILE)).toMatchObject({ ok: true });
+    fs.write();
+    fs.fire('PROGRESS.md');
+    vi.advanceTimersByTime(DEBOUNCE);
+    expect(notices.at(-1)).toEqual({ callerId: 1, notice: { token: 'tok-3', state: 'changed' } });
   });
 
   it('stop() releases every file, whoever was holding it', () => {
@@ -559,7 +723,9 @@ describe('FileWatchService (P2-E16-04)', () => {
       expect(svc.stats()).toMatchObject({ files: 0, dirs: 0, viewers: 0 });
       expect(fs.live()).toBe(0);
       expect(vi.getTimerCount()).toBe(0);
-      expect(states()).toEqual([]);
+      // told once that the watch ended (#506) -- the case that most needs it,
+      // because a quiet file gives the reader no other clue at all
+      expect(states()).toEqual(['unfollowed']);
     });
   });
 

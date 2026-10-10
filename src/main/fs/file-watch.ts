@@ -670,7 +670,9 @@ export class FileWatchService {
       if (!file.gone) this.schedule(file, false);
       return;
     }
-    if (signature(sig) !== file.sig) {
+    if (signature(sig) !== file.sig || file.force) {
+      // `force` still set here is a change `settle` could not report because
+      // the scope could not answer (see there); this is it being asked again
       this.schedule(file, false);
       return;
     }
@@ -680,9 +682,7 @@ export class FileWatchService {
     // on screen. `settle` makes the same check on the change path; this is the
     // half of it that a file nobody is writing to would otherwise never reach,
     // and it is why a closed session's watches do not outlive it.
-    if (!this.deps.scope.resolve(file.path).ok) {
-      this.closeFile(file, 'the path left the read scope');
-    }
+    this.stillInScope(file);
   }
 
   // --- coalescing ----------------------------------------------------------
@@ -749,9 +749,16 @@ export class FileWatchService {
     // would keep reporting activity on a path the caller may no longer read —
     // `fs.probe` smuggled through the back door of `fs.read`. The read that
     // would follow is refused anyway, so the viewer freezes on its last content
-    // either way; this just stops us talking about it.
-    if (!this.deps.scope.resolve(file.path).ok) {
-      this.closeFile(file, 'the path left the read scope');
+    // either way; this stops us talking about the FILE, and tells the viewer
+    // once that we have stopped (`leftScope`, #506).
+    const scope = this.stillInScope(file);
+    if (scope !== 'yes') {
+      // A named event for a rewrite that did not move the signature (same
+      // size, same clock tick) is carried by `force` alone, and `force` was
+      // consumed above. If the scope simply could not answer, put it back:
+      // the floor sees it and asks again, where dropping it would lose a
+      // change nothing else will ever notice.
+      if (scope === 'unknown' && forced) file.force = true;
       return;
     }
 
@@ -761,6 +768,72 @@ export class FileWatchService {
     file.sig = next;
     file.gone = false;
     if (moved || forced || returned) this.notify(file, 'changed');
+  }
+
+  /**
+   * The path left the read scope: say so to everyone following it, THEN let go
+   * (#506).
+   *
+   * Until this existed the watch was simply closed, and the comment in `settle`
+   * said why that was enough: "the viewer freezes on its last content either
+   * way; this just stops us talking about it". True, and the freeze was the
+   * bug: a document that has stopped updating looks exactly like a document
+   * nobody is writing to, and the reader had no way to tell which they had.
+   *
+   * ONE notice, and it is about the WATCH, not the file: nothing here says
+   * whether the file changed or what is in it, so the reason the watch is
+   * closed (we may no longer report on this path) is kept. Told BEFORE
+   * `closeFile`, because that is what empties `refs`.
+   *
+   * IT DOES SAY ONE THING ABOUT THE FILE, in one corner, and that is accepted
+   * rather than hidden: a file that was DELETED keeps its watch without a scope
+   * check (see `floorCheck`), so if its session then closes and the file later
+   * comes back, this notice is how the viewer learns of it, and "it exists
+   * again" is a fact about a path now out of scope. One bit, about a file the
+   * viewer was already following, to our own renderer. The alternative is a
+   * viewer saying "deleted" for ever about a file that is there.
+   *
+   * Nothing is kept for a later re-attach. A viewer that wants to follow again
+   * asks again, and `watch()` answers from the scope as it is at that moment;
+   * a parked entry here would be a second list of paths to keep honest against
+   * a scope that changes without telling us.
+   */
+  private leftScope(file: WatchedFile): void {
+    this.notify(file, 'unfollowed');
+    this.closeFile(file, 'the path left the read scope');
+  }
+
+  /**
+   * Re-check the scope of a file that is THERE, and act on the answer. `yes`
+   * means carry on; `dealt` means this call has dealt with it; `unknown` means
+   * the scope could not say, and the caller should come back.
+   *
+   * Three different things come back as "not ok", and until #506 they were one
+   * (the watch was closed, and nobody was told anything, so it did not matter
+   * which). Now that a viewer is TOLD, telling it the wrong one is a lie:
+   *
+   *  - THE FILE WENT between the caller's probe and this resolve. That is two
+   *    syscalls apart, and the delete half of a temp-and-rename save or a
+   *    `git checkout` lands in the gap. A picked file reads as `out-of-scope`
+   *    then, for the reason `settle` gives. It is a deletion: hand it to the
+   *    debounce, which announces `gone` and keeps the watch for the return.
+   *  - `out-of-scope`, with the file still there. The real thing: say so, let
+   *    go.
+   *  - anything else (`unreadable` from a realpath that failed, a lock, a
+   *    drive that blinked). Not a verdict about the scope at all. Say nothing
+   *    and keep the watch; the floor asks again in two seconds, and nothing is
+   *    reported about the file in the meantime because the caller stops here.
+   */
+  private stillInScope(file: WatchedFile): 'yes' | 'dealt' | 'unknown' {
+    const decision = this.deps.scope.resolve(file.path);
+    if (decision.ok) return 'yes';
+    if (this.probe(file.path) === null) {
+      if (!file.gone) this.schedule(file, false);
+      return 'dealt';
+    }
+    if (decision.reason !== 'out-of-scope') return 'unknown';
+    this.leftScope(file);
+    return 'dealt';
   }
 
   private notify(file: WatchedFile, state: FileWatchNotice['state']): void {

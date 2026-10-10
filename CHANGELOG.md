@@ -103,6 +103,13 @@ on the floor, and say so in your PR.
   take the keyboard a moment after they were drawn. A key pressed in that
   moment went to whatever was behind: Escape, typed fast, could reach the
   prompt box and leave the dialog open.
+- **A document tells you when it has stopped updating.** Close the session a
+  document was opened from and, if no other open session works in that
+  folder, the document could no longer follow its file. It used to go on
+  showing the last version with nothing to say so, and bringing it back to
+  the front did not help. Now a strip says "No longer following this file"
+  and why, with a **Follow again** button; and when you open a session in
+  that folder the document picks up by itself and shows what it missed.
 
 ### Internal
 

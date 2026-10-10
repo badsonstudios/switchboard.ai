@@ -1146,14 +1146,31 @@ const api = {
      * one renderer reach main in the order they were made — so an unwatch issued
      * immediately after a watch cannot arrive first and strand a live watch.
      */
-    watch: (p: string, onChange: (notice: FileWatchNotice) => void): (() => void) => {
+    watch: (
+      p: string,
+      onChange: (notice: FileWatchNotice) => void,
+      onAnswer?: (answer: unknown) => void
+    ): (() => void) => {
       const token = `doc-${++watchSeq}`;
       fileWatchers.set(token, onChange);
       // Fire-and-forget in BOTH directions, with the rejection swallowed: a
       // caller's teardown has nobody left to tell, and an unhandled rejection in
       // the renderer over a file watch would be our breakage costing the user
       // their session, which is the one thing fail-open forbids.
-      void ipcRenderer.invoke('fs:watch', { token, path: p }).catch(() => {});
+      //
+      // `onAnswer` (#506) is for the one caller that DOES have somebody to tell:
+      // a viewer asking to follow a file again needs to know whether main said
+      // yes, and inferring it from a read was wrong in both directions. Still
+      // nothing to await, and a rejection is reported as `null` rather than
+      // thrown. A callback that throws is the caller's own, and is swallowed
+      // with the rest.
+      void ipcRenderer
+        .invoke('fs:watch', { token, path: p })
+        .then(
+          (answer: unknown) => onAnswer?.(answer),
+          () => onAnswer?.(null)
+        )
+        .catch(() => {});
       return () => {
         fileWatchers.delete(token);
         void ipcRenderer.invoke('fs:unwatch', { token }).catch(() => {});

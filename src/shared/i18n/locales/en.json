@@ -735,6 +735,12 @@
     "truncated": "This file is large — showing the first {shown} of {size}. Open it externally to read the rest.",
     "encodingNote": "Decoded as {encoding}",
     "gone": "This file has been deleted or moved. You're reading the last version switchboard.ai saw.",
+    "unfollowed": {
+      "stopped": "No longer following this file. No open session works in its folder any more, so switchboard.ai may not read it. You're reading the last version it saw.",
+      "refused": "Still not following this file. Open a session in its folder and this picks up by itself, or open the file again with File › Open File…. You're reading the last version switchboard.ai saw.",
+      "failed": "Couldn't follow this file just now. It may be in use; try again in a moment. You're reading the last version switchboard.ai saw.",
+      "again": "Follow again"
+    },
     "card": {
       "title": "This file isn't shown here",
       "body": "{name} is a {type} file ({size}). switchboard.ai doesn't render this kind of file — open it in the app you already use for it.",

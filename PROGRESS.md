@@ -10,9 +10,16 @@
 > the close-out of the one before. Everything lands in `0.8.119 — unreleased`.
 > **DO NOT CUT A RELEASE** unless he asks (he asked for 0.8.118 himself).
 >
-> 1. **The three flaky tests (#1171 with #1029, #768, #1186). IN PROGRESS,
->    started 2026-10-10, branch `feature/1171-flaky-tests`, one PR for all
->    three.** Each was reproduced or measured before it was changed:
+> 1. **The three flaky tests (#1171 with #1029, #768, #1186). DONE 2026-10-10,
+>    PR #1205 (`1d8a663c`), merged, NOT released.** Green on the first CI
+>    run; all four tickets closed. Repetition after the fixes: the Settings
+>    test 30 of 30 with 24 cores busy, the watcher tests 40 of 40 with all 32
+>    busy, the full unit suite 6 of 6 (it had been 3 of 3 red on #768). An
+>    independent review found no blockers and five small things, all applied.
+>    **Filed on the way: #1204**, a fourth timing failure seen once in nine
+>    full runs (`eslint-hex-rule.test.js` pays ESLint's cold start in its
+>    first test: 26.7s once, 2.2s warm, against 5s). Not touched.
+>    Each was reproduced or measured before it was changed:
 >    - **#1171 / #1029** was a real, if tiny, product defect and not a test
 >      problem: a dialog took the keyboard one task AFTER it appeared, so a
 >      key pressed in the gap went to the prompt box. The Windows CI trace has
@@ -24,8 +31,15 @@
 >      starving the event loop for the length of the sleep. It now waits for
 >      the root to report the quiet rung. Its sibling had the same hole.
 >    - **#768** is the budget: thirteen payloads, two real processes each.
-> 2. **#506 — closing a session silently stops its document viewer updating.**
->    Not started.
+>      1.3s alone, 5.2 to 6.1s in a full run. Its own 30s budget, and a 10s
+>      limit per spawn (a synchronous body cannot be timed out by the runner).
+> 2. **#506 — closing a session silently stops its document viewer updating.
+>    IN PROGRESS, started 2026-10-10, branch `feature/506-viewer-unfollowed`.**
+>    Main tells the viewer once that it stopped following (`unfollowed`); the
+>    viewer shows a strip with **Follow again**; it resumes by itself when a
+>    session opens over the folder, or when the file is picked again with
+>    Open File…. Two independent reviews; the first changed the design (the
+>    strip is decided by main's answer to the watch, not inferred from a read).
 > 3. **#685 — readability stragglers** (three decisions, measured). Not started.
 > 4. **The manual: a catch-up pass (#965, REDUCED; do not close it).** What
 >    shipped in 0.8.116 to 0.8.118, plus the missing screenshots. Not started.

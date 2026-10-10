@@ -39,7 +39,7 @@ import {
   grantCount,
   useStandingGrants,
 } from './StandingGrants';
-import { DocumentViewer } from './DocumentViewer';
+import { DocumentViewer, documentReopened } from './DocumentViewer';
 import { SessionHistoryDialog } from './SessionHistoryDialog';
 import { DispatchDialog, dispatchedTitle } from './DispatchDialog';
 import type { DispatchOptions } from '../../../shared/dispatch-wire';
@@ -3845,6 +3845,9 @@ function openDocumentPanel(
     const panel = api.getPanel(plan.id);
     if (panel) {
       panel.focus();
+      // if that viewer had stopped following its file, this is the reader
+      // asking for it back (#506)
+      documentReopened(plan.id, filePath);
       // ...AND RAISE THE WINDOW IT LIVES IN, if that is not this one. `focus()`
       // ends in "make this panel active in its group", and a popped-out viewer
       // is alone in its group and therefore already active — so asking for a
