@@ -91,6 +91,7 @@ import {
   withPin,
 } from '../lib/pinning';
 import {
+  groupBucket,
   ManualOrder,
   NO_ORDER,
   persistableManualOrder,
@@ -1139,6 +1140,42 @@ export class SessionStore {
     if (!next) return false;
     this.setBucketOrder(bucket, next);
     return true;
+  }
+
+  /**
+   * A session about to move INTO a group lands at the BOTTOM of it (#582).
+   *
+   * WITHOUT THIS IT LANDS WHEREVER IT WAS BORN. A group nobody has arranged
+   * has no stored order, so its members are shown in the order main's session
+   * list has them, which is the order they were opened. A session moved in
+   * was opened at SOME point in that order, so it appeared in the middle of
+   * the group, between two sessions it has nothing to do with, and the
+   * manual could only say "you arrange it from there".
+   *
+   * So the destination's order is written down as it is ON SCREEN now, with
+   * the newcomer added at the end. Called BEFORE the move is sent, which is
+   * why it is the screen's order: `derivedRail` is what the user was looking
+   * at when they let go. An order naming a session that is not a member yet
+   * is harmless (`applyManualOrder` skips ids with no member); the moment
+   * main says it is one, it ranks last.
+   *
+   * A pinned newcomer still shows first: the pin sort runs after this, and
+   * "pinned sorts first in its group" is the pin's promise, not this one's.
+   *
+   * `null` (out of every group) is deliberately a no-op. Where the session
+   * lands then is main's to say: the loose list, or a folder group that only
+   * exists because of where it lands. Guessing the bucket here would write
+   * an order for one it may not join.
+   */
+  landAtEndOf(cardId: string, groupId: string | null): void {
+    if (!groupId) return;
+    const bucket = groupBucket(groupId);
+    // already there: a move that is not a move must not reorder anything
+    if (this.derivedRail.bucketOf.get(cardId) === bucket) return;
+    const there = this.derivedRail.buckets.get(bucket) ?? [];
+    // the first member has nothing to be after
+    if (there.length === 0) return;
+    this.setBucketOrder(bucket, [...there.filter((id) => id !== cardId), cardId]);
   }
 
   /** Forget arrangements naming cards that no longer exist. Called from the

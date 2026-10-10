@@ -162,6 +162,11 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A session moved into a group lands at the bottom of it.** It used to
+  appear wherever it happened to have been opened, often in the middle of
+  the group between two sessions it had nothing to do with. Dragging it
+  in, the Move to group menu and the keyboard all put it last now.
+
 - **A stacked session can be dragged out into a full-height column.** Drag
   a session's tab to the left or right side of the workspace and it gets
   that whole side, top to bottom. This was possible before only if you let

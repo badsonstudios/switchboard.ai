@@ -1634,7 +1634,13 @@ export function SessionsRail(props: {
         e.preventDefault();
         const cardId = e.dataTransfer.getData(DND_TYPE) || getDraggedCard();
         setDraggedCard(null);
-        if (cardId) props.onMoveToGroup(cardId, null);
+        if (!cardId) return;
+        // a session that is already in no group has nowhere to be moved out of
+        // (#582): the group card's own drop has always had this guard, and
+        // without it this one paid a round trip to main and a reshuffle of
+        // the workspace for nothing
+        const from = props.sessions.find((s) => s.id === cardId)?.groupId ?? null;
+        if (from !== null) props.onMoveToGroup(cardId, null);
       }}
       style={{
         position: 'relative',
