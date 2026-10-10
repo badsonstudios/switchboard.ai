@@ -146,6 +146,13 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **You can see where a dragged tab will land.** While you drag a
+  session's tab, the place it will go is now tinted blue (it was a pale
+  grey that could not be seen on the tab row). Dropping a tab straight onto
+  another card's row of tabs puts it there as a tab: on the left half of a
+  tab it lands before it, on the right half after it, and on the empty
+  part of the row at the end.
+
 - **A new session shows which model it is on straight away.** The button
   under the prompt box used to read "model?" until the session had answered
   you once, and the model menu ticked nothing. The app now asks the session

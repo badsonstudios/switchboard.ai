@@ -728,6 +728,17 @@ Drag a card's tab to split the grid, stack cards as tabs, or reorder them. The
 arrangement is saved and restored next launch, along with which session you had
 focused and which tab it was showing.
 
+**To put one session beside another as a tab, drop its tab straight onto the
+other card's row of tabs.** You do not have to aim for the middle of the card:
+
+- Drop it on the **left half** of a tab and it lands just before that tab; on
+  the **right half**, just after it. A blue tint on that half, with a blue line
+  on the side it will land, shows which.
+- Drop it on the **empty part** of the row and it goes on the end.
+
+While you drag, wherever the tab can be dropped is tinted blue: over a row of
+tabs, over half a card (to split it), or along an edge of the workspace.
+
 ### Arranging cards with one click
 
 In the title bar there is a block of five small pictures. Each one is a drawing

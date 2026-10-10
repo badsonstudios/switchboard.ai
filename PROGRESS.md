@@ -93,16 +93,33 @@
 >    now. `ModelQuickMenu` (50) has the same latent overlap and was NOT
 >    changed: not asked for, and it opens near the bottom of a card.
 > 7. **#1166 — an empty workspace with the list hidden says nothing about
->    how to start. ← IN FLIGHT**, branch `feature/1166-empty-workspace`.
->    (Read from "166".) *This line rides in that PR: if `main` has
->    `e2e/empty-workspace.spec.ts`, it has landed and the next item is
->    #620.* Built as dockview's own watermark (`EmptyWorkspace`), which
+>    how to start. DONE 2026-10-09, PR #1189 (`22cca653`), merged, NOT
+>    released.** (Read from "166".) Green on the first CI run. Built as dockview's own watermark (`EmptyWorkspace`), which
 >    shows exactly when no panel is open: so it shows with the list
 >    showing or hidden, not over a document-only workspace, and goes when
 >    the first card is added. Its button is "Start a session" (its own
 >    name, not "+ session") and runs the grid's new-session path.
 > 8. **#620 — drag a session's tab onto another group's tab strip to dock
->    it there.**
+>    it there. ← IN FLIGHT**, branch `feature/620-tab-strip-drop`. *This
+>    line rides in that PR: if `main` has `e2e/tab-strip-drop.spec.ts`, it
+>    has landed and the next item is #731.* **REPRODUCED FIRST, AND IT DID
+>    NOT REPRODUCE: the drop already works** on dockview 7.0.2 with no code
+>    of ours (on a tab: before or after by which half; on the empty strip:
+>    appended). What WAS wrong: the drop marker was `var(--chip)`, a pale
+>    grey invisible on the strip in a screenshot of a real drag. Fixed:
+>    `--dv-drag-over-background-color` is a tint of `--link`, plus a 2px
+>    line on the landing side of a tab. The new e2e pins the behaviour so
+>    a library upgrade cannot lose it silently. **Asked in the tracker:**
+>    whether his trouble was "does not work" or "cannot tell".
+>
+>    **Measured for #731 in the same probe (2026-10-09), before touching
+>    it:** the full-height root-edge drop EXISTS and works, but only
+>    within about 8px of the dock's edge (dockview's default
+>    `activationSize` is 10px, its marker a 20px sliver); from 12px to
+>    60px in, the GROUP's own left/right split wins. The public option is
+>    `dndEdges` (a `DroptargetOverlayModel`); `rootOverlayModel`, which the
+>    ticket names, is not in 7.0.2. #702 (adoption handler) is about
+>    GROUP MEMBERSHIP, not dock layout, and is not the cause of either.
 > 9. **#731 — a stacked session cannot be dragged out into its own
 >    full-height column.**
 > 10. **#582 — a session dragged into another group lands in arrival
