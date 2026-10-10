@@ -8,7 +8,9 @@
 > When Dan asks "what should I test?", answer FROM this file: the UNTESTED
 > and RE-TEST sections, phrased as steps + expected result.
 
-Last updated: 2026-10-07 — **✅ v0.8.115 IS RELEASED, so every row in the Re-test table below is INSTALLABLE NOW** (Help ▸ Check for updates). **The one to do first, on the LAPTOP: the typing lag** — three separate fixes went in, all measured on the desktop with the app slowed down, and the two issues stay open until you say whether typing while Claude replies in a long session keeps up with you there.
+Last updated: 2026-10-09 — **TEN NEW ROWS at the top of the Untested table, from the list you picked on 2026-10-09 (#1174, #715, #619, #631, #757, #695, #1166, #620, #731, #582). ALL TEN ARE MERGED AND NONE IS INSTALLABLE: you said to hold off on a release, so they sit in 0.8.118, unreleased, until you ask for a cut. Five of the rows ask you something; they are marked ⚠️ or "say if".**
+
+Previously 2026-10-07 — **✅ v0.8.115 IS RELEASED, so every row in the Re-test table below is INSTALLABLE NOW** (Help ▸ Check for updates). **The one to do first, on the LAPTOP: the typing lag** — three separate fixes went in, all measured on the desktop with the app slowed down, and the two issues stay open until you say whether typing while Claude replies in a long session keeps up with you there.
 
 Previously 2026-10-02 (fourth pass) — **⭐⭐⭐ GIT V2 IS DONE: ALL FIFTEEN ITEMS, and the Changes tab can now STAGE, DISCARD AND COMMIT.** The top five rows are the write half plus the two surfaces that finish the read half. ⚠️ **USE A SCRATCH REPO for the top rows** — they change your repository, and one of them (discard on an untracked file) destroys work nothing else has a copy of.
 
