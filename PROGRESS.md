@@ -3,9 +3,22 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ RELEASED: v0.8.119, 2026-10-10 (PR #1217)
+>
+> The owner, after the report on the five items: *"let's go ahead and fire off
+> a release."* A plain patch step. It carries the five items below.
+> `0.8.120 — unreleased` is open. The four new tracker rows read "IN
+> v0.8.119, installable now".
+>
+> **Nothing is in flight.** He filed ten new tickets on 2026-10-10 (#1197 to
+> #1203, #1206, #1207, #1210) and said the next session works on "like five"
+> of them: **ask him which.** #1210 (submitting a prompt hid the session) reads
+> as the most urgent. #1198 (the context meter's bar form) may already be
+> done since 0.8.118: check before planning.
+>
 > # ✔ 2026-10-10 — FIVE THINGS THE OWNER PICKED (after 0.8.118): ALL FIVE DONE.
 >
-> Merged, NOT released: all of it is in `0.8.119 — unreleased`. **DO NOT CUT A
+> All of it is in **v0.8.119** (released 2026-10-10). **DO NOT CUT A
 > RELEASE** unless he asks (he asked for 0.8.118 himself). Five PRs, each
 > green on its first CI run: #1205, #1208, #1212, #1213, #1215.
 >
