@@ -22,7 +22,7 @@
 // display and visibility both take an element out of the accessibility tree,
 // which would make this an elaborate way to say nothing.
 import React from 'react';
-import { subscribeAnnouncements } from '../lib/live-region';
+import { registerVoice, subscribeAnnouncements } from '../lib/live-region';
 import { srOnly } from './sr-only';
 
 /** The two slots: at most one of them holds text at any moment. */
@@ -52,14 +52,31 @@ interface Voice {
 
 const SILENT: Voice = { pending: [], slots: ['', ''] };
 
-export function LiveRegion(): React.JSX.Element {
+export function LiveRegion(props: {
+  /**
+   * The window this region is drawn in (#1022). Absent means the main window,
+   * which is the one at the root of `App`; a popped-out window gets its own
+   * from `PopoutSurfaces`. Every instance hears every announcement, each one
+   * addressed to a single window (`lib/live-region` decides which), and only
+   * the instance in that window says it.
+   */
+  win?: Window;
+}): React.JSX.Element {
   const [voice, setVoice] = React.useState<Voice>(SILENT);
+  const mine = props.win ?? window;
 
   React.useEffect(() => {
-    return subscribeAnnouncements((text) => {
+    // "there is a region here": the bus never addresses a window without one
+    const gone = registerVoice(mine);
+    const off = subscribeAnnouncements((text, to) => {
+      if (to !== mine) return;
       setVoice((v) => ({ ...v, pending: [...v.pending, text] }));
     });
-  }, []);
+    return () => {
+      off();
+      gone();
+    };
+  }, [mine]);
 
   // One per commit: each flush is an empty -> text change in a region that was
   // empty, which is the mutation a screen reader announces.
