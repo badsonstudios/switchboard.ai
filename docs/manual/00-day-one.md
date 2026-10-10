@@ -82,8 +82,8 @@ Dragging a folder from Explorer onto the window does the same thing.
 
 A **session** is one conversation in one folder. Want a second task going in the
 same project, or in a different one? Click **+ session** again. Each gets its own
-card, and its own row in the **Sessions** list on the left with a coloured dot
-that tells you what it's doing:
+card, and its own row in the **Sessions** list on the left with a mark at the
+end that tells you what it's doing:
 
 | You see | It means |
 |---|---|

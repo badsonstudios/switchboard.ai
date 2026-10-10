@@ -24,7 +24,7 @@ page at a time.
 | [Approvals & autonomy](04-approvals-and-autonomy.md) | Allowing/denying tool use, answering Claude's questions, the four autonomy modes |
 | [Slash commands](05-slash-commands.md) | `/clear`, `/compact`, autocomplete, the Clear and Compact buttons, the ⋯ menu |
 | [Direct mode](12-direct-mode.md) | How sessions talk to Claude: fixes the `.claude` double-prompt, costs you the terminal |
-| [Choosing a model](18-model.md) | Switching a session between Opus, Sonnet and Haiku mid-conversation — the one-click menu on the model name and the fuller `/model` picker — and why the tick is sometimes missing |
+| [Choosing a model](18-model.md) | Switching a session between Opus, Sonnet and Haiku mid-conversation — the one-click menu on the model name and the fuller `/model` picker, why the tick is sometimes missing, and the effort button that sets how hard the model thinks |
 | [Handing work to a fresh session](20-dispatch.md) | Dispatch: ⋯ → Dispatch… and the palette's per-role entries, why a reviewer deliberately does not get your conversation, the task line worth reading before you send it, getting the findings back, where a dispatched session sits in the list and when it closes itself |
 
 ## Looking at the work
@@ -41,7 +41,7 @@ page at a time.
 
 | Page | What it covers |
 |---|---|
-| [Organizing your workspace](07-workspace.md) | The sidebar, groups, pop-out windows, layout |
+| [Organizing your workspace](07-workspace.md) | The Sessions list (down the left or across the top), groups, pop-out windows, layout, arranging cards with one click |
 | [Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette |
 | [Notifications & events](09-notifications.md) | Sounds, the Events drawer, who needs you, when you get told what |
 | [Settings](10-settings.md) | The Settings window (`Ctrl+,`), the chips that stayed on the title bar, and why |

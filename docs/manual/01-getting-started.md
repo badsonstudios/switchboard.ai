@@ -56,8 +56,8 @@ same result, no dialog.
   workspace is arranged. Everything you set once and forget — theme, language,
   quiet hours, phone push — is in the Settings window instead: press
   **`Ctrl+,`**. See [Settings](10-settings.md).
-- **Sessions** (left) — every session you have open, with a colored status dot.
-  Click one to jump to it.
+- **Sessions** (left, or across the top if you prefer) — every session you have
+  open, each with a mark for what it is doing. Click one to jump to it.
 - **The grid** (middle) — the session cards themselves. Each has its own tabs:
   Session, Changes, Files, History.
 - **Events** (right) — what needs you right now. Empty is good; it says
@@ -65,7 +65,6 @@ same result, no dialog.
 - **Status bar** (bottom) — how many sessions are open, total tokens and
   estimated cost, the Claude Code version, and the current theme.
 
-<!-- screenshot: the whole window with two or three live sessions -->
 
 ## Good to know
 

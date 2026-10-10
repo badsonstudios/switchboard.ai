@@ -264,7 +264,13 @@ the chip again and the auto labels come straight back; nothing was thrown away.
   Both are picked for you when the session starts and stay the same for that
   session, including across restarts, so "the teal one" keeps meaning the same
   session all day. **No session is ever yellow or orange:** those two colours
-  are kept for one meaning, a session that needs you.
+  are kept for one meaning, a session that needs you. (If you had an amber or
+  orange session before version 0.8.117, it is indigo or magenta now, and two
+  of the group colours changed the same way.) The rest of the app follows the
+  same rule: something that **failed** is red, and something worth noticing
+  that is not a failure is **blue** — commits you haven't pushed, a connector
+  still connecting, a provider having trouble, a message from another session
+  waiting to be read.
 
   With several cards docked side by side, the tabs are usually all you can see
   of the ones you are not looking at — so the color and badge there are what let
@@ -377,8 +383,9 @@ list is a way of choosing which session is `Ctrl+1`.
 A few things worth knowing:
 
 - **You're ordering one group at a time.** Dragging a session onto a *different*
-  group still means what it always meant — it joins that group. Where it lands
-  there is up to you: drag it again once it has arrived. The same goes for the
+  group still means what it always meant — it joins that group. It arrives
+  as the **last** one there (pinned sessions still go to the front); drag it
+  again once it has arrived if you want it somewhere else. The same goes for the
   **Ungrouped** list, and for the automatic folder groups: each keeps its own
   order.
 - **A new session goes to the bottom** of a group you have arranged. Nothing you
@@ -548,7 +555,8 @@ A few details keep that Enter honest:
 
 You don't have to be looking at a session to find out it has a message.
 
-- **The sessions list on the left** shows a small number on that session's row —
+- **The Sessions list** shows a small number on that session's row (or on its
+  pill, if your sessions are listed across the top) —
   whether the session is open, collapsed, hidden, or showing its Changes tab.
 - **The group heading** shows a "waiting" count too, so a collapsed group still
   tells you there's something inside it.

@@ -88,7 +88,8 @@ after the screen has changed. Then the outline goes away by itself. See
 | `Ctrl+PageDown` | Next session |
 | `Ctrl+PageUp` | Previous session |
 
-The numbers follow the **Sessions list on the left, top to bottom** — groups
+The numbers follow the **Sessions list, top to bottom** (left to right if your
+sessions are listed across the top) — groups
 first with their sessions under them, then auto-grouped sessions, then
 everything else. Whatever is third in that list is `Ctrl+3`. If you have four
 sessions open, `Ctrl+7` does nothing at all.
@@ -343,10 +344,11 @@ clicking would do.
 | A session's name | `Enter` brings that session up in the grid |
 | The **✕** at the end of a row | `Enter` ends the session (it asks first) |
 | **+ group** at the top | `Enter` makes a new group |
+| **+ session** beside it | `Enter` opens the folder picker for a new session |
 
 A session row reads out as its name and its state together — *"trading-app —
-Wants permission to run"* — so you don't have to see the little status square
-to know what it's asking for. The session you're currently looking at is
+Wants permission to run"* — so you don't have to see the little mark at the end
+of the row to know what it's asking for. The session you're currently looking at is
 announced as the current one. With the list across the top, each pill is a
 button in the same way: `Tab` reaches it and `Enter` goes to that session.
 

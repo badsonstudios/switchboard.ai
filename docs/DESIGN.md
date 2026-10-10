@@ -4346,7 +4346,7 @@ a pointer where they left.)*
   >    meant to be read moved to `--muted` (87 uses, plus four the sweep's
   >    pattern could not see: the words "disabled" and "unknown" in the MCP
   >    list, and two status words in the Events tab and the status bar), and
-  >    what is left (34 uses in 16 files) is a disabled control or a non-text
+  >    what is left (32 uses in 16 files) is a disabled control or a non-text
   >    mark. One went the OTHER way: the find bar's buttons wore the same ink
   >    enabled and disabled, and the disabled ones now wear `--faint`. **The
   >    pin is a count per file with a reason beside it**, because "is this

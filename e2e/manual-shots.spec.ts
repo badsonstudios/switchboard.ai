@@ -581,6 +581,136 @@ test.describe('manual screenshots (#1082)', () => {
       { target: composer, label: 'Talk to it here', side: 'top', alignEnd: true },
     ]);
   });
+  // ── five things that shipped without a picture (0.8.117, 0.8.118) ──────────
+  //
+  // Each is small and each is something you would not find by reading: a meter
+  // in a corner, a picture after a word, a box that appears when the pointer
+  // rests, a marker that exists only while a drag is in the air. So every one is
+  // a CLOSE-UP, clipped to the thing, with one label.
+  test('the small things', async () => {
+    test.setTimeout(300_000);
+    const parent = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-shots-')));
+    const shop = storefront(parent);
+    const billing = plainProject(parent, 'billing-api', '# Billing API\n\nInvoices and payments.\n');
+    const scriptFile = path.join(parent, 'script.json');
+    fs.writeFileSync(scriptFile, JSON.stringify(script(billing)), 'utf8');
+
+    a = await launchApp({
+      seedFolder: shop,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_FAKE_SCRIPT: scriptFile },
+    });
+    const w = a.window;
+    await a.app.evaluate(
+      ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
+      onTestDisplay(a, { x: 20, y: 20, ...WINDOW })
+    );
+    await expect(w.getByText('acme-storefront').first()).toBeVisible({ timeout: 25_000 });
+    await setTheme(w, 'nordic');
+
+    const composer = w.getByPlaceholder(/Prompt this session/);
+    await composer.click();
+    await composer.fill(PROMPT_FEATURE);
+    await composer.press('Enter');
+    await expect(w.getByText('Want me to store it?')).toBeVisible({ timeout: 30_000 });
+    await tidy(w, parent);
+
+    // ── the picture after each tool name ─────────────────────────────────────
+    const icons = w.locator('svg[data-tool-icon]');
+    await expect(icons.first()).toBeVisible({ timeout: 15_000 });
+    const iconClip = await around(w, [icons.first(), icons.last()], 46);
+    await shot(
+      w,
+      'tool-icons',
+      // ABOVE it: to the right is the file's path, which is the row's point
+      [{ target: icons.first(), label: 'A picture for the kind of step', side: 'top' }],
+      // from the left edge of the conversation, wide enough to read each row
+      { ...iconClip, width: Math.max(iconClip.width, 760) }
+    );
+
+    // ── the context meter ────────────────────────────────────────────────────
+    const meter = w.locator('[data-testid="composer-context"]');
+    await expect(meter).toBeVisible({ timeout: 15_000 });
+    const options = w.locator('[data-testid="composer-options"]');
+    await shot(
+      w,
+      'context-meter',
+      [{ target: meter, label: 'How full this session is', side: 'top', alignEnd: true }],
+      await around(w, [options, meter], 60)
+    );
+
+    // ── rest the pointer on a session: the last thing you asked it ───────────
+    const row = w.locator('nav [data-last-prompt-for]').first();
+    const hover = w.locator('[data-testid="last-prompt-hover"]');
+    const rowBox = (await row.boundingBox())!;
+    await shot(
+      w,
+      'last-prompt-hover',
+      [],
+      { x: 0, y: Math.max(0, rowBox.y - 60), width: 820, height: 250 },
+      // AFTER the labels would be drawn: the box follows the pointer, and it
+      // only opens once the pointer has rested
+      async () => {
+        await w.mouse.move(2, 2);
+        await row.hover();
+        await expect(hover).toBeVisible({ timeout: 10_000 });
+      }
+    );
+    await w.mouse.move(2, 2);
+    await expect(hover).toHaveCount(0);
+
+    // ── the blue marker while a tab is in the air ────────────────────────────
+    await a.app.evaluate(({ dialog }, d) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
+    }, billing);
+    await w.getByRole('button', { name: '+ session' }).click();
+    await expect(w.locator('.dv-tab .identity-tab')).toHaveCount(2, { timeout: 25_000 });
+    // side by side, so each session has a row of tabs of its own
+    await w.locator('[data-layout-preset="columns2"]').click();
+    await tidy(w, parent);
+    const from = w.locator('.dv-tab', { hasText: 'billing-api' });
+    const onto = w.locator('.dv-tab', { hasText: 'acme-storefront' });
+    const a1 = (await from.boundingBox())!;
+    const b1 = (await onto.boundingBox())!;
+    const marker = w.locator('.dv-drop-target-selection');
+    await shot(
+      w,
+      'tab-drop-marker',
+      [],
+      { x: Math.max(0, b1.x - 60), y: Math.max(0, b1.y - 40), width: 900, height: 230 },
+      // the marker exists only while the button is down, so the picture is
+      // taken mid-drag and the tab is let go afterwards
+      async () => {
+        await w.mouse.move(a1.x + a1.width / 2, a1.y + a1.height / 2);
+        await w.mouse.down();
+        await w.mouse.move(a1.x + a1.width / 2 + 8, a1.y + a1.height / 2 + 5, { steps: 3 });
+        // the RIGHT half of the other tab: "it will land after this one"
+        const to = { x: b1.x + b1.width * 0.75, y: b1.y + b1.height / 2 };
+        await w.mouse.move((a1.x + to.x) / 2, to.y, { steps: 8 });
+        await w.mouse.move(to.x, to.y, { steps: 10 });
+        await w.mouse.move(to.x + 1, to.y, { steps: 2 });
+        await expect(marker.first()).toBeVisible({ timeout: 10_000 });
+      }
+    );
+    await w.mouse.up();
+  });
+
+  test('an empty workspace', async () => {
+    test.setTimeout(120_000);
+    // no session at all: what a first launch looks like
+    a = await launchApp({ env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    await a.app.evaluate(
+      ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
+      onTestDisplay(a, { x: 20, y: 20, ...WINDOW })
+    );
+    const start = w.getByTestId('empty-workspace-new-session');
+    await expect(start).toBeVisible({ timeout: 25_000 });
+    await setTheme(w, 'nordic');
+    // for the build stamp in the title bar; there are no paths on this screen
+    await tidy(w, os.tmpdir());
+    await shot(w, 'empty-workspace', [{ target: start, label: 'Pick a folder to begin', side: 'bottom' }]);
+  });
+
   // ── the rest of the manual ─────────────────────────────────────────────────
   //
   // One picture per remaining page, in three launches. The second and third

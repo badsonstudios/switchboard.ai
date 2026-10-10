@@ -96,6 +96,16 @@ on the floor, and say so in your PR.
 
 ## 0.8.119 — unreleased
 
+### Changed
+
+- **The manual has caught up with the last three versions** (Help ▸ User
+  manual). Every picture in it was retaken, so they show the app as it is
+  now, and five things that had no picture have one: the context meter, the
+  small pictures after tool names, the box that shows a session's last
+  prompt, the blue marker while you drag a tab, and the empty window. A
+  dozen passages that still described the old top bar, the old right-click
+  menu or the old look of a busy session were corrected.
+
 ### Fixed
 
 - **A dialog has the keyboard the instant it appears.** Settings, About, the
