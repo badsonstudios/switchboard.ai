@@ -54,8 +54,9 @@
 >    No change to the sanitizer or the content security policy.
 >    ⚠️ Nothing tells Claude to use image syntax; whether it does unprompted
 >    is the owner's first hand-test.
-> 4. **#1209 — control edges on nordic and daylight. IN PROGRESS, started
->    2026-10-11, branch `feature/1209-control-edges`.**
+> 4. **#1209 — control edges on nordic and daylight.
+>    DONE 2026-10-11, PR #1245 (`bf9d24c1`), merged, NOT released.**
+>    The ticket is closed.
 >    The audit the ticket asked for: 36 controls whose only edge was the
 >    `--border` hairline (1.13 to 1.31:1) and which have no fill of their
 >    own: 19 text boxes (including the prompt box) and 17 outlined buttons
@@ -67,7 +68,7 @@
 >    ⚠️ The ticket says "needs eyes as much as numbers"; nobody has looked
 >    at it but me, in two screenshots.
 > 5. **#1211 — text dimmed by opacity. IN PROGRESS, started 2026-10-11,
->    branch `feature/1211-opacity-dims` (stacked on #1209's).** The five
+>    branch `feature/1211-opacity-dims`.** The five
 >    places: a folded calm pill (its NAME goes to `--muted`), sidechain rows
 >    in the feed (the fade is removed, not replaced: the indent and the
 >    dashed spine already say "helper"), a find hit that cannot be jumped to
