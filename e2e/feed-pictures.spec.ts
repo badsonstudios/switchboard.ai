@@ -68,7 +68,7 @@ test.describe('pictures in the conversation (#1235)', () => {
     // CAPPED, and still the right shape: 900 tall would take over the conversation
     await expect
       .poll(async () => Math.round((await picture.boundingBox())!.height), { timeout: 15_000 })
-      .toBeLessThanOrEqual(421);
+      .toBeLessThanOrEqual(420);
     const box = (await picture.boundingBox())!;
     expect(box.height).toBeGreaterThan(300);
     expect(Math.abs(box.width / box.height - 600 / 900)).toBeLessThan(0.02);

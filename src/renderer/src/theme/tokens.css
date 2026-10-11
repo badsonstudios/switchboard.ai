@@ -1734,6 +1734,10 @@ mark[data-feed-match-current] {
  * when both caps bite; the button around it is how the whole picture is seen. */
 .feed-md .doc-image {
   display: block;
+  /* the cap is the cap INCLUDING the hairline round the picture: left as the
+   * default it was 420 plus two, which the Linux runner measured and the
+   * Windows one rounded away */
+  box-sizing: border-box;
   max-inline-size: 100%;
   /* the same number as `FEED_IMAGE_MAX_HEIGHT`. A picture of known size is
    * fitted under it by its attributes, so this only bites on first sight,
