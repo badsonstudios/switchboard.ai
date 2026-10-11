@@ -56,6 +56,14 @@ export function startStaticServer(root: string): Promise<StaticServer> {
         // <meta> tag (P2-E15-12, AR-P2-10). Main re-asserts the identical
         // policy via onHeadersReceived so dev is covered too; see shared/csp.ts.
         'content-security-policy': CSP_PROD,
+        // NOTHING HERE IS WORTH CACHING (#744). This server's port is picked
+        // by the system on every launch, and a cache entry is keyed by its
+        // address: a stored copy is under an origin that will never be asked
+        // for again. Without this header each launch left another 10 MB copy
+        // of the bundle behind (20 of them, 189 MB, measured on one machine).
+        // The file comes off the local disk either way. `http-cache.ts` has
+        // the whole account, and clears what is already there.
+        'cache-control': 'no-store',
       });
       res.end(data);
     });

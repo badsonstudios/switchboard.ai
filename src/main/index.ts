@@ -135,6 +135,7 @@ import {
 } from './popout-geometry';
 import { dialog } from 'electron';
 import { buildIdentity, isReleaseBuild, windowTitle } from '../shared/build-identity';
+import { clearDeadHttpCache } from './http-cache';
 import { acquireInstanceLock, focusRunningWindow, sleepSync } from './single-instance';
 import { refocusAfterDialog } from './dialog-refocus';
 
@@ -855,6 +856,10 @@ app
       builtAt: BUILD_IDENTITY.builtAt ?? 'unknown',
       release: isReleaseBuild(BUILD_IDENTITY),
     });
+    // The browser cache holds nothing this app can reuse (#744, `http-cache.ts`):
+    // empty it. NOT awaited: it must never stand between the user and the
+    // window, and nothing the window loads is cacheable any more.
+    void clearDeadHttpCache(session.defaultSession, log.app);
     // serve the packaged renderer over loopback http so dockview pop-out works
     if (!DEV_URL) {
       try {
