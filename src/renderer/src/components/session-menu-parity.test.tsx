@@ -35,6 +35,8 @@ const SESSIONS: RailSession[] = [
 ];
 
 let roots: Root[] = [];
+/** sessions with finished work nobody has looked at (#1219), for both mounts */
+let finishedIds: string[] = [];
 
 async function mountRail(groups: RailGroup[]): Promise<HTMLElement> {
   const host = document.createElement('div');
@@ -47,6 +49,7 @@ async function mountRail(groups: RailGroup[]): Promise<HTMLElement> {
         sessions={SESSIONS.map((s) => (groups.length ? s : { ...s, groupId: undefined }))}
         groups={groups}
         needing={new Set<string>()}
+        finished={new Set<string>(finishedIds)}
         palette={['var(--status-working)']}
         policies={DEFAULT_BOOK}
         onRename={noop}
@@ -86,6 +89,7 @@ async function mountStrip(groups: RailGroup[]): Promise<HTMLElement> {
         groups={groups}
         order={railOrder(sessions, groups, pinned)}
         needing={new Set()}
+        finished={new Set<string>(finishedIds)}
         pinned={pinned}
         onCreateGroup={noop}
         onNewSession={noop}
@@ -206,6 +210,25 @@ describe('right-clicking a session, in the left list and on the strip (issue 116
     const { left, top } = await both([BACK, DOCS], 'scratch');
     expect(left).toEqual(top);
     expect(left.find((e) => e.label === i18next.t('strip.menuNoGroup'))!.checked).toBe('true');
+  });
+
+  it('offers "Mark as seen" in the same place in both, and only for a finished session (#1219)', async () => {
+    finishedIds = ['scratch'];
+    try {
+      const { left, top } = await both([BACK, DOCS], 'scratch');
+      expect(left).toEqual(top);
+      const labels = left.map((e) => e.label);
+      const seen = labels.indexOf(i18next.t('rail.menuSeen'));
+      expect(seen).toBeGreaterThan(-1);
+      // straight after Close, before anything about groups
+      expect(labels[seen - 1]).toBe(i18next.t('rail.menuClose'));
+      // not offered for a session with nothing to mark
+      const calm = await both([BACK, DOCS], 'api');
+      expect(calm.left.map((e) => e.label)).not.toContain(i18next.t('rail.menuSeen'));
+      expect(calm.top.map((e) => e.label)).not.toContain(i18next.t('rail.menuSeen'));
+    } finally {
+      finishedIds = [];
+    }
   });
 
   it('is the same menu in both places for a session in a group, ticked at its group', async () => {

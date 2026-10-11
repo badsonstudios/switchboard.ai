@@ -192,7 +192,12 @@ carries a mark for what that session is doing right now:
 
 Yellow and orange are used for nothing else in the app, so anything in those
 colours is a session waiting for you; and the words **needs you** say it without
-the colour at all. The list also totals them
+the colour at all. A session that has simply **finished** is not one of them:
+it has its own, quieter count, **"N finished"**, and it clears when you look at
+it (see [Which ones need you, and which have
+finished](02-sessions.md#which-ones-need-you-and-which-have-finished)). The
+sound, the spoken announcement and the notification for a finished session are
+unchanged. The list also totals the ones that need you
 up as **"2 need you"**: at the foot of the list on the left, or on the strip's
 first line when the list is across the top. When nobody is waiting there is no
 total at all.

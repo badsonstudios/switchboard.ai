@@ -149,7 +149,8 @@ test.describe('focus-stealing policy (E9-10)', () => {
     // the hidden-behind-a-tab session finishes: its row says so and NOTHING
     // else moves. This is the case the naive rung test gets wrong.
     await post(first, { hook_event_name: 'Stop' });
-    await expect(listed(w, first)).toHaveAttribute('data-needs-you', 'true', { timeout: 20_000 });
+    // ("finished", its own count since #1219, and not "needs you")
+    await expect(listed(w, first)).toHaveAttribute('data-finished', 'true', { timeout: 20_000 });
     await expect(focused(w)).toHaveText(new RegExp(third));
     await expect(tabs(w)).toHaveCount(3); // and no card was rearranged
   });
@@ -210,7 +211,7 @@ test.describe('focus-stealing policy (E9-10)', () => {
     await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
     const second = await addSession(a);
     await expect(tabs(w)).toHaveCount(2);
-    const post = await hookPoster(a, 2);
+    await hookPoster(a, 2);
 
     await setSessionFocusPolicy(w, second, 'none');
     await row(w, first).click();
@@ -229,7 +230,10 @@ test.describe('focus-stealing policy (E9-10)', () => {
     await expect(focused(w)).toHaveText(new RegExp(first));
 
     // the OTHER session is not silenced, and proves the filter is per session
-    await post(first, { hook_event_name: 'Stop' });
+    // (A held permission, not a finished turn: `first` is the card in front
+    // and we have just been clicking, so its finishing would be SEEN at once
+    // and never queued, #1219. A permission is never cleared by looking.)
+    await permissionHolder(a)(first);
     await expect(nextUp(w)).toHaveCount(1, { timeout: 20_000 });
 
     // and the choice is in the blob, and comes back saying the same thing

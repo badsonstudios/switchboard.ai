@@ -142,7 +142,8 @@ test.describe('how a working session looks (#718)', () => {
     const post = await hookPoster(a, 1);
     // finished, and waiting for you to look
     await post(title, { hook_event_name: 'Stop' });
-    await expect(row(w, title)).toHaveAttribute('data-needs-you', 'true', { timeout: 15_000 });
+    // (highlighted as FINISHED: its own count since #1219, lit the same way)
+    await expect(row(w, title)).toHaveAttribute('data-finished', 'true', { timeout: 15_000 });
 
     let first: Awaited<ReturnType<typeof paint>> | null = null;
     for (const look of LOOKS) {
@@ -202,8 +203,13 @@ test.describe('how a working session looks (#718)', () => {
     await w.locator('[data-placement="top"]').click();
     const group = w.getByTestId('sessions-strip').locator('[data-strip-group]');
     await expect(group).toHaveCount(1);
-    // finished and waiting for a look: the group needs you, and is NOT marked working
-    await expect(group).toHaveAttribute('data-needs-you', 'true', { timeout: 15_000 });
+    // finished and waiting for a look: the group says so ("1 finished", its own
+    // count since #1219), and is NOT marked working
+    // ("1 finished" or already "calm": the session is the one in front and we
+    // have just clicked, which counts as having looked, #1219)
+    await expect(group.locator('[data-strip-group-summary]')).toHaveText(/^(1 finished|calm)$/, {
+      timeout: 15_000,
+    });
     await expect(group).not.toHaveAttribute('data-session-status', 'working');
     const quiet = await group.evaluate((el) => getComputedStyle(el).backgroundColor);
 

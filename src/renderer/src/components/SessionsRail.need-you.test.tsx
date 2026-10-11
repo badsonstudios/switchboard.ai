@@ -38,13 +38,18 @@ const session = (id: string, status: RailCardStatus): RailSession => ({
   groupId: 'g1',
 });
 
-async function mount(sessions: RailSession[], needing: string[]): Promise<void> {
+async function mount(
+  sessions: RailSession[],
+  needing: string[],
+  finished: string[] = []
+): Promise<void> {
   await act(async () => {
     root.render(
       <SessionsRail
         sessions={sessions}
         groups={[backend]}
         needing={new Set<string>(needing)}
+        finished={new Set<string>(finished)}
         palette={['var(--status-working)']}
         selectedId={null}
         policies={DEFAULT_BOOK}
@@ -219,5 +224,68 @@ describe('a session waiting on an approval is marked, with its clock (#1202)', (
     expect(card().dataset.needsApproval).toBe('true');
     expect(card().dataset.approvalUrgent).toBe('true');
     expect(card().title).toContain('Waiting for your approval');
+    // open it again: which groups are closed is remembered, and would leak
+    // into every test after this one
+    await act(async () => {
+      host.querySelector<HTMLElement>('[data-rail-group-toggle="g1"]')!.click();
+    });
+  });
+});
+
+// #1219 — finished work is its own count. The owner, of a session showing its
+// summary: "It's kind of waiting for anything, but it doesn't really need me."
+describe('"N need you" and "N finished" are two counts (#1219)', () => {
+  const finishedRows = (): string[] =>
+    Array.from(host.querySelectorAll<HTMLElement>('.rail-row[data-finished="true"]')).map(
+      (r) => r.querySelector<HTMLElement>('[data-rail-open]')!.dataset.railOpen!
+    );
+  const footer = (): HTMLButtonElement | null =>
+    host.querySelector<HTMLButtonElement>('[data-rail-finished]');
+
+  it('a finished session is in "finished", lit so it can be found, and NOT in "need you"', async () => {
+    await mount([session('a', 'done'), session('b', 'idle')], [], ['a']);
+    expect(headerText()).toContain('1 finished');
+    expect(headerText()).not.toContain('need');
+    expect(finishedRows()).toEqual(['a']);
+    // "needs you" is a demand, and this is not one
+    expect(litRows()).toEqual([]);
+    expect(host.querySelector('[data-rail-need]')).toBeNull();
+    expect(footer()!.textContent).toBe('1 finished');
+    expect(footer()!.dataset.railFinished).toBe('1');
+  });
+
+  it('both at once: each number counts its own rows, and they add up', async () => {
+    await mount(
+      [session('a', 'needs-permission'), session('b', 'done'), session('c', 'done')],
+      ['a'],
+      ['b', 'c']
+    );
+    expect(headerText()).toContain('1 need you · 2 finished');
+    expect(litRows()).toEqual(['a']);
+    expect(finishedRows()).toEqual(['b', 'c']);
+    expect(host.querySelector<HTMLElement>('[data-rail-need]')!.dataset.railNeed).toBe('1');
+    expect(footer()!.dataset.railFinished).toBe('2');
+  });
+
+  it('looked at: neither count, and no button', async () => {
+    await mount([session('a', 'done')], [], []);
+    expect(headerText()).not.toContain('finished');
+    expect(finishedRows()).toEqual([]);
+    expect(footer()).toBeNull();
+  });
+
+  it('the "N finished" button marks them all as seen, and only them', async () => {
+    const ack = vi.fn(() => Promise.resolve());
+    (window as unknown as { switchboard: unknown }).switchboard = { events: { ack } };
+    sessionStore.mapLiveToCard('live-b', 'b');
+    sessionStore.mapLiveToCard('live-a', 'a');
+    sessionStore.setEvents([
+      { id: 1, sessionId: 'live-a', kind: 'needs-permission', at: '2026-10-10T00:00:00.000Z' },
+      { id: 2, sessionId: 'live-b', kind: 'done', at: '2026-10-10T00:00:00.000Z' },
+    ] as never);
+    await mount([session('a', 'needs-permission'), session('b', 'done')], ['a'], ['b']);
+    await act(async () => footer()!.click());
+    expect(ack.mock.calls).toEqual([['live-b']]);
+    sessionStore.setEvents([]);
   });
 });

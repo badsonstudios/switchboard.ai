@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
+  AttentionEvent,
   attentionQueue,
+  demands,
+  finishedCards,
   needingCards,
   nextInQueue,
   panelOrder,
   queueable,
   withVisit,
-  AttentionEvent,
 } from './queue';
 
 let nextId = 1;
@@ -176,15 +178,29 @@ describe('needingCards — what every "N need you" counts (#621)', () => {
   const bound = (m: Record<string, string>) => (liveId: string) => m[liveId] ?? liveId;
 
   it('is the set of cards with an outstanding demand', () => {
-    const events = [ev('needs-permission', 'l1', 1), ev('done', 'l2', 2)];
+    const events = [ev('needs-permission', 'l1', 1), ev('crashed', 'l2', 2)];
     expect([...needingCards(events, bound({ l1: 'c1', l2: 'c2' }))].sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('does NOT hold finished work: that is the other count (#1219)', () => {
+    // the owner, of a session showing its summary: "It's kind of waiting for
+    // anything, but it doesn't really need me."
+    const events = [ev('needs-permission', 'l1', 1), ev('done', 'l2', 2)];
+    const map = bound({ l1: 'c1', l2: 'c2' });
+    expect([...needingCards(events, map)]).toEqual(['c1']);
+    expect([...finishedCards(events, map)]).toEqual(['c2']);
+    expect(demands(ev('done', 'l2', 2))).toBe(false);
+    // ...while the QUEUE still ends with it: the list's order and the hotkey's
+    // walk are unchanged
+    expect(queueable(ev('done', 'l2', 2))).toBe(true);
+    expect(attentionQueue(events).map((e) => e.kind)).toEqual(['needs-permission', 'done']);
   });
 
   it('DROPS a dismissed session — the whole of #621', () => {
     // `EventFeed.forget` is what the ✕ calls: the event simply leaves the list.
     // Nothing about the session's STATUS moved, which is why a status-derived
     // counter went on reporting it.
-    const events = [ev('needs-permission', 'l1', 1), ev('done', 'l2', 2)];
+    const events = [ev('needs-permission', 'l1', 1), ev('needs-input', 'l2', 2)];
     const afterDismiss = events.filter((e) => e.sessionId !== 'l1');
     expect([...needingCards(afterDismiss, bound({ l1: 'c1', l2: 'c2' }))]).toEqual(['c2']);
   });
@@ -206,12 +222,50 @@ describe('needingCards — what every "N need you" counts (#621)', () => {
   it('agrees with the queue about what is outstanding', () => {
     // one predicate behind both, so the to-do list and the counters cannot
     // describe different work
+    // ...across the TWO counts since #1219: every queued row is in exactly one
     const events = [ev('ready', 'l1', 1), ev('crashed', 'l2', 2), ev('done', 'l3', 3)];
-    expect(needingCards(events, bound({})).size).toBe(attentionQueue(events).length);
+    expect(needingCards(events, bound({})).size + finishedCards(events, bound({})).size).toBe(
+      attentionQueue(events).length
+    );
   });
 
   it('is empty for an empty feed', () => {
     expect(needingCards([], bound({})).size).toBe(0);
+  });
+});
+
+describe('finishedCards — what every "N finished" counts (#1219)', () => {
+  const bound = (m: Record<string, string>) => (liveId: string) => m[liveId] ?? liveId;
+
+  it('is the cards with a done nobody has looked at', () => {
+    const events = [ev('done', 'l1', 1), ev('ready', 'l2', 2), ev('needs-input', 'l3', 3)];
+    expect([...finishedCards(events, bound({ l1: 'c1', l2: 'c2', l3: 'c3' }))]).toEqual(['c1']);
+  });
+
+  it('LOOKING clears it: an acknowledged done is `ready`, and is in neither count', () => {
+    const map = bound({ l1: 'c1' });
+    expect(finishedCards([ev('ready', 'l1', 1)], map).size).toBe(0);
+    expect(needingCards([ev('ready', 'l1', 1)], map).size).toBe(0);
+  });
+
+  it('a card is in AT MOST ONE count, and a demand wins', () => {
+    // one card, two rows: a restarted session's old done, and a live question.
+    // Counted once, as needing you: the two numbers must add up to lit rows.
+    const events = [ev('done', 'l1', 1), ev('needs-input', 'l2', 2)];
+    const map = bound({ l1: 'c1', l2: 'c1' });
+    expect([...needingCards(events, map)]).toEqual(['c1']);
+    expect(finishedCards(events, map).size).toBe(0);
+    // ...and the same for an author whose own turn is done with a review waiting
+    const author = [ev('done', 'a', 1), ev('dispatch-result', 'a', 2)];
+    expect(finishedCards(author, bound({})).size).toBe(0);
+    expect(needingCards(author, bound({})).size).toBe(1);
+  });
+
+  it('only a done: looking can never take a blocked session out of a count', () => {
+    for (const kind of ['needs-permission', 'needs-input', 'crashed'] as const) {
+      expect(finishedCards([ev(kind, 'l1', 1)], bound({})).size).toBe(0);
+      expect(needingCards([ev(kind, 'l1', 1)], bound({})).size).toBe(1);
+    }
   });
 });
 

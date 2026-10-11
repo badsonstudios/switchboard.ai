@@ -127,6 +127,7 @@ import type {
 } from '../../shared/push';
 import { revealTargets } from './lib/ladder';
 import { useUrgencyBeat } from './lib/use-urgency-beat';
+import { installSeenWatch } from './lib/seen';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
 import { interpretPushAnswer } from './lib/push-answer';
@@ -437,6 +438,12 @@ export function App(): React.JSX.Element {
   // or a dismissal would clear the list and leave the counters behind — which
   // is exactly what it did before.
   const needing = useSyncExternalStore(subscribeStore, () => sessionStore.getNeedingCards());
+  // ...and the second count (#1219): finished work nobody has looked at
+  const finished = useSyncExternalStore(subscribeStore, () => sessionStore.getFinishedCards());
+  // looking at a finished session is what clears it (lib/seen)
+  useEffect(() => {
+    return installSeenWatch();
+  }, []);
   // The urgency strip (E9-04). It renders from RAIL ORDER, not the raw session
   // list, so the Nth lamp is the Nth Ctrl+1..9 target — the derived value has a
   // stable identity (recomputed only when sessions/groups change), which is
@@ -2844,6 +2851,7 @@ export function App(): React.JSX.Element {
         groups={groups}
         order={railOrderNow}
         needing={needing}
+        finished={finished}
         pinned={pinned}
         selectedId={activeCard}
         labelLines={LABEL_LINES[taskLabelSize]}
@@ -2911,6 +2919,7 @@ export function App(): React.JSX.Element {
             sessions={sessions}
             groups={groups}
             needing={needing}
+            finished={finished}
             palette={palette}
             // #877 — the shared table turns the owner's chosen size into a line
             // count, so "full" cannot mean three lines here and two on a card.

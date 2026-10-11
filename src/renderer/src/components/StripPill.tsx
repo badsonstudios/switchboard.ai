@@ -26,6 +26,8 @@ export function StripPill(props: {
   session: RailSession;
   /** is this session one of the N the strip's total is counting (#1137) */
   needsYou: boolean;
+  /** finished, and nobody has looked (#1219): the OTHER count, never both */
+  finished?: boolean;
   /** the card the grid is currently showing */
   selected: boolean;
   pinned: boolean;
@@ -49,10 +51,10 @@ export function StripPill(props: {
   const p = presentStatus(s.status);
   // WHO NEEDS YOU is the count's own answer (#1137), not the status's: a pill
   // is filled exactly when its session is one of the N in the line above.
-  const paint = attentionPaint(s.status, props.needsYou);
+  const paint = attentionPaint(s.status, props.needsYou, props.finished);
   // #1202: the same cue the row in the left list wears, from the same rule
   const approval = useApprovalWatch(
-    paint.lit && s.status === 'needs-permission' ? [s.id] : NO_CARDS
+    paint.lit && !paint.finished && s.status === 'needs-permission' ? [s.id] : NO_CARDS
   );
   const hue = `var(--status-${paint.token})`;
   const ink = `var(--status-${paint.token}-ink)`;
@@ -75,10 +77,13 @@ export function StripPill(props: {
       data-strip-pill={s.id}
       // hover shows this session's last prompt (#631, `LastPromptHover`)
       data-last-prompt-for={s.id}
-      data-needs-you={paint.lit}
+      // "needs you" is a DEMAND. Finished work is lit too, so its count
+      // leads to a row you can see, but it is the other count (#1219).
+      data-needs-you={paint.lit && !paint.finished}
+      data-finished={paint.finished ? 'true' : undefined}
       {...approvalAttrs(approval)}
       // read back by the strip when it measures what is off each end
-      data-strip-item-need={paint.lit ? 1 : 0}
+      data-strip-item-need={paint.lit && !paint.finished ? 1 : 0}
       data-session-status={p.token}
       data-folded={props.folded}
       data-pinned={props.pinned}

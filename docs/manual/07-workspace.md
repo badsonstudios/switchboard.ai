@@ -35,10 +35,12 @@ permission to run*, *Finished — review changes*, *Crashed — needs restart*.
 Calm sessions stay plain and quiet. That contrast is the whole point: you
 should be able to spot the ones that need you from across the room.
 
-Each group header counts its own waiting sessions (**"2 need you"**, or
-**"calm"** when none are), and the bar at the bottom of the list totals them
-for the whole workspace. When nobody is waiting, there is no total there at
-all. Those counts count exactly what the [Events
+Each group header counts its own sessions: **"2 need you"** for sessions that
+are stuck until you act, **"1 finished"** for sessions that completed and that
+you have not looked at yet, both when there are both, or **"calm"**. The bar at
+the bottom of the list totals each for the whole workspace. When there is
+nothing to count, there is no total there at all. See [Which ones need you,
+and which have finished](02-sessions.md#which-ones-need-you-and-which-have-finished). Those counts count exactly what the [Events
 drawer](09-notifications.md#the-events-drawer) is listing, so dismissing an
 entry there drops them straight away.
 
@@ -147,6 +149,8 @@ Along the top of the strip, in this order:
 - **+ session** opens a new session. It is the only "+ session" button there is.
 - **N need you** appears beside them when any session is waiting on you, and
   is the same number the list on the left shows at its foot.
+- **N finished** appears beside that when sessions have completed and you have
+  not looked at them yet. Click it to mark them all as seen.
 
 Under those, your **groups**, in the same order as the list on the left: the
 ones you made first, then any [automatic groups](#automatic-groups). Each

@@ -87,8 +87,11 @@ test.describe('attention queue (E9-03)', () => {
     const { w, titles } = await threeWaitingSessions();
     // focus something that is NOT first in the queue, so the first press has
     // to actually move
-    await w.keyboard.press(`${MOD}+1`);
-    await expect(activeTab(w)).toContainText(titles.done);
+    // (The needs-input one, not the finished one: GOING to a finished session
+    // is looking at it, which takes it off the queue, #1219. This test is
+    // about the walk reaching it LAST.)
+    await w.keyboard.press(`${MOD}+3`);
+    await expect(activeTab(w)).toContainText(titles.input);
 
     const marked = w.locator('aside [data-next="true"]');
     await w.keyboard.press(`${MOD}+Space`);
