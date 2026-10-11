@@ -50,6 +50,7 @@ function deps(): CommandDeps & DepMocks {
     openFind: vi.fn(),
     toggleTabRows: vi.fn(),
     toggleDiffLayout: vi.fn(),
+    toggleDocumentOutline: vi.fn(),
     jumpToNextAttention: vi.fn(),
     openAbout: vi.fn(),
     checkForUpdates: vi.fn(),
@@ -822,5 +823,24 @@ describe('a chord pressed in a popped-out session’s window (#1214)', () => {
     expect(byId(cmds, 'session.pin').enabled?.(ctxWith(['a']))).toBe(false);
     byId(cmds, 'session.pin').run(ctxWith(['a'], 'a'));
     expect(d.togglePin).toHaveBeenCalledWith('a');
+  });
+});
+
+describe('the document outline, from the command palette (#1017)', () => {
+  it('flips the outline, and takes no card: the preference is every viewer’s', () => {
+    const d = deps();
+    const cmd = byId(buildCommands(d), 'view.documentOutline');
+    cmd.run({ ...ctxWith([]), documentOutlineOffered: true });
+    expect(d.toggleDocumentOutline).toHaveBeenCalledOnce();
+    // palette-only, like the diff layout toggle it sits beside
+    expect(cmd.binding).toBeUndefined();
+  });
+
+  it('is greyed by the chip’s own rule: no open document has an outline to hide', () => {
+    const cmd = byId(buildCommands(deps()), 'view.documentOutline');
+    expect(cmd.enabled?.({ ...ctxWith(['a'], 'a'), documentOutlineOffered: false })).toBe(false);
+    expect(cmd.enabled?.(ctxWith(['a'], 'a'))).toBe(false);
+    expect(cmd.enabled?.({ ...ctxWith([]), documentOutlineOffered: true })).toBe(true);
+    expect(cmd.disabledReasonKey).toBe('commands.disabled.noOutline');
   });
 });

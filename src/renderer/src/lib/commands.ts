@@ -80,6 +80,12 @@ export interface CommandContext {
    */
   activeDiffPanelId?: string | null;
   /**
+   * Does any open document have an outline to show or hide (#1017)? The same
+   * question the viewer's own Outline chip is greyed by. Optional, like the
+   * other document answers here.
+   */
+  documentOutlineOffered?: boolean;
+  /**
    * How many §5.30 documents a bulk close would actually take right now (#543).
    *
    * "Closable", not "open", and the difference is the whole point: a popped-out

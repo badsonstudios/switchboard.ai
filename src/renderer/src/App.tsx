@@ -149,6 +149,7 @@ import {
 import { buildIdentity } from '../../shared/build-identity';
 import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
 import { toggleDiffLayout } from './lib/diff-layout';
+import { isOutlineOffered, toggleDocumentOutline } from './lib/document-outline';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
 import { openFindBar } from './lib/find-bar-state';
 import { setDocumentOpener } from './lib/document-open';
@@ -1946,6 +1947,10 @@ export function App(): React.JSX.Element {
           toggleDiffLayout: () => {
             toggleDiffLayout();
           },
+          // one workspace value, read by every open viewer (#1017)
+          toggleDocumentOutline: () => {
+            toggleDocumentOutline();
+          },
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
           // #885. ONE dep where push, quiet hours and task label size each had
@@ -2102,6 +2107,8 @@ export function App(): React.JSX.Element {
       // the main window's document area wherever it was invoked from, and the
       // popped-out ones it spares are the same set from every window.
       closableDocumentCount: grid.current?.closableDocumentCount() ?? 0,
+      // the viewer's Outline chip is greyed by this same answer (#1017)
+      documentOutlineOffered: isOutlineOffered(),
       // resolved HERE, once, so the palette's enabled state and the keyboard's
       // both come from the same read (E9-06's group-level commands)
       activeGroupId: activeCardId

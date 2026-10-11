@@ -104,3 +104,30 @@ export function subscribeDocumentOutline(fn: () => void): () => void {
     listeners.delete(fn);
   };
 }
+
+// ── WHO HAS AN OUTLINE TO SHOW OR HIDE (#1017) ───────────────────────────────
+//
+// The toolbar chip is GREYED when its own document has no outline to hide
+// (fewer than three headings, the Source view, a file the viewer can only
+// name). The command palette's entry for the same switch needs the same
+// answer, and the palette is not inside any viewer. So each viewer says here
+// whether it is offering one, and the command is enabled while any does: the
+// preference is global, so flipping it does something in every one of them.
+
+const offering = new Set<string>();
+
+/** A viewer says whether its document has an outline to hide. `key` is the viewer's own. */
+export function setOutlineOffered(key: string, offered: boolean): void {
+  if (offered) offering.add(key);
+  else offering.delete(key);
+}
+
+/** Does any open document have an outline the switch would show or hide? */
+export function isOutlineOffered(): boolean {
+  return offering.size > 0;
+}
+
+/** The tests' reset, and nothing else's. */
+export function resetOutlineOfferedForTest(): void {
+  offering.clear();
+}

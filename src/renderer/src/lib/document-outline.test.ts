@@ -141,3 +141,20 @@ describe('fail-open: a refusing workspace costs the memory, never the gesture', 
     expect(getDocumentOutline()).toBe(false);
   });
 });
+
+describe('who has an outline to show or hide (#1017)', () => {
+  it('is true while ANY viewer offers one, and false when the last stops', async () => {
+    const m = await import('./document-outline');
+    m.resetOutlineOfferedForTest();
+    expect(m.isOutlineOffered()).toBe(false);
+    m.setOutlineOffered('viewer-a', true);
+    m.setOutlineOffered('viewer-b', true);
+    m.setOutlineOffered('viewer-a', false);
+    expect(m.isOutlineOffered()).toBe(true);
+    m.setOutlineOffered('viewer-b', false);
+    expect(m.isOutlineOffered()).toBe(false);
+    // saying "no" twice, or for a viewer never heard of, is harmless
+    m.setOutlineOffered('viewer-c', false);
+    expect(m.isOutlineOffered()).toBe(false);
+  });
+});

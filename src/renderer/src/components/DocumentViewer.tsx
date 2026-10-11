@@ -50,6 +50,7 @@ import {
 import { applyMatches, clearMatches, focusMatch } from '../lib/document-find';
 import {
   getDocumentOutline,
+  setOutlineOffered,
   subscribeDocumentOutline,
   toggleDocumentOutline,
 } from '../lib/document-outline';
@@ -934,6 +935,13 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   // exactly why `showRendered` is part of both answers rather than just one.
   const outlineOffered = showRendered && outline.length >= 3;
   const outlineShown = outlineOffered && outlineWanted;
+  // the command palette's entry for this switch is enabled while any viewer
+  // has an outline to hide (#1017): say whether this one does
+  const outlineKey = React.useId();
+  React.useEffect(() => {
+    setOutlineOffered(outlineKey, outlineOffered);
+    return () => setOutlineOffered(outlineKey, false);
+  }, [outlineKey, outlineOffered]);
 
   /**
    * Flip it, without stranding a keyboard user in a pane that is about to stop
