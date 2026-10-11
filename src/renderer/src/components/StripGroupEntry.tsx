@@ -11,7 +11,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailSession } from '../model/types';
-import { needCount, workingCount } from '../lib/rail-view';
+import { finishedCount, needCount, workingCount } from '../lib/rail-view';
 import { approvalAttrs, approvalHint, waitingOnApproval } from '../lib/approval-watch';
 import { useApprovalWatch } from '../lib/use-approval-watch';
 import { StatusMark } from './StatusMark';
@@ -55,6 +55,8 @@ export function StripGroupEntry(props: {
   members: readonly RailSession[];
   /** the cards with an outstanding demand — the count's whole input (#621) */
   needing: ReadonlySet<string>;
+  /** finished work nobody has looked at (#1219); absent = none */
+  finished?: ReadonlySet<string>;
   /** messages other sessions have left, per card (#774) */
   waiting: ReadonlyMap<string, number>;
   /** card id -> its place in the jump order, 1-based */
@@ -101,6 +103,9 @@ export function StripGroupEntry(props: {
   // `needing` set the rows in the list are lit from, so "2 need you" is exactly
   // two highlighted rows. It is never re-derived from the members' statuses.
   const need = needCount(props.members, props.needing);
+  // ...and the second number, from its own set (#1219). A session is in one
+  // or the other, so the two add up to the rows that are lit.
+  const done = props.finished ? finishedCount(props.members, props.finished) : 0;
   // #1202: a group drawn as one box is the only thing on screen for the
   // sessions inside it, so it carries their approval cue, on the soonest clock
   const approval = useApprovalWatch(waitingOnApproval(props.members, props.needing));
@@ -114,18 +119,25 @@ export function StripGroupEntry(props: {
   // is a group that needs you: it keeps its yellow words, and the look (which
   // every rule gives only to what is NOT `data-needs-you`) stays off it.
   const working = workingCount(props.members, props.needing);
-  const showsWorking = working > 0 && need === 0;
+  // ...and not while it has FINISHED work to show either (#1219): the words
+  // would say "1 finished" in the working look's ink. One mark at a time,
+  // and something to look at outranks something still running.
+  const showsWorking = working > 0 && need === 0 && done === 0;
   const waitingHere = props.members.reduce((n, m) => n + (props.waiting.get(m.id) ?? 0), 0);
   const range = chordRange(props.members, props.ordinalOf);
   const foldedHere = props.folded ? props.members.filter((m) => props.folded!.has(m.id)).length : 0;
   const summary =
     props.members.length === 0
       ? t('rail.groupEmpty')
-      : need > 0
-        ? t('rail.needSummary', { count: need })
-        : working > 0
-          ? t('rail.workingSummary', { count: working })
-          : t('rail.calm');
+      : need > 0 && done > 0
+        ? t('rail.bothSummary', { need, finished: done })
+        : need > 0
+          ? t('rail.needSummary', { count: need })
+          : done > 0
+            ? t('rail.finishedSummary', { count: done })
+            : working > 0
+              ? t('rail.workingSummary', { count: working })
+              : t('rail.calm');
   const toggle = (): void => {
     if (cell.current) props.onToggle(cell.current);
   };
@@ -143,6 +155,7 @@ export function StripGroupEntry(props: {
       {...approvalAttrs(approval)}
       // read back by the strip when it measures what is off each end
       data-strip-item-need={need}
+      data-strip-group-finished={done}
       // the handle the "working" looks hang off, exactly as on a row or a pill
       data-session-status={showsWorking ? 'working' : undefined}
       data-strip-group-working={working}
@@ -332,8 +345,15 @@ export function StripGroupEntry(props: {
             style={{
               fontFamily: 'var(--font-ui)',
               fontSize: 9.5,
-              fontWeight: need > 0 ? 700 : 400,
-              color: need > 0 ? 'var(--status-needs-input-ink)' : 'var(--muted)',
+              fontWeight: need > 0 ? 700 : done > 0 ? 600 : 400,
+              // yellow is for a demand only; finished work is said in the
+              // finished ramp, and is the quieter of the two
+              color:
+                need > 0
+                  ? 'var(--status-needs-input-ink)'
+                  : done > 0
+                    ? 'var(--status-done-ink)'
+                    : 'var(--muted)',
               whiteSpace: 'nowrap',
             }}
           >

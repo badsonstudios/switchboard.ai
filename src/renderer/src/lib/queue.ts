@@ -136,13 +136,58 @@ export function queueable(e: AttentionEvent): boolean {
  *
  * Keyed by CARD, not by live session: the counters count rail rows, and a card
  * outlives the live sessions bound to it. `cardIdFor` is the store's map.
+ *
+ * ── FINISHED WORK IS NOT IN THIS SET, SINCE #1219 ───────────────────────────
+ *
+ * The owner, of a session that had finished and was showing its summary: "It's
+ * kind of waiting for anything, but it doesn't really need me." A `done` sat
+ * in the same count, under the same words, as a held permission; those block
+ * an agent and a finished turn blocks nothing. Asked directly, he chose two
+ * readouts: "N need you" for what is blocked or has a button waiting, and
+ * "N finished" for completed work nobody has looked at (`finishedCards`).
+ *
+ * `queueable` is unchanged, on purpose: the QUEUE (the Events list's order and
+ * the jump hotkey's walk) still ends with finished work, after every demand.
+ * What changed is which of two counts a row is in.
  */
 export function needingCards(
   events: readonly AttentionEvent[],
   cardIdFor: (sessionId: string) => string
 ): ReadonlySet<string> {
   const cards = new Set<string>();
-  for (const e of events) if (queueable(e)) cards.add(cardIdFor(e.sessionId));
+  for (const e of events) if (demands(e)) cards.add(cardIdFor(e.sessionId));
+  return cards;
+}
+
+/** An outstanding demand that is NOT merely finished work: something is
+ *  blocked, broken, or has a button waiting on its row. */
+export function demands(e: AttentionEvent): boolean {
+  return queueable(e) && e.kind !== 'done';
+}
+
+/**
+ * The CARDS with finished work nobody has looked at (#1219): what every
+ * "N finished" readout counts.
+ *
+ * A card is in AT MOST ONE of the two sets, and `needing` wins. A session can
+ * own two rows in the feed (its own `done` and a returned review filed on it),
+ * and a card counted once as "needs you" and again as "finished" would make
+ * the two numbers add up to more rows than are lit.
+ *
+ * It leaves this set the way it always left the count: the `done` is
+ * acknowledged and becomes `ready` (looked at), or dismissed.
+ */
+export function finishedCards(
+  events: readonly AttentionEvent[],
+  cardIdFor: (sessionId: string) => string
+): ReadonlySet<string> {
+  const needing = needingCards(events, cardIdFor);
+  const cards = new Set<string>();
+  for (const e of events) {
+    if (e.kind !== 'done') continue;
+    const card = cardIdFor(e.sessionId);
+    if (!needing.has(card)) cards.add(card);
+  }
   return cards;
 }
 

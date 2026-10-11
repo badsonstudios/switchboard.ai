@@ -98,6 +98,16 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **"N need you" no longer counts sessions that have simply finished.** A
+  finished session blocks nothing, so it has its own, quieter count: **N
+  finished**. "N need you" is now only what is stuck until you act (a
+  permission, a question, a crash, a returned review). Group headings, the
+  foot of the Sessions list and the strip across the top all show both.
+- **Looking at a finished session clears it.** Clicking it in the list, on the
+  strip or on its tab, clicking or typing in its card, or having it in front of
+  you while you work when it finishes, all count. Before, only the jump
+  shortcut and the Events list did. You can also right-click a session ▸
+  **Mark as seen**, or click **N finished** to clear them all.
 - **Answering one of two requests no longer hides the other.** When a session
   asked for two things at once, answering the first made its card say
   "working" while the second was still waiting, and it then ran out unseen.

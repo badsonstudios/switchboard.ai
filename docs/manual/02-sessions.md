@@ -297,22 +297,42 @@ Every session shows one of these:
 | **suspended** | Kept, but not currently running |
 | **not started** | Nothing ever ran in this card — see below |
 
-### Which ones need you
+### Which ones need you, and which have finished
 
-A row that needs you is **highlighted**: tinted, with a thicker colored bar at
-its left edge and its name in bold. Each group's heading counts them — **"2 need
-you"**, or **"calm"** — and the Sessions list totals them: at its foot when it
-is on the left, on its first line when it is across the top. When nobody is
-waiting there is no total. The count and the highlighted rows always match:
-if a heading says 1, exactly one row under it is highlighted.
+The Sessions list keeps **two counts**, because they are two different things:
 
-A session stops needing you when you deal with it:
+- **N need you** is for a session that is stuck until you act: it is asking
+  permission, asking you a question, it crashed, or a review you sent for has
+  come back with a button waiting. It is in yellow.
+- **N finished** is for a session that completed its work and that you have
+  not looked at yet. Nothing is stuck. It is quieter, in the colour of *done*.
 
-- A **done** session stays highlighted until you look at it. Click it and the
-  highlight goes; the row still says **done** until you give it something new.
-- A session that is asking you something stays highlighted until you answer. If
-  you dismiss its entry in **Events** instead, the highlight and the count both
-  drop, but the word on the row stays colored — it is still waiting.
+A row in either count is **highlighted**: tinted, with a thicker colored bar at
+its left edge and its name in bold. Each group's heading says both numbers
+(**"1 need you · 2 finished"**, or one of them, or **"calm"**), and the Sessions
+list totals them: at its foot when it is on the left, on its first line when it
+is across the top. The counts and the highlighted rows always match.
+
+**A finished session clears when you look at it.** Any of these counts as
+looking:
+
+- you click it in the list, on the strip, or on its tab, or go to it with
+  `Ctrl+Space`;
+- it is already in front and you click or type in its card;
+- it finishes while it is in front of you and you have used the window in the
+  last minute. In that case it is never counted at all.
+
+A card that is merely on screen while you are away has **not** been looked at,
+and is still counted when you come back.
+
+You can also clear it without going to it: **right-click the session ▸ Mark as
+seen**. And the **N finished** total is a button: click it to mark every
+finished session as seen at once.
+
+**A session that needs you never clears by being looked at.** It leaves the
+count when you answer it. If you dismiss its entry in **Events** instead, the
+highlight and the count both drop, but the word on the row stays colored: it
+is still waiting.
 
 ## Leaving and coming back
 

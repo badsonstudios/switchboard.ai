@@ -137,12 +137,16 @@
     "chevron": "▾",
     "ungrouped": "Ungrouped",
     "needSummary": "{count} need you",
+    "finishedSummary": "{count} finished",
+    "bothSummary": "{need} need you · {finished} finished",
+    "menuSeen": "Mark as seen",
     "calm": "calm",
     "workingSummary": "{count} working",
     "closeSession": "Close session",
     "closeSessionIcon": "✕",
     "footerSessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",
     "footerNeed": "{count} need you",
+    "footerFinished": "{count} finished",
     "resize": "Drag to resize the rail",
     "menuDiff": "Open changes",
     "menuRename": "Rename…",
@@ -192,7 +196,8 @@
     "glyphIdle": "–"
   },
   "urgency": {
-    "needYou": "{n, plural, one {# needs you} other {# need you}}"
+    "needYou": "{n, plural, one {# needs you} other {# need you}}",
+    "finished": "{n} finished"
   },
   "ladder": {
     "announceRung": "{title} {rung}",
@@ -1414,6 +1419,9 @@
     "chip": "⬍ {policy}",
     "chipHint": "What happens to a session card when you submit a prompt: {policy}. Click to change.",
     "groupDefault": "Follow the default"
+  },
+  "seen": {
+    "clearAllHint": "Finished and not looked at yet. Click to mark them all as seen."
   },
   "approvalWatch": {
     "hint": "Waiting for your approval.",

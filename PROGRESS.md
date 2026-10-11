@@ -29,8 +29,12 @@
 >    setting, which level) with **Bring it back**, **Stop doing this** and
 >    **Stop telling me**; and every change to the setting is now logged with
 >    the control that made it. The default and the chip are unchanged.
-> 2. **#1202 — needs-approval must be unmissable. IN PROGRESS, started
->    2026-10-10, branch `feature/1202-approval-pulse`.** Found first: a held
+> 2. **#1202 — needs-approval must be unmissable. DONE 2026-10-10, PR #1223
+>    (`bfdf9f2e`), merged, NOT released.** The ticket is closed. CI needed one
+>    re-run of the Windows unit job: two timing failures in files this did not
+>    touch (`watcher.test.ts`, a 5s budget; `stream-service.test.ts`,
+>    `shutdownAll`), green on the re-run, NOT filed. Two independent reviews;
+>    the first changed the design (the pulse is on its own layer). Found first: a held
 >    approval has a 300 second deadline in main that the window was never
 >    told; when it runs out the request is DECLINED and the session is told
 >    nobody answered (it does not move to a terminal); a question has no
@@ -42,7 +46,20 @@
 >    "working" over the one still waiting. ⚠️ **The ticket's "design pass
 >    with Tanner before implementation" did NOT happen**; he picked it for
 >    this run, so a first version is built and should be shown to Tanner.
-> 3. #1219 "Need you" does not clear when you look. NOT STARTED.
+> 3. **#1219 — "N need you" and "N finished" are two counts, and looking
+>    clears a finished one. IN PROGRESS, started 2026-10-10, branch
+>    `feature/1219-need-you-and-finished`.** The owner's decision on the
+>    ticket put all three options in scope. Built: `needingCards` no longer
+>    holds `done`, `finishedCards` does (a card is in at most one); both
+>    numbers on group headings, the list's foot, the strip's first line and
+>    a group's box; `lib/seen` acknowledges when you go to a card, touch its
+>    body, or it finishes in front of you while you use the window (not when
+>    it merely sat on screen); right-click ▸ Mark as seen; the "N finished"
+>    total is a button. **Changes real-app test behaviour:** a turn that
+>    finishes on the card in front of someone typing is never queued, so
+>    `expectTurnCompleted` now asks the feed. Left alone on purpose: sound,
+>    speech and toast for a finished session; the hotkey's order; the number
+>    at the bottom of the window; the Events list; the look of a finished row.
 > 4. #1201 past questions render as raw JSON. NOT STARTED.
 > 5. #1206 speech leads with the session name. NOT STARTED.
 > 6. #1198 context meter bar form (may already be done). NOT STARTED.

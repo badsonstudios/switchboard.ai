@@ -1139,14 +1139,34 @@ export function skipPopoutOnLinux(): void {
  * and its two assertions were missed by the first sweep, so nothing caught them.
  */
 export async function expectTurnCompleted(window: Page, timeout = 30_000): Promise<void> {
-  const tab = window.getByTestId('events-tab');
-  await expect(tab).toHaveAttribute('data-count', '1', { timeout });
-  await expect(tab).toHaveAttribute('data-hottest', 'done');
+  // ASKED OF THE FEED ITSELF since #1219, not read off the tab's count. A turn
+  // that finishes on the card in front of someone who is using the window is
+  // SEEN at once: its `done` becomes `ready` and is never queued, so the tab
+  // would say 0. These tests have always just typed the prompt, which is
+  // exactly that. The fact wanted here is "the turn closed", and both kinds
+  // say it; a session that is still running has neither.
+  await expect
+    .poll(
+      () => eventKinds(window),
+      { timeout }
+    )
+    .toEqual([expect.stringMatching(/^(done|ready)$/)]);
+}
+
+/** the kinds main's feed is holding, in its own order */
+function eventKinds(page: Page): Promise<string[]> {
+  return page.evaluate(async () => {
+    const list = (await window.switchboard.events.list()) as Array<{ kind: string }>;
+    return list.map((e) => e.kind);
+  });
 }
 
 /** ...and its negative: nothing has been queued at all, so no turn has ended */
 export async function expectTurnStillRunning(window: Page): Promise<void> {
-  await expect(window.getByTestId('events-tab')).toHaveAttribute('data-count', '0');
+  // The FEED, like its sibling above, and for the same reason (#1219): a turn
+  // that wrongly completed in front of someone typing would be seen at once
+  // and the tab's count would read 0 either way. A running turn has no row.
+  expect(await eventKinds(window)).toEqual([]);
 }
 
 export async function openEventsDrawer(window: Page): Promise<void> {

@@ -44,7 +44,8 @@ import { LineageMap, NO_LINEAGE } from '../lib/dispatch-lineage';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
 import { DND_TYPE, GROUP_DND_TYPE } from '../lib/rail-dnd';
 import { edgeAtX, edgeAtY, insertIndex } from '../lib/strip-drag';
-import { needCount } from '../lib/rail-view';
+import { finishedCount, needCount } from '../lib/rail-view';
+import { markAllSeen, markSeen } from '../lib/seen';
 import { useHeldCounts } from '../lib/sibling-inbox';
 import { edgeOverflow, EdgeState, sameEdges } from '../lib/strip-overflow';
 import { isLit, UrgencyMarks } from '../lib/urgency';
@@ -104,6 +105,8 @@ export interface SessionsStripProps {
   order: RailOrderResult<RailSession>;
   /** the cards with an outstanding demand (#621) — REQUIRED for the rail's reason */
   needing: ReadonlySet<string>;
+  /** finished work nobody has looked at (#1219); absent = none */
+  finished?: ReadonlySet<string>;
   pinned: ReadonlySet<string>;
   /** the cards that are collapsed or hidden: not on screen until asked for */
   folded: ReadonlySet<string>;
@@ -551,7 +554,7 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   // `setEdges` keeps the old object when nothing changed, so this settles.
   React.useLayoutEffect(() => {
     measure();
-  }, [measure, order, props.needing, props.folded, props.pinned, waiting, edges]);
+  }, [measure, order, props.needing, props.finished, props.folded, props.pinned, waiting, edges]);
   React.useEffect(() => {
     window.addEventListener('resize', measure);
     // fail-open: no ResizeObserver costs the re-measure when a banner above
@@ -979,6 +982,22 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
             props.onClose(s.id);
           },
         },
+        // only while there is something to mark: an item that would do
+        // nothing is not offered (#1219). After Close, where the list on the
+        // left has it: the two are one menu.
+        ...(props.finished?.has(s.id)
+          ? [
+              {
+                id: 'seen',
+                label: t('rail.menuSeen'),
+                can: true,
+                run: () => {
+                  ran('session', s.id);
+                  markSeen(s.id);
+                },
+              },
+            ]
+          : []),
         // MOVE TO GROUP: one choice out of a known set — each of your groups,
         // and none. The current one is checked, and choosing it does nothing.
         //
@@ -1125,6 +1144,7 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   }, [menuHasNothing]);
 
   const total = needCount(order.flat, props.needing);
+  const totalFinished = props.finished ? finishedCount(order.flat, props.finished) : 0;
   const nothing = entries.length === 0 && order.loose.length === 0;
 
   const row = (s: RailSession): React.JSX.Element => {
@@ -1134,6 +1154,7 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         key={s.id}
         session={s}
         needsYou={props.needing.has(s.id)}
+        finished={props.finished?.has(s.id)}
         selected={s.id === props.selectedId}
         pinned={props.pinned.has(s.id)}
         waiting={waiting.get(s.id) ?? 0}
@@ -1280,6 +1301,20 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
             {t('urgency.needYou', { n: total })}
           </span>
         )}
+        {totalFinished > 0 && (
+          // THE SECOND NUMBER (#1219), and the quieter one: no tint, the
+          // finished ramp, never yellow. A BUTTON, because it is also the one
+          // place to say "I have seen all of these" at once.
+          <button
+            type="button"
+            data-strip-finished={totalFinished}
+            title={t('seen.clearAllHint')}
+            onClick={markAllSeen}
+            style={{ ...lineButton, color: 'var(--status-done-ink)', fontWeight: 600 }}
+          >
+            {t('urgency.finished', { n: totalFinished })}
+          </button>
+        )}
       </div>
       {/* THE ROW: groups first, then the loose sessions, scrolling sideways when
           they do not fit, with a fixed cell at each end for what is past it. */}
@@ -1365,6 +1400,7 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
                 color={e.color}
                 members={e.members}
                 needing={props.needing}
+                finished={props.finished}
                 waiting={waiting}
                 ordinalOf={ordinalOf}
                 open={open?.key === e.key}
@@ -1433,6 +1469,7 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
                 key={s.id}
                 session={s}
                 needsYou={props.needing.has(s.id)}
+                finished={props.finished?.has(s.id)}
                 selected={s.id === props.selectedId}
                 pinned={props.pinned.has(s.id)}
                 waiting={waiting.get(s.id) ?? 0}

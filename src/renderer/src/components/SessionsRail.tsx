@@ -74,6 +74,7 @@ import {
 } from '../lib/rail-order';
 import { LineageMap, NO_LINEAGE } from '../lib/dispatch-lineage';
 import {
+  finishedCount,
   needCount,
   clampRailWidth,
   railWidthAtPointer,
@@ -86,6 +87,7 @@ import {
   waitingOnApproval,
 } from '../lib/approval-watch';
 import { useApprovalLookup } from '../lib/use-approval-watch';
+import { markAllSeen, markSeen } from '../lib/seen';
 import { tint } from '../lib/tint';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { useHeldCounts } from '../lib/sibling-inbox';
@@ -162,6 +164,8 @@ export function SessionsRail(props: {
    * bug — the counters would ignore dismissal again and nothing would fail.
    */
   needing: ReadonlySet<string>;
+  /** finished work nobody has looked at (#1219); absent = none */
+  finished?: ReadonlySet<string>;
   onRename: (id: string, title: string) => void;
   onFocus: (id: string) => void;
   onDiff: (s: RailSession) => void;
@@ -801,6 +805,7 @@ export function SessionsRail(props: {
       key={s.id}
       session={s}
       needsYou={props.needing.has(s.id)}
+      finished={props.finished?.has(s.id)}
       selected={s.id === props.selectedId}
       pinned={props.pinned.has(s.id)}
       waiting={waitingCounts.get(s.id) ?? 0}
@@ -1004,6 +1009,7 @@ export function SessionsRail(props: {
   }): React.JSX.Element => {
     const isCollapsed = collapsed.has(opts.key);
     const need = needCount(opts.members, props.needing);
+    const done = props.finished ? finishedCount(opts.members, props.finished) : 0;
     // #1202: a CLOSED group draws no rows, so its header is the only place the
     // approval cue can be. An open one leaves it to the rows: two things
     // pulsing for one request is noise.
@@ -1476,10 +1482,22 @@ export function SessionsRail(props: {
               fontSize: 9,
               whiteSpace: 'nowrap',
               marginInlineStart: 'auto',
-              color: need ? 'var(--status-needs-input-ink)' : 'var(--muted)',
+              // yellow is for a demand only (#1219): finished work is said
+              // in the finished ramp, and is the quieter of the two
+              color: need
+                ? 'var(--status-needs-input-ink)'
+                : done
+                  ? 'var(--status-done-ink)'
+                  : 'var(--muted)',
             }}
           >
-            {need ? t('rail.needSummary', { count: need }) : t('rail.calm')}
+            {need && done
+              ? t('rail.bothSummary', { need, finished: done })
+              : need
+                ? t('rail.needSummary', { count: need })
+                : done
+                  ? t('rail.finishedSummary', { count: done })
+                  : t('rail.calm')}
           </span>
           {/* …and what siblings have left inside it (#774 review). AFTER the
               need summary and in its own chip rather than folded into that
@@ -1610,6 +1628,7 @@ export function SessionsRail(props: {
   };
 
   const totalNeed = needCount(props.sessions, props.needing);
+  const totalFinished = props.finished ? finishedCount(props.sessions, props.finished) : 0;
   // The Ungrouped bucket only earns a header when there is something to
   // distinguish it FROM — on a fresh workspace it would be pure chrome.
   const hasOtherCards = props.groups.length > 0 || order.autoGroups.length > 0;
@@ -1830,16 +1849,39 @@ export function SessionsRail(props: {
           color: 'var(--muted)',
           display: 'flex',
           justifyContent: 'space-between',
+          // ONE LINE, at any width the list can be dragged to: a third item
+          // (#1219) must not grow the footer by a line on a narrow list.
+          // The session count gives way first; the totals never do.
+          whiteSpace: 'nowrap',
+          gap: 8,
         }}
       >
-        <span>{t('rail.footerSessions', { count: props.sessions.length })}</span>
-        {totalNeed > 0 && (
-          // the ONE total in this placement since the lamps row went (#1164);
-          // named so a spec can read the count without parsing the words
-          <span data-rail-need={totalNeed} style={{ color: 'var(--status-needs-input-ink)' }}>
-            {t('rail.footerNeed', { count: totalNeed })}
-          </span>
-        )}
+        <span style={{ minInlineSize: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {t('rail.footerSessions', { count: props.sessions.length })}
+        </span>
+        {/* the two totals sit together at the end of the line (#1219) */}
+        <span style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+          {totalNeed > 0 && (
+            // the ONE total in this placement since the lamps row went (#1164);
+            // named so a spec can read the count without parsing the words
+            <span data-rail-need={totalNeed} style={{ color: 'var(--status-needs-input-ink)' }}>
+              {t('rail.footerNeed', { count: totalNeed })}
+            </span>
+          )}
+          {totalFinished > 0 && (
+            // the second number (#1219), quieter, and a BUTTON: the one place
+            // to say "I have seen all of these" at once
+            <button
+              type="button"
+              className="rail-footer-finished"
+              data-rail-finished={totalFinished}
+              title={t('seen.clearAllHint')}
+              onClick={markAllSeen}
+            >
+              {t('rail.footerFinished', { count: totalFinished })}
+            </button>
+          )}
+        </span>
       </div>
 
       {/* A move made from the keyboard is otherwise SILENT: the row simply
@@ -2045,6 +2087,24 @@ export function SessionsRail(props: {
               {t(key)}
             </button>
           ))}
+          {/* #1219: only while there is something to mark. An item that would
+              do nothing is not offered. */}
+          {props.finished?.has(menu.session.id) && (
+            <button
+              type="button"
+              role="menuitem"
+              className="rail-menu-item"
+              data-rail-menu-seen
+              onClick={() => {
+                const id = menu.session.id;
+                closeMenu(true);
+                markSeen(id);
+              }}
+              style={menuItemStyle}
+            >
+              {t('rail.menuSeen')}
+            </button>
+          )}
           {/* #253 — the keyboard's way to do what only a drag could do.
               A session's group was reachable by dragging its row onto a group
               card and no other way, so the whole interaction failed WCAG 2.1.1

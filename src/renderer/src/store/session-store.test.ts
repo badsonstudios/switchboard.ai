@@ -215,7 +215,20 @@ describe('the needing-cards set — every "N need you" readout (#621)', () => {
     store.mapLiveToCard('live-1', 'card-A');
     store.mapLiveToCard('live-2', 'card-B');
     store.setEvents([event(1, 'live-1', 'needs-permission'), event(2, 'live-2', 'done')]);
-    expect([...store.getNeedingCards()].sort()).toEqual(['card-A', 'card-B']);
+    // two counts since #1219: the held permission needs you, the finished
+    // turn is finished
+    expect([...store.getNeedingCards()]).toEqual(['card-A']);
+    expect([...store.getFinishedCards()]).toEqual(['card-B']);
+  });
+
+  it('says which live sessions to acknowledge for a card, and none for a calm one', () => {
+    store.mapLiveToCard('live-1', 'card-A');
+    store.mapLiveToCard('live-2', 'card-B');
+    store.setEvents([event(1, 'live-1', 'needs-permission'), event(2, 'live-2', 'done')]);
+    expect(store.unseenDoneFor('card-B')).toEqual(['live-2']);
+    // a held permission has nothing to acknowledge: looking never clears it
+    expect(store.unseenDoneFor('card-A')).toEqual([]);
+    expect(store.unseenDoneFor('nobody')).toEqual([]);
   });
 
   it('DISMISSING clears the card, though its status has not moved', () => {
@@ -234,8 +247,10 @@ describe('the needing-cards set — every "N need you" readout (#621)', () => {
   it('ACKNOWLEDGING a done clears it too — `ready` is not a demand', () => {
     store.mapLiveToCard('live-1', 'card-A');
     store.setEvents([event(1, 'live-1', 'done')]);
-    expect(store.getNeedingCards().has('card-A')).toBe(true);
+    expect(store.getFinishedCards().has('card-A')).toBe(true);
+    expect(store.getNeedingCards().has('card-A')).toBe(false);
     store.setEvents([event(2, 'live-1', 'ready')]);
+    expect(store.getFinishedCards().has('card-A')).toBe(false);
     expect(store.getNeedingCards().has('card-A')).toBe(false);
   });
 
@@ -253,10 +268,15 @@ describe('the needing-cards set — every "N need you" readout (#621)', () => {
   it('re-derives when a live id is BOUND, not only when events arrive', () => {
     // a session that finished before `sessions:create` resolved: the event
     // lands first and maps to the live id, which no rail row carries
-    store.setEvents([event(1, 'live-1', 'done')]);
+    store.setEvents([event(1, 'live-1', 'needs-input')]);
     expect(store.getNeedingCards().has('card-A')).toBe(false);
     store.mapLiveToCard('live-1', 'card-A');
     expect(store.getNeedingCards().has('card-A')).toBe(true);
+    // ...and the finished set with it
+    store.setEvents([event(2, 'live-9', 'done')]);
+    expect(store.getFinishedCards().has('card-Z')).toBe(false);
+    store.mapLiveToCard('live-9', 'card-Z');
+    expect(store.getFinishedCards().has('card-Z')).toBe(true);
   });
 
   it('keeps a stable identity until events change it', () => {

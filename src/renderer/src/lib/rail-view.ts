@@ -221,6 +221,12 @@ export interface AttentionPaint {
    * word is where it stays knowable.
    */
   stateInk: boolean;
+  /**
+   * Lit for FINISHED work nobody has looked at, and nothing else (#1219). The
+   * row is highlighted so it can be found, but it is not a demand: it is in
+   * "N finished", not "N need you", and it clears by being looked at.
+   */
+  finished: boolean;
 }
 
 /** Statuses a session cannot leave on its own: someone has to act. */
@@ -254,10 +260,20 @@ const BLOCKED: ReadonlySet<string> = new Set(['needs-input', 'needs-permission',
  * is filed on its author, who is usually idle) is lit in the `done` ramp:
  * finished work to look at, which is what it is.
  */
-export function attentionPaint(status: string | undefined, counted: boolean): AttentionPaint {
+export function attentionPaint(
+  status: string | undefined,
+  counted: boolean,
+  /** in `finishedCards` (#1219): the other count, and never both */
+  finished = false
+): AttentionPaint {
   const p = presentStatus(status);
-  if (counted) return { lit: true, token: p.needsYou ? p.token : 'done', stateInk: true };
-  return { lit: false, token: p.token, stateInk: BLOCKED.has(status ?? '') };
+  if (counted) {
+    return { lit: true, token: p.needsYou ? p.token : 'done', stateInk: true, finished: false };
+  }
+  // FINISHED, UNSEEN: lit in the `done` ramp so the count leads to a row you
+  // can see, exactly as "N need you" does. The same invariant, a second number.
+  if (finished) return { lit: true, token: 'done', stateInk: true, finished: true };
+  return { lit: false, token: p.token, stateInk: BLOCKED.has(status ?? ''), finished: false };
 }
 
 /**
@@ -301,6 +317,19 @@ export function needCount(
   needing: ReadonlySet<string>
 ): number {
   return sessions.reduce((n, s) => (needing.has(s.id) ? n + 1 : n), 0);
+}
+
+/**
+ * How many of these sessions have FINISHED work nobody has looked at (#1219):
+ * the one rule behind every "N finished" readout, over `lib/queue`'s
+ * `finishedCards`. `needCount`'s sibling, and the two never count one session
+ * twice because the two sets never share a card.
+ */
+export function finishedCount(
+  sessions: ReadonlyArray<{ id: string }>,
+  finished: ReadonlySet<string>
+): number {
+  return sessions.reduce((n, s) => (finished.has(s.id) ? n + 1 : n), 0);
 }
 
 /** Rail width bounds. 286px is the design's figure; the clamp keeps a dragged

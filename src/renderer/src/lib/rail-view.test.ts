@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   attentionPaint,
+  finishedCount,
   presentStatus,
   statusVars,
   needCount,
@@ -236,8 +237,8 @@ describe("the row's short state word (#877)", () => {
 
 describe('attentionPaint — the one rule for who is lit (#1137)', () => {
   it('lights a counted session in its own ramp', () => {
-    expect(attentionPaint('done', true)).toEqual({ lit: true, token: 'done', stateInk: true });
-    expect(attentionPaint('needs-input', true)).toEqual({
+    expect(attentionPaint('done', true)).toMatchObject({ lit: true, token: 'done', stateInk: true });
+    expect(attentionPaint('needs-input', true)).toMatchObject({
       lit: true,
       token: 'needs-input',
       stateInk: true,
@@ -246,29 +247,53 @@ describe('attentionPaint — the one rule for who is lit (#1137)', () => {
 
   // looking at a finished session takes it off the count and leaves it `done`
   it('does not light a finished session nobody is counting', () => {
-    expect(attentionPaint('done', false)).toEqual({ lit: false, token: 'done', stateInk: false });
+    expect(attentionPaint('done', false)).toMatchObject({ lit: false, token: 'done', stateInk: false });
   });
 
   // dismissing an ask does not answer it: the word keeps its colour
   it.each(['needs-input', 'needs-permission', 'crashed'])(
     'keeps the state word coloured for a dismissed %s',
     (status) => {
-      expect(attentionPaint(status, false)).toEqual({ lit: false, token: status, stateInk: true });
+      expect(attentionPaint(status, false)).toMatchObject({ lit: false, token: status, stateInk: true });
     }
   );
 
   // a returned review is filed on its author, who is usually idle
   it('lights a counted session whose status is calm, as finished work', () => {
-    expect(attentionPaint('idle', true)).toEqual({ lit: true, token: 'done', stateInk: true });
+    expect(attentionPaint('idle', true)).toMatchObject({ lit: true, token: 'done', stateInk: true });
     expect(attentionPaint('working', true).token).toBe('done');
   });
 
+  // #1219: finished work nobody has looked at is lit too, in the finished
+  // ramp, but it is the OTHER count and says so
+  it('lights FINISHED, unseen work, and marks it as not a demand', () => {
+    expect(attentionPaint('done', false, true)).toEqual({
+      lit: true,
+      token: 'done',
+      stateInk: true,
+      finished: true,
+    });
+    // a demand wins: a card is in one count or the other, never both
+    expect(attentionPaint('needs-permission', true, true).finished).toBe(false);
+    expect(attentionPaint('done', true).finished).toBe(false);
+    expect(attentionPaint('done', false).finished).toBe(false);
+  });
+
   it('fails open on a status it does not know', () => {
-    expect(attentionPaint('no-such-status', false)).toEqual({
+    expect(attentionPaint('no-such-status', false)).toMatchObject({
       lit: false,
       token: 'idle',
       stateInk: false,
     });
     expect(attentionPaint(undefined, false).lit).toBe(false);
+  });
+});
+
+describe('finishedCount — every "N finished" readout (#1219)', () => {
+  it('counts the sessions in the finished set, and only those', () => {
+    const sessions = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    expect(finishedCount(sessions, new Set(['a', 'c', 'elsewhere']))).toBe(2);
+    expect(finishedCount(sessions, new Set())).toBe(0);
+    expect(finishedCount([], new Set(['a']))).toBe(0);
   });
 });

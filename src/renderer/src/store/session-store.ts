@@ -39,7 +39,13 @@ import {
   isDispatchRetirePolicy,
   type DispatchRetirePolicy,
 } from '../lib/dispatch-ephemeral';
-import { attentionQueue, needingCards, nextInQueue, withVisit } from '../lib/queue';
+import {
+  attentionQueue,
+  finishedCards,
+  needingCards,
+  nextInQueue,
+  withVisit,
+} from '../lib/queue';
 import {
   CardPresentation,
   DEFAULT_PRESENTATION,
@@ -287,6 +293,8 @@ export class SessionStore {
   // response, not the session's existence. Filtering here would make a held
   // permission invisible rather than quiet — §4's fail-open rule.
   private derivedNeeding: ReadonlySet<string> = new Set();
+  /** finished work nobody has looked at (#1219): never overlaps `derivedNeeding` */
+  private derivedFinished: ReadonlySet<string> = new Set();
   // §5.8's batch prompt (P2-E9-11): the ONE group currently on screen, and the
   // request ids it has taken responsibility for. Derived on mutation like the
   // rest, and — unlike the rest — deliberately identity-STABLE across a
@@ -359,6 +367,34 @@ export class SessionStore {
     return this.derivedNeeding;
   }
 
+  /**
+   * The cards with FINISHED work nobody has looked at: what every "N finished"
+   * readout counts (#1219). Never overlaps `getNeedingCards`.
+   */
+  getFinishedCards(): ReadonlySet<string> {
+    return this.derivedFinished;
+  }
+
+  /**
+   * The live session ids whose `done` is still unlooked-at on this card: what
+   * to acknowledge when the user looks at it or presses its "seen" mark.
+   * Usually one; a card that was resumed can briefly hold an old one too.
+   *
+   * Answers for a card in EITHER count: a card that also has a demand on it (a
+   * returned review beside its own finished turn) is counted as needing you,
+   * and a direct ask still clears its `done`. The watch in lib/seen only asks
+   * about cards in the finished count, so for such a card looking clears
+   * nothing until the demand is dealt with.
+   */
+  unseenDoneFor(cardId: string): string[] {
+    if (!this.derivedFinished.has(cardId) && !this.derivedNeeding.has(cardId)) return [];
+    const out: string[] = [];
+    for (const e of this.state.events) {
+      if (e.kind === 'done' && this.cardIdForLive(e.sessionId) === cardId) out.push(e.sessionId);
+    }
+    return out;
+  }
+
   private set(patch: Partial<SessionState>): void {
     this.state = { ...this.state, ...patch };
     // KEY presence, not truthiness: `setEvents([])` must still recompute, and
@@ -425,6 +461,11 @@ export class SessionStore {
     // bound after its first event landed would otherwise be counted under the
     // live id `cardIdForLive` falls back to, which no rail row carries.
     this.derivedNeeding = needingCards(this.state.events, (liveId) =>
+      this.cardIdForLive(liveId)
+    );
+    // ...and its quieter sibling (#1219), from the same feed in the same
+    // recompute, so "N need you" and "N finished" can never be a push apart
+    this.derivedFinished = finishedCards(this.state.events, (liveId) =>
       this.cardIdForLive(liveId)
     );
   }

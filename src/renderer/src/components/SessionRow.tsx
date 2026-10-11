@@ -123,6 +123,8 @@ export function SessionRow(props: {
   session: RailSession;
   /** is this session one of the N its list's "N need you" is counting (#1137) */
   needsYou: boolean;
+  /** finished, and nobody has looked (#1219): the OTHER count, never both */
+  finished?: boolean;
   /** the card the grid is currently showing, for the selected-row tint */
   selected: boolean;
   pinned: boolean;
@@ -182,11 +184,11 @@ export function SessionRow(props: {
   const p = presentStatus(s.status);
   // WHO NEEDS YOU is the count's own answer (#1137), not the status's: a row
   // is lit exactly when its session is one of the N the header is counting.
-  const paint = attentionPaint(s.status, props.needsYou);
+  const paint = attentionPaint(s.status, props.needsYou, props.finished);
   // #1202: an approval runs out, so the row that is waiting on one moves, and
   // says how long is left. Lit by the same rule as the tint above.
   const approval = useApprovalWatch(
-    paint.lit && s.status === 'needs-permission' ? [s.id] : NO_CARDS
+    paint.lit && !paint.finished && s.status === 'needs-permission' ? [s.id] : NO_CARDS
   );
   const hue = `var(--status-${paint.token})`;
   const ink = `var(--status-${paint.token}-ink)`;
@@ -209,7 +211,10 @@ export function SessionRow(props: {
       // `.rail-row[data-tinted='true']:hover`, the exception that kept a
       // needy row's tint from being repainted. No hover rule, nothing to
       // except it from.
-      data-needs-you={paint.lit}
+      // "needs you" is a DEMAND. Finished work is lit too, so its count
+      // leads to a row you can see, but it is the other count (#1219).
+      data-needs-you={paint.lit && !paint.finished}
+      data-finished={paint.finished ? 'true' : undefined}
       {...approvalAttrs(approval)}
       data-session-status={p.token}
       // which row is the session you have open, for the stylesheet (#718): a
