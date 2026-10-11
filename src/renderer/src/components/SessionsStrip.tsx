@@ -288,10 +288,20 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   const [dropAt, setDropAt] = React.useState<{ id: string; edge: 'before' | 'after' } | null>(null);
   /** the group a dragged session would join */
   const [dropInto, setDropInto] = React.useState<string | null>(null);
+  /**
+   * A session from a group is being held over the strip itself, where letting
+   * go takes it OUT of the group (#1197). The owner, with the sessions across
+   * the top: "I'm not able to grab a session out of the group and move it
+   * outside the group." A row could be dragged onto another group's box, and
+   * up and down its own list, but the strip's own surface took no drop at
+   * all, so there was nowhere to let go that meant "no group".
+   */
+  const [dropOut, setDropOut] = React.useState(false);
   const endDrag = (): void => {
     dragging.current = null;
     setDropAt(null);
     setDropInto(null);
+    setDropOut(false);
   };
   const lastNudge = React.useRef(0);
   // HOWEVER THE DRAG ENDS, IT ENDS. `dragend` is dispatched at the element the
@@ -307,6 +317,9 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
       dragging.current = null;
       setDropAt(null);
       setDropInto(null);
+      // a ROW has no `dragend` handler of its own, so this is the only place a
+      // drag that started on one and was cancelled is known to have ended
+      setDropOut(false);
     };
     window.addEventListener('dragend', over);
     window.addEventListener('drop', over);
@@ -654,6 +667,27 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   const cardInFlight = (types: readonly string[]): string | null =>
     (types.includes(DND_TYPE) && dragging.current?.kind === 'card' ? dragging.current.id : null) ??
     getDraggedCard();
+
+  /**
+   * The grouped session a drop on the strip's own surface would take out of
+   * its group, or null when this is not that drop.
+   *
+   * ONLY a drag that began on this strip (a row from a group's list; a pill
+   * is loose already). A card's tab dragged up from the workspace is not
+   * asking to be ungrouped by passing over the strip. And never over a group's
+   * box or an open list: those have their own meanings, including "no", and a
+   * drop they refused must not fall through to this one.
+   */
+  const ungroupable = (types: readonly string[], target: EventTarget | null): string | null => {
+    if (!types.includes(DND_TYPE)) return null;
+    const d = dragging.current;
+    if (!d || d.kind !== 'card') return null;
+    if ((target as Element | null)?.closest?.('[data-strip-group], [data-strip-list]')) return null;
+    const s = order.flat.find((x) => x.id === d.id);
+    // an automatic group's membership is its folder's: there is no `groupId`
+    // to clear, and nothing a drop could change (#687 for the not-started half)
+    return s?.groupId && s.status !== 'not-started' ? s.id : null;
+  };
 
   const groupDrag = (
     e: Entry
@@ -1237,11 +1271,52 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         e.preventDefault();
         setMenu({ kind: 'strip', ...menuPoint(e) });
       }}
+      // DRAG A SESSION OUT OF ITS GROUP (#1197): anywhere on the strip that is
+      // not a group's box or an open list. Handlers on the strip itself, so the
+      // first line, the gaps between entries and the loose pills all count:
+      // "outside the group" is a big target, not a 4px gap to aim for.
+      data-drop-out={dropOut ? 'true' : undefined}
+      onDragOver={(ev) => {
+        const id = ungroupable(ev.dataTransfer.types, ev.target);
+        if (!id) {
+          if (dropOut) setDropOut(false);
+          return;
+        }
+        // a pill under the pointer may be drawing a reorder line for a LOOSE
+        // session; for a grouped one it draws none, and this is the answer
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'move';
+        if (!dropOut) setDropOut(true);
+      }}
+      onDragLeave={(ev) => {
+        if (ev.currentTarget.contains(ev.relatedTarget as Node | null)) return;
+        setDropOut(false);
+      }}
+      onDrop={(ev) => {
+        // BEFORE anything a child's handler did to it: a pill's `onDrop` has
+        // already ended the drag by the time this runs, so the session is read
+        // from the drop itself and checked again
+        const cardId = ev.dataTransfer.getData(DND_TYPE);
+        const grouped = order.flat.find((x) => x.id === cardId);
+        const inside = (ev.target as Element | null)?.closest?.(
+          '[data-strip-group], [data-strip-list]'
+        );
+        endDrag();
+        // a child took it (a reorder, a move into a group), or it is not ours
+        if (ev.defaultPrevented || inside) return;
+        if (!cardId || !grouped?.groupId || grouped.status === 'not-started') return;
+        ev.preventDefault();
+        ran('session', cardId);
+        props.onMoveToGroup(cardId, null);
+      }}
       role="group"
       aria-label={t('strip.label')}
       style={{
         display: 'flex',
         flexDirection: 'column',
+        // while a grouped session is held over it: a blue edge, and the words
+        // in the line below say what letting go will do
+        ...(dropOut ? { boxShadow: 'inset 0 0 0 2px var(--status-working)' } : {}),
         // never give up height (#274): this is the only list of sessions on
         // screen while it is on, and the shell column squeezes its auto-basis
         // children first
@@ -1250,8 +1325,9 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         borderBlockEnd: '1px solid var(--border)',
       }}
     >
-      {/* THE LINE ABOVE. In this order and nothing else: "+ group",
-          "+ session", then the ONE total. It does not scroll — the row below
+      {/* THE LINE ABOVE. In this order: "+ group", "+ session", then the
+          totals (and, only while a session is being dragged out of a group,
+          the words that say so, at the far end). It does not scroll — the row below
           does, and "7 need you" sliding off the edge is exactly when it starts
           to matter. */}
       <div
@@ -1314,6 +1390,27 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
           >
             {t('urgency.finished', { n: totalFinished })}
           </button>
+        )}
+        {dropOut && (
+          // never by the edge alone (§5.32): the strip says what a drop does.
+          // LAST on the line and pushed to its end, so the buttons and the
+          // totals do not jump sideways under a drag in progress.
+          <span
+            data-strip-drop-out
+            style={{
+              marginInlineStart: 'auto',
+              minInlineSize: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              fontFamily: 'var(--font-ui)',
+              fontSize: 10.5,
+              fontWeight: 600,
+              color: 'var(--status-working-ink)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {t('strip.dropOut')}
+          </span>
         )}
       </div>
       {/* THE ROW: groups first, then the loose sessions, scrolling sideways when

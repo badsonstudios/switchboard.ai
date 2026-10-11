@@ -127,6 +127,12 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **With the sessions across the top, a session can be dragged out of its
+  group.** Drag its row out of the group's list and let go anywhere on the
+  strip that is not a group; the strip says "Let go to take it out of its
+  group" while you hold it there. Before, a row could only be dragged within
+  its list or onto another group, and the only way out was **No group** on the
+  right-click menu (which is still there).
 - **A question Claude asked you now reads as a question when you scroll back
   to it.** It used to show the raw request, which looked like code. Now each
   question is a sentence, with the answers that were offered and a tick on the

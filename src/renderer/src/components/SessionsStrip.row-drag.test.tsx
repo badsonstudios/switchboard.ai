@@ -336,4 +336,92 @@ describe('a row in a group’s open list (issue 1178)', () => {
     await fire(target, 'drop', dt);
     expect(moves).toEqual([['a2', B.id]]);
   });
+
+  // #1197: the strip's own surface is where a session leaves its group
+  describe('dragged OUT of the group, onto the strip itself (#1197)', () => {
+    const strip = (): HTMLElement =>
+      document.querySelector<HTMLElement>('[data-testid="sessions-strip"]')!;
+    const line = (): HTMLElement => document.querySelector<HTMLElement>('[data-strip-line]')!;
+    const hint = (): HTMLElement | null =>
+      document.querySelector<HTMLElement>('[data-strip-drop-out]');
+    const pill = (id: string): HTMLElement =>
+      by('[data-strip-pill]', 'data-strip-pill', id);
+
+    it('over the line it is accepted, and the strip says what letting go does', async () => {
+      await mount();
+      await openList(A.id);
+      const dt = transfer(DND_TYPE, 'a2');
+      await fire(row('a2'), 'dragstart', dt);
+      const over = await fire(line(), 'dragover', dt);
+      expect(over.defaultPrevented).toBe(true);
+      expect(hint()!.textContent).toBe('Let go to take it out of its group');
+      expect(strip().getAttribute('data-drop-out')).toBe('true');
+    });
+
+    it('a drop there takes it out of its group, once', async () => {
+      const moves: unknown[] = [];
+      await mount({ onMoveToGroup: (...a) => moves.push(a) });
+      await openList(A.id);
+      const dt = transfer(DND_TYPE, 'a2');
+      await fire(row('a2'), 'dragstart', dt);
+      await fire(line(), 'dragover', dt);
+      await fire(line(), 'drop', dt);
+      expect(moves).toEqual([['a2', null]]);
+      expect(hint()).toBeNull();
+    });
+
+    it('a drop on a LOOSE pill takes it out too: the pill is outside every group', async () => {
+      const moves: unknown[] = [];
+      const reorders: unknown[] = [];
+      await mount({ onMoveToGroup: (...a) => moves.push(a), onReorder: (...a) => reorders.push(a) });
+      await openList(A.id);
+      const dt = transfer(DND_TYPE, 'a2');
+      await fire(row('a2'), 'dragstart', dt);
+      await fire(boxed(pill('loose')), 'dragover', dt);
+      await fire(pill('loose'), 'drop', dt);
+      expect(moves).toEqual([['a2', null]]);
+      expect(reorders).toEqual([]);
+    });
+
+    it('its OWN group’s box is not "out": nothing is offered and nothing moves', async () => {
+      const moves: unknown[] = [];
+      await mount({ onMoveToGroup: (...a) => moves.push(a) });
+      await openList(A.id);
+      const dt = transfer(DND_TYPE, 'a2');
+      await fire(row('a2'), 'dragstart', dt);
+      const over = await fire(groupBox(A.id), 'dragover', dt);
+      expect(over.defaultPrevented).toBe(false);
+      expect(hint()).toBeNull();
+      await fire(groupBox(A.id), 'drop', dt);
+      expect(moves).toEqual([]);
+    });
+
+    it('a drop the LIST refuses does not fall through and ungroup', async () => {
+      const moves: unknown[] = [];
+      await mount({ onMoveToGroup: (...a) => moves.push(a) });
+      await openList(A.id);
+      const dt = transfer(DND_TYPE, 'a2');
+      await fire(row('a2'), 'dragstart', dt);
+      // a row dropped on itself: not a reorder
+      await fire(boxed(row('a2')), 'dragover', dt, TOP);
+      await fire(row('a2'), 'drop', dt, TOP);
+      expect(moves).toEqual([]);
+    });
+
+    it('a LOOSE pill, a file, and a session that never started are not offered it', async () => {
+      const moves: unknown[] = [];
+      await mount({ onMoveToGroup: (...a) => moves.push(a) });
+      // a pill that is loose already
+      const loose = transfer(DND_TYPE, 'loose');
+      await fire(pill('loose'), 'dragstart', loose);
+      expect((await fire(line(), 'dragover', loose)).defaultPrevented).toBe(false);
+      await fire(line(), 'drop', loose);
+      // a file from the desktop: no card type on it
+      const file = transfer('Files', 'x');
+      expect((await fire(line(), 'dragover', file)).defaultPrevented).toBe(false);
+      await fire(line(), 'drop', file);
+      expect(hint()).toBeNull();
+      expect(moves).toEqual([]);
+    });
+  });
 });

@@ -75,8 +75,9 @@
 >    The reader also handles sentence shapes that are in the installed CLI
 >    (2.1.288) but have NOT been probed (notes, previews, "no option
 >    selected", three other openings): a follow-up probe is worth filing.
-> 5. **#1206 — speech leads with the session name. IN PROGRESS, started
->    2026-10-11, branch `feature/1206-speech-session-name`.** The `speak` action resolves its own "who":
+> 5. **#1206 — speech leads with the session name. DONE 2026-10-11, PR #1227
+>    (`f2955726`), merged, NOT released.** Green on the first CI run (which
+>    is where its real-app speech test ran); the ticket is closed. The `speak` action resolves its own "who":
 >    the session's name, tidied for a voice ("Switchboard.ai" is said
 >    "Switchboard AI"); the task label follows only when two open sessions
 >    sound the same. Toast, phone and webhook are unchanged. ⚠️ The real-app
@@ -88,7 +89,14 @@
 >    meter, PR #1183); the existing real-app test for it passes on `main`.
 >    Nothing was built. One difference from the ticket's wording stays an
 >    open question for him: blue from 60%, not yellow.
-> 7. #1197 drag a session out of a group. NOT STARTED.
+> 7. **#1197 — drag a session out of a group, on the strip. IN PROGRESS,
+>    started 2026-10-11, branch `feature/1197-strip-drag-out`.** Reproduced first: the menu way ("No group") already existed
+>    in both placements, and a row could already be dragged onto another
+>    group; the strip's own surface took no drop at all, so there was nowhere
+>    to let go that meant "no group" (the manual said so). Built: the strip
+>    accepts a grouped session dragged from a group's list anywhere that is
+>    not a group's box or an open list, says what letting go will do, and
+>    ungroups on drop. A real-mouse drag is tested in the real app.
 > 8. #1200 consolidate consecutive Bash runs. NOT STARTED.
 > 9. #1207 tool pictures in the timeline gutter. NOT STARTED.
 > 10. #1199 Settings in tabs. NOT STARTED.
