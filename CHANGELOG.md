@@ -98,6 +98,12 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **The spoken announcement now says the session's name.** With **🗣
+  announce** on, the voice says *"Switchboard AI needs permission"* or
+  *"BrainHarbor is done"* instead of reading out the task label, so you can
+  tell which session is calling without looking. Names are tidied so a voice
+  can say them (`Switchboard.ai` is said "Switchboard AI"). Two sessions with
+  the same name get the task label added. Pop-ups are unchanged.
 - **"N need you" no longer counts sessions that have simply finished.** A
   finished session blocks nothing, so it has its own, quieter count: **N
   finished**. "N need you" is now only what is stuck until you act (a

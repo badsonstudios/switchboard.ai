@@ -30,7 +30,7 @@
 import { errorText } from '../../shared/error-text';
 import type { Logger } from '../log/logger';
 import { AudioChannelName } from '../../shared/sounds';
-import { announcementFor } from './notification-text';
+import { announcementFor, spokenWho } from './notification-text';
 import type { RuleActionContext, RuleActionHandler } from './rules-engine';
 import type { Translate } from '../../shared/i18n';
 
@@ -57,6 +57,12 @@ export interface SoundActionsDeps {
    * and it is the one that reaches someone who is not looking at the screen.
    */
   t: Translate;
+  /**
+   * The session's NAME as the list of sessions shows it, and whether another
+   * open session has the same one (#1206). Absent, or answering null, the
+   * voice says the label, as it did before.
+   */
+  sessionNameFor?: (liveSessionId: string) => { name: string; shared: boolean } | null;
   log?: Logger;
 }
 
@@ -114,11 +120,15 @@ export class SoundActions {
   /** The `speak` action, ready for `registry.register`. */
   get speakHandler(): RuleActionHandler {
     return (_action, ctx) => {
-      // `ctx.title` is what every other channel is already saying — the card's
-      // auto task label when it has one, the session title when it does not
-      // (`main/index.ts` → `titleFor`). Speaking anything else would make the
-      // voice the one channel that names sessions differently.
-      const text = announcementFor(ctx.title, ctx.event.kind, this.deps.t);
+      // THE VOICE NAMES SESSIONS DIFFERENTLY FROM EVERY OTHER CHANNEL, AND
+      // THAT IS DELIBERATE (#1206). `ctx.title` is what the toast, the phone
+      // and the webhook lead with: the card's auto task label when it has one.
+      // That is right to READ and useless BY EAR. The owner, hand-testing:
+      // "it needs to say the name of the session." So speech resolves its own
+      // who, here, rather than the chain becoming configurable for everyone.
+      const named = this.safe(() => this.deps.sessionNameFor?.(ctx.event.sessionId) ?? null, null);
+      const who = spokenWho({ name: named?.name, shared: named?.shared, label: ctx.title }, this.deps.t);
+      const text = announcementFor(who, ctx.event.kind, this.deps.t);
       const taken = this.safe(() => this.deps.sink.speak(text), false);
       // No beep fallback: the `sound` action has usually just made one, and a
       // beep standing in for a sentence tells the user nothing the beep did not

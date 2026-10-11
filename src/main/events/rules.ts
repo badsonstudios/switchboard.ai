@@ -315,7 +315,7 @@ export function defaultRules(prefs: {
     for (const kind of ['needs-input', 'needs-permission', 'crashed', 'done'] as const)
       out.push(rule('sound:', ACTION_SOUND, kind, ALL_VISIBILITIES));
   // Spoken announcements (P2-E14-05a) — WHEN AWAY, like the toast and unlike
-  // the sound. A voice reading "Add markdown preview needs your input" at
+  // the sound. A voice reading "BrainHarbor needs your input" at
   // someone who is looking straight at that card is telling them something they
   // can already see, in the slowest possible medium. The cue above is for the
   // desk; this one is for the other side of the room.

@@ -73,11 +73,11 @@ export function notificationBody(kind: string, t: Translate): string {
 /**
  * The sentence the app speaks (§5.9: "TradingApp needs permission").
  *
- * `title` is whatever the rules engine already resolved for every other
- * channel — the card's auto task label when there is one, the session title
- * when there is not (`main/index.ts` → `titleFor`). That chain is why the
- * fallback in this item's spec needs no code here: turning auto labels off
- * changes what `title` IS, and this function speaks whatever it is handed.
+ * `title` is WHO, already resolved by the caller. Since #1206 the `speak`
+ * action hands it the session's NAME (`spokenWho`), not the task label every
+ * other channel leads with: by ear the question is which session, and a
+ * conversation's title does not answer it. This function speaks whatever it is
+ * handed.
  *
  * The event's own body is deliberately NOT spoken. For `needs-permission` that
  * body is a tool-call summary ("Bash: rm -rf …"), which is the right thing to
@@ -130,4 +130,99 @@ export function speakableTitle(title: string, t: Translate): string {
   const cut = clean.slice(0, SPOKEN_TITLE_MAX);
   const lastSpace = cut.lastIndexOf(' ');
   return (lastSpace > SPOKEN_TITLE_MAX / 2 ? cut.slice(0, lastSpace) : cut).trim();
+}
+
+/**
+ * A SESSION'S NAME, made sayable (#1206).
+ *
+ * The owner, hand-testing speech: "When it talks, it needs to say the name of
+ * the session. If I'm in Switchboard AI, it needs to say 'Switchboard AI, and
+ * then what's going on.'" The voice was saying the conversation's task label,
+ * which is the right thing to READ on a toast and useless BY EAR for the one
+ * question a listener has: which session wants me.
+ *
+ * A name is usually a folder's name, and folder names carry punctuation a
+ * voice either reads out ("Switchboard dot A I") or swallows. So:
+ *
+ *   - a dot after a letter or a digit, with LETTERS after it, becomes a space.
+ *     A short tail is upper-cased, which is what makes a voice spell it rather
+ *     than try to pronounce it: one or two letters always ("ai", "io", "js"),
+ *     three only when they hold no vowel ("txt", "css"). A three-letter tail
+ *     WITH a vowel is usually a word ("my.app", "api.dev", "john.doe") and is
+ *     left as one. "Switchboard.ai" is "Switchboard AI";
+ *   - a dot between DIGITS is left alone: "v0.8" is a number and is said as one;
+ *   - `_` `-` `/` `\\` between words become spaces: "my-app" is "my app".
+ *
+ * Nothing else is touched. This is a guess at pronunciation, and the more it
+ * rewrites the more names it gets wrong; these are the rules a real name on
+ * the owner's machine needed. A name that still comes out wrong can be
+ * renamed to how it should be said.
+ */
+export function speakableName(name: string): string {
+  return (name ?? '')
+    .replace(/(?<=[\p{L}\p{N}])\.(\p{L}+)/gu, (_m, tail: string) => ` ${spelled(tail)}`)
+    .replace(/(?<=[\p{L}\p{N}])[_\-/\\]+(?=[\p{L}\p{N}])/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function spelled(tail: string): string {
+  if (tail.length <= 2) return tail.toUpperCase();
+  if (tail.length === 3 && !/[aeiouy]/i.test(tail)) return tail.toUpperCase();
+  return tail;
+}
+
+/** How much of a NAME is kept when a task label has to follow it, so the
+ *  label is never the part that falls off the end. */
+const SPOKEN_NAME_WITH_LABEL_MAX = 30;
+
+/**
+ * The name the voice should use for one session, and whether another open
+ * session SOUNDS the same (#1206).
+ *
+ * Compared as they are SAID, not as they are written: "my-app" and "my_app"
+ * are different names on screen and the same two words by ear, and the point
+ * of `shared` is whether the listener can tell them apart.
+ */
+export function sessionNameAmong(
+  sessions: ReadonlyArray<{ id: string; title: string }>,
+  liveId: string
+): { name: string; shared: boolean } | null {
+  const mine = sessions.find((s) => s.id === liveId)?.title;
+  if (!mine) return null;
+  const said = (title: string): string => speakableName(title).toLowerCase();
+  const key = said(mine);
+  return { name: mine, shared: sessions.filter((s) => said(s.title) === key).length > 1 };
+}
+
+/**
+ * WHO the voice names (#1206): the session, not the task.
+ *
+ * `name` is the card's name as the list of sessions shows it. `label` is what
+ * every other channel leads with (the task label when there is one). Speech
+ * says the name; the label is left out, because a sentence you cannot skim
+ * should be short.
+ *
+ * ...EXCEPT WHEN THE NAME ALONE DOES NOT SAY WHICH. Two sessions opened on one
+ * folder have the same name, and what tells them apart in the list is the task
+ * label under each. So when `shared`, the label follows the name, and that is
+ * the only time it is spoken.
+ *
+ * With no name at all (a session main has no record of) this falls back to the
+ * label, which is what the voice said before.
+ */
+export function spokenWho(
+  who: { name?: string | null; shared?: boolean; label: string },
+  t: Translate
+): string {
+  const name = speakableName(who.name ?? '');
+  // a name with nothing in it a voice can say ("...", "---") is no name
+  if (!/[\p{L}\p{N}]/u.test(name)) return speakableTitle(who.label, t);
+  const label = (who.label ?? '').replace(/\s+/g, ' ').trim();
+  if (who.shared && label && label !== (who.name ?? '').trim()) {
+    // the NAME gives way first: the label is the only thing telling them apart
+    const short = speakableTitle(name, t).slice(0, SPOKEN_NAME_WITH_LABEL_MAX).trim();
+    return speakableTitle(`${short}, ${label}`, t);
+  }
+  return speakableTitle(name, t);
 }

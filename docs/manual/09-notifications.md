@@ -313,17 +313,23 @@ Two more things:
 ## Having switchboard tell you out loud
 
 Turn on **🗣 announce** in the title bar and switchboard will *say* which session
-needs you: *"Add markdown preview needs your input."*
+needs you, by name: *"BrainHarbor needs your input."*
 
 It uses your computer's built-in voice — nothing is sent anywhere, and nothing
 is downloaded.
 
-- **It says the session's task label** if it has one — the short "what am I
-  doing" line under the title (see [Sessions](02-sessions.md)). That's the
-  useful half: it answers *what* is waiting, not just *which*.
-- **If there's no label, it says the session's title instead.** Same if you've
-  turned auto labels off with the **🏷** chip — the voice falls back to the
-  title rather than going quiet.
+- **It says the session's name**, the one on its row in the Sessions list,
+  and then what is going on: *"Switchboard AI needs permission"*, *"BrainHarbor
+  is done"*. By ear the question is *which* session, and the name answers it.
+  (It used to say the task label, the short "what am I doing" line, which is
+  fine to read and hard to place when you only hear it. Pop-ups still lead
+  with the label.)
+- **The name is tidied so a voice can say it.** A name like `Switchboard.ai`
+  is said "Switchboard AI", and `my-app` is said "my app". Two names that sound alike once tidied (`my-app` and `my_app`) count as the same name for the next point. If a name comes out
+  wrong, rename the session (double-click its name) to how you want it said.
+- **Two sessions with the same name** (two opened on one folder) are told
+  apart by adding the task label: *"BrainHarbor, Migrate the notes table needs
+  your input."* That is the only time the label is spoken.
 - **It only speaks when you're not in switchboard.** Reading out something
   you're looking straight at is slow and annoying, so the voice waits until
   you've clicked away or minimized — the same rule the desktop pop-ups follow.

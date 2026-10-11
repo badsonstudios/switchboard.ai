@@ -63,8 +63,10 @@
 >    `expectTurnCompleted` now asks the feed. Left alone on purpose: sound,
 >    speech and toast for a finished session; the hotkey's order; the number
 >    at the bottom of the window; the Events list; the look of a finished row.
-> 4. **#1201 — past questions render as raw JSON. IN PROGRESS, started
->    2026-10-11, branch `feature/1201-question-readback`.** A question had
+> 4. **#1201 — past questions render as raw JSON. DONE 2026-10-11, PR #1225
+>    (`6a59793f`), merged, NOT released.** Green on the first CI run; the
+>    ticket is closed. **Filed on the way: #1226** (probe the installed CLI
+>    for the result shapes the reader handles unmeasured). A question had
 >    no block of its own and fell through to the generic tool row. Built: the
 >    questions ride on the block structured; a shared reader finds each answer
 >    in the CLI's own result sentence by the question's text; a new block
@@ -73,8 +75,19 @@
 >    The reader also handles sentence shapes that are in the installed CLI
 >    (2.1.288) but have NOT been probed (notes, previews, "no option
 >    selected", three other openings): a follow-up probe is worth filing.
-> 5. #1206 speech leads with the session name. NOT STARTED.
-> 6. #1198 context meter bar form (may already be done). NOT STARTED.
+> 5. **#1206 — speech leads with the session name. IN PROGRESS, started
+>    2026-10-11, branch `feature/1206-speech-session-name`.** The `speak` action resolves its own "who":
+>    the session's name, tidied for a voice ("Switchboard.ai" is said
+>    "Switchboard AI"); the task label follows only when two open sessions
+>    sound the same. Toast, phone and webhook are unchanged. ⚠️ The real-app
+>    speech test cannot run on this desktop (`blurApp` fails here on `main`
+>    too); CI is the check. How it SOUNDS is for the owner's ears.
+> 6. **#1198 — context meter bar form. ALREADY SHIPPED, closed 2026-10-11
+>    with the evidence on the ticket.** Settings ▸ Appearance ▸ Context meter
+>    has offered a number, a bar, or both since v0.8.118 (it came in with the
+>    meter, PR #1183); the existing real-app test for it passes on `main`.
+>    Nothing was built. One difference from the ticket's wording stays an
+>    open question for him: blue from 60%, not yellow.
 > 7. #1197 drag a session out of a group. NOT STARTED.
 > 8. #1200 consolidate consecutive Bash runs. NOT STARTED.
 > 9. #1207 tool pictures in the timeline gutter. NOT STARTED.
