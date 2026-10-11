@@ -47,8 +47,11 @@
 >    with Tanner before implementation" did NOT happen**; he picked it for
 >    this run, so a first version is built and should be shown to Tanner.
 > 3. **#1219 — "N need you" and "N finished" are two counts, and looking
->    clears a finished one. IN PROGRESS, started 2026-10-10, branch
->    `feature/1219-need-you-and-finished`.** The owner's decision on the
+>    clears a finished one. DONE 2026-10-11, PR #1224 (`1c1b4026`), merged,
+>    NOT released.** Green on the first CI run; the ticket is closed. Two
+>    independent reviews (the first narrowed "touching it" to input inside
+>    the card's own body; the second caught a clear that fired on unrelated
+>    events). The owner's decision on the
 >    ticket put all three options in scope. Built: `needingCards` no longer
 >    holds `done`, `finishedCards` does (a card is in at most one); both
 >    numbers on group headings, the list's foot, the strip's first line and
@@ -60,7 +63,16 @@
 >    `expectTurnCompleted` now asks the feed. Left alone on purpose: sound,
 >    speech and toast for a finished session; the hotkey's order; the number
 >    at the bottom of the window; the Events list; the look of a finished row.
-> 4. #1201 past questions render as raw JSON. NOT STARTED.
+> 4. **#1201 — past questions render as raw JSON. IN PROGRESS, started
+>    2026-10-11, branch `feature/1201-question-readback`.** A question had
+>    no block of its own and fell through to the generic tool row. Built: the
+>    questions ride on the block structured; a shared reader finds each answer
+>    in the CLI's own result sentence by the question's text; a new block
+>    shows question, options, the chosen ones ticked, typed text, skipped,
+>    declined. Live and replayed look the same (real-app test does both).
+>    The reader also handles sentence shapes that are in the installed CLI
+>    (2.1.288) but have NOT been probed (notes, previews, "no option
+>    selected", three other openings): a follow-up probe is worth filing.
 > 5. #1206 speech leads with the session name. NOT STARTED.
 > 6. #1198 context meter bar form (may already be done). NOT STARTED.
 > 7. #1197 drag a session out of a group. NOT STARTED.

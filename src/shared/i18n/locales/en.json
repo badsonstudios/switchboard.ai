@@ -1104,6 +1104,23 @@
     "expandHint": "click to expand",
     "collapsedIcon": "▸",
     "expandedIcon": "▾",
+    "question": {
+      "title": "{count, plural, one {Question} other {# questions}}",
+      "state": {
+        "pending": "waiting for an answer",
+        "answered": "answered",
+        "responded": "answered in their own words",
+        "declined": "not answered"
+      },
+      "chosenMark": "✓",
+      "offeredMark": "·",
+      "chosenWord": " (chosen)",
+      "descriptionJoin": " — ",
+      "other": "Typed instead: ",
+      "notes": "Note: ",
+      "skipped": "Skipped",
+      "cut": "Not shown: the answer record was cut short here. Open the box to see what there is."
+    },
     "regionLabel": "Conversation",
     "regionLabelNamed": "Conversation — {title}",
     "keyHint": "↑ ↓ move · Enter expands · Esc leaves",

@@ -56,6 +56,17 @@ const todos = block({ kind: 'todos', todos: [{ content: 'step one', status: 'com
 const thinking = block({ kind: 'thinking', text: 'pondering', durationMs: 3000 });
 const command = block({ kind: 'user', text: '<command-name>/usage</command-name>\nboilerplate' });
 const shortPrompt = block({ kind: 'user', text: 'do the thing' });
+// a question read back (#1201): its title line opens the raw call
+const question = block({
+  kind: 'tool',
+  tool: {
+    name: 'AskUserQuestion',
+    summary: '',
+    detail: '{"questions":[]}',
+    questions: [{ question: 'Which?', options: [{ label: 'A' }, { label: 'B' }], multiSelect: false }],
+    out: 'Your questions have been answered: "Which?"="A". You can now continue with these answers in mind.',
+  },
+});
 
 // #380: this file renders real components, several of which call
 // `useTranslation`, and it used to render them with i18next never initialised
@@ -80,6 +91,7 @@ describe('every expander in the feed is a real button', () => {
     ['edit', edit, 1],
     ['tool row with detail', readTool, 1],
     ['thinking', thinking, 1],
+    ['question read back', question, 1],
     ['collapsed command prompt', command, 1],
     // nothing to expand -> nothing that claims it can
     ['tool row with no detail', bareTool, 0],
@@ -112,7 +124,7 @@ describe('the box tells the truth about what it is', () => {
   it('never claims a role it cannot have', () => {
     // A `role="button"` here is THE thing #174 was filed over: the bash box
     // CONTAINS the IN/OUT buttons, and a button may not contain buttons.
-    for (const b of [bash, edit, readTool, todos]) {
+    for (const b of [bash, edit, readTool, todos, question]) {
       const host = draw(b);
       const box = host.querySelector('[data-feed-box]');
       expect(box).not.toBeNull();
@@ -124,7 +136,7 @@ describe('the box tells the truth about what it is', () => {
   it('aria-controls always points at an element that exists', () => {
     // a dangling aria-controls is worse than none: it sends a screen reader
     // somewhere there is nothing
-    for (const b of [bash, edit, readTool, thinking, command]) {
+    for (const b of [bash, edit, readTool, thinking, command, question]) {
       const host = draw(b);
       for (const el of expanders(host)) {
         const controls = el.getAttribute('aria-controls');

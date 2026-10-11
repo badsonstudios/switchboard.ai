@@ -121,6 +121,12 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A question Claude asked you now reads as a question when you scroll back
+  to it.** It used to show the raw request, which looked like code. Now each
+  question is a sentence, with the answers that were offered and a tick on the
+  ones you chose, your own words if you typed an answer, and "Skipped" for one
+  you left. It looks the same after you quit and reopen the session. The raw
+  request is still one click away on the box's title line.
 - **When a card is put away because you sent a prompt, the app now says so.**
   With **Collapse on submit** or **Hide on submit** turned on, pressing Enter
   takes that session's card off the screen, and until now nothing explained

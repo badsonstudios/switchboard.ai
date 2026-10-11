@@ -83,6 +83,47 @@ describe('deriveIntents — one message, one set of blocks', () => {
     expect(b[0].block.todos).toEqual([{ content: 'one', status: 'completed' }]);
   });
 
+  it('a question carries its questions STRUCTURED, so it can be read back (#1201)', () => {
+    const questions = [
+      {
+        question: 'Which colour do you prefer?',
+        header: 'Colour',
+        options: [{ label: 'Red', description: 'Prefer red' }, { label: 'Green' }],
+        multiSelect: false,
+      },
+    ];
+    const [intent] = deriveIntents({
+      type: 'assistant',
+      message: {
+        content: [{ type: 'tool_use', id: 'toolu_q', name: 'AskUserQuestion', input: { questions } }],
+      },
+    });
+    expect(intent.t).toBe('block');
+    if (intent.t !== 'block') return;
+    expect(intent.block.tool?.questions).toEqual([
+      {
+        question: 'Which colour do you prefer?',
+        header: 'Colour',
+        options: [{ label: 'Red', description: 'Prefer red' }, { label: 'Green' }],
+        multiSelect: false,
+      },
+    ]);
+    // the raw call is still there, for the expander
+    expect(intent.block.tool?.detail).toContain('"questions"');
+  });
+
+  it('...and only a question does, and only one in the documented shape', () => {
+    const tool = (name: string, input: Record<string, unknown>) => {
+      const [i] = deriveIntents({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id: 't', name, input }] },
+      });
+      return i.t === 'block' ? i.block.tool : undefined;
+    };
+    expect(tool('Read', { questions: [{ question: 'q', options: [{ label: 'a' }] }] })?.questions).toBeUndefined();
+    expect(tool('AskUserQuestion', { questions: 'nope' })?.questions).toBeUndefined();
+  });
+
   it('a tool_result attaches to its tool block instead of becoming one', () => {
     const intents = deriveIntents({
       type: 'user',

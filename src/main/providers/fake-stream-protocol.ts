@@ -95,6 +95,10 @@ export const FAKE_QUESTION_MANY = {
   multiSelect: true,
 };
 
+/** What the CLI writes back for `!asked`: the first answered, the second skipped. */
+export const FAKE_ASKED_RESULT =
+  'Your questions have been answered: "Which colour do you prefer?"="Red". You can now continue with these answers in mind.';
+
 /** The side effects the protocol needs, injected so tests can observe them. */
 /** One tool call in a turn, and what came back from it if anything did. */
 export interface FakeToolCall {
@@ -967,6 +971,26 @@ export class FakeStreamProtocol {
     // was reachable from a JSONL file and from no stream anywhere.
     if (text === '!tools') {
       this.emitToolTurn();
+      return;
+    }
+
+    // A question that has been ASKED AND ANSWERED, as it sits in a conversation
+    // afterwards (#1201): the `tool_use` and its `tool_result`. `!ask` above is
+    // the live half, a request with no block; this is what you scroll back to.
+    // The result is the CLI's own sentence for "one answered, one skipped"
+    // (measured: an unanswered question is simply absent from it).
+    if (text === '!asked') {
+      this.emitToolTurn(
+        [
+          {
+            id: 'toolu_fake_asked',
+            name: ASK_USER_QUESTION_TOOL,
+            input: { questions: [FAKE_QUESTION_ONE, FAKE_QUESTION_MANY] },
+            result: FAKE_ASKED_RESULT,
+          },
+        ],
+        'ASKED_PROSE after the answer'
+      );
       return;
     }
 
