@@ -751,7 +751,9 @@ function userIntents(
         // the CLI's own flag, not a reading of the text. Measured on 3,153
         // shell results in 25 real transcripts: every "Exit code N" result
         // carried it, and so did the 21 that failed without one (blocked by
-        // the harness, declined for want of an answer). See the #1200 ticket.
+        // the harness, declined for want of an answer). And on the live
+        // stream it is on every result, true or false. Both in
+        // `spike/findings/1200-is-error-on-a-tool-result.md`.
         ...(c.is_error === true ? { failed: true as const } : {}),
       });
     }

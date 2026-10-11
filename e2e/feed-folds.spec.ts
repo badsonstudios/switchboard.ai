@@ -361,4 +361,39 @@ test.describe('a burst of looking around folds into one row (#1130)', () => {
     expect(after.y - before.y).toBeGreaterThan(0);
     expect(after.y - before.y).toBeLessThan(60);
   });
+
+  test('from main, live and after a restart: a failed command is marked and stands outside the folds (#1200)', async () => {
+    // the two tests above inject blocks into the window; this one starts where
+    // the flag is BORN, the result the CLI writes, and goes the whole way
+    test.setTimeout(240_000);
+    const folder = tempProjectFolder();
+    const first = await launchApp({ seedFolder: folder, env: DIRECT });
+    a = first;
+    const w1 = first.window;
+    await expect(w1.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    const box = w1.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!failed');
+    await box.press('Enter');
+    await expect(w1.getByText('FAILED_PROSE').first()).toBeAttached({ timeout: 60_000 });
+
+    const check = async (w: Page): Promise<void> => {
+      // three ran, one failed, three ran
+      await expect(w.locator('[data-feed-fold][data-feed-fold-kind="shell"]')).toHaveCount(2, {
+        timeout: 60_000,
+      });
+      const failed = w.locator('[data-feed-box="bash"]');
+      await expect(failed).toHaveCount(1);
+      await expect(failed).toContainText('Step 4');
+      await expect(failed.locator('[data-feed-failed]')).toHaveText('failed');
+    };
+    await check(w1);
+
+    // quit and come back: the replayed conversation is built from the
+    // transcript on disk, a different path, and must say the same
+    await first.close();
+    a = await launchApp({ home: first.home, env: DIRECT });
+    await expect(a.window.getByText('FAILED_PROSE').first()).toBeAttached({ timeout: 60_000 });
+    await check(a.window);
+  });
 });

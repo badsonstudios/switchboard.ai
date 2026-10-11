@@ -67,7 +67,11 @@ export function renderBlock(block: FeedBlock): string {
       : '[subagent] '
     : '';
   if (block.kind === 'tool' && block.tool) {
-    const head = `${tag}[${block.tool.name}] ${block.tool.summary}`;
+    // a failed call says so in the head (#1200): with `compactTools` the
+    // output is stripped, and a failed command would otherwise read to
+    // another agent exactly like one that worked
+    const failed = block.tool.failed ? ' (failed)' : '';
+    const head = `${tag}[${block.tool.name}] ${block.tool.summary}${failed}`;
     return block.tool.out ? `${head}\n  -> ${block.tool.out}` : head;
   }
   if (block.kind === 'todos' && block.todos) {

@@ -33,6 +33,10 @@
 // "Ran 5 commands", the failed one, "Ran 6 commands". Nothing about a failure
 // is ever behind a click.
 //
+// (Only a COMMAND's failure does this. A Read of a file that is not there is
+// marked failed too, and still folds into "Explored the code": a miss while
+// looking around is part of looking around, and the ticket is about commands.)
+//
 // It is a property of the RESULT, so a command joins a run when it starts and
 // leaves it if it fails: the fold it was in splits there. The folds are derived
 // on every render (below), so that needs no bookkeeping.

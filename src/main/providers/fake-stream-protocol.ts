@@ -107,6 +107,9 @@ export interface FakeToolCall {
   input: Record<string, unknown>;
   /** the tool's output — a `tool_result` is emitted for every call that has one */
   result?: string;
+  /** the result is an error (#1200). The real CLI writes `is_error` on every
+   *  result, true or false (spike/findings/1200-is-error-on-a-tool-result.md) */
+  isError?: boolean;
 }
 
 /**
@@ -979,6 +982,24 @@ export class FakeStreamProtocol {
     // the live half, a request with no block; this is what you scroll back to.
     // The result is the CLI's own sentence for "one answered, one skipped"
     // (measured: an unanswered question is simply absent from it).
+    // A command that FAILED, between two that did not (#1200): the one shape
+    // the fake could not produce, so "a failed command is marked, and is never
+    // folded away" had no proof that started in main.
+    if (text === '!failed') {
+      const cmd = (n: number, isError: boolean): FakeToolCall => ({
+        id: `toolu_fake_cmd_${n}`,
+        name: 'Bash',
+        input: { command: `npm run step-${n}`, description: `Step ${n}` },
+        result: isError ? `Exit code 1\nSTEP_${n}_BROKE` : `STEP_${n}_OK`,
+        isError,
+      });
+      this.emitToolTurn(
+        [cmd(1, false), cmd(2, false), cmd(3, false), cmd(4, true), cmd(5, false), cmd(6, false), cmd(7, false)],
+        'FAILED_PROSE after the run'
+      );
+      return;
+    }
+
     if (text === '!asked') {
       this.emitToolTurn(
         [
@@ -1106,7 +1127,14 @@ export class FakeStreamProtocol {
       if (call.result === undefined) continue;
       const resultMessage = {
         role: 'user',
-        content: [{ type: 'tool_result', tool_use_id: call.id, content: call.result }],
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: call.id,
+            content: call.result,
+            is_error: call.isError === true,
+          },
+        ],
       };
       this.emit({ type: 'user', message: resultMessage, session_id: this.sessionId, parent_tool_use_id: null });
       this.transcribe('user', resultMessage);
