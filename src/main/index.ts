@@ -78,7 +78,7 @@ import {
   permissionSummary,
   toastActionsSupported,
 } from './events/permission-toast';
-import { notificationBody } from './events/notification-text';
+import { notificationBody, sessionNameAmong } from './events/notification-text';
 import { createMainI18n } from './i18n';
 import { languageFromUi } from '../shared/i18n';
 import { APP_USER_MODEL_ID } from '../shared/app-identity';
@@ -2193,6 +2193,14 @@ app
       // The spoken announcement follows the language chip too (#471) — it would
       // otherwise be the only notification channel left in English.
       t: i18n.t,
+      // #1206: the voice says the session's NAME (what its row in the list of
+      // sessions says), and adds the task label only when two open sessions
+      // share that name and the name alone would not say which.
+      sessionNameFor: (liveId) =>
+        sessionNameAmong(
+          manager.list().map((s) => ({ id: s.id, title: s.identity.title })),
+          liveId
+        ),
       log: rulesLog,
     });
     ruleActions.register(ACTION_SOUND, soundActions.soundHandler);

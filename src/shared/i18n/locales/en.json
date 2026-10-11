@@ -22,7 +22,7 @@
     "soundsHint": "Give every session its own sound, so you can tell which one wants you without looking. Off, they all share the same beep. Change a session's sound from its ⋯ menu.",
     "speakOn": "🗣 announce",
     "speakOff": "🗣 silent",
-    "speakHint": "Say out loud which session needs you — \"Add markdown preview needs your input\" — but only while switchboard isn't the window you're in.",
+    "speakHint": "Say out loud which session needs you, by its name — \"BrainHarbor needs your input\" — but only while switchboard isn't the window you're in.",
     "speakSample": "Announcements are on",
     "placementLabel": "Where sessions are listed",
     "placement": {

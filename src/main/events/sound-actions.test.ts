@@ -327,3 +327,66 @@ describe('the registry contract it is registered under', () => {
     expect(spy).toHaveReturnedWith(undefined);
   });
 });
+
+// #1206 — speech resolves its own "who": the session's name, not the label
+// every other channel leads with.
+describe('the voice names the session (#1206)', () => {
+  const speaking = (
+    sessionNameFor?: (id: string) => { name: string; shared: boolean } | null
+  ): { said: string[]; actions: SoundActions } => {
+    const said: string[] = [];
+    const actions = new SoundActions({
+      sink: {
+        play: () => true,
+        speak: (text) => {
+          said.push(text);
+          return true;
+        },
+      },
+      soundFor: () => 'chime',
+      t,
+      ...(sessionNameFor ? { sessionNameFor } : {}),
+    });
+    return { said, actions };
+  };
+
+  it('says the session name first, and not the task label', () => {
+    const { said, actions } = speaking(() => ({ name: 'Switchboard.ai', shared: false }));
+    void actions.speakHandler({ type: 'speak' }, ctx({ title: 'Fix the tail-pin gesture window' }));
+    expect(said).toEqual(['Switchboard AI needs your input']);
+  });
+
+  it('asks about the session the EVENT belongs to', () => {
+    const asked: string[] = [];
+    const { actions } = speaking((id) => {
+      asked.push(id);
+      return { name: 'BrainHarbor', shared: false };
+    });
+    const c = ctx();
+    void actions.speakHandler({ type: 'speak' }, c);
+    expect(asked).toEqual([c.event.sessionId]);
+  });
+
+  it('two sessions sharing a name: the task label follows it', () => {
+    const { said, actions } = speaking(() => ({ name: 'BrainHarbor', shared: true }));
+    void actions.speakHandler({ type: 'speak' }, ctx({ title: 'Migrate the notes table' }));
+    expect(said).toEqual(['BrainHarbor, Migrate the notes table needs your input']);
+  });
+
+  it('no name known, or nobody to ask: it says what it said before', () => {
+    const none = speaking(() => null);
+    void none.actions.speakHandler({ type: 'speak' }, ctx());
+    expect(none.said).toEqual(['Add markdown preview needs your input']);
+    const absent = speaking();
+    void absent.actions.speakHandler({ type: 'speak' }, ctx());
+    expect(absent.said).toEqual(['Add markdown preview needs your input']);
+  });
+
+  it('a name lookup that THROWS costs the name, not the announcement', () => {
+    const { said, actions } = speaking(() => {
+      throw new Error('manager is gone');
+    });
+    expect(() => actions.speakHandler({ type: 'speak' }, ctx())).not.toThrow();
+    expect(said).toEqual(['Add markdown preview needs your input']);
+  });
+});

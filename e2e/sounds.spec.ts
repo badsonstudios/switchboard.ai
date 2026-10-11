@@ -129,7 +129,7 @@ test.describe('per-session sounds and announcements (P2-E14-05a)', () => {
     expect(after.at(-1)!.sound).not.toBe(before);
   });
 
-  test('the voice names the session, and falls back to its title', async () => {
+  test('the voice names the session, with or without a task label', async () => {
     const folder = tempProjectFolder();
     const name = path.basename(folder);
     a = await launchApp({ seedFolder: folder });
@@ -149,17 +149,19 @@ test.describe('per-session sounds and announcements (P2-E14-05a)', () => {
     const post = await hookPoster(a);
     await post(name, { hook_event_name: 'Stop' });
 
-    // FALLBACK first: with no task label to show, the sentence names the
-    // session by its title — which is exactly what an auto label switched off
-    // leaves behind (`visibleTaskLabel`, unit-covered).
+    // THE SESSION'S NAME (#1206), said the way a voice can say it: the test
+    // folder is `sb-e2e-proj-XXXX`, and a hyphen between words is a space.
+    const sayable = name.replace(/-/g, ' ');
     const first = await poll(() => {
       const s = spoken(a.home);
       return s.length > 0 ? s : null;
     }, 20_000);
-    expect(first[0].text).toBe(`${name} is done`);
+    expect(first[0].text).toBe(`${sayable} is done`);
 
-    // …and with a label, the label — the answer to "what is waiting", which is
-    // the whole reason the voice prefers it (§5.11, P2-E7-06).
+    // …and with a task label, STILL the name. The label is what a pop-up leads
+    // with, because you can read it; by ear the question is which session, and
+    // the owner asked for exactly this ("it needs to say the name of the
+    // session"). It used to say the label here.
     const cards = await w.evaluate(() => window.switchboard.sessions.cards());
     const cardId = cards.find((c) => c.title === name)!.cardId;
     await w.evaluate(
@@ -176,6 +178,6 @@ test.describe('per-session sounds and announcements (P2-E14-05a)', () => {
       const s = spoken(a.home);
       return s.length > 1 ? s : null;
     }, 20_000);
-    expect(withLabel.at(-1)!.text).toBe('Add markdown preview needs your input');
+    expect(withLabel.at(-1)!.text).toBe(`${sayable} needs your input`);
   });
 });
