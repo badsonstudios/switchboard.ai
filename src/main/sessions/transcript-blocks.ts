@@ -152,7 +152,10 @@ export function blocksFrom(
     for (const intent of intents) {
       if (intent.t === 'tool-result') {
         const target = awaiting.get(intent.toolUseId);
-        if (target?.tool) target.tool.out = intent.out;
+        if (target?.tool) {
+          target.tool.out = intent.out;
+          if (intent.failed) target.tool.failed = true;
+        }
         awaiting.delete(intent.toolUseId);
         continue;
       }

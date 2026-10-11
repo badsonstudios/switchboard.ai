@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { FeedBlockDto } from './feed';
-import { applyFolds, foldRuns, isExploration, FOLD_MIN } from './feed-folds';
+import { applyFolds, foldKind, foldRuns, isExploration, FOLD_MIN } from './feed-folds';
 
 let next = 1;
 const tool = (name: string, category: string, over: Partial<FeedBlockDto> = {}): FeedBlockDto =>
@@ -138,5 +138,81 @@ describe('applyFolds (#1130)', () => {
     const out = applyFolds(all, () => false);
     expect(out.rendered).toBe(all);
     expect(out.folds.size).toBe(0);
+  });
+});
+
+// #1200 — runs of shell commands fold too. The owner, after #1130: "I just had
+// about 12 in a row and they weren't grouped at all."
+describe('runs of commands (#1200)', () => {
+  const cmd = (over: Record<string, unknown> = {}): FeedBlockDto =>
+    tool('Bash', 'shell', {
+      tool: { name: 'Bash', category: 'shell', summary: 'npm test', ...over },
+    });
+  const failed = (): FeedBlockDto => cmd({ out: 'Exit code 1', failed: true });
+  const runs = (blocks: FeedBlockDto[]) => [...foldRuns(blocks).values()];
+
+  it('twelve commands in a row are ONE fold, and it says how many', () => {
+    const twelve = Array.from({ length: 12 }, () => cmd({ out: 'ok' }));
+    const [run, ...rest] = runs(twelve);
+    expect(rest).toEqual([]);
+    expect(run.kind).toBe('shell');
+    expect(run.commands).toBe(12);
+    expect(run.seqs).toEqual(twelve.map((b) => b.seq));
+    // and it is not counted as looking around
+    expect(run.searches + run.reads).toBe(0);
+  });
+
+  it('PowerShell is a command like any other: the category decides, not the name', () => {
+    const mixed = [cmd(), tool('PowerShell', 'shell'), cmd()];
+    expect(runs(mixed)).toHaveLength(1);
+    expect(runs(mixed)[0].commands).toBe(3);
+  });
+
+  it('a FAILED command is never folded: it ends the run and stands alone', () => {
+    const before = [cmd(), cmd(), cmd(), cmd(), cmd()];
+    const bad = failed();
+    const after = [cmd(), cmd(), cmd(), cmd(), cmd(), cmd()];
+    const found = runs([...before, bad, ...after]);
+    expect(found.map((r) => r.commands)).toEqual([5, 6]);
+    // it is in neither
+    for (const r of found) expect(r.seqs).not.toContain(bad.seq);
+    expect(foldKind(bad)).toBeNull();
+    // ...so with every fold SHUT it is still in the list that is drawn
+    const drawn = applyFolds([...before, bad, ...after], () => false).rendered;
+    expect(drawn.map((b) => b.seq)).toEqual([before[0].seq, bad.seq, after[0].seq]);
+  });
+
+  it('a failure with too few successes around it folds nothing', () => {
+    expect(runs([cmd(), cmd(), failed(), cmd(), cmd()])).toEqual([]);
+  });
+
+  it('a command that fails AFTER it joined a run leaves it: the fold splits there', () => {
+    // it joined when it started (no result yet); the result came back an error
+    const run = [cmd(), cmd(), cmd(), cmd(), cmd(), cmd(), cmd()];
+    expect(runs(run).map((r) => r.commands)).toEqual([7]);
+    const late = run.map((b, i) =>
+      i === 3 ? { ...b, tool: { ...b.tool!, out: 'boom', failed: true } } : b
+    );
+    expect(runs(late).map((r) => r.commands)).toEqual([3, 3]);
+  });
+
+  it('commands and looking around never share a fold', () => {
+    const mixed = [read(), grep(), cmd(), cmd(), read(), cmd()];
+    expect(runs(mixed)).toEqual([]);
+    const two = [read(), grep(), glob(), cmd(), cmd(), cmd()];
+    expect(runs(two).map((r) => r.kind)).toEqual(['explore', 'shell']);
+  });
+
+  it('the closed row shows what the newest command was FOR, or its first line', () => {
+    const described = [cmd(), cmd(), cmd({ description: 'Run the unit tests', summary: 'npm test' })];
+    expect(runs(described)[0].latest).toBe('Run the unit tests');
+    const two = String.fromCharCode(10);
+    const bare = [cmd(), cmd(), cmd({ summary: `git status${two}git diff` })];
+    expect(runs(bare)[0].latest).toBe('git status');
+  });
+
+  it('an exploration run is unchanged: its kind, its counts, no commands', () => {
+    const [run] = runs([grep(), read(), glob()]);
+    expect(run).toMatchObject({ kind: 'explore', searches: 2, reads: 1, commands: 0 });
   });
 });

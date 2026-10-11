@@ -97,7 +97,14 @@
 >    accepts a grouped session dragged from a group's list anywhere that is
 >    not a group's box or an open list, says what letting go will do, and
 >    ungroups on drop. A real-mouse drag is tested in the real app.
-> 8. #1200 consolidate consecutive Bash runs. NOT STARTED.
+> 8. **#1200 — fold runs of commands. IN PROGRESS, started 2026-10-11, branch
+>    `feature/1200-fold-shell-runs` (stacked on #1197's).** Measured first
+>    (25 real conversations, 3,153 commands: 2.4% failed; a third of runs are
+>    three or more; the CLI's `is_error` is reliable). Built: main carries the
+>    error flag onto the block; three or more commands in a row fold into
+>    "Ran N commands"; **a failed command is never folded** (it ends the run
+>    and stands alone, marked "failed"). Not done: keeping output-heavy
+>    commands out of a fold; re-running the typing-lag probe.
 > 9. #1207 tool pictures in the timeline gutter. NOT STARTED.
 > 10. #1199 Settings in tabs. NOT STARTED.
 > 11. #1203 Prompt History. NOT STARTED.

@@ -133,6 +133,22 @@ describe('deriveIntents — one message, one set of blocks', () => {
     expect(results(intents)).toEqual([{ t: 'tool-result', toolUseId: 'toolu_1', out: 'ok' }]);
   });
 
+  it('a result the CLI marked an ERROR says so, and one it did not says nothing (#1200)', () => {
+    const result = (extra: Record<string, unknown>) =>
+      deriveIntents({
+        type: 'user',
+        message: {
+          content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'Exit code 1', ...extra }],
+        },
+      })[0];
+    expect(result({ is_error: true })).toMatchObject({ t: 'tool-result', failed: true });
+    // absent, never `false`: an ordinary result carries no such key
+    expect('failed' in result({})).toBe(false);
+    expect('failed' in result({ is_error: false })).toBe(false);
+    // the FLAG decides, not the words: text that merely looks like a failure
+    expect('failed' in result({ content: 'Exit code 1' })).toBe(false);
+  });
+
   it('CLI-internal lines produce nothing: isMeta, and <local-command-*> user text', () => {
     expect(
       deriveIntents({ type: 'user', isMeta: true, message: { content: 'internal' } })

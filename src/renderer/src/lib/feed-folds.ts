@@ -13,8 +13,34 @@
 // `tool.category === 'read'`: Read, Grep, Glob and LS, by main's own taxonomy
 // (`shared/tool-taxonomy`). That category is stamped in main and is the same
 // one the hold policy reads, so "is this call only looking" has one answer in
-// the app. Everything else — an edit, a shell command, a subagent, a web
-// search, an MCP tool — is an EVENT and is never folded.
+// the app. An edit, a subagent, a web search, an MCP tool is an EVENT and is
+// never folded.
+//
+// ── AND RUNS OF COMMANDS, SINCE #1200 ───────────────────────────────────────
+//
+// #1130 left shell commands out on purpose ("output-bearing tools stay as
+// individual blocks"). The owner then saw the result: "I just had about 12 in
+// a row and they weren't grouped at all." So a run of consecutive
+// `category === 'shell'` calls folds too, as its own KIND of fold ("Ran 12
+// commands"). The two kinds never mix: a Read between two commands is the end
+// of one run and the start of nothing.
+//
+// A COMMAND THAT FAILED IS NEVER FOLDED. That is the whole of the reason shell
+// was left out before: a collapse that hides a red exit code behind "Ran 12
+// commands" buries the one row you needed. So a failed command is an EVENT,
+// like an edit: it ends the run before it and stands on its own, in full, with
+// its own "failed" mark. Twelve commands with one failure in the middle are
+// "Ran 5 commands", the failed one, "Ran 6 commands". Nothing about a failure
+// is ever behind a click.
+//
+// It is a property of the RESULT, so a command joins a run when it starts and
+// leaves it if it fails: the fold it was in splits there. The folds are derived
+// on every render (below), so that needs no bookkeeping.
+//
+// Measured before deciding (25 recent conversations on the owner's machine,
+// 3,153 shell results): 2.4% failed; about a third of command runs were three
+// or more long; the CLI's own error flag was on every result that printed an
+// exit code and on the ones that failed without one.
 //
 // ── WHERE A RUN ENDS ───────────────────────────────────────────────────────
 //
@@ -45,8 +71,12 @@ import type { FeedBlockDto } from './feed';
  */
 export const FOLD_MIN = 3;
 
-/** One run of consecutive exploration calls. */
+/** What a fold is a run OF. The two never share a run. */
+export type FoldKind = 'explore' | 'shell';
+
+/** One run of consecutive calls of one kind. */
 export interface FoldRun {
+  kind: FoldKind;
   /** the seq of the run's FIRST block — where the fold's row is drawn */
   head: number;
   /** every member's seq, in order, the head included */
@@ -55,13 +85,35 @@ export interface FoldRun {
   searches: number;
   /** Read: opening a file */
   reads: number;
+  /** shell: how many commands ran (zero for an exploration run) */
+  commands: number;
   /** the newest member's one-line header ("Grep src/lib"), for the closed row */
   latest: string;
 }
 
-/** Is this block a read-only exploration call — the only thing that folds? */
+/** Is this block a read-only exploration call? */
 export function isExploration(b: FeedBlockDto): boolean {
   return b.kind === 'tool' && b.tool?.category === 'read';
+}
+
+/**
+ * Which kind of fold this block can be part of, or null for an event.
+ *
+ * A shell command whose result came back an error answers null: see the header.
+ */
+export function foldKind(b: FeedBlockDto): FoldKind | null {
+  if (b.kind !== 'tool') return null;
+  if (b.tool?.category === 'read') return 'explore';
+  if (b.tool?.category === 'shell' && b.tool.failed !== true) return 'shell';
+  return null;
+}
+
+/** the one line a closed fold shows for its newest member */
+function captionOf(b: FeedBlockDto, kind: FoldKind): string {
+  if (kind === 'explore') return [b.tool?.name, b.tool?.summary].filter(Boolean).join(' ');
+  // a command's own description says what it was FOR; without one, its first line
+  const first = (b.tool?.summary ?? '').split(String.fromCharCode(10))[0];
+  return b.tool?.description || first;
 }
 
 /** two blocks are the same speaker: both the session, or the same subagent */
@@ -82,25 +134,33 @@ export function foldRuns(
 ): Map<number, FoldRun> {
   const out = new Map<number, FoldRun>();
   let run: FeedBlockDto[] = [];
+  let kind: FoldKind | null = null;
   const close = (): void => {
-    if (run.length >= min) {
+    if (kind !== null && run.length >= min) {
       const last = run[run.length - 1];
+      const explore = kind === 'explore';
       out.set(run[0].seq, {
+        kind,
         head: run[0].seq,
         seqs: run.map((b) => b.seq),
-        reads: run.filter((b) => b.tool?.name === 'Read').length,
-        searches: run.filter((b) => b.tool?.name !== 'Read').length,
-        latest: [last.tool?.name, last.tool?.summary].filter(Boolean).join(' '),
+        reads: explore ? run.filter((b) => b.tool?.name === 'Read').length : 0,
+        searches: explore ? run.filter((b) => b.tool?.name !== 'Read').length : 0,
+        commands: explore ? 0 : run.length,
+        latest: captionOf(last, kind),
       });
     }
     run = [];
+    kind = null;
   };
   for (const b of visible) {
-    if (!isExploration(b)) {
+    const k = foldKind(b);
+    if (k === null) {
       close();
       continue;
     }
-    if (run.length > 0 && !sameSpeaker(run[run.length - 1], b)) close();
+    // a run is one kind and one speaker
+    if (run.length > 0 && (k !== kind || !sameSpeaker(run[run.length - 1], b))) close();
+    kind = k;
     run.push(b);
   }
   close();

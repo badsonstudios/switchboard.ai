@@ -63,10 +63,23 @@ This is the conversation, rendered to be read rather than scrolled past:
   again to fold them away. While Claude is still looking, the counts go up in
   place.
 
-  Only looking is folded. Anything that changes something or runs something —
-  an edit, a command, a helper being sent out — always gets its own box. So
-  does a single Read, or two. And a sentence from Claude in the middle of a
-  burst splits it into two boxes with the sentence between them.
+  An edit or a helper being sent out always gets its own box. So does a single
+  Read, or two. And a sentence from Claude in the middle of a burst splits it
+  into two boxes with the sentence between them.
+- **A run of commands is one box too.** Three or more commands in a row, with
+  nothing else between them, become **Ran**, how many commands, and what the
+  most recent one was for. Click it (or press Enter on it) to see each one,
+  with its **IN** and **OUT**, exactly as before.
+
+  **A command that failed is never folded away.** It keeps its own box, in
+  full, with **failed** in red on its title line, in the place where it
+  happened. Twelve commands with one failure in the middle are *Ran 5
+  commands*, the failed one, *Ran 6 commands*. You never have to open anything
+  to find out that something went wrong. (A command counts as failed when
+  Claude Code itself reports it so: it exited with an error, it was blocked,
+  or nobody approved it.)
+
+  Commands and looking around are never mixed in one box.
 
   `Ctrl+F` still finds text inside a folded burst: stepping to a match there
   opens the box.

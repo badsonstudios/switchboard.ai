@@ -79,6 +79,9 @@ export interface FeedBlock {
     newString?: string;
     /** tool_result output, attached when it arrives (block re-emitted) */
     out?: string;
+    /** the result came back marked an error (#1200). Absent = it did not, or
+     *  no result has arrived yet. */
+    failed?: true;
     /**
      * AskUserQuestion: the questions of the call, structured (#1201). `detail`
      * is a JSON string cut at a display cap, so it cannot be parsed back; a
@@ -428,6 +431,12 @@ export interface ToolResultIntent {
   t: 'tool-result';
   toolUseId: string;
   out: string;
+  /**
+   * The CLI marked this result an error (#1200): a command that exited
+   * non-zero, one the harness blocked, one nobody approved. Absent, never
+   * `false`, for a result that is not one.
+   */
+  failed?: true;
 }
 
 export type BlockIntent = EmitIntent | ToolResultIntent;
@@ -700,6 +709,7 @@ function userIntents(
     type?: string;
     text?: string;
     tool_use_id?: string;
+    is_error?: unknown;
     content?: unknown;
   }>;
   const attachments = countAttachments(items);
@@ -738,6 +748,11 @@ function userIntents(
         t: 'tool-result',
         toolUseId: c.tool_use_id,
         out: toolResultText(c.content).slice(0, caps.detail),
+        // the CLI's own flag, not a reading of the text. Measured on 3,153
+        // shell results in 25 real transcripts: every "Exit code N" result
+        // carried it, and so did the 21 that failed without one (blocked by
+        // the harness, declined for want of an answer). See the #1200 ticket.
+        ...(c.is_error === true ? { failed: true as const } : {}),
       });
     }
   }

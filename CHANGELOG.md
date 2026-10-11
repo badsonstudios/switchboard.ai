@@ -98,6 +98,11 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **A run of commands is one box in the conversation.** Three or more
+  commands in a row now fold into **Ran N commands**, the way a burst of
+  reading and searching already did; click it to see each one. **A command
+  that failed is never folded away**: it keeps its own box, where it happened,
+  marked **failed** in red, so nothing that went wrong is behind a click.
 - **The spoken announcement now says the session's name.** With **🗣
   announce** on, the voice says *"Switchboard AI needs permission"* or
   *"BrainHarbor is done"* instead of reading out the task label, so you can

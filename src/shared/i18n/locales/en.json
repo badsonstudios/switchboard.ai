@@ -1087,6 +1087,8 @@
     "turnMarker": "New prompt",
     "fold": {
       "title": "Explored the code",
+      "shellTitle": "Ran",
+      "commands": "{count, plural, one {# command} other {# commands}}",
       "searches": "{count, plural, one {# search} other {# searches}}",
       "reads": "{count, plural, one {# file read} other {# files read}}",
       "join": ", ",
@@ -1104,6 +1106,7 @@
     "expandHint": "click to expand",
     "collapsedIcon": "▸",
     "expandedIcon": "▾",
+    "failed": "failed",
     "question": {
       "title": "{count, plural, one {Question} other {# questions}}",
       "state": {
