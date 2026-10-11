@@ -61,7 +61,7 @@ const selectStyle: React.CSSProperties = {
   minInlineSize: 0,
   background: 'var(--panel2)',
   color: 'var(--text)',
-  border: '1px solid var(--border)',
+  border: '1px solid var(--control-edge)',
   borderRadius: 5,
   padding: '2px 4px',
   fontFamily: 'var(--font-ui)',

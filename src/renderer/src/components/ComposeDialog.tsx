@@ -65,7 +65,7 @@ export const composeLabelStyle = { fontSize: 11.5, color: 'var(--muted)' } as co
 export const composeFieldStyle = {
   background: 'var(--panel2)',
   color: 'var(--text)',
-  border: '1px solid var(--border)',
+  border: '1px solid var(--control-edge)',
   borderRadius: 6,
   padding: '5px 8px',
   fontFamily: 'var(--font-ui)',

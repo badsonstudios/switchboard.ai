@@ -554,7 +554,7 @@ export function SessionHistoryDialog(props: {
             style={{
               background: scope === 'all' ? 'var(--chip)' : 'transparent',
               color: scope === 'all' ? 'var(--text)' : 'var(--muted)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--control-edge)',
               borderRadius: 'var(--radius-chip)',
               padding: '3px 10px',
               marginInline: 10,

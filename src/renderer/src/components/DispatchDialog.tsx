@@ -81,7 +81,7 @@ const fieldStyle: React.CSSProperties = {
   boxSizing: 'border-box',
   background: 'var(--bg)',
   color: 'var(--text)',
-  border: '1px solid var(--border)',
+  border: '1px solid var(--control-edge)',
   borderRadius: 6,
   padding: '5px 8px',
   fontFamily: 'var(--font-ui)',

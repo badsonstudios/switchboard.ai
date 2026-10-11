@@ -1452,7 +1452,7 @@ export function FeedView(props: {
             onClick={() => pickVerbosity(v)}
             style={{
               background: verbosity === v ? 'var(--chip)' : 'transparent',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--control-edge)',
               color: verbosity === v ? 'var(--text)' : 'var(--muted)',
               borderRadius: 'var(--radius-chip)',
               fontSize: 9.5,
@@ -4300,7 +4300,7 @@ function Composer({
           resize: 'none',
           background: 'var(--panel)',
           color: 'var(--text)',
-          border: '1px solid var(--border)',
+          border: '1px solid var(--control-edge)',
           borderRadius: 8,
           padding: '7px 10px',
           fontSize: COMPOSER_FONT_SIZE,

@@ -78,7 +78,7 @@ function RenameField(props: {
         inlineSize: '100%',
         background: 'var(--panel2)',
         color: 'var(--text)',
-        border: '1px solid var(--border)',
+        border: '1px solid var(--control-edge)',
         borderRadius: 4,
         fontSize: 11.5,
         fontFamily: 'var(--font-ui)',

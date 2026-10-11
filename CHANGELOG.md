@@ -110,6 +110,13 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **Text boxes and outlined buttons have an edge you can see.** On the Nordic
+  and Daylight themes, the outline of a text box (the prompt box, search and
+  rename boxes, the boxes in Settings and the dialogs) and of a button with no
+  fill was a hairline almost the same colour as what it sat on, so an empty
+  box was hard to find. They now use the stronger edge the row of buttons
+  under the prompt box already had. The lines between areas of the window are
+  unchanged.
 - **Prompt History is now a tab of the history window.** Click **🕘** in a
   session's title bar and the window has two tabs: **Conversations** (previous
   conversations, as before) and **Prompts** (what you asked in this one, with

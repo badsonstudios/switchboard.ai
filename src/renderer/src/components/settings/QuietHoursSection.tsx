@@ -161,7 +161,7 @@ export function QuietHoursSection(props: QuietHoursSectionProps): React.JSX.Elem
         style={{
           background: 'var(--panel2)',
           color: 'var(--text)',
-          border: '1px solid var(--border)',
+          border: '1px solid var(--control-edge)',
           borderRadius: 6,
           padding: '4px 8px',
           fontFamily: 'var(--font-mono)',

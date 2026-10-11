@@ -2113,7 +2113,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 style={{
                   background: 'var(--panel)',
                   color: 'var(--text)',
-                  border: '1px solid var(--border)',
+                  border: '1px solid var(--control-edge)',
                   borderRadius: 4,
                   fontSize: 11,
                   fontFamily: 'var(--font-ui)',

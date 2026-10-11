@@ -234,7 +234,7 @@ function GrantRow(props: {
         onClick={props.onRevoke}
         style={{
           background: 'transparent',
-          border: '1px solid var(--border)',
+          border: '1px solid var(--control-edge)',
           borderRadius: 'var(--radius-chip)',
           color: 'var(--text)',
           cursor: 'pointer',
