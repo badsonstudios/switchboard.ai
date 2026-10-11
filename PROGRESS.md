@@ -3,7 +3,11 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶ 2026-10-11 — TEN MORE TICKETS, IN FLIGHT
+> # ✅ 2026-10-11 — TEN MORE TICKETS: ALL LANDED, NOT RELEASED
+>
+> **All ten are merged to `main` and their tickets are closed. Nothing is in
+> flight. Nothing is released: it all sits in `0.8.121 — unreleased`. What
+> comes next is the owner's call.**
 >
 > After 0.8.120 he asked for a shortlist of ten, reviewed it, and said: *"Let's
 > go ahead and do all 10 of these tickets."* Same rules as the eleven: each
@@ -121,8 +125,9 @@
 >    The synthetic test strings are gone: the tests read the artifacts. No
 >    tracker row: none of these can be produced from switchboard's own panel.
 >    Not measured: `kind: text` / `number` questions, and a refused preview.
-> 10. **#1204 — the eslint cold-start flake. IN PROGRESS, started
->     2026-10-11, branch `feature/1204-test-budgets`.**
+> 10. **#1204 — the eslint cold-start flake.
+>     DONE 2026-10-11, PR #1251 (`92c3961f`), merged, NOT released.**
+>     The ticket is closed.
 >     It fired again twice on 2026-10-11 under load, with a second test
 >     beside it. `eslint-hex-rule.test.js`: ESLint's start-up is paid once in
 >     `beforeAll` under its own 120 s budget, as the ticket proposed; the
