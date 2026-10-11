@@ -98,6 +98,74 @@ export function resolvePolicy(
   return isPolicy(book.global) ? book.global : DEFAULT_POLICY;
 }
 
+/** Which of the three levels a card's policy came from. */
+export type PolicyLevel = 'card' | 'group' | 'global';
+
+/**
+ * WHICH LEVEL decided this card's policy (#1210).
+ *
+ * `resolvePolicy` says what happens; this says who said so, in the same order
+ * and by the same tests, so the two cannot disagree. The notice that follows an
+ * auto-minimize needs it twice: to turn the setting off at the level that is
+ * actually in force (clearing the global default does nothing for a card whose
+ * group overrides it), and to say in words which setting that was.
+ */
+export function policyLevel(
+  book: PolicyBook,
+  cardId: string | undefined,
+  groupId?: string | null
+): PolicyLevel {
+  if (cardId && isPolicy(book.cards[cardId])) return 'card';
+  if (groupId && isPolicy(book.groups[groupId])) return 'group';
+  return 'global';
+}
+
+/**
+ * The book with auto-minimize turned OFF for this card, at the level that
+ * decided it (#1210's "Stop doing this").
+ *
+ * An explicit `always-visible` rather than a removed override: removing a
+ * card's override would hand the decision to its group or the default, which
+ * may minimize too, and the button would then appear to do nothing.
+ */
+export function withPolicyOff(
+  book: PolicyBook,
+  cardId: string,
+  groupId?: string | null,
+  /** the level to act at, when the caller has already said which in words */
+  at?: PolicyLevel
+): PolicyBook {
+  const level = at ?? policyLevel(book, cardId, groupId);
+  if (level === 'card') return withCard(book, cardId, 'always-visible');
+  if (level === 'group' && groupId) return withGroup(book, groupId, 'always-visible');
+  return withGlobal(book, 'always-visible');
+}
+
+/**
+ * What changed between two books, one line per changed setting (#1210).
+ *
+ * For the log. The owner's card vanished on submit and the log could say WHICH
+ * RULE moved it but not who had turned that rule on, or when: the setting was
+ * written from two surfaces and neither left a trace.
+ */
+export function describePolicyChange(prev: PolicyBook, next: PolicyBook): string[] {
+  const out: string[] = [];
+  const shown = (p: PresentationPolicy | undefined): string => p ?? 'follow the default';
+  if (prev.global !== next.global) out.push(`global: ${prev.global} → ${next.global}`);
+  const tables: ReadonlyArray<['group' | 'card', keyof Pick<PolicyBook, 'groups' | 'cards'>]> = [
+    ['group', 'groups'],
+    ['card', 'cards'],
+  ];
+  for (const [label, key] of tables) {
+    const ids = new Set([...Object.keys(prev[key]), ...Object.keys(next[key])]);
+    for (const id of ids) {
+      if (prev[key][id] === next[key][id]) continue;
+      out.push(`${label} ${id}: ${shown(prev[key][id])} → ${shown(next[key][id])}`);
+    }
+  }
+  return out;
+}
+
 /** The card's OWN override, if it has one — what the menus tick, as opposed to
  *  what `resolvePolicy` computes. "Follow the default" is the absence of one. */
 export function cardOverride(book: PolicyBook, cardId: string): PresentationPolicy | undefined {

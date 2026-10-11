@@ -7,9 +7,12 @@ import {
   DEFAULT_POLICY,
   groupOverride,
   loadPolicyBook,
+  describePolicyChange,
   persistablePolicies,
   POLICY_ORDER,
   PolicyBook,
+  policyLevel,
+  withPolicyOff,
   prunePolicies,
   resolvePolicy,
   submitTarget,
@@ -202,6 +205,67 @@ describe('presentation policy (E9-06, §5.8)', () => {
     it('returns null when there is nothing to drop — no write, no re-render', () => {
       const b = book({ cards: { 'card-A': 'auto-hide' } });
       expect(prunePolicies(b, ['card-A'], [])).toBeNull();
+    });
+  });
+
+  describe('who decided, and turning it off there (#1210)', () => {
+    const b = book({
+      global: 'auto-hide',
+      groups: { g1: 'auto-collapse' },
+      cards: { 'card-A': 'auto-hide' },
+    });
+
+    it('policyLevel walks the same precedence resolvePolicy does', () => {
+      expect(policyLevel(b, 'card-A', 'g1')).toBe('card');
+      expect(policyLevel(b, 'card-B', 'g1')).toBe('group');
+      expect(policyLevel(b, 'card-B', null)).toBe('global');
+      expect(policyLevel(b, undefined)).toBe('global');
+      // a garbage entry decides nothing, exactly as in resolvePolicy
+      const junk = book({ cards: { x: 'nope' as never } });
+      expect(policyLevel(junk, 'x')).toBe('global');
+    });
+
+    it('withPolicyOff changes ONLY the level that decided', () => {
+      const card = withPolicyOff(b, 'card-A', 'g1');
+      expect(resolvePolicy(card, 'card-A', 'g1')).toBe('always-visible');
+      expect(card.groups).toEqual(b.groups);
+      expect(card.global).toBe('auto-hide');
+
+      const group = withPolicyOff(b, 'card-B', 'g1');
+      expect(resolvePolicy(group, 'card-B', 'g1')).toBe('always-visible');
+      expect(group.cards).toEqual(b.cards);
+      expect(group.global).toBe('auto-hide');
+
+      const global = withPolicyOff(b, 'card-C', null);
+      expect(global.global).toBe('always-visible');
+      // overrides are the user's own choices and are not swept up with it
+      expect(global.groups).toEqual(b.groups);
+      expect(global.cards).toEqual(b.cards);
+    });
+
+    it('whatever the level, the card stays put on the next submit', () => {
+      for (const [cardId, groupId] of [
+        ['card-A', 'g1'],
+        ['card-B', 'g1'],
+        ['card-C', null],
+      ] as const) {
+        expect(resolvePolicy(withPolicyOff(b, cardId, groupId), cardId, groupId)).toBe(
+          'always-visible'
+        );
+      }
+    });
+
+    it('describePolicyChange says what moved, from what, to what', () => {
+      expect(describePolicyChange(DEFAULT_BOOK, withGlobal(DEFAULT_BOOK, 'auto-hide'))).toEqual([
+        'global: always-visible → auto-hide',
+      ]);
+      expect(describePolicyChange(b, withCard(b, 'card-A', undefined))).toEqual([
+        'card card-A: auto-hide → follow the default',
+      ]);
+      expect(describePolicyChange(b, withGroup(b, 'g2', 'auto-hide'))).toEqual([
+        'group g2: follow the default → auto-hide',
+      ]);
+      expect(describePolicyChange(b, b)).toEqual([]);
     });
   });
 

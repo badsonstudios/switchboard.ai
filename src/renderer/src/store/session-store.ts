@@ -52,11 +52,15 @@ import {
 import { markLit, pruneLit, startBeat, UrgencyMarks } from '../lib/urgency';
 import {
   DEFAULT_BOOK,
+  describePolicyChange,
   persistablePolicies,
   PolicyBook,
+  PolicyLevel,
+  policyLevel,
   PresentationPolicy,
   prunePolicies,
   resolvePolicy,
+  withPolicyOff,
 } from '../lib/presentation-policy';
 import {
   DEFAULT_LAYOUT,
@@ -917,8 +921,15 @@ export class SessionStore {
   }
 
   /** Replace the book (the pure edits live in lib/presentation-policy). */
-  setPolicies(book: PolicyBook): void {
+  setPolicies(book: PolicyBook, via = 'unknown'): void {
     if (book === this.state.policies) return;
+    // #1210: WHO TURNED IT ON is the question the log could not answer. The
+    // renderer console is forwarded into switchboard.log, so each change says
+    // what moved, from what, to what, and which surface asked. Not logged from
+    // `initPolicies` or `prunePolicies`: neither is a person changing a setting.
+    for (const line of describePolicyChange(this.state.policies, book)) {
+      console.log(`[policy] on submit, ${line} (${via})`);
+    }
     this.set({ policies: book });
     this.persistPolicies(persistablePolicies(book));
   }
@@ -935,10 +946,25 @@ export class SessionStore {
    * needs the list), but worth knowing before adding a second caller.
    */
   policyFor(cardId: string | undefined): PresentationPolicy {
-    const groupId = cardId
-      ? this.state.sessions.find((s) => s.id === cardId)?.groupId
-      : undefined;
-    return resolvePolicy(this.state.policies, cardId, groupId);
+    return resolvePolicy(this.state.policies, cardId, this.groupIdOf(cardId));
+  }
+
+  /** Which level decided `policyFor(cardId)`: the card, its group or the
+   *  global default (#1210). Same group lookup, so the two always agree. */
+  policyLevelFor(cardId: string | undefined): PolicyLevel {
+    return policyLevel(this.state.policies, cardId, this.groupIdOf(cardId));
+  }
+
+  /** Turn auto-minimize off for this card at the level that decided it. */
+  turnPolicyOffFor(cardId: string, via: string, level?: PolicyLevel): void {
+    this.setPolicies(
+      withPolicyOff(this.state.policies, cardId, this.groupIdOf(cardId), level),
+      via
+    );
+  }
+
+  private groupIdOf(cardId: string | undefined): string | undefined {
+    return cardId ? this.state.sessions.find((s) => s.id === cardId)?.groupId : undefined;
   }
 
   /** Forget overrides for cards and groups that no longer exist. Called from

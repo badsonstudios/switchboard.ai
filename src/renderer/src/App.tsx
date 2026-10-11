@@ -684,29 +684,34 @@ export function App(): React.JSX.Element {
   // commit — the same requirement that put the ladder there.
   const policies = useSyncExternalStore(subscribeStore, () => sessionStore.getPolicies());
   const setGlobalPolicy = React.useCallback(
-    (p: PresentationPolicy) => sessionStore.setPolicies(withGlobal(sessionStore.getPolicies(), p)),
+    (p: PresentationPolicy, via = 'command') =>
+      sessionStore.setPolicies(withGlobal(sessionStore.getPolicies(), p), via),
     []
   );
   const setSessionPolicy = React.useCallback(
     (cardId: string, p: PresentationPolicy | undefined) =>
-      sessionStore.setPolicies(withCard(sessionStore.getPolicies(), cardId, p)),
+      sessionStore.setPolicies(withCard(sessionStore.getPolicies(), cardId, p), 'command'),
     []
   );
   const setGroupPolicy = React.useCallback(
-    (groupId: string, p: PresentationPolicy | undefined) =>
-      sessionStore.setPolicies(withGroup(sessionStore.getPolicies(), groupId, p)),
+    (groupId: string, p: PresentationPolicy | undefined, via = 'command') =>
+      sessionStore.setPolicies(withGroup(sessionStore.getPolicies(), groupId, p), via),
     []
   );
   // The two CYCLES read-then-write on the store's own snapshot, never on the
   // rendered `policies` — a click handler must act on what is true now, not on
   // the last commit.
   const cycleGlobalPolicy = React.useCallback(
-    () => setGlobalPolicy(cycleGlobal(sessionStore.getPolicies().global)),
+    () => setGlobalPolicy(cycleGlobal(sessionStore.getPolicies().global), 'title bar chip'),
     [setGlobalPolicy]
   );
   const cycleGroupPolicy = React.useCallback(
     (groupId: string) =>
-      setGroupPolicy(groupId, cycleOverride(groupOverride(sessionStore.getPolicies(), groupId))),
+      setGroupPolicy(
+        groupId,
+        cycleOverride(groupOverride(sessionStore.getPolicies(), groupId)),
+        'group button'
+      ),
     [setGroupPolicy]
   );
   // §5.8's focus-stealing policy (E9-10). The book itself is read from the

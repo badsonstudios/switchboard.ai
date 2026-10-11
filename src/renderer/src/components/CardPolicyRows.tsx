@@ -103,7 +103,8 @@ export function CardPolicyRows(props: { cardId: string }): React.JSX.Element {
                 sessionStore.getPolicies(),
                 cardId,
                 v === DEFAULT ? undefined : (v as PresentationPolicy)
-              )
+              ),
+              'card menu'
             );
           }}
           style={selectStyle}

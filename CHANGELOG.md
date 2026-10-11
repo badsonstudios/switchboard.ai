@@ -96,6 +96,18 @@ on the floor, and say so in your PR.
 
 ## 0.8.120 — unreleased
 
+### Fixed
+
+- **When a card is put away because you sent a prompt, the app now says so.**
+  With **Collapse on submit** or **Hide on submit** turned on, pressing Enter
+  takes that session's card off the screen, and until now nothing explained
+  it. A line above the cards now names the session and the setting, with
+  **Bring it back** (the card returns to where it was) and **Stop doing this**
+  (brings it back and switches the setting to **Keep visible**). The default
+  is unchanged: out of the box a card stays where it is.
+- **Changes to the "on submit" setting are written to the log**, with which
+  control made them, so "who turned this on?" has an answer.
+
 ## 0.8.119 — 2026-10-10
 
 ### Changed
