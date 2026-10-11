@@ -94,7 +94,17 @@
 >    The ticket is closed. `view.documentOutline`, palette-only, enabled by
 >    the chip's own rule: each viewer says whether it is offering an outline
 >    (`setOutlineOffered`) and the command is enabled while any does.
-> 8. #744 — the Electron cache directory. Not started.
+> 8. **#744 — the Electron cache directory. IN PROGRESS, started 2026-10-11,
+>    branch `feature/744-cache-size` (stacked on #1020's).** MEASURED FIRST,
+>    as the ticket asked, on the desktop's installed app: `Cache` 208 MB of a
+>    226 MB profile, 189 MB of it 20 copies of the ~10 MB renderer bundle.
+>    Cause found (the ticket's step 2): `static-server.ts` listens on a port
+>    the system picks per launch and sent no cache header, so every launch
+>    stored the bundle under an origin that is never asked for again. Fix:
+>    the server answers `Cache-Control: no-store`, and `http-cache.ts` clears
+>    the cache (and the code cache) on every start, unawaited and fail-open.
+>    Not the ticket's guess of "evict on version change": the copies were per
+>    LAUNCH and none was ever reusable. Start-up time not measured.
 > 9. #1226 — probe the CLI's question-result shapes. Not started.
 > 10. #1204 — the eslint cold-start flake (and the second test seen timing
 >     out beside it on 2026-10-11, `find-providers.test.ts`). Not started.

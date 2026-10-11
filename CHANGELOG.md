@@ -143,6 +143,11 @@ on the floor, and say so in your PR.
   back until the top one closes: it cannot be clicked, tabbed into or read.
   Nothing you typed in it is lost. A shortcut also no longer opens a second
   window over a session's History, Dispatch or hand-off window.
+- **The app no longer leaves a copy of itself on disk every time it starts.**
+  Each launch saved a 10 MB copy of the app's own code in a cache folder and
+  never used or removed it: about 200 MB after two weeks on one machine. It
+  no longer saves them, and the next start clears the ones already there.
+  Nothing you see changes; your sessions and settings are not in that folder.
 - **Shortcuts pressed in a popped-out session's window work on that session.**
   `Ctrl+Alt+P` (pin), `Ctrl+F` (find), `Ctrl+Alt+↑/↓` (move in the list),
   `Ctrl+W` (close) and `Ctrl+Shift+O` (bring it back into the main window) used
