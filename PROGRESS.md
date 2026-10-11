@@ -3,7 +3,16 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶ 2026-10-10 (evening) — ELEVEN TICKETS THE OWNER PICKED, IN FLIGHT
+> # ✅ 2026-10-11 — ELEVEN TICKETS THE OWNER PICKED: ALL LANDED, NOT RELEASED
+>
+> **Nothing is in flight.** Ten are merged and one (#1198) was closed as
+> already shipped. All of it sits in `0.8.120 — unreleased`; no release was
+> cut and none is to be until he asks. **Next up: his call.** His open
+> tickets not to start without him: #1214, #1211, #1209, #1204. Filed in
+> this run: #1226 (probe the installed CLI for the question-result shapes
+> read from its binary, not measured). Seen once and NOT filed: two unit
+> tests timing out on the Windows CI runner (the transcript watcher; the
+> stream service's shutdown), green on a re-run.
 >
 > He was shown twelve of his own tickets and picked eleven (everything but
 > #1218, the text-to-speech research). Each is its own item through
@@ -124,8 +133,8 @@
 >     always mounted and the inactive ones are `hidden`. Opens on the
 >     last-used tab, Appearance the first time. Decisions that differ from
 >     the ticket's proposal: Appearance first, not General.
-> 11. **#1203 — Prompt History. IN PROGRESS, started 2026-10-11, branch
->     `feature/1203-prompt-history`.** Built to the
+> 11. **#1203 — Prompt History. DONE 2026-10-11, PR #1232 (`e06013dc`),
+>     merged, NOT released.** The ticket is closed. Built to the
 >     owner's rescope comment (the conversation History is untouched): a
 >     "prompts" button in the conversation's toolbar lists the user's own
 >     prompts in the loaded conversation, newest first, with a filter; a
