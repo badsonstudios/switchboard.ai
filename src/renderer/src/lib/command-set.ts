@@ -78,6 +78,8 @@ export interface CommandDeps {
   toggleTabRows: () => void;
   /** show a diff in two columns or one — every Changes tab at once (#532) */
   toggleDiffLayout: () => void;
+  /** flip the document viewer's outline, for every open viewer (#1017) */
+  toggleDocumentOutline: () => void;
   /** jump to the next session waiting on a human (E9-03 attention queue) */
   jumpToNextAttention: () => void;
   /** show the build identity — version, commit, branch, build age (E15-15) */
@@ -1026,6 +1028,21 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_VIEW,
       scope: 'app',
       run: () => deps.toggleDiffLayout(),
+    },
+    {
+      // The document viewer's Outline switch (#1017, the follow-up #1010's
+      // worker reported). The chip in a viewer's toolbar was reachable by
+      // mouse and by Tab, and had no entry here; the diff layout toggle above
+      // is the precedent that made that an omission. Palette-only and unbound
+      // for that toggle's reason. ENABLED BY THE CHIP'S OWN RULE: greyed when
+      // no open document has an outline to hide.
+      id: 'view.documentOutline',
+      titleKey: 'commands.toggleDocumentOutline',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app',
+      enabled: (ctx: CommandContext) => ctx.documentOutlineOffered === true,
+      disabledReasonKey: 'commands.disabled.noOutline',
+      run: () => deps.toggleDocumentOutline(),
     },
     {
       // The keyboard route to the build identity (E15-15). Palette-only and no

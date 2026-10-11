@@ -40,6 +40,7 @@ function noopDeps(): CommandDeps {
     openFind: () => {},
     toggleTabRows: () => {},
     toggleDiffLayout: () => {},
+    toggleDocumentOutline: () => {},
     jumpToNextAttention: () => {},
     openAbout: () => {},
     checkForUpdates: () => {},

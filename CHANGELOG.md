@@ -117,6 +117,9 @@ on the floor, and say so in your PR.
   box was hard to find. They now use the stronger edge the row of buttons
   under the prompt box already had. The lines between areas of the window are
   unchanged.
+- **The document outline can be switched from the command list.**
+  `Ctrl+Shift+P`, "outline": **Show or hide the document outline**, the same
+  switch as the **Outline** button in a document's toolbar.
 - **Five things that were faded are now a readable grey.** Fading something
   dims its words and the background behind them together, which made small
   text hard to read: the name on a folded-away session across the top, what a

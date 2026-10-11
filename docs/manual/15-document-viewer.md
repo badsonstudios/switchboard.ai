@@ -199,6 +199,9 @@ outline back.
   survives closing switchboard.ai. It is **one setting for the whole app**, not
   one per file: turn the outline off on one document and it is off on the next
   one too.
+- **It is in the command list too.** Press `Ctrl+Shift+P` and type "outline":
+  **Show or hide the document outline** does the same thing as the button. It
+  is greyed there, with the reason, when no open document has an outline.
 - **The button greys out when there is nothing to hide.** A document with fewer
   than three headings never had an outline, and neither does the **Source**
   view or a file the viewer can only name rather than show. The button stays

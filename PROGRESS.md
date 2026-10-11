@@ -80,7 +80,11 @@
 >    as painted in four themes), and placeholder text. No independent
 >    review: five one-line colour changes and a scan.
 > 6. #1020 — two modals open at once. Not started.
-> 7. #1017 — palette entry for the outline toggle. Not started.
+> 7. **#1017 — palette entry for the outline toggle. IN PROGRESS, started
+>    2026-10-11, branch `feature/1017-outline-command` (stacked on #1211's;
+>    built before #1020).** `view.documentOutline`, palette-only, enabled by
+>    the chip's own rule: each viewer says whether it is offering an outline
+>    (`setOutlineOffered`) and the command is enabled while any does.
 > 8. #744 — the Electron cache directory. Not started.
 > 9. #1226 — probe the CLI's question-result shapes. Not started.
 > 10. #1204 — the eslint cold-start flake (and the second test seen timing
