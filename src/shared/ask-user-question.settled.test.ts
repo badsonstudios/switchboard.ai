@@ -6,6 +6,8 @@
 // recorded it. A test against an invented sentence would only pin our idea of
 // what the CLI writes.
 import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import {
   ASK_COUNT_CAP,
   ASK_TEXT_CAP,
@@ -204,62 +206,124 @@ describe('settledQuestions — what is kept on the block', () => {
 // produced by a probe: the strings were read out of `claude.exe`. They are
 // handled because the failure they would otherwise cause is the bad one, an
 // answered question shown as skipped.
-describe('readAskResult — shapes read from the installed CLI, not yet probed', () => {
+describe('readAskResult — the shapes another client can produce, MEASURED (#1226)', () => {
+  // These were first written from strings read out of the 2.1.288 binary, with
+  // synthetic sentences. The CLI has since been made to produce every one of
+  // them (`spike/probes/1226/`), and each test below reads the ARTIFACT of
+  // that run: the questions exactly as the CLI asked them and the sentence
+  // exactly as it wrote it. Nothing here is typed by hand.
+  const ARTIFACTS = path.join(__dirname, '..', '..', 'spike', 'findings', 'artifacts', '1226');
+  function measured(mode: string): { questions: SettledQuestion[]; result: string } {
+    const record = JSON.parse(fs.readFileSync(path.join(ARTIFACTS, `ask-result-${mode}.json`), 'utf8')) as {
+      askInput: unknown;
+      toolResults: Array<{ content: string }>;
+    };
+    const questions = settledQuestions(record.askInput);
+    if (!questions) throw new Error(`${mode}: the artifact holds no questions`);
+    return { questions, result: record.toolResults[0].content };
+  }
+  const read = (mode: string): ReturnType<typeof readAskResult> => {
+    const m = measured(mode);
+    return readAskResult(m.questions, m.result);
+  };
+
   it('a note after an answer does not swallow the next question', () => {
-    const r =
-      'The user answered: "Which colour do you prefer?"="Red" notes: because warm, "Which of these languages do you use?"="Go". Read the answers carefully — they may request clarification.';
-    expect(readAskResult([COLOUR, LANGS], r)).toEqual({
+    expect(read('note')).toEqual({
       state: 'answered',
-      answers: [{ answer: 'Red', notes: 'because warm' }, { answer: 'Go' }],
+      answers: [{ answer: 'Red', notes: 'PROBE-NOTE because it is warm' }, { answer: 'TypeScript, Rust' }],
       cut: false,
     });
   });
 
   it('a preview and a note after an answer are not part of the answer', () => {
-    const r =
-      'Your questions have been answered: "Which colour do you prefer?"="Red" selected preview:\n#f00 notes: bright, "Which of these languages do you use?"="Go, Rust". You can now continue with these answers in mind.';
-    expect(readAskResult([COLOUR, LANGS], r)).toEqual({
+    expect(measured('preview').result).toContain(' selected preview:' + String.fromCharCode(10));
+    expect(read('preview')).toEqual({
       state: 'answered',
-      answers: [{ answer: 'Red', notes: 'bright' }, { answer: 'Go, Rust' }],
+      answers: [{ answer: 'Red', notes: 'PROBE-NOTE bright' }, { answer: 'TypeScript, Rust' }],
       cut: false,
     });
   });
 
   it('a note with NO pick is not an answer, and the question after it still is', () => {
-    const r =
-      'The user answered: "Which colour do you prefer?"=(no option selected) notes: none of these, "Which of these languages do you use?"="Go". Read the answers carefully.';
-    expect(readAskResult([COLOUR, LANGS], r)).toEqual({
+    expect(measured('notepick').result).toContain('=(no option selected) notes: ');
+    expect(read('notepick')).toEqual({
       state: 'answered',
-      answers: [{ answer: null, notes: 'none of these' }, { answer: 'Go' }],
+      answers: [{ answer: null, notes: 'PROBE-NOTE none of these' }, { answer: 'TypeScript, Rust' }],
       cut: false,
     });
   });
 
-  it('pairs that open mid-sentence are found', () => {
-    const soFar =
-      'The user wants to clarify before you proceed. So far they answered: "Which colour do you prefer?"="Red". Call AskUserQuestion again.';
-    expect(readAskResult([COLOUR, LANGS], soFar)).toMatchObject({
-      state: 'answered',
-      answers: [{ answer: 'Red' }, null],
-    });
-    const idle =
-      'Before going idle the user had selected: "Which of these languages do you use?"="Go".';
-    expect(readAskResult([COLOUR, LANGS], idle)).toMatchObject({
-      state: 'answered',
-      answers: [null, { answer: 'Go' }],
-    });
-  });
-
   it('free text instead of choices is a RESPONSE, not "not answered"', () => {
-    expect(readAskResult([COLOUR], 'The user responded: just do it')).toEqual({
+    expect(read('response')).toEqual({
       state: 'responded',
-      text: 'just do it',
+      text: 'PROBE-RESPONSE I would rather describe it in my own words',
     });
   });
 
-  it('"did not answer" is not answered, in the CLI’s own words', () => {
+  it('free text sent WITH answers: the CLI writes only the text, and so that is what is read', () => {
+    // measured: the answers that came with it are not in the sentence at all
+    expect(measured('both').result).not.toContain('"="');
+    expect(read('both')).toEqual({ state: 'responded', text: 'PROBE-RESPONSE and one more thing' });
+  });
+
+  it('⚠️ a multi-select answer sent as an ARRAY is joined with a bare comma, and still ticks its choices', () => {
+    const { questions, result } = measured('array');
+    expect(result).toContain('="TypeScript,Rust"');
+    const outcome = readAskResult(questions, result);
+    expect(outcome).toMatchObject({ state: 'answered', answers: [{ answer: 'Red' }, { answer: 'TypeScript,Rust' }] });
+    expect(pickedFor(questions[1], 'TypeScript,Rust')).toEqual({ picked: ['TypeScript', 'Rust'], other: null });
+    // ...but typed text with a comma in it is still what was typed
+    expect(pickedFor(questions[1], 'Zig,Rust')).toEqual({ picked: [], other: 'Zig,Rust' });
+  });
+
+  it('"asked for more questions", with answers so far: the answers are read, and nothing after them', () => {
+    const { result } = measured('followup');
+    expect(result.startsWith('The user asked for more questions before you proceed. So far they answered: ')).toBe(true);
+    expect(read('followup')).toEqual({
+      state: 'answered',
+      answers: [{ answer: 'Red' }, { answer: 'TypeScript, Rust' }],
+      cut: false,
+    });
+  });
+
+  it('⚠️ ...and with words of their own after the answers, which hold a QUOTE: the last answer is not run on into them', () => {
+    const { result } = measured('followboth');
+    expect(result).toContain('. They also wrote: "PROBE-RESPONSE but ask me about "shade" too". Call ');
+    expect(read('followboth')).toEqual({
+      state: 'answered',
+      answers: [{ answer: 'Red' }, { answer: 'TypeScript, Rust' }],
+      cut: false,
+    });
+  });
+
+  it('"asked for more questions" with NO answers but words of their own: those words are the response', () => {
+    expect(measured('followtext').result.startsWith('The user asked for more questions before answering.')).toBe(true);
+    expect(read('followtext')).toEqual({
+      state: 'responded',
+      text: 'PROBE-RESPONSE what do you mean by colour',
+    });
+  });
+
+  it('gone idle: what had been selected before the wait ran out is read from mid-result', () => {
+    const { result } = measured('afk');
+    expect(result.startsWith('No response after 60s')).toBe(true);
+    expect(read('afk')).toEqual({
+      state: 'answered',
+      answers: [{ answer: 'Red' }, { answer: 'TypeScript, Rust' }],
+      cut: false,
+    });
+  });
+
+  it('"did not answer" is not answered, in the CLI’s own words (measured in S-11, 2.1.233)', () => {
     const r = 'The user did not answer the questions.';
     expect(readAskResult([COLOUR], r)).toEqual({ state: 'declined', reason: r });
+  });
+
+  it('every artifact was made by the CLI these shapes are claimed for', () => {
+    for (const file of fs.readdirSync(ARTIFACTS)) {
+      const record = JSON.parse(fs.readFileSync(path.join(ARTIFACTS, file), 'utf8')) as { cliVersion: string | null };
+      expect(record.cliVersion, file).toBe('2.1.288');
+    }
   });
 });
 

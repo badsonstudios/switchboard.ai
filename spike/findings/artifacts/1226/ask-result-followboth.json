@@ -1,0 +1,130 @@
+{
+  "mode": "followboth",
+  "cli": "claude.cmd",
+  "cliVersion": "2.1.288",
+  "startedAt": "2026-10-11T15:00:04.234Z",
+  "askInput": {
+    "questions": [
+      {
+        "question": "Which colour do you prefer?",
+        "header": "Colour",
+        "options": [
+          {
+            "label": "Red",
+            "description": "Red is your preferred colour."
+          },
+          {
+            "label": "Green",
+            "description": "Green is your preferred colour."
+          },
+          {
+            "label": "Blue",
+            "description": "Blue is your preferred colour."
+          }
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": "Which of these languages do you use?",
+        "header": "Languages",
+        "options": [
+          {
+            "label": "TypeScript",
+            "description": "You use TypeScript."
+          },
+          {
+            "label": "Rust",
+            "description": "You use Rust."
+          },
+          {
+            "label": "Go",
+            "description": "You use Go."
+          },
+          {
+            "label": "Python",
+            "description": "You use Python."
+          }
+        ],
+        "multiSelect": true
+      }
+    ]
+  },
+  "ourResponse": {
+    "behavior": "allow",
+    "updatedInput": {
+      "questions": [
+        {
+          "question": "Which colour do you prefer?",
+          "header": "Colour",
+          "options": [
+            {
+              "label": "Red",
+              "description": "Red is your preferred colour."
+            },
+            {
+              "label": "Green",
+              "description": "Green is your preferred colour."
+            },
+            {
+              "label": "Blue",
+              "description": "Blue is your preferred colour."
+            }
+          ],
+          "multiSelect": false
+        },
+        {
+          "question": "Which of these languages do you use?",
+          "header": "Languages",
+          "options": [
+            {
+              "label": "TypeScript",
+              "description": "You use TypeScript."
+            },
+            {
+              "label": "Rust",
+              "description": "You use Rust."
+            },
+            {
+              "label": "Go",
+              "description": "You use Go."
+            },
+            {
+              "label": "Python",
+              "description": "You use Python."
+            }
+          ],
+          "multiSelect": true
+        }
+      ],
+      "answers": {
+        "Which colour do you prefer?": "Red",
+        "Which of these languages do you use?": "TypeScript, Rust"
+      },
+      "followUp": true,
+      "response": "PROBE-RESPONSE but ask me about \"shade\" too"
+    }
+  },
+  "toolResults": [
+    {
+      "type": "tool_result",
+      "content": "The user asked for more questions before you proceed. So far they answered: \"Which colour do you prefer?\"=\"Red\", \"Which of these languages do you use?\"=\"TypeScript, Rust\". They also wrote: \"PROBE-RESPONSE but ask me about \"shade\" too\". Call AskUserQuestion again with follow-up questions that build on these answers (do not repeat these); do not start the task yet.",
+      "tool_use_id": "toolu_01VRrzNESNmubH9w2R2jmD5t"
+    },
+    {
+      "type": "tool_result",
+      "content": "Probe: one question was enough.",
+      "is_error": true,
+      "tool_use_id": "toolu_01FCyD9KwNC8EGENhBXMDeug"
+    }
+  ],
+  "assistantText": [
+    "Summary: You picked Red as your colour and said you use TypeScript and Rust. You also asked me to follow up about shade, which I did, but that second prompt was rejected before you answered, so I have no shade on record.\n\n- **Colour:** Red\n- **Languages:** TypeScript, Rust\n- **Your note:** \"PROBE-RESPONSE but ask me about \"shade\" too\"\n- **Shade:** unanswered. The follow-up question (Light / Medium / Dark red) came back with the error `Probe: one question was enough.`"
+  ],
+  "result": {
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 8224
+  },
+  "stderr": [],
+  "endedAt": "2026-10-11T15:00:13.970Z"
+}

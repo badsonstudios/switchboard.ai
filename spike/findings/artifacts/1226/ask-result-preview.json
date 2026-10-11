@@ -1,0 +1,128 @@
+{
+  "mode": "preview",
+  "cli": "claude.cmd",
+  "cliVersion": "2.1.288",
+  "startedAt": "2026-10-11T14:58:11.895Z",
+  "askInput": {
+    "questions": [
+      {
+        "question": "Which colour do you prefer?",
+        "header": "Colour",
+        "options": [
+          {
+            "label": "Red",
+            "description": "You prefer red."
+          },
+          {
+            "label": "Green",
+            "description": "You prefer green."
+          },
+          {
+            "label": "Blue",
+            "description": "You prefer blue."
+          }
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": "Which of these languages do you use?",
+        "header": "Languages",
+        "options": [
+          {
+            "label": "TypeScript",
+            "description": "You use TypeScript."
+          },
+          {
+            "label": "Rust",
+            "description": "You use Rust."
+          },
+          {
+            "label": "Go",
+            "description": "You use Go."
+          },
+          {
+            "label": "Python",
+            "description": "You use Python."
+          }
+        ],
+        "multiSelect": true
+      }
+    ]
+  },
+  "ourResponse": {
+    "behavior": "allow",
+    "updatedInput": {
+      "questions": [
+        {
+          "question": "Which colour do you prefer?",
+          "header": "Colour",
+          "options": [
+            {
+              "label": "Red",
+              "description": "You prefer red."
+            },
+            {
+              "label": "Green",
+              "description": "You prefer green."
+            },
+            {
+              "label": "Blue",
+              "description": "You prefer blue."
+            }
+          ],
+          "multiSelect": false
+        },
+        {
+          "question": "Which of these languages do you use?",
+          "header": "Languages",
+          "options": [
+            {
+              "label": "TypeScript",
+              "description": "You use TypeScript."
+            },
+            {
+              "label": "Rust",
+              "description": "You use Rust."
+            },
+            {
+              "label": "Go",
+              "description": "You use Go."
+            },
+            {
+              "label": "Python",
+              "description": "You use Python."
+            }
+          ],
+          "multiSelect": true
+        }
+      ],
+      "answers": {
+        "Which colour do you prefer?": "Red",
+        "Which of these languages do you use?": "TypeScript, Rust"
+      },
+      "annotations": {
+        "Which colour do you prefer?": {
+          "preview": "<b>PROBE-PREVIEW</b>",
+          "notes": "PROBE-NOTE bright"
+        }
+      }
+    }
+  },
+  "toolResults": [
+    {
+      "type": "tool_result",
+      "content": "The user answered: \"Which colour do you prefer?\"=\"Red\" selected preview:\n<b>PROBE-PREVIEW</b> notes: PROBE-NOTE bright, \"Which of these languages do you use?\"=\"TypeScript, Rust\". Read the answers carefully — they may request clarification, changes, or that you not proceed — and follow what they actually say.",
+      "tool_use_id": "toolu_01GLnhFA3mt9Ft1EBSprJak8"
+    }
+  ],
+  "assistantText": [
+    "Summary: You picked Red as your preferred colour, and TypeScript and Rust as the languages you use. Your colour answer also came with a note saying \"PROBE-NOTE bright\".\n\n- **Colour (single choice):** Red\n  - Note attached: `PROBE-NOTE bright`\n  - Preview attached to the selection: `<b>PROBE-PREVIEW</b>` (I didn't supply any previews in the question, so that came from your side)\n- **Languages (multi-select):** TypeScript, Rust\n  - Not selected: Go, Python"
+  ],
+  "result": {
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 7094
+  },
+  "stderr": [],
+  "endedAt": "2026-10-11T14:58:20.508Z"
+}

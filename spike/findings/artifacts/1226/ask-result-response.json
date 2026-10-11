@@ -1,0 +1,120 @@
+{
+  "mode": "response",
+  "cli": "claude.cmd",
+  "cliVersion": "2.1.288",
+  "startedAt": "2026-10-11T14:58:21.218Z",
+  "askInput": {
+    "questions": [
+      {
+        "question": "Which colour do you prefer?",
+        "header": "Colour",
+        "options": [
+          {
+            "label": "Red",
+            "description": "Red is your preferred colour."
+          },
+          {
+            "label": "Green",
+            "description": "Green is your preferred colour."
+          },
+          {
+            "label": "Blue",
+            "description": "Blue is your preferred colour."
+          }
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": "Which of these languages do you use?",
+        "header": "Languages",
+        "options": [
+          {
+            "label": "TypeScript",
+            "description": "You use TypeScript."
+          },
+          {
+            "label": "Rust",
+            "description": "You use Rust."
+          },
+          {
+            "label": "Go",
+            "description": "You use Go."
+          },
+          {
+            "label": "Python",
+            "description": "You use Python."
+          }
+        ],
+        "multiSelect": true
+      }
+    ]
+  },
+  "ourResponse": {
+    "behavior": "allow",
+    "updatedInput": {
+      "questions": [
+        {
+          "question": "Which colour do you prefer?",
+          "header": "Colour",
+          "options": [
+            {
+              "label": "Red",
+              "description": "Red is your preferred colour."
+            },
+            {
+              "label": "Green",
+              "description": "Green is your preferred colour."
+            },
+            {
+              "label": "Blue",
+              "description": "Blue is your preferred colour."
+            }
+          ],
+          "multiSelect": false
+        },
+        {
+          "question": "Which of these languages do you use?",
+          "header": "Languages",
+          "options": [
+            {
+              "label": "TypeScript",
+              "description": "You use TypeScript."
+            },
+            {
+              "label": "Rust",
+              "description": "You use Rust."
+            },
+            {
+              "label": "Go",
+              "description": "You use Go."
+            },
+            {
+              "label": "Python",
+              "description": "You use Python."
+            }
+          ],
+          "multiSelect": true
+        }
+      ],
+      "answers": {},
+      "response": "PROBE-RESPONSE I would rather describe it in my own words"
+    }
+  },
+  "toolResults": [
+    {
+      "type": "tool_result",
+      "content": "The user responded: PROBE-RESPONSE I would rather describe it in my own words",
+      "tool_use_id": "toolu_01U3Vae87uTZmX3v1QCkfUuP"
+    }
+  ],
+  "assistantText": [
+    "You didn't pick any of the options for either question: your answer was the free-text \"PROBE-RESPONSE I would rather describe it in my own words\". So I have no colour or language selection recorded; tell me both in your own words and I'll take it from there."
+  ],
+  "result": {
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 5527
+  },
+  "stderr": [],
+  "endedAt": "2026-10-11T14:58:28.270Z"
+}

@@ -148,6 +148,12 @@ on the floor, and say so in your PR.
   never used or removed it: about 200 MB after two weeks on one machine. It
   no longer saves them, and the next start clears the ones already there.
   Nothing you see changes; your sessions and settings are not in that folder.
+- **A past question answered in another app reads back correctly in three
+  more cases.** When a question was answered somewhere other than switchboard
+  (several choices sent a different way, "ask me more first" with words of
+  your own, or more questions asked for without answering), scrolling back to
+  it showed the wrong thing: an answer with other text run into it, choices
+  not ticked, or "not answered". Each now reads as what happened.
 - **Shortcuts pressed in a popped-out session's window work on that session.**
   `Ctrl+Alt+P` (pin), `Ctrl+F` (find), `Ctrl+Alt+↑/↓` (move in the list),
   `Ctrl+W` (close) and `Ctrl+Shift+O` (bring it back into the main window) used
