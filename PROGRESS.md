@@ -95,8 +95,9 @@
 >    The ticket is closed. `view.documentOutline`, palette-only, enabled by
 >    the chip's own rule: each viewer says whether it is offering an outline
 >    (`setOutlineOffered`) and the command is enabled while any does.
-> 8. **#744 — the Electron cache directory. IN PROGRESS, started 2026-10-11,
->    branch `feature/744-cache-size`.** MEASURED FIRST,
+> 8. **#744 — the Electron cache directory.
+>    DONE 2026-10-11, PR #1249 (`0c06a9de`), merged, NOT released.**
+>    The ticket is closed. MEASURED FIRST,
 >    as the ticket asked, on the desktop's installed app: `Cache` 208 MB of a
 >    226 MB profile, 189 MB of it 20 copies of the ~10 MB renderer bundle.
 >    Cause found (the ticket's step 2): `static-server.ts` listens on a port
@@ -107,7 +108,7 @@
 >    Not the ticket's guess of "evict on version change": the copies were per
 >    LAUNCH and none was ever reusable. Start-up time not measured.
 > 9. **#1226 — probe the CLI's question-result shapes. IN PROGRESS, started
->    2026-10-11, branch `feature/1226-question-probe` (stacked on #744's).**
+>    2026-10-11, branch `feature/1226-question-probe`.**
 >    Ten runs against the CLI on PATH (2.1.288), probe in
 >    `spike/probes/1226/`, artifacts and the note in `spike/findings/`. The
 >    CLI accepts `annotations`, `response`, `followUp` and `afkTimeoutMs` from
