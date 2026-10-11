@@ -1066,6 +1066,64 @@ mark[data-feed-match-current] {
   cursor: pointer;
   user-select: none;
 }
+/* The list of prompts you sent (#1203). A row is the prompt's first two lines
+ * and when it was sent; the whole row is the button that goes to it. */
+.prompt-history-filter {
+  inline-size: 100%;
+  box-sizing: border-box;
+  background: var(--panel2);
+  border: 1px solid var(--control-edge);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 4px 6px;
+}
+.prompt-history-row {
+  appearance: none;
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  padding: 5px 6px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--text);
+  text-align: start;
+  cursor: pointer;
+}
+.prompt-history-row:hover {
+  background: var(--chip);
+}
+.prompt-history-row:focus-visible,
+.prompt-history-filter:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.prompt-history-text {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.prompt-history-text[data-command='true'] {
+  font-family: var(--font-mono);
+}
+.prompt-history-age {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+}
 /* The tabs of the settings window (#1199). The selected one is said two
  * ways, neither of them colour alone: full ink against the readable grey, and
  * an underline. NOT bold: a heavier word is a wider word, and the tabs beside

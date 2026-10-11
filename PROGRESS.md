@@ -124,7 +124,15 @@
 >     always mounted and the inactive ones are `hidden`. Opens on the
 >     last-used tab, Appearance the first time. Decisions that differ from
 >     the ticket's proposal: Appearance first, not General.
-> 11. #1203 Prompt History. NOT STARTED.
+> 11. **#1203 — Prompt History. IN PROGRESS, started 2026-10-11, branch
+>     `feature/1203-prompt-history` (stacked on #1199's).** Built to the
+>     owner's rescope comment (the conversation History is untouched): a
+>     "prompts" button in the conversation's toolbar lists the user's own
+>     prompts in the loaded conversation, newest first, with a filter; a
+>     click jumps the view to that prompt (the find jump), and "Use again"
+>     puts its text back in the prompt box without losing what was typed.
+>     Decisions: both readings of "go back" ship from one list; the button
+>     lives with the conversation, not beside the 🕘 button.
 
 > # ✅ RELEASED: v0.8.119, 2026-10-10 (PR #1217)
 >

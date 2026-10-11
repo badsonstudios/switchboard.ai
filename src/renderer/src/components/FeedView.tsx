@@ -5,10 +5,12 @@
 // Guardrail (Â§5.10 Non-Goals): no input surface of any kind lives here.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
+import { blockVisible, FEED_VIEW_CAP, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
 import { applyFolds, foldKind, type FoldKind, type FoldRun } from '../lib/feed-folds';
 import { GutterMark } from './ToolIcon';
+import { PromptHistory } from './PromptHistory';
+import { promptsOf, recallInto } from '../lib/prompt-history';
 import { gutterIconFor } from '../../../shared/tool-icon';
 import { groupBySeq } from '../lib/feed-skipping';
 import { FEED_GROUP_ATTR, FEED_GROUP_OPEN_ATTR, useFeedSkipping } from '../lib/use-feed-skipping';
@@ -1106,6 +1108,18 @@ export function FeedView(props: {
     },
     [markGesture, noteUnpin],
   );
+  // PROMPT HISTORY (#1203): the prompts you sent here, to go back to one.
+  // The owner: "if I want to go back to a previous prompt, how do I do that?"
+  const [promptsOpen, setPromptsOpen] = React.useState(false);
+  const promptsBtn = React.useRef<HTMLButtonElement | null>(null);
+  /** the prompt box's own "take this text", set by the Composer below. A ref
+   *  and not a prop the other way: the draft lives in the Composer (it
+   *  outlives this component, #485) and this only ever asks it to add to it. */
+  const recall = React.useRef<((text: string) => void) | null>(null);
+  const closePrompts = React.useCallback((): void => {
+    setPromptsOpen(false);
+  }, []);
+
   /** the folds as last rendered, for `toggleFold` — a callback that must stay
    *  the same function across renders, or every `FoldRow` re-renders with it */
   const foldsRef = React.useRef<ReadonlyMap<number, FoldRun & { open: boolean }>>(new Map());
@@ -1346,6 +1360,8 @@ export function FeedView(props: {
           paddingInline: 8,
           paddingBlock: 3,
           borderBlockEnd: '1px solid var(--border)',
+          // the prompt list drops from this row (#1203)
+          position: 'relative',
         }}
       >
         {/* Only while the keyboard is actually IN the conversation: the arrow
@@ -1366,6 +1382,51 @@ export function FeedView(props: {
         >
           {inFeed ? t('feedView.keyHint') : ''}
         </span>
+        {/* PROMPT HISTORY (#1203). With the conversation it navigates, and
+            before the three detail chips so it does not read as a fourth. */}
+        <button
+          ref={promptsBtn}
+          type="button"
+          data-prompt-history-open
+          aria-haspopup="dialog"
+          aria-expanded={promptsOpen}
+          title={t('promptHistory.openHint')}
+          onClick={() => setPromptsOpen((open) => !open)}
+          style={{
+            background: promptsOpen ? 'var(--chip)' : 'transparent',
+            border: '1px solid var(--control-edge)',
+            color: 'var(--text)',
+            borderRadius: 'var(--radius-chip)',
+            fontSize: 9.5,
+            padding: '0 6px',
+            marginInlineEnd: 6,
+            cursor: 'pointer',
+            fontFamily: 'var(--font-ui)',
+          }}
+        >
+          {t('promptHistory.open')}
+        </button>
+        {promptsOpen && (
+          <PromptHistory
+            prompts={promptsOf(blocks)}
+            // the view holds the most recent thousand blocks; at that size
+            // there may be prompts further back than the list can show
+            truncated={blocks.length >= FEED_VIEW_CAP}
+            onJump={(seq) => {
+              setPromptsOpen(false);
+              jumpTo(seq);
+            }}
+            onRecall={(text) => {
+              setPromptsOpen(false);
+              recall.current?.(text);
+            }}
+            onClose={() => {
+              closePrompts();
+              // the keyboard goes back to the button that opened it
+              promptsBtn.current?.focus();
+            }}
+          />
+        )}
         {(['quiet', 'normal', 'firehose'] as const).map((v) => (
           <button
             key={v}
@@ -1785,6 +1846,8 @@ export function FeedView(props: {
         sessionId={props.sessionId}
         // the durable key the saved draft is filed under (#485)
         cardId={props.cardId}
+        // "use again" from the prompt list (#1203)
+        recall={recall}
         autonomy={props.autonomy}
         liveAutonomy={props.liveAutonomy}
         model={props.model}
@@ -2317,7 +2380,11 @@ function Composer({
   transport,
   onCycleAutonomy,
   dockedChrome,
+  recall,
 }: {
+  /** #1203: where this box publishes "put this text in the draft", for the
+   *  prompt list above it. Cleared on unmount. */
+  recall?: React.MutableRefObject<((text: string) => void) | null>;
   sessionId: string;
   /** durable key for this card's saved draft (#485) â€” the live id churns */
   cardId?: string;
@@ -2372,6 +2439,25 @@ function Composer({
     [cardId]
   );
   const box = React.useRef<HTMLTextAreaElement | null>(null);
+  // "Use again" from the prompt list (#1203). It ADDS to what is typed rather
+  // than replacing it (`recallInto`), and hands the keyboard to the box with
+  // the caret at the end, where the recalled prompt is.
+  React.useEffect(() => {
+    if (!recall) return;
+    recall.current = (text: string): void => {
+      const next = recallInto(box.current?.value ?? '', text);
+      setDraft(next);
+      const el = box.current;
+      if (!el) return;
+      el.focus();
+      requestAnimationFrame(() => {
+        el.setSelectionRange(next.length, next.length);
+      });
+    };
+    return () => {
+      recall.current = null;
+    };
+  }, [recall, setDraft]);
   /** the composer's own root â€” the auto-grow measures the panel through it */
   const root = React.useRef<HTMLDivElement | null>(null);
   /** the options row, whose height stopped being invariant when it learned to
