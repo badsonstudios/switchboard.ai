@@ -1352,6 +1352,7 @@
       "noSessions": "No sessions are open",
       "noDocuments": "No documents to close — popped-out ones are kept",
       "noActiveSession": "No session is focused",
+      "inOwnWindow": "That shortcut arranges the main window, and this session is in a window of its own",
       "noFindTarget": "Nothing that can be searched is focused — click a session, a document or a single diff",
       "emptyQueue": "Nothing is waiting on you",
       "noActiveGroup": "The focused session is not in a group"

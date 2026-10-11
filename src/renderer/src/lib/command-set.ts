@@ -142,6 +142,11 @@ function activeIndex(ctx: CommandContext): number {
 
 export function buildCommands(deps: CommandDeps): Command[] {
   const hasActive = (ctx: CommandContext): boolean => ctx.activeCardId !== null;
+  // THE SESSION YOU ARE IN, including one in a window of its own (#1214). For
+  // the few commands that mean the same thing on a popped-out card as on a
+  // docked one; each of them is also marked `actsInPopout`.
+  const here = (ctx: CommandContext): string | null => ctx.popoutCardId ?? ctx.activeCardId;
+  const hasHere = (ctx: CommandContext): boolean => here(ctx) !== null;
 
   // Ctrl+1..9 — the Nth session in RAIL order (lib/groups railOrder), so the
   // keyboard and the eye always agree
@@ -236,10 +241,12 @@ export function buildCommands(deps: CommandDeps): Command[] {
       // never be live together with a document — one panel is active, and a
       // popout window shows one.
       enabled: (ctx: CommandContext) =>
-        hasActive(ctx) || !!ctx.activeDocumentId || !!ctx.activeDiffPanelId,
+        hasHere(ctx) || !!ctx.activeDocumentId || !!ctx.activeDiffPanelId,
       disabledReasonKey: 'commands.disabled.noFindTarget',
+      // a popped-out session's bar opens over it, in its own window (#1214)
+      actsInPopout: true,
       run: (ctx: CommandContext) => {
-        const target = ctx.activeDocumentId ?? ctx.activeDiffPanelId ?? ctx.activeCardId;
+        const target = ctx.activeDocumentId ?? ctx.activeDiffPanelId ?? here(ctx);
         if (target) deps.openFind(target);
       },
     },
@@ -387,10 +394,13 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_SESSION,
       binding: 'Mod+W',
       scope: 'app',
-      enabled: hasActive,
+      enabled: hasHere,
       disabledReasonKey: 'commands.disabled.noActiveSession',
+      // the confirm names the session, and it is the one in front of you (#1214)
+      actsInPopout: true,
       run: (ctx) => {
-        if (ctx.activeCardId) deps.closeCard(ctx.activeCardId);
+        const cardId = here(ctx);
+        if (cardId) deps.closeCard(cardId);
       },
     },
     // ── §5.8's PINNING contract (E9-09) ───────────────────────────────────
@@ -408,10 +418,15 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_SESSION,
       binding: 'Mod+Alt+P',
       scope: 'app',
-      enabled: hasActive,
+      enabled: hasHere,
       disabledReasonKey: 'commands.disabled.noActiveSession',
+      // THE CHORD THE TICKET WAS FILED ON (#1214): pressed in a popped-out
+      // session's window, on its tab, it was refused with "No session is
+      // focused". A pin belongs to the session, wherever its card is.
+      actsInPopout: true,
       run: (ctx) => {
-        if (ctx.activeCardId) deps.togglePin(ctx.activeCardId);
+        const cardId = here(ctx);
+        if (cardId) deps.togglePin(cardId);
       },
     },
     // ── #559's MANUAL RAIL ORDER ──────────────────────────────────────────
@@ -456,10 +471,14 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_SESSION,
       binding: dir === 'up' ? 'Mod+Alt+ArrowUp' : 'Mod+Alt+ArrowDown',
       scope: 'app' as const,
-      enabled: hasActive,
+      enabled: hasHere,
       disabledReasonKey: 'commands.disabled.noActiveSession',
+      // a move in the SESSIONS LIST, and a popped-out session still has its
+      // row there (#1214): pin's argument exactly
+      actsInPopout: true,
       run: (ctx: CommandContext) => {
-        if (ctx.activeCardId) deps.reorderSession(ctx.activeCardId, dir);
+        const cardId = here(ctx);
+        if (cardId) deps.reorderSession(cardId, dir);
       },
     })),
     {
@@ -532,6 +551,7 @@ export function buildCommands(deps: CommandDeps): Command[] {
       scope: 'app',
       enabled: hasActive,
       disabledReasonKey: 'commands.disabled.noActiveSession',
+      arrangesMainWindow: true,
       run: (ctx) => {
         if (ctx.activeCardId) deps.stepLadder(ctx.activeCardId, 'down');
       },
@@ -544,6 +564,7 @@ export function buildCommands(deps: CommandDeps): Command[] {
       scope: 'app',
       enabled: hasActive,
       disabledReasonKey: 'commands.disabled.noActiveSession',
+      arrangesMainWindow: true,
       run: (ctx) => {
         if (ctx.activeCardId) deps.stepLadder(ctx.activeCardId, 'up');
       },
@@ -557,6 +578,7 @@ export function buildCommands(deps: CommandDeps): Command[] {
       scope: 'app', // palette-only: the step bindings above are the key path
       enabled: hasActive,
       disabledReasonKey: 'commands.disabled.noActiveSession',
+      arrangesMainWindow: true,
       run: (ctx) => {
         if (ctx.activeCardId) deps.setLadder(ctx.activeCardId, 'collapsed');
       },
@@ -570,6 +592,7 @@ export function buildCommands(deps: CommandDeps): Command[] {
       scope: 'app',
       enabled: hasActive,
       disabledReasonKey: 'commands.disabled.noActiveSession',
+      arrangesMainWindow: true,
       run: (ctx) => {
         if (ctx.activeCardId) deps.setLadder(ctx.activeCardId, 'tabbed');
       },
@@ -581,6 +604,7 @@ export function buildCommands(deps: CommandDeps): Command[] {
       scope: 'app',
       enabled: hasActive,
       disabledReasonKey: 'commands.disabled.noActiveSession',
+      arrangesMainWindow: true,
       run: (ctx) => {
         if (ctx.activeCardId) deps.setLadder(ctx.activeCardId, 'expanded');
       },
@@ -596,6 +620,7 @@ export function buildCommands(deps: CommandDeps): Command[] {
       scope: 'app',
       enabled: hasActive,
       disabledReasonKey: 'commands.disabled.noActiveSession',
+      arrangesMainWindow: true,
       run: (ctx) => {
         if (ctx.activeCardId) deps.hideCard(ctx.activeCardId);
       },
@@ -661,6 +686,7 @@ export function buildCommands(deps: CommandDeps): Command[] {
       scope: 'app',
       enabled: hasActive,
       disabledReasonKey: 'commands.disabled.noActiveSession',
+      arrangesMainWindow: true,
       run: (ctx) => {
         if (ctx.activeCardId) deps.toggleMaximize(ctx.activeCardId);
       },
@@ -790,10 +816,14 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_VIEW,
       binding: 'Mod+Shift+O',
       scope: 'app',
-      enabled: hasActive,
+      enabled: hasHere,
       disabledReasonKey: 'commands.disabled.noActiveSession',
+      // THE SAME CHORD BRINGS IT HOME (#1214): pressed in a popped-out
+      // session's window it docks that session back. NOT `actsInPopout`: the
+      // card ends up in the main window, so that is the window to bring forward.
       run: (ctx) => {
-        if (ctx.activeCardId) deps.popOutCard(ctx.activeCardId);
+        const cardId = here(ctx);
+        if (cardId) deps.popOutCard(cardId);
       },
     },
     // `view.terminal` (Ctrl+`) was here. It toggled the card to the Terminal

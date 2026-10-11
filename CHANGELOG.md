@@ -107,6 +107,16 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **Shortcuts pressed in a popped-out session's window work on that session.**
+  `Ctrl+Alt+P` (pin), `Ctrl+F` (find), `Ctrl+Alt+↑/↓` (move in the list),
+  `Ctrl+W` (close) and `Ctrl+Shift+O` (bring it back into the main window) used
+  to be handed to the main window, which had no session focused, so you were
+  told *"No session is focused"* while looking at one. They now act on the
+  session in the window you pressed them in. The shortcuts that arrange cards
+  in the main window (collapse, maximise) still do nothing from a pop-out, and
+  now say why.
+- **"Close this session?" is asked in the window the session is in.** For a
+  popped-out session the question used to open over the main window.
 - **Holding Enter down in the prompt box no longer sends.** Only a fresh press
   does. A key still held from somewhere else (a button you pressed with Enter
   that then handed the keyboard to the prompt box) could send what was there.

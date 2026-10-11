@@ -295,13 +295,32 @@ Four things about these that are deliberate:
   isn't new; it's
   [how the ladder has always worked](#working-with-the-focused-session).
 
-Using these from a **popped-out session window**: the shortcut is handed back to
-the main window and acts there. What happens next is **said in the window you
-end up in**. If the shortcut did something, the main window comes forward and
-says it. If it could not be used, you stay in the pop-out and the reason is
-said there. A screen reader in a pop-out used to hear nothing at all; now every
-pop-out has the same announcements the main window has, and only one window
-ever speaks, so nothing is said twice.
+Using these from a **popped-out session window**. These act on the session in
+that window:
+
+| Shortcut | In a popped-out window |
+|---|---|
+| `Ctrl+Alt+P` | Pins or unpins that session |
+| `Ctrl+F` | Opens find over that session, in its own window |
+| `Ctrl+Alt+↑` / `Ctrl+Alt+↓` | Moves that session up or down the Sessions list |
+| `Ctrl+W` | Closes that session. It asks first, as always, and asks in that window |
+| `Ctrl+Shift+O` | Brings that session back into the main window |
+
+The first three leave you in the pop-out. Every other shortcut is handed back
+to the main window and acts there. What happens next is **said in the window
+you end up in**. If the shortcut did something, the main window comes forward
+and says it. If it could not be used, you stay in the pop-out and the reason is
+said there.
+
+The shortcuts that arrange cards in the main window (the ladder and maximise)
+have nothing to act on from a pop-out, because that session's card is not in
+the main window. You hear *"That shortcut arranges the main window, and this
+session is in a window of its own"*. Press `Ctrl+Shift+O` to bring the session
+back, and they work on it again.
+
+A screen reader in a pop-out used to hear nothing at all; now every pop-out has
+the same announcements the main window has, and only one window ever speaks, so
+nothing is said twice.
 
 ## A shortcut that can't be used right now tells you why
 
@@ -472,6 +491,9 @@ mouse, from anywhere.
   touches lives in the main switchboard window, so running one from a
   popped-out window brings that window to the front. Ordinary typing in a
   popped-out session never does — only a shortcut that actually did something.
+  The exceptions are the few that act on the popped-out session itself (pin,
+  find, moving it in the list): those leave its window in front. See
+  [the table above](#working-with-the-focused-session).
 - Jumping to a popped-out session — by number or with `Ctrl+Space` — brings
   **its** window forward and leaves it there, rather than pulling the main
   window back over the top of it.

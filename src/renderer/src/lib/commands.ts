@@ -40,6 +40,22 @@ export interface CommandContext {
   /** card id of the currently focused session card, if any */
   activeCardId: string | null;
   /**
+   * The session card in the POPPED-OUT window the keystroke was typed in, if
+   * it was typed in one (#1214).
+   *
+   * `activeCardId` answers null for a popped-out card, on purpose: a command
+   * typed in the main window must never act on a card that is in another one.
+   * But a chord pressed IN that other window, on the session it holds, was
+   * answered "No session is focused" to someone looking straight at one. This
+   * is that session. Only a command that makes sense on a card in a window of
+   * its own reads it (`actsInPopout`); the ones that arrange the main window
+   * (the ladder, maximise, reorder) still read `activeCardId` alone.
+   *
+   * Optional for `activeDocumentId`'s reason. The palette never sets it: it
+   * opens in the main window and acts there.
+   */
+  popoutCardId?: string | null;
+  /**
    * Panel id of the focused §5.30 DOCUMENT viewer, if any (#533).
    *
    * A second answer to "what has the user's attention", not a replacement for
@@ -110,6 +126,21 @@ export interface Command<Ctx extends CommandContext = CommandContext> {
   /** preconditions; the palette greys unmet ones out with disabledReasonKey */
   enabled?: (ctx: Ctx) => boolean;
   disabledReasonKey?: string;
+  /**
+   * Pressed in a popped-out session's window, this acts on THAT session, in
+   * that window (#1214). The key bridge reads it to know the main window is
+   * not to be pulled forward over the window the user is working in.
+   */
+  actsInPopout?: boolean;
+  /**
+   * This arranges cards IN THE MAIN WINDOW (the ladder, maximise): a session
+   * in a window of its own has no place there to change. Refused in a popout
+   * as before, but with that reason instead of "No session is focused"
+   * (`command-voice`'s `refusedIn`). A flag on the command, not a guess from
+   * its reason key: other commands share that key and the sentence would be
+   * false for them.
+   */
+  arrangesMainWindow?: boolean;
   run: (ctx: Ctx) => void;
 }
 

@@ -528,7 +528,10 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
    */
   const closeThisTab = (): void => {
     if (cardId) {
-      if (!nativeConfirm(t('grid.closeConfirm', { title }))) return;
+      // asked in the window this tab is IN (#1214): its own, when popped out
+      const loc = props.api.location;
+      const tabWindow = loc?.type === 'popout' ? loc.getWindow() : undefined;
+      if (!nativeConfirm(t('grid.closeConfirm', { title }), tabWindow)) return;
     }
     props.api.close();
   };
@@ -5909,6 +5912,12 @@ export interface GridController {
    * the same rule, including which window the keystroke came from.
    */
   activeDiffPanelId: (sourceWindow?: Window) => string | null;
+  /**
+   * The session card showing in the popped-out window a keystroke came from,
+   * or null (#1214). `activeCardId` for the one case it refuses: the window is
+   * an argument, as it is for a document, and never a guess.
+   */
+  popoutCardId: (sourceWindow?: Window) => string | null;
   /** is this panel in its own OS window right now? (#533 — see App's openFind) */
   isPanelPoppedOut: (panelId: string) => boolean;
   /** close a card the way the tab ✕ does — including its confirm (E9-01) */
@@ -6599,6 +6608,13 @@ export function SessionGrid(props: {
       // callers that close and count documents read that predicate too.
       activeDiffPanelId: (sourceWindow) =>
         activeStandalonePanelId(apiRef.current, sourceWindow, isDiffPanelId),
+      // ONLY with a source window: without one this is the main window asking,
+      // and its answer for a popped-out card is `activeCardId`'s null.
+      popoutCardId: (sourceWindow) => {
+        if (!sourceWindow) return null;
+        const panelId = activeStandalonePanelId(apiRef.current, sourceWindow, (id) => /^session-/.test(id));
+        return panelId ? panelId.replace(/^session-/, '') : null;
+      },
       isPanelPoppedOut: (panelId) =>
         apiRef.current?.getPanel(panelId)?.api.location.type === 'popout',
       closeCard: (cardId) => {
@@ -6614,7 +6630,10 @@ export function SessionGrid(props: {
           panel?.title,
           (panel?.params as CardParams | undefined)?.folder
         );
-        if (!nativeConfirm(t('grid.closeConfirm', { title }))) return;
+        // asked in the window the card is IN (#1214): its own, when popped out
+        const loc = panel?.group.api.location;
+        const cardWindow = loc?.type === 'popout' ? loc.getWindow() : undefined;
+        if (!nativeConfirm(t('grid.closeConfirm', { title }), cardWindow)) return;
         // the confirm belongs to the gesture; retireCard (E9-09) does what
         // main's inline removePanel/by-hand branch did, for both call sites
         retireCard(cardId);

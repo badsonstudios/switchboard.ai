@@ -72,21 +72,93 @@ test.describe('a popped-out window has what the main window has (#1022)', () => 
     // this test can fail on.
 
     // ── refused: the user stays in the popout, and so does the reason ────────
-    // The only card is popped out, so the main window has no focused session
-    // and the pin chord has nothing to act on. That refusal is the case the
-    // ticket called the one that stings: a chord refused in silence.
+    // A chord that ARRANGES THE MAIN WINDOW (here: one step down the ladder)
+    // has nothing to act on, because this card is not in the main window. It
+    // is refused, in the popout, and with the TRUE reason (#1214): it used to
+    // say "No session is focused" to someone looking straight at one.
     await tabs(popout).first().click(); // on the tab, not in the prompt box: chords are suppressed while typing
-    await popout.keyboard.press(`${MOD}+Alt+p`);
-    await expect.poll(() => spoken(popout), { timeout: 15_000 }).toBe('No session is focused');
+    await popout.keyboard.press(`${MOD}+Shift+ArrowDown`);
+    await expect
+      .poll(() => spoken(popout), { timeout: 15_000 })
+      .toBe('That shortcut arranges the main window, and this session is in a window of its own');
     expect(await spoken(w)).toBe('');
+  });
 
-    // NOT HERE: the other half of the rule, a chord that RUNS from a popout
-    // being said in the main window it raises. It was tried with a second,
-    // docked session, and the pin chord was refused again: a card-scoped chord
-    // pressed in a popout finds no focused session whatever the main window is
-    // showing (filed as its own question). No chord both runs from a popout
-    // and speaks today, so that half is held where it can be reached, in
-    // `PopoutSurfaces.test.tsx` ("held until the caller knows...").
+  test('pin, find, close and dock-back pressed in a popout act on ITS session (#1214)', async () => {
+    skipPopoutOnLinux();
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: DIRECT });
+    const name = path.basename(folder);
+    const { w, popout } = await poppedOut(a, name);
+    const pinned = (): Promise<boolean> =>
+      w.evaluate(() => document.querySelector('[data-pinned]')?.getAttribute('data-pinned') === 'true');
+
+    // THE CHORD THE TICKET WAS FILED ON. The only card is popped out, so the
+    // main window has no focused session: this used to be refused.
+    await tabs(popout).first().click();
+    expect(await pinned()).toBe(false);
+    await popout.keyboard.press(`${MOD}+Alt+p`);
+    await expect.poll(pinned, { timeout: 15_000 }).toBe(true);
+    // said in the window it was pressed in, and only there
+    await expect.poll(() => spoken(popout), { timeout: 15_000 }).toContain(name);
+    expect(await spoken(popout)).not.toContain('No session is focused');
+    expect(await spoken(w)).toBe('');
+    // ...and it is a toggle there too
+    await popout.keyboard.press(`${MOD}+Alt+p`);
+    await expect.poll(pinned, { timeout: 15_000 }).toBe(false);
+
+    // FIND opens over the popped-out session, in ITS window, not on a card in
+    // the main one (there is none) and not as a refusal
+    await tabs(popout).first().click();
+    await popout.keyboard.press(`${MOD}+f`);
+    await expect(popout.locator('[data-testid="find-bar"]')).toBeVisible({ timeout: 15_000 });
+    await expect(popout.locator('[data-testid="find-input"]')).toBeFocused();
+    await expect(w.locator('[data-testid="find-bar"]')).toHaveCount(0);
+    await popout.keyboard.press('Escape');
+
+    // CLOSE asks about THIS session, by name, IN THIS WINDOW, and a "no"
+    // changes nothing. (A popout runs the main window's JavaScript, so the bare
+    // `confirm` is the main window's: the box used to open over there.)
+    const askedHere: string[] = [];
+    const askedMain: string[] = [];
+    popout.on('dialog', (d) => {
+      askedHere.push(d.message());
+      void d.dismiss();
+    });
+    w.on('dialog', (d) => {
+      askedMain.push(d.message());
+      void d.dismiss();
+    });
+    await tabs(popout).first().click();
+    await popout.keyboard.press(`${MOD}+w`);
+    await expect.poll(() => askedHere.length + askedMain.length, { timeout: 15_000 }).toBe(1);
+    expect(askedHere).toHaveLength(1);
+    expect(askedHere[0]).toContain(name);
+    await expect(tabs(popout)).toHaveCount(1);
+
+    // THE POP-OUT CHORD BRINGS IT HOME: the same key that sent it out
+    await tabs(popout).first().click();
+    // (the window goes while the key is still down: the press itself may reject)
+    await popout.keyboard.press(`${MOD}+Shift+o`).catch(() => undefined);
+    await expect.poll(() => a.app.windows().length, { timeout: 15_000 }).toBe(1);
+    await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
+  });
+
+  test('closing a session from its own window, and meaning it, takes the window with it (#1214)', async () => {
+    skipPopoutOnLinux();
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: DIRECT });
+    const { w, popout } = await poppedOut(a, path.basename(folder));
+    popout.on('dialog', (d) => void d.accept());
+    w.on('dialog', (d) => void d.accept());
+    await tabs(popout).first().click();
+    // the window is destroyed while its own key handler is still running
+    await popout.keyboard.press(`${MOD}+w`).catch(() => undefined);
+    await expect.poll(() => a.app.windows().length, { timeout: 15_000 }).toBe(1);
+    await expect(w.locator('[data-pinned]')).toHaveCount(0, { timeout: 15_000 });
+    // ...and the main window is alive and takes a command afterwards
+    await w.keyboard.press(`${MOD}+Shift+p`);
+    await expect(w.getByRole('dialog').first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('resting on a tab in the popout shows that session’s last prompt, in the popout', async () => {

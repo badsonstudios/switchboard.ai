@@ -22,7 +22,17 @@
 >    a small port (`lib/prompt-port`) the window reads. Decisions: opens on
 >    the tab last used; a session not showing its conversation keeps the tab
 >    and says why it is empty; the `+ session` picker has no tabs.
-> 2. #1214 — a shortcut pressed in a popped-out window. Not started.
+> 2. **#1214 — a shortcut pressed in a popped-out window. IN PROGRESS, started
+>    2026-10-11, branch `feature/1214-popout-chords` (stacked on #1237's).**
+>    The ticket says "needs a decision from the owner before any plan"; he
+>    picked it from a shortlist without giving one, so I made it: YES for the
+>    five chords that mean the same thing on a popped-out card (pin, find,
+>    reorder, close, and the pop-out chord, which brings it home), which now
+>    act on the session in the window they were pressed in; NO for the ones
+>    that arrange the main window (ladder, maximise), which are still refused
+>    but now say why. `popoutCardId` on the command context; `actsInPopout`
+>    and `arrangesMainWindow` on a command. The close question is asked in
+>    the card's own window. The palette is unchanged.
 > 3. #1235 — pictures inline in the conversation. Not started.
 > 4. #1209 — control edges on nordic and daylight. Not started.
 > 5. #1211 — text dimmed by opacity. Not started.

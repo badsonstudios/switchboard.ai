@@ -87,7 +87,7 @@ import {
   contextMeterFormOf,
   type ContextMeterForm,
 } from './lib/context-meter';
-import { sayManualMissing, sayUnavailable } from './lib/command-voice';
+import { refusedIn, sayManualMissing, sayUnavailable, stillOpen } from './lib/command-voice';
 import { LastPromptHover } from './components/LastPromptHover';
 import { DEFAULT_SOUND } from '../../shared/sounds';
 // #440: a refused call RESOLVES a truthy object — read every bridge answer
@@ -1744,6 +1744,10 @@ export function App(): React.JSX.Element {
   // focusing a popout and then pulling the main window forward would bury the
   // very session you asked for.
   const raisedOtherWindowRef = React.useRef(false);
+  // ...and when it acted on the popped-out session it was pressed IN (#1214):
+  // pin, close and find mean the same thing there as on a docked card, and
+  // pulling the main window forward would bury the window the user is in.
+  const actedInPopoutRef = React.useRef(false);
   const focusSession = React.useCallback((sessionId: string): boolean => {
     // #923. Click in the rail to the card painted — #904's second named
     // interaction, and the one the owner notices after typing.
@@ -1899,15 +1903,13 @@ export function App(): React.JSX.Element {
           // publishes which card is asking, because a keydown handler has no
           // way into another dockview panel's tree (§5.31, lib/find-bar-state).
           //
-          // POPPED-OUT CARDS: `activeCardId()` deliberately answers null for
-          // one (a command typed in this window must never act on a card you
-          // cannot see), so `find.open` is disabled while a popout is the
-          // active panel, exactly as every other card-scoped command is. That
-          // means Ctrl+F inside a popped-out session opens the bar on the
-          // docked card instead, and the popout key bridge below raises this
-          // window with it — which is where the bar actually is. Making find
-          // window-local is a §5.8 question about which window a command acts
-          // in, not a find question, so it is not answered here.
+          // POPPED-OUT CARDS (#1214): Ctrl+F pressed IN a popped-out session's
+          // window opens the bar over that session, in that window. The card
+          // renders its own bar, so it travelled with the card; the command is
+          // handed `popoutCardId`, and the key bridge leaves that window in
+          // front (`actsInPopout`). From the MAIN window `activeCardId()` still
+          // answers null for a popped-out card, so a command typed here never
+          // acts on a card that is in another window.
           //
           // POPPED-OUT DOCUMENTS ARE THE EXCEPTION, and #533 had to answer that
           // §5.8 question for them: `activeDocumentId()` DOES claim a popped-out
@@ -1922,9 +1924,9 @@ export function App(): React.JSX.Element {
             // Asked ONLY of a document, because only a document's id is a panel
             // id: a card's is the bare uuid and its panel is `session-<uuid>`,
             // so passing one here would be a lookup that can only ever miss.
-            // (It would answer "not popped out", which is accidentally right —
-            // `activeCardId` already refuses a popped-out card — and being
-            // right by accident is how the next reader gets misled.)
+            // (It would answer "not popped out", and for a popped-out card
+            // that is wrong; nothing needs the answer, because the key bridge
+            // already keeps a popped-out session's window in front, #1214.)
             //
             // A `gitdiff-` DIFF PANEL is the same case (#1054): its id is a
             // panel id too, and Monaco's find opens in the window the panel is in.
@@ -2067,10 +2069,19 @@ export function App(): React.JSX.Element {
   const commandContext = React.useCallback((sourceWindow?: Window) => {
     // read from the store, not a ref: this runs on KEYDOWN, outside React's
     // commit, so it has to see what is true now
-    const activeCardId = grid.current?.activeCardId() ?? null;
+    // the session in the popped-out window the key was pressed in (#1214)
+    const popoutCardId = grid.current?.popoutCardId(sourceWindow) ?? null;
+    // ⚠️ IN A SESSION'S OWN WINDOW THERE IS NO "ACTIVE CARD". Dockview's active
+    // panel does not follow the user into another OS window, so without this
+    // a chord pressed in a popout could pin the popped-out session and, on the
+    // next press, collapse whichever docked card happened to be active behind
+    // it: two chords, back to back, on two different sessions. From a popout
+    // the answer is that popout's session or nothing.
+    const activeCardId = popoutCardId ? null : (grid.current?.activeCardId() ?? null);
     return {
       sessions: sessionStore.getRailOrder().flat,
       activeCardId,
+      popoutCardId,
       // The other thing that can have the user's attention (#533): a §5.30
       // document viewer is its own panel with no session behind it, and
       // `find.open` is the one command that takes either.
@@ -2170,6 +2181,7 @@ export function App(): React.JSX.Element {
       // while a modal owns the screen, nothing underneath it fires —
       // regardless of where focus ended up inside the modal
       if (modalOpenRef.current) return false;
+      const ctx = commandContext(sourceWindow);
       const result = dispatch(
         {
           key: e.key,
@@ -2184,7 +2196,7 @@ export function App(): React.JSX.Element {
           preventDefault: () => e.preventDefault(),
         },
         commands,
-        commandContext(sourceWindow),
+        ctx,
         platform,
         // fail-open: a broken command logs and is forgotten, never an uncaught
         // error in the keydown handler (the main process tails this console)
@@ -2193,7 +2205,11 @@ export function App(): React.JSX.Element {
       // #942 — the chord matched a real binding and the command behind it is
       // disabled right now. The palette dims that entry and renders the reason;
       // a chord has no affordance at all, so the reason is spoken instead.
-      if (result.outcome === 'unavailable') sayUnavailable(result.command);
+      if (result.outcome === 'unavailable') sayUnavailable(refusedIn(result.command, ctx));
+      // it acted on the popped-out session it was pressed in (#1214): the
+      // bridge below must leave that window in front
+      actedInPopoutRef.current =
+        result.outcome === 'ran' && !!result.command.actsInPopout && !!ctx.popoutCardId;
       return result.outcome === 'ran';
     };
     // Bubble phase, so a component that stops propagation keeps its keys. The
@@ -2237,10 +2253,11 @@ export function App(): React.JSX.Element {
           // `win` — which window this was typed in. A popped-out DOCUMENT is the
           // one thing a command can act on THERE rather than here (#533), and
           // dockview's active panel cannot tell us which window that is.
-          raiseMain = onKey(e, win) && !raisedOtherWindowRef.current;
+          actedInPopoutRef.current = false;
+          raiseMain = onKey(e, win) && !raisedOtherWindowRef.current && !actedInPopoutRef.current;
           if (raiseMain) window.focus();
         } finally {
-          say(raiseMain ? window : raisedOtherWindowRef.current ? undefined : win);
+          say(raiseMain ? window : raisedOtherWindowRef.current ? undefined : stillOpen(win));
         }
       };
       popoutKeys.set(win, handler);
@@ -2331,26 +2348,28 @@ export function App(): React.JSX.Element {
       const say = fromPopout ? holdAnnouncements() : undefined;
       let raiseMain = false;
       try {
+        const ctx = commandContext(sourceWindow);
         const result = dispatchAccelerator(
           commandId,
           commands,
-          commandContext(sourceWindow),
+          ctx,
           target,
           (err, id) => console.error(`[commands] ${id} failed`, err),
         );
         // #942, and this is the path that needs it most: these two chords are
         // claimed above the renderer precisely so they reach a user who is inside
         // a session terminal, where nothing else they press has any effect at all.
-        if (result.outcome === 'unavailable') sayUnavailable(result.command);
+        if (result.outcome === 'unavailable') sayUnavailable(refusedIn(result.command, ctx));
         const ran = result.outcome === 'ran';
+        const actedInPopout = ran && !!result.command.actsInPopout && !!ctx.popoutCardId;
         // Pressed in a popped-out window: what these commands show — the palette,
         // the grid — is in THIS window, so bring it forward. Unless the command
         // deliberately raised a different one (jumping to another popped-out
         // session), which is the same exception the keydown bridge makes.
-        raiseMain = fromPopout && ran && !raisedOtherWindowRef.current;
+        raiseMain = fromPopout && ran && !raisedOtherWindowRef.current && !actedInPopout;
         if (raiseMain) window.focus();
       } finally {
-        say?.(raiseMain ? window : raisedOtherWindowRef.current ? undefined : sourceWindow);
+        say?.(raiseMain ? window : raisedOtherWindowRef.current ? undefined : stillOpen(sourceWindow));
       }
     });
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
