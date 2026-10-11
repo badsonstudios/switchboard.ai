@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SessionStore } from './session-store';
 import { EventDto, RailGroup, RailSession } from '../model/types';
 import { DEFAULT_PRESENTATION } from '../lib/presentation';
@@ -926,6 +926,34 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
       )
     );
     expect(store.policyFor('card-A')).toBe('auto-hide');
+  });
+
+  it('a change to the setting is LOGGED, with the surface that made it (#1210)', () => {
+    // the owner's card was hidden on submit and the log could not say who had
+    // turned that on, or when
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      store.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-hide'), 'title bar chip');
+      expect(log).toHaveBeenCalledWith(
+        '[policy] on submit, global: always-visible → auto-hide (title bar chip)'
+      );
+      // the same book again is not a change, and says nothing
+      log.mockClear();
+      store.setPolicies(store.getPolicies(), 'title bar chip');
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('turnPolicyOffFor acts at the level that decided, through the group lookup', () => {
+    store.setSessions([session('card-A', { groupId: 'g1' }), session('card-B')]);
+    store.setPolicies(withGroup(withGlobal(DEFAULT_BOOK, 'auto-hide'), 'g1', 'auto-collapse'));
+    expect(store.policyLevelFor('card-A')).toBe('group');
+    expect(store.policyLevelFor('card-B')).toBe('global');
+    store.turnPolicyOffFor('card-A', 'submit notice');
+    expect(store.policyFor('card-A')).toBe('always-visible');
+    expect(store.policyFor('card-B')).toBe('auto-hide');
   });
 
   it('an unknown card gets the global — never a throw', () => {

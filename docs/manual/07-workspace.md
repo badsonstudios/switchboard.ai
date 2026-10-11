@@ -659,6 +659,30 @@ matters more than the space it takes.
 The most specific setting wins: a session's own choice beats its group's, which
 beats the global one. All of it is remembered across restarts.
 
+### When it puts a card away, it tells you
+
+The moment a card is collapsed or hidden because you sent a prompt, a line
+appears above the cards:
+
+> *BrainHarbor was hidden because “Hide on submit” is on. It is still running,
+> and it is in the Sessions list.*
+
+It says which session, which setting, and where the setting comes from (for
+everything, for its group, or for this session). It has three buttons:
+
+| Button | What it does |
+|---|---|
+| **Bring it back** | the card returns to the spot it left. The session never stopped. The setting stays as it is |
+| **Stop doing this** | brings the card back **and** switches the setting that sent it away to **Keep visible**. If the setting came from the session's group, only that group changes; if it was the session's own, only that session |
+| **Stop telling me** | hides this line until you next restart switchboard. The setting stays on. For when you turned it on deliberately and don't need reminding |
+
+The line goes away by itself when the card comes back.
+
+If a card vanished when you pressed Enter and you never asked for that: the
+**⬍** chip in the title bar cycles through the three settings one click at a
+time, so it is easy to change without meaning to. **Stop doing this** puts it
+back.
+
 ### What it won't do
 
 - **It won't touch a session you've popped out into its own window.** Putting a

@@ -47,6 +47,8 @@ const strip = (w: Page) => w.locator('nav .rail-row[data-folded="true"]');
 const stripRow = (w: Page, title: string) => strip(w).filter({ hasText: title });
 const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
 const policyChip = (w: Page) => w.getByTestId('presentation-policy');
+/** the line above the cards that says a card was put away, and why (#1210) */
+const notice = (w: Page) => w.getByTestId('submit-notice');
 
 /** open one more session, in its own folder (so nothing auto-groups) */
 async function addSession(a: LaunchedApp): Promise<string> {
@@ -135,6 +137,9 @@ test.describe('presentation policy (E9-06)', () => {
     await expect(tabs(w)).toHaveCount(2);
     await expect(strip(w)).toHaveCount(0);
     await expect(w.locator('.dv-active-tab')).toContainText(first);
+    // ...and nothing is SAID, because nothing happened (#1210)
+    await expect(notice(w).getByRole('button')).toHaveCount(0);
+    await expect(notice(w)).toHaveText('');
   });
 
   test('auto-collapse, opted in, collapses on submit and done brings it back to its slot', async () => {
@@ -162,6 +167,11 @@ test.describe('presentation policy (E9-06)', () => {
     await expect(row(w, second)).toBeVisible(); // still in the rail
     expect(await liveCount(w)).toBe(3); // and still running: a rung, not a close
 
+    // #1210: the moment it goes, one line says which session and which
+    // setting. The owner's card vanished on Enter and nothing explained it.
+    await expect(notice(w)).toContainText(`${second} was collapsed`);
+    await expect(notice(w)).toContainText('Collapse on submit');
+
     // the CLI finishes the turn — §5.8: "it restores automatically on Stop"
     await post(second, { hook_event_name: 'Stop' });
 
@@ -173,6 +183,88 @@ test.describe('presentation policy (E9-06)', () => {
     ]);
     await expect(strip(w)).toHaveCount(0);
     expect(await liveCount(w)).toBe(3);
+    // the card is back, so there is nothing left to explain
+    await expect(notice(w)).toHaveText('');
+  });
+
+  test('the notice brings a hidden card back, and can turn the setting off (#1210)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const first = path.basename(folder);
+    await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
+    const second = await addSession(a);
+    const third = await addSession(a);
+    await expect(tabs(w)).toHaveCount(3);
+    const inOrder = async (): Promise<void> =>
+      expect(await tabs(w).allInnerTexts()).toEqual([
+        expect.stringContaining(first),
+        expect.stringContaining(second),
+        expect.stringContaining(third),
+      ]);
+
+    await setPresentationPolicy(w, 'Hide on submit');
+    await submitIn(w, second);
+    await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
+    await expect(notice(w)).toContainText(`${second} was hidden because “Hide on submit” is on.`);
+
+    // BRING IT BACK: the card returns to the slot it left, the session is
+    // still running, and the setting is untouched
+    await notice(w).getByRole('button', { name: 'Bring it back' }).click();
+    await expect(tabs(w)).toHaveCount(3, { timeout: 15_000 });
+    await inOrder();
+    await expect(notice(w)).toHaveText('');
+    await expect(policyChip(w)).toContainText('Hide on submit');
+    expect(await liveCount(w)).toBe(3);
+
+    // STOP DOING THIS: the card comes back AND the setting that sent it away
+    // is off, at the level that decided (here, the global one)
+    await submitIn(w, third);
+    await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
+    await expect(notice(w)).toContainText(`${third} was hidden`);
+    await notice(w).getByRole('button', { name: 'Stop doing this' }).click();
+    await expect(tabs(w)).toHaveCount(3, { timeout: 15_000 });
+    await inOrder();
+    await expect(policyChip(w)).toContainText('Keep visible');
+    await expect(notice(w)).toHaveText('');
+
+    // ...and it stays off: the next prompt leaves its card alone
+    await submitIn(w, first);
+    await expectSubmitLanded(w);
+    await w.waitForTimeout(1000);
+    await expect(tabs(w)).toHaveCount(3);
+    await expect(notice(w)).toHaveText('');
+  });
+
+  test('Stop telling me silences the notice for the run and keeps the keyboard (#1210)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
+    const second = await addSession(a);
+    const third = await addSession(a);
+    await expect(tabs(w)).toHaveCount(3);
+
+    await setPresentationPolicy(w, 'Hide on submit');
+    await submitIn(w, second);
+    await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
+    await expect(notice(w)).toContainText(`${second} was hidden`);
+
+    // BY KEYBOARD, because that is the case that can go wrong: the strip
+    // unmounts under the focused button, and focus must land on a card and not
+    // fall to the body
+    await notice(w).getByRole('button', { name: 'Stop telling me' }).focus();
+    await w.keyboard.press('Enter');
+    await expect(notice(w)).toHaveText('');
+    expect(await w.evaluate(() => document.activeElement?.tagName)).not.toBe('BODY');
+    // the setting is untouched and the card stays away
+    await expect(policyChip(w)).toContainText('Hide on submit');
+    await expect(tabs(w)).toHaveCount(2);
+
+    // ...and the next card that goes, goes quietly
+    await submitIn(w, third);
+    await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
+    await expect(notice(w)).toHaveText('');
   });
 
   test('auto-hide removes the card and still honours the reveal contract', async () => {

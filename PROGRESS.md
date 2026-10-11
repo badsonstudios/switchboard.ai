@@ -3,6 +3,39 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ 2026-10-10 (evening) — ELEVEN TICKETS THE OWNER PICKED, IN FLIGHT
+>
+> He was shown twelve of his own tickets and picked eleven (everything but
+> #1218, the text-to-speech research). Each is its own item through
+> `/next-item`; one PR in CI at a time; each PR folds in the close-out of the
+> one before. **DO NOT CUT A RELEASE** unless he asks. Everything lands in
+> `0.8.120 — unreleased`.
+>
+> **The order (mine, he did not give one):** #1210, #1202, #1219, #1201,
+> #1206, #1198 (check what shipped first), #1197, #1200, #1207, #1199, #1203.
+>
+> 1. **#1210 — submitting a prompt hid the session. IN PROGRESS, started
+>    2026-10-10, branch `feature/1210-submit-hid-session`.** Diagnosed first
+>    and posted to the ticket: his desktop's global setting was **Hide on
+>    submit** (not the default, not changed by any release; only the title
+>    bar chip and the palette can set it; first hide ever was about a minute
+>    after 0.8.118 installed; the change was never logged). **His desktop is
+>    still on Hide on submit** until he clicks it back. The fix: a line above
+>    the cards the moment the policy puts one away (which session, which
+>    setting, which level) with **Bring it back**, **Stop doing this** and
+>    **Stop telling me**; and every change to the setting is now logged with
+>    the control that made it. The default and the chip are unchanged.
+> 2. #1202 needs-approval must be unmissable. NOT STARTED.
+> 3. #1219 "Need you" does not clear when you look. NOT STARTED.
+> 4. #1201 past questions render as raw JSON. NOT STARTED.
+> 5. #1206 speech leads with the session name. NOT STARTED.
+> 6. #1198 context meter bar form (may already be done). NOT STARTED.
+> 7. #1197 drag a session out of a group. NOT STARTED.
+> 8. #1200 consolidate consecutive Bash runs. NOT STARTED.
+> 9. #1207 tool pictures in the timeline gutter. NOT STARTED.
+> 10. #1199 Settings in tabs. NOT STARTED.
+> 11. #1203 Prompt History. NOT STARTED.
+
 > # ✅ RELEASED: v0.8.119, 2026-10-10 (PR #1217)
 >
 > The owner, after the report on the five items: *"let's go ahead and fire off

@@ -1415,6 +1415,27 @@
     "chipHint": "What happens to a session card when you submit a prompt: {policy}. Click to change.",
     "groupDefault": "Follow the default"
   },
+  "submitNotice": {
+    "collapsed": {
+      "global": "{name} was collapsed because “{setting}” is on. It is still running, and it is in the Sessions list.",
+      "group": "{name} was collapsed because “{setting}” is on for its group. It is still running, and it is in the Sessions list.",
+      "card": "{name} was collapsed because “{setting}” is on for this session. It is still running, and it is in the Sessions list."
+    },
+    "hidden": {
+      "global": "{name} was hidden because “{setting}” is on. It is still running, and it is in the Sessions list.",
+      "group": "{name} was hidden because “{setting}” is on for its group. It is still running, and it is in the Sessions list.",
+      "card": "{name} was hidden because “{setting}” is on for this session. It is still running, and it is in the Sessions list."
+    },
+    "restore": "Bring it back",
+    "off": "Stop doing this",
+    "offHint": {
+      "global": "Bring it back, and set every session to “{keep}” when you submit a prompt.",
+      "group": "Bring it back, and set this group to “{keep}” when you submit a prompt.",
+      "card": "Bring it back, and set this session to “{keep}” when you submit a prompt."
+    },
+    "mute": "Stop telling me",
+    "muteHint": "Hide this message until you restart switchboard. The setting stays on."
+  },
   "find": {
     "label": "Find in session",
     "placeholder": "Find",

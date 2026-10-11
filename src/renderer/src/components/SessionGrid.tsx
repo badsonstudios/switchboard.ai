@@ -88,6 +88,7 @@ import {
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { autonomyTooltip, DEFAULT_AUTONOMY, isAutonomy, nextAutonomy } from '../lib/autonomy';
 import { submitTarget } from '../lib/presentation-policy';
+import { SubmitNotice, SubmitPolicyNotice, submitNoticeMuted } from './SubmitPolicyNotice';
 import { bulkClose } from '../lib/pinning';
 import {
   mayRetire,
@@ -5104,9 +5105,11 @@ function removePanelKeepingSlot(api: DockviewApi, cardId: string, rung: Ladder):
  * not the decision: three of the four rules describe the card at the moment we
  * would move it, so a card popped out (or blocked) between the keystroke and
  * this call must still be spared.
+ *
+ * Returns the rung the card was sent to, or null when it stayed.
  */
-export function applySubmitPolicy(api: DockviewApi | null, cardId: string): void {
-  if (!api || !cardId || sessionStore.isTearingDown()) return;
+export function applySubmitPolicy(api: DockviewApi | null, cardId: string): Ladder | null {
+  if (!api || !cardId || sessionStore.isTearingDown()) return null;
   const p = sessionStore.getPresentation(cardId);
   const rung = submitTarget({
     policy: sessionStore.policyFor(cardId),
@@ -5122,6 +5125,10 @@ export function applySubmitPolicy(api: DockviewApi | null, cardId: string): void
     pinned: sessionStore.isPinned(cardId),
   });
   if (rung) setCardLadder(api, cardId, rung, 'submit policy');
+  // the rung it was sent to, so the caller can SAY so (#1210). Read back
+  // rather than assumed: a move dropped by the ladder's own guard must not be
+  // announced as one that happened.
+  return rung && sessionStore.getPresentation(cardId).ladder === rung ? rung : null;
 }
 
 /**
@@ -6339,6 +6346,7 @@ export function SessionGrid(props: {
     };
   }, [retireCard]);
 
+  const [submitNotice, setSubmitNotice] = React.useState<SubmitNotice | null>(null);
   // §5.8's auto-minimize on submit (P2-E9-06). Subscribed ONCE, here, rather
   // than per card: the grid is the only thing that owns the dockview api, and a
   // subscription per mounted panel would collapse a card that had already been
@@ -6359,7 +6367,14 @@ export function SessionGrid(props: {
       const cardId = sessionStore.cardIdForLive(liveId);
       const timer = setTimeout(() => {
         pending.delete(timer);
-        applySubmitPolicy(apiRef.current, cardId);
+        const rung = applySubmitPolicy(apiRef.current, cardId);
+        // #1210: SAY SO. The owner pressed Enter and the card he was typing
+        // in left the screen with nothing to explain it; the setting had been
+        // on for hours. The strip names the session and the setting, and
+        // carries the two things he wanted: the card back, and this stopped.
+        if (rung === 'collapsed' || rung === 'hidden') {
+          setSubmitNotice(submitNoticeMuted() ? null : { cardId, rung });
+        }
       }, 0);
       pending.add(timer);
     });
@@ -7237,6 +7252,14 @@ export function SessionGrid(props: {
           height back. What is left is the one thing the bar also carried and
           nothing else does: the reason a session could not be opened. It
           takes a line only while there is something to say. */}
+      <SubmitPolicyNotice
+        notice={submitNotice}
+        onRestore={(cardId) => {
+          setSubmitNotice(null);
+          setCardLadder(apiRef.current, cardId, 'expanded', 'submit notice');
+        }}
+        onDismiss={() => setSubmitNotice(null)}
+      />
       {error && (
         <div
           data-testid="grid-error"
