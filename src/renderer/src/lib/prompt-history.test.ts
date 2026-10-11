@@ -2,7 +2,7 @@
 // and how a recalled one meets what is already typed.
 import { describe, it, expect } from 'vitest';
 import type { FeedBlockDto } from './feed';
-import { filterPrompts, promptAge, promptsOf, recallInto } from './prompt-history';
+import { filterPrompts, ownWords, promptAge, promptsOf, recallInto } from './prompt-history';
 
 let seq = 1;
 const block = (over: Partial<FeedBlockDto>): FeedBlockDto => ({
@@ -43,13 +43,60 @@ describe('promptsOf — the prompts you sent', () => {
       user('<command-name>/next-item</command-name><command-args>1203</command-args>'),
       user('<command-message>next-item is running</command-message>'),
     ]);
-    expect(list).toEqual([expect.objectContaining({ text: '/next-item 1203', command: true })]);
+    expect(list).toEqual([
+      expect.objectContaining({ text: '/next-item 1203', recall: '/next-item 1203', command: true }),
+    ]);
   });
 
   it('a prompt that merely MENTIONS the markup is still a prompt', () => {
     const list = promptsOf([user('what does <command-name> mean in a transcript?')]);
     expect(list).toHaveLength(1);
     expect(list[0].command).toBe(false);
+  });
+
+  it('a prompt that QUOTES a whole command is prose: listed and put back as what you wrote', () => {
+    // the markup has to OPEN the text to be a command, as it does in the
+    // conversation itself
+    const prose = 'why does <command-name>/clear</command-name> show up in my transcript?';
+    const [p] = promptsOf([user(prose)]);
+    expect(p).toMatchObject({ text: prose, recall: prose, command: false });
+  });
+
+  it('a command run with a long briefing is LABELLED short and PUT BACK whole', () => {
+    const briefing = 'do the next item, and '.repeat(20).trim();
+    const [p] = promptsOf([
+      user(`<command-name>/next-item</command-name><command-args>${briefing}</command-args>`),
+    ]);
+    expect(p.command).toBe(true);
+    // the label is one line, cut
+    expect(p.text.length).toBeLessThan(briefing.length);
+    // what "use again" gives back is all of it
+    expect(p.recall).toBe(`/next-item ${briefing}`);
+  });
+
+  it('⚠️ what the APP injected ahead of your words is not your prompt (#830)', () => {
+    // a prompt that mentioned another session is sent with that session's
+    // output in front. It must not be listed, matched or pasted back.
+    const injected = '<session-context ref="x">SOMEBODY ELSE said a great deal</session-context>';
+    const mine = 'what did the other session decide?';
+    const text = `${injected}${NL}${NL}${mine}`;
+    const [p] = promptsOf([
+      user(text, { context: [{ ref: 'x', name: 'other', start: 0, end: injected.length }] }),
+    ]);
+    expect(p.text).toBe(mine);
+    expect(p.recall).toBe(mine);
+    expect(filterPrompts([p], 'somebody')).toEqual([]);
+    // and a prompt that was ONLY injected context is not one of yours
+    expect(
+      promptsOf([user(injected, { context: [{ ref: 'x', name: 'o', start: 0, end: injected.length }] })])
+    ).toEqual([]);
+  });
+
+  it('ownWords: the text outside the ranges, joined; untouched when there are none', () => {
+    expect(ownWords('  plain  ', undefined)).toBe('plain');
+    expect(ownWords('AAAhelloBBB world', [{ start: 0, end: 3 }, { start: 8, end: 11 }])).toBe(
+      'hello world'
+    );
   });
 
   it('nothing sent is not a prompt', () => {
@@ -60,6 +107,7 @@ describe('promptsOf — the prompts you sent', () => {
   it('the text is the prompt as sent, whole and trimmed: it is what "use again" puts back', () => {
     const long = `line one${NL}line two${NL}${'x'.repeat(500)}`;
     expect(promptsOf([user(`  ${long}  `)])[0].text).toBe(long);
+    expect(promptsOf([user(`  ${long}  `)])[0].recall).toBe(long);
   });
 });
 

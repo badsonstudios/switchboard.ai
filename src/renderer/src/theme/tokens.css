@@ -1101,7 +1101,7 @@ mark[data-feed-match-current] {
 }
 .prompt-history-row:focus-visible,
 .prompt-history-filter:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--status-working-ink);
   outline-offset: -2px;
 }
 .prompt-history-text {

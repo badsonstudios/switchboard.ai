@@ -76,10 +76,10 @@ export interface FeedBlockDto {
   streaming?: boolean;
 }
 
-/** Insert-or-replace by seq: the watcher re-emits updated blocks (E10-06). */
 /** How many blocks the view holds; older ones are evicted. */
 export const FEED_VIEW_CAP = 1000;
 
+/** Insert-or-replace by seq: the watcher re-emits updated blocks (E10-06). */
 export function upsertBlock(
   blocks: FeedBlockDto[],
   b: FeedBlockDto,

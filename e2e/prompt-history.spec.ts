@@ -68,6 +68,19 @@ test.describe('Prompt History (#1203)', () => {
     await rows(w).first().locator('[data-prompt-history-jump]').click();
     await expect(panel(w)).toBeHidden();
     await expect(first).toBeInViewport({ timeout: 15_000 });
+    // the keyboard is in the conversation, not lost
+    await expect(w.locator('[data-feed-region]')).toBeFocused();
+    // THE MARK IS A BEAT. It shows where you landed and then lets go: left on,
+    // it would outline that prompt for good and going to it again would do
+    // nothing the second time.
+    const outlined = (): Promise<string> => first.evaluate((el) => getComputedStyle(el).outlineStyle);
+    await expect.poll(outlined, { timeout: 10_000 }).toBe('none');
+    // ...so going to the SAME prompt again works: scroll away, and come back
+    await w.locator('[data-feed-region]').evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    await expect(first).not.toBeInViewport();
+    await opener(w).click();
+    await rows(w).nth(2).locator('[data-prompt-history-jump]').click();
+    await expect(first).toBeInViewport({ timeout: 15_000 });
 
     // USE AGAIN, into an empty box: the prompt, with the keyboard in the box
     await opener(w).click();
@@ -75,6 +88,12 @@ test.describe('Prompt History (#1203)', () => {
     await expect(panel(w)).toBeHidden();
     await expect(composer(w)).toHaveValue('FIRST_PROMPT find the bug');
     await expect(composer(w)).toBeFocused();
+    // typing carries on at the END of what was put back
+    await w.keyboard.type(' now');
+    await expect(composer(w)).toHaveValue('FIRST_PROMPT find the bug now');
+    await composer(w).fill('');
+    await opener(w).click();
+    await rows(w).nth(2).locator('[data-prompt-history-recall]').click();
 
     // ...and into a box with words already in it: THEY ARE KEPT
     await composer(w).fill('half a thought');

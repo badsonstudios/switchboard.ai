@@ -356,6 +356,9 @@ function sameBlock(prev: { b: FeedBlockDto }, next: { b: FeedBlockDto }): boolea
  * (`spike/findings/716-streaming-render-cost.md`) with what was tried and did
  * not move it — memoising the composer and rendering in groups, for two.
  */
+/** how long a prompt you went to stays marked before the mark lets go (#1203) */
+const PROMPT_BEAT_MS = 1500;
+
 const Block = React.memo(function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // Resolved, not switched (Â§5.23): this used to be a seven-branch ternary
   // naming every renderer. A new block shape is now a contribution plus a
@@ -1116,9 +1119,49 @@ export function FeedView(props: {
    *  and not a prop the other way: the draft lives in the Composer (it
    *  outlives this component, #485) and this only ever asks it to add to it. */
   const recall = React.useRef<((text: string) => void) | null>(null);
-  const closePrompts = React.useCallback((): void => {
+  /** shut the list; on Escape, give the keyboard back to its button. One
+   *  stable function: the panel re-attaches its outside-press listener when
+   *  this changes, and this component renders on every streamed chunk. */
+  const closePrompts = React.useCallback((returnFocus: boolean): void => {
     setPromptsOpen(false);
+    if (returnFocus) promptsBtn.current?.focus();
   }, []);
+  /**
+   * GO TO A PROMPT, through the same jump Find uses, and then let go of it.
+   *
+   * Find's jump leaves the block "revealed": outlined, and forced open if it
+   * is long. Find clears that when its bar closes. Nothing closes here, so
+   * left alone the outline would stay on that prompt for good, a long prompt
+   * could not be folded again, and going to the same prompt twice would do
+   * nothing the second time. So the mark is a BEAT: long enough to see where
+   * you landed, then gone. If Find is open its own marks are kept (its query
+   * is handed back to the jump) and it is left to clear the reveal itself.
+   */
+  const promptBeat = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  React.useEffect(() => {
+    return () => {
+      if (promptBeat.current) clearTimeout(promptBeat.current);
+    };
+  }, []);
+  const markQueryNow = React.useRef<FindQuery | null>(null);
+  markQueryNow.current = markQuery;
+  const goToPrompt = (seq: number): void => {
+    const finding = markQueryNow.current;
+    // an evicted prompt cannot be gone to: the list stays, rather than
+    // closing as if something had happened
+    if (!jumpTo(seq, finding ?? undefined)) return;
+    setPromptsOpen(false);
+    // the panel is about to unmount with the keyboard inside it: the
+    // conversation takes it, which is where the arrow keys now work
+    scroller.current?.focus({ preventScroll: true });
+    if (promptBeat.current) clearTimeout(promptBeat.current);
+    if (finding) return;
+    promptBeat.current = setTimeout(() => {
+      promptBeat.current = null;
+      if (markQueryNow.current) return; // Find opened meanwhile: it owns the reveal
+      setReveal((prev) => (prev.current === seq ? NO_REVEAL : prev));
+    }, PROMPT_BEAT_MS);
+  };
 
   /** the folds as last rendered, for `toggleFold` — a callback that must stay
    *  the same function across renders, or every `FoldRow` re-renders with it */
@@ -1412,19 +1455,12 @@ export function FeedView(props: {
             // the view holds the most recent thousand blocks; at that size
             // there may be prompts further back than the list can show
             truncated={blocks.length >= FEED_VIEW_CAP}
-            onJump={(seq) => {
-              setPromptsOpen(false);
-              jumpTo(seq);
-            }}
+            onJump={goToPrompt}
             onRecall={(text) => {
               setPromptsOpen(false);
               recall.current?.(text);
             }}
-            onClose={() => {
-              closePrompts();
-              // the keyboard goes back to the button that opened it
-              promptsBtn.current?.focus();
-            }}
+            onClose={closePrompts}
           />
         )}
         {(['quiet', 'normal', 'firehose'] as const).map((v) => (
@@ -2446,13 +2482,15 @@ function Composer({
     if (!recall) return;
     recall.current = (text: string): void => {
       const next = recallInto(box.current?.value ?? '', text);
+      // THE SAME THREE STEPS a picked completion takes (`pick`, below), and
+      // for its reasons. `setPendingCaret` is what moves the caret, takes the
+      // keyboard and tells the rest of this component where the caret is; a
+      // bare `setSelectionRange` would leave that stale. And `setDismissed`
+      // keeps the `/` and `@` pop-ups shut: a recalled "/clear" is a prompt
+      // being put back, not a command being typed.
       setDraft(next);
-      const el = box.current;
-      if (!el) return;
-      el.focus();
-      requestAnimationFrame(() => {
-        el.setSelectionRange(next.length, next.length);
-      });
+      setDismissed(true);
+      setPendingCaret({ pos: next.length });
     };
     return () => {
       recall.current = null;

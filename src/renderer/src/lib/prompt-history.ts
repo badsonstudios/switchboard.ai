@@ -23,12 +23,54 @@ import type { FeedBlockDto } from './feed';
 export interface PromptEntry {
   /** the block to jump to */
   seq: number;
-  /** what the list shows, and what "use again" puts in the prompt box */
+  /** what the list shows: the prompt, or a slash command as a short label */
   text: string;
+  /**
+   * What "use again" puts in the prompt box. The same as `text` for a prompt.
+   * For a slash command it is the WHOLE command: `text` is a label, flattened
+   * and cut to a line, and a command run with a pasted briefing would
+   * otherwise come back as its first eighty characters and an ellipsis.
+   */
+  recall: string;
   /** when it was sent, if the block says */
   ts?: string;
   /** it was a slash command, shown as you would type it ("/clear") */
   command: boolean;
+}
+
+/**
+ * YOUR words in a prompt: its text with the stretches the app injected taken
+ * out (#830).
+ *
+ * A prompt that mentioned another session is sent with that session's output
+ * ahead of the prose, and `context` marks where. The conversation shows those
+ * stretches as rows of their own; a list of "what I asked" must not show two
+ * lines of somebody else's transcript, match a filter inside it, or paste it
+ * back into the prompt box. The offsets are main's; nothing here re-reads the
+ * markers.
+ */
+export function ownWords(
+  text: string,
+  context: ReadonlyArray<{ start: number; end: number }> | undefined
+): string {
+  if (!context || context.length === 0) return text.trim();
+  const parts: string[] = [];
+  let at = 0;
+  for (const c of context) {
+    parts.push(text.slice(at, c.start));
+    at = c.end;
+  }
+  parts.push(text.slice(at));
+  return parts.join('').trim();
+}
+
+/** A slash command in full, as typed: the name and ALL of its arguments. */
+function wholeCommand(raw: string): string | null {
+  const name = /<command-name>([\s\S]*?)<\/command-name>/.exec(raw);
+  if (!name) return null;
+  const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(raw);
+  const whole = `${name[1].trim()} ${args ? args[1].trim() : ''}`.trim();
+  return whole || null;
 }
 
 /**
@@ -39,6 +81,11 @@ export interface PromptEntry {
  * plumbing around a slash command (its stdout, a caveat line) is not a prompt;
  * the command itself is, and is listed as you typed it.
  *
+ * WHAT COUNTS AS A COMMAND is asked the way the conversation asks it: the
+ * markup has to OPEN the text. A prompt that quotes `<command-name>` partway
+ * through (someone asking about this very format) is prose, and is listed and
+ * recalled as the prose it is.
+ *
  * `blocks` is the view's buffer, which holds the most recent thousand blocks:
  * a prompt older than that is not in it and is not listed. The list says so
  * rather than passing itself off as the whole history.
@@ -47,15 +94,17 @@ export function promptsOf(blocks: readonly FeedBlockDto[]): PromptEntry[] {
   const out: PromptEntry[] = [];
   for (const b of blocks) {
     if (b.kind !== 'user' || b.sidechain) continue;
-    const raw = (b.text ?? '').trim();
+    const raw = ownWords(b.text ?? '', b.context);
     if (!raw) continue;
-    const command = commandInvocation(raw);
-    if (command === null && isCommandPlumbing(raw)) continue;
+    const plumbing = isCommandPlumbing(raw);
+    const label = plumbing ? commandInvocation(raw) : null;
+    if (plumbing && label === null) continue;
     out.push({
       seq: b.seq,
-      text: command ?? raw,
+      text: label ?? raw,
+      recall: label === null ? raw : (wholeCommand(raw) ?? label),
       ...(b.ts ? { ts: b.ts } : {}),
-      command: command !== null,
+      command: label !== null,
     });
   }
   return out.reverse();

@@ -16,12 +16,13 @@ let root: Root | null = null;
 let host: HTMLElement;
 const onJump = vi.fn<(seq: number) => void>();
 const onRecall = vi.fn<(text: string) => void>();
-const onClose = vi.fn<() => void>();
+const onClose = vi.fn<(returnFocus: boolean) => void>();
 
 const PROMPTS: PromptEntry[] = [
-  { seq: 30, text: 'Write the release notes', command: false },
-  { seq: 20, text: '/next-item 1203', command: true },
-  { seq: 10, text: 'Fix the tail-pin gesture', command: false },
+  { seq: 30, text: 'Write the release notes', recall: 'Write the release notes', command: false },
+  // a command's LABEL is short; what it puts back is the whole command
+  { seq: 20, text: '/next-item 1203', recall: '/next-item 1203 and the whole briefing', command: true },
+  { seq: 10, text: 'Fix the tail-pin gesture', recall: 'Fix the tail-pin gesture', command: false },
 ];
 
 async function mount(prompts: PromptEntry[] = PROMPTS, truncated = false): Promise<void> {
@@ -93,6 +94,31 @@ describe('the prompt list (#1203)', () => {
     expect(onJump).not.toHaveBeenCalled();
   });
 
+  it('Use again gives back the WHOLE prompt, not the label the row shows', async () => {
+    await mount();
+    await act(async () => rows()[1].querySelector<HTMLElement>('[data-prompt-history-recall]')!.click());
+    expect(onRecall).toHaveBeenCalledWith('/next-item 1203 and the whole briefing');
+  });
+
+  it('leaving it by keyboard closes it; moving within it, or to its own button, does not', async () => {
+    await mount();
+    const opener = document.createElement('button');
+    opener.setAttribute('data-prompt-history-open', '');
+    const elsewhere = document.createElement('button');
+    document.body.append(opener, elsewhere);
+    const leave = async (to: Element | null): Promise<void> => {
+      await act(async () => {
+        filter().dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: to }));
+      });
+    };
+    await leave(rows()[0].querySelector('button'));
+    await leave(opener);
+    await leave(null); // the window lost focus: not a choice
+    expect(onClose).not.toHaveBeenCalled();
+    await leave(elsewhere);
+    expect(onClose.mock.calls).toEqual([[false]]);
+  });
+
   it('each Use again says WHICH prompt, for someone who cannot see the row beside it', async () => {
     await mount();
     const names = rows().map(
@@ -133,7 +159,8 @@ describe('the prompt list (#1203)', () => {
     await act(async () => {
       filter().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
     });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // "never mind": the keyboard is to go back to the button
+    expect(onClose.mock.calls).toEqual([[true]]);
     expect(outer).not.toHaveBeenCalled();
   });
 
@@ -152,7 +179,8 @@ describe('the prompt list (#1203)', () => {
     await press(opener);
     expect(onClose).not.toHaveBeenCalled();
     await press(elsewhere);
-    expect(onClose).toHaveBeenCalledTimes(1);
+    // the press put the keyboard where the user wanted it: do not take it back
+    expect(onClose.mock.calls).toEqual([[false]]);
   });
 
   it('says when older prompts are not listed, and only then', async () => {

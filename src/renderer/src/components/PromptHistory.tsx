@@ -21,7 +21,15 @@ export function PromptHistory(props: {
   truncated: boolean;
   onJump: (seq: number) => void;
   onRecall: (text: string) => void;
-  onClose: () => void;
+  /**
+   * Shut it. `returnFocus` is true only for Escape: that is "never mind", and
+   * the keyboard goes back to the button. A press or a Tab somewhere else
+   * already put the keyboard where the user wanted it, and taking it back
+   * would be stealing it.
+   */
+  onClose: (returnFocus: boolean) => void;
+  /** how tall the panel may be, in px: the room the card has under the toolbar */
+  maxBlockSize?: number;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [query, setQuery] = React.useState('');
@@ -46,7 +54,7 @@ export function PromptHistory(props: {
       // the button that opened it toggles it itself; closing here as well
       // would shut it and let the click open it again
       if ((target as Element | null)?.closest?.('[data-prompt-history-open]')) return;
-      onClose();
+      onClose(false);
     };
     doc.addEventListener('pointerdown', away, true);
     return () => doc.removeEventListener('pointerdown', away, true);
@@ -70,7 +78,17 @@ export function PromptHistory(props: {
         if (e.key !== 'Escape') return;
         e.preventDefault();
         e.stopPropagation();
-        onClose();
+        onClose(true);
+      }}
+      // It is not modal, so Tab can walk out of it. Leaving by keyboard closes
+      // it, the same as a press outside: otherwise it would be left open with
+      // no key that shuts it.
+      onBlur={(e) => {
+        const to = e.relatedTarget as Node | null;
+        if (!to) return; // focus left the window, or went nowhere: not a choice
+        if (e.currentTarget.contains(to)) return;
+        if ((to as Element).closest?.('[data-prompt-history-open]')) return;
+        onClose(false);
       }}
       style={{
         position: 'absolute',
@@ -78,7 +96,9 @@ export function PromptHistory(props: {
         insetInlineEnd: 0,
         zIndex: 5,
         inlineSize: 'min(460px, 100%)',
-        maxBlockSize: 'min(420px, 70vh)',
+        // bounded by the CARD, not the window: a short tiled card must not have
+        // the end of the list cut off under its own edge
+        maxBlockSize: props.maxBlockSize ?? 'min(420px, 70vh)',
         display: 'flex',
         flexDirection: 'column',
         background: 'var(--panel)',
@@ -138,8 +158,10 @@ export function PromptHistory(props: {
                   className="doc-btn"
                   data-prompt-history-recall
                   title={t('promptHistory.recallHint')}
-                  aria-label={t('promptHistory.recallNamed', { prompt: p.text.slice(0, 60) })}
-                  onClick={() => props.onRecall(p.text)}
+                  aria-label={t('promptHistory.recallNamed', {
+                    prompt: p.text.replace(/\s+/g, ' ').slice(0, 60),
+                  })}
+                  onClick={() => props.onRecall(p.recall)}
                   style={{ alignSelf: 'center' }}
                 >
                   {t('promptHistory.recall')}
