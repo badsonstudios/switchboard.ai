@@ -14,15 +14,26 @@
 > **The order:** #1237, #1214, #1235, #1209, #1211, #1020, #1017, #744, #1226,
 > #1204.
 >
-> 1. **#1237 — Prompt History is a tab of the history window. IN PROGRESS,
->    started 2026-10-11, branch `feature/1237-history-tabs`.** He filed it
+> 1. **#1237 — Prompt History is a tab of the history window. DONE
+>    2026-10-11, PR #1238 (`55eb07fd`), merged, NOT released.** Green on the
+>    first CI run; the ticket is closed. He filed it
 >    (through me) the hour he installed 0.8.120 and could not find the
 >    "prompts" button. Built: 🕘 opens one window with two tabs, Conversations
 >    and Prompts; the toolbar button is gone; the conversation view publishes
 >    a small port (`lib/prompt-port`) the window reads. Decisions: opens on
 >    the tab last used; a session not showing its conversation keeps the tab
 >    and says why it is empty; the `+ session` picker has no tabs.
-> 2. #1214 — a shortcut pressed in a popped-out window. Not started.
+> 2. **#1214 — a shortcut pressed in a popped-out window. IN PROGRESS, started
+>    2026-10-11, branch `feature/1214-popout-chords`.**
+>    The ticket says "needs a decision from the owner before any plan"; he
+>    picked it from a shortlist without giving one, so I made it: YES for the
+>    five chords that mean the same thing on a popped-out card (pin, find,
+>    reorder, close, and the pop-out chord, which brings it home), which now
+>    act on the session in the window they were pressed in; NO for the ones
+>    that arrange the main window (ladder, maximise), which are still refused
+>    but now say why. `popoutCardId` on the command context; `actsInPopout`
+>    and `arrangesMainWindow` on a command. The close question is asked in
+>    the card's own window. The palette is unchanged.
 > 3. #1235 — pictures inline in the conversation. Not started.
 > 4. #1209 — control edges on nordic and daylight. Not started.
 > 5. #1211 — text dimmed by opacity. Not started.

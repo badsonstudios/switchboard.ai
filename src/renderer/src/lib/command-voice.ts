@@ -46,6 +46,40 @@ import type { Translate } from './session-voice';
 export interface UnavailableCommand {
   id: string;
   disabledReasonKey?: string;
+  arrangesMainWindow?: boolean;
+}
+
+/**
+ * The refusal as it should be SAID in the window it was pressed in (#1214).
+ *
+ * A chord that arranges the main window (the ladder, maximise, reorder) is
+ * refused in a popped-out session's window, correctly: that card is not in
+ * the main window to be arranged. But its stock reason is "No session is
+ * focused", said to someone who has just clicked a session and is looking at
+ * it. There it gets the true reason instead. Only for a command that SAYS it
+ * arranges the main window: the stock reason is shared by commands the new
+ * sentence would be false for. Everything else is handed back untouched.
+ */
+export function refusedIn(
+  cmd: UnavailableCommand,
+  ctx: { popoutCardId?: string | null }
+): UnavailableCommand {
+  if (!ctx.popoutCardId || !cmd.arrangesMainWindow) return cmd;
+  return { id: cmd.id, disabledReasonKey: 'commands.disabled.inOwnWindow' };
+}
+
+/**
+ * This window, if it is still there to be spoken in (#1214). Closing a
+ * popped-out session from its own window takes the window with it, and a
+ * sentence addressed to a window that has gone is addressed to nobody:
+ * `undefined` hands it to whichever window has the keyboard by then.
+ */
+export function stillOpen(win: Window | undefined): Window | undefined {
+  try {
+    return win && !win.closed ? win : undefined;
+  } catch {
+    return undefined; // a dead Window can throw on any property read
+  }
 }
 
 /**

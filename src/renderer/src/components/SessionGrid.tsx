@@ -528,7 +528,10 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
    */
   const closeThisTab = (): void => {
     if (cardId) {
-      if (!nativeConfirm(t('grid.closeConfirm', { title }))) return;
+      // asked in the window this tab is IN (#1214): its own, when popped out
+      const loc = props.api.location;
+      const tabWindow = loc?.type === 'popout' ? loc.getWindow() : undefined;
+      if (!nativeConfirm(t('grid.closeConfirm', { title }), tabWindow)) return;
     }
     props.api.close();
   };
@@ -5909,10 +5912,21 @@ export interface GridController {
    * the same rule, including which window the keystroke came from.
    */
   activeDiffPanelId: (sourceWindow?: Window) => string | null;
+  /**
+   * The session card showing in the popped-out window a keystroke came from,
+   * or null (#1214). `activeCardId` for the one case it refuses: the window is
+   * an argument, as it is for a document, and never a guess.
+   */
+  popoutCardId: (sourceWindow?: Window) => string | null;
   /** is this panel in its own OS window right now? (#533 — see App's openFind) */
   isPanelPoppedOut: (panelId: string) => boolean;
   /** close a card the way the tab ✕ does — including its confirm (E9-01) */
-  closeCard: (cardId: string) => void;
+  /**
+   * `fromItsOwnWindow` (#1214): asked for from inside the popped-out window
+   * the card is in, so the confirm is that window's. Otherwise it is asked
+   * here, in the main window, where the gesture was made.
+   */
+  closeCard: (cardId: string, fromItsOwnWindow?: boolean) => void;
   /** close EVERY session at once, sparing the pinned ones (§5.8's pinning
    *  contract, E9-09). One confirm for the lot, not one per card. */
   closeAllCards: () => void;
@@ -6599,9 +6613,16 @@ export function SessionGrid(props: {
       // callers that close and count documents read that predicate too.
       activeDiffPanelId: (sourceWindow) =>
         activeStandalonePanelId(apiRef.current, sourceWindow, isDiffPanelId),
+      // ONLY with a source window: without one this is the main window asking,
+      // and its answer for a popped-out card is `activeCardId`'s null.
+      popoutCardId: (sourceWindow) => {
+        if (!sourceWindow) return null;
+        const panelId = activeStandalonePanelId(apiRef.current, sourceWindow, (id) => /^session-/.test(id));
+        return panelId ? panelId.replace(/^session-/, '') : null;
+      },
       isPanelPoppedOut: (panelId) =>
         apiRef.current?.getPanel(panelId)?.api.location.type === 'popout',
-      closeCard: (cardId) => {
+      closeCard: (cardId, fromItsOwnWindow) => {
         const panel = apiRef.current?.getPanel(`session-${cardId}`);
         // same contract as the tab ✕ (Dan 2026-07-22): confirm, because this
         // ends the session and forgets the record
@@ -6614,7 +6635,16 @@ export function SessionGrid(props: {
           panel?.title,
           (panel?.params as CardParams | undefined)?.folder
         );
-        if (!nativeConfirm(t('grid.closeConfirm', { title }))) return;
+        // THE QUESTION IS ASKED WHERE THE GESTURE WAS MADE (#1214). Pressed in
+        // the card's own popped-out window, that is its window. From anywhere
+        // else (the ✕ on its row in the Sessions list, the command list) it is
+        // THIS window: the user is here, and a confirm opened over a window on
+        // another monitor is a question nobody sees. That mistake was made
+        // first, and the real-app tests caught it: closing a popped-out
+        // session from the list asked in the popout.
+        const loc = panel?.group.api.location;
+        const cardWindow = fromItsOwnWindow && loc?.type === 'popout' ? loc.getWindow() : undefined;
+        if (!nativeConfirm(t('grid.closeConfirm', { title }), cardWindow)) return;
         // the confirm belongs to the gesture; retireCard (E9-09) does what
         // main's inline removePanel/by-hand branch did, for both call sites
         retireCard(cardId);

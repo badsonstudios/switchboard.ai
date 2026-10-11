@@ -96,3 +96,49 @@ describe('activeStandalonePanelId', () => {
     expect(activeStandalonePanelId(null, undefined, isDiffPanelId)).toBeNull();
   });
 });
+
+describe('a popped-out window that holds MORE THAN ONE group (#1214)', () => {
+  // A popout can be split, or share its window with a document. Which group a
+  // keystroke belongs to used to be "the first", harmless while it only chose
+  // where a find bar opened. It now chooses which session a pin or a close
+  // acts on.
+  const isSession = (id: string): boolean => /^session-/.test(id);
+  const inside = (node: object): GroupShape['element'] => ({ contains: (n) => n === (node as unknown as Node) });
+  const withFocus = (focused: object | null): Window =>
+    ({ document: { activeElement: focused } }) as unknown as Window;
+
+  it('the group with the KEYBOARD in it answers, not the first one', () => {
+    const inY = {};
+    const w = withFocus(inY);
+    const x: GroupShape = { ...popout(w, 'session-x'), element: inside({}) };
+    const y: GroupShape = { ...popout(w, 'session-y'), element: inside(inY) };
+    expect(activeStandalonePanelId(dock('session-a', [grid('session-a'), x, y]), w, isSession)).toBe('session-y');
+  });
+
+  it('with the keyboard in neither, dockview’s active group, if it is in THAT window', () => {
+    const w = withFocus(null);
+    const x: GroupShape = { ...popout(w, 'session-x'), element: inside({}) };
+    const y: GroupShape = { ...popout(w, 'session-y'), element: inside({}) };
+    const api: DockShape = { ...dock('session-y', [x, y]), activeGroup: y };
+    expect(activeStandalonePanelId(api, w, isSession)).toBe('session-y');
+    // an active group in ANOTHER window is no answer for this one: the first
+    const elsewhere: DockShape = { ...dock('session-a', [grid('session-a'), x, y]), activeGroup: grid('session-a') };
+    expect(activeStandalonePanelId(elsewhere, w, isSession)).toBe('session-x');
+  });
+
+  it('a session beside a DOCUMENT: the keyboard in the document means no session', () => {
+    const inDoc = {};
+    const w = withFocus(inDoc);
+    const session: GroupShape = { ...popout(w, 'session-x'), element: inside({}) };
+    const doc: GroupShape = { ...popout(w, 'doc-1'), element: inside(inDoc) };
+    expect(activeStandalonePanelId(dock(undefined, [session, doc]), w, isSession)).toBeNull();
+    expect(activeStandalonePanelId(dock(undefined, [session, doc]), w, isDocumentPanelId)).toBe('doc-1');
+  });
+
+  it('a window that cannot be asked where its keyboard is falls back, and does not throw', () => {
+    const w = new Proxy({}, { get: () => { throw new Error('dead window'); } }) as unknown as Window;
+    const x = popout(w, 'session-x');
+    const y = popout(w, 'session-y');
+    expect(activeStandalonePanelId(dock(undefined, [x, y]), w, isSession)).toBe('session-x');
+  });
+});

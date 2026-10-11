@@ -34,6 +34,30 @@ describe('nativeConfirm / nativeAlert (#909)', () => {
     expect(refocus).toHaveBeenCalledTimes(1);
   });
 
+  it('asks in the window the question is ABOUT, when it is not this one (#1214)', () => {
+    // a popped-out card's own window: the bare global is the MAIN window's
+    const mine = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const theirs = vi.fn(() => true);
+    const popout = { closed: false, confirm: theirs } as unknown as Window;
+    expect(nativeConfirm('close it?', popout)).toBe(true);
+    expect(theirs).toHaveBeenCalledWith('close it?');
+    expect(mine).not.toHaveBeenCalled();
+  });
+
+  it('a window that has gone, or will not answer, is asked here instead: the question is never dropped', () => {
+    const mine = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const gone = { closed: true, confirm: vi.fn() } as unknown as Window;
+    expect(nativeConfirm('x', gone)).toBe(true);
+    const broken = {
+      closed: false,
+      confirm: () => {
+        throw new Error('window torn down');
+      },
+    } as unknown as Window;
+    expect(nativeConfirm('x', broken)).toBe(true);
+    expect(mine).toHaveBeenCalledTimes(2);
+  });
+
   it('fails open: no preload method, or one that throws, still returns the answer', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     setApi(undefined);

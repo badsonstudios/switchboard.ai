@@ -14,6 +14,8 @@ export interface PanelShape {
 }
 export interface GroupShape {
   readonly activePanel?: PanelShape | undefined;
+  /** the group's own box, to ask whether the keyboard is inside it (#1214) */
+  readonly element?: { contains(node: Node | null): boolean } | undefined;
   readonly api: {
     // every dockview location but `popout` is "somewhere in the main window",
     // and only the popout one is read
@@ -24,6 +26,7 @@ export interface GroupShape {
 }
 export interface DockShape {
   readonly activePanel?: PanelShape | undefined;
+  readonly activeGroup?: GroupShape | undefined;
   readonly groups: readonly GroupShape[];
 }
 
@@ -49,21 +52,50 @@ export function activeStandalonePanelId(
 ): string | null {
   if (!api) return null;
   if (sourceWindow) {
-    for (const group of api.groups) {
-      const loc = group.api.location;
-      if (loc.type !== 'popout') continue;
-      let win: Window | null = null;
-      try {
-        win = loc.getWindow() ?? null;
-      } catch {
-        win = null; // torn down between the lookup and the read
-      }
-      if (win !== sourceWindow) continue;
-      const shown = group.activePanel;
-      return shown && isKind(shown.id) ? shown.id : null;
-    }
-    return null;
+    const group = groupIn(api, sourceWindow);
+    if (!group) return null;
+    const shown = group.activePanel;
+    return shown && isKind(shown.id) ? shown.id : null;
   }
   const panel = api.activePanel;
   return panel && isKind(panel.id) ? panel.id : null;
+}
+
+/**
+ * The group in a popped-out window that the keystroke belongs to (#1214).
+ *
+ * ONE WINDOW CAN HOLD SEVERAL GROUPS: a popout can be split, or share its
+ * window with a document. Taking the first was harmless while the only thing
+ * this decided was where a find bar opened. It now also decides which session
+ * a pin or a close acts on, so it has to be the group the user is IN:
+ *
+ *   1. the one with the keyboard inside it, which is what "pressed here" means;
+ *   2. else dockview's active group, if it is in this window;
+ *   3. else the first, which is the only one in the common case.
+ */
+function groupIn(api: DockShape, sourceWindow: Window): GroupShape | null {
+  const here: GroupShape[] = [];
+  for (const group of api.groups) {
+    const loc = group.api.location;
+    if (loc.type !== 'popout') continue;
+    let win: Window | null = null;
+    try {
+      win = loc.getWindow() ?? null;
+    } catch {
+      win = null; // torn down between the lookup and the read
+    }
+    if (win === sourceWindow) here.push(group);
+  }
+  if (here.length <= 1) return here[0] ?? null;
+  let focused: Element | null = null;
+  try {
+    focused = sourceWindow.document.activeElement;
+  } catch {
+    focused = null;
+  }
+  const holding = focused ? here.find((g) => g.element?.contains(focused)) : undefined;
+  if (holding) return holding;
+  const active = api.activeGroup;
+  if (active && here.includes(active)) return active;
+  return here[0];
 }

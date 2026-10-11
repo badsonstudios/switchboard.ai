@@ -129,7 +129,8 @@ Two things are different, and both follow from a document not being a session:
   `Ctrl+F` there opens the editor's own find box.
 
 This works in a popped-out document window too — the bar opens in that window,
-where the document is.
+where the document is. The same goes for a popped-out **session**: click its
+tab, press `Ctrl+F`, and the bar opens over that session in its own window.
 
 ## Good to know
 

@@ -8,9 +8,24 @@
 // fails if any renderer source calls the bare globals, so a new confirm cannot
 // bring the bug back quietly.
 
-/** `window.confirm`, then put the keyboard back. */
-export function nativeConfirm(message: string): boolean {
+/**
+ * `window.confirm`, then put the keyboard back.
+ *
+ * `inWindow` is the window the question is ABOUT (#1214): a popped-out card's
+ * own. A popout runs this window's JavaScript, so the bare global is always
+ * the MAIN window's confirm, and its box opened over the main window while
+ * the user was looking at the popout it concerned. A window that has gone, or
+ * that will not answer, falls back to this one: the question is still asked.
+ */
+export function nativeConfirm(message: string, inWindow?: Window): boolean {
   try {
+    if (inWindow && inWindow !== window) {
+      try {
+        if (!inWindow.closed) return inWindow.confirm(message);
+      } catch {
+        // fall through to this window's own
+      }
+    }
     return window.confirm(message);
   } finally {
     refocus();

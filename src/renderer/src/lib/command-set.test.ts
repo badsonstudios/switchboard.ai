@@ -164,7 +164,8 @@ describe('seed command set (E9-01)', () => {
   it('close routes through the card closer (which confirms) — never a bare close', () => {
     const d = deps();
     byId(buildCommands(d), 'session.close').run(ctxWith(['a'], 'a'));
-    expect(d.closeCard).toHaveBeenCalledWith('a');
+    // (false: pressed in the main window, so the question is asked there)
+    expect(d.closeCard).toHaveBeenCalledWith('a', false);
   });
 
   // ── §5.8's PINNING contract (E9-09) ────────────────────────────
@@ -739,4 +740,87 @@ describe('dispatch entries (P2-E13-03)', () => {
     }
   });
 });
+});
+
+describe('a chord pressed in a popped-out session’s window (#1214)', () => {
+  // The owner clicked a session in its own window, pressed the pin chord and
+  // was told "No session is focused". `activeCardId` is null there by design
+  // (a command typed in the main window must not act on a card in another);
+  // `popoutCardId` is the session in the window the key was pressed in.
+  const inPopout = (cardId: string): CommandContext => ({ ...ctxWith(['a', 'b']), popoutCardId: cardId });
+
+  it('pin, close, find and reorder act on THAT session, and say they stay in its window', () => {
+    const d = deps();
+    const cmds = buildCommands(d);
+    for (const id of ['session.pin', 'session.close', 'find.open', 'session.reorder.up', 'session.reorder.down']) {
+      expect(byId(cmds, id).enabled?.(inPopout('b')), id).toBe(true);
+      expect(byId(cmds, id).actsInPopout, id).toBe(true);
+    }
+    byId(cmds, 'session.pin').run(inPopout('b'));
+    expect(d.togglePin).toHaveBeenCalledWith('b');
+    byId(cmds, 'session.close').run(inPopout('b'));
+    // ...and says the question belongs in that window, which is where the user is
+    expect(d.closeCard).toHaveBeenCalledWith('b', true);
+    byId(cmds, 'find.open').run(inPopout('b'));
+    expect(d.openFind).toHaveBeenCalledWith('b');
+    byId(cmds, 'session.reorder.down').run(inPopout('b'));
+    expect(d.reorderSession).toHaveBeenCalledWith('b', 'down');
+  });
+
+  it('the pop-out chord brings it HOME from there, and that is the main window’s to show', () => {
+    const d = deps();
+    const cmd = byId(buildCommands(d), 'session.popOut');
+    expect(cmd.enabled?.(inPopout('b'))).toBe(true);
+    cmd.run(inPopout('b'));
+    expect(d.popOutCard).toHaveBeenCalledWith('b');
+    // the card lands in the main window, so that window comes forward
+    expect(cmd.actsInPopout).toBeUndefined();
+  });
+
+  it('the popped-out session wins over whatever the main window has focused', () => {
+    const d = deps();
+    byId(buildCommands(d), 'session.pin').run({ ...ctxWith(['a', 'b'], 'a'), popoutCardId: 'b' });
+    expect(d.togglePin).toHaveBeenCalledWith('b');
+  });
+
+  it('⚠️ what ARRANGES THE MAIN WINDOW is still refused there, and SAYS that is why', () => {
+    // the ladder and maximise act on a card's place in the main window's
+    // grid; a card in a window of its own has none
+    const d = deps();
+    const cmds = buildCommands(d);
+    const arranging = [
+      'session.collapse',
+      'session.expand',
+      'session.hide',
+      'session.ladder.down',
+      'session.ladder.up',
+      'session.maximize',
+      'session.tabbed',
+    ];
+    for (const id of arranging) {
+      const cmd = byId(cmds, id);
+      expect(cmd.enabled?.(inPopout('b')), id).toBe(false);
+      expect(cmd.actsInPopout, id).toBeUndefined();
+    }
+    // BOTH LISTS ARE EXACT, so a new member of either is a decision somebody
+    // made here and not a flag copied along with a command
+    expect(cmds.filter((c) => c.arrangesMainWindow).map((c) => c.id).sort()).toEqual(arranging);
+    expect(cmds.filter((c) => c.actsInPopout).map((c) => c.id).sort()).toEqual([
+      'find.open',
+      'session.close',
+      'session.pin',
+      'session.reorder.down',
+      'session.reorder.up',
+    ]);
+    byId(cmds, 'session.ladder.down').run(inPopout('b'));
+    expect(d.stepLadder).not.toHaveBeenCalled();
+  });
+
+  it('in the main window nothing changed: no popout, the active card', () => {
+    const d = deps();
+    const cmds = buildCommands(d);
+    expect(byId(cmds, 'session.pin').enabled?.(ctxWith(['a']))).toBe(false);
+    byId(cmds, 'session.pin').run(ctxWith(['a'], 'a'));
+    expect(d.togglePin).toHaveBeenCalledWith('a');
+  });
 });

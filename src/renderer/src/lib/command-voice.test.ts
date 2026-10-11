@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import i18next from 'i18next';
 import { initI18nForTests } from '../i18n/test-i18n';
-import { sayUnavailable, unavailableSaid } from './command-voice';
+import { refusedIn, sayUnavailable, stillOpen, unavailableSaid } from './command-voice';
 import { announce, resetAnnouncementsForTest, subscribeAnnouncements } from './live-region';
 import { buildCommands, type CommandDeps } from './command-set';
 import type { Translate } from './session-voice';
@@ -97,3 +97,39 @@ function depsStub(): CommandDeps {
     get: (target, prop) => (prop in target ? target[prop as string] : noop),
   }) as unknown as CommandDeps;
 }
+
+describe('a refusal said in a popped-out session’s window (#1214)', () => {
+  const LADDER = {
+    id: 'session.ladder.down',
+    disabledReasonKey: 'commands.disabled.noActiveSession',
+    arrangesMainWindow: true,
+  };
+
+  it('"No session is focused" becomes the true reason there', () => {
+    const said = unavailableSaid(t, refusedIn(LADDER, { popoutCardId: 'card-1' }));
+    expect(said).toBe('That shortcut arranges the main window, and this session is in a window of its own');
+  });
+
+  it('in the main window nothing is changed', () => {
+    expect(refusedIn(LADDER, { popoutCardId: null })).toBe(LADDER);
+    expect(refusedIn(LADDER, {})).toBe(LADDER);
+  });
+
+  it('⚠️ ONLY for a command that says it arranges the main window: the reason key is shared', () => {
+    // "Dispatch from this session" carries the same stock reason, and "arranges
+    // the main window" would be false of it
+    const dispatch = { id: 'session.dispatch.x', disabledReasonKey: 'commands.disabled.noActiveSession' };
+    expect(refusedIn(dispatch, { popoutCardId: 'card-1' })).toBe(dispatch);
+    const other = { id: 'attention.next', disabledReasonKey: 'commands.disabled.emptyQueue' };
+    expect(refusedIn(other, { popoutCardId: 'card-1' })).toBe(other);
+  });
+
+  it('a window that has gone is nobody to speak to', () => {
+    const open = { closed: false } as Window;
+    expect(stillOpen(open)).toBe(open);
+    expect(stillOpen({ closed: true } as Window)).toBeUndefined();
+    expect(stillOpen(undefined)).toBeUndefined();
+    const dead = new Proxy({}, { get: () => { throw new Error('dead window'); } }) as Window;
+    expect(stillOpen(dead)).toBeUndefined();
+  });
+});
