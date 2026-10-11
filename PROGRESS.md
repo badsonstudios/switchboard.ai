@@ -107,8 +107,8 @@
 >    "Ran N commands"; **a failed command is never folded** (it ends the run
 >    and stands alone, marked "failed"). Not done: keeping output-heavy
 >    commands out of a fold; re-running the typing-lag probe.
-> 9. **#1207 — tool pictures in the timeline gutter. IN PROGRESS, started
->    2026-10-11, branch `feature/1207-gutter-glyphs`.**
+> 9. **#1207 — tool pictures in the timeline gutter. DONE 2026-10-11, PR
+>    #1230 (`e14cc114`), merged, NOT released.** The ticket is closed.
 >    The picture replaces the dot (a 13px drawing centred on the 6px cell, so
 >    no box moved); the boxes carry none; new kinds for a new file, a
 >    notebook and a folded burst; a command wears git / node / python /
@@ -117,7 +117,7 @@
 >    the glyph art before merge" did NOT happen**; the eight new drawings are
 >    a first pass.
 > 10. **#1199 — Settings in tabs. IN PROGRESS, started 2026-10-11, branch
->     `feature/1199-settings-tabs` (stacked on #1207's).** Six tabs in the
+>     `feature/1199-settings-tabs`.** Six tabs in the
 >     same window: Appearance, General, Notifications, Sessions, Diagnostics,
 >     Advanced. A section IS a tab (the deep-link ids are the tab ids;
 >     `attention` keeps its id and is labelled Notifications). Every panel is
