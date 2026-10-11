@@ -3,11 +3,18 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ 2026-10-11 — ELEVEN TICKETS THE OWNER PICKED: ALL LANDED, NOT RELEASED
+> # ✅ RELEASED: v0.8.120, 2026-10-11 (PR #1234)
+>
+> The owner, after the report on the eleven tickets: *"Yeah, go ahead and
+> cut a release."* A plain patch step. It carries the ten items below.
+> `0.8.121 — unreleased` is open. The ten tracker rows read "IN v0.8.120,
+> installable now". **DO NOT CUT ANOTHER** unless he asks.
+>
+> # ✅ 2026-10-11 — ELEVEN TICKETS THE OWNER PICKED: ALL LANDED, IN v0.8.120
 >
 > **Nothing is in flight.** Ten are merged and one (#1198) was closed as
-> already shipped. All of it sits in `0.8.120 — unreleased`; no release was
-> cut and none is to be until he asks. **Next up: his call.** His open
+> already shipped. All of it is in **v0.8.120** (released 2026-10-11).
+> **Next up: his call.** His open
 > tickets not to start without him: #1214, #1211, #1209, #1204. Filed in
 > this run: #1226 (probe the installed CLI for the question-result shapes
 > read from its binary, not measured). Seen once and NOT filed: two unit
