@@ -1400,7 +1400,11 @@ describe('a scripted turn (#1082) — what the pictures in the manual are taken 
       )
       .filter((c) => c.type === 'tool_result');
     // one result, for the one call that had one — stitched by ITS id
-    expect(results).toEqual([{ type: 'tool_result', tool_use_id: 't2', content: '4 passed' }]);
+    // (`is_error` on every result, true or false, as the real CLI writes it:
+    // spike/findings/1200-is-error-on-a-tool-result.md)
+    expect(results).toEqual([
+      { type: 'tool_result', tool_use_id: 't2', content: '4 passed', is_error: false },
+    ]);
     expect(JSON.stringify(out)).toContain('Done.');
     expect(JSON.stringify(out)).not.toContain('FAKE-REPLY');
     expect(types().at(-1)).toBe('result:success');
