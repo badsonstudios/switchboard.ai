@@ -16,6 +16,8 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailSession } from '../model/types';
 import { attentionPaint, presentStatus } from '../lib/rail-view';
+import { approvalAttrs, approvalHint, NO_CARDS } from '../lib/approval-watch';
+import { useApprovalWatch } from '../lib/use-approval-watch';
 import { tint } from '../lib/tint';
 import { sessionSpokenName } from './SessionRow';
 import { StatusMark } from './StatusMark';
@@ -48,6 +50,10 @@ export function StripPill(props: {
   // WHO NEEDS YOU is the count's own answer (#1137), not the status's: a pill
   // is filled exactly when its session is one of the N in the line above.
   const paint = attentionPaint(s.status, props.needsYou);
+  // #1202: the same cue the row in the left list wears, from the same rule
+  const approval = useApprovalWatch(
+    paint.lit && s.status === 'needs-permission' ? [s.id] : NO_CARDS
+  );
   const hue = `var(--status-${paint.token})`;
   const ink = `var(--status-${paint.token}-ink)`;
   const accent = s.accent ?? 'var(--faint)';
@@ -70,6 +76,7 @@ export function StripPill(props: {
       // hover shows this session's last prompt (#631, `LastPromptHover`)
       data-last-prompt-for={s.id}
       data-needs-you={paint.lit}
+      {...approvalAttrs(approval)}
       // read back by the strip when it measures what is off each end
       data-strip-item-need={paint.lit ? 1 : 0}
       data-session-status={p.token}
@@ -79,7 +86,7 @@ export function StripPill(props: {
       // the row's own words, plus the one fact only a pill carries
       aria-label={props.folded ? t('strip.pillFolded', { name: spoken }) : spoken}
       aria-current={props.selected ? 'true' : undefined}
-      title={props.folded ? t('strip.pillFoldedHint') : undefined}
+      title={approval.active ? approvalHint(t, approval) : props.folded ? t('strip.pillFoldedHint') : undefined}
       onClick={props.onFocus}
       onContextMenu={props.onContextMenu}
       {...props.dragProps}

@@ -1757,6 +1757,71 @@ mark[data-feed-match-current] {
 }
 
 /* ==========================================================================
+ * A SESSION WAITING ON AN APPROVAL (#1202)
+ *
+ * The owner: "I want it to maybe blink yellow and flash or something … because
+ * our approvals time out." A held approval is declined after five minutes; a
+ * steady yellow pill among a dozen sessions was the same pill at second 1 and
+ * second 299, and five ran out unseen in one day.
+ *
+ * THE ONE THING IN THE LIST THAT MOVES TO BE LOOKED AT. "Working" moves too,
+ * but every working rule below is written `:not([data-needs-you])`, so the two
+ * never share an element: the ladder is calm, working, needs you, and this is
+ * the top of it.
+ *
+ * A SLOW PULSE, NOT A BLINK. One cycle every 1.8 seconds, and one a second in
+ * the last minute of the hold. Both are far under the three flashes a second
+ * that is the photosensitivity limit, and what changes is how strongly a ring
+ * shows, never the whole pill going on and off.
+ *
+ * PAINTED ON ITS OWN LAYER, and only its opacity moves. The row, the pill and
+ * the group's box each carry inline shadows that mean something (the outline
+ * after a jump, the ring of a drop target), and an animation on the element
+ * itself would outrank them and switch them off. A layer over the top does
+ * not, shows over a header that has an opaque background of its own, and
+ * costs the compositor nothing. (On a ROW the outline after a jump is an
+ * inset ring in the same place, so the two overlap there for that second and
+ * a half; on a pill and a group's box it is outside and both show.)
+ *
+ * A RING AND NO FILL. The steady yellow tint the row already has stays as it
+ * is. A second wash over the words took them below the readability bar at the
+ * top of every pulse, and the ring is what the eye catches anyway.
+ *
+ * Which elements get it is decided in lib/approval-watch, from the same set
+ * every "N need you" count reads, so it cannot outlive the request.
+ * ========================================================================== */
+@keyframes sb-approval-pulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+:is(.rail-row, [data-strip-pill], [data-strip-group], .rail-head)[data-needs-approval='true'] {
+  position: relative;
+}
+:is(.rail-row, [data-strip-pill], [data-strip-group], .rail-head)[data-needs-approval='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 2px var(--status-needs-permission);
+  animation: sb-approval-pulse 1.8s ease-in-out infinite;
+}
+:is(.rail-row, [data-strip-pill], [data-strip-group], .rail-head)[data-needs-approval='true'][data-approval-urgent='true']::after {
+  animation-duration: 1s;
+}
+/* LESS MOTION: the same prominence, standing still. The loudest frame of the
+ * pulse, held. The last minute cannot quicken, so its ring thickens. */
+@media (prefers-reduced-motion: reduce) {
+  :is(.rail-row, [data-strip-pill], [data-strip-group], .rail-head)[data-needs-approval='true']::after {
+    animation: none;
+    opacity: 1;
+  }
+  :is(.rail-row, [data-strip-pill], [data-strip-group], .rail-head)[data-needs-approval='true'][data-approval-urgent='true']::after {
+    box-shadow: inset 0 0 0 3px var(--status-needs-permission);
+  }
+}
+
+/* ==========================================================================
  * A WORKING SESSION (#718) — six looks, one in force.
  *
  * The owner's ask: a glance at the Sessions list should answer "which of my

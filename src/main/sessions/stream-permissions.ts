@@ -832,6 +832,13 @@ export class StreamPermissions {
             this.failOpen(requestId, 'permission hold timed out');
           }, timeout);
     timer?.unref?.();
+    // WHEN THE HOLD RUNS OUT, told to the window (#1202). The owner: "our
+    // approvals time out", and five expired unseen in one day while he was
+    // using the app. The deadline was known only here; the list of sessions
+    // could say "needs permission" but not "for another forty seconds". Wall
+    // clock, because it crosses a process boundary and is read by a tooltip.
+    // Absent for a question, which waits for a person (#570).
+    if (timeout !== null) request.deadline = Date.now() + timeout;
     this.pending.set(requestId, { sessionId, nativeRequestId, request, timer });
     this.log.info('stream permission requested', {
       sessionId,
@@ -918,11 +925,20 @@ export class StreamPermissions {
     }
 
     const sent = this.send(p.sessionId, controlResponse(p.nativeRequestId, payload));
-    // Before `notifyResolved`, and unguarded, so this half stays a mirror image
+    // Before `notifyResolved`, so this half stays a mirror image
     // of `HookListener.decide` — a divergence between the two would be a trap
     // for whoever reads one to understand the other, which is the shape of the
     // whole class (see the header).
-    this.applyStatus(p.sessionId, { kind: 'permission-resolved' });
+    //
+    // ...UNLESS SOMETHING ELSE IS STILL HELD FOR THIS SESSION (#1202). Claude
+    // issues tool calls in parallel, so two requests can be held at once.
+    // Answering one and walking the session to `working` hid the other: still
+    // blocking the CLI, on its own five-minute clock, under a card that said
+    // "working". That is exactly an approval running out unseen. The plan-mode
+    // branch of `offer` already had this guard; this is the same one.
+    if (!this.holdsAnotherFor(p.sessionId, requestId)) {
+      this.applyStatus(p.sessionId, { kind: 'permission-resolved' });
+    }
     this.log.info('stream permission decided', {
       requestId,
       decision,
@@ -1268,13 +1284,25 @@ export class StreamPermissions {
     if (p.timer) clearTimeout(p.timer);
     const message = this.unavailable('Nobody in switchboard answered this request in time');
     this.send(p.sessionId, controlResponse(p.nativeRequestId, { behavior: 'deny', message }));
-    this.applyStatus(p.sessionId, { kind: 'permission-resolved' });
+    // the same guard as `decide`: one of two holds timing out must not walk
+    // the session to `working` over the one that is still waiting (#1202)
+    if (!this.holdsAnotherFor(p.sessionId, requestId)) {
+      this.applyStatus(p.sessionId, { kind: 'permission-resolved' });
+    }
     this.log.warn('stream permission failed open (denied)', {
       requestId,
       sessionId: p.sessionId,
       why,
     });
     this.notifyResolved(requestId);
+  }
+
+  /** Is this router still holding a request for the session, other than this one? */
+  private holdsAnotherFor(sessionId: string, exceptRequestId: string): boolean {
+    for (const [id, held] of this.pending) {
+      if (id !== exceptRequestId && held.sessionId === sessionId) return true;
+    }
+    return false;
   }
 
   /**

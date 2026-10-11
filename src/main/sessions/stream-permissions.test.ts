@@ -705,6 +705,49 @@ describe('failing open when nobody can answer (#319)', () => {
       expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
     });
 
+    it('the held request SAYS when it runs out, so the window can show a clock (#1202)', () => {
+      const before = Date.now();
+      const p = router({ holdTimeoutMs: 5000 });
+      p.offer('s1', canUseTool());
+      const [held] = p.pendingRequests();
+      // wall clock, on both the push and the replay a reloading window asks for
+      expect(held.deadline).toBeGreaterThanOrEqual(before + 5000);
+      expect(held.deadline).toBeLessThanOrEqual(Date.now() + 5000);
+      expect(requests[0].deadline).toBe(held.deadline);
+      p.decide('stream:s1:req-1', 'allow');
+    });
+
+    it('TWO held at once: answering one does not hide the other (#1202)', () => {
+      // Claude issues tool calls in parallel. Answering the first used to walk
+      // the session to `working` while the second was still blocking the CLI
+      // on its own clock: an approval running out under a card that says
+      // "working", which is the thing this item exists to stop.
+      const p = router({ holdTimeoutMs: 5000 });
+      p.offer('s1', canUseTool('req-1'));
+      p.offer('s1', canUseTool('req-2'));
+      expect(p.pendingRequests()).toHaveLength(2);
+
+      p.decide('stream:s1:req-1', 'allow');
+      expect(applied).toEqual([]); // still needs-permission: one is still held
+      expect(resolved).toEqual(['stream:s1:req-1']); // but that bar comes down
+
+      p.decide('stream:s1:req-2', 'allow');
+      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+    });
+
+    it('...and one of two timing out does not hide the other either', async () => {
+      // wide margins on purpose: real timers, and a loaded runner overshoots
+      const p = router({ holdTimeoutMs: 400 });
+      p.offer('s1', canUseTool('req-1'));
+      await new Promise((r) => setTimeout(r, 250));
+      p.offer('s1', canUseTool('req-2'));
+      await new Promise((r) => setTimeout(r, 250)); // req-1 is out, req-2 is not
+      expect(p.pendingRequests().map((r) => r.requestId)).toEqual(['stream:s1:req-2']);
+      expect(applied).toEqual([]);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+    });
+
     it('a decision cancels it — no second answer arrives later', async () => {
       const p = router({ holdTimeoutMs: 20 });
       p.offer('s1', canUseTool());

@@ -14,8 +14,12 @@
 > **The order (mine, he did not give one):** #1210, #1202, #1219, #1201,
 > #1206, #1198 (check what shipped first), #1197, #1200, #1207, #1199, #1203.
 >
-> 1. **#1210 — submitting a prompt hid the session. IN PROGRESS, started
->    2026-10-10, branch `feature/1210-submit-hid-session`.** Diagnosed first
+> 1. **#1210 — submitting a prompt hid the session. DONE 2026-10-10, PR #1222
+>    (`c590e5fb`), merged, NOT released.** Green on the first CI run; the
+>    ticket is closed. An independent review found no blockers and three
+>    things worth fixing, all applied (the keyboard was dropped when the line
+>    went away; the sentence promised the card would come back, which "never
+>    jump" can refuse; a card brought back as a tab left the line up). Diagnosed first
 >    and posted to the ticket: his desktop's global setting was **Hide on
 >    submit** (not the default, not changed by any release; only the title
 >    bar chip and the palette can set it; first hide ever was about a minute
@@ -25,7 +29,19 @@
 >    setting, which level) with **Bring it back**, **Stop doing this** and
 >    **Stop telling me**; and every change to the setting is now logged with
 >    the control that made it. The default and the chip are unchanged.
-> 2. #1202 needs-approval must be unmissable. NOT STARTED.
+> 2. **#1202 — needs-approval must be unmissable. IN PROGRESS, started
+>    2026-10-10, branch `feature/1202-approval-pulse`.** Found first: a held
+>    approval has a 300 second deadline in main that the window was never
+>    told; when it runs out the request is DECLINED and the session is told
+>    nobody answered (it does not move to a terminal); a question has no
+>    deadline. Built: main sends the deadline; a row, a pill, a group's box
+>    on the strip and a closed group's header in the list pulse (a ring on
+>    its own layer, 1.8s, 1s in the last minute); reduced motion holds the
+>    ring still; the tooltip says how long is left. **Also fixed, found in
+>    review:** answering one of two requests held at once made the card say
+>    "working" over the one still waiting. ⚠️ **The ticket's "design pass
+>    with Tanner before implementation" did NOT happen**; he picked it for
+>    this run, so a first version is built and should be shown to Tanner.
 > 3. #1219 "Need you" does not clear when you look. NOT STARTED.
 > 4. #1201 past questions render as raw JSON. NOT STARTED.
 > 5. #1206 speech leads with the session name. NOT STARTED.

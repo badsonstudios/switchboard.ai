@@ -8,7 +8,8 @@
 // a finished session: looking relaxes its event from `done` to `ready`, which
 // takes it out of the count, but the session's status is still `done` — so its
 // row stayed lit, identical to the one that really was waiting.
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
+import { sessionStore } from '../store/session-store';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 import { SessionsRail } from './SessionsRail';
@@ -134,5 +135,89 @@ describe('a group header and its rows agree about who needs you (#1137)', () => 
     await mount([session('a', 'idle'), session('b', 'working')], ['a']);
     expect(headerText()).toContain('1 need');
     expect(litRows()).toEqual(['a']);
+  });
+});
+
+// #1202 — an approval runs out, so the row waiting on one is marked for the
+// pulse, and says how long is left. Marked by the SAME set the count reads.
+describe('a session waiting on an approval is marked, with its clock (#1202)', () => {
+  const NOW = 1_800_000_000_000;
+  const hold = (cardId: string, leftMs: number): void =>
+    sessionStore.addPendingPermission({
+      requestId: `stream:${cardId}:1`,
+      sessionId: `live-${cardId}`,
+      cardId,
+      tool: 'Bash',
+      input: {},
+      deadline: NOW + leftMs,
+    });
+  const marked = (): string[] =>
+    Array.from(host.querySelectorAll<HTMLElement>('.rail-row[data-needs-approval="true"]')).map(
+      (r) => r.querySelector<HTMLElement>('[data-rail-open]')!.dataset.railOpen!
+    );
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    for (const r of sessionStore.getState().pendingPermissions) {
+      sessionStore.removePendingPermission(r.requestId);
+    }
+    vi.useRealTimers();
+  });
+
+  it('only the row that is counted AND on needs-permission; a question is not', async () => {
+    hold('a', 200_000);
+    await mount(
+      [session('a', 'needs-permission'), session('b', 'needs-input'), session('c', 'done')],
+      ['a', 'b', 'c']
+    );
+    expect(litRows()).toEqual(['a', 'b', 'c']);
+    expect(marked()).toEqual(['a']);
+    expect(rowOf('a').dataset.approvalUrgent).toBeUndefined();
+    expect(rowOf('a').title).toContain('Waiting for your approval. In less than 4 minutes');
+  });
+
+  it('a DISMISSED ask is not marked: the pulse never claims what the count dropped', async () => {
+    hold('a', 200_000);
+    await mount([session('a', 'needs-permission')], []);
+    expect(marked()).toEqual([]);
+    expect(rowOf('a').title).toBe('');
+  });
+
+  it('the last minute is urgent, and arrives on time without a re-render from outside', async () => {
+    hold('a', 90_000);
+    await mount([session('a', 'needs-permission')], ['a']);
+    expect(rowOf('a').dataset.approvalUrgent).toBeUndefined();
+    await act(async () => {
+      vi.advanceTimersByTime(31_000);
+    });
+    expect(rowOf('a').dataset.approvalUrgent).toBe('true');
+    expect(rowOf('a').title).toContain('In less than 60 seconds');
+  });
+
+  it('answered: the mark goes with the status, at once', async () => {
+    hold('a', 200_000);
+    await mount([session('a', 'needs-permission')], ['a']);
+    expect(marked()).toEqual(['a']);
+    await act(async () => sessionStore.removePendingPermission('stream:a:1'));
+    await mount([session('a', 'working')], []);
+    expect(marked()).toEqual([]);
+  });
+
+  it('a CLOSED group carries it on its header; an open one leaves it to the rows', async () => {
+    hold('a', 30_000);
+    await mount([session('a', 'needs-permission'), session('b', 'idle')], ['a']);
+    // the HEADER: it is all a closed group shows, and where the pointer rests
+    const card = (): HTMLElement =>
+      host.querySelector<HTMLElement>('[data-group-card="g1"] .rail-head')!;
+    expect(card().dataset.needsApproval).toBeUndefined();
+    await act(async () => {
+      host.querySelector<HTMLElement>('[data-rail-group-toggle="g1"]')!.click();
+    });
+    expect(card().dataset.needsApproval).toBe('true');
+    expect(card().dataset.approvalUrgent).toBe('true');
+    expect(card().title).toContain('Waiting for your approval');
   });
 });
