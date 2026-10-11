@@ -2406,7 +2406,7 @@ describe('there is exactly one markdown pipeline', () => {
   });
 });
 
-describe('nothing but the viewer can ask for a document picture (#1080)', () => {
+describe('the SANITIZER never lets a document-picture address through (#1080, #1235)', () => {
   // `img-src` allows ONE scheme beyond our own origin, and it is only safe to
   // allow because the sole thing that writes it is the viewer's own image pass.
   // The feed and the update dialog render this same output with NO image pass,

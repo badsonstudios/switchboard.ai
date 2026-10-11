@@ -1729,6 +1729,60 @@ mark[data-feed-match-current] {
   vertical-align: middle;
   border-radius: 4px;
 }
+/* A picture in a REPLY (#1235). Capped in height as well as width: one tall
+ * screenshot must not take over a conversation. `object-fit` keeps the shape
+ * when both caps bite; the button around it is how the whole picture is seen. */
+.feed-md .doc-image {
+  display: block;
+  /* the cap is the cap INCLUDING the hairline round the picture: left as the
+   * default it was 420 plus two, which the Linux runner measured and the
+   * Windows one rounded away */
+  box-sizing: border-box;
+  max-inline-size: 100%;
+  /* the same number as `FEED_IMAGE_MAX_HEIGHT`. A picture of known size is
+   * fitted under it by its attributes, so this only bites on first sight,
+   * where width is `auto` and the two caps scale in proportion. NO
+   * `inline-size` here: it would switch the `width` attribute off, and with
+   * it the room reserved before the picture loads. */
+  max-block-size: 420px;
+  block-size: auto;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+}
+.feed-image-open {
+  appearance: none;
+  display: block;
+  max-inline-size: 100%;
+  margin: 4px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+.feed-image-open:focus-visible {
+  outline: 2px solid var(--status-working-ink);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* why a picture is a chip: readable grey, after the name */
+.feed-image-why {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+/* A link to a FILE on this machine, not a web address: it opens in your
+ * browser as a page. Marked, because it otherwise looks exactly like a web
+ * link and can be written to read like one. */
+.feed-md a[data-feed-open-path] {
+  cursor: pointer;
+}
+.feed-md a[data-feed-open-path]::after {
+  content: ' \25A3';
+  color: var(--muted);
+  font-size: 0.85em;
+  text-decoration: none;
+  display: inline-block;
+}
 .doc-image-chip,
 .doc-media-chip {
   display: inline-flex;

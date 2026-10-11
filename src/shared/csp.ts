@@ -34,7 +34,9 @@ const META_IGNORED = ['frame-ancestors', 'report-uri', 'report-to', 'sandbox'];
 // document — or an agent's reply in the feed — can spell it: DOMPurify drops an
 // unknown scheme from `src`, `srcset` is forbidden outright because its URI
 // check does not survive a list (`markdown.tsx`, and the test that pins it),
-// and the viewer builds its own `<img>`. NOT `data:`, NOT `blob:`, NOT `https:` —
+// and the two surfaces that show a picture (the viewer, and since #1235 the
+// conversation) each build their OWN `<img>` from a path, after sanitizing.
+// NOT `data:`, NOT `blob:`, NOT `https:` —
 // a remote image stays a chip, because fetching it is a beacon (§5.30, P8).
 const IMG_SRC = `img-src 'self' ${DOC_IMAGE_SCHEME}:`;
 

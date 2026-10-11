@@ -33,6 +33,14 @@ import { useRevealed } from '../lib/feed-reveal';
 import { ownWords } from '../lib/prompt-history';
 import { FeedBlockRendererContribution, manifestFor } from './contributions';
 import { decorateFeedMarkdown } from '../lib/feed-markdown';
+import {
+  capFeedImage,
+  chipForFailedFeedImage,
+  FEED_OPEN_PATH_ATTR,
+  type FeedImageLabels,
+} from '../lib/feed-images';
+import { rememberImageSize } from '../lib/document-render';
+import { useFeedSurface } from '../lib/feed-surface';
 import { Markdown } from '../lib/markdown';
 import { handleMarkdownLinkClick, openExternalBridge } from '../lib/markdown-links';
 
@@ -124,6 +132,34 @@ function useCodeLabels(): FeedCodeLabels {
     }),
     [t]
   );
+}
+
+/** The words for a picture in a reply (#1235): the viewer's own, plus the feed's three. */
+function useImageLabels(): FeedImageLabels {
+  const { t } = useTranslation();
+  return React.useMemo(
+    () => ({
+      copy: t('feedView.copy'),
+      image: t('document.image'),
+      openInBrowser: t('document.openInBrowser'),
+      mediaOmitted: t('document.mediaOmitted'),
+      openPicture: (name: string) => t('feedView.openPicture', { name }),
+      openPage: t('document.openInBrowser'),
+      notShown: t('feedView.pictureNotShown'),
+    }),
+    [t]
+  );
+}
+
+/** Ask main to open a picture or a page in whatever the system uses for it.
+ *  THE NARROW ROUTE (`fs:openViewable`), never `openPath`: this is reached
+ *  from markup an agent wrote, and main decides what kind of file it really
+ *  is. A refusal is a log line, like a refused link. */
+function openLocalFile(path: string): void {
+  const files = (
+    window as unknown as { switchboard?: { files?: { openViewable?: (p: string) => Promise<unknown> } } }
+  ).switchboard?.files;
+  void files?.openViewable?.(path)?.catch?.(() => undefined);
 }
 
 /**
@@ -1254,9 +1290,14 @@ function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // because `<Markdown>` memoises on this callback's identity: a stale one
   // would leave a finished fence without its Copy button.
   const streaming = b.streaming === true;
+  // PICTURES (#1235): a path in a reply is relative to the session's folder,
+  // which this block is not told and reads from the surface it is in.
+  const imageLabels = useImageLabels();
+  const { folder } = useFeedSurface();
   const decorate = React.useCallback(
-    (html: string) => decorateFeedMarkdown(html, labels, { streaming }),
-    [labels, streaming]
+    (html: string) =>
+      decorateFeedMarkdown(html, labels, { streaming, images: { labels: imageLabels, folder } }),
+    [labels, streaming, imageLabels, folder]
   );
   const onClick = React.useCallback(
     (e: React.MouseEvent<HTMLDivElement>): void => {
@@ -1266,6 +1307,26 @@ function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
         // `null` = a button outside any wrapper of ours. Doing nothing beats
         // putting the wrong text on the clipboard.
         if (code !== null) runCopy(button, code, labels.copied);
+        return;
+      }
+      // A picture, or a link to a local HTML file (#1235): open the file. The
+      // attribute is ours (the pass takes the feed's namespace back before it
+      // writes one), so a reply cannot arrive with a path already on it.
+      // A REMOTE picture's chip: its button opens the address in the browser,
+      // which is the only thing "show it" can honestly mean for one. Asked
+      // FIRST: the chip can sit inside a link to a local page
+      // (`[![far](https://…)](page.html)`), and the nearer control is the one
+      // that was pressed.
+      const remote = (e.target as Element | null)?.closest?.<HTMLElement>('[data-doc-external]');
+      if (remote) {
+        e.preventDefault();
+        void openExternalBridge()?.(remote.getAttribute('data-doc-external') ?? '');
+        return;
+      }
+      const local = (e.target as Element | null)?.closest?.<HTMLElement>(`[${FEED_OPEN_PATH_ATTR}]`);
+      if (local) {
+        e.preventDefault();
+        openLocalFile(local.getAttribute(FEED_OPEN_PATH_ATTR) ?? '');
         return;
       }
       // A link in a reply goes to the OS browser (#527). `void`, because the
@@ -1285,8 +1346,27 @@ function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // `minInlineSize: 0` so the wrapper shrinks the way `<Markdown>`'s own
   // container did when it was the flex child — without it a wide fence stops
   // the block ellipsising and pushes the conversation sideways.
+  // `load` and `error` do not bubble, so they are caught on the way DOWN. A
+  // picture that loaded has its size remembered, so the next render of this
+  // reply reserves its room before the bytes arrive; one that failed becomes
+  // the chip, never the broken-picture glyph.
+  const onLoad = React.useCallback((e: React.SyntheticEvent<HTMLDivElement>): void => {
+    if (rememberImageSize(e.target)) capFeedImage(e.target as Element);
+  }, []);
+  const onError = React.useCallback(
+    (e: React.SyntheticEvent<HTMLDivElement>): void => {
+      chipForFailedFeedImage(e.target, imageLabels);
+    },
+    [imageLabels]
+  );
   return (
-    <div onClick={onClick} onAuxClick={onAuxClick} style={{ minInlineSize: 0 }}>
+    <div
+      onClick={onClick}
+      onAuxClick={onAuxClick}
+      onLoadCapture={onLoad}
+      onErrorCapture={onError}
+      style={{ minInlineSize: 0 }}
+    >
       <Markdown text={b.text ?? ''} streaming={b.streaming} decorate={decorate} />
     </div>
   );

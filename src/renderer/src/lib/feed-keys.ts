@@ -58,7 +58,14 @@ export const FEED_COPY_ATTR = 'data-feed-copy';
  * So a new control inside the conversation joins THIS selector and is marked
  * `tabindex="-1"`, and the keys keep working the way #174 designed them.
  */
-export const FEED_STOP_SELECTOR = `[${FEED_EXPANDER_ATTR}], [${FEED_COPY_ATTR}]`;
+//
+// Since #1235 a picture in a reply is a button too (it opens the picture), and
+// so is the "Open in browser" on a chip. The same rule: they join the list and
+// take no Tab stop. Spelled out here rather than imported from `feed-images`,
+// which would make the key rules depend on the picture pass.
+export const FEED_STOP_SELECTOR =
+  `[${FEED_EXPANDER_ATTR}], [${FEED_COPY_ATTR}], ` +
+  'button[data-feed-open-path], button[data-doc-external]';
 
 /** What a keystroke inside the conversation region means. */
 export type FeedKeyAction =

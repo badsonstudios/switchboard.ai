@@ -305,10 +305,14 @@ describe('a reply cannot forge the feed’s expander protocol (#465)', () => {
     expect(body.querySelector('audio')).toBeNull();
     expect(body.querySelector('map')).toBeNull();
     expect(body.querySelector('area')).toBeNull();
-    // `img` is NOT swept with them, deliberately: markdown emits one for every
-    // `![alt](src)`, so it stays, and only its hot spots go. If a later sweep
-    // takes it, this line is where the feed notices.
-    expect(body.querySelector('img')).not.toBeNull();
+    // `img` is not swept by the SANITIZER, deliberately: markdown emits one for
+    // every `![alt](src)`. Since #1235 the feed has a picture pass of its own,
+    // which replaces every `<img>` a reply wrote: a local picture becomes a new
+    // element of ours, and anything else a chip. This feed is mounted with no
+    // session folder, so the forged one is a chip, and no `<img>` the reply
+    // wrote reaches the page.
+    expect(body.querySelector('img')).toBeNull();
+    expect(body.querySelector('.doc-image-chip')).not.toBeNull();
   });
 
   it('cannot capture a find jump by claiming another block’s seq', async () => {

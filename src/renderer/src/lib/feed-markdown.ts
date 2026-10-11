@@ -26,8 +26,9 @@
 // that already parsed the markdown, memoised per block on the text. The
 // template's content is an inert document with no browsing context, so nothing
 // fetches while we work (same reason `document-render.ts` gives at length).
-import { FEED_DECORATION, stripDecorationNamespace } from './decoration-guard';
+import { DOC_DECORATION, FEED_DECORATION, stripDecorationNamespace } from './decoration-guard';
 import { decorateFeedCodeFences, type FeedCodeLabels } from './feed-code';
+import { decorateFeedImages, type FeedImageLabels } from './feed-images';
 
 /**
  * Sanitized HTML in, decorated HTML out — the feed's surface pass.
@@ -54,6 +55,14 @@ import { decorateFeedCodeFences, type FeedCodeLabels } from './feed-code';
  * WHAT IT COSTS is the one flip #635 does not remove: the fence header appears
  * when the turn ends. That is deliberate and it is bounded — the CODE renders
  * progressively like everything else, and it is only our chrome that waits.
+ *
+ * PICTURES (#1235) are the second thing this writes, through the document
+ * viewer's own machinery, which marks what it writes in the VIEWER's
+ * namespace (`doc-image`, `data-doc-*`). So that namespace is taken back here
+ * too, first: a reply that arrived with `class="doc-image"` already on an
+ * element would otherwise be mistaken, by the load and error handlers, for a
+ * picture this pass had offered. Without `images` (a caller with no labels
+ * for them) the pictures are left exactly as the sanitizer left them.
  */
 export function decorateFeedMarkdown(
   html: string,
@@ -62,12 +71,23 @@ export function decorateFeedMarkdown(
   // true)` was the alternative at the one call site that needs `streaming`, and
   // a placeholder `undefined` in the middle of an argument list is how the next
   // flag gets passed to the wrong parameter.
-  { doc = document, streaming = false }: { doc?: Document; streaming?: boolean } = {}
+  {
+    doc = document,
+    streaming = false,
+    images,
+  }: {
+    doc?: Document;
+    streaming?: boolean;
+    /** the words for pictures, and the folder a relative path is relative to */
+    images?: { labels: FeedImageLabels; folder?: string };
+  } = {}
 ): string {
   const template = doc.createElement('template');
   template.innerHTML = html;
   // FIRST, before any decoration below writes one of ours.
   stripDecorationNamespace(template.content, FEED_DECORATION);
+  stripDecorationNamespace(template.content, DOC_DECORATION);
   if (!streaming) decorateFeedCodeFences(template.content, labels);
+  if (images) decorateFeedImages(template.content, images.labels, { folder: images.folder, streaming });
   return template.innerHTML;
 }

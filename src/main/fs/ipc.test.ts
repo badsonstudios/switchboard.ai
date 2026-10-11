@@ -7,7 +7,7 @@
 //
 // The fake broker is `sessions/ipc.test.ts`'s, for the same reason it exists
 // there: it lets a channel be called without an Electron process.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { tempDir } from '../../test-temp-dirs';
@@ -92,6 +92,7 @@ describe('fs:read', () => {
       'fs:openExternal',
       'fs:openPath',
       'fs:reveal',
+      'fs:openViewable',
       'fs:watch',
       'fs:unwatch',
     ]);
@@ -341,6 +342,84 @@ describe('the document viewer’s shell channels (P2-E16-02)', () => {
       const climb = path.join(ROOT, '..', 'secrets', 'id_rsa');
       expect(await bus.call('fs:openPath', climb)).toBe(false);
       expect(sh.calls).toEqual([]);
+    });
+  });
+
+  describe('fs:openViewable: a picture or a page a reply offered (#1235)', () => {
+    // Reached from ONE CLICK on markup an agent wrote. `shell.openPath` runs
+    // whatever the system has registered for a file, so everything here is
+    // about what that click can and cannot be aimed at.
+    const file = (name: string, body = 'x'): string => {
+      const p = path.join(ROOT, name);
+      fs.writeFileSync(p, body);
+      return p;
+    };
+    const refused = (reason: string): number =>
+      rec.lines.filter((l) => l.msg === `fs:openViewable refused: ${reason}`).length;
+
+    it('opens a picture and a web page inside the scope, by their RESOLVED path', async () => {
+      for (const name of ['mock.svg', 'shot.PNG', 'page.html', 'old.htm']) {
+        expect(await bus.call('fs:openViewable', file(name)), name).toBe(true);
+      }
+      expect(sh.calls.map((c) => c.what)).toEqual(['openPath', 'openPath', 'openPath', 'openPath']);
+      expect(sh.calls[0].arg.endsWith('mock.svg')).toBe(true);
+    });
+
+    it('⚠️ refuses everything else IN THE SCOPE: a program is not a picture', async () => {
+      for (const name of ['setup.bat', 'tool.exe', 'run.cmd', 'x.lnk', 'a.js', 'a.vbs', 'a.hta', 'notes.md', 'go.command']) {
+        expect(await bus.call('fs:openViewable', file(name)), name).toBe(false);
+      }
+      expect(sh.calls).toEqual([]);
+      expect(refused('not-viewable')).toBe(9);
+    });
+
+    it('⚠️ a page that is really a LINK TO A PROGRAM is refused: the type is checked on what it resolves to', async () => {
+      const program = file('setup.bat', 'echo pwned');
+      const disguised = path.join(ROOT, 'report.html');
+      try {
+        fs.symlinkSync(program, disguised);
+      } catch {
+        return; // this machine cannot make a symlink (no Developer Mode): nothing to prove here
+      }
+      expect(await bus.call('fs:openViewable', disguised)).toBe(false);
+      expect(sh.calls).toEqual([]);
+      expect(refused('not-viewable')).toBe(1);
+    });
+
+    it('refuses a FOLDER with a page’s name, a file that is not there, and a path outside the scope', async () => {
+      fs.mkdirSync(path.join(ROOT, 'folder.html'), { recursive: true });
+      expect(await bus.call('fs:openViewable', path.join(ROOT, 'folder.html'))).toBe(false);
+      expect(await bus.call('fs:openViewable', path.join(ROOT, 'never-written.html'))).toBe(false);
+      const outside = path.join(OUTSIDE, 'page.html');
+      fs.writeFileSync(outside, 'x');
+      expect(await bus.call('fs:openViewable', outside)).toBe(false);
+      expect(await bus.call('fs:openViewable', path.join(ROOT, '..', 'secrets', 'page.html'))).toBe(false);
+      expect(sh.calls).toEqual([]);
+    });
+
+    it('⚠️ a network path is refused AS A STRING: nobody is asked where it really is', async () => {
+      const resolve = vi.spyOn(scope, 'resolve');
+      const BS = String.fromCharCode(92);
+      for (const p of [`${BS}${BS}evil.example${BS}share${BS}a.html`, '//evil.example/share/a.png']) {
+        expect(await bus.call('fs:openViewable', p), p).toBe(false);
+      }
+      expect(resolve).not.toHaveBeenCalled();
+      expect(sh.calls).toEqual([]);
+    });
+
+    it('refuses what is not a path at all, and a stream hidden behind a page’s name', async () => {
+      for (const bad of [undefined, null, 42, '', { path: 'a.html' }]) {
+        expect(await bus.call('fs:openViewable', bad)).toBe(false);
+      }
+      // `host.txt:payload.html` is an alternate data stream of host.txt on NTFS
+      file('host.txt');
+      expect(await bus.call('fs:openViewable', path.join(ROOT, 'host.txt:payload.html'))).toBe(false);
+      expect(sh.calls).toEqual([]);
+    });
+
+    it('`fs:openPath` is untouched: the viewer’s own button still opens any file in the scope', async () => {
+      expect(await bus.call('fs:openPath', path.join(ROOT, 'PROGRESS.md'))).toBe(true);
+      expect(sh.calls).toHaveLength(1);
     });
   });
 

@@ -96,6 +96,18 @@ on the floor, and say so in your PR.
 
 ## 0.8.121 — unreleased
 
+### Added
+
+- **Pictures in the conversation.** When Claude saves a picture in your
+  project and refers to it in a reply, it is drawn right there: PNG, JPEG,
+  GIF, WebP and SVG. Ask for a mock-up **as an SVG file** and you see it in
+  the session. Click a picture to open it at full size. A picture that cannot
+  be shown (missing, too large, outside the folders the app can read) is a
+  labelled chip, never a broken icon, and a picture on the web is never
+  fetched: it is a chip with **Open in browser**. A link to an HTML file
+  Claude wrote now opens it in your browser. Not yet: HTML mock-ups drawn
+  inline, tool screenshots, and pictures you attached.
+
 ### Changed
 
 - **Prompt History is now a tab of the history window.** Click **🕘** in a

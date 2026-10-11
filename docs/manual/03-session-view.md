@@ -303,6 +303,44 @@ keyboard along with everything else (below). It works in a popped-out card too.
 The document viewer has had the same button on its code blocks since it
 shipped — it's the same affordance in both places, on purpose.
 
+### Pictures in a reply
+
+When Claude saves a picture in your project and refers to it in its reply, the
+picture is drawn right there in the conversation. This is what makes "mock it
+up for me" work: ask for a mock-up **as an SVG file** and it appears in the
+reply.
+
+- **What is shown:** PNG, JPEG, GIF, WebP and SVG files on your machine, in the
+  session's folder or in any other folder that has a session open.
+- **How big:** never wider than the conversation, and never taller than 420
+  pixels, so one tall screenshot cannot take over. **Click the picture** to
+  open the whole thing in whatever your system uses for that kind of file.
+  From the keyboard, walk the conversation with the arrow keys: a picture is
+  one of the stops, and Enter opens it.
+- **A picture that cannot be shown** is a small labelled chip instead, with a
+  few words saying what it can be: the file is missing, too large (over
+  20 MB), not really a picture, or in a folder switchboard is not allowed to
+  read. You never get a broken-picture icon.
+- **A picture on the web is never loaded.** Fetching one tells its server that
+  you looked, and when. It is a chip with **Open in browser**, and nothing
+  leaves your machine unless you click that.
+- **While a reply is still arriving**, pictures are chips; they are drawn when
+  the reply is finished.
+
+**HTML mock-ups are not drawn in the conversation.** If the reply links to an
+`.html` file Claude wrote in your project, click the link (or the chip's
+**Open in browser**) and it opens in whatever your system uses for web pages,
+normally your browser. Asking for the mock-up as SVG is how you get it inline.
+
+A link to a file on your machine has a small **▣** after it, so you can tell
+it from a link to the web: it opens that file, whatever the link's words say.
+Opening an HTML or SVG file in your browser opens it as a page, and a page
+can run scripts. Only pictures and web pages can be opened this way; a link
+to anything else on your machine does nothing.
+
+Not shown yet: a screenshot a tool took, and a picture you attached to your
+own prompt.
+
 ### Opening a link a session gives you
 
 **Click a link in an answer and it opens in your normal web browser.** It never

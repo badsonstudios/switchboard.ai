@@ -23,8 +23,9 @@
 >    a small port (`lib/prompt-port`) the window reads. Decisions: opens on
 >    the tab last used; a session not showing its conversation keeps the tab
 >    and says why it is empty; the `+ session` picker has no tabs.
-> 2. **#1214 — a shortcut pressed in a popped-out window. IN PROGRESS, started
->    2026-10-11, branch `feature/1214-popout-chords`.**
+> 2. **#1214 — a shortcut pressed in a popped-out window.
+>    DONE 2026-10-11, PR #1242 (`06dadf8b`), merged, NOT released.**
+>    The ticket is closed. Green on the second CI run: the first failed on a real break (a close made from the Sessions list asked its question in the popout), fixed.
 >    The ticket says "needs a decision from the owner before any plan"; he
 >    picked it from a shortlist without giving one, so I made it: YES for the
 >    five chords that mean the same thing on a popped-out card (pin, find,
@@ -34,7 +35,24 @@
 >    but now say why. `popoutCardId` on the command context; `actsInPopout`
 >    and `arrangesMainWindow` on a command. The close question is asked in
 >    the card's own window. The palette is unchanged.
-> 3. #1235 — pictures inline in the conversation. Not started.
+> 3. **#1235 — pictures in the conversation. IN PROGRESS, started
+>    2026-10-11, branch `feature/1235-feed-pictures`.**
+>    The ticket has four parts and I split it: THIS item is part 1 (a local
+>    picture a reply refers to is drawn inline: PNG, JPEG, GIF, WebP, SVG,
+>    through the document viewer's own scoped handler; a remote one is a
+>    chip and never fetched; a failed one is a chip that says so; a click
+>    opens it in the system's viewer) plus a stop-gap for part 2 (a link to a
+>    local HTML file opens it in the browser). Filed for the rest: **#1239**
+>    (HTML mock-ups shown in the session), **#1240** (tool-result and
+>    attached pictures), **#1241** (measure scroll position while pictures
+>    load: the ticket asked for it measured, and it was not). One new
+>    channel in main, `fs:openViewable`: the click on a picture or a page
+>    link goes through it and NOT through `fs:openPath`, because main
+>    must check the type of the file a path resolves to (the review's
+>    blocker: `report.html` as a symlink to a `.bat` ran on one click).
+>    No change to the sanitizer or the content security policy.
+>    ⚠️ Nothing tells Claude to use image syntax; whether it does unprompted
+>    is the owner's first hand-test.
 > 4. #1209 — control edges on nordic and daylight. Not started.
 > 5. #1211 — text dimmed by opacity. Not started.
 > 6. #1020 — two modals open at once. Not started.

@@ -1128,6 +1128,12 @@ const api = {
      * only be aimed at a file the caller could already have read.
      */
     openPath: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:openPath', p),
+    /**
+     * Open a picture or a web page a reply in the conversation offered (#1235).
+     * Main refuses anything else, whatever the path is spelled like: it checks
+     * the type of the file the path RESOLVES to.
+     */
+    openViewable: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:openViewable', p),
     /** Show the file in the OS file manager. Scope-checked like `openPath`. */
     reveal: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:reveal', p),
     /**

@@ -27,7 +27,9 @@ import {
 } from '../../shared/ipc/fs';
 import { isAllowedLinkUrl } from '../../shared/link-schemes';
 import { readCappedText } from './read-file';
-import { ReadScope } from './read-scope';
+import { ReadScope, isWithinRoot } from './read-scope';
+import { isNetworkPath } from './doc-image';
+import { isViewableFile } from '../../shared/doc-image';
 import { listDirectory } from './list-dir';
 import { FileWatchDeps, FileWatchService } from './file-watch';
 
@@ -321,6 +323,58 @@ export function registerFsIpc(deps: FsIpcDeps): FsIpcHandle {
     });
   });
   scoped('fs:reveal', (real) => sh.showItemInFolder(real));
+
+  /**
+   * Open a PICTURE or a WEB PAGE that a reply in the conversation offered
+   * (#1235). `fs:openPath`'s narrow sibling, and deliberately not the same
+   * channel.
+   *
+   * `fs:openPath` is reached from the document viewer's own "Open externally"
+   * button: app chrome, on a file the user had already opened and can see the
+   * type of. THIS is reached from one click on markup an agent wrote, and the
+   * agent may be relaying text from a web page or a file it read. The renderer
+   * only offers it for a path that is spelled like a picture or a page, and
+   * that is a convenience, not a boundary:
+   *
+   *   - `docs/report.html` can be a symlink to `tools/setup.bat`, and what
+   *     `shell.openPath` runs is what the path RESOLVES to. So the type is
+   *     checked on the asked spelling AND on the resolved path, as the picture
+   *     handler checks it (`doc-image.ts`).
+   *   - It must be a FILE. A directory named `x.html` opens a file manager.
+   *   - No alternate data stream (`page.html:payload`): a colon after the
+   *     drive's own.
+   *   - A network path is refused as a STRING, before `resolve` asks the host
+   *     for its real path (an outbound login handshake to a machine the reply
+   *     chose), unless its spelling already sits under a granted root.
+   */
+  deps.broker.handle('fs:openViewable', (_e, target: unknown): boolean => {
+    const refuse = (reason: string): boolean => {
+      deps.log.warn(`fs:openViewable refused: ${reason}`, {
+        path: (typeof target === 'string' ? target : String(target)).slice(0, 500),
+      });
+      return false;
+    };
+    if (typeof target !== 'string' || target.length === 0) return refuse('invalid-path');
+    if (!isViewableFile(target)) return refuse('not-viewable');
+    if (isNetworkPath(target)) {
+      const lexical = path.resolve(target);
+      if (!deps.scope.roots().some((root) => isWithinRoot(root, lexical))) return refuse('out-of-scope');
+    }
+    const decision = deps.scope.resolve(target);
+    if (!decision.ok) return refuse(decision.reason);
+    const real = decision.path;
+    if (!isViewableFile(real)) return refuse('not-viewable');
+    if (real.slice(2).includes(':')) return refuse('not-viewable');
+    try {
+      if (!fs.statSync(real).isFile()) return refuse('not-a-file');
+    } catch {
+      return refuse('not-found');
+    }
+    void sh.openPath(real).then((err) => {
+      if (err) deps.log.warn('fs:openViewable could not open the file', { path: real, error: err });
+    });
+    return true;
+  });
 
   // --- P2-E16-04: following the open file ----------------------------------
   //

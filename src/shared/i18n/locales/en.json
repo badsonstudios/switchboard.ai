@@ -1134,6 +1134,8 @@
     "keyHint": "↑ ↓ move · Enter expands · Esc leaves",
     "copy": "Copy",
     "copied": "Copied",
+    "openPicture": "Open {name} at full size",
+    "pictureNotShown": "Not shown: it is missing, too large, not a picture this app can draw, or outside the folders this app can read.",
     "copyCode": "Copy this code",
     "copySection": "Copy {section}",
     "jumpLatest": "↓ Jump to latest",
