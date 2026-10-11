@@ -21,7 +21,6 @@ import {
   type FeedCodeLabels,
 } from '../lib/feed-code';
 import { FEED_COPY_ATTR, FEED_EXPANDER_ATTR } from '../lib/feed-keys';
-import { ToolIcon } from '../components/ToolIcon';
 import { srOnly } from '../components/sr-only';
 import {
   ASK_USER_QUESTION_TOOL,
@@ -278,7 +277,6 @@ function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
         >
           <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
             <span>{b.tool?.name}</span>
-            <ToolIcon name={b.tool?.name} />
           </span>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minInlineSize: 0 }}>
             {b.tool?.filePath ?? b.tool?.summary}
@@ -408,7 +406,6 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
         >
           <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
             <span>{b.tool?.name}</span>
-            <ToolIcon name={b.tool?.name} />
           </span>
           <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{b.tool?.description ?? ''}</span>
           {/* IN WORDS, and in the failure ink (#1200). A command that failed is
@@ -450,7 +447,6 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
       <div style={{ fontSize: 11 }}>
         <div style={{ fontWeight: 700, color: 'var(--text)', marginBlockEnd: 2, whiteSpace: 'nowrap' }}>
           <span>{t('feedView.updateTodos')}</span>
-          <ToolIcon kind="todos" />
         </div>
         {(b.todos ?? []).map((td, i) => (
           <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline', color: 'var(--muted)' }}>
@@ -620,19 +616,11 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
           nordic's; the ink is 5.47:1 and 5.75:1 (#246). */}
       <span style={{ color: 'var(--status-working-ink)', fontWeight: 600, whiteSpace: 'nowrap' }}>
         {/* THE NAME KEEPS A SPAN OF ITS OWN, and that is not tidiness (found in
-            review). Find-in-conversation only paints a match on a text node
-            that is its parent's ONLY child (`lib/feed-marks.ts`); with the
-            picture as a sibling of the bare text, searching for "Grep"
-            counted the name and highlighted nothing. `nowrap` on the outer
-            span keeps the picture on the name's line when a long summary
-            squeezes the row. */}
+            review of #757). Find-in-conversation only paints a match on a text
+            node that is its parent's ONLY child (`lib/feed-marks.ts`), so the
+            name must not share its element with anything. The picture that
+            used to sit beside it is in the timeline gutter now (#1207). */}
         <span>{b.tool?.name}</span>
-        {/* the picture for this kind of tool, AFTER the name as the owner
-            asked (#757), and INSIDE the name's own span: that is what gives
-            it the name's ink. Beside the span it took the row's, which is a
-            different grey in the shell and edit blocks (caught by
-            e2e/tool-icons.spec.ts). Shape says which tool, never colour. */}
-        <ToolIcon name={b.tool?.name} />
       </span>
       <span
         style={{
@@ -726,7 +714,6 @@ function QuestionBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
       )}
       <span style={{ color: 'var(--status-working-ink)', fontWeight: 600, whiteSpace: 'nowrap' }}>
         <span>{t('feedView.question.title', { count: questions.length })}</span>
-        <ToolIcon name={b.tool?.name} />
       </span>
       <span
         data-question-state={outcome.state}

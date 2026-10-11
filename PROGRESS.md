@@ -98,15 +98,24 @@
 >    accepts a grouped session dragged from a group's list anywhere that is
 >    not a group's box or an open list, says what letting go will do, and
 >    ungroups on drop. A real-mouse drag is tested in the real app.
-> 8. **#1200 — fold runs of commands. IN PROGRESS, started 2026-10-11, branch
->    `feature/1200-fold-shell-runs`.** Measured first
+> 8. **#1200 — fold runs of commands. DONE 2026-10-11, PR #1229 (`11fb1343`),
+>    merged, NOT released.** Green on the first CI run; the ticket is closed.
+>    Measured first
 >    (25 real conversations, 3,153 commands: 2.4% failed; a third of runs are
 >    three or more; the CLI's `is_error` is reliable). Built: main carries the
 >    error flag onto the block; three or more commands in a row fold into
 >    "Ran N commands"; **a failed command is never folded** (it ends the run
 >    and stands alone, marked "failed"). Not done: keeping output-heavy
 >    commands out of a fold; re-running the typing-lag probe.
-> 9. #1207 tool pictures in the timeline gutter. NOT STARTED.
+> 9. **#1207 — tool pictures in the timeline gutter. IN PROGRESS, started
+>    2026-10-11, branch `feature/1207-gutter-glyphs`.**
+>    The picture replaces the dot (a 13px drawing centred on the 6px cell, so
+>    no box moved); the boxes carry none; new kinds for a new file, a
+>    notebook and a folded burst; a command wears git / node / python /
+>    PowerShell / container from a one-table, first-word lookup; an
+>    unrecognised tool keeps the plain dot. ⚠️ **The ticket's "Tanner pass on
+>    the glyph art before merge" did NOT happen**; the eight new drawings are
+>    a first pass.
 > 10. #1199 Settings in tabs. NOT STARTED.
 > 11. #1203 Prompt History. NOT STARTED.
 

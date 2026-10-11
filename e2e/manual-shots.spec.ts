@@ -926,7 +926,14 @@ test.describe('manual screenshots (#1082)', () => {
     await shot(w, 'events-drawer', [
       { target: drawer.locator('[data-testid="events-filters"]'), label: 'Everything, or only what needs you', side: 'left' },
       { target: drawer.locator('[data-event-held]').first(), label: 'A session waiting on you — answer it right here', side: 'left' },
-      { target: drawer.locator('.event-row[data-event-kind="done"]').first(), label: 'A session that finished its turn', side: 'left' },
+      // `done` or `ready`: a turn that finishes in front of someone using the
+      // window is seen at once and filed as looked-at (#1219). Either way the
+      // row is "a session that finished its turn".
+      {
+        target: drawer.locator('.event-row[data-event-kind="done"], .event-row[data-event-kind="ready"]').first(),
+        label: 'A session that finished its turn',
+        side: 'left',
+      },
     ]);
     await w.getByTestId('events-close').click();
 

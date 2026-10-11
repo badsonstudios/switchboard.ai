@@ -152,12 +152,14 @@ Two things about that are worth knowing, because both are deliberate:
   waits. That's on purpose: copying a command that is still half-written would
   put half a command on your clipboard with nothing to tell you so.
 
-### The small picture after each tool name
+### The small picture beside each step
 
-![Four steps in a conversation, each with a small picture after its name: a page after Read, a pencil after Edit, a terminal after Bash, a checklist after Update Todos](img/tool-icons.png)
+![Steps in a conversation, each with a small picture in the margin on its left: a page beside Read, a pencil beside Edit, a terminal beside Bash](img/tool-icons.png)
 
-Every box for something Claude did has a small picture right after the tool's
-name, so you can tell what kind of step it was by its shape, without reading:
+Down the left edge of the conversation, where there used to be a grey dot,
+each thing Claude did has a small picture of what kind of step it was. You can
+run your eye down that margin and tell them apart by shape, without reading.
+The box beside it shows the tool's name and what it was used on, as before.
 
 | Picture | What it marks |
 |---|---|
@@ -165,15 +167,37 @@ name, so you can tell what kind of step it was by its shape, without reading:
 | A speech bubble with a question mark | Claude asked you a question |
 | A page | It read a file |
 | A magnifying glass | It searched (for files, or for text in them) |
-| A terminal window | It ran a command (the same picture for Bash and PowerShell) |
-| A pencil | It edited or wrote a file |
+| Two magnifying glasses | A burst of reading and searching, folded into one box |
+| A pencil | It edited a file |
+| A page with a plus | It wrote a new file |
+| A notebook | It read or changed a notebook |
+| A terminal window | It ran a command (see below) |
 | A ticked list | It updated its to-do list |
 | A globe | It fetched a web page or searched the web |
 | A plug | It used a tool from a connected server (an MCP tool) |
-| A diamond | Any other tool |
+| A plain dot | A tool switchboard doesn't have a picture for |
 
-The pictures are drawn in the same colour as the name beside them. The colour
-tells you nothing extra; the shape does.
+**A command says what it ran.** When the command starts with a program
+switchboard knows, the terminal picture is replaced by that program's:
+
+| Picture | The command starts with |
+|---|---|
+| A branch | `git`, `gh` |
+| A hexagon | `npm`, `npx`, `node`, `pnpm`, `yarn`, `bun` |
+| Two interlocked hooks | `python`, `python3`, `py`, `pip`, `pip3`, `uv` |
+| A slanted terminal | `powershell`, `pwsh` (and anything run with the PowerShell tool) |
+| Stacked blocks | `docker`, `podman` |
+
+It looks only at the first word (after any `NAME=value` settings in front, and
+past a leading `cd somewhere &&`), so `git add -A && npm test` is a git step
+and `cd app && npm test` is an npm one. A script run by its own name counts
+too: `./build.ps1` is PowerShell, `tools/x.py` is Python. Anything else keeps
+the terminal.
+
+**Your own prompts keep their dot.** Plain text from Claude has no mark in
+the margin, as before.
+
+The pictures are all one grey. The colour tells you nothing; the shape does.
 
 ### Expanding a box
 

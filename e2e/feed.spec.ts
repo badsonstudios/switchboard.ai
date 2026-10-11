@@ -348,7 +348,9 @@ test.describe('Feed view (E12-06)', () => {
     // 2. the ANSWER has no dot; the prompt and the tool calls still do
     await expect(w.locator('[data-feed-block="assistant"] [data-feed-dot]')).toHaveCount(0);
     await expect(w.locator('[data-feed-block="user"] [data-feed-dot]').first()).toBeAttached();
-    await expect(w.locator('[data-feed-block="tool"] [data-feed-dot]').first()).toBeAttached();
+    // a tool block's mark is the PICTURE of what kind of step it was (#1207);
+    // the plain dot is only for a tool nothing has a picture for
+    await expect(w.locator('[data-feed-block="tool"] [data-feed-glyph]').first()).toBeAttached();
 
     // …and dropping the dot must not drop the GUTTER: prose starts on the same
     // column as the boxes, or the conversation zig-zags down the page
