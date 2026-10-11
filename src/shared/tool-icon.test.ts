@@ -123,7 +123,24 @@ describe('commandIconFor — the first word of a command (#1207)', () => {
 
   it('a chain is whatever its FIRST command is: data, not a parser', () => {
     expect(commandIconFor('git add -A && npm test')).toBe('git');
-    expect(commandIconFor('cd src && git status')).toBeNull();
+  });
+
+  it('looks past ONE prefix, `cd <dir> &&`, because that is how most commands are written', () => {
+    expect(commandIconFor('cd src && git status')).toBe('git');
+    expect(commandIconFor('cd packages/app && npm test')).toBe('node');
+    expect(commandIconFor('cd "C:/Projects/x" && python run.py')).toBe('python');
+    // ...and only that shape: nothing else is skipped
+    expect(commandIconFor('cd a b && git status')).toBeNull();
+    expect(commandIconFor('cd src; git status')).toBeNull();
+    expect(commandIconFor('sudo git status')).toBeNull();
+    expect(commandIconFor('time npm test')).toBeNull();
+    expect(commandIconFor('cd src && cd lib && git status')).toBeNull();
+  });
+
+  it('a Windows wrapper is the program it wraps', () => {
+    expect(commandIconFor('npm.cmd run build')).toBe('node');
+    expect(commandIconFor('npx.cmd vitest')).toBe('node');
+    expect(commandIconFor('git.bat status')).toBe('git');
   });
 
   it('anything else is not recognised, and says so with null', () => {

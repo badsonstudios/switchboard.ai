@@ -141,16 +141,25 @@ const SCRIPT_ICONS: ReadonlyArray<[RegExp, ToolIconKind]> = [
  *
  * Leading `NAME=value` assignments are skipped (they are how a command is
  * given its environment, not what it is). A path is reduced to its last part
- * and an `.exe` to its name, so `C:\tools\git.exe status` is git.
+ * and an `.exe`, `.cmd` or `.bat` to its name, so `C:\tools\git.exe status`
+ * is git and `npm.cmd test` is node.
+ *
+ * ONE PREFIX IS LOOKED PAST: `cd <somewhere> &&`. It is how the CLI writes a
+ * great many of its commands ("cd packages/app && npm test"), and without
+ * this most of them would stay plain terminals. It is the only one: `sudo`,
+ * `time`, `env`, a subshell and a second `&&` are all left alone, and the
+ * answer for those is the terminal, which is never wrong.
  */
 export function commandIconFor(command: string | undefined | null): ToolIconKind | null {
   const tokens = (command ?? '').trim().split(/\s+/).filter(Boolean);
   let i = 0;
   while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i])) i += 1;
+  // `cd <dir> && <the command>`: exactly that shape, one directory, one `&&`
+  if (tokens[i] === 'cd' && tokens[i + 2] === '&&') i += 3;
   const first = tokens[i];
   if (!first) return null;
   const bare = first.replace(/^["']|["']$/g, '');
-  const name = (bare.split(/[\\/]/).pop() ?? '').replace(/\.exe$/i, '').toLowerCase();
+  const name = (bare.split(/[\\/]/).pop() ?? '').replace(/\.(?:exe|cmd|bat)$/i, '').toLowerCase();
   if (Object.hasOwn(COMMAND_ICONS, name)) return COMMAND_ICONS[name];
   for (const [ext, kind] of SCRIPT_ICONS) if (ext.test(bare)) return kind;
   return null;

@@ -616,18 +616,11 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
           nordic's; the ink is 5.47:1 and 5.75:1 (#246). */}
       <span style={{ color: 'var(--status-working-ink)', fontWeight: 600, whiteSpace: 'nowrap' }}>
         {/* THE NAME KEEPS A SPAN OF ITS OWN, and that is not tidiness (found in
-            review). Find-in-conversation only paints a match on a text node
-            that is its parent's ONLY child (`lib/feed-marks.ts`); with the
-            picture as a sibling of the bare text, searching for "Grep"
-            counted the name and highlighted nothing. `nowrap` on the outer
-            span keeps the picture on the name's line when a long summary
-            squeezes the row. */}
+            review of #757). Find-in-conversation only paints a match on a text
+            node that is its parent's ONLY child (`lib/feed-marks.ts`), so the
+            name must not share its element with anything. The picture that
+            used to sit beside it is in the timeline gutter now (#1207). */}
         <span>{b.tool?.name}</span>
-        {/* the picture for this kind of tool, AFTER the name as the owner
-            asked (#757), and INSIDE the name's own span: that is what gives
-            it the name's ink. Beside the span it took the row's, which is a
-            different grey in the shell and edit blocks (caught by
-            e2e/tool-icons.spec.ts). Shape says which tool, never colour. */}
       </span>
       <span
         style={{
