@@ -1087,10 +1087,10 @@ mark[data-feed-match-current] {
 }
 .settings-tab[aria-selected='true'] {
   color: var(--text);
-  border-block-end-color: var(--accent);
+  border-block-end-color: var(--status-working-ink);
 }
 .settings-tab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--status-working-ink);
   outline-offset: -2px;
   border-radius: 4px;
 }
@@ -1110,7 +1110,7 @@ mark[data-feed-match-current] {
   text-decoration: underline;
 }
 .rail-footer-finished:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--status-working-ink);
   outline-offset: 2px;
 }
 
