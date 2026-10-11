@@ -21,7 +21,13 @@ export interface CommandDeps {
   /** pick a folder and open a new session in it */
   newSession: () => void;
   /** close a card (asks for confirmation — it forgets the record) */
-  closeCard: (cardId: string) => void;
+  /**
+   * `fromItsOwnWindow`: the chord was pressed IN the popped-out window this
+   * card is in (#1214), so that is the window the "close it?" question
+   * belongs in. Absent, the question is asked in the main window, where
+   * every other way of closing a session is.
+   */
+  closeCard: (cardId: string, fromItsOwnWindow?: boolean) => void;
   /** close every session at once, except the pinned ones (E9-09 bulk-close) */
   closeAllCards: () => void;
   /** pin or unpin a session — §5.8's protection contract (E9-09) */
@@ -400,7 +406,7 @@ export function buildCommands(deps: CommandDeps): Command[] {
       actsInPopout: true,
       run: (ctx) => {
         const cardId = here(ctx);
-        if (cardId) deps.closeCard(cardId);
+        if (cardId) deps.closeCard(cardId, ctx.popoutCardId === cardId);
       },
     },
     // ── §5.8's PINNING contract (E9-09) ───────────────────────────────────

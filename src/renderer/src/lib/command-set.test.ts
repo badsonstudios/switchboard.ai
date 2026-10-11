@@ -164,7 +164,8 @@ describe('seed command set (E9-01)', () => {
   it('close routes through the card closer (which confirms) — never a bare close', () => {
     const d = deps();
     byId(buildCommands(d), 'session.close').run(ctxWith(['a'], 'a'));
-    expect(d.closeCard).toHaveBeenCalledWith('a');
+    // (false: pressed in the main window, so the question is asked there)
+    expect(d.closeCard).toHaveBeenCalledWith('a', false);
   });
 
   // ── §5.8's PINNING contract (E9-09) ────────────────────────────
@@ -758,7 +759,8 @@ describe('a chord pressed in a popped-out session’s window (#1214)', () => {
     byId(cmds, 'session.pin').run(inPopout('b'));
     expect(d.togglePin).toHaveBeenCalledWith('b');
     byId(cmds, 'session.close').run(inPopout('b'));
-    expect(d.closeCard).toHaveBeenCalledWith('b');
+    // ...and says the question belongs in that window, which is where the user is
+    expect(d.closeCard).toHaveBeenCalledWith('b', true);
     byId(cmds, 'find.open').run(inPopout('b'));
     expect(d.openFind).toHaveBeenCalledWith('b');
     byId(cmds, 'session.reorder.down').run(inPopout('b'));

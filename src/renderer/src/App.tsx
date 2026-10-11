@@ -1846,7 +1846,7 @@ export function App(): React.JSX.Element {
             if (grid.current?.newSessionTargetsPopout()) raisedOtherWindowRef.current = true;
             void grid.current?.newSession();
           },
-          closeCard: (cardId) => grid.current?.closeCard(cardId),
+          closeCard: (cardId, fromItsOwnWindow) => grid.current?.closeCard(cardId, fromItsOwnWindow),
           closeAllCards: () => grid.current?.closeAllCards(),
           // #581 — the three families that were silent to a screen reader.
           //

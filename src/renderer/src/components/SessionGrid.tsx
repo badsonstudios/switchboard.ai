@@ -5921,7 +5921,12 @@ export interface GridController {
   /** is this panel in its own OS window right now? (#533 — see App's openFind) */
   isPanelPoppedOut: (panelId: string) => boolean;
   /** close a card the way the tab ✕ does — including its confirm (E9-01) */
-  closeCard: (cardId: string) => void;
+  /**
+   * `fromItsOwnWindow` (#1214): asked for from inside the popped-out window
+   * the card is in, so the confirm is that window's. Otherwise it is asked
+   * here, in the main window, where the gesture was made.
+   */
+  closeCard: (cardId: string, fromItsOwnWindow?: boolean) => void;
   /** close EVERY session at once, sparing the pinned ones (§5.8's pinning
    *  contract, E9-09). One confirm for the lot, not one per card. */
   closeAllCards: () => void;
@@ -6617,7 +6622,7 @@ export function SessionGrid(props: {
       },
       isPanelPoppedOut: (panelId) =>
         apiRef.current?.getPanel(panelId)?.api.location.type === 'popout',
-      closeCard: (cardId) => {
+      closeCard: (cardId, fromItsOwnWindow) => {
         const panel = apiRef.current?.getPanel(`session-${cardId}`);
         // same contract as the tab ✕ (Dan 2026-07-22): confirm, because this
         // ends the session and forgets the record
@@ -6630,9 +6635,15 @@ export function SessionGrid(props: {
           panel?.title,
           (panel?.params as CardParams | undefined)?.folder
         );
-        // asked in the window the card is IN (#1214): its own, when popped out
+        // THE QUESTION IS ASKED WHERE THE GESTURE WAS MADE (#1214). Pressed in
+        // the card's own popped-out window, that is its window. From anywhere
+        // else (the ✕ on its row in the Sessions list, the command list) it is
+        // THIS window: the user is here, and a confirm opened over a window on
+        // another monitor is a question nobody sees. That mistake was made
+        // first, and the real-app tests caught it: closing a popped-out
+        // session from the list asked in the popout.
         const loc = panel?.group.api.location;
-        const cardWindow = loc?.type === 'popout' ? loc.getWindow() : undefined;
+        const cardWindow = fromItsOwnWindow && loc?.type === 'popout' ? loc.getWindow() : undefined;
         if (!nativeConfirm(t('grid.closeConfirm', { title }), cardWindow)) return;
         // the confirm belongs to the gesture; retireCard (E9-09) does what
         // main's inline removePanel/by-hand branch did, for both call sites
