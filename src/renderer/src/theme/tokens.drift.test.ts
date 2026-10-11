@@ -1296,8 +1296,8 @@ describe('--faint is the disabled and decorative ink, and every use of it is cou
     'components/CommandPalette.tsx': [1, "a disabled command's title"],
     'components/EventsPanel.tsx': [2, 'the OUTLINE hue of a dealt-with row; a swatch fallback'],
     'components/FeedView.tsx': [
-      6,
-      'two dashed rules, two rail marks, a swatch fallback, and the send button with nothing to send',
+      4,
+      'two dashed rules, a swatch fallback, and the send button with nothing to send',
     ],
     'components/FileTree.tsx': [1, 'an aria-hidden file glyph'],
     'components/FindBar.tsx': [1, 'a find button that cannot be pressed (nothing to step through)'],
@@ -1309,6 +1309,7 @@ describe('--faint is the disabled and decorative ink, and every use of it is cou
     'components/SessionRow.tsx': [2, 'an accent fallback; the dash where a task label would be'],
     'components/SessionsStrip.tsx': [1, 'a scroll arrow with nothing to scroll to'],
     'components/StripPill.tsx': [2, 'an accent fallback; the dash where a task label would be'],
+    'components/ToolIcon.tsx': [1, 'the timeline DOT of a row with no picture (a picture is --muted)'],
     'theme/dockview-tokens.css': [2, 'the two scrollbar colours'],
     'theme/tokens.css': [4, 'a dashed rule, a disabled chip, and two accent fallbacks on edges'],
   };

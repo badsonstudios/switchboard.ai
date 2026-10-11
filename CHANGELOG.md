@@ -98,6 +98,13 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **The pictures for each step moved to the margin of the conversation.** The
+  small picture that says what kind of step it was (read, edit, command, …)
+  now replaces the grey dot down the left edge, and the box beside it is back
+  to the tool's name and what it was used on. A command now says what it ran:
+  a branch for `git`, a hexagon for `npm`/`node`, and pictures for Python,
+  PowerShell and Docker. A new file, a notebook and a folded burst each have
+  their own. Your own prompts keep their dot.
 - **A run of commands is one box in the conversation.** Three or more
   commands in a row now fold into **Ran N commands**, the way a burst of
   reading and searching already did; click it to see each one. **A command

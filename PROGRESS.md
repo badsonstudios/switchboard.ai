@@ -106,7 +106,15 @@
 >    "Ran N commands"; **a failed command is never folded** (it ends the run
 >    and stands alone, marked "failed"). Not done: keeping output-heavy
 >    commands out of a fold; re-running the typing-lag probe.
-> 9. #1207 tool pictures in the timeline gutter. NOT STARTED.
+> 9. **#1207 — tool pictures in the timeline gutter. IN PROGRESS, started
+>    2026-10-11, branch `feature/1207-gutter-glyphs` (stacked on #1200's).**
+>    The picture replaces the dot (a 13px drawing centred on the 6px cell, so
+>    no box moved); the boxes carry none; new kinds for a new file, a
+>    notebook and a folded burst; a command wears git / node / python /
+>    PowerShell / container from a one-table, first-word lookup; an
+>    unrecognised tool keeps the plain dot. ⚠️ **The ticket's "Tanner pass on
+>    the glyph art before merge" did NOT happen**; the eight new drawings are
+>    a first pass.
 > 10. #1199 Settings in tabs. NOT STARTED.
 > 11. #1203 Prompt History. NOT STARTED.
 

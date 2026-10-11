@@ -8,6 +8,8 @@ import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
 import { applyFolds, foldKind, type FoldKind, type FoldRun } from '../lib/feed-folds';
+import { GutterMark } from './ToolIcon';
+import { gutterIconFor } from '../../../shared/tool-icon';
 import { groupBySeq } from '../lib/feed-skipping';
 import { FEED_GROUP_ATTR, FEED_GROUP_OPEN_ATTR, useFeedSkipping } from '../lib/use-feed-skipping';
 import { autonomyTooltip, isAutonomy } from '../lib/autonomy';
@@ -250,18 +252,9 @@ const FoldRow = React.memo(function FoldRow(props: {
           : {}),
       }}
     >
-      {/* the gutter every row reserves, with the tool rows' own dot */}
-      <span
-        aria-hidden
-        style={{
-          inlineSize: 6,
-          blockSize: 6,
-          flexShrink: 0,
-          marginBlockStart: 5,
-          borderRadius: '50%',
-          background: 'var(--faint)',
-        }}
-      />
+      {/* the gutter every row reserves, with the picture of what was folded:
+          a burst of looking around, or a run of commands (#1207) */}
+      <GutterMark icon={shell ? 'shell' : 'explore'} dot />
       <div style={{ flex: 1, minInlineSize: 0 }}>
         <ToolBox kind="fold" onToggle={toggle}>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5 }}>
@@ -370,6 +363,10 @@ const Block = React.memo(function Block({ b }: { b: FeedBlockDto }): React.JSX.E
   // `ContributionBoundary`, and that boundary names the contribution (#594).
   const { id, node: inner } = resolveFeedBlock(rendererRegistry, b);
   const dot = showsTimelineDot(b.kind);
+  // #1207: for a tool block the dot IS the picture of what kind of step it
+  // was. A prompt keeps its circle (the owner: "the prompt is fine with a
+  // circle"), and a tool nobody here recognises keeps the plain dot.
+  const glyph = gutterIconFor(b);
   // The block find is sitting on (P2-E17-02). An OUTLINE rather than a
   // background: the block already paints its own surfaces (tool boxes, diff
   // rows) and tinting behind them would recolour half of them and none of the
@@ -407,21 +404,11 @@ const Block = React.memo(function Block({ b }: { b: FeedBlockDto }): React.JSX.E
           unconditional and the DOT is not (#91): assistant prose gets the same
           6px of reserved column so the left edge stays flush with the boxed
           blocks above it, but no marker â€” see `showsTimelineDot`. */}
-      <span
-        {...(dot ? { 'data-feed-dot': b.kind } : {})}
-        aria-hidden
-        style={{
-          inlineSize: 6,
-          blockSize: 6,
-          flexShrink: 0,
-          marginBlockStart: 5,
-          ...(dot
-            ? {
-                borderRadius: '50%',
-                background: b.kind === 'user' ? 'var(--muted)' : 'var(--faint)',
-              }
-            : {}),
-        }}
+      <GutterMark
+        icon={glyph}
+        dot={dot}
+        mark={b.kind}
+        dotColor={b.kind === 'user' ? 'var(--muted)' : undefined}
       />
       {/* THE CRASH BARRIER (#594). `resolveFeedBlock` catches a renderer that
           throws while BUILDING its node; it cannot catch the node THROWING

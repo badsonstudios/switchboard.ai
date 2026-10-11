@@ -21,7 +21,6 @@ import {
   type FeedCodeLabels,
 } from '../lib/feed-code';
 import { FEED_COPY_ATTR, FEED_EXPANDER_ATTR } from '../lib/feed-keys';
-import { ToolIcon } from '../components/ToolIcon';
 import { srOnly } from '../components/sr-only';
 import {
   ASK_USER_QUESTION_TOOL,
@@ -278,7 +277,6 @@ function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
         >
           <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
             <span>{b.tool?.name}</span>
-            <ToolIcon name={b.tool?.name} />
           </span>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minInlineSize: 0 }}>
             {b.tool?.filePath ?? b.tool?.summary}
@@ -408,7 +406,6 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
         >
           <span style={{ fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>
             <span>{b.tool?.name}</span>
-            <ToolIcon name={b.tool?.name} />
           </span>
           <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{b.tool?.description ?? ''}</span>
           {/* IN WORDS, and in the failure ink (#1200). A command that failed is
@@ -450,7 +447,6 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
       <div style={{ fontSize: 11 }}>
         <div style={{ fontWeight: 700, color: 'var(--text)', marginBlockEnd: 2, whiteSpace: 'nowrap' }}>
           <span>{t('feedView.updateTodos')}</span>
-          <ToolIcon kind="todos" />
         </div>
         {(b.todos ?? []).map((td, i) => (
           <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline', color: 'var(--muted)' }}>
@@ -632,7 +628,6 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
             it the name's ink. Beside the span it took the row's, which is a
             different grey in the shell and edit blocks (caught by
             e2e/tool-icons.spec.ts). Shape says which tool, never colour. */}
-        <ToolIcon name={b.tool?.name} />
       </span>
       <span
         style={{
@@ -726,7 +721,6 @@ function QuestionBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
       )}
       <span style={{ color: 'var(--status-working-ink)', fontWeight: 600, whiteSpace: 'nowrap' }}>
         <span>{t('feedView.question.title', { count: questions.length })}</span>
-        <ToolIcon name={b.tool?.name} />
       </span>
       <span
         data-question-state={outcome.state}
