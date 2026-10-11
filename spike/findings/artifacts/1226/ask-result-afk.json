@@ -1,0 +1,123 @@
+{
+  "mode": "afk",
+  "cli": "claude.cmd",
+  "cliVersion": "2.1.288",
+  "startedAt": "2026-10-11T14:59:15.471Z",
+  "askInput": {
+    "questions": [
+      {
+        "question": "Which colour do you prefer?",
+        "header": "Colour",
+        "options": [
+          {
+            "label": "Red",
+            "description": "Red is your preferred colour."
+          },
+          {
+            "label": "Green",
+            "description": "Green is your preferred colour."
+          },
+          {
+            "label": "Blue",
+            "description": "Blue is your preferred colour."
+          }
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": "Which of these languages do you use?",
+        "header": "Languages",
+        "options": [
+          {
+            "label": "TypeScript",
+            "description": "You use TypeScript."
+          },
+          {
+            "label": "Rust",
+            "description": "You use Rust."
+          },
+          {
+            "label": "Go",
+            "description": "You use Go."
+          },
+          {
+            "label": "Python",
+            "description": "You use Python."
+          }
+        ],
+        "multiSelect": true
+      }
+    ]
+  },
+  "ourResponse": {
+    "behavior": "allow",
+    "updatedInput": {
+      "questions": [
+        {
+          "question": "Which colour do you prefer?",
+          "header": "Colour",
+          "options": [
+            {
+              "label": "Red",
+              "description": "Red is your preferred colour."
+            },
+            {
+              "label": "Green",
+              "description": "Green is your preferred colour."
+            },
+            {
+              "label": "Blue",
+              "description": "Blue is your preferred colour."
+            }
+          ],
+          "multiSelect": false
+        },
+        {
+          "question": "Which of these languages do you use?",
+          "header": "Languages",
+          "options": [
+            {
+              "label": "TypeScript",
+              "description": "You use TypeScript."
+            },
+            {
+              "label": "Rust",
+              "description": "You use Rust."
+            },
+            {
+              "label": "Go",
+              "description": "You use Go."
+            },
+            {
+              "label": "Python",
+              "description": "You use Python."
+            }
+          ],
+          "multiSelect": true
+        }
+      ],
+      "answers": {
+        "Which colour do you prefer?": "Red",
+        "Which of these languages do you use?": "TypeScript, Rust"
+      },
+      "afkTimeoutMs": 60000
+    }
+  },
+  "toolResults": [
+    {
+      "type": "tool_result",
+      "content": "No response after 60s — the user may be away from keyboard. Proceed using your best judgment based on the context so far; you can re-ask this question later if it's still relevant.\n\nBefore going idle the user had selected: \"Which colour do you prefer?\"=\"Red\", \"Which of these languages do you use?\"=\"TypeScript, Rust\".",
+      "tool_use_id": "toolu_0112s7ogmZhdTeosuiExiyaM"
+    }
+  ],
+  "assistantText": [
+    "The question timed out after 60 seconds without being submitted, but the selections you'd made before going idle were **Red** for colour and **TypeScript** and **Rust** for languages. Since those were never confirmed, treat them as provisional; tell me if either is wrong."
+  ],
+  "result": {
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 4690
+  },
+  "stderr": [],
+  "endedAt": "2026-10-11T14:59:21.678Z"
+}

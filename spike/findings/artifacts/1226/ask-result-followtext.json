@@ -1,0 +1,133 @@
+{
+  "mode": "followtext",
+  "cli": "claude.cmd",
+  "cliVersion": "2.1.288",
+  "startedAt": "2026-10-11T14:58:50.369Z",
+  "askInput": {
+    "questions": [
+      {
+        "question": "Which colour do you prefer?",
+        "header": "Colour",
+        "options": [
+          {
+            "label": "Red",
+            "description": "Red is your preferred colour."
+          },
+          {
+            "label": "Green",
+            "description": "Green is your preferred colour."
+          },
+          {
+            "label": "Blue",
+            "description": "Blue is your preferred colour."
+          }
+        ],
+        "multiSelect": false
+      },
+      {
+        "question": "Which of these languages do you use?",
+        "header": "Languages",
+        "options": [
+          {
+            "label": "TypeScript",
+            "description": "You use TypeScript."
+          },
+          {
+            "label": "Rust",
+            "description": "You use Rust."
+          },
+          {
+            "label": "Go",
+            "description": "You use Go."
+          },
+          {
+            "label": "Python",
+            "description": "You use Python."
+          }
+        ],
+        "multiSelect": true
+      }
+    ]
+  },
+  "ourResponse": {
+    "behavior": "allow",
+    "updatedInput": {
+      "questions": [
+        {
+          "question": "Which colour do you prefer?",
+          "header": "Colour",
+          "options": [
+            {
+              "label": "Red",
+              "description": "Red is your preferred colour."
+            },
+            {
+              "label": "Green",
+              "description": "Green is your preferred colour."
+            },
+            {
+              "label": "Blue",
+              "description": "Blue is your preferred colour."
+            }
+          ],
+          "multiSelect": false
+        },
+        {
+          "question": "Which of these languages do you use?",
+          "header": "Languages",
+          "options": [
+            {
+              "label": "TypeScript",
+              "description": "You use TypeScript."
+            },
+            {
+              "label": "Rust",
+              "description": "You use Rust."
+            },
+            {
+              "label": "Go",
+              "description": "You use Go."
+            },
+            {
+              "label": "Python",
+              "description": "You use Python."
+            }
+          ],
+          "multiSelect": true
+        }
+      ],
+      "answers": {},
+      "followUp": true,
+      "response": "PROBE-RESPONSE what do you mean by colour"
+    }
+  },
+  "toolResults": [
+    {
+      "type": "tool_result",
+      "content": "The user asked for more questions before answering. They also wrote: \"PROBE-RESPONSE what do you mean by colour\". Call AskUserQuestion again now with further questions about this decision (do not repeat these); do not proceed with the task yet.",
+      "tool_use_id": "toolu_013PcybAxht2b4to4gkW1zj3"
+    },
+    {
+      "type": "tool_result",
+      "content": "Probe: one question was enough.",
+      "is_error": true,
+      "tool_use_id": "toolu_01PpTd6AihfPZB15qEuJk5Kw"
+    },
+    {
+      "type": "tool_result",
+      "content": "Probe: one question was enough.",
+      "is_error": true,
+      "tool_use_id": "toolu_014UQGhLs8X4da32ahw3V9EC"
+    }
+  ],
+  "assistantText": [
+    "Summary: I asked your two questions, but you didn't pick a colour or any languages, so I have no answers to report. Instead you asked what I meant by \"colour\", and my two attempts to follow up on that were both rejected.\n\n- **First call:** asked both questions together as requested (colour as pick-one from Red, Green, Blue; languages as pick-several from TypeScript, Rust, Go, Python).\n- **Your response:** no selections, just \"PROBE-RESPONSE what do you mean by colour\" and a request for further questions.\n- **Follow-up 1:** two clarifying questions (which sense of \"colour\", and what counts as \"using\" a language) were rejected with \"Probe: one question was enough.\"\n- **Follow-up 2:** the colour clarification alone was rejected with the same message, so I stopped retrying.\n- **What I meant by \"colour\":** simply your general favourite of the three, with no particular use in mind."
+  ],
+  "result": {
+    "subtype": "success",
+    "is_error": false,
+    "duration_ms": 16667
+  },
+  "stderr": [],
+  "endedAt": "2026-10-11T14:59:08.553Z"
+}

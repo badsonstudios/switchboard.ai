@@ -299,22 +299,29 @@ export function toggleOther(q: AskQuestion, sel: AskSelection): AskSelection {
 //   A question the user SKIPPED is simply absent from the sentence ("blank"
 //   and "partial" were byte-identical downstream).
 //
-// READ FROM THE INSTALLED BINARY (2.1.288), NOT YET PROBED. The strings are in
-// `claude.exe`; nobody has made the CLI produce them in front of us:
+// MEASURED ON 2.1.288 (#1226, `spike/findings/1226-ask-result-shapes.md`). These
+// were first read out of the binary; the CLI has since been made to produce
+// every one of them, and the artifacts are what the tests read:
 //
 //   a pair may carry more after its answer:
 //                "<q>"="<a>" selected preview:\n<preview> notes: <notes>
 //   and a pair with a note but no pick is
 //                "<q>"=(no option selected) notes: <notes>
-//   other openings:  … So far they answered: <pairs>. …
-//                    Before going idle the user had selected: <pairs>.
-//                    The user responded: <free text>
-//                    The user did not answer the questions.
+//   a multi-select answer sent as an ARRAY is joined with a bare comma:
+//                "<q>"="TypeScript,Rust"
+//   other sentences:
+//     The user responded: <free text>          (answers sent with it are dropped)
+//     The user did not answer the questions.
+//     No response after 60s — … Before going idle the user had selected: <pairs>.
+//     The user asked for more questions before you proceed. So far they
+//       answered: <pairs>.[ They also wrote: "<text>".] Call AskUserQuestion again …
+//     The user asked for more questions before answering.[ They also wrote:
+//       "<text>".] Call AskUserQuestion again now …
 //
-// switchboard's own panel sends none of the note or preview forms, so they
-// arrive only from a question answered in another client. They are handled
-// because misreading one would show an ANSWERED question as skipped, and that
-// is the one outcome this must not produce.
+// switchboard's own panel sends none of these, so they arrive only from a
+// question answered in another client. They are handled because misreading
+// one would show an ANSWERED question as skipped, and that is the one outcome
+// this must not produce.
 //
 // The CLI escapes nothing in that sentence, so it cannot be parsed on its own:
 // a question or an answer may contain a quote, a comma, even `"="`. What makes
@@ -404,6 +411,14 @@ const PAIR_OPENINGS = [
 const RESPONDED_PREFIX = 'The user responded: ';
 /** the sentences the CLI is known to close the pairs with, each after `".` */
 const ANSWERED_TAILS = ['". You can now continue', '". Read the answers carefully'];
+/**
+ * What follows the pairs when the user asked for MORE QUESTIONS (measured,
+ * #1226). Unlike the two above these are not the end of the result, and the
+ * first carries text the user typed, which may itself hold a quote. So they
+ * are looked for FORWARDS from the last pair, never backwards from the end.
+ */
+const FOLLOW_UP_TAILS = ['". They also wrote: "', '". Call '];
+const ALSO_WROTE = 'They also wrote: "';
 const NO_PICK = '(no option selected)';
 const NOTES = ' notes: ';
 const PREVIEW = ' selected preview:';
@@ -419,7 +434,17 @@ export function readAskResult(
   const opening = PAIR_OPENINGS.map((p) => ({ p, at: result.indexOf(p) }))
     .filter((o) => o.at !== -1)
     .sort((a, b) => a.at - b.at)[0];
-  if (!opening) return { state: 'declined', reason: result.trim() };
+  if (!opening) {
+    // "asked for more questions before answering", with words of their own:
+    // those words are what the user said, so they are the response. The text
+    // runs to the LAST `". Call `, because it may contain a quote itself.
+    const wrote = result.indexOf(ALSO_WROTE);
+    const end = result.lastIndexOf('". Call ');
+    if (wrote !== -1 && end > wrote) {
+      return { state: 'responded', text: result.slice(wrote + ALSO_WROTE.length, end).trim() };
+    }
+    return { state: 'declined', reason: result.trim() };
+  }
   const body = result.slice(opening.at + opening.p.length);
 
   // Where each question's `"<text>"=` sits. Searched in order, so two
@@ -436,7 +461,14 @@ export function readAskResult(
   const placed = [...new Set(marks.filter((m): m is Marker => m !== null).map((m) => m.at))].sort(
     (a, b) => a - b
   );
-  const tail = Math.max(...ANSWERED_TAILS.map((t) => body.lastIndexOf(t)));
+  // Where the pairs END. A result closes with ONE of the two closing
+  // sentences, found from the back and the LAST taken (a typed answer may
+  // quote the other one's words). Only a result with neither is a follow-up,
+  // whose endings are found from the last pair forwards, the first taken.
+  const closing = Math.max(...ANSWERED_TAILS.map((t) => body.lastIndexOf(t)));
+  const lastValueAt = Math.max(0, ...marks.map((m) => m?.valueAt ?? 0));
+  const following = FOLLOW_UP_TAILS.map((t) => body.indexOf(t, lastValueAt)).filter((at) => at !== -1);
+  const tail = closing !== -1 ? closing : following.length > 0 ? Math.min(...following) : -1;
   // Cut short: main keeps a bounded slice of every result, and a long typed
   // answer can push the end of the sentence past it. Without its known close
   // and without a full stop, the end we have is not the end.
@@ -523,7 +555,8 @@ function readPair(value: string, openEnded: boolean): AskAnswerRead {
  * `picked` are offered labels; `other` is what was typed instead of, or beside,
  * them. A multi-select answer is the labels joined with ", " (measured), so it
  * is split on that ONLY when no offered label contains ", " itself. Otherwise
- * the labels are found by their own text, longest first.
+ * the labels are found by their own text, longest first. (Sent as an array it
+ * is joined with a bare comma instead; see below.)
  *
  * KNOWN LIMIT, inherent in an unescaped format: on a multi-select, typed text
  * that happens to contain an offered label after a ", " ticks that label.
@@ -535,9 +568,16 @@ export function pickedFor(
   const labels = q.options.map((o) => o.label);
   if (labels.includes(answer)) return { picked: [answer], other: null };
   if (!q.multiSelect) return { picked: [], other: answer };
-  const parts = labels.some((l) => l.includes(', '))
-    ? splitByLabels(answer, labels)
-    : answer.split(', ');
+  // A client that sends a multi-select answer as an ARRAY has it joined with a
+  // bare comma (measured, #1226): `TypeScript,Rust`. Read as that only when
+  // every piece is an offered label, so typed text with a comma stays text.
+  const bare = answer.split(',');
+  const parts =
+    bare.length > 1 && bare.every((p) => labels.includes(p))
+      ? bare
+      : labels.some((l) => l.includes(', '))
+        ? splitByLabels(answer, labels)
+        : answer.split(', ');
   const picked = labels.filter((l) => parts.includes(l));
   const rest = parts.filter((p) => !labels.includes(p));
   return { picked, other: rest.length > 0 ? rest.join(', ') : null };
