@@ -89,15 +89,23 @@
 >    meter, PR #1183); the existing real-app test for it passes on `main`.
 >    Nothing was built. One difference from the ticket's wording stays an
 >    open question for him: blue from 60%, not yellow.
-> 7. **#1197 — drag a session out of a group, on the strip. IN PROGRESS,
->    started 2026-10-11, branch `feature/1197-strip-drag-out`.** Reproduced first: the menu way ("No group") already existed
+> 7. **#1197 — drag a session out of a group, on the strip. DONE 2026-10-11,
+>    PR #1228 (`b66f0118`), merged, NOT released.** Green on the first CI run;
+>    the ticket is closed. Reproduced first: the menu way ("No group") already existed
 >    in both placements, and a row could already be dragged onto another
 >    group; the strip's own surface took no drop at all, so there was nowhere
 >    to let go that meant "no group" (the manual said so). Built: the strip
 >    accepts a grouped session dragged from a group's list anywhere that is
 >    not a group's box or an open list, says what letting go will do, and
 >    ungroups on drop. A real-mouse drag is tested in the real app.
-> 8. #1200 consolidate consecutive Bash runs. NOT STARTED.
+> 8. **#1200 — fold runs of commands. IN PROGRESS, started 2026-10-11, branch
+>    `feature/1200-fold-shell-runs`.** Measured first
+>    (25 real conversations, 3,153 commands: 2.4% failed; a third of runs are
+>    three or more; the CLI's `is_error` is reliable). Built: main carries the
+>    error flag onto the block; three or more commands in a row fold into
+>    "Ran N commands"; **a failed command is never folded** (it ends the run
+>    and stands alone, marked "failed"). Not done: keeping output-heavy
+>    commands out of a fold; re-running the typing-lag probe.
 > 9. #1207 tool pictures in the timeline gutter. NOT STARTED.
 > 10. #1199 Settings in tabs. NOT STARTED.
 > 11. #1203 Prompt History. NOT STARTED.

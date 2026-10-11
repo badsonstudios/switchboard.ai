@@ -7,7 +7,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
-import { applyFolds, isExploration, type FoldRun } from '../lib/feed-folds';
+import { applyFolds, foldKind, type FoldKind, type FoldRun } from '../lib/feed-folds';
 import { groupBySeq } from '../lib/feed-skipping';
 import { FEED_GROUP_ATTR, FEED_GROUP_OPEN_ATTR, useFeedSkipping } from '../lib/use-feed-skipping';
 import { autonomyTooltip, isAutonomy } from '../lib/autonomy';
@@ -212,23 +212,29 @@ const FEED_FOLD_ATTR = 'data-feed-fold';
 const FoldRow = React.memo(function FoldRow(props: {
   head: number;
   open: boolean;
+  kind: FoldKind;
   searches: number;
   reads: number;
+  commands: number;
   latest: string;
   sidechain: boolean;
   onToggle: (head: number) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const toggle = (): void => props.onToggle(props.head);
-  const counts = [
-    props.searches > 0 ? t('feedView.fold.searches', { count: props.searches }) : '',
-    props.reads > 0 ? t('feedView.fold.reads', { count: props.reads }) : '',
-  ]
-    .filter(Boolean)
-    .join(t('feedView.fold.join'));
+  const shell = props.kind === 'shell';
+  const counts = shell
+    ? t('feedView.fold.commands', { count: props.commands })
+    : [
+        props.searches > 0 ? t('feedView.fold.searches', { count: props.searches }) : '',
+        props.reads > 0 ? t('feedView.fold.reads', { count: props.reads }) : '',
+      ]
+        .filter(Boolean)
+        .join(t('feedView.fold.join'));
   return (
     <div
       {...{ [FEED_FOLD_ATTR]: String(props.head) }}
+      data-feed-fold-kind={props.kind}
       data-feed-fold-open={props.open ? '' : undefined}
       style={{
         display: 'flex',
@@ -275,7 +281,7 @@ const FoldRow = React.memo(function FoldRow(props: {
                 {props.open ? t('feedView.fold.caretOpen') : t('feedView.fold.caretClosed')}
               </span>
               <span style={{ color: 'var(--status-working-ink)', fontWeight: 600, flexShrink: 0 }}>
-                {t('feedView.fold.title')}
+                {t(shell ? 'feedView.fold.shellTitle' : 'feedView.fold.title')}
               </span>
               {/* The title holds; the counts shorten only once the newest call
                   beside them has given way entirely (its basis is zero). On a
@@ -1202,7 +1208,7 @@ export function FeedView(props: {
     if (!el) return;
     const seq = Number(el.getAttribute(FEED_SEQ_ATTR));
     const block = blocksRef.current.find((b) => b.seq === seq);
-    if (!block || !isExploration(block)) return;
+    if (!block || foldKind(block) === null) return;
     setOpenFolds((prev) => (prev.has(seq) ? prev : new Set(prev).add(seq)));
   }, []);
   /**
@@ -1662,8 +1668,10 @@ export function FeedView(props: {
                       <FoldRow
                         head={fold.head}
                         open={fold.open}
+                        kind={fold.kind}
                         searches={fold.searches}
                         reads={fold.reads}
+                        commands={fold.commands}
                         latest={fold.latest}
                         sidechain={b.sidechain}
                         onToggle={toggleFold}

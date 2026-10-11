@@ -280,7 +280,7 @@ export class StreamFeed {
         // this replay — under the newest message. See `absorbSidechain`.
         for (const intent of deriveIntents(e, DISPLAY_CAPS, this.ctx(sessionId))) {
           if (intent.t === 'tool-result') {
-            s.buffer.attachResult(intent.toolUseId, intent.out);
+            s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true);
             continue;
           }
           // A MAIN-transcript line gets no `agentId`, and not because it was
@@ -368,7 +368,7 @@ export class StreamFeed {
     }
     for (const intent of deriveIntents(entry, DISPLAY_CAPS, this.ctx(sessionId))) {
       if (intent.t === 'tool-result') {
-        s.buffer.attachResult(intent.toolUseId, intent.out);
+        s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true);
         continue;
       }
       const block = s.buffer.push(intent.block, origin);
@@ -667,7 +667,7 @@ export class StreamFeed {
     const unstreamed = isAssistant && wasNeverStreamed(msg);
     for (const intent of deriveIntents(entry, DISPLAY_CAPS, this.ctx(sessionId))) {
       if (intent.t === 'tool-result') {
-        s.buffer.attachResult(intent.toolUseId, intent.out);
+        s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true);
         continue;
       }
       // Only an assistant message can complete streamed deltas; a replayed

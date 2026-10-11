@@ -411,6 +411,25 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
             <ToolIcon name={b.tool?.name} />
           </span>
           <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{b.tool?.description ?? ''}</span>
+          {/* IN WORDS, and in the failure ink (#1200). A command that failed is
+              never folded into "Ran N commands", so this is the row that has
+              to say so; until now nothing on it did, and you opened OUT to
+              find the exit code. Red is for failures (§5.32). */}
+          {b.tool?.failed && (
+            <span
+              data-feed-failed
+              style={{
+                marginInlineStart: 'auto',
+                fontSize: 9.5,
+                fontWeight: 700,
+                fontFamily: 'var(--font-ui)',
+                color: 'var(--status-crashed-ink)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t('feedView.failed')}
+            </span>
+          )}
         </FeedExpander>
         {section(inId, t('feedView.in'), b.tool?.summary ?? '', inOpen, () => setInExpanded(!inOpen))}
         {hasOut &&

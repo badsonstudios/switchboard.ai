@@ -22,7 +22,15 @@ interface Block {
   kind: string;
   sidechain: boolean;
   text?: string;
-  tool?: { name: string; category: string; summary: string; detail?: string; out?: string };
+  tool?: {
+    name: string;
+    category: string;
+    summary: string;
+    description?: string;
+    detail?: string;
+    out?: string;
+    failed?: boolean;
+  };
 }
 
 const say = (seq: number, text: string, kind = 'assistant'): Block => ({ seq, kind, sidechain: false, text });
@@ -121,6 +129,80 @@ test.describe('a burst of looking around folds into one row (#1130)', () => {
     await fold.locator('button[data-feed-expander]').click();
     await expect(w.locator('[data-feed-box="tool"]')).toHaveCount(0);
     await expect(w.getByText('FOUND_IT')).toBeInViewport();
+  });
+
+  // #1200: runs of COMMANDS fold too. The owner: "I just had about 12 in a row
+  // and they weren't grouped at all."
+  const cmd = (seq: number, n: number, over: Partial<NonNullable<Block['tool']>> = {}): Block => ({
+    seq,
+    kind: 'tool',
+    sidechain: false,
+    tool: {
+      name: 'Bash',
+      category: 'shell',
+      summary: `npm run step-${n}`,
+      description: `Step ${n}`,
+      out: `STEP_${n}_OUTPUT`,
+      ...over,
+    },
+  });
+
+  test('twelve commands in a row take one row, and open onto all twelve (#1200)', async () => {
+    const { w, inject } = await open();
+    await inject([say(301, 'build it', 'user'), say(302, 'Running the steps.')]);
+    await inject(Array.from({ length: 12 }, (_, i) => cmd(303 + i, i + 1)));
+    await inject([say(315, 'ALL_STEPS_DONE')]);
+    await expect(w.getByText('ALL_STEPS_DONE')).toBeVisible({ timeout: 15_000 });
+
+    const fold = w.locator('[data-feed-fold]');
+    await expect(fold).toHaveCount(1);
+    await expect(fold).toHaveAttribute('data-feed-fold-kind', 'shell');
+    await expect(fold).toContainText('Ran');
+    await expect(fold).toContainText('12 commands');
+    // the newest one, by what it was FOR
+    await expect(fold).toContainText('latest: Step 12');
+    await expect(w.locator('[data-feed-box="bash"]')).toHaveCount(0);
+    expect((await fold.boundingBox())!.height).toBeLessThan(60);
+
+    await fold.locator('button[data-feed-expander]').click();
+    await expect(w.locator('[data-feed-box="bash"]')).toHaveCount(12);
+    await fold.locator('button[data-feed-expander]').click();
+    await expect(w.locator('[data-feed-box="bash"]')).toHaveCount(0);
+  });
+
+  test('a command that FAILED is never folded away: it stands between two folds, marked (#1200)', async () => {
+    const { w, inject } = await open();
+    await inject([say(401, 'build it', 'user')]);
+    await inject([
+      ...Array.from({ length: 5 }, (_, i) => cmd(402 + i, i + 1)),
+      cmd(407, 6, { out: 'Exit code 1\nSTEP_6_BROKE', failed: true }),
+      ...Array.from({ length: 6 }, (_, i) => cmd(408 + i, i + 7)),
+      say(414, 'ONE_STEP_FAILED'),
+    ]);
+    await expect(w.getByText('ONE_STEP_FAILED')).toBeVisible({ timeout: 15_000 });
+
+    // two folds, and they say how many each holds
+    const folds = w.locator('[data-feed-fold]');
+    await expect(folds).toHaveCount(2);
+    await expect(folds.nth(0)).toContainText('5 commands');
+    await expect(folds.nth(1)).toContainText('6 commands');
+
+    // THE FAILED ONE IS ON SCREEN WITHOUT OPENING ANYTHING, in full, and says
+    // "failed" in words. It is the only command box drawn.
+    const boxes = w.locator('[data-feed-box="bash"]');
+    await expect(boxes).toHaveCount(1);
+    await expect(boxes).toContainText('Step 6');
+    await expect(boxes.locator('[data-feed-failed]')).toHaveText('failed');
+    await expect(boxes).toBeInViewport();
+    // ...and it sits BETWEEN the two folds, where it happened
+    const y = async (l: ReturnType<typeof w.locator>): Promise<number> => (await l.boundingBox())!.y;
+    expect(await y(folds.nth(0))).toBeLessThan(await y(boxes));
+    expect(await y(boxes)).toBeLessThan(await y(folds.nth(1)));
+
+    // a command that succeeded carries no such mark, even once opened
+    await folds.nth(0).locator('button[data-feed-expander]').click();
+    await expect(w.locator('[data-feed-box="bash"]')).toHaveCount(6);
+    await expect(w.locator('[data-feed-failed]')).toHaveCount(1);
   });
 
   test('prose in the middle makes two folds; an edit and a lone Read are left alone', async () => {
@@ -278,5 +360,40 @@ test.describe('a burst of looking around folds into one row (#1130)', () => {
     const after = (await second.boundingBox())!;
     expect(after.y - before.y).toBeGreaterThan(0);
     expect(after.y - before.y).toBeLessThan(60);
+  });
+
+  test('from main, live and after a restart: a failed command is marked and stands outside the folds (#1200)', async () => {
+    // the two tests above inject blocks into the window; this one starts where
+    // the flag is BORN, the result the CLI writes, and goes the whole way
+    test.setTimeout(240_000);
+    const folder = tempProjectFolder();
+    const first = await launchApp({ seedFolder: folder, env: DIRECT });
+    a = first;
+    const w1 = first.window;
+    await expect(w1.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    const box = w1.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!failed');
+    await box.press('Enter');
+    await expect(w1.getByText('FAILED_PROSE').first()).toBeAttached({ timeout: 60_000 });
+
+    const check = async (w: Page): Promise<void> => {
+      // three ran, one failed, three ran
+      await expect(w.locator('[data-feed-fold][data-feed-fold-kind="shell"]')).toHaveCount(2, {
+        timeout: 60_000,
+      });
+      const failed = w.locator('[data-feed-box="bash"]');
+      await expect(failed).toHaveCount(1);
+      await expect(failed).toContainText('Step 4');
+      await expect(failed.locator('[data-feed-failed]')).toHaveText('failed');
+    };
+    await check(w1);
+
+    // quit and come back: the replayed conversation is built from the
+    // transcript on disk, a different path, and must say the same
+    await first.close();
+    a = await launchApp({ home: first.home, env: DIRECT });
+    await expect(a.window.getByText('FAILED_PROSE').first()).toBeAttached({ timeout: 60_000 });
+    await check(a.window);
   });
 });

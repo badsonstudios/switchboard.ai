@@ -18,6 +18,8 @@ export interface FeedBlockDto {
     oldString?: string;
     newString?: string;
     out?: string;
+    /** the result came back marked an error (#1200) */
+    failed?: boolean;
     /** AskUserQuestion: the questions of the call, structured (#1201) */
     questions?: SettledQuestion[];
   };

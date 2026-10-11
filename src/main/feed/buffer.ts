@@ -219,10 +219,11 @@ export class FeedBuffer {
   }
 
   /** Attach tool output to the block that asked for it. Returns true if it landed. */
-  attachResult(toolUseId: string, out: string): boolean {
+  attachResult(toolUseId: string, out: string, failed = false): boolean {
     const target = this.awaitingResult.get(toolUseId);
     if (!target?.tool || target.tool.out !== undefined) return false;
     target.tool.out = out;
+    if (failed) target.tool.failed = true;
     this.awaitingResult.delete(toolUseId);
     this.update(target);
     return true;

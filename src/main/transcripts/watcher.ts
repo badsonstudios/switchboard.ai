@@ -2183,7 +2183,7 @@ export class TranscriptWatcher {
     const ctx = refs === undefined ? {} : { isMintedRef: refs.guardFor(w.sessionId) };
     for (const intent of deriveIntents(e, DISPLAY_CAPS, ctx)) {
       if (intent.t === 'tool-result') {
-        w.feed.attachResult(intent.toolUseId, intent.out);
+        w.feed.attachResult(intent.toolUseId, intent.out, intent.failed === true);
         continue;
       }
       const block = w.feed.push(intent.block, origin);
