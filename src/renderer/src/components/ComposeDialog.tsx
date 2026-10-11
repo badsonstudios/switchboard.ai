@@ -29,6 +29,7 @@
 //   • **Fields are `box-sizing: border-box`.** At 100% width without it, every
 //     field is 18px wider than the dialog and the whole form scrolls sideways.
 import React from 'react';
+import { useModalLayer } from '../lib/modal-layer';
 
 export interface ComposeDialogProps {
   /**
@@ -109,13 +110,16 @@ export function composeButtonStyle(primary: boolean, enabled = true): React.CSSP
 }
 
 export function ComposeDialog(props: ComposeDialogProps): React.JSX.Element {
+  // mounted only while it is showing; only the top modal is modal (#1020)
+  const { top, lift } = useModalLayer(true);
   return (
     <div
       onMouseDown={props.onDismiss}
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 51,
+        // above whatever modal was already open (#1020): paint order follows the stack
+        zIndex: 51 + lift,
         background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
@@ -126,7 +130,8 @@ export function ComposeDialog(props: ComposeDialogProps): React.JSX.Element {
       <div
         ref={props.dialogRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal={top ? 'true' : undefined}
+        inert={!top}
         aria-label={props.title}
         tabIndex={-1}
         {...{ [`data-${props.kind}-dialog`]: '' }}

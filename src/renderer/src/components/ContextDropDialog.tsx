@@ -18,6 +18,7 @@
 // `McpManagerDialog`'s, which is `SettingsDialog`'s. Two modals that behave
 // differently is a bug report waiting to happen.
 import React from 'react';
+import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
 import {
   DEFAULT_FIDELITY,
@@ -56,6 +57,9 @@ function groupDigits(n: number): string {
 export function ContextDropDialog(props: ContextDropDialogProps): React.JSX.Element {
   const { t } = useTranslation();
   const dialog = React.useRef<HTMLDivElement | null>(null);
+  // only the top modal is modal (#1020, `lib/modal-layer`)
+  // (`dialog`: this one travels with a popped-out card, and joins THAT window's stack)
+  const { top, lift } = useModalLayer(true, dialog);
   /**
    * §5.5 NAMES LEVEL 2 AS THE DEFAULT, so the dialog opens on it rather than on
    * the first row. Seeded from the shared constant, not from a literal, so the
@@ -96,7 +100,8 @@ export function ContextDropDialog(props: ContextDropDialogProps): React.JSX.Elem
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 51,
+        // above whatever modal was already open (#1020): paint order follows the stack
+        zIndex: 51 + lift,
         background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
@@ -107,7 +112,8 @@ export function ContextDropDialog(props: ContextDropDialogProps): React.JSX.Elem
       <div
         ref={dialog}
         role="dialog"
-        aria-modal="true"
+        aria-modal={top ? 'true' : undefined}
+        inert={!top}
         aria-label={t('contextDrop.title')}
         data-testid="context-drop"
         tabIndex={-1}

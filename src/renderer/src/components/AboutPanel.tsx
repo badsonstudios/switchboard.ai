@@ -7,6 +7,7 @@
 // Rendering only. What the fields MEAN lives in shared/build-identity.ts
 // (pure, tested, shared with main's window title) so the two can never drift.
 import React from 'react';
+import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
 import {
   BuildIdentity,
@@ -39,15 +40,10 @@ export function AboutPanel(props: {
    * because there was nowhere else, and said so. Optional, like the rest.
    */
   onOpenSettings?: () => void;
-  /**
-   * Another modal is stacked ON TOP of this one (the update dialog, which is
-   * reachable from here). Two nested `aria-modal="true"` regions is a case
-   * screen readers handle inconsistently, so the panel underneath stops
-   * claiming to be the modal while it is not the one in front.
-   */
-  dialogAbove?: boolean;
 }): React.JSX.Element | null {
   const { t } = useTranslation();
+  // only the top modal is modal (#1020, `lib/modal-layer`)
+  const { top, lift } = useModalLayer(props.open);
   const [copied, setCopied] = React.useState(false);
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
   const dialog = React.useRef<HTMLDivElement | null>(null);
@@ -122,7 +118,8 @@ export function AboutPanel(props: {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 50,
+        // above whatever modal was already open (#1020): paint order follows the stack
+        zIndex: 50 + lift,
         background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
@@ -133,7 +130,8 @@ export function AboutPanel(props: {
       <div
         ref={dialog}
         role="dialog"
-        aria-modal={props.dialogAbove ? undefined : 'true'}
+        aria-modal={top ? 'true' : undefined}
+        inert={!top}
         aria-label={t('about.title')}
         // tabIndex, not a preventDefault on mousedown: clicking the panel's
         // body must not strand focus on <body>, or Escape would go dead the

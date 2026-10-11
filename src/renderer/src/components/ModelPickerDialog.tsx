@@ -29,6 +29,7 @@
 // fabrication: the user may well be on something else from their settings, and
 // the one fact this surface exists to report is the one it would be inventing.
 import React from 'react';
+import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
 import { answered } from '../../../shared/ipc/refusal';
 import { readModels, type CliModel } from '../../../shared/stream-protocol';
@@ -55,6 +56,8 @@ export interface ModelPickerDialogProps {
 
 export function ModelPickerDialog(props: ModelPickerDialogProps): React.JSX.Element | null {
   const { t } = useTranslation();
+  // only the top modal is modal (#1020, `lib/modal-layer`)
+  const { top, lift } = useModalLayer(props.open);
   const dialog = React.useRef<HTMLDivElement | null>(null);
   const [models, setModels] = React.useState<CliModel[] | null>(null);
   const [current, setCurrent] = React.useState<string | null>(null);
@@ -286,7 +289,8 @@ export function ModelPickerDialog(props: ModelPickerDialogProps): React.JSX.Elem
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 51,
+        // above whatever modal was already open (#1020): paint order follows the stack
+        zIndex: 51 + lift,
         background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
@@ -297,7 +301,8 @@ export function ModelPickerDialog(props: ModelPickerDialogProps): React.JSX.Elem
       <div
         ref={dialog}
         role="dialog"
-        aria-modal="true"
+        aria-modal={top ? 'true' : undefined}
+        inert={!top}
         aria-label={t('model.title')}
         data-testid="model-picker"
         tabIndex={-1}

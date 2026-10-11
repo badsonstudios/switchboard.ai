@@ -16,6 +16,7 @@
 // Only a manual check ever opens the last two. Automatic checks are silent
 // unless there is genuinely something to offer (the item's done-when).
 import React from 'react';
+import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
 import type { UpdateInstallStatus, UpdateStatus } from '../../../shared/update';
 import { Markdown } from '../lib/markdown';
@@ -114,6 +115,10 @@ export function UpdateDialog(props: {
   onCancelInstall?: () => void;
 }): React.JSX.Element | null {
   const { t } = useTranslation();
+  // only the top modal is modal (#1020, `lib/modal-layer`)
+  // (`&& status`: it draws nothing without one, and a layer with no dialog would make whatever
+  // is really on screen inert)
+  const { top, lift } = useModalLayer(props.open && !!props.status);
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
   const dialog = React.useRef<HTMLDivElement | null>(null);
 
@@ -163,7 +168,8 @@ export function UpdateDialog(props: {
         inset: 0,
         // above About: the manual check is reachable FROM the About panel, and
         // the answer must land in front of the panel that asked for it
-        zIndex: 60,
+        // above whatever modal was already open (#1020): paint order follows the stack
+        zIndex: 60 + lift,
         background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
@@ -174,7 +180,8 @@ export function UpdateDialog(props: {
       <div
         ref={dialog}
         role="dialog"
-        aria-modal="true"
+        aria-modal={top ? 'true' : undefined}
+        inert={!top}
         aria-label={title}
         data-update-state={result.state}
         // The install's own state, so the e2e suite can wait on a PHASE rather

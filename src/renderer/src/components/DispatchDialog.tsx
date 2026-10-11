@@ -40,6 +40,7 @@
 // differently is a bug report waiting to happen.
 import { errorText } from '../../../shared/error-text';
 import React from 'react';
+import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
 import type { DispatchOptions, DispatchPrepared } from '../../../shared/dispatch-wire';
 
@@ -104,6 +105,8 @@ const hintStyle: React.CSSProperties = {
 
 export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
   const { t } = useTranslation();
+  // only the top modal is modal (#1020, `lib/modal-layer`)
+  const { top, lift } = useModalLayer(true);
   const dialog = React.useRef<HTMLDivElement | null>(null);
   const { templates } = props.options;
   /**
@@ -205,7 +208,8 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 51,
+        // above whatever modal was already open (#1020): paint order follows the stack
+        zIndex: 51 + lift,
         background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
@@ -216,7 +220,8 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
       <div
         ref={dialog}
         role="dialog"
-        aria-modal="true"
+        aria-modal={top ? 'true' : undefined}
+        inert={!top}
         aria-label={t('dispatch.title')}
         data-testid="dispatch-dialog"
         tabIndex={-1}

@@ -80,7 +80,15 @@
 >    of them disabled controls). NOT done: the ticket's step 1 (measure each
 >    as painted in four themes), and placeholder text. No independent
 >    review: five one-line colour changes and a scan.
-> 6. #1020 — two modals open at once. Not started.
+> 6. **#1020 — two modals open at once. IN PROGRESS, started 2026-10-11,
+>    branch `feature/1020-one-modal` (stacked on #1017's).** The ticket
+>    wanted ONE central rule and offered two; adopted the stacking contract
+>    (DESIGN §5.32): dialogs may stack, only the top is `aria-modal`, the
+>    ones beneath are `inert`, one stack per document. `lib/modal-layer`
+>    (`useModalLayer`), called by all eleven dialogs; the two hand-kept
+>    `dialogAbove` lists are gone; the keyboard guard asks the stack, which
+>    closes the gap for the five dialogs whose state lives in a card. Pinned
+>    by a source scan and `e2e/one-modal.spec.ts`. Not done: a Tab trap.
 > 7. **#1017 — palette entry for the outline toggle. IN PROGRESS, started
 >    2026-10-11, branch `feature/1017-outline-command`.** `view.documentOutline`, palette-only, enabled by
 >    the chip's own rule: each viewer says whether it is offering an outline

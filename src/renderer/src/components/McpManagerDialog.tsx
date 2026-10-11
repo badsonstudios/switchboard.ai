@@ -75,6 +75,7 @@
 // even by accident. The add form is the one place a value exists, it is a
 // password field, and it travels one way. See `shared/mcp.ts`.
 import React from 'react';
+import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
 import { answered } from '../../../shared/ipc/refusal';
 import { McpAddForm, McpDialogButton as Btn } from './McpAddForm';
@@ -536,6 +537,8 @@ const STALE = Symbol('stale');
 
 export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Element | null {
   const { t } = useTranslation();
+  // only the top modal is modal (#1020, `lib/modal-layer`)
+  const { top, lift } = useModalLayer(props.open);
   const dialog = React.useRef<HTMLDivElement | null>(null);
   const [inventory, setInventory] = React.useState<McpInventoryWire | null>(null);
   /**
@@ -1734,7 +1737,8 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 51,
+        // above whatever modal was already open (#1020): paint order follows the stack
+        zIndex: 51 + lift,
         background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
@@ -1745,7 +1749,8 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
       <div
         ref={dialog}
         role="dialog"
-        aria-modal="true"
+        aria-modal={top ? 'true' : undefined}
+        inert={!top}
         aria-label={t('mcp.title')}
         data-testid="mcp-manager"
         tabIndex={-1}
