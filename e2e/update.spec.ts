@@ -24,13 +24,14 @@ import {
   sweepTempDirs,
   workspaceJsonPath,
   openEventsDrawer,
-  openSettings,
   closeSettings,
+  openSettingsTab,
 } from './fixtures/app';
 
 /** Set "check for updates automatically", which lives in Settings since #885. */
 async function setAutoCheck(w: Page, on: boolean): Promise<void> {
-  const settings = await openSettings(w);
+  // on the General tab since #1199
+  const settings = await openSettingsTab(w, 'general');
   const box = settings.locator('[data-settings-field="auto-check-updates"]');
   await expect(box).toBeChecked({ checked: !on }); // it really is changing something
   await box.setChecked(on);
@@ -327,7 +328,7 @@ test.describe('update check (E19-03)', () => {
     const before = feed.hits;
     a = await launch(home);
     await shellReady(a.window);
-    const settings = await openSettings(a.window);
+    const settings = await openSettingsTab(a.window, 'general');
     await expect(settings.locator('[data-settings-field="auto-check-updates"]')).not.toBeChecked();
     await closeSettings(a.window);
     await stamp(a.window).click();

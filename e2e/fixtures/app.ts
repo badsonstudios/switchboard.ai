@@ -1260,9 +1260,30 @@ export async function setTheme(window: Page, name: string): Promise<void> {
   await closeSettings(window);
 }
 
+/**
+ * Open Settings on one of its tabs (#1199): 'appearance', 'general',
+ * 'attention' (labelled Notifications), 'sessions', 'diagnostics', 'advanced'.
+ *
+ * By the tab's id and not its words, so it still works in the pseudo locale
+ * where every label is mangled.
+ */
+export async function openSettingsTab(window: Page, tab: string): Promise<Locator> {
+  const dialog = await openSettings(window);
+  await dialog.locator(`[data-settings-tab="${tab}"]`).click();
+  await dialog.locator(`[data-settings-section="${tab}"]`).waitFor({ state: 'visible' });
+  return dialog;
+}
+
 /** The same, for the language buttons — 'en' or 'pseudo'. */
 export async function setUiLanguage(window: Page, name: string): Promise<void> {
-  const dialog = await openSettings(window);
+  // the language is on the General tab since #1199. ⚠️ Not through
+  // `openSettingsTab`: `openSettings` finds the dialog by the word "Settings",
+  // which a session already in pseudo no longer says.
+  await window.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
+  await window.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+,`);
+  const dialog = window.getByRole('dialog').first();
+  await dialog.waitFor({ state: 'visible', timeout: 15_000 });
+  await dialog.locator('[data-settings-tab="general"]').click();
   await dialog.getByRole('button', { name, exact: true }).click();
   // ⚠️ NOT `closeSettings`, which waits for a dialog named 'Settings': in
   // pseudo every string is mangled, so the accessible name is no longer that

@@ -37,29 +37,37 @@ export interface AdvancedSectionProps {
   onToggleAutoCheckUpdates?: (on: boolean) => void;
   statusPolling?: boolean;
   onToggleStatusPolling?: (on: boolean) => void;
+  /**
+   * Which of its settings to draw (#1199). The fork switch lives on the
+   * Advanced tab and the two network preferences on General; the component is
+   * one because it was one section. Absent = all of them, as before.
+   */
+  show?: 'fork' | 'network';
 }
 
 export function AdvancedSection(props: AdvancedSectionProps): React.JSX.Element {
   const { t } = useTranslation();
   return (
     <>
-      <SettingItem
-        item="experimental-fork"
-        label={t('settings.experimentalFork')}
-        blurb={t('titlebar.forkHint')}
-      >
-        <SettingCheckbox
-          field="experimental-fork"
-          checked={props.experimentalFork}
-          onChange={props.onToggleExperimentalFork}
+      {props.show !== 'network' && (
+        <SettingItem
+          item="experimental-fork"
+          label={t('settings.experimentalFork')}
+          blurb={t('titlebar.forkHint')}
         >
-          {/* States the word ON or OFF, never colour alone (§5.32) — the same
-              promise the chip made. */}
-          {props.experimentalFork ? t('titlebar.forkOn') : t('titlebar.forkOff')}
-        </SettingCheckbox>
-      </SettingItem>
+          <SettingCheckbox
+            field="experimental-fork"
+            checked={props.experimentalFork}
+            onChange={props.onToggleExperimentalFork}
+          >
+            {/* States the word ON or OFF, never colour alone (§5.32) — the same
+                promise the chip made. */}
+            {props.experimentalFork ? t('titlebar.forkOn') : t('titlebar.forkOff')}
+          </SettingCheckbox>
+        </SettingItem>
+      )}
 
-      {props.onToggleAutoCheckUpdates && (
+      {props.show !== 'fork' && props.onToggleAutoCheckUpdates && (
         <SettingItem item="updates" label={t('settings.updates')}>
           <SettingCheckbox
             field="auto-check-updates"
@@ -71,7 +79,7 @@ export function AdvancedSection(props: AdvancedSectionProps): React.JSX.Element 
         </SettingItem>
       )}
 
-      {props.onToggleStatusPolling && (
+      {props.show !== 'fork' && props.onToggleStatusPolling && (
         <SettingItem item="status-polling" label={t('settings.providerStatus')}>
           <SettingCheckbox
             field="status-polling"

@@ -116,7 +116,14 @@
 >    unrecognised tool keeps the plain dot. ⚠️ **The ticket's "Tanner pass on
 >    the glyph art before merge" did NOT happen**; the eight new drawings are
 >    a first pass.
-> 10. #1199 Settings in tabs. NOT STARTED.
+> 10. **#1199 — Settings in tabs. IN PROGRESS, started 2026-10-11, branch
+>     `feature/1199-settings-tabs` (stacked on #1207's).** Six tabs in the
+>     same window: Appearance, General, Notifications, Sessions, Diagnostics,
+>     Advanced. A section IS a tab (the deep-link ids are the tab ids;
+>     `attention` keeps its id and is labelled Notifications). Every panel is
+>     always mounted and the inactive ones are `hidden`. Opens on the
+>     last-used tab, Appearance the first time. Decisions that differ from
+>     the ticket's proposal: Appearance first, not General.
 > 11. #1203 Prompt History. NOT STARTED.
 
 > # ✅ RELEASED: v0.8.119, 2026-10-10 (PR #1217)
