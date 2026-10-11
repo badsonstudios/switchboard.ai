@@ -81,7 +81,7 @@
 >    as painted in four themes), and placeholder text. No independent
 >    review: five one-line colour changes and a scan.
 > 6. **#1020 — two modals open at once. IN PROGRESS, started 2026-10-11,
->    branch `feature/1020-one-modal` (stacked on #1017's).** The ticket
+>    branch `feature/1020-one-modal`.** The ticket
 >    wanted ONE central rule and offered two; adopted the stacking contract
 >    (DESIGN §5.32): dialogs may stack, only the top is `aria-modal`, the
 >    ones beneath are `inert`, one stack per document. `lib/modal-layer`
@@ -89,8 +89,9 @@
 >    `dialogAbove` lists are gone; the keyboard guard asks the stack, which
 >    closes the gap for the five dialogs whose state lives in a card. Pinned
 >    by a source scan and `e2e/one-modal.spec.ts`. Not done: a Tab trap.
-> 7. **#1017 — palette entry for the outline toggle. IN PROGRESS, started
->    2026-10-11, branch `feature/1017-outline-command`.** `view.documentOutline`, palette-only, enabled by
+> 7. **#1017 — palette entry for the outline toggle.
+>    DONE 2026-10-11, PR #1247 (`d781b994`), merged, NOT released.**
+>    The ticket is closed. `view.documentOutline`, palette-only, enabled by
 >    the chip's own rule: each viewer says whether it is offering an outline
 >    (`setOutlineOffered`) and the command is enabled while any does.
 > 8. #744 — the Electron cache directory. Not started.
