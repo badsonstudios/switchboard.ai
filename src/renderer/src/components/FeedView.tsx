@@ -250,7 +250,7 @@ const FoldRow = React.memo(function FoldRow(props: {
           ? {
               marginInlineStart: 'var(--feed-sidechain-indent)',
               borderInlineStart: '1px dashed var(--faint)',
-              opacity: 0.85,
+              // not faded as well (#1211): see `Block`
             }
           : {}),
       }}
@@ -401,7 +401,11 @@ const Block = React.memo(function Block({ b }: { b: FeedBlockDto }): React.JSX.E
               // to sit on the same spine (#788)
               marginInlineStart: 'var(--feed-sidechain-indent)',
               borderInlineStart: '1px dashed var(--faint)',
-              opacity: 0.85,
+              // THE INDENT AND THE SPINE SAY "a helper did this". It used to
+              // be faded to 0.85 as well (#1211), which took the secondary
+              // text inside its tool boxes to about 4.2:1: a contrast cut on
+              // words that are meant to be read, for a distinction two other
+              // marks already make.
             }
           : {}),
       }}

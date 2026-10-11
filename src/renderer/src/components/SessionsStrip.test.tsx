@@ -330,7 +330,22 @@ describe('sessions that are not in a group', () => {
   it('a folded-away pill that needs you is filled in all the same', async () => {
     const host = await mount({ groups: [], sessions: [s('a')], folded: ['a'], needing: ['a'] });
     expect(pill(host, 'a').dataset.needsYou).toBe('true');
-    expect(pill(host, 'a').style.opacity).toBe('1');
+    const name = (id: string, h: HTMLElement = host): HTMLElement =>
+      pill(h, id).querySelector<HTMLElement>('[data-strip-pill-title]')!;
+    // its name is full ink: it needs you
+    expect(name('a').style.color).toBe('var(--text)');
+    // NEVER faded, lit or calm (#1211): a fade cuts the contrast of the words
+    expect(pill(host, 'a').style.opacity).toBe('');
+  });
+
+  it('a folded-away pill that is CALM steps back by its name going grey, not by fading', async () => {
+    const host = await mount({ groups: [], sessions: [s('a'), s('b')], folded: ['a'] });
+    const name = (id: string): HTMLElement =>
+      pill(host, id).querySelector<HTMLElement>('[data-strip-pill-title]')!;
+    expect(name('a').style.color).toBe('var(--muted)');
+    expect(pill(host, 'a').style.opacity).toBe('');
+    // one that is not folded away is untouched
+    expect(name('b').style.color).toBe('var(--text)');
   });
 
   it('show a pin, and pinned ones come first', async () => {

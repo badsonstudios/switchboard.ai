@@ -54,8 +54,9 @@
 >    No change to the sanitizer or the content security policy.
 >    ⚠️ Nothing tells Claude to use image syntax; whether it does unprompted
 >    is the owner's first hand-test.
-> 4. **#1209 — control edges on nordic and daylight. IN PROGRESS, started
->    2026-10-11, branch `feature/1209-control-edges`.**
+> 4. **#1209 — control edges on nordic and daylight.
+>    DONE 2026-10-11, PR #1245 (`bf9d24c1`), merged, NOT released.**
+>    The ticket is closed.
 >    The audit the ticket asked for: 36 controls whose only edge was the
 >    `--border` hairline (1.13 to 1.31:1) and which have no fill of their
 >    own: 19 text boxes (including the prompt box) and 17 outlined buttons
@@ -66,7 +67,18 @@
 >    independent review: it is one token swapped in 36 places and a test.
 >    ⚠️ The ticket says "needs eyes as much as numbers"; nobody has looked
 >    at it but me, in two screenshots.
-> 5. #1211 — text dimmed by opacity. Not started.
+> 5. **#1211 — text dimmed by opacity. IN PROGRESS, started 2026-10-11,
+>    branch `feature/1211-opacity-dims`.** The five
+>    places: a folded calm pill (its NAME goes to `--muted`), sidechain rows
+>    in the feed (the fade is removed, not replaced: the indent and the
+>    dashed spine already say "helper"), a find hit that cannot be jumped to
+>    (`--muted` words, default cursor), a rolled-up status letter in the
+>    file tree (`--muted`), a group's policy button with no override
+>    (`--muted`). Pinned by `theme/opacity-dims.test.ts`: every fractional
+>    opacity in a component is on an allow-list with its reason (nine, eight
+>    of them disabled controls). NOT done: the ticket's step 1 (measure each
+>    as painted in four themes), and placeholder text. No independent
+>    review: five one-line colour changes and a scan.
 > 6. #1020 — two modals open at once. Not started.
 > 7. #1017 — palette entry for the outline toggle. Not started.
 > 8. #744 — the Electron cache directory. Not started.

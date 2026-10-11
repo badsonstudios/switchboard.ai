@@ -825,9 +825,20 @@ function HitRow({
   const before = hit.snippet.slice(0, hit.matchStart);
   const match = hit.snippet.slice(hit.matchStart, hit.matchStart + hit.matchLength);
   const after = hit.snippet.slice(hit.matchStart + hit.matchLength);
+  // A HIT THAT CANNOT BE JUMPED TO STEPS DOWN THE NEUTRAL LADDER (#1211): its
+  // words are the readable grey. It used to be the whole row at 0.85, which
+  // took its 9px second line under 4.5:1. The match itself stays full ink:
+  // it is what was searched for.
   const body = (
     <>
-      <div style={{ fontSize: 10.5, color: 'var(--text)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+      <div
+        style={{
+          fontSize: 10.5,
+          color: hit.jumpable ? 'var(--text)' : 'var(--muted)',
+          whiteSpace: 'pre-wrap',
+          overflowWrap: 'anywhere',
+        }}
+      >
         {before}
         <mark style={{ background: 'var(--chip)', color: 'var(--text)', fontWeight: 700 }}>{match}</mark>
         {after}
@@ -874,7 +885,7 @@ function HitRow({
       // in the session" about all three is the small lie told confidently that
       // §5.31 exists to avoid.
       title={t(whyKey)}
-      style={{ ...box, opacity: 0.85 }}
+      style={{ ...box, cursor: 'default' }}
     >
       {body}
     </div>

@@ -489,8 +489,14 @@ export function FileTree(props: {
                     fontFamily: 'var(--font-mono)',
                     fontSize: 10,
                     fontWeight: decorations.get(row.path)!.rolledUp ? 400 : 600,
-                    opacity: decorations.get(row.path)!.rolledUp ? 0.55 : 1,
-                    color: `var(${LETTER_INKS[decorations.get(row.path)!.letter] ?? '--muted'})`,
+                    // A LETTER IS TEXT (#1211). One rolled up from inside a
+                    // folder used to be its status colour at 0.55, well under
+                    // any readable contrast. It is the readable grey and light
+                    // instead: "something in here changed", without claiming
+                    // the folder itself has that status.
+                    color: decorations.get(row.path)!.rolledUp
+                      ? 'var(--muted)'
+                      : `var(${LETTER_INKS[decorations.get(row.path)!.letter] ?? '--muted'})`,
                   }}
                 >
                   {decorations.get(row.path)!.letter}

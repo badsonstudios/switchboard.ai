@@ -117,6 +117,13 @@ on the floor, and say so in your PR.
   box was hard to find. They now use the stronger edge the row of buttons
   under the prompt box already had. The lines between areas of the window are
   unchanged.
+- **Five things that were faded are now a readable grey.** Fading something
+  dims its words and the background behind them together, which made small
+  text hard to read: the name on a folded-away session across the top, what a
+  helper agent did, a search result you cannot jump to, the small status
+  letter on a folder in the Files tab, and a group's "on submit" button. Each
+  now steps back by using the grey the rest of the app uses for secondary
+  text. Things that really are unavailable are still faded.
 - **Prompt History is now a tab of the history window.** Click **🕘** in a
   session's title bar and the window has two tabs: **Conversations** (previous
   conversations, as before) and **Prompts** (what you asked in this one, with
