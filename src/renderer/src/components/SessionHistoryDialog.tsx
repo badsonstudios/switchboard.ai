@@ -24,10 +24,26 @@
 // hidden, and it is inert: hiding it would leave the user hunting for a
 // conversation that is on screen behind them, while opening it would put two
 // cards in one transcript — plain `--resume` appends rather than forking.
+//
+// ── TWO KINDS OF HISTORY, ONE BUTTON (#1237) ───────────────────────────────
+//
+// Opened from a card, the window has two tabs: **Conversations** (everything
+// above) and **Prompts**, the prompts you sent in the conversation that is
+// open (`PromptList`, `lib/prompt-history`). The prompt list first shipped
+// behind a small button of its own in the conversation's toolbar, and the
+// owner could not find it. The `+ session` picker has no session yet, so it
+// has no tabs and is exactly what it was.
+//
+// The conversations panel stays MOUNTED while the other tab shows: its scan,
+// its search and its highlight are where they were when you come back. The
+// prompts panel is read fresh each time it is shown, and is a SNAPSHOT while
+// it is up: the window is modal, so nothing is being sent behind it.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { answered } from '../../../shared/ipc/refusal';
 import type { ConversationHistory, ConversationRow } from '../../../shared/session-history';
+import { promptPortFor } from '../lib/prompt-port';
+import { PromptList } from './PromptHistory';
 
 export interface HistoryPick {
   nativeId: string;
@@ -52,6 +68,19 @@ export interface HistoryPick {
  */
 export const STOP_ARM_MS = 700;
 
+export type HistoryTab = 'conversations' | 'prompts';
+const HISTORY_TABS: readonly HistoryTab[] = ['conversations', 'prompts'];
+/**
+ * The tab the window opens on is the one last used, as Settings does: someone
+ * who lives in the prompt list should not have to choose it every time. For
+ * the life of the app, not saved: the first open after a launch is
+ * Conversations, which is what the button has always meant.
+ */
+let lastTab: HistoryTab = 'conversations';
+export function resetHistoryTabForTests(): void {
+  lastTab = 'conversations';
+}
+
 /** The two answers to "stop it?" (#1127) — the same plain button, on purpose: neither is dressed as the safe one, the FOCUS is. */
 const CONFIRM_BUTTON: React.CSSProperties = {
   background: 'var(--chip)',
@@ -68,6 +97,13 @@ export function SessionHistoryDialog(props: {
   open: boolean;
   /** the folder the picker opens scoped to */
   folder: string;
+  /**
+   * The session whose prompts the second tab lists (#1237). Given by a card;
+   * absent for the `+ session` picker, which then has no tabs at all. An id
+   * with no conversation view behind it still gets the tab, and the tab says
+   * why it is empty.
+   */
+  promptSession?: string;
   onClose: () => void;
   onPick: (pick: HistoryPick) => void;
   /**
@@ -115,6 +151,25 @@ export function SessionHistoryDialog(props: {
   const input = React.useRef<HTMLInputElement | null>(null);
   const selectedRow = React.useRef<HTMLDivElement | null>(null);
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
+  const hasTabs = props.promptSession !== undefined;
+  /**
+   * The tab to open on: the one last used, EXCEPT that a session with nothing
+   * to list never opens on Prompts. A card showing its terminal has no
+   * conversation view, and the history button there would greet the user with
+   * an apology instead of the list they came for. `lastTab` is not touched:
+   * the next card that does have prompts still opens on them.
+   */
+  const openingTab = (): HistoryTab =>
+    hasTabs && promptPortFor(props.promptSession) ? lastTab : 'conversations';
+  const [tab, setTab] = React.useState<HistoryTab>(openingTab);
+  const dialogEl = React.useRef<HTMLDivElement | null>(null);
+  const promptInput = React.useRef<HTMLInputElement | null>(null);
+  const tabButtons = React.useRef<Record<HistoryTab, HTMLButtonElement | null>>({
+    conversations: null,
+    prompts: null,
+  });
+  /** the next tab change was made with the arrow keys: the keyboard stays ON the tabs */
+  const focusTabNext = React.useRef(false);
   // #654: ids here are IDREFs for `aria-controls` / `aria-activedescendant`, and
   // a stable published name can be captured by earlier content carrying the same
   // `id`. `useId` (plus the root's per-launch prefix) makes them unguessable;
@@ -166,9 +221,32 @@ export function SessionHistoryDialog(props: {
   // a LAYOUT effect: focused in the commit that shows it (#1171, `lib/modal-dismiss.ts`)
   React.useLayoutEffect(() => {
     if (!props.open) return;
-    returnFocusTo.current = document.activeElement as HTMLElement | null;
-    input.current?.focus();
+    // THE DIALOG'S OWN DOCUMENT: in a popped-out card the global `document` is
+    // the main window's, and what has the keyboard THERE is not what opened this
+    const doc = dialogEl.current?.ownerDocument ?? document;
+    returnFocusTo.current = doc.activeElement as HTMLElement | null;
+    setTab(openingTab());
+    // on OPEN only: `openingTab` reads the props of the render that opened it
   }, [props.open]);
+  // ...and the keyboard goes to the box of whichever tab is showing, on open
+  // and on every change of tab. Chosen with the arrow keys, it stays on the
+  // tabs instead, so a second arrow press moves on rather than typing.
+  React.useLayoutEffect(() => {
+    if (!props.open) return;
+    if (focusTabNext.current) {
+      focusTabNext.current = false;
+      tabButtons.current[tab]?.focus();
+      return;
+    }
+    const box = (tab === 'prompts' ? promptInput : input).current;
+    // ⚠️ THE KEYBOARD MUST END UP INSIDE THE WINDOW, whatever the tab holds.
+    // Escape is handled on this subtree, so focus left outside it (or on a box
+    // that was just hidden) is a window no key can close. The Prompts tab of a
+    // session with nothing to list has a DISABLED box, and focusing a disabled
+    // box does nothing: its tab takes the keyboard instead.
+    if (box && !box.disabled) box.focus();
+    else tabButtons.current[tab]?.focus();
+  }, [props.open, tab]);
 
   // THE SEARCH IS FORGOTTEN WHEN THE DIALOG CLOSES, AND NOT BEFORE (#1099). It
   // used to be cleared in `pick()`, on the way out — but a pick made from a card
@@ -235,7 +313,40 @@ export function SessionHistoryDialog(props: {
     setScope('folder');
     props.onClose();
     const el = returnFocusTo.current;
-    requestAnimationFrame(() => el?.focus?.());
+    // the frame of the window the opener is IN: the main window's may be
+    // minimised behind a pop-out, and a minimised window paints no frames
+    const view = el?.ownerDocument?.defaultView ?? window;
+    view.requestAnimationFrame(() => el?.focus?.());
+  };
+
+  const choose = (next: HistoryTab, byArrowKey: boolean): void => {
+    // a question about a pick is up: it holds the window until answered
+    if (asking) return;
+    lastTab = next;
+    if (next === tab) {
+      // nothing changes, so the effect that moves the keyboard will not run
+      if (!byArrowKey) {
+        const box = (tab === 'prompts' ? promptInput : input).current;
+        if (box && !box.disabled) box.focus();
+      }
+      return;
+    }
+    focusTabNext.current = byArrowKey;
+    setTab(next);
+  };
+
+  // THE PROMPTS TAB ACTS ON THE CONVERSATION BEHIND THE WINDOW, so both of its
+  // actions shut the window WITHOUT handing the keyboard back to the history
+  // button (`close()` does that): the conversation, or the prompt box, takes it.
+  const port = promptPortFor(props.promptSession);
+  const jumpToPrompt = (seq: number): void => {
+    // a prompt no longer loaded cannot be gone to: the list stays
+    if (!port?.jump(seq)) return;
+    props.onClose();
+  };
+  const usePromptAgain = (text: string): void => {
+    props.onClose();
+    port?.recall(text);
   };
 
   const pick = (row: ConversationRow | undefined): void => {
@@ -263,6 +374,17 @@ export function SessionHistoryDialog(props: {
       if (e.key === 'Escape') {
         e.preventDefault();
         props.confirm.onCancel();
+      }
+      return;
+    }
+    // THE LIST'S KEYS BELONG TO THE CONVERSATIONS LIST (#1237). On the prompts
+    // tab, or with the keyboard on the tabs themselves, the arrows and Enter
+    // are the focused control's own; only Escape is the window's.
+    const onTabs = (e.target as Element | null)?.closest?.('[role="tab"]');
+    if (tab === 'prompts' || onTabs) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        close();
       }
       return;
     }
@@ -303,16 +425,18 @@ export function SessionHistoryDialog(props: {
       }}
     >
       <div
+        ref={dialogEl}
         role="dialog"
         aria-modal="true"
-        aria-label={t('sessionHistory.title')}
+        aria-label={hasTabs ? t('sessionHistory.windowTitle') : t('sessionHistory.title')}
         data-history-dialog
         onMouseDown={(e) => {
           e.stopPropagation();
           // Clicking the dialog's padding must not blur the input: the key
           // handling hangs off this subtree, so focus on <body> would make
           // Escape and the arrows dead. The palette and the composer agree.
-          if (e.target !== input.current) e.preventDefault();
+          // (either tab's box: the prompts tab has its own, #1237)
+          if (e.target !== input.current && e.target !== promptInput.current) e.preventDefault();
         }}
         onKeyDown={onKeyDown}
         style={{
@@ -326,8 +450,70 @@ export function SessionHistoryDialog(props: {
           boxShadow: 'var(--tab-lift)',
           overflow: 'hidden',
           fontFamily: 'var(--font-ui)',
+          // WITH TABS, ONE HEIGHT. A window that fits its list would change
+          // size every time you looked at the other tab (#1199's lesson).
+          ...(hasTabs ? { blockSize: 'min(64vh, 560px)' } : null),
         }}
       >
+        {hasTabs && (
+          <div
+            role="tablist"
+            data-history-tabs
+            style={{
+              display: 'flex',
+              gap: 2,
+              paddingInline: 8,
+              borderBlockEnd: '1px solid var(--border)',
+              flexShrink: 0,
+            }}
+          >
+            {HISTORY_TABS.map((id) => (
+              <button
+                key={id}
+                ref={(el) => {
+                  tabButtons.current[id] = el;
+                }}
+                type="button"
+                role="tab"
+                id={`${listId}tab-${id}`}
+                aria-selected={tab === id}
+                // the prompts panel exists only while it shows; never point at nothing
+                aria-controls={id === 'conversations' || tab === 'prompts' ? `${listId}panel-${id}` : undefined}
+                // one stop for the Tab key; the arrows move along them
+                tabIndex={tab === id ? 0 : -1}
+                disabled={asking}
+                data-history-tab={id}
+                className="settings-tab"
+                onClick={() => choose(id, false)}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                  e.preventDefault();
+                  // two tabs: either arrow is "the other one"
+                  choose(id === 'conversations' ? 'prompts' : 'conversations', true);
+                }}
+              >
+                {t(`sessionHistory.tab.${id}`)}
+              </button>
+            ))}
+          </div>
+        )}
+        <div
+          role={hasTabs ? 'tabpanel' : undefined}
+          id={`${listId}panel-conversations`}
+          aria-labelledby={hasTabs ? `${listId}tab-conversations` : undefined}
+          data-history-panel="conversations"
+          style={
+            tab === 'conversations'
+              ? {
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minBlockSize: 0,
+                  overflow: 'hidden',
+                  ...(hasTabs ? { flex: 1 } : null),
+                }
+              : { display: 'none' }
+          }
+        >
         <div style={{ display: 'flex', alignItems: 'center', borderBlockEnd: '1px solid var(--border)' }}>
           <input
             ref={input}
@@ -563,6 +749,25 @@ export function SessionHistoryDialog(props: {
           >
             {t('sessionHistory.newConversation')}
           </button>
+        )}
+        </div>
+        {hasTabs && tab === 'prompts' && (
+          <div
+            role="tabpanel"
+            id={`${listId}panel-prompts`}
+            aria-labelledby={`${listId}tab-prompts`}
+            data-history-panel="prompts"
+            style={{ display: 'flex', flexDirection: 'column', minBlockSize: 0, flex: 1 }}
+          >
+            <PromptList
+              prompts={port?.prompts() ?? []}
+              truncated={port?.truncated() ?? false}
+              unavailable={!port}
+              inputRef={promptInput}
+              onJump={jumpToPrompt}
+              onRecall={usePromptAgain}
+            />
+          </div>
         )}
       </div>
     </div>

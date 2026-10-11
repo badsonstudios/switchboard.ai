@@ -340,9 +340,14 @@
     "ok": "Add to prompt box"
   },
   "sessionHistory": {
-    "open": "Previous conversations",
+    "open": "History: previous conversations, and the prompts you sent in this one",
     "openIcon": "🕘",
     "title": "Previous conversations",
+    "windowTitle": "History",
+    "tab": {
+      "conversations": "Conversations",
+      "prompts": "Prompts"
+    },
     "placeholder": "Search previous conversations…",
     "loading": "Looking…",
     "empty": "No previous conversations in this folder.",
@@ -1444,11 +1449,9 @@
     "clearAllHint": "Finished and not looked at yet. Click to mark them all as seen."
   },
   "promptHistory": {
-    "open": "prompts",
-    "openHint": "Previous prompts: go back to something you asked in this conversation.",
-    "title": "Previous prompts",
     "filter": "Filter your prompts…",
     "empty": "You have not sent this session a prompt yet.",
+    "unavailable": "This session is not showing its conversation right now, so there are no prompts to list here.",
     "noMatch": "None of your prompts contain \"{query}\".",
     "jumpHint": "Go to this prompt in the conversation.",
     "recall": "Use again",

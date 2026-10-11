@@ -31,8 +31,11 @@ including the ones you had in a terminal without switchboard. The **🕘** butto
 in a session card's header lists the ones belonging to that session's folder,
 newest first.
 
-1. Click **🕘** in the card header. A list opens showing each past
-   conversation with a short description — the title Claude gave it, or, when it
+1. Click **🕘** in the card header. A window opens with two tabs. The first,
+   **Conversations**, is this list; the second, **Prompts**, lists what you
+   asked in the conversation that is open now (see [Going back to a prompt you
+   sent](03-session-view.md#going-back-to-a-prompt-you-sent)). The list shows
+   each past conversation with a short description — the title Claude gave it, or, when it
    never gave it one, the first thing you asked, in quotes — and when you last
    worked on it. If a conversation began with a slash command, the list skips
    past it to the first real thing you asked; a conversation that was *only*

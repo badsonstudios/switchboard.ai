@@ -9,8 +9,8 @@ import { blockVisible, FEED_VIEW_CAP, FeedBlockDto, showsTimelineDot, upsertBloc
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
 import { applyFolds, foldKind, type FoldKind, type FoldRun } from '../lib/feed-folds';
 import { GutterMark } from './ToolIcon';
-import { PromptHistory } from './PromptHistory';
 import { promptsOf, recallInto } from '../lib/prompt-history';
+import { registerPromptPort } from '../lib/prompt-port';
 import { gutterIconFor } from '../../../shared/tool-icon';
 import { groupBySeq } from '../lib/feed-skipping';
 import { FEED_GROUP_ATTR, FEED_GROUP_OPEN_ATTR, useFeedSkipping } from '../lib/use-feed-skipping';
@@ -1113,19 +1113,12 @@ export function FeedView(props: {
   );
   // PROMPT HISTORY (#1203): the prompts you sent here, to go back to one.
   // The owner: "if I want to go back to a previous prompt, how do I do that?"
-  const [promptsOpen, setPromptsOpen] = React.useState(false);
-  const promptsBtn = React.useRef<HTMLButtonElement | null>(null);
+  // The LIST is a tab of the history window (#1237), which is opened from the
+  // card's title bar; this view publishes what that tab needs (below).
   /** the prompt box's own "take this text", set by the Composer below. A ref
    *  and not a prop the other way: the draft lives in the Composer (it
    *  outlives this component, #485) and this only ever asks it to add to it. */
   const recall = React.useRef<((text: string) => void) | null>(null);
-  /** shut the list; on Escape, give the keyboard back to its button. One
-   *  stable function: the panel re-attaches its outside-press listener when
-   *  this changes, and this component renders on every streamed chunk. */
-  const closePrompts = React.useCallback((returnFocus: boolean): void => {
-    setPromptsOpen(false);
-    if (returnFocus) promptsBtn.current?.focus();
-  }, []);
   /**
    * GO TO A PROMPT, through the same jump Find uses, and then let go of it.
    *
@@ -1145,23 +1138,40 @@ export function FeedView(props: {
   }, []);
   const markQueryNow = React.useRef<FindQuery | null>(null);
   markQueryNow.current = markQuery;
-  const goToPrompt = (seq: number): void => {
+  const goToPrompt = (seq: number): boolean => {
     const finding = markQueryNow.current;
-    // an evicted prompt cannot be gone to: the list stays, rather than
-    // closing as if something had happened
-    if (!jumpTo(seq, finding ?? undefined)) return;
-    setPromptsOpen(false);
-    // the panel is about to unmount with the keyboard inside it: the
+    // an evicted prompt cannot be gone to: the answer is "no", and the list
+    // stays up rather than closing as if something had happened
+    if (!jumpTo(seq, finding ?? undefined)) return false;
+    // the history window is about to close with the keyboard inside it: the
     // conversation takes it, which is where the arrow keys now work
     scroller.current?.focus({ preventScroll: true });
     if (promptBeat.current) clearTimeout(promptBeat.current);
-    if (finding) return;
+    if (finding) return true;
     promptBeat.current = setTimeout(() => {
       promptBeat.current = null;
       if (markQueryNow.current) return; // Find opened meanwhile: it owns the reveal
       setReveal((prev) => (prev.current === seq ? NO_REVEAL : prev));
     }, PROMPT_BEAT_MS);
+    return true;
   };
+  // WHAT THE HISTORY WINDOW'S "PROMPTS" TAB NEEDS (#1237), published under
+  // this session's id while this view is mounted. Everything is read through
+  // a ref at the moment it is asked for: this component renders on every
+  // streamed chunk, and the port must not be re-published each time.
+  const goToPromptNow = React.useRef(goToPrompt);
+  goToPromptNow.current = goToPrompt;
+  React.useEffect(() => {
+    const release = registerPromptPort(props.sessionId, {
+      prompts: () => promptsOf(blocksRef.current),
+      // the view holds the most recent thousand blocks; at that size there
+      // may be prompts further back than the list can show
+      truncated: () => blocksRef.current.length >= FEED_VIEW_CAP,
+      jump: (seq) => goToPromptNow.current(seq),
+      recall: (text) => recall.current?.(text),
+    });
+    return release;
+  }, [props.sessionId]);
 
   /** the folds as last rendered, for `toggleFold` — a callback that must stay
    *  the same function across renders, or every `FoldRow` re-renders with it */
@@ -1403,8 +1413,6 @@ export function FeedView(props: {
           paddingInline: 8,
           paddingBlock: 3,
           borderBlockEnd: '1px solid var(--border)',
-          // the prompt list drops from this row (#1203)
-          position: 'relative',
         }}
       >
         {/* Only while the keyboard is actually IN the conversation: the arrow
@@ -1425,44 +1433,6 @@ export function FeedView(props: {
         >
           {inFeed ? t('feedView.keyHint') : ''}
         </span>
-        {/* PROMPT HISTORY (#1203). With the conversation it navigates, and
-            before the three detail chips so it does not read as a fourth. */}
-        <button
-          ref={promptsBtn}
-          type="button"
-          data-prompt-history-open
-          aria-haspopup="dialog"
-          aria-expanded={promptsOpen}
-          title={t('promptHistory.openHint')}
-          onClick={() => setPromptsOpen((open) => !open)}
-          style={{
-            background: promptsOpen ? 'var(--chip)' : 'transparent',
-            border: '1px solid var(--control-edge)',
-            color: 'var(--text)',
-            borderRadius: 'var(--radius-chip)',
-            fontSize: 9.5,
-            padding: '0 6px',
-            marginInlineEnd: 6,
-            cursor: 'pointer',
-            fontFamily: 'var(--font-ui)',
-          }}
-        >
-          {t('promptHistory.open')}
-        </button>
-        {promptsOpen && (
-          <PromptHistory
-            prompts={promptsOf(blocks)}
-            // the view holds the most recent thousand blocks; at that size
-            // there may be prompts further back than the list can show
-            truncated={blocks.length >= FEED_VIEW_CAP}
-            onJump={goToPrompt}
-            onRecall={(text) => {
-              setPromptsOpen(false);
-              recall.current?.(text);
-            }}
-            onClose={closePrompts}
-          />
-        )}
         {(['quiet', 'normal', 'firehose'] as const).map((v) => (
           <button
             key={v}
@@ -4288,6 +4258,12 @@ function Composer({
           }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
+            // A HELD Enter never sends (#1237, review). "Use again" in the
+            // history window is a button, so Enter presses it on key DOWN,
+            // the window closes and this box takes the keyboard with the key
+            // still held: its auto-repeat would send the prompt that was only
+            // meant to be put back. A send is always a fresh press.
+            if (e.repeat) return;
             submit();
           }
         }}

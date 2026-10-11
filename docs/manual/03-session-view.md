@@ -249,23 +249,29 @@ fold anything.
 
 ### Going back to a prompt you sent
 
-There are two kinds of history, and they answer different questions:
+There are two kinds of history, and they are behind one button: **🕘** in the
+card's title bar. The window it opens has two tabs.
 
-- **🕘 Previous conversations**, in the card's title bar, lists other
-  conversations you have had in this folder, so you can reopen one.
-- **prompts**, at the top right of the conversation beside **quiet / normal /
-  firehose**, lists what *you* asked in the conversation that is open now.
+- **Conversations** lists other conversations you have had in this folder, so
+  you can reopen one.
+- **Prompts** lists what *you* asked in the conversation that is open now.
 
-Click **prompts** and you get your prompts, newest first, each with how long
-ago you sent it. Type in the box at the top to narrow the list (every word you
-type has to be in the prompt, in any order).
+Click **🕘**, then **Prompts**, and you get your prompts, newest first, each
+with how long ago you sent it. Type in the box at the top to narrow the list
+(every word you type has to be in the prompt, in any order). The window opens
+on whichever tab you used last, and on **Conversations** the first time after
+you start switchboard. With the keyboard on the tabs, **←** and **→** switch
+between them.
 
 | Do this | And this happens |
 |---|---|
-| Click a prompt | The conversation jumps to where you asked it. Nothing is changed or undone: you are only looking at an earlier place |
-| Click **Use again** beside it | Its text is put back in the prompt box, ready to edit or send again. If you had already typed something, that is kept, and the old prompt is added underneath |
+| Click a prompt | The window closes and the conversation jumps to where you asked it. Nothing is changed or undone: you are only looking at an earlier place |
+| Click **Use again** beside it | The window closes and its text is put back in the prompt box, ready to edit or send again. If you had already typed something, that is kept, and the old prompt is added underneath |
 
-Close it with **Escape** or a click anywhere else.
+Close it with **Escape** or a click outside the window.
+
+If the session is not showing its conversation at the moment, the **Prompts**
+tab says so instead of listing anything.
 
 A slash command is listed the way you typed it (`/clear`). What helper agents
 were told is not in the list: those were not your prompts.

@@ -96,6 +96,21 @@ on the floor, and say so in your PR.
 
 ## 0.8.121 — unreleased
 
+### Changed
+
+- **Prompt History is now a tab of the history window.** Click **🕘** in a
+  session's title bar and the window has two tabs: **Conversations** (previous
+  conversations, as before) and **Prompts** (what you asked in this one, with
+  the filter, click-to-go-to and **Use again**). The small **prompts** button
+  at the top right of the conversation is gone; it was easy to miss. The
+  window opens on the tab you used last.
+
+### Fixed
+
+- **Holding Enter down in the prompt box no longer sends.** Only a fresh press
+  does. A key still held from somewhere else (a button you pressed with Enter
+  that then handed the keyboard to the prompt box) could send what was there.
+
 ## 0.8.120 — 2026-10-11
 
 ### Added
