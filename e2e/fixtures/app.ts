@@ -1255,7 +1255,8 @@ async function parkPointer(window: Page): Promise<void> {
  * find it moved, which is what this hides.
  */
 export async function setTheme(window: Page, name: string): Promise<void> {
-  const dialog = await openSettings(window);
+  // by name, not by luck: Settings reopens on the tab last used (#1199)
+  const dialog = await openSettingsTab(window, 'appearance');
   await dialog.getByRole('button', { name, exact: true }).click();
   await closeSettings(window);
 }
@@ -1281,7 +1282,8 @@ export async function setUiLanguage(window: Page, name: string): Promise<void> {
   // which a session already in pseudo no longer says.
   await window.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
   await window.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+,`);
-  const dialog = window.getByRole('dialog').first();
+  // the dialog that HAS the tabs: exact, and the same in any language
+  const dialog = window.locator('[role="dialog"]:has([data-settings-tab])');
   await dialog.waitFor({ state: 'visible', timeout: 15_000 });
   await dialog.locator('[data-settings-tab="general"]').click();
   await dialog.getByRole('button', { name, exact: true }).click();

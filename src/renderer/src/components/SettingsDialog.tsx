@@ -20,12 +20,12 @@
 // not a preference — so a global settings modal would misstate its scope, and
 // absorbing it would strand `/mcp` typed in the composer (#633).
 //
-// **The shape is ONE SCROLLING COLUMN, not a nav/content split.** A split makes
-// "open at the right section" crisper, but it also mounts one section at a
-// time — and the three absorbed dialogs' e2e specs find their controls by
-// `data-quiet-field` / `data-push-field` / `data-task-label-size` with the
-// surface merely open. A column keeps those true, and "open at section" becomes
-// a scroll, which is honest about what it is.
+// **The shape is TABS since #1199**, one per subject, in the same single
+// window. It was one scrolling column until fourteen settings had piled up in
+// it. What the column was chosen for is kept: every panel is mounted the whole
+// time (the inactive ones are `hidden`), so nothing a section fetched or had
+// typed into it is lost by looking at another tab, and "open at a section" is
+// "open on its tab".
 //
 // The modal shape — scrim, click-away, focus capture, Escape — is
 // `QuietHoursDialog.tsx`'s, which was `PushSetupDialog.tsx`'s, which was
@@ -63,7 +63,7 @@ import { DiagnosticsSection } from './settings/DiagnosticsSection';
 export interface SettingsDialogProps {
   open: boolean;
   /**
-   * Scroll this section into view when the modal opens. `null` means the top.
+   * Open on this section's tab. `null` means the tab last shown.
    *
    * This is what keeps muscle memory working: `Ctrl+Shift+P` → *quiet hours*
    * still lands on the quiet-hours controls rather than on a screen where you
@@ -140,7 +140,6 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
   const { t } = useTranslation();
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
   const dialog = React.useRef<HTMLDivElement | null>(null);
-  const sections = React.useRef<Partial<Record<SettingsSection, HTMLElement | null>>>({});
   const ids = React.useId();
 
   // A LAYOUT effect, so the dialog has the keyboard in the same commit that
@@ -164,44 +163,28 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
    * exists to remove.
    */
   const [tab, setTab] = React.useState<SettingsSection>(lastTab);
-  React.useEffect(() => {
+  const body = React.useRef<HTMLDivElement | null>(null);
+  // A LAYOUT effect: the component stays mounted while the window is shut, so
+  // `tab` is whatever the last opening showed. Corrected after paint, the
+  // window would flash that tab before the one it was opened for.
+  React.useLayoutEffect(() => {
     if (!props.open) return;
-    setTab(props.section ?? lastTab);
+    const next = props.section ?? lastTab;
+    // "the tab you were last on" includes one a palette entry took you to
+    lastTab = next;
+    setTab(next);
   }, [props.open, props.section]);
+  // EVERY TAB STARTS AT ITS TOP. The six panels share one scroller, so without
+  // this the place you had scrolled to on one tab would be where you landed on
+  // the next. Before paint, so there is no jump to see.
+  React.useLayoutEffect(() => {
+    if (body.current) body.current.scrollTop = 0;
+  }, [tab, props.open]);
   const choose = (next: SettingsSection): void => {
     lastTab = next;
     setTab(next);
   };
   const tabs = React.useRef<Partial<Record<SettingsSection, HTMLButtonElement | null>>>({});
-
-  /**
-   * Bring the requested section's top into view on the way in.
-   *
-   * `scrollIntoView` and NOT focus: moving focus to a heading would take it off
-   * the dialog container, which is where the Escape handler lives, and the
-   * first thing someone does to a settings screen they opened by accident is
-   * press Escape. The container keeps focus; the scroll says where to look.
-   *
-   * Only when a section was ASKED for. With tabs it is nearly always a no-op (a
-   * tab starts at its top), and it is kept because the palette's entries name
-   * a section and must land on it whatever is above.
-   */
-  const scrolledTo = React.useRef<SettingsSection | null>(null);
-  React.useEffect(() => {
-    if (!props.open) {
-      scrolledTo.current = null;
-      return;
-    }
-    // ONCE per opening, and only once its tab is the one showing: a panel that
-    // is still `hidden` has no position to scroll to, and the tab is chosen by
-    // the effect above, a render before this can act on it.
-    if (!props.section || tab !== props.section || scrolledTo.current === props.section) return;
-    scrolledTo.current = props.section;
-    // `block: 'start'` inside the scroller, not `smooth`: an animation here is
-    // a race for every test that reads a position, and it buys nothing on a
-    // surface you opened deliberately.
-    sections.current[props.section]?.scrollIntoView?.({ block: 'start' });
-  }, [props.open, props.section, tab]);
 
   if (!props.open) return null;
 
@@ -223,9 +206,6 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
    */
   const heading = (id: SettingsSection, children: React.ReactNode): React.JSX.Element => (
     <section
-      ref={(el) => {
-        sections.current[id] = el;
-      }}
       role="tabpanel"
       // a literal id is on an allow-list for a reason (two dialogs, one id);
       // these are derived from the dialog's own
@@ -302,7 +282,8 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
               tabs whose panels are already there. */}
           <div
             role="tablist"
-            aria-label={t('settings.title')}
+            // its own name: the dialog around it is already "Settings"
+            aria-label={t('settings.tabsLabel')}
             style={{ display: 'flex', flexWrap: 'wrap', gap: 2, paddingInline: 10 }}
           >
             {SETTINGS_SECTIONS.map((id) => {
@@ -323,6 +304,8 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
                   className="settings-tab"
                   onClick={() => choose(id)}
                   onKeyDown={(e) => {
+                    // a chord is somebody else's shortcut, not a move along the tabs
+                    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
                     const next = stepSettingsSection(
                       id,
                       e.key,
@@ -341,6 +324,7 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
           </div>
         </div>
         <div
+          ref={body}
           data-settings-body
           style={{ flex: '1 1 auto', minBlockSize: 0, overflowY: 'auto' }}
         >

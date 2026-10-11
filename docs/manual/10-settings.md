@@ -37,8 +37,8 @@ Click a tab, or put the keyboard on the tabs and use **`←`** and **`→`**
 (**`Home`** and **`End`** jump to the ends). The window stays the same size
 whichever tab you are on.
 
-**It opens on the tab you were last on.** The first time, that is
-**Appearance**. Nothing you were in the middle of on another tab is lost when
+**It opens on the tab you were last on**, however you got there. The first
+time, that is **Appearance**. Every tab opens at its top. Nothing you were in the middle of on another tab is lost when
 you switch: a half-typed push key is still there when you come back.
 
 Muscle memory still works: **`Ctrl+Shift+P` → *quiet hours*** (or *phone push*,

@@ -1066,9 +1066,10 @@ mark[data-feed-match-current] {
   cursor: pointer;
   user-select: none;
 }
-/* The tabs of the settings window (#1199). The selected one is said three
- * ways, none of them colour alone: full ink against the readable grey, bold,
- * and an underline in the accent. */
+/* The tabs of the settings window (#1199). The selected one is said two
+ * ways, neither of them colour alone: full ink against the readable grey, and
+ * an underline. NOT bold: a heavier word is a wider word, and the tabs beside
+ * it would shift a few pixels every time you chose one. */
 .settings-tab {
   appearance: none;
   background: none;
@@ -1086,7 +1087,6 @@ mark[data-feed-match-current] {
 }
 .settings-tab[aria-selected='true'] {
   color: var(--text);
-  font-weight: 700;
   border-block-end-color: var(--accent);
 }
 .settings-tab:focus-visible {

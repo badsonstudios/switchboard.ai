@@ -1830,6 +1830,7 @@
       "advanced": "Advanced",
       "diagnostics": "Diagnostics"
     },
+    "tabsLabel": "Settings, by subject",
     "diagnosticsPointer": "To send everything needed to look into a problem in one go, use Help ▸ Report a problem. It bundles the logs for you.",
     "perfCapture": "Detailed performance capture",
     "perfCaptureBlurb": "Records how long each keystroke takes to appear, how much of the conversation was on screen at the time, and what blocked the app while you waited. Off by default because it costs a little speed to run. It stays on this computer: it stores durations and the names of actions only, never anything you typed, any file name, or anything from a conversation.",

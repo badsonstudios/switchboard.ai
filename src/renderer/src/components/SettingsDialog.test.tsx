@@ -219,13 +219,14 @@ describe('the sections', () => {
     }
   });
 
-  it('scrolls to the section it was opened at', async () => {
+  it('opens on the TAB of the section it was asked for, at its top', async () => {
     // The palette aliases (quiet hours, phone push, task label size) keep
-    // working by landing on the right part of this screen rather than on its
-    // top. jsdom has no layout, so `scrollIntoView` does not exist unless we
-    // put it there — which is also the only way to observe that it was asked.
+    // working by landing on the right tab. Nothing is scrolled into view any
+    // more: a tab starts at its top, which is where its first setting is.
     await render(true, { section: 'attention' });
-    expect(scrolled).toEqual(['attention']);
+    expect(section('attention')!.hidden).toBe(false);
+    expect(section('appearance')!.hidden).toBe(true);
+    expect(scrolled).toEqual([]);
   });
 
   it('does not scroll anywhere when it was opened with no section', async () => {
@@ -323,7 +324,37 @@ describe('the sections', () => {
     it('a deep link opens on the tab that owns the section', async () => {
       await render(true, { section: 'attention' });
       expect(showing()).toEqual(['attention']);
-      expect(scrolled).toEqual(['attention']);
+    });
+
+    it('...and that IS then the tab you were last on', async () => {
+      await render(true, { section: 'attention' });
+      await render(false);
+      await render();
+      expect(showing()).toEqual(['attention']);
+    });
+
+    it('every tab starts at its top: the scroll of one is not carried to the next', async () => {
+      await render();
+      const body = host.querySelector<HTMLElement>('[data-settings-body]')!;
+      body.scrollTop = 300;
+      await click(tab('general'));
+      expect(body.scrollTop).toBe(0);
+    });
+
+    it('a chord is not a move along the tabs', async () => {
+      await render();
+      await act(async () => {
+        tab('appearance').dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowRight', ctrlKey: true, bubbles: true, cancelable: true })
+        );
+      });
+      expect(showing()).toEqual(['appearance']);
+    });
+
+    it('the tab list has a name of its own, not the dialog’s over again', async () => {
+      await render();
+      const list = host.querySelector('[role="tablist"]')!;
+      expect(list.getAttribute('aria-label')).not.toBe(dialog()!.getAttribute('aria-label'));
     });
 
     it('reopening lands on the tab you were last on, unless a section is asked for', async () => {

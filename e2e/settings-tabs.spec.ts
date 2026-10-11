@@ -86,8 +86,13 @@ test.describe('Settings is in tabs (#1199)', () => {
     const win = (await d.boundingBox())!;
     const done = (await d.getByRole('button', { name: 'Done', exact: true }).boundingBox())!;
     expect(done.y + done.height).toBeLessThanOrEqual(win.y + win.height);
+    // EVERY TAB STARTS AT ITS TOP: still scrolled to the end of Appearance,
+    // go to another tab and back
+    await tab(d, 'general').click();
+    expect(await body.evaluate((el) => el.scrollTop)).toBe(0);
+    await tab(d, 'appearance').click();
+    expect(await body.evaluate((el) => el.scrollTop)).toBe(0);
     // and the intro above the first setting is not cut off under the tabs
-    await body.evaluate((el) => el.scrollTo(0, 0));
     const intro = (await body.locator('p').first().boundingBox())!;
     const tabs = (await d.getByRole('tablist').boundingBox())!;
     expect(intro.y).toBeGreaterThanOrEqual(tabs.y + tabs.height - 1);

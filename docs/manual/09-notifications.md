@@ -493,7 +493,7 @@ destination yourself.
 ### Where the setup lives
 
 **Settings ▸ Notifications.** Press **`Ctrl+,`**, or press **`Ctrl+Shift+P`** and
-type *phone push*, which opens Settings scrolled straight to it.
+type *phone push*, which opens Settings on that tab.
 
 ### Setting up ntfy (the easy one)
 
@@ -599,7 +599,7 @@ and a program isn't asleep — a log with a hole in it every night from 22:00 to
 Hours of the day when switchboard won't make a noise at you.
 
 **Settings ▸ Notifications** — press **`Ctrl+,`**, or **`Ctrl+Shift+P`** and type
-*quiet hours*, which opens Settings scrolled straight to it. Tick **Keep quiet
+*quiet hours*, which opens Settings on that tab. Tick **Keep quiet
 between these times**, set a **From** and an **Until**, and close the window.
 That's the whole setting.
 
