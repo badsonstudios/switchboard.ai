@@ -35,8 +35,9 @@
 >    but now say why. `popoutCardId` on the command context; `actsInPopout`
 >    and `arrangesMainWindow` on a command. The close question is asked in
 >    the card's own window. The palette is unchanged.
-> 3. **#1235 — pictures in the conversation. IN PROGRESS, started
->    2026-10-11, branch `feature/1235-feed-pictures`.**
+> 3. **#1235 — pictures in the conversation.
+>    DONE 2026-10-11, PR #1243 (`b14f9fb6`), merged, NOT released.**
+>    The ticket is closed.
 >    The ticket has four parts and I split it: THIS item is part 1 (a local
 >    picture a reply refers to is drawn inline: PNG, JPEG, GIF, WebP, SVG,
 >    through the document viewer's own scoped handler; a remote one is a
@@ -54,7 +55,7 @@
 >    ⚠️ Nothing tells Claude to use image syntax; whether it does unprompted
 >    is the owner's first hand-test.
 > 4. **#1209 — control edges on nordic and daylight. IN PROGRESS, started
->    2026-10-11, branch `feature/1209-control-edges` (stacked on #1235's).**
+>    2026-10-11, branch `feature/1209-control-edges`.**
 >    The audit the ticket asked for: 36 controls whose only edge was the
 >    `--border` hairline (1.13 to 1.31:1) and which have no fill of their
 >    own: 19 text boxes (including the prompt box) and 17 outlined buttons
