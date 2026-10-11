@@ -149,6 +149,7 @@ import {
 import { buildIdentity } from '../../shared/build-identity';
 import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './lib/tab-rows';
 import { toggleDiffLayout } from './lib/diff-layout';
+import { isModalOpen } from './lib/modal-layer';
 import { isOutlineOffered, toggleDocumentOutline } from './lib/document-outline';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
 import { openFindBar } from './lib/find-bar-state';
@@ -1197,12 +1198,10 @@ export function App(): React.JSX.Element {
     // one is in flight — the `openSettings` rule, for its reason.
     setReportStatus(null);
     setReportOpen(true);
-    // THE TWIN CLOSES (#1008). The native Help menu stays clickable while a
-    // renderer modal is up, so Report a problem → Feature request (or the
-    // reverse) could put two windows with IDENTICAL chrome on top of each
-    // other, both claiming `aria-modal` at the same z-index — the very thing
-    // every `dialogAbove` prop in this file exists to avoid. They are two
-    // errands; you are only on one of them.
+    // THE TWIN CLOSES (#1008). Defensive since #1020: the keyboard guard now
+    // refuses the other Help item while either is open, and only the top of
+    // any stack is `aria-modal` (`lib/modal-layer`). Kept because they are
+    // two errands with identical chrome, and you are only on one of them.
     setFeatureOpen(false);
     refreshReportStatus();
   }, [refreshReportStatus]);
@@ -1726,6 +1725,31 @@ export function App(): React.JSX.Element {
   // the two chords the browser process claims before the page sees them, which
   // would otherwise jump to a session hidden behind the dialog.
   const modalOpenRef = React.useRef(false);
+  /**
+   * Is a modal in the way of a command (#1020)? ONE question for both routes
+   * a command arrives by, so they cannot disagree.
+   *
+   * The ref is this component's nine dialogs. Four more keep their state
+   * inside a card or the grid (a session's history window, Dispatch, the
+   * context hand-off, the new-session picker) and it never knew about them,
+   * so a chord pressed with one of those open opened a second dialog over it.
+   * Every dialog registers in `lib/modal-layer`, so that is asked too:
+   *
+   *   - of THIS window, always: nearly every command acts here, and a chord
+   *     pressed in a popout that ran would raise this window over its dialog;
+   *   - and of the window the key was pressed in, when that is a popout with
+   *     a dialog of its own.
+   *
+   * A dialog that is only in a popped-out window does not silence this one.
+   */
+  const modalBlocks = React.useCallback((pressedIn?: Window): boolean => {
+    if (modalOpenRef.current || isModalOpen(document)) return true;
+    try {
+      return pressedIn ? isModalOpen(pressedIn.document) : false;
+    } catch {
+      return false; // a window torn down under the key press
+    }
+  }, []);
   useEffect(() => {
     railHiddenRef.current = railHidden;
     modalOpenRef.current =
@@ -2186,8 +2210,9 @@ export function App(): React.JSX.Element {
     // it is.
     const onKey = (e: KeyboardEvent, sourceWindow?: Window): boolean => {
       // while a modal owns the screen, nothing underneath it fires —
-      // regardless of where focus ended up inside the modal
-      if (modalOpenRef.current) return false;
+      // regardless of where focus ended up inside the modal.
+      //
+      if (modalBlocks(sourceWindow)) return false;
       const ctx = commandContext(sourceWindow);
       const result = dispatch(
         {
@@ -2333,9 +2358,14 @@ export function App(): React.JSX.Element {
   // command the palette and the keyboard run.
   useEffect(() => {
     return bridge.onAccelerator?.(({ commandId, fromPopout }) => {
-      // while a modal owns the screen, nothing underneath it fires — the
-      // same guard the keydown dispatcher applies
-      if (modalOpenRef.current) return;
+      // while a modal owns the screen, nothing underneath it fires: the
+      // same guard the keydown dispatcher applies, asked of the same windows
+      // (#1020). Only the popouts we know about are searched for where the
+      // key was pressed.
+      const pressedIn = fromPopout
+        ? (focusedElementIn(openPopoutWindows(), document)?.ownerDocument.defaultView ?? undefined)
+        : undefined;
+      if (modalBlocks(pressedIn)) return;
       // Only the popouts we know about are searched — the registry is filled by
       // SessionGrid from dockview's own event (#227), so a window that somehow
       // missed it lands on the fallback and simply behaves as if nothing were
@@ -2577,9 +2607,6 @@ export function App(): React.JSX.Element {
         open={perfSummaryOpen}
         onClose={() => setPerfSummaryOpen(false)}
         summary={perfSummaryData}
-        // two stacked `aria-modal` regions is a thing screen readers disagree
-        // about, so only the top one claims it — as every other dialog here does
-        dialogAbove={settingsOpen || mcpOpen || reportOpen || featureOpen || modelFor !== null}
       />
       <AboutPanel
         open={aboutOpen}
@@ -2588,17 +2615,6 @@ export function App(): React.JSX.Element {
         identity={BUILD_IDENTITY}
         platform={bridge.platform}
         onCheckForUpdates={checkForUpdates}
-        // a second dialog is above this one: two stacked `aria-modal` regions
-        // is a thing screen readers disagree about, so only the top one claims it
-        dialogAbove={
-          updateOpen ||
-          settingsOpen ||
-          mcpOpen ||
-          reportOpen ||
-          featureOpen ||
-          perfSummaryOpen ||
-          modelFor !== null
-        }
         onOpenSettings={() => openSettings(null)}
       />
       {/* Settings (#885) — the one modal that absorbed quiet hours, phone push

@@ -136,6 +136,13 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **When two windows are open on top of each other, only the top one says it
+  owns the screen.** With a screen reader, two dialogs up at once (an update
+  prompt arriving over Settings, say) both claimed the whole window, and
+  screen readers disagree about what that means. Now the one underneath steps
+  back until the top one closes: it cannot be clicked, tabbed into or read.
+  Nothing you typed in it is lost. A shortcut also no longer opens a second
+  window over a session's History, Dispatch or hand-off window.
 - **Shortcuts pressed in a popped-out session's window work on that session.**
   `Ctrl+Alt+P` (pin), `Ctrl+F` (find), `Ctrl+Alt+↑/↓` (move in the list),
   `Ctrl+W` (close) and `Ctrl+Shift+O` (bring it back into the main window) used

@@ -4432,6 +4432,37 @@ a pointer where they left.)*
   > composer's option chips were that case and got `--control-edge` (#1009).
   > Whether other controls still rest on a `--border` hairline alone has NOT
   > been audited; that is filed separately (1209) rather than claimed here.
+  >
+  > **Audited 2026-10-11 (#1209).** 19 text boxes and 18 buttons with no fill
+  > had the hairline as their only edge; all are on `--control-edge`, which is
+  > now measured at 3:1 on six surfaces in four themes, and a scan fails for a
+  > field or a transparent button that is given the hairline again. Buttons
+  > with a fill of their own were left as they are.
+
+- **Only the top modal is modal (#1020, decided 2026-10-11).** `aria-modal`
+  tells assistive technology that one thing owns the window; two at once is a
+  contradiction that screen readers resolve differently. #1008 stopped one
+  pair stacking by having each close the other. The general case was open:
+  nine dialogs were known to the app's keyboard guard and five were not; an
+  update prompt arrives from main whatever is open.
+
+  The ticket offered two rules. **The one adopted is the stacking contract:
+  dialogs may stack, the top one carries `aria-modal`, and the ones beneath
+  are `inert`** until they are on top again. Not "the newcomer closes what is
+  beneath it", because two of the dialogs hold text somebody typed (Report a
+  problem, Feature request) and an update prompt arriving over one must not
+  throw it away; and because two stacks are deliberate (About opens Settings
+  and the update dialog over itself).
+
+  One stack per document: a popped-out card is its own window, and a dialog
+  there is not beneath one in the main window. `lib/modal-layer` is the
+  single owner; every dialog takes its answer from `useModalLayer`, and a
+  source scan fails for a component that writes `aria-modal` without it. The
+  keyboard guard asks the same stack, so a chord no longer opens a second
+  dialog over one whose state the app's root never held.
+
+  *Not done:* a Tab trap. A modal here still lets Tab walk out to the page
+  behind it; that is older than this and is its own piece of work.
 
 ### 5.33 Session history — opening a past conversation
 

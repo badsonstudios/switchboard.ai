@@ -39,6 +39,7 @@
 // prompts panel is read fresh each time it is shown, and is a SNAPSHOT while
 // it is up: the window is modal, so nothing is being sent behind it.
 import React from 'react';
+import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
 import { answered } from '../../../shared/ipc/refusal';
 import type { ConversationHistory, ConversationRow } from '../../../shared/session-history';
@@ -163,6 +164,9 @@ export function SessionHistoryDialog(props: {
     hasTabs && promptPortFor(props.promptSession) ? lastTab : 'conversations';
   const [tab, setTab] = React.useState<HistoryTab>(openingTab);
   const dialogEl = React.useRef<HTMLDivElement | null>(null);
+  // only the top modal is modal (#1020, `lib/modal-layer`)
+  // (`dialogEl`: opened from a card, this travels with a popped-out one, and joins THAT window's stack)
+  const { top, lift } = useModalLayer(props.open, dialogEl);
   const promptInput = React.useRef<HTMLInputElement | null>(null);
   const tabButtons = React.useRef<Record<HistoryTab, HTMLButtonElement | null>>({
     conversations: null,
@@ -416,7 +420,8 @@ export function SessionHistoryDialog(props: {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 50,
+        // above whatever modal was already open (#1020): paint order follows the stack
+        zIndex: 50 + lift,
         background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
@@ -427,7 +432,9 @@ export function SessionHistoryDialog(props: {
       <div
         ref={dialogEl}
         role="dialog"
-        aria-modal="true"
+        // while its own question is up, the QUESTION is the modal thing (below)
+        aria-modal={top && !props.confirm ? 'true' : undefined}
+        inert={!top}
         aria-label={hasTabs ? t('sessionHistory.windowTitle') : t('sessionHistory.title')}
         data-history-dialog
         onMouseDown={(e) => {
@@ -579,7 +586,7 @@ export function SessionHistoryDialog(props: {
           <div
             data-history-confirm
             role="alertdialog"
-            aria-modal="true"
+            aria-modal={top ? 'true' : undefined}
             aria-label={props.confirm.title}
             aria-describedby={`${listId}confirm`}
             style={{

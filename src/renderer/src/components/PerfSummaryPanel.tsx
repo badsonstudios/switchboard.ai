@@ -17,6 +17,7 @@
 // behaviour, same click-away. It is the other read-only "tell me about this
 // build" surface and there is no reason for the two to feel different.
 import React from 'react';
+import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
 import { describeContext, type PerfSummary } from '../../../shared/perf';
 
@@ -25,10 +26,10 @@ export function PerfSummaryPanel(props: {
   onClose: () => void;
   /** `null` while the numbers are still being fetched from main */
   summary: PerfSummary | null;
-  /** Another modal is stacked above — see AboutPanel for why this matters. */
-  dialogAbove?: boolean;
 }): React.JSX.Element | null {
   const { t } = useTranslation();
+  // only the top modal is modal (#1020, `lib/modal-layer`)
+  const { top, lift } = useModalLayer(props.open);
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
   const dialog = React.useRef<HTMLDivElement | null>(null);
 
@@ -59,7 +60,8 @@ export function PerfSummaryPanel(props: {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 50,
+        // above whatever modal was already open (#1020): paint order follows the stack
+        zIndex: 50 + lift,
         background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
@@ -70,7 +72,8 @@ export function PerfSummaryPanel(props: {
       <div
         ref={dialog}
         role="dialog"
-        aria-modal={props.dialogAbove ? undefined : 'true'}
+        aria-modal={top ? 'true' : undefined}
+        inert={!top}
         aria-label={t('perf.title')}
         tabIndex={-1}
         onMouseDown={(e) => e.stopPropagation()}

@@ -32,6 +32,7 @@
 // `AboutPanel.tsx`'s. Declared ONCE here now, for all of it: three near-copies
 // of the same nine lines was the other half of the problem this closes.
 import React from 'react';
+import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
 import { ThemeDefinition, ThemePreference } from '../theme/theme';
 import { LanguageChoice } from '../i18n';
@@ -138,6 +139,8 @@ export function resetSettingsTabForTests(): void {
 
 export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | null {
   const { t } = useTranslation();
+  // only the top modal is modal (#1020, `lib/modal-layer`)
+  const { top, lift } = useModalLayer(props.open);
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
   const dialog = React.useRef<HTMLDivElement | null>(null);
   const ids = React.useId();
@@ -224,7 +227,8 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 51,
+        // above whatever modal was already open (#1020): paint order follows the stack
+        zIndex: 51 + lift,
         background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
@@ -235,7 +239,8 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
       <div
         ref={dialog}
         role="dialog"
-        aria-modal="true"
+        aria-modal={top ? 'true' : undefined}
+        inert={!top}
         aria-label={t('settings.title')}
         tabIndex={-1}
         onMouseDown={(e) => e.stopPropagation()}

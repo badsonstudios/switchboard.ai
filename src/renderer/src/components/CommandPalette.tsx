@@ -5,6 +5,7 @@
 // Rendering only. What the rows ARE lives in lib/palette.ts (pure, tested);
 // which key opens this lives in the registry, like every other binding.
 import React from 'react';
+import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
 import { Command, CommandContext, formatBinding, Platform } from '../lib/commands';
 import { filterRows, firstRunnable, PaletteRow, paletteRows } from '../lib/palette';
@@ -19,6 +20,8 @@ export function CommandPalette(props: {
   platform: Platform;
 }): React.JSX.Element | null {
   const { t } = useTranslation();
+  // only the top modal is modal (#1020, `lib/modal-layer`)
+  const { top, lift } = useModalLayer(props.open);
   const [query, setQuery] = React.useState('');
   const [selected, setSelected] = React.useState(0);
   const input = React.useRef<HTMLInputElement | null>(null);
@@ -137,7 +140,8 @@ export function CommandPalette(props: {
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 50,
+        // above whatever modal was already open (#1020): paint order follows the stack
+        zIndex: 50 + lift,
         background: 'var(--scrim)',
         display: 'flex',
         justifyContent: 'center',
@@ -147,7 +151,8 @@ export function CommandPalette(props: {
     >
       <div
         role="dialog"
-        aria-modal="true"
+        aria-modal={top ? 'true' : undefined}
+        inert={!top}
         aria-label={t('palette.label')}
         onMouseDown={(e) => {
           e.stopPropagation();
