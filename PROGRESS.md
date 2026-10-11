@@ -63,8 +63,10 @@
 >    `expectTurnCompleted` now asks the feed. Left alone on purpose: sound,
 >    speech and toast for a finished session; the hotkey's order; the number
 >    at the bottom of the window; the Events list; the look of a finished row.
-> 4. **#1201 — past questions render as raw JSON. IN PROGRESS, started
->    2026-10-11, branch `feature/1201-question-readback`.** A question had
+> 4. **#1201 — past questions render as raw JSON. DONE 2026-10-11, PR #1225
+>    (`6a59793f`), merged, NOT released.** Green on the first CI run; the
+>    ticket is closed. **Filed on the way: #1226** (probe the installed CLI
+>    for the result shapes the reader handles unmeasured). A question had
 >    no block of its own and fell through to the generic tool row. Built: the
 >    questions ride on the block structured; a shared reader finds each answer
 >    in the CLI's own result sentence by the question's text; a new block
@@ -74,8 +76,7 @@
 >    (2.1.288) but have NOT been probed (notes, previews, "no option
 >    selected", three other openings): a follow-up probe is worth filing.
 > 5. **#1206 — speech leads with the session name. IN PROGRESS, started
->    2026-10-11, branch `feature/1206-speech-session-name` (stacked on #1201's
->    branch until that merges).** The `speak` action resolves its own "who":
+>    2026-10-11, branch `feature/1206-speech-session-name`.** The `speak` action resolves its own "who":
 >    the session's name, tidied for a voice ("Switchboard.ai" is said
 >    "Switchboard AI"); the task label follows only when two open sessions
 >    sound the same. Toast, phone and webhook are unchanged. ⚠️ The real-app
