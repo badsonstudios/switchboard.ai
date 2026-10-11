@@ -1,11 +1,12 @@
 // The list of prompts you sent in this conversation (#1203). See
 // `lib/prompt-history` for what it is and is not.
 //
-// A PANEL THAT DROPS FROM ITS OWN BUTTON, over the top of the conversation it
-// lists, and not a window of its own: you are choosing a place in the thing
-// behind it. It is a dialog to assistive technology (it has a name and takes
-// the keyboard), it closes on Escape and on a click outside, and it gives the
-// keyboard back to its button.
+// IT IS A TAB OF THE HISTORY WINDOW (#1237), beside the list of previous
+// conversations. It first shipped as a panel dropped from its own small
+// "prompts" button in the conversation's toolbar, and the owner, the day he
+// installed it: "I don't see any icon for that." One history button, two
+// kinds of history behind it. So this is the list alone; the window around
+// it, its Escape and its focus belong to `SessionHistoryDialog`.
 //
 // EACH ROW IS TWO BUTTONS, side by side, never one inside the other: the prompt
 // itself (go to where it is in the conversation) and "Use again" (put its text
@@ -15,50 +16,22 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { filterPrompts, promptAge, type PromptEntry } from '../lib/prompt-history';
 
-export function PromptHistory(props: {
+export function PromptList(props: {
   prompts: readonly PromptEntry[];
   /** the view's buffer is full: older prompts than these exist and are not listed */
   truncated: boolean;
+  /**
+   * This session has no conversation view to list from (it is showing
+   * something else). Said, rather than shown as "you have sent nothing".
+   */
+  unavailable?: boolean;
   onJump: (seq: number) => void;
   onRecall: (text: string) => void;
-  /**
-   * Shut it. `returnFocus` is true only for Escape: that is "never mind", and
-   * the keyboard goes back to the button. A press or a Tab somewhere else
-   * already put the keyboard where the user wanted it, and taking it back
-   * would be stealing it.
-   */
-  onClose: (returnFocus: boolean) => void;
-  /** how tall the panel may be, in px: the room the card has under the toolbar */
-  maxBlockSize?: number;
+  /** the filter box, so the window can put the keyboard in it */
+  inputRef?: React.Ref<HTMLInputElement>;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [query, setQuery] = React.useState('');
-  const input = React.useRef<HTMLInputElement | null>(null);
-  const panel = React.useRef<HTMLDivElement | null>(null);
-  const { onClose } = props;
-
-  // the search box has the keyboard the moment the panel appears (the same
-  // layout-effect rule every other dialog here follows, #1171)
-  React.useLayoutEffect(() => {
-    input.current?.focus();
-  }, []);
-
-  // a press anywhere outside closes it. On the panel's OWN document: a card
-  // popped out into its own window is a different document from the main one.
-  React.useEffect(() => {
-    const doc = panel.current?.ownerDocument;
-    if (!doc) return;
-    const away = (e: Event): void => {
-      const target = e.target as Node | null;
-      if (target && panel.current?.contains(target)) return;
-      // the button that opened it toggles it itself; closing here as well
-      // would shut it and let the click open it again
-      if ((target as Element | null)?.closest?.('[data-prompt-history-open]')) return;
-      onClose(false);
-    };
-    doc.addEventListener('pointerdown', away, true);
-    return () => doc.removeEventListener('pointerdown', away, true);
-  }, [onClose]);
 
   const shown = filterPrompts(props.prompts, query);
   const now = Date.now();
@@ -70,53 +43,15 @@ export function PromptHistory(props: {
 
   return (
     <div
-      ref={panel}
-      role="dialog"
-      aria-label={t('promptHistory.title')}
       data-prompt-history
-      onKeyDown={(e) => {
-        if (e.key !== 'Escape') return;
-        e.preventDefault();
-        e.stopPropagation();
-        onClose(true);
-      }}
-      // It is not modal, so Tab can walk out of it. Leaving by keyboard closes
-      // it, the same as a press outside: otherwise it would be left open with
-      // no key that shuts it.
-      onBlur={(e) => {
-        const to = e.relatedTarget as Node | null;
-        if (!to) return; // focus left the window, or went nowhere: not a choice
-        if (e.currentTarget.contains(to)) return;
-        if ((to as Element).closest?.('[data-prompt-history-open]')) return;
-        onClose(false);
-      }}
-      style={{
-        position: 'absolute',
-        insetBlockStart: '100%',
-        insetInlineEnd: 0,
-        zIndex: 5,
-        inlineSize: 'min(460px, 100%)',
-        // bounded by the CARD, not the window: a short tiled card must not have
-        // the end of the list cut off under its own edge
-        maxBlockSize: props.maxBlockSize ?? 'min(420px, 70vh)',
-        display: 'flex',
-        flexDirection: 'column',
-        background: 'var(--panel)',
-        border: '1px solid var(--control-edge)',
-        borderRadius: 8,
-        boxShadow: 'var(--tab-lift)',
-        fontFamily: 'var(--font-ui)',
-        color: 'var(--text)',
-      }}
+      style={{ display: 'flex', flexDirection: 'column', minBlockSize: 0, flex: 1, color: 'var(--text)' }}
     >
-      <div style={{ padding: '8px 10px 6px', borderBlockEnd: '1px solid var(--border)' }}>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBlockEnd: 6 }}>
-          {t('promptHistory.title')}
-        </div>
+      <div style={{ padding: '8px 10px', borderBlockEnd: '1px solid var(--border)' }}>
         <input
-          ref={input}
+          ref={props.inputRef}
           type="text"
           value={query}
+          disabled={props.unavailable}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t('promptHistory.filter')}
           aria-label={t('promptHistory.filter')}
@@ -124,8 +59,12 @@ export function PromptHistory(props: {
           className="prompt-history-filter"
         />
       </div>
-      <div style={{ overflowY: 'auto', minBlockSize: 0, padding: '4px 0' }}>
-        {props.prompts.length === 0 ? (
+      <div style={{ overflowY: 'auto', minBlockSize: 0, flex: 1, padding: '4px 0' }}>
+        {props.unavailable ? (
+          <div data-prompt-history-empty style={emptyStyle}>
+            {t('promptHistory.unavailable')}
+          </div>
+        ) : props.prompts.length === 0 ? (
           <div data-prompt-history-empty style={emptyStyle}>
             {t('promptHistory.empty')}
           </div>
@@ -171,7 +110,7 @@ export function PromptHistory(props: {
           </ul>
         )}
       </div>
-      {props.truncated && (
+      {props.truncated && !props.unavailable && (
         <div
           data-prompt-history-truncated
           style={{

@@ -3,6 +3,36 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ 2026-10-11 — TEN MORE TICKETS, IN FLIGHT
+>
+> After 0.8.120 he asked for a shortlist of ten, reviewed it, and said: *"Let's
+> go ahead and do all 10 of these tickets."* Same rules as the eleven: each
+> its own item, one PR in CI at a time, each PR folds in the close-out of the
+> one before, one report at the end. **DO NOT CUT A RELEASE** unless he asks.
+> Everything lands in `0.8.121 — unreleased`.
+>
+> **The order:** #1237, #1214, #1235, #1209, #1211, #1020, #1017, #744, #1226,
+> #1204.
+>
+> 1. **#1237 — Prompt History is a tab of the history window. IN PROGRESS,
+>    started 2026-10-11, branch `feature/1237-history-tabs`.** He filed it
+>    (through me) the hour he installed 0.8.120 and could not find the
+>    "prompts" button. Built: 🕘 opens one window with two tabs, Conversations
+>    and Prompts; the toolbar button is gone; the conversation view publishes
+>    a small port (`lib/prompt-port`) the window reads. Decisions: opens on
+>    the tab last used; a session not showing its conversation keeps the tab
+>    and says why it is empty; the `+ session` picker has no tabs.
+> 2. #1214 — a shortcut pressed in a popped-out window. Not started.
+> 3. #1235 — pictures inline in the conversation. Not started.
+> 4. #1209 — control edges on nordic and daylight. Not started.
+> 5. #1211 — text dimmed by opacity. Not started.
+> 6. #1020 — two modals open at once. Not started.
+> 7. #1017 — palette entry for the outline toggle. Not started.
+> 8. #744 — the Electron cache directory. Not started.
+> 9. #1226 — probe the CLI's question-result shapes. Not started.
+> 10. #1204 — the eslint cold-start flake (and the second test seen timing
+>     out beside it on 2026-10-11, `find-providers.test.ts`). Not started.
+>
 > # ✅ RELEASED: v0.8.120, 2026-10-11 (PR #1234)
 >
 > The owner, after the report on the eleven tickets: *"Yeah, go ahead and

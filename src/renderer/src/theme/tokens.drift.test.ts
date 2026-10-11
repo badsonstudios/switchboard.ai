@@ -1311,7 +1311,7 @@ describe('--faint is the disabled and decorative ink, and every use of it is cou
     'components/StripPill.tsx': [2, 'an accent fallback; the dash where a task label would be'],
     'components/ToolIcon.tsx': [1, 'the timeline DOT of a row with no picture (a picture is --muted)'],
     'theme/dockview-tokens.css': [2, 'the two scrollbar colours'],
-    'theme/tokens.css': [4, 'a dashed rule, a disabled chip, and two accent fallbacks on edges'],
+    'theme/tokens.css': [5, 'a dashed rule, a disabled chip, a disabled tab, and two accent fallbacks on edges'],
   };
 
   const SRC = path.join(__dirname, '..');

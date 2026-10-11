@@ -487,3 +487,35 @@ describe('arrowing the list moves what a screen reader is told (#828)', () => {
     expect(optionsOf(host)[2].getAttribute('aria-selected')).toBe('true');
   });
 });
+
+describe('a HELD Enter never sends (#1237)', () => {
+  // "Use again" in the history window is a button: Enter presses it on key
+  // DOWN, the window closes and the prompt box takes the keyboard with the key
+  // still held. The auto-repeat that follows must not send the prompt that
+  // was only meant to be put back.
+  it('the repeat of a held Enter is swallowed; a fresh press sends', async () => {
+    const host = await mount();
+    const sent: string[] = [];
+    const bridge = (window as unknown as { switchboard: { sessions: { submitPrompt: unknown } } }).switchboard;
+    bridge.sessions.submitPrompt = (_id: string, text: string) => {
+      sent.push(text);
+      return Promise.resolve(true);
+    };
+    await type(host, 'put back, not sent');
+    const enter = async (repeat: boolean): Promise<KeyboardEvent> => {
+      const e = new KeyboardEvent('keydown', { key: 'Enter', repeat, bubbles: true, cancelable: true });
+      await act(async () => {
+        boxOf(host).dispatchEvent(e);
+      });
+      await flush();
+      return e;
+    };
+    const held = await enter(true);
+    expect(sent).toEqual([]);
+    expect(boxOf(host).value).toBe('put back, not sent');
+    // swallowed, not turned into a new line in the box
+    expect(held.defaultPrevented).toBe(true);
+    await enter(false);
+    expect(sent).toHaveLength(1);
+  });
+});

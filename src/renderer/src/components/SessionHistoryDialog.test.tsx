@@ -13,7 +13,14 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
-import { SessionHistoryDialog, HistoryPick, STOP_ARM_MS } from './SessionHistoryDialog';
+import {
+  SessionHistoryDialog,
+  HistoryPick,
+  STOP_ARM_MS,
+  resetHistoryTabForTests,
+} from './SessionHistoryDialog';
+import { registerPromptPort } from '../lib/prompt-port';
+import type { PromptEntry } from '../lib/prompt-history';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { ipcRefusal } from '../../../shared/ipc/refusal';
 import type { ConversationHistory, ConversationRow } from '../../../shared/session-history';
@@ -541,5 +548,212 @@ describe('a pick that needs a yes first (#1127)', () => {
     const h = await mount();
     await press('Enter');
     expect(h.picked).toHaveLength(1);
+  });
+});
+
+describe('two kinds of history behind one button (#1237)', () => {
+  // The owner, the day the prompt list shipped behind its own small button:
+  // "I don't see any icon for that." So it is a tab of THIS window.
+  const PROMPTS: PromptEntry[] = [
+    { seq: 30, text: 'Write the release notes', recall: 'Write the release notes', command: false },
+    { seq: 10, text: 'Fix the tail-pin gesture', recall: 'Fix the tail-pin gesture', command: false },
+  ];
+  const tab = (id: string): HTMLButtonElement =>
+    host.querySelector<HTMLButtonElement>(`[data-history-tab="${id}"]`)!;
+  const tabs = (): HTMLButtonElement[] => [...host.querySelectorAll<HTMLButtonElement>('[data-history-tab]')];
+  const promptRows = (): HTMLElement[] => [...host.querySelectorAll<HTMLElement>('[data-prompt-history-row]')];
+  const filter = (): HTMLInputElement => host.querySelector<HTMLInputElement>('[data-prompt-history-filter]')!;
+  const search = (): HTMLInputElement => host.querySelector<HTMLInputElement>('[data-history-search]')!;
+  const conversations = (): HTMLElement => host.querySelector<HTMLElement>('[data-history-panel="conversations"]')!;
+  const oneRow = (): void => {
+    answer = { status: 'ok', truncated: false, rows: [row()] } satisfies ConversationHistory;
+  };
+  let jump: ReturnType<typeof vi.fn<(seq: number) => boolean>>;
+  let recall: ReturnType<typeof vi.fn<(text: string) => void>>;
+  let release: () => void;
+
+  beforeEach(() => {
+    resetHistoryTabForTests();
+    jump = vi.fn<(seq: number) => boolean>(() => true);
+    recall = vi.fn<(text: string) => void>();
+    release = registerPromptPort('s1', {
+      prompts: () => PROMPTS,
+      truncated: () => false,
+      jump,
+      recall,
+    });
+  });
+  afterEach(() => release());
+
+  it('the + session picker has NO tabs: there is no session yet to have prompts', async () => {
+    await mount();
+    expect(tabs()).toHaveLength(0);
+    expect(host.querySelector('[data-history-dialog]')!.getAttribute('aria-label')).toBe('Previous conversations');
+  });
+
+  it('from a card: two tabs, Conversations first and showing, the keyboard in its search', async () => {
+    oneRow();
+    await mount({ promptSession: 's1' });
+    expect(tabs().map((b) => b.textContent)).toEqual(['Conversations', 'Prompts']);
+    expect(tabs().map((b) => b.getAttribute('aria-selected'))).toEqual(['true', 'false']);
+    expect(host.querySelector('[data-history-dialog]')!.getAttribute('aria-label')).toBe('History');
+    expect(rows()).toHaveLength(1);
+    expect(host.querySelector('[data-prompt-history]')).toBeNull();
+    expect(document.activeElement).toBe(search());
+  });
+
+  it('Prompts lists what you sent, with the keyboard in ITS filter; the conversations wait, unchanged', async () => {
+    oneRow();
+    await mount({ promptSession: 's1' });
+    await type('Fix');
+    await click(tab('prompts'));
+    expect(promptRows().map((r) => r.querySelector('.prompt-history-text')!.textContent)).toEqual([
+      'Write the release notes',
+      'Fix the tail-pin gesture',
+    ]);
+    expect(document.activeElement).toBe(filter());
+    // hidden, not thrown away: the search typed there is still there
+    expect(conversations().style.display).toBe('none');
+    await click(tab('conversations'));
+    expect(conversations().style.display).not.toBe('none');
+    expect(search().value).toBe('Fix');
+    expect(document.activeElement).toBe(search());
+  });
+
+  it('a prompt GOES to it and shuts the window, and picks no conversation', async () => {
+    oneRow();
+    const h = await mount({ promptSession: 's1' });
+    await click(tab('prompts'));
+    await click(promptRows()[1].querySelector('[data-prompt-history-jump]'));
+    expect(jump).toHaveBeenCalledWith(10);
+    expect(h.closed).toBe(1);
+    expect(h.picked).toEqual([]);
+  });
+
+  it('a prompt that is no longer loaded cannot be gone to: the window stays', async () => {
+    jump.mockReturnValue(false);
+    const h = await mount({ promptSession: 's1' });
+    await click(tab('prompts'));
+    await click(promptRows()[0].querySelector('[data-prompt-history-jump]'));
+    expect(jump).toHaveBeenCalledWith(30);
+    expect(h.closed).toBe(0);
+  });
+
+  it('Use again shuts the window and hands the text to the prompt box', async () => {
+    const h = await mount({ promptSession: 's1' });
+    await click(tab('prompts'));
+    await click(promptRows()[0].querySelector('[data-prompt-history-recall]'));
+    expect(recall).toHaveBeenCalledWith('Write the release notes');
+    expect(h.closed).toBe(1);
+  });
+
+  it('⚠️ Enter and the arrows on the Prompts tab do NOT pick a conversation from the hidden list', async () => {
+    oneRow();
+    const h = await mount({ promptSession: 's1' });
+    await click(tab('prompts'));
+    await press('ArrowDown');
+    await press('Enter');
+    expect(h.picked).toEqual([]);
+  });
+
+  it('Escape closes the window from the Prompts tab too', async () => {
+    const h = await mount({ promptSession: 's1' });
+    await click(tab('prompts'));
+    await press('Escape');
+    expect(h.closed).toBe(1);
+  });
+
+  it('the arrow keys move along the tabs, and the keyboard STAYS on the tabs', async () => {
+    oneRow();
+    const h = await mount({ promptSession: 's1' });
+    const arrow = async (from: HTMLElement, key: string): Promise<void> => {
+      await act(async () => {
+        from.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+      });
+      await settle();
+    };
+    await arrow(tab('conversations'), 'ArrowRight');
+    expect(tab('prompts').getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tab('prompts'));
+    await arrow(tab('prompts'), 'ArrowLeft');
+    expect(tab('conversations').getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(tab('conversations'));
+    // ...and Enter with the keyboard on a tab is the tab's, never a pick
+    await arrow(tab('conversations'), 'Enter');
+    expect(h.picked).toEqual([]);
+    // one Tab stop: only the chosen tab is in the Tab order
+    expect(tabs().map((b) => b.tabIndex)).toEqual([0, -1]);
+  });
+
+  it('opens on the tab last used', async () => {
+    await mount({ promptSession: 's1' });
+    await click(tab('prompts'));
+    await mount({ promptSession: 's1', open: false });
+    await mount({ promptSession: 's1' });
+    expect(tab('prompts').getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(filter());
+  });
+
+  it('a session with no conversation view still has the tab, and the tab says why it is empty', async () => {
+    await mount({ promptSession: 'nobody-published-this' });
+    await click(tab('prompts'));
+    expect(promptRows()).toHaveLength(0);
+    expect(text()).toContain('not showing its conversation');
+    // ⚠️ THE KEYBOARD IS STILL IN THE WINDOW. Its box is disabled and cannot
+    // take it; left on the hidden search box, or outside, Escape would be dead.
+    expect(document.activeElement).toBe(tab('prompts'));
+    // ...and Escape, pressed where the keyboard actually IS, closes it
+    const h = await mount({ promptSession: 'nobody-published-this' });
+    await act(async () => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(h.closed).toBe(1);
+  });
+
+  it('a session with nothing to list never OPENS on Prompts, and does not forget that you use it', async () => {
+    oneRow();
+    await mount({ promptSession: 's1' });
+    await click(tab('prompts'));
+    await mount({ promptSession: 's1', open: false });
+    // a card that is showing its terminal: the list you came for, not an apology
+    await mount({ promptSession: 'nobody-published-this' });
+    expect(tab('conversations').getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(search());
+    await mount({ promptSession: 'nobody-published-this', open: false });
+    // back on a card that has prompts: still the tab last used
+    await mount({ promptSession: 's1' });
+    expect(tab('prompts').getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('gives the keyboard back to what opened it, in the window it was opened from', async () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+    opener.focus();
+    await mount({ promptSession: 's1' });
+    await click(tab('prompts'));
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      cb(0);
+      return 0;
+    });
+    await press('Escape');
+    expect(raf).toHaveBeenCalled();
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
+  });
+
+  it('while a pick is being asked about, the tabs cannot be used', async () => {
+    oneRow();
+    await mount({
+      promptSession: 's1',
+      confirm: {
+        title: 'Stop this session?',
+        message: 'This session is working.',
+        confirmLabel: 'Stop it',
+        cancelLabel: 'Cancel',
+        onConfirm: () => undefined,
+        onCancel: () => undefined,
+      },
+    });
+    expect(tabs().every((b) => b.disabled)).toBe(true);
   });
 });
