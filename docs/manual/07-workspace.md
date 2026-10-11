@@ -292,8 +292,9 @@ To take a session **out** of a group altogether, **drag its row out of the
 group's list and let go anywhere on the strip that is not a group**: the line
 with **+ group** on it, the space between entries, or on top of a loose
 session. While you hold it there the strip gets a blue edge and says **Let go
-to take it out of its group**. It becomes a pill of its own at the end of the
-loose sessions. Or use **No group** on its right-click menu, which does the
+to take it out of its group**. It becomes a pill of its own among the loose
+sessions, in the place the order you have arranged gives it (drag it sideways
+from there if you want it elsewhere). Or use **No group** on its right-click menu, which does the
 same without dragging.
 
 **Without the mouse:** `Ctrl+Alt+↑` and `Ctrl+Alt+↓` move the session you are

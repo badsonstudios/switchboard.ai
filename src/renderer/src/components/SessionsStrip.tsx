@@ -317,6 +317,9 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
       dragging.current = null;
       setDropAt(null);
       setDropInto(null);
+      // a ROW has no `dragend` handler of its own, so this is the only place a
+      // drag that started on one and was cancelled is known to have ended
+      setDropOut(false);
     };
     window.addEventListener('dragend', over);
     window.addEventListener('drop', over);
@@ -1322,8 +1325,9 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         borderBlockEnd: '1px solid var(--border)',
       }}
     >
-      {/* THE LINE ABOVE. In this order and nothing else: "+ group",
-          "+ session", then the ONE total. It does not scroll — the row below
+      {/* THE LINE ABOVE. In this order: "+ group", "+ session", then the
+          totals (and, only while a session is being dragged out of a group,
+          the words that say so, at the far end). It does not scroll — the row below
           does, and "7 need you" sliding off the edge is exactly when it starts
           to matter. */}
       <div
@@ -1337,21 +1341,6 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
           minBlockSize: 23,
         }}
       >
-        {dropOut && (
-          // never by the edge alone (§5.32): the strip says what a drop does
-          <span
-            data-strip-drop-out
-            style={{
-              fontFamily: 'var(--font-ui)',
-              fontSize: 10.5,
-              fontWeight: 600,
-              color: 'var(--status-working-ink)',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {t('strip.dropOut')}
-          </span>
-        )}
         <button
           type="button"
           data-strip-add-group
@@ -1401,6 +1390,27 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
           >
             {t('urgency.finished', { n: totalFinished })}
           </button>
+        )}
+        {dropOut && (
+          // never by the edge alone (§5.32): the strip says what a drop does.
+          // LAST on the line and pushed to its end, so the buttons and the
+          // totals do not jump sideways under a drag in progress.
+          <span
+            data-strip-drop-out
+            style={{
+              marginInlineStart: 'auto',
+              minInlineSize: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              fontFamily: 'var(--font-ui)',
+              fontSize: 10.5,
+              fontWeight: 600,
+              color: 'var(--status-working-ink)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {t('strip.dropOut')}
+          </span>
         )}
       </div>
       {/* THE ROW: groups first, then the loose sessions, scrolling sideways when
