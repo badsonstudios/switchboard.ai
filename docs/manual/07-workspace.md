@@ -288,10 +288,13 @@ dragging over the cell at that end and the strip scrolls along.
 The order is the same one the list on the left uses. Put your groups in an
 order here and that is their order there, and `Ctrl+1` to `Ctrl+9` follow it.
 
-To take a session **out** of a group altogether, use **Move to group ▸ No
-group** on its right-click menu. (A row can be dragged within its list and
-onto another group, but there is nowhere on the strip to drop it that means
-"no group".)
+To take a session **out** of a group altogether, **drag its row out of the
+group's list and let go anywhere on the strip that is not a group**: the line
+with **+ group** on it, the space between entries, or on top of a loose
+session. While you hold it there the strip gets a blue edge and says **Let go
+to take it out of its group**. It becomes a pill of its own at the end of the
+loose sessions. Or use **No group** on its right-click menu, which does the
+same without dragging.
 
 **Without the mouse:** `Ctrl+Alt+↑` and `Ctrl+Alt+↓` move the session you are
 in earlier or later, as they do with the list on the left. To move a group,

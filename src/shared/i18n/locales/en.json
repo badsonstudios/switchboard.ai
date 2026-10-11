@@ -1717,6 +1717,7 @@
     "topNote": "One strip under the top bar, and the full width for your sessions. Groups open as lists; sessions outside a group are pills."
   },
   "strip": {
+    "dropOut": "Let go to take it out of its group",
     "label": "Sessions",
     "range": "{from}–{to}",
     "groupLabel": "{name}, {count, plural, =0 {no sessions} one {# session} other {# sessions}}, {summary}",
