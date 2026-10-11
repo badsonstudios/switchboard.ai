@@ -593,8 +593,9 @@ Object.freeze(MARKED_OPTIONS);
  * turned it from a footnote into an entry: `<area href>` inside a `<map>`
  * applied to a rendered image really does take focus in Chromium 149. #612
  * called it "unreachable in practice" on the strength of the VIEWER chipping
- * every `<img>` — but the feed has no image pass either, so in a reply the image
- * renders and its hot spots are live. Both go, for the `option`/`optgroup`
+ * every `<img>` — but the feed had no image pass then, so in a reply the image
+ * rendered and its hot spots were live. (It has one since #1235; the update
+ * notes and the approval preview still do not.) Both go, for the `option`/`optgroup`
  * reason again: `map` alone leaves orphaned `<area>`s. `usemap` on the `<img>`
  * itself survives and now points at a map that can never exist — a dangling
  * attribute with nothing on the other end, left rather than named in

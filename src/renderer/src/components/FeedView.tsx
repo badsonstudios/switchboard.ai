@@ -11,6 +11,7 @@ import { applyFolds, foldKind, type FoldKind, type FoldRun } from '../lib/feed-f
 import { GutterMark } from './ToolIcon';
 import { promptsOf, recallInto } from '../lib/prompt-history';
 import { registerPromptPort } from '../lib/prompt-port';
+import { FeedSurfaceContext } from '../lib/feed-surface';
 import { gutterIconFor } from '../../../shared/tool-icon';
 import { groupBySeq } from '../lib/feed-skipping';
 import { FEED_GROUP_ATTR, FEED_GROUP_OPEN_ATTR, useFeedSkipping } from '../lib/use-feed-skipping';
@@ -520,6 +521,12 @@ export function FeedView(props: {
   sessionId: string;
   /** durable key for per-card preferences (the live id churns on resume) */
   cardId?: string;
+  /**
+   * The session's working folder (#1235): what a relative path in a reply is
+   * relative to, so a picture the agent saved in the project can be shown.
+   * Absent, pictures are chips.
+   */
+  folder?: string;
   /**
    * The session's title (#196). It NAMES the conversation landmark: several
    * cards are visible at once, and a landmark called "Conversation" on every
@@ -1387,7 +1394,12 @@ export function FeedView(props: {
   const groups = groupBySeq(layout.rendered);
   /** the conversation's first block never gets a turn rule above it */
   const firstVisible = visibleBlocks[0];
+  // what a block may need to know about its session (#1235): one object per
+  // folder, so a streamed chunk does not re-render every picture-bearing block
+  const surface = React.useMemo(() => ({ folder: props.folder }), [props.folder]);
   return (
+    <FeedSurfaceContext.Provider value={surface}>
+    {(
     // `data-perf-*`: how big this conversation is, and how much of it is on
     // screen, published for E21's detailed capture (#923). The whole premise of
     // #716/#740 is that typing cost scales with these two numbers, so a
@@ -1885,6 +1897,8 @@ export function FeedView(props: {
         dockedChrome={`${offTail}|${props.approval ? (askQuestions ? 'q' : 'a') : ''}|${props.approval?.requestId ?? ''}|${props.status ?? ''}`}
       />
     </div>
+    )}
+    </FeedSurfaceContext.Provider>
   );
 }
 

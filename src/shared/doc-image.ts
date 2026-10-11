@@ -89,3 +89,16 @@ export function docImagePath(url: unknown): string | null {
   const target = parsed.searchParams.get('path');
   return target && target.length > 0 ? target : null;
 }
+
+/**
+ * May a file with this name be OPENED from the conversation (#1235)?
+ *
+ * A picture, or a web page: the two things a reply can offer to open. This is
+ * the whole list, and it is asked in MAIN, of the file a path really resolves
+ * to. `shell.openPath` runs whatever the system has registered for a file, so
+ * for a `.bat`, an `.exe`, a `.lnk` or a `.command` "open" means EXECUTE, and
+ * the thing that asks for this is markup an agent wrote.
+ */
+export function isViewableFile(filePath: string): boolean {
+  return docImageMime(filePath) !== undefined || /[.]html?$/i.test(filePath);
+}

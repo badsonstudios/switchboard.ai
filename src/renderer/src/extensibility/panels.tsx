@@ -61,6 +61,8 @@ export const sessionPanels: PanelContribution[] = [
       <FeedView
         sessionId={ctx.sessionId}
         cardId={ctx.cardId}
+        // a picture in a reply is found relative to this (#1235)
+        folder={ctx.folder}
         title={ctx.title}
         visible={ctx.visible}
         // the feed keeps a scroll position, so it is the panel that most needs
