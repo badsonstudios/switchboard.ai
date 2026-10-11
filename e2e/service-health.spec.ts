@@ -12,7 +12,13 @@
 import { test, expect, Page } from '@playwright/test';
 import http from 'http';
 import { AddressInfo } from 'net';
-import { launchApp, LaunchedApp, openEventsDrawer, openSettings, closeSettings } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  openEventsDrawer,
+  openSettingsTab,
+  closeSettings,
+} from './fixtures/app';
 
 /** The shell is mounted and listening (the reason is in about.spec.ts). */
 const stamp = (w: Page) =>
@@ -171,8 +177,9 @@ test.describe('provider service health (E14-07)', () => {
     await expect(dot(w)).toHaveAttribute('data-state', 'operational');
 
     // #885 moved this preference off the About panel and into Settings ▸
-    // Advanced, beside the other outbound-network switch.
-    await openSettings(w);
+    // Advanced, beside the other outbound-network switch; #1199 put both on
+    // the General tab.
+    await openSettingsTab(w, 'general');
     const box = w.locator('[data-settings-field="status-polling"]');
     await expect(box).toBeChecked();
     await box.uncheck();

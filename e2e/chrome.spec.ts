@@ -76,7 +76,8 @@ test.describe('Settings opens where it says it does (#885)', () => {
     // most dev machines and neither CI runner.
     await expect(dialog.locator('[data-settings-section="appearance"]')).toBeInViewport();
     expect(
-      await dialog.evaluate((el) => el.scrollTop),
+      // the part that scrolls is the body between the tabs and Done (#1199)
+      await dialog.locator('[data-settings-body]').evaluate((el) => el.scrollTop),
       'Settings opened scrolled down. Something inside it called focus() or ' +
         'scrollIntoView() on mount — see this block for the one that did'
     ).toBe(0);

@@ -882,7 +882,7 @@ test.describe('manual screenshots (#1082)', () => {
     const settings = await openSettings(w);
     await tidy(w, parent);
     await shot(w, 'settings', [
-      { target: settings.locator('[data-settings-section="appearance"]'), label: 'One section per subject', side: 'right' },
+      { target: settings.getByRole('tablist'), label: 'One tab per subject', side: 'right' },
       { target: settings.getByRole('button', { name: 'Done', exact: true }), label: 'Nothing to save — changes apply at once', side: 'left' },
     ]);
     await closeSettings(w);

@@ -31,6 +31,9 @@ export interface ThemeSectionProps {
   onTheme: (p: ThemePreference) => void;
   lang: LanguageChoice;
   onLang: (l: LanguageChoice) => void;
+  /** which of the two to draw (#1199): the theme is on Appearance, the
+   *  language on General. Absent = both, as before. */
+  show?: 'theme' | 'language';
 }
 
 const row: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6 };
@@ -39,41 +42,45 @@ export function ThemeSection(props: ThemeSectionProps): React.JSX.Element {
   const { t } = useTranslation();
   return (
     <>
-      <SettingItem item="theme" label={t('settings.theme')} blurb={t('settings.themeBlurb')}>
-        <div data-settings-block="theme" role="group" aria-label={t('settings.theme')} style={row}>
-          {/* 'system' is not a theme — it is the absence of a choice, so it is
-              not a contribution either and stays hard-coded here (§5.20 OS
-              sync). */}
-          <Chip pressed selected={props.pref === 'system'} onClick={() => props.onTheme('system')}>
-            {t('theme.system')}
-          </Chip>
-          {props.themes.map((th) => (
-            <Chip
-              key={th.id}
-              pressed
-              selected={th.id === props.pref}
-              onClick={() => props.onTheme(th.id)}
-            >
-              {t(th.nameKey)}
+      {props.show !== 'language' && (
+        <SettingItem item="theme" label={t('settings.theme')} blurb={t('settings.themeBlurb')}>
+          <div data-settings-block="theme" role="group" aria-label={t('settings.theme')} style={row}>
+            {/* 'system' is not a theme — it is the absence of a choice, so it is
+                not a contribution either and stays hard-coded here (§5.20 OS
+                sync). */}
+            <Chip pressed selected={props.pref === 'system'} onClick={() => props.onTheme('system')}>
+              {t('theme.system')}
             </Chip>
-          ))}
-        </div>
-      </SettingItem>
+            {props.themes.map((th) => (
+              <Chip
+                key={th.id}
+                pressed
+                selected={th.id === props.pref}
+                onClick={() => props.onTheme(th.id)}
+              >
+                {t(th.nameKey)}
+              </Chip>
+            ))}
+          </div>
+        </SettingItem>
+      )}
 
-      <SettingItem item="language" label={t('settings.language')} blurb={t('settings.languageBlurb')}>
-        <div
-          data-settings-block="language"
-          role="group"
-          aria-label={t('settings.language')}
-          style={row}
-        >
-          {(['en', 'pseudo'] as const).map((l) => (
-            <Chip key={l} pressed selected={l === props.lang} onClick={() => props.onLang(l)}>
-              {t(`language.${l}`)}
-            </Chip>
-          ))}
-        </div>
-      </SettingItem>
+      {props.show !== 'theme' && (
+        <SettingItem item="language" label={t('settings.language')} blurb={t('settings.languageBlurb')}>
+          <div
+            data-settings-block="language"
+            role="group"
+            aria-label={t('settings.language')}
+            style={row}
+          >
+            {(['en', 'pseudo'] as const).map((l) => (
+              <Chip key={l} pressed selected={l === props.lang} onClick={() => props.onLang(l)}>
+                {t(`language.${l}`)}
+              </Chip>
+            ))}
+          </div>
+        </SettingItem>
+      )}
     </>
   );
 }

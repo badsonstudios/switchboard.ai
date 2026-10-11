@@ -98,6 +98,13 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **Settings is in tabs.** The fourteen settings that had piled up in one long
+  scroll are now on six tabs: **Appearance**, **General**, **Notifications**,
+  **Sessions**, **Diagnostics** and **Advanced**. It opens on the tab you were
+  last on (Appearance the first time), and the window stays the same size on
+  every tab. Three things moved: **Language** and the two network switches
+  are on **General**, and **Finished dispatched sessions** is on **Sessions**.
+  What was called "Attention" is now **Notifications**.
 - **The pictures for each step moved to the margin of the conversation.** The
   small picture that says what kind of step it was (read, edit, command, …)
   now replaces the grey dot down the left edge, and the box beside it is back

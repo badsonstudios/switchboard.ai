@@ -59,7 +59,7 @@ common" becomes the better explanation.
 
 ## Turning the check off
 
-Press **`Ctrl+,`** for Settings and look under **Advanced**:
+Press **`Ctrl+,`** for Settings and look on the **General** tab:
 
 - **Check provider status** — on by default, beside the update check. Those two
   are the only things switchboard fetches over the network without being asked,

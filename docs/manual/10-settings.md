@@ -9,7 +9,7 @@ rather than an accident.
 
 ## The Settings window
 
-![The Settings window, open on its Appearance section, with the Done button at the bottom](img/settings.png)
+![The Settings window, open on its Appearance tab, with the Done button at the bottom](img/settings.png)
 
 Choose **File ▸ Settings…** from the menu bar, or press **`Ctrl+,`**, or open
 the command palette (**`Ctrl+Shift+P`**) and pick **Settings…**, or click the
@@ -22,15 +22,27 @@ button** — every control takes effect the moment you touch it, and you can wat
 the window behind change as you do. Close it with **Done**, **Escape**, or a
 click outside.
 
-| Section | Holds |
+It is organised in **six tabs** along the top:
+
+| Tab | Holds |
 |---|---|
-| **Appearance** | Theme, language, where the Sessions list goes, how a working session looks, the context meter, task label size |
-| **Attention** | Quiet hours, phone push & webhooks |
-| **Advanced** | Fork sessions (experimental), automatic update checks, Anthropic status checks |
+| **Appearance** | Theme, where the Sessions list goes, how a working session looks, the context meter, task label size |
+| **General** | Language, automatic update checks, Anthropic status checks |
+| **Notifications** | Quiet hours, phone push & webhooks |
+| **Sessions** | What happens to a finished dispatched session |
 | **Diagnostics** | Detailed performance capture, and the file it writes — see [When it feels slow](19-performance.md) |
+| **Advanced** | Fork sessions (experimental) |
+
+Click a tab, or put the keyboard on the tabs and use **`←`** and **`→`**
+(**`Home`** and **`End`** jump to the ends). The window stays the same size
+whichever tab you are on.
+
+**It opens on the tab you were last on**, however you got there. The first
+time, that is **Appearance**. Every tab opens at its top. Nothing you were in the middle of on another tab is lost when
+you switch: a half-typed push key is still there when you come back.
 
 Muscle memory still works: **`Ctrl+Shift+P` → *quiet hours*** (or *phone push*,
-or *task label size*) opens Settings scrolled to the right part of it.
+or *task label size*) opens Settings on the right tab.
 
 ## The chips that stayed in the title bar
 
@@ -60,7 +72,7 @@ opening a window:
 
 ## Language
 
-**Settings ▸ Appearance.** Two choices for now: **en** (English) and **pseudo**.
+**Settings ▸ General.** Two choices for now: **en** (English) and **pseudo**.
 
 `pseudo` is not a translation. It takes every English word and mangles it into
 accented look-alikes wrapped in `⟦ ⟧` — so anything that comes out plain is a
@@ -264,7 +276,7 @@ level, and window position all persist across restarts, stored on your machine.
 
 ## Quiet hours
 
-**Settings ▸ Attention.** Off until you set a window. Two times on your machine's clock, between which
+**Settings ▸ Notifications.** Off until you set a window. Two times on your machine's clock, between which
 nothing pops up, beeps, speaks or reaches your phone — webhooks keep going,
 deliberately. Full walk-through in
 [Notifications](09-notifications.md#quiet-hours).
@@ -273,7 +285,7 @@ Stored with your workspace, so it survives restarts like everything above.
 
 ## Phone push & webhooks
 
-**Settings ▸ Attention.** Off until you set it up. Full walk-through in
+**Settings ▸ Notifications.** Off until you set it up. Full walk-through in
 [Notifications](09-notifications.md#getting-told-on-your-phone).
 
 Anything you paste in there — an ntfy topic, Pushover keys, a webhook URL —
@@ -281,29 +293,32 @@ goes into your operating system's credential store, never into a switchboard
 file, so it is **not** part of "what's remembered" above and does not travel
 with your workspace.
 
-## Advanced
+## The rest: Sessions, General and Advanced
 
-One choice and three switches, together at the bottom of the Settings window.
+One choice and three switches. They used to sit together at the bottom of the
+window under "Advanced"; each is now on the tab it belongs to.
 
-- **Finished dispatched sessions** — what happens to a dispatched session's card
-  once you have taken its findings, or once it turns out it had none. **Close it
-  after half a minute** is the default: long enough to open the card and read the
-  whole review first. **Close it straight away** is tidier and can startle you,
-  because the card goes in the same moment you click Inject. **Leave it open**
-  means nothing closes itself. Whatever you pick, five things keep a card open:
-  findings you have not taken, a pin, carrying on the conversation, an unsent
-  message, and a crash. See [Dispatch](20-dispatch.md).
-- **Fork sessions** — experimental, off by default. Turning it on adds
-  **Fork into a new session** to a session's **⋯** menu, which starts a second
-  session already carrying the whole conversation. It leans on Claude Code
-  behaviour that isn't documented, so if an update ever breaks it, switch it off
-  here and nothing else changes.
-- **Check for updates automatically** — on by default. Off, switchboard never
-  reaches the release host on its own; the **Check for updates…** button in the
-  About panel still works whenever you ask it to. See [Updates](13-updates.md).
-- **Check Anthropic's status page** — on by default. It is what colours the dot
-  in the status bar. Off, the dot goes grey and says why. See
-  [Provider status](14-provider-status.md).
+- **Finished dispatched sessions** (**Settings ▸ Sessions**) — what happens to
+  a dispatched session's card once you have taken its findings, or once it turns
+  out it had none. **Close it after half a minute** is the default: long enough
+  to open the card and read the whole review first. **Close it straight away**
+  is tidier and can startle you, because the card goes in the same moment you
+  click Inject. **Leave it open** means nothing closes itself. Whatever you
+  pick, five things keep a card open: findings you have not taken, a pin,
+  carrying on the conversation, an unsent message, and a crash. See
+  [Dispatch](20-dispatch.md).
+- **Fork sessions** (**Settings ▸ Advanced**) — experimental, off by default.
+  Turning it on adds **Fork into a new session** to a session's **⋯** menu,
+  which starts a second session already carrying the whole conversation. It
+  leans on Claude Code behaviour that isn't documented, so if an update ever
+  breaks it, switch it off here and nothing else changes.
+- **Check for updates automatically** (**Settings ▸ General**) — on by default.
+  Off, switchboard never reaches the release host on its own; the **Check for
+  updates…** button in the About panel still works whenever you ask it to. See
+  [Updates](13-updates.md).
+- **Check Anthropic's status page** (**Settings ▸ General**) — on by default.
+  It is what colours the dot in the status bar. Off, the dot goes grey and says
+  why. See [Provider status](14-provider-status.md).
 
 Those last two are the **only** two things switchboard sends over the network
 without being asked, which is why they sit together.

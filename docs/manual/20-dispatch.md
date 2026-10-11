@@ -225,7 +225,7 @@ Five things keep a card open, whatever the setting says:
 - **A crash.** If the session died, its card is the only place the reason is, so
   it stays until you close it yourself.
 
-You can change all of this in **Settings → Advanced → Finished dispatched
+You can change all of this in **Settings → Sessions → Finished dispatched
 sessions**: close it straight away, close it after half a minute (the default),
 or leave it open and close cards yourself.
 

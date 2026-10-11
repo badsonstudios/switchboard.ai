@@ -22,8 +22,8 @@ import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../../../shared/i18n/locales/en.json';
-import { SettingsDialog } from './SettingsDialog';
-import { SETTINGS_SECTIONS } from '../lib/settings-sections';
+import { resetSettingsTabForTests, SettingsDialog } from './SettingsDialog';
+import { SETTINGS_SECTIONS, stepSettingsSection } from '../lib/settings-sections';
 import { builtinThemes } from '../theme/builtin-themes';
 import type { PushConfig } from '../../../shared/push';
 import type { QuietState } from '../../../shared/quiet-hours';
@@ -137,6 +137,8 @@ beforeEach(async () => {
   // Stubbed here and RESTORED in afterEach: leaving it installed would hand the
   // next test in this file whichever recorder ran last.
   scrolled = [];
+  // which tab was last shown is remembered for the run; not between tests
+  resetSettingsTabForTests();
   Element.prototype.scrollIntoView = function (this: Element): void {
     scrolled.push(this.getAttribute('data-settings-section') ?? '?');
   };
@@ -217,18 +219,174 @@ describe('the sections', () => {
     }
   });
 
-  it('scrolls to the section it was opened at', async () => {
+  it('opens on the TAB of the section it was asked for, at its top', async () => {
     // The palette aliases (quiet hours, phone push, task label size) keep
-    // working by landing on the right part of this screen rather than on its
-    // top. jsdom has no layout, so `scrollIntoView` does not exist unless we
-    // put it there — which is also the only way to observe that it was asked.
+    // working by landing on the right tab. Nothing is scrolled into view any
+    // more: a tab starts at its top, which is where its first setting is.
     await render(true, { section: 'attention' });
-    expect(scrolled).toEqual(['attention']);
+    expect(section('attention')!.hidden).toBe(false);
+    expect(section('appearance')!.hidden).toBe(true);
+    expect(scrolled).toEqual([]);
   });
 
   it('does not scroll anywhere when it was opened with no section', async () => {
     await render();
     expect(scrolled).toEqual([]);
+  });
+
+  // #1199 — the fourteen settings are in tabs. The owner: "We need to organize
+  // the settings a little more, possibly with some tabs."
+  describe('tabs (#1199)', () => {
+    const tab = (id: string): HTMLButtonElement =>
+      host.querySelector<HTMLButtonElement>(`[data-settings-tab="${id}"]`)!;
+    const showing = (): string[] =>
+      SETTINGS_SECTIONS.filter((id) => section(id)!.hidden === false);
+    const key = async (el: Element, k: string): Promise<void> => {
+      await act(async () => {
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+      });
+    };
+
+    it('one tab per section, in order, and exactly one panel showing', async () => {
+      await render();
+      const tabs = [...host.querySelectorAll<HTMLElement>('[role="tab"]')];
+      expect(tabs.map((b) => b.dataset.settingsTab)).toEqual([...SETTINGS_SECTIONS]);
+      expect(tabs.map((b) => b.textContent)).toEqual([
+        'Appearance',
+        'General',
+        'Notifications',
+        'Sessions',
+        'Diagnostics',
+        'Advanced',
+      ]);
+      // it opens on Appearance the first time
+      expect(showing()).toEqual(['appearance']);
+      expect(tab('appearance').getAttribute('aria-selected')).toBe('true');
+    });
+
+    it('every setting is on exactly ONE tab: none dropped, none shown twice', async () => {
+      await render();
+      const where = (id: string): string[] =>
+        [...host.querySelectorAll<HTMLElement>(`[data-settings-item="${id}"]`)].map(
+          (el) => el.closest<HTMLElement>('[data-settings-section]')!.dataset.settingsSection!
+        );
+      expect(where('theme')).toEqual(['appearance']);
+      expect(where('context-meter')).toEqual(['appearance']);
+      expect(where('language')).toEqual(['general']);
+      expect(where('updates')).toEqual(['general']);
+      expect(where('status-polling')).toEqual(['general']);
+      expect(where('experimental-fork')).toEqual(['advanced']);
+      // ...and each panel has something in it
+      for (const id of SETTINGS_SECTIONS) {
+        expect(section(id)!.textContent.length, id).toBeGreaterThan(0);
+      }
+    });
+
+    it('a click shows that tab’s panel and hides the rest', async () => {
+      await render();
+      await click(tab('general'));
+      expect(showing()).toEqual(['general']);
+      expect(tab('general').getAttribute('aria-selected')).toBe('true');
+      expect(tab('appearance').getAttribute('aria-selected')).toBe('false');
+    });
+
+    it('each tab names its panel, and each panel its tab', async () => {
+      await render();
+      for (const id of SETTINGS_SECTIONS) {
+        const panel = section(id)!;
+        expect(panel.getAttribute('role')).toBe('tabpanel');
+        expect(tab(id).getAttribute('aria-controls')).toBe(panel.id);
+        expect(panel.getAttribute('aria-labelledby')).toBe(tab(id).id);
+      }
+    });
+
+    it('is ONE tab stop: the arrow keys move along it, and the panel follows', async () => {
+      await render();
+      const stops = (): string[] =>
+        [...host.querySelectorAll<HTMLElement>('[role="tab"]')]
+          .filter((b) => b.tabIndex === 0)
+          .map((b) => b.dataset.settingsTab!);
+      expect(stops()).toEqual(['appearance']);
+      await key(tab('appearance'), 'ArrowRight');
+      expect(showing()).toEqual(['general']);
+      expect(stops()).toEqual(['general']);
+      expect(document.activeElement).toBe(tab('general'));
+      // wraps at both ends
+      await key(tab('general'), 'ArrowLeft');
+      await key(tab('appearance'), 'ArrowLeft');
+      expect(showing()).toEqual(['advanced']);
+      await key(tab('advanced'), 'Home');
+      expect(showing()).toEqual(['appearance']);
+      await key(tab('appearance'), 'End');
+      expect(showing()).toEqual(['advanced']);
+    });
+
+    it('a deep link opens on the tab that owns the section', async () => {
+      await render(true, { section: 'attention' });
+      expect(showing()).toEqual(['attention']);
+    });
+
+    it('...and that IS then the tab you were last on', async () => {
+      await render(true, { section: 'attention' });
+      await render(false);
+      await render();
+      expect(showing()).toEqual(['attention']);
+    });
+
+    it('every tab starts at its top: the scroll of one is not carried to the next', async () => {
+      await render();
+      const body = host.querySelector<HTMLElement>('[data-settings-body]')!;
+      body.scrollTop = 300;
+      await click(tab('general'));
+      expect(body.scrollTop).toBe(0);
+    });
+
+    it('a chord is not a move along the tabs', async () => {
+      await render();
+      await act(async () => {
+        tab('appearance').dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowRight', ctrlKey: true, bubbles: true, cancelable: true })
+        );
+      });
+      expect(showing()).toEqual(['appearance']);
+    });
+
+    it('the tab list has a name of its own, not the dialog’s over again', async () => {
+      await render();
+      const list = host.querySelector('[role="tablist"]')!;
+      expect(list.getAttribute('aria-label')).not.toBe(dialog()!.getAttribute('aria-label'));
+    });
+
+    it('reopening lands on the tab you were last on, unless a section is asked for', async () => {
+      await render();
+      await click(tab('sessions'));
+      await render(false);
+      await render();
+      expect(showing()).toEqual(['sessions']);
+      await render(false);
+      await render(true, { section: 'diagnostics' });
+      expect(showing()).toEqual(['diagnostics']);
+    });
+
+    it('a panel you leave keeps what was in it', async () => {
+      // all six are mounted; the ones not showing are only hidden
+      await render();
+      const before = item('language');
+      await click(tab('general'));
+      await click(tab('appearance'));
+      expect(item('language')).toBe(before);
+    });
+
+    it('the keyboard contract, as a table', () => {
+      expect(stepSettingsSection('appearance', 'ArrowRight')).toBe('general');
+      expect(stepSettingsSection('appearance', 'ArrowLeft')).toBe('advanced');
+      expect(stepSettingsSection('advanced', 'ArrowRight')).toBe('appearance');
+      // mirrored when the layout is
+      expect(stepSettingsSection('appearance', 'ArrowLeft', true)).toBe('general');
+      expect(stepSettingsSection('general', 'Home')).toBe('appearance');
+      expect(stepSettingsSection('general', 'End')).toBe('advanced');
+      expect(stepSettingsSection('general', 'Enter')).toBeNull();
+    });
   });
 
   // ⚠️ THE HALF jsdom CANNOT SEE, stated here so the next reader does not think

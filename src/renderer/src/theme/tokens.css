@@ -1066,6 +1066,34 @@ mark[data-feed-match-current] {
   cursor: pointer;
   user-select: none;
 }
+/* The tabs of the settings window (#1199). The selected one is said two
+ * ways, neither of them colour alone: full ink against the readable grey, and
+ * an underline. NOT bold: a heavier word is a wider word, and the tabs beside
+ * it would shift a few pixels every time you chose one. */
+.settings-tab {
+  appearance: none;
+  background: none;
+  border: 0;
+  border-block-end: 2px solid transparent;
+  padding: 6px 9px 7px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.settings-tab:hover {
+  color: var(--text);
+}
+.settings-tab[aria-selected='true'] {
+  color: var(--text);
+  border-block-end-color: var(--status-working-ink);
+}
+.settings-tab:focus-visible {
+  outline: 2px solid var(--status-working-ink);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
 /* "N finished" in the list's footer (#1219). It reads as the number it is and
  * acts as the button it also is: the underline on hover and the focus ring are
  * what say so. The finished ramp, never the yellow of a demand. */
@@ -1082,7 +1110,7 @@ mark[data-feed-match-current] {
   text-decoration: underline;
 }
 .rail-footer-finished:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--status-working-ink);
   outline-offset: 2px;
 }
 
