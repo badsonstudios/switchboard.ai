@@ -247,6 +247,36 @@ is the same click every other box uses to show its detail; here it is only for
 when the box looks wrong. Clicking or selecting text in the answers does not
 fold anything.
 
+### Going back to a prompt you sent
+
+There are two kinds of history, and they answer different questions:
+
+- **🕘 Previous conversations**, in the card's title bar, lists other
+  conversations you have had in this folder, so you can reopen one.
+- **prompts**, at the top right of the conversation beside **quiet / normal /
+  firehose**, lists what *you* asked in the conversation that is open now.
+
+Click **prompts** and you get your prompts, newest first, each with how long
+ago you sent it. Type in the box at the top to narrow the list (every word you
+type has to be in the prompt, in any order).
+
+| Do this | And this happens |
+|---|---|
+| Click a prompt | The conversation jumps to where you asked it. Nothing is changed or undone: you are only looking at an earlier place |
+| Click **Use again** beside it | Its text is put back in the prompt box, ready to edit or send again. If you had already typed something, that is kept, and the old prompt is added underneath |
+
+Close it with **Escape** or a click anywhere else.
+
+A slash command is listed the way you typed it (`/clear`). What helper agents
+were told is not in the list: those were not your prompts.
+
+On a very long conversation, switchboard only holds the most recent part in
+the window. The list then says at the bottom that prompts from further back
+are not shown.
+
+**This does not rewind anything.** Going back to a prompt moves your view.
+The session carries on from where it is.
+
 ### Copying code out of a session
 
 **Code blocks in an answer have a small header with a Copy button on the

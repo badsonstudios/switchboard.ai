@@ -1443,6 +1443,25 @@
   "seen": {
     "clearAllHint": "Finished and not looked at yet. Click to mark them all as seen."
   },
+  "promptHistory": {
+    "open": "prompts",
+    "openHint": "Previous prompts: go back to something you asked in this conversation.",
+    "title": "Previous prompts",
+    "filter": "Filter your prompts…",
+    "empty": "You have not sent this session a prompt yet.",
+    "noMatch": "None of your prompts contain \"{query}\".",
+    "jumpHint": "Go to this prompt in the conversation.",
+    "recall": "Use again",
+    "recallHint": "Put this prompt back in the prompt box, to edit or send again. Anything already typed there is kept.",
+    "recallNamed": "Use again: {prompt}",
+    "truncated": "This conversation is longer than what is loaded here, so prompts from further back are not listed.",
+    "age": {
+      "now": "just now",
+      "minutes": "{count} min ago",
+      "hours": "{count, plural, one {# hour ago} other {# hours ago}}",
+      "days": "{count, plural, one {# day ago} other {# days ago}}"
+    }
+  },
   "approvalWatch": {
     "hint": "Waiting for your approval.",
     "hintMinutes": "Waiting for your approval. In less than {count} minutes the request is declined for you, and the session is told nobody answered.",

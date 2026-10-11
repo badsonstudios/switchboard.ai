@@ -30,6 +30,7 @@ import {
   type AskQuestion,
 } from '../../../shared/ask-user-question';
 import { useRevealed } from '../lib/feed-reveal';
+import { ownWords } from '../lib/prompt-history';
 import { FeedBlockRendererContribution, manifestFor } from './contributions';
 import { decorateFeedMarkdown } from '../lib/feed-markdown';
 import { Markdown } from '../lib/markdown';
@@ -1122,16 +1123,11 @@ function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // "is this really ours" gets decided. Memoised on `b.context` itself, not on a
   // `?? []` default, which would be a fresh array and a fresh computation every
   // render for the overwhelmingly common block that has none.
+  // (the slicing is `ownWords`, shared with the prompt list so the two cannot
+  // disagree about what the user typed, #1203)
   const text = React.useMemo(() => {
     if (sections === undefined || sections.length === 0) return full;
-    const parts: string[] = [];
-    let at = 0;
-    for (const s of sections) {
-      parts.push(full.slice(at, s.start));
-      at = s.end;
-    }
-    parts.push(full.slice(at));
-    return parts.join('').trim();
+    return ownWords(full, sections);
   }, [full, sections]);
   const [expanded, setExpanded] = React.useState(false);
   // find jumped here — a long prompt (a skill body dumped as a user message)

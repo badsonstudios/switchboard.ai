@@ -96,6 +96,15 @@ on the floor, and say so in your PR.
 
 ## 0.8.120 — unreleased
 
+### Added
+
+- **Prompt History: go back to something you asked.** A new **prompts** button
+  at the top right of a conversation lists every prompt you sent in it, newest
+  first, with a box to filter them. Click one to jump to where you asked it,
+  or **Use again** to put its text back in the prompt box (anything you had
+  typed there is kept). The **🕘 Previous conversations** button is unchanged;
+  this is a second kind of history beside it.
+
 ### Changed
 
 - **Settings is in tabs.** The fourteen settings that had piled up in one long
