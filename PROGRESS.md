@@ -107,8 +107,9 @@
 >    the cache (and the code cache) on every start, unawaited and fail-open.
 >    Not the ticket's guess of "evict on version change": the copies were per
 >    LAUNCH and none was ever reusable. Start-up time not measured.
-> 9. **#1226 — probe the CLI's question-result shapes. IN PROGRESS, started
->    2026-10-11, branch `feature/1226-question-probe`.**
+> 9. **#1226 — probe the CLI's question-result shapes.
+>    DONE 2026-10-11, PR #1250 (`74c112ea`), merged, NOT released.**
+>    The ticket is closed.
 >    Ten runs against the CLI on PATH (2.1.288), probe in
 >    `spike/probes/1226/`, artifacts and the note in `spike/findings/`. The
 >    CLI accepts `annotations`, `response`, `followUp` and `afkTimeoutMs` from
@@ -120,8 +121,18 @@
 >    The synthetic test strings are gone: the tests read the artifacts. No
 >    tracker row: none of these can be produced from switchboard's own panel.
 >    Not measured: `kind: text` / `number` questions, and a refused preview.
-> 10. #1204 — the eslint cold-start flake (and the second test seen timing
->     out beside it on 2026-10-11, `find-providers.test.ts`). Not started.
+> 10. **#1204 — the eslint cold-start flake. IN PROGRESS, started
+>     2026-10-11, branch `feature/1204-test-budgets`.**
+>     It fired again twice on 2026-10-11 under load, with a second test
+>     beside it. `eslint-hex-rule.test.js`: ESLint's start-up is paid once in
+>     `beforeAll` under its own 120 s budget, as the ticket proposed; the
+>     first test went from 2.2 s to 7 ms, and one test run alone with `-t`
+>     passes. `find-providers.test.ts`'s whole-tree scan (the second test)
+>     gets a 60 s budget: it reads 1,400 files and its claim is not a speed.
+>     NOT touched: `check-nul.test.js`'s 5 s ceiling, which failed once the
+>     same day and is its own open ticket (#651; sighting added there).
+>     Filed: **#1244**, the two Windows CI failures of 2026-10-10 that the
+>     last run's report left unfiled. Internal: no changelog entry.
 >
 > # ✅ RELEASED: v0.8.120, 2026-10-11 (PR #1234)
 >

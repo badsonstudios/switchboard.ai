@@ -29,11 +29,29 @@ import { ESLint } from 'eslint';
 // rename the ignore with it.
 const RENDERER_FILE = path.join(process.cwd(), 'src', 'renderer', 'src', '__eslint-probe__.ts');
 
+/**
+ * How long ESLint may take to START, which is not what any test here is about.
+ *
+ * #1204. The first `lintText` call loads ESLint, the TypeScript parser and the
+ * type-checked config, and builds a program: 2.2 s warm, 26.7 s once on a
+ * cold disk, and it timed out again twice on 2026-10-11 with the machine
+ * busy. Whichever test ran first paid that out of its own 5 s, and failed on
+ * a rule it had not yet been asked about. So the start-up is paid HERE, once,
+ * under a budget that is about start-up; every test below is then measured on
+ * the rule alone (1 to 11 ms each).
+ *
+ * Not "raise the first test's timeout": the first test is whichever one `-t`
+ * leaves standing.
+ */
+const ESLINT_STARTUP_MS = 120_000;
+
 /** @type {ESLint} */
 let eslint;
-beforeAll(() => {
+beforeAll(async () => {
   eslint = new ESLint({ cwd: process.cwd() });
-});
+  // one throwaway snippet through the same path the tests use
+  await eslint.lintText('export {};', { filePath: RENDERER_FILE });
+}, ESLINT_STARTUP_MS);
 
 /** Every `no-restricted-syntax` message the real config raises for `source`. */
 async function restricted(source) {

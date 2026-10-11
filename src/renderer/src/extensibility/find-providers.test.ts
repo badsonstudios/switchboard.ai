@@ -491,6 +491,17 @@ describe('find-document — the §5.30 viewer (#533)', () => {
   });
 });
 
+/**
+ * The budget for a test that READS EVERY SOURCE FILE (#1204).
+ *
+ * It is a scan of the tree, about 1,400 files read from disk one after
+ * another, and how long that takes is a fact about the disk and what else the
+ * machine is doing. Under the default 5 s it timed out on 2026-10-11, twice,
+ * with a build running beside it, and passed alone in well under a second. A
+ * timeout there says nothing about `findInPage`. The assertion is unchanged.
+ */
+const TREE_SCAN_MS = 60_000;
+
 describe('the primitive this feature must not reach for', () => {
   it('`webContents.findInPage` appears NOWHERE in the tree', () => {
     // §5.31 names it explicitly: it searches the whole webContents, so on a
@@ -516,5 +527,5 @@ describe('the primitive this feature must not reach for', () => {
     };
     walk(root);
     expect(offenders).toEqual([]);
-  });
+  }, TREE_SCAN_MS);
 });
