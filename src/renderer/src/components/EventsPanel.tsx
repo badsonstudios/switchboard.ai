@@ -438,7 +438,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
               style={{
                 background: on ? 'var(--chip)' : 'transparent',
                 color: on ? 'var(--text)' : 'var(--muted)',
-                border: '1px solid var(--border)',
+                border: '1px solid var(--control-edge)',
                 borderRadius: 'var(--radius-chip)',
                 padding: '1px 8px',
                 cursor: 'pointer',
@@ -554,7 +554,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
               style={{
                 background: 'transparent',
                 color: 'var(--muted)',
-                border: '1px solid var(--border)',
+                border: '1px solid var(--control-edge)',
                 borderRadius: 'var(--radius-chip)',
                 padding: '2px 10px',
                 cursor: 'pointer',
@@ -610,7 +610,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                   style={{
                     background: 'transparent',
                     color: 'var(--muted)',
-                    border: '1px solid var(--border)',
+                    border: '1px solid var(--control-edge)',
                     borderRadius: 'var(--radius-chip)',
                     padding: '2px 10px',
                     cursor: 'pointer',
@@ -669,7 +669,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                 style={{
                   background: 'transparent',
                   color: 'var(--muted)',
-                  border: '1px solid var(--border)',
+                  border: '1px solid var(--control-edge)',
                   borderRadius: 'var(--radius-chip)',
                   padding: '2px 10px',
                   cursor: 'pointer',
@@ -767,7 +767,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
               style={{
                 background: 'transparent',
                 color: 'var(--muted)',
-                border: '1px solid var(--border)',
+                border: '1px solid var(--control-edge)',
                 borderRadius: 'var(--radius-chip)',
                 padding: '2px 10px',
                 cursor: 'pointer',

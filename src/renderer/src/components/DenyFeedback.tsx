@@ -196,7 +196,7 @@ export function DenyFeedbackField(props: {
           resize: 'none',
           background: 'var(--panel)',
           color: 'var(--text)',
-          border: '1px solid var(--border)',
+          border: '1px solid var(--control-edge)',
           borderRadius: 'var(--radius-chip)',
           padding: '4px 6px',
           fontFamily: 'var(--font-ui)',

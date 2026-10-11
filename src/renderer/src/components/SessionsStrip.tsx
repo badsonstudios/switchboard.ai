@@ -527,7 +527,7 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   const lineButton: React.CSSProperties = {
     background: 'transparent',
     color: 'var(--muted)',
-    border: '1px solid var(--border)',
+    border: '1px solid var(--control-edge)',
     borderRadius: 'var(--radius-chip)',
     padding: '1px 8px',
     cursor: 'pointer',

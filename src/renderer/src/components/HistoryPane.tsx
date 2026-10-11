@@ -609,7 +609,7 @@ export function HistoryPane(props: {
             maxInlineSize: 260,
             background: 'var(--input-bg, var(--card-bg))',
             color: 'var(--text)',
-            border: '1px solid var(--border)',
+            border: '1px solid var(--control-edge)',
             borderRadius: 4,
             padding: '2px 6px',
             fontSize: 11,

@@ -51,7 +51,7 @@ export function SessionsPlacementSwitch(props: {
             style={{
               background: lit ? 'var(--chip)' : 'transparent',
               color: lit ? 'var(--text)' : 'var(--muted)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--control-edge)',
               // the halves share their middle edge rather than doubling it
               borderInlineStartWidth: first ? 1 : 0,
               borderStartStartRadius: first ? 'var(--radius-chip)' : 0,

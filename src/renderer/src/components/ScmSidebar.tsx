@@ -655,7 +655,7 @@ export function ScmSidebar(props: {
               minInlineSize: 0,
               background: 'var(--input-bg, var(--card-bg))',
               color: 'var(--text)',
-              border: '1px solid var(--border)',
+              border: '1px solid var(--control-edge)',
               borderRadius: 4,
               padding: '2px 6px',
               fontSize: 11,
@@ -689,7 +689,7 @@ export function ScmSidebar(props: {
                 onClick={() => setScmViewMode(m)}
                 style={{
                   background: mode === m ? 'var(--rail-row-selected)' : 'transparent',
-                  border: '1px solid var(--border)',
+                  border: '1px solid var(--control-edge)',
                   borderRadius: 3,
                   color: mode === m ? 'var(--text)' : 'var(--muted)',
                   cursor: 'pointer',
@@ -717,7 +717,7 @@ export function ScmSidebar(props: {
               style={{
                 flexShrink: 0,
                 background: 'transparent',
-                border: '1px solid var(--border)',
+                border: '1px solid var(--control-edge)',
                 borderRadius: 3,
                 color: 'var(--muted)',
                 cursor: 'pointer',
@@ -1513,7 +1513,7 @@ function CommitBox(props: {
           resize: 'vertical',
           background: 'var(--input-bg, var(--card-bg))',
           color: 'var(--text)',
-          border: '1px solid var(--border)',
+          border: '1px solid var(--control-edge)',
           borderRadius: 4,
           padding: '3px 6px',
           fontFamily: 'var(--font-ui)',
@@ -1533,7 +1533,7 @@ function CommitBox(props: {
             flex: 1,
             minInlineSize: 0,
             background: hasMessage && ready ? 'var(--rail-row-selected)' : 'transparent',
-            border: '1px solid var(--border)',
+            border: '1px solid var(--control-edge)',
             borderRadius: 4,
             color: hasMessage && ready ? 'var(--text)' : 'var(--muted)',
             cursor: hasMessage && ready && !busy ? 'pointer' : 'default',
@@ -1564,7 +1564,7 @@ function CommitBox(props: {
           style={{
             flexShrink: 0,
             background: 'transparent',
-            border: '1px solid var(--border)',
+            border: '1px solid var(--control-edge)',
             borderRadius: 4,
             color: 'var(--muted)',
             cursor: 'pointer',

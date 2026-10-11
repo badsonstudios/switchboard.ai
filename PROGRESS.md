@@ -53,7 +53,18 @@
 >    No change to the sanitizer or the content security policy.
 >    ⚠️ Nothing tells Claude to use image syntax; whether it does unprompted
 >    is the owner's first hand-test.
-> 4. #1209 — control edges on nordic and daylight. Not started.
+> 4. **#1209 — control edges on nordic and daylight. IN PROGRESS, started
+>    2026-10-11, branch `feature/1209-control-edges` (stacked on #1235's).**
+>    The audit the ticket asked for: 36 controls whose only edge was the
+>    `--border` hairline (1.13 to 1.31:1) and which have no fill of their
+>    own: 19 text boxes (including the prompt box) and 17 outlined buttons
+>    with a transparent background. All moved to `--control-edge`, which is
+>    now measured at 3:1 on six surfaces in four themes instead of the
+>    composer's three. Pinned by a scan in `tokens.drift.test.ts`. Filled
+>    buttons and the lines between regions were left alone on purpose. No
+>    independent review: it is one token swapped in 36 places and a test.
+>    ⚠️ The ticket says "needs eyes as much as numbers"; nobody has looked
+>    at it but me, in two screenshots.
 > 5. #1211 — text dimmed by opacity. Not started.
 > 6. #1020 — two modals open at once. Not started.
 > 7. #1017 — palette entry for the outline toggle. Not started.

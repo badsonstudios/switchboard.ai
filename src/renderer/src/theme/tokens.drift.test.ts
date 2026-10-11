@@ -1453,3 +1453,113 @@ describe("a hand-made group's name and count are readable in every colour it can
 // of App.tsx that fails when a new child of the shell column is added without
 // being classified. Nothing about the mechanism changed; only where the list
 // of them lives.
+
+// ── #1209: A CONTROL'S ONLY EDGE IS NEVER THE HAIRLINE ────────────────────────
+//
+// `--border` is the hairline between regions and measures 1.13 to 1.31:1 on
+// nordic and daylight. §5.32 (2026-10-10) lets it stay that: separation is not
+// a control's boundary, and WCAG 1.4.11 does not ask 3:1 of it. What it may
+// not be is the ONLY thing that says "this is a control". A text field with
+// nothing typed in it is the plain case: its edge is how you find it.
+//
+// Two promises, and both are needed. The first is that `--control-edge` really
+// does clear 3:1 on every surface a field or an outlined button is drawn on,
+// not only the composer row it was made for. The second is that the fields and
+// the fill-less buttons actually USE it: a scan, because a new input copied
+// from an old one is how the hairline would come back.
+
+/** every surface a field or an outlined button sits on today */
+const CONTROL_SURFACES = ['--bg', '--panel', '--panel2', '--chip', '--rail-card', '--bar'];
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: a control’s edge can be seen wherever a control is drawn (#1209)',
+  (id, theme) => {
+    const tokens = resolved(theme);
+    it.each(CONTROL_SURFACES)('--control-edge on %s clears 3:1', (surface) => {
+      expect(tokens[surface], `${id} ${surface} must be #rrggbb to be measured`).toMatch(/^#[0-9a-f]{6}$/i);
+      const edge = derivedSurface('--control-edge', id, tokens);
+      expect(
+        ratio(edge, tokens[surface]),
+        `${id}: --control-edge on ${surface} (${edge} on ${tokens[surface]})`
+      ).toBeGreaterThanOrEqual(3);
+    });
+  }
+);
+
+describe('fields and fill-less buttons do not wear the hairline (#1209)', () => {
+  const SRC = path.join(__dirname, '..');
+  const HAIRLINE = /\bborder:\s*['"`]?1px solid var\(--border\)/;
+  const NL = String.fromCharCode(10);
+
+  function sources(dir: string, out: string[] = []): string[] {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) sources(full, out);
+      else if (entry.name.endsWith('.tsx') && !entry.name.includes('.test.')) out.push(full);
+    }
+    return out;
+  }
+
+  /**
+   * Every full-box hairline border in a component, with the JSX element it is
+   * written on (the nearest opening tag above it) and whether the same style
+   * says the background is transparent.
+   */
+  function hairlines(): Array<{ where: string; tag: string; transparent: boolean }> {
+    const found: Array<{ where: string; tag: string; transparent: boolean }> = [];
+    for (const file of sources(SRC)) {
+      const lines = fs.readFileSync(file, 'utf8').split(NL);
+      lines.forEach((line, i) => {
+        if (!HAIRLINE.test(line) || /^\s*(\/\/|\*)/.test(line)) return;
+        let tag = '';
+        for (let j = i; j >= Math.max(0, i - 40) && !tag; j -= 1) {
+          if (/^\s*(\/\/|\*)/.test(lines[j])) continue;
+          const opened = [...lines[j].matchAll(/<([a-z][a-z0-9]*)\b/g)].pop();
+          if (opened) tag = opened[1];
+        }
+        const near = lines.slice(Math.max(0, i - 6), i + 7).join(NL);
+        const transparent = /background:\s*(?:[^,\n]*\?\s*[^:\n]*:\s*)?'transparent'/.test(near);
+        found.push({ where: `${path.relative(SRC, file).replace(/\\/g, '/')}:${i + 1}`, tag, transparent });
+      });
+    }
+    return found;
+  }
+
+  it('no <input>, <textarea> or <select> has the hairline as its edge', () => {
+    const fields = hairlines().filter((h) => ['input', 'textarea', 'select'].includes(h.tag));
+    expect(fields.map((f) => f.where), 'a field’s edge is how an empty one is found: use --control-edge').toEqual([]);
+  });
+
+  it('no <button> with a transparent background has the hairline as its edge', () => {
+    const bare = hairlines().filter((h) => h.tag === 'button' && h.transparent);
+    expect(bare.map((b) => b.where), 'an outlined button with no fill: use --control-edge').toEqual([]);
+  });
+
+  it('the shared field styles use it too (a style object is not a tag the scan can see)', () => {
+    // each of these is spread onto inputs and selects from a named constant
+    const shared: Array<[string, string]> = [
+      ['components/CardPolicyRows.tsx', 'selectStyle'],
+      ['components/ComposeDialog.tsx', 'composeFieldStyle'],
+      ['components/DispatchDialog.tsx', 'fieldStyle'],
+      ['components/McpAddForm.tsx', 'field'],
+      ['components/FindBar.tsx', 'chip'],
+      ['components/SessionsStrip.tsx', 'lineButton'],
+    ];
+    for (const [file, name] of shared) {
+      const text = fs.readFileSync(path.join(SRC, file), 'utf8');
+      const at = text.search(new RegExp(`const ${name}\\b`));
+      expect(at, `${file}: ${name}`).toBeGreaterThanOrEqual(0);
+      // to the constant's own closing brace, at the start of a line
+      const body = text.slice(at, text.indexOf(NL + '}', at));
+      expect(body, `${file}: ${name}`).toContain('var(--control-edge)');
+      expect(body, `${file}: ${name}`).not.toMatch(HAIRLINE);
+    }
+  });
+
+  it('the stylesheet’s outlined buttons use it', () => {
+    const css = fs.readFileSync(path.join(__dirname, 'tokens.css'), 'utf8');
+    const at = css.indexOf('.doc-btn,' + NL + '.diff-btn {');
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(css.slice(at, css.indexOf('}', at))).toContain('border: 1px solid var(--control-edge)');
+  });
+});

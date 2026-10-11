@@ -1398,7 +1398,8 @@ mark[data-feed-match-current] {
 .doc-btn,
 .diff-btn {
   background: transparent;
-  border: 1px solid var(--border);
+  /* an outlined button with no fill: the edge is all that says "button" (#1209) */
+  border: 1px solid var(--control-edge);
   border-radius: 4px;
   color: var(--text);
   font-family: var(--font-ui);

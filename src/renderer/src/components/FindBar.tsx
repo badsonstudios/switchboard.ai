@@ -84,7 +84,7 @@ import {
 const DEBOUNCE_MS = 200;
 
 const chip: React.CSSProperties = {
-  border: '1px solid var(--border)',
+  border: '1px solid var(--control-edge)',
   borderRadius: 'var(--radius-chip)',
   background: 'transparent',
   color: 'var(--muted)',
@@ -591,7 +591,7 @@ export function FindBar(props: {
             flex: 1,
             minInlineSize: 120,
             background: 'var(--panel)',
-            border: '1px solid var(--border)',
+            border: '1px solid var(--control-edge)',
             borderRadius: 'var(--radius-chip)',
             color: 'var(--text)',
             font: 'inherit',
