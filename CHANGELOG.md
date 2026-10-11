@@ -96,6 +96,19 @@ on the floor, and say so in your PR.
 
 ## 0.8.120 — unreleased
 
+### Changed
+
+- **Answering one of two requests no longer hides the other.** When a session
+  asked for two things at once, answering the first made its card say
+  "working" while the second was still waiting, and it then ran out unseen.
+  The card now keeps saying it needs you until both are answered.
+- **A session waiting on your approval now pulses.** An unanswered request for
+  permission is declined after five minutes, and a steady yellow pill was easy
+  to miss among many sessions. Its row in the list, its pill across the top
+  and its group now pulse slowly, and faster in the last minute. Rest the
+  pointer on it to see how long is left. If your system is set to reduce
+  motion it does not move: it gets a steady thick outline instead.
+
 ### Fixed
 
 - **When a card is put away because you sent a prompt, the app now says so.**

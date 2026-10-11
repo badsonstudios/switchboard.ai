@@ -86,6 +86,37 @@ Five buttons:
   diff. Type your objection, press **Enter**, and your words go back to Claude
   along with the refusal.
 
+### You have five minutes, and the list shows it
+
+A request for permission does not wait for ever. If nobody answers within
+**five minutes**, switchboard declines it for you and tells the session that
+nobody answered. The session carries on without having done that thing, so a
+missed approval is work that did not happen.
+
+So a session that is waiting on an approval is the loudest thing in the list
+of sessions:
+
+- **Its row pulses.** In the list on the left, and on its pill when the
+  sessions are across the top, a yellow outline swells and eases about once
+  every two seconds. Nothing else in the list does this.
+- **In the last minute it pulses faster**, about once a second.
+- **A group shows it too.** Across the top, a group's box pulses when a session
+  inside it is waiting. In the list on the left, a group you have closed pulses
+  on its header (an open one leaves it to the rows inside).
+- **Rest the pointer on it** to see how long is left: *"Waiting for your
+  approval. In less than 3 minutes the request is declined for you, and the
+  session is told nobody answered."*
+
+It stops the moment you answer, and the moment the request is declined.
+
+**If your system is set to reduce motion**, nothing pulses. The row is drawn
+with the outline at its strongest, held, and the outline gets thicker in the
+last minute.
+
+Only a request for *permission* does this. A *question* (the kind with
+clickable answers) waits as long as you need, so it is highlighted but does
+not pulse.
+
 ### Taking a standing approval back
 
 **Approve all in this file** and **Allow all (this session)** both set something

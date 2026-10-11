@@ -12,6 +12,8 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailSession } from '../model/types';
 import { needCount, workingCount } from '../lib/rail-view';
+import { approvalAttrs, approvalHint, waitingOnApproval } from '../lib/approval-watch';
+import { useApprovalWatch } from '../lib/use-approval-watch';
 import { StatusMark } from './StatusMark';
 import { tint } from '../lib/tint';
 import { FolderGlyph } from './FolderGlyph';
@@ -99,6 +101,9 @@ export function StripGroupEntry(props: {
   // `needing` set the rows in the list are lit from, so "2 need you" is exactly
   // two highlighted rows. It is never re-derived from the members' statuses.
   const need = needCount(props.members, props.needing);
+  // #1202: a group drawn as one box is the only thing on screen for the
+  // sessions inside it, so it carries their approval cue, on the soonest clock
+  const approval = useApprovalWatch(waitingOnApproval(props.members, props.needing));
   // #1179: something inside is working. The owner, with the sessions across
   // the top: "I don't know if something's running in a group currently if …
   // the group is closed. I have to open the group." So the group says so,
@@ -135,13 +140,14 @@ export function StripGroupEntry(props: {
       data-drop-into={props.dropInto ? 'true' : undefined}
       data-strip-group-kind={props.kind}
       data-needs-you={need > 0}
+      {...approvalAttrs(approval)}
       // read back by the strip when it measures what is off each end
       data-strip-item-need={need}
       // the handle the "working" looks hang off, exactly as on a row or a pill
       data-session-status={showsWorking ? 'working' : undefined}
       data-strip-group-working={working}
       data-flash={props.flash ? 'true' : undefined}
-      title={isAuto ? t('rail.autoGroupHint') : undefined}
+      title={approval.active ? approvalHint(t, approval) : isAuto ? t('rail.autoGroupHint') : undefined}
       style={{
         ['--work-accent' as string]: props.color,
         display: 'flex',

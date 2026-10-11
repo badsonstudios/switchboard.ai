@@ -107,6 +107,11 @@ export interface PermissionRequest {
   displayName?: string;
   /** Remedies the CLI suggests, e.g. switch this session to acceptEdits. */
   suggestions?: Array<Record<string, unknown>>;
+  /**
+   * When main stops holding this and declines it, telling the session nobody
+   * answered (epoch ms, #1202). Absent = no deadline: a question waits for a person.
+   */
+  deadline?: number;
 }
 
 /**

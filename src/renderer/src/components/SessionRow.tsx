@@ -16,6 +16,8 @@ import type { TFunction } from 'i18next';
 import { RailSession } from '../model/types';
 import { railDepthIndent } from '../lib/dispatch-lineage';
 import { attentionPaint, presentStatus } from '../lib/rail-view';
+import { approvalAttrs, approvalHint, NO_CARDS } from '../lib/approval-watch';
+import { useApprovalWatch } from '../lib/use-approval-watch';
 import { tint } from '../lib/tint';
 import { StatusMark } from './StatusMark';
 import { DEFAULT_TASK_LABEL_SIZE, LABEL_LINES } from '../../../shared/task-label-size';
@@ -181,6 +183,11 @@ export function SessionRow(props: {
   // WHO NEEDS YOU is the count's own answer (#1137), not the status's: a row
   // is lit exactly when its session is one of the N the header is counting.
   const paint = attentionPaint(s.status, props.needsYou);
+  // #1202: an approval runs out, so the row that is waiting on one moves, and
+  // says how long is left. Lit by the same rule as the tint above.
+  const approval = useApprovalWatch(
+    paint.lit && s.status === 'needs-permission' ? [s.id] : NO_CARDS
+  );
   const hue = `var(--status-${paint.token})`;
   const ink = `var(--status-${paint.token}-ink)`;
   const accent = s.accent ?? 'var(--faint)';
@@ -203,6 +210,7 @@ export function SessionRow(props: {
       // needy row's tint from being repainted. No hover rule, nothing to
       // except it from.
       data-needs-you={paint.lit}
+      {...approvalAttrs(approval)}
       data-session-status={p.token}
       // which row is the session you have open, for the stylesheet (#718): a
       // "working" look repaints the tint and the edge bar that used to be the
@@ -244,7 +252,7 @@ export function SessionRow(props: {
       data-last-prompt-for={s.id}
       data-folded={props.folded ? 'true' : undefined}
       // the pill's own hint: a dashed edge is not self-explanatory
-      title={props.folded ? t('strip.pillFoldedHint') : undefined}
+      title={approval.active ? approvalHint(t, approval) : props.folded ? t('strip.pillFoldedHint') : undefined}
       style={{
         // the session's own colour, for whichever "working" look is in force
         // (#718, tokens.css "a working session"). A row only says what its

@@ -79,6 +79,13 @@ import {
   railWidthAtPointer,
   RAIL_WIDTH_DEFAULT,
 } from '../lib/rail-view';
+import {
+  approvalAttrs,
+  approvalHint,
+  NO_APPROVAL,
+  waitingOnApproval,
+} from '../lib/approval-watch';
+import { useApprovalLookup } from '../lib/use-approval-watch';
 import { tint } from '../lib/tint';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { useHeldCounts } from '../lib/sibling-inbox';
@@ -289,6 +296,10 @@ export function SessionsRail(props: {
   // per launch in packaged builds because the loopback origin's port churns)
   const [collapsed, setCollapsed] = React.useState<Set<string>>(
     () => new Set(uiGet<string[]>('railCollapsed', []))
+  );
+  // #1202: the approval cue for a CLOSED group's header (the rows have their own)
+  const approvalOf = useApprovalLookup(
+    collapsed.size > 0 && waitingOnApproval(props.sessions, props.needing).length > 0
   );
   const [width, setWidth] = React.useState<number>(() =>
     clampRailWidth(uiGet<number>('railWidth', RAIL_WIDTH_DEFAULT))
@@ -993,6 +1004,12 @@ export function SessionsRail(props: {
   }): React.JSX.Element => {
     const isCollapsed = collapsed.has(opts.key);
     const need = needCount(opts.members, props.needing);
+    // #1202: a CLOSED group draws no rows, so its header is the only place the
+    // approval cue can be. An open one leaves it to the rows: two things
+    // pulsing for one request is noise.
+    const approval = isCollapsed
+      ? approvalOf(waitingOnApproval(opts.members, props.needing))
+      : NO_APPROVAL;
     // #774 review: a COLLAPSED group renders no member rows at all, so the row
     // mark — "the one surface a card you cannot see still has" — is not in the
     // DOM either, and the header said "calm" over five unread messages. The
@@ -1164,8 +1181,16 @@ export function SessionsRail(props: {
         )}
         <div
           className="rail-head"
+          // #1202: on the HEADER, not the card. The header is all a closed
+          // group shows, and an automatic group's header is opaque, so a cue
+          // painted on the card behind it would not be seen at all.
+          {...approvalAttrs(approval)}
           onClick={() => toggleCollapsed(opts.key)}
-          title={opts.title ?? (isCollapsed ? t('rail.expand') : t('rail.collapse'))}
+          title={
+            approval.active
+              ? approvalHint(t, approval)
+              : (opts.title ?? (isCollapsed ? t('rail.expand') : t('rail.collapse')))
+          }
           // ── reorder (#1144) ──────────────────────────────────────────────
           // Only a group you MADE, and only when there is somewhere to save
           // the order: an auto-group's place is derived from its folder, and
