@@ -3,23 +3,30 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ 2026-10-11 — TEN MORE TICKETS: ALL LANDED, NOT RELEASED
+> # ✅ RELEASED: v0.8.121, 2026-10-11 (PR #1253)
+>
+> The owner, after the report on the ten tickets: *"In the meantime, go
+> ahead and create a release."* A plain patch step. It carries the ten items
+> below. `0.8.122 — unreleased` is open. The eight tracker rows read "IN
+> v0.8.121, installable now". **DO NOT CUT ANOTHER** unless he asks.
+>
+> # ✅ 2026-10-11 — TEN MORE TICKETS: ALL LANDED, IN v0.8.121
 >
 > **All ten are merged to `main` and their tickets are closed. Nothing is in
-> flight. Nothing is released: it all sits in `0.8.121 — unreleased`. What
-> comes next is the owner's call.**
+> flight. All of it is in **v0.8.121** (released 2026-10-11). What comes
+> next is the owner's call.**
 >
 > After 0.8.120 he asked for a shortlist of ten, reviewed it, and said: *"Let's
 > go ahead and do all 10 of these tickets."* Same rules as the eleven: each
 > its own item, one PR in CI at a time, each PR folds in the close-out of the
-> one before, one report at the end. **DO NOT CUT A RELEASE** unless he asks.
-> Everything lands in `0.8.121 — unreleased`.
+> one before, one report at the end. No release was to be cut until he
+> asked; he asked after the report, and it is v0.8.121.
 >
 > **The order:** #1237, #1214, #1235, #1209, #1211, #1020, #1017, #744, #1226,
 > #1204.
 >
 > 1. **#1237 — Prompt History is a tab of the history window. DONE
->    2026-10-11, PR #1238 (`55eb07fd`), merged, NOT released.** Green on the
+>    2026-10-11, PR #1238 (`55eb07fd`), merged, in v0.8.121.** Green on the
 >    first CI run; the ticket is closed. He filed it
 >    (through me) the hour he installed 0.8.120 and could not find the
 >    "prompts" button. Built: 🕘 opens one window with two tabs, Conversations
@@ -28,7 +35,7 @@
 >    the tab last used; a session not showing its conversation keeps the tab
 >    and says why it is empty; the `+ session` picker has no tabs.
 > 2. **#1214 — a shortcut pressed in a popped-out window.
->    DONE 2026-10-11, PR #1242 (`06dadf8b`), merged, NOT released.**
+>    DONE 2026-10-11, PR #1242 (`06dadf8b`), merged, in v0.8.121.**
 >    The ticket is closed. Green on the second CI run: the first failed on a real break (a close made from the Sessions list asked its question in the popout), fixed.
 >    The ticket says "needs a decision from the owner before any plan"; he
 >    picked it from a shortlist without giving one, so I made it: YES for the
@@ -40,7 +47,7 @@
 >    and `arrangesMainWindow` on a command. The close question is asked in
 >    the card's own window. The palette is unchanged.
 > 3. **#1235 — pictures in the conversation.
->    DONE 2026-10-11, PR #1243 (`b14f9fb6`), merged, NOT released.**
+>    DONE 2026-10-11, PR #1243 (`b14f9fb6`), merged, in v0.8.121.**
 >    The ticket is closed.
 >    The ticket has four parts and I split it: THIS item is part 1 (a local
 >    picture a reply refers to is drawn inline: PNG, JPEG, GIF, WebP, SVG,
@@ -59,7 +66,7 @@
 >    ⚠️ Nothing tells Claude to use image syntax; whether it does unprompted
 >    is the owner's first hand-test.
 > 4. **#1209 — control edges on nordic and daylight.
->    DONE 2026-10-11, PR #1245 (`bf9d24c1`), merged, NOT released.**
+>    DONE 2026-10-11, PR #1245 (`bf9d24c1`), merged, in v0.8.121.**
 >    The ticket is closed.
 >    The audit the ticket asked for: 36 controls whose only edge was the
 >    `--border` hairline (1.13 to 1.31:1) and which have no fill of their
@@ -72,7 +79,7 @@
 >    ⚠️ The ticket says "needs eyes as much as numbers"; nobody has looked
 >    at it but me, in two screenshots.
 > 5. **#1211 — text dimmed by opacity.
->    DONE 2026-10-11, PR #1246 (`bf659102`), merged, NOT released.**
+>    DONE 2026-10-11, PR #1246 (`bf659102`), merged, in v0.8.121.**
 >    The ticket is closed. The five
 >    places: a folded calm pill (its NAME goes to `--muted`), sidechain rows
 >    in the feed (the fade is removed, not replaced: the indent and the
@@ -85,7 +92,7 @@
 >    as painted in four themes), and placeholder text. No independent
 >    review: five one-line colour changes and a scan.
 > 6. **#1020 — two modals open at once.
->    DONE 2026-10-11, PR #1248 (`137e6541`), merged, NOT released.**
+>    DONE 2026-10-11, PR #1248 (`137e6541`), merged, in v0.8.121.**
 >    The ticket is closed. The ticket
 >    wanted ONE central rule and offered two; adopted the stacking contract
 >    (DESIGN §5.32): dialogs may stack, only the top is `aria-modal`, the
@@ -95,12 +102,12 @@
 >    closes the gap for the five dialogs whose state lives in a card. Pinned
 >    by a source scan and `e2e/one-modal.spec.ts`. Not done: a Tab trap.
 > 7. **#1017 — palette entry for the outline toggle.
->    DONE 2026-10-11, PR #1247 (`d781b994`), merged, NOT released.**
+>    DONE 2026-10-11, PR #1247 (`d781b994`), merged, in v0.8.121.**
 >    The ticket is closed. `view.documentOutline`, palette-only, enabled by
 >    the chip's own rule: each viewer says whether it is offering an outline
 >    (`setOutlineOffered`) and the command is enabled while any does.
 > 8. **#744 — the Electron cache directory.
->    DONE 2026-10-11, PR #1249 (`0c06a9de`), merged, NOT released.**
+>    DONE 2026-10-11, PR #1249 (`0c06a9de`), merged, in v0.8.121.**
 >    The ticket is closed. MEASURED FIRST,
 >    as the ticket asked, on the desktop's installed app: `Cache` 208 MB of a
 >    226 MB profile, 189 MB of it 20 copies of the ~10 MB renderer bundle.
@@ -112,7 +119,7 @@
 >    Not the ticket's guess of "evict on version change": the copies were per
 >    LAUNCH and none was ever reusable. Start-up time not measured.
 > 9. **#1226 — probe the CLI's question-result shapes.
->    DONE 2026-10-11, PR #1250 (`74c112ea`), merged, NOT released.**
+>    DONE 2026-10-11, PR #1250 (`74c112ea`), merged, in v0.8.121.**
 >    The ticket is closed.
 >    Ten runs against the CLI on PATH (2.1.288), probe in
 >    `spike/probes/1226/`, artifacts and the note in `spike/findings/`. The
@@ -126,7 +133,7 @@
 >    tracker row: none of these can be produced from switchboard's own panel.
 >    Not measured: `kind: text` / `number` questions, and a refused preview.
 > 10. **#1204 — the eslint cold-start flake.
->     DONE 2026-10-11, PR #1251 (`92c3961f`), merged, NOT released.**
+>     DONE 2026-10-11, PR #1251 (`92c3961f`), merged, in v0.8.121.**
 >     The ticket is closed.
 >     It fired again twice on 2026-10-11 under load, with a second test
 >     beside it. `eslint-hex-rule.test.js`: ESLint's start-up is paid once in
