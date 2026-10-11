@@ -19,6 +19,11 @@
 import { asDisplayString } from '../../shared/display-string';
 import { ToolCategory, toolCategory } from '../../shared/tool-taxonomy';
 import {
+  ASK_USER_QUESTION_TOOL,
+  settledQuestions,
+  type SettledQuestion,
+} from '../../shared/ask-user-question';
+import {
   fitContextSections,
   findContextSections,
   type ContextSection,
@@ -74,6 +79,14 @@ export interface FeedBlock {
     newString?: string;
     /** tool_result output, attached when it arrives (block re-emitted) */
     out?: string;
+    /**
+     * AskUserQuestion: the questions of the call, structured (#1201). `detail`
+     * is a JSON string cut at a display cap, so it cannot be parsed back; a
+     * question the user scrolls up to, or one replayed on resume, is drawn
+     * from this and from `out`. Absent for every other tool, and for a
+     * payload that is not the shape the CLI documents.
+     */
+    questions?: SettledQuestion[];
   };
   /** TodoWrite checklist (E10-06) */
   todos?: Array<{ content: string; status: string }>;
@@ -862,6 +875,12 @@ function toolIntent(
   if (typeof input.new_string === 'string') tool.newString = input.new_string.slice(0, caps.edit);
   if (name === 'Write' && typeof input.content === 'string') {
     tool.newString = input.content.slice(0, caps.edit);
+  }
+  // a question is read back as a question, not as its payload (#1201). Not
+  // for the identity-only pass (`detail: 0`), which reads none of it.
+  if (name === ASK_USER_QUESTION_TOOL && caps.detail !== 0) {
+    const questions = settledQuestions(input);
+    if (questions) tool.questions = questions;
   }
   return { t: 'block', block: { kind: 'tool', tool, ts, ...srcId }, index, toolUseId };
 }

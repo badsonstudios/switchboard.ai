@@ -1,5 +1,7 @@
 // Feed view visibility rules (P2-E12-07, §5.10 verbosity presets). Pure —
 // the FeedView component applies these; tests pin the preset semantics.
+import type { SettledQuestion } from '../../../shared/ask-user-question';
+
 export interface FeedBlockDto {
   seq: number;
   kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice';
@@ -16,6 +18,8 @@ export interface FeedBlockDto {
     oldString?: string;
     newString?: string;
     out?: string;
+    /** AskUserQuestion: the questions of the call, structured (#1201) */
+    questions?: SettledQuestion[];
   };
   todos?: Array<{ content: string; status: string }>;
   /**

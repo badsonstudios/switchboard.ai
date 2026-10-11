@@ -179,6 +179,37 @@ Two things deliberately *don't* fold the box away:
 Checklist boxes have nothing to expand — they're already showing everything —
 so clicking one does nothing.
 
+### A question Claude asked you, afterwards
+
+While a question is open it has its own panel above the prompt box (see [When
+Claude asks you a question](04-approvals-and-autonomy.md#when-claude-asks-you-a-question)).
+Once it is answered, it stays in the conversation as a box you can read back:
+
+- **Each question as a sentence**, with its short label beside it.
+- **Every answer that was offered**, with a **✓** and bold type on the ones
+  you chose. If you ticked several, all of them are marked.
+- **Typed instead:** and your own words, if you typed an answer rather than
+  picking one.
+- **Skipped**, for a question you left unanswered.
+- **Note:** and the note, if you left one beside an answer in another app
+  that has that.
+- At the top, **answered**, **answered in their own words** (you replied with
+  text instead of using the choices), **not answered** (you declined, or it
+  ran out of time; the reason is shown underneath) or **waiting for an
+  answer**.
+
+If an answer was very long, the record of it can be cut short. The box then
+says so under the questions it could not read, rather than calling them
+skipped; the title line still opens everything there is.
+
+It looks the same when you scroll back to it later, and the same after you
+quit and reopen the session.
+
+Click the box's title line to see the request exactly as Claude sent it. That
+is the same click every other box uses to show its detail; here it is only for
+when the box looks wrong. Clicking or selecting text in the answers does not
+fold anything.
+
 ### Copying code out of a session
 
 **Code blocks in an answer have a small header with a Copy button on the

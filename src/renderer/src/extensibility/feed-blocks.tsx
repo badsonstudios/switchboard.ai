@@ -22,6 +22,14 @@ import {
 } from '../lib/feed-code';
 import { FEED_COPY_ATTR, FEED_EXPANDER_ATTR } from '../lib/feed-keys';
 import { ToolIcon } from '../components/ToolIcon';
+import { srOnly } from '../components/sr-only';
+import {
+  ASK_USER_QUESTION_TOOL,
+  pickedFor,
+  readAskResult,
+  type AskAnswerRead,
+  type AskQuestion,
+} from '../../../shared/ask-user-question';
 import { useRevealed } from '../lib/feed-reveal';
 import { FeedBlockRendererContribution, manifestFor } from './contributions';
 import { decorateFeedMarkdown } from '../lib/feed-markdown';
@@ -661,6 +669,234 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
   );
 }
 
+/**
+ * A question the session asked, read back (#1201).
+ *
+ * The owner: "when you go back into the session and scroll up to where the
+ * questions were asked, it's displayed in what looks like JSON … I need nice
+ * output formatting so we can easily read it in English."
+ *
+ * While a question is OPEN it has its own panel above the prompt box (#733).
+ * This is what is left in the conversation afterwards, and what a resumed
+ * session replays: each question as a sentence, what was offered, and what was
+ * chosen, typed, or skipped. Both come from the transcript's own blocks: the
+ * questions from the call, the answers from the CLI's result (the reading rule
+ * is `shared/ask-user-question`'s `readAskResult`). Nothing here is remembered
+ * from the live panel, which is what makes a replay look the same.
+ *
+ * THE RAW CALL IS STILL ONE CLICK AWAY, behind the same expander every other
+ * tool row has. It is what you want when the reading above looks wrong.
+ */
+function QuestionBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = React.useState(false);
+  // find jumped here: the raw call unfolds (§5.31), as on every tool row
+  const revealed = useRevealed(b.seq);
+  const open = expanded || revealed;
+  const rawId = React.useId();
+  const toggle = (): void => setExpanded(!open);
+  const questions = b.tool?.questions ?? [];
+  const outcome = readAskResult(questions, b.tool?.out);
+  const hasRaw = !!b.tool?.detail;
+  const header = (
+    <>
+      {hasRaw && (
+        <span style={{ color: 'var(--muted)', fontSize: 8, flexShrink: 0 }}>
+          {open ? t('feedView.expandedIcon') : t('feedView.collapsedIcon')}
+        </span>
+      )}
+      <span style={{ color: 'var(--status-working-ink)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+        <span>{t('feedView.question.title', { count: questions.length })}</span>
+        <ToolIcon name={b.tool?.name} />
+      </span>
+      <span
+        data-question-state={outcome.state}
+        style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}
+      >
+        {t(`feedView.question.state.${outcome.state}`)}
+      </span>
+    </>
+  );
+  const headerStyle: React.CSSProperties = {
+    display: 'flex',
+    gap: 6,
+    alignItems: 'baseline',
+    padding: '1px 0',
+    inlineSize: '100%',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 10.5,
+  };
+  return (
+    <ToolBox kind="question" onToggle={hasRaw ? toggle : undefined}>
+      {hasRaw ? (
+        <FeedExpander
+          open={open}
+          onToggle={toggle}
+          controls={open ? rawId : undefined}
+          style={headerStyle}
+        >
+          {header}
+        </FeedExpander>
+      ) : (
+        <div style={headerStyle}>{header}</div>
+      )}
+      {/* NOT A TOGGLE: reading and selecting an answer must not fold the box */}
+      <div {...NO_TOGGLE} style={{ cursor: 'auto', paddingBlock: '2px 3px', fontSize: 11.5 }}>
+        {questions.map((q, i) => (
+          <QuestionAnswer
+            // by position: one call can carry the same question text twice
+            key={i}
+            q={q}
+            read={outcome.state === 'answered' ? outcome.answers[i] : undefined}
+            cut={outcome.state === 'answered' && outcome.cut}
+          />
+        ))}
+        {outcome.state === 'declined' && outcome.reason !== '' && (
+          <div
+            data-question-reason
+            style={{ marginBlockStart: 4, color: 'var(--muted)', whiteSpace: 'pre-wrap' }}
+          >
+            {outcome.reason}
+          </div>
+        )}
+        {/* answered in their own words rather than through the choices */}
+        {outcome.state === 'responded' && (
+          <div data-question-responded style={{ marginBlockStart: 4, color: 'var(--text)' }}>
+            <span style={{ color: 'var(--muted)' }}>{t('feedView.question.other')}</span>
+            <span style={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>{outcome.text}</span>
+          </div>
+        )}
+      </div>
+      {open && hasRaw && (
+        <pre
+          id={rawId}
+          {...NO_TOGGLE}
+          style={{
+            margin: '2px 0 4px 14px',
+            padding: 6,
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            fontSize: 10,
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--muted)',
+            maxBlockSize: 240,
+            overflow: 'auto',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+          }}
+        >
+          {b.tool?.detail}
+        </pre>
+      )}
+    </ToolBox>
+  );
+}
+
+/** One question of the call: the sentence, what was offered, what came back. */
+function QuestionAnswer({
+  q,
+  read: got,
+  cut,
+}: {
+  q: AskQuestion;
+  /** what came back for it; null = not in the result; undefined = the call
+   *  has no per-question answers at all */
+  read: AskAnswerRead | null | undefined;
+  /** the result was cut short, so "not in the result" is not "skipped" */
+  cut: boolean;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const answer = got === undefined ? undefined : (got?.answer ?? null);
+  const read = typeof answer === 'string' ? pickedFor(q, answer) : null;
+  // absent from a result that was cut short may only mean "past the cut"
+  const lost = got === null && cut;
+  return (
+    <div data-question style={{ paddingBlock: 3 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
+        {q.header && (
+          <span
+            style={{
+              fontSize: 9.5,
+              fontWeight: 600,
+              color: 'var(--muted)',
+              border: '1px solid var(--control-edge)',
+              borderRadius: 'var(--radius-chip)',
+              padding: '0 5px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {q.header}
+          </span>
+        )}
+        <span data-question-text style={{ fontWeight: 600, color: 'var(--text)' }}>
+          {q.question}
+        </span>
+      </div>
+      <ul style={{ listStyle: 'none', margin: '3px 0 0', padding: 0 }}>
+        {q.options.map((o, i) => {
+          const chosen = read?.picked.includes(o.label) ?? false;
+          return (
+            <li
+              // by position: labels are the CLI's words and are not ours to
+              // assume unique once shown
+              key={i}
+              data-question-option={chosen ? 'chosen' : 'offered'}
+              style={{
+                display: 'flex',
+                gap: 6,
+                alignItems: 'baseline',
+                paddingBlock: 1,
+                // what was NOT chosen stays readable (--muted is the readable
+                // grey); what was chosen is full ink and bold, and has a mark
+                // and a word beside it, so it never rests on weight alone
+                color: chosen ? 'var(--text)' : 'var(--muted)',
+                fontWeight: chosen ? 600 : 400,
+              }}
+            >
+              <span aria-hidden style={{ inlineSize: 10, flexShrink: 0 }}>
+                {chosen ? t('feedView.question.chosenMark') : t('feedView.question.offeredMark')}
+              </span>
+              <span style={{ minInlineSize: 0 }}>
+                <span>{o.label}</span>
+                {chosen && <span style={srOnly}>{t('feedView.question.chosenWord')}</span>}
+                {o.description && (
+                  <span style={{ fontWeight: 400, color: 'var(--muted)' }}>
+                    {t('feedView.question.descriptionJoin')}
+                    {o.description}
+                  </span>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {read?.other != null && (
+        <div data-question-other style={{ marginBlockStart: 2, color: 'var(--text)' }}>
+          <span style={{ color: 'var(--muted)' }}>{t('feedView.question.other')}</span>
+          <span style={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>{read.other}</span>
+        </div>
+      )}
+      {got?.notes && (
+        <div data-question-notes style={{ marginBlockStart: 2, color: 'var(--text)' }}>
+          <span style={{ color: 'var(--muted)' }}>{t('feedView.question.notes')}</span>
+          <span style={{ whiteSpace: 'pre-wrap' }}>{got.notes}</span>
+        </div>
+      )}
+      {answer === null && !lost && (
+        <div data-question-skipped style={{ marginBlockStart: 2, color: 'var(--muted)' }}>
+          {t('feedView.question.skipped')}
+        </div>
+      )}
+      {lost && (
+        <div data-question-cut style={{ marginBlockStart: 2, color: 'var(--muted)' }}>
+          {t('feedView.question.cut')}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ThinkingRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
   const [expanded, setExpanded] = React.useState(false);
@@ -1076,6 +1312,18 @@ export const feedBlockRenderers: FeedBlockRendererContribution[] = [
     matches: (b) =>
       b.kind === 'tool' && (b.tool?.oldString !== undefined || b.tool?.newString !== undefined),
     render: (b) => <EditBlock b={b} />,
+  },
+  {
+    // BEFORE the generic row, which is what a question used to fall through
+    // to. Only when the questions came through structured: a payload the CLI's
+    // own shape does not describe stays a generic row, raw and honest.
+    manifest: manifest('feed-block-question', 'Question and answer block'),
+    order: 35,
+    matches: (b) =>
+      b.kind === 'tool' &&
+      b.tool?.name === ASK_USER_QUESTION_TOOL &&
+      (b.tool.questions?.length ?? 0) > 0,
+    render: (b) => <QuestionBlock b={b} />,
   },
   {
     manifest: manifest('feed-block-tool', 'Generic tool row'),

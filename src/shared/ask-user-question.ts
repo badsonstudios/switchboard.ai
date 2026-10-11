@@ -277,3 +277,284 @@ export function toggleOther(q: AskQuestion, sel: AskSelection): AskSelection {
   if (q.multiSelect) return { ...sel, other: !sel.other };
   return { labels: [], other: !sel.other, otherText: sel.otherText };
 }
+
+// ── READING A SETTLED QUESTION BACK (#1201) ─────────────────────────────────
+//
+// Everything above is about ANSWERING a question. This is the other end: a
+// question the user scrolls back to, or one replayed from a transcript when a
+// session is resumed. Until #1201 that was a generic tool row whose detail was
+// the raw payload: "it's displayed in what looks like JSON."
+//
+// THE ANSWERS ARE READ FROM THE CLI'S OWN RESULT TEXT. Two sources for what
+// that text is, and they are kept apart on purpose:
+//
+// MEASURED (`spike/findings/s-11-ask-user-question.md`, CLI 2.1.233, and six
+// real transcripts on the owner's machine):
+//
+//   answered     Your questions have been answered: "<q>"="<a>", "<q>"="<a>".
+//                You can now continue with these answers in mind.
+//   off the menu The user answered: "<q>"="<a>". Read the answers carefully …
+//   declined     our own denial text, with `is_error`
+//
+//   A question the user SKIPPED is simply absent from the sentence ("blank"
+//   and "partial" were byte-identical downstream).
+//
+// READ FROM THE INSTALLED BINARY (2.1.288), NOT YET PROBED. The strings are in
+// `claude.exe`; nobody has made the CLI produce them in front of us:
+//
+//   a pair may carry more after its answer:
+//                "<q>"="<a>" selected preview:\n<preview> notes: <notes>
+//   and a pair with a note but no pick is
+//                "<q>"=(no option selected) notes: <notes>
+//   other openings:  … So far they answered: <pairs>. …
+//                    Before going idle the user had selected: <pairs>.
+//                    The user responded: <free text>
+//                    The user did not answer the questions.
+//
+// switchboard's own panel sends none of the note or preview forms, so they
+// arrive only from a question answered in another client. They are handled
+// because misreading one would show an ANSWERED question as skipped, and that
+// is the one outcome this must not produce.
+//
+// The CLI escapes nothing in that sentence, so it cannot be parsed on its own:
+// a question or an answer may contain a quote, a comma, even `"="`. What makes
+// it readable is that WE KNOW THE QUESTIONS. Each one is looked for by its own
+// text, and an answer is whatever sits between one question's marker and the
+// next one's. The Claude Code VS Code extension, the known-correct consumer of
+// this contract, reads it the same way (it also takes a structured copy from
+// the transcript when there is one; the stream has no such copy, and one rule
+// for both sources is the point).
+//
+// WHEN IN DOUBT, THE SENTENCE ITSELF IS SHOWN. Any reading this cannot make
+// with the questions it holds comes back as `declined` or `responded` with the
+// result's own words, never as a confident row of "Skipped".
+
+/** Longest question, label or description kept on a settled block. Display
+ *  caps: a question is a sentence or two, and a block is held in memory for
+ *  every session that is open. */
+export const ASK_TEXT_CAP = 600;
+/** ...and how many questions and options of one call are kept. The CLI's own
+ *  schema allows four of each; this is head-room, not a contract. */
+export const ASK_COUNT_CAP = 8;
+
+/**
+ * The questions of one call, clamped for display on a settled block.
+ *
+ * `clipped` rides along because the answer is looked up by the question's
+ * text, and a clamped question must still be found in the result: the lookup
+ * then matches on the kept prefix instead of the whole.
+ */
+export interface SettledQuestion extends AskQuestion {
+  /** true when `question` was cut to `ASK_TEXT_CAP` */
+  clipped?: true;
+}
+
+export function settledQuestions(input: unknown): SettledQuestion[] | null {
+  const parsed = parseAskUserQuestion(input);
+  if (!parsed) return null;
+  return parsed.slice(0, ASK_COUNT_CAP).map((q) => {
+    const clipped = q.question.length > ASK_TEXT_CAP;
+    const out: SettledQuestion = {
+      question: clipped ? q.question.slice(0, ASK_TEXT_CAP) : q.question,
+      // LABELS ARE NOT CLAMPED: a label is what an answer is matched against,
+      // and a cut one would never match its own answer. Descriptions are prose.
+      options: q.options.slice(0, ASK_COUNT_CAP).map((o) => ({
+        label: o.label,
+        ...(o.description ? { description: o.description.slice(0, ASK_TEXT_CAP) } : {}),
+      })),
+      multiSelect: q.multiSelect,
+    };
+    if (q.header) out.header = q.header.slice(0, ASK_TEXT_CAP);
+    if (clipped) out.clipped = true;
+    return out;
+  });
+}
+
+/** What came back for ONE question. */
+export interface AskAnswerRead {
+  /** the answer's text; null = nothing was picked or typed */
+  answer: string | null;
+  /** a note the user left beside it (another client's feature) */
+  notes?: string;
+}
+
+/** What became of a question call. */
+export type AskOutcome =
+  /** no result yet: the live panel is where this one is being answered */
+  | { state: 'pending' }
+  /**
+   * One entry per question, in the questions' order; null = not in the
+   * sentence. `cut` = the result was cut short before its end, so "not in the
+   * sentence" may only mean "past the cut" and must not be called skipped.
+   */
+  | { state: 'answered'; answers: Array<AskAnswerRead | null>; cut: boolean }
+  /** the user answered in their own words instead of through the choices */
+  | { state: 'responded'; text: string }
+  /** the call came back without answers; `reason` is the result's own words */
+  | { state: 'declined'; reason: string };
+
+/** Each is followed by the pairs. Searched for ANYWHERE: two of them open
+ *  mid-sentence. */
+const PAIR_OPENINGS = [
+  'Your questions have been answered: ',
+  'The user answered: ',
+  'So far they answered: ',
+  'Before going idle the user had selected: ',
+];
+const RESPONDED_PREFIX = 'The user responded: ';
+/** the sentences the CLI is known to close the pairs with, each after `".` */
+const ANSWERED_TAILS = ['". You can now continue', '". Read the answers carefully'];
+const NO_PICK = '(no option selected)';
+const NOTES = ' notes: ';
+const PREVIEW = ' selected preview:';
+
+export function readAskResult(
+  questions: readonly SettledQuestion[],
+  result: string | undefined
+): AskOutcome {
+  if (result === undefined) return { state: 'pending' };
+  if (result.startsWith(RESPONDED_PREFIX)) {
+    return { state: 'responded', text: result.slice(RESPONDED_PREFIX.length).trim() };
+  }
+  const opening = PAIR_OPENINGS.map((p) => ({ p, at: result.indexOf(p) }))
+    .filter((o) => o.at !== -1)
+    .sort((a, b) => a.at - b.at)[0];
+  if (!opening) return { state: 'declined', reason: result.trim() };
+  const body = result.slice(opening.at + opening.p.length);
+
+  // Where each question's `"<text>"=` sits. Searched in order, so two
+  // questions with different text keep their places; one that is not found
+  // after the last is looked for from the start, because the wire keys answers
+  // by question TEXT and two questions with the same text share one pair.
+  const marks: Array<Marker | null> = [];
+  let from = 0;
+  for (const q of questions) {
+    const found = findMarker(body, q, from) ?? (from > 0 ? findMarker(body, q, 0) : null);
+    marks.push(found);
+    if (found && found.valueAt >= from) from = found.valueAt;
+  }
+  const placed = [...new Set(marks.filter((m): m is Marker => m !== null).map((m) => m.at))].sort(
+    (a, b) => a - b
+  );
+  const tail = Math.max(...ANSWERED_TAILS.map((t) => body.lastIndexOf(t)));
+  // Cut short: main keeps a bounded slice of every result, and a long typed
+  // answer can push the end of the sentence past it. Without its known close
+  // and without a full stop, the end we have is not the end.
+  const cut = tail === -1 && !/[.!?]["')\]]?\s*$/.test(body);
+
+  const answers = marks.map((m) => {
+    if (!m) return null;
+    const nextAt = placed.find((at) => at > m.at);
+    // a pair runs to the `, ` before the next question, or to the close
+    const end = nextAt !== undefined ? nextAt - 2 : tail !== -1 ? tail + 1 : body.length;
+    return readPair(body.slice(m.valueAt, Math.max(end, m.valueAt)), nextAt === undefined && tail === -1);
+  });
+  // The sentence had the answered shape but none of OUR questions is in it:
+  // the payload and the result have parted, and the honest thing to show is
+  // the result's own words rather than rows of "skipped".
+  if (questions.length > 0 && answers.every((a) => a === null) && body.includes('"=')) {
+    return { state: 'declined', reason: result.trim() };
+  }
+  return { state: 'answered', answers, cut };
+}
+
+interface Marker {
+  /** where the pair's opening quote is */
+  at: number;
+  /** where its value starts: just after `"=` */
+  valueAt: number;
+}
+
+function findMarker(body: string, q: SettledQuestion, from: number): Marker | null {
+  const open = `"${q.question}`;
+  let at = body.indexOf(open, from);
+  while (at !== -1) {
+    // only at the start of the pairs, or after the `, ` that separates two
+    const boundary = at === 0 || body.slice(at - 2, at) === ', ';
+    const afterText = at + open.length;
+    // a whole question is followed at once by `"=`; a clipped one by the rest
+    // of its own text first
+    const eq = q.clipped
+      ? body.indexOf('"=', afterText)
+      : body.startsWith('"=', afterText)
+        ? afterText
+        : -1;
+    if (boundary && eq !== -1) {
+      const valueAt = eq + 2;
+      // a value is a quoted answer, or the words for "nothing picked"
+      if (body[valueAt] === '"' || body.startsWith(NO_PICK, valueAt)) return { at, valueAt };
+    }
+    at = body.indexOf(open, at + 1);
+  }
+  return null;
+}
+
+/**
+ * One pair's value: `"<answer>"`, optionally followed by a preview and a note,
+ * or `(no option selected)` followed by a note.
+ */
+function readPair(value: string, openEnded: boolean): AskAnswerRead {
+  const notesOf = (rest: string): { notes?: string } => {
+    const at = rest.indexOf(NOTES);
+    if (at === -1) return {};
+    const notes = rest.slice(at + NOTES.length).trim();
+    return notes ? { notes } : {};
+  };
+  if (value.startsWith(NO_PICK)) return { answer: null, ...notesOf(value.slice(NO_PICK.length)) };
+  const inner = value.slice(1); // past the opening quote
+  // the answer closes at the quote before a preview or a note, when there is
+  // one; otherwise at the pair's own last quote
+  const extras = [`"${PREVIEW}`, `"${NOTES}`].map((m) => inner.indexOf(m)).filter((i) => i !== -1);
+  let close: number;
+  if (extras.length > 0) close = Math.min(...extras);
+  else {
+    const last = inner.lastIndexOf('"');
+    // no closing quote at all only happens at a cut: keep what there is
+    close = last !== -1 ? last : openEnded ? inner.length : -1;
+  }
+  if (close === -1) return { answer: null };
+  const answer = inner.slice(0, close);
+  return { answer: answer === '' ? null : answer, ...notesOf(inner.slice(close + 1)) };
+}
+
+/**
+ * One answer, set against the options that were offered.
+ *
+ * `picked` are offered labels; `other` is what was typed instead of, or beside,
+ * them. A multi-select answer is the labels joined with ", " (measured), so it
+ * is split on that ONLY when no offered label contains ", " itself. Otherwise
+ * the labels are found by their own text, longest first.
+ *
+ * KNOWN LIMIT, inherent in an unescaped format: on a multi-select, typed text
+ * that happens to contain an offered label after a ", " ticks that label.
+ */
+export function pickedFor(
+  q: AskQuestion,
+  answer: string
+): { picked: string[]; other: string | null } {
+  const labels = q.options.map((o) => o.label);
+  if (labels.includes(answer)) return { picked: [answer], other: null };
+  if (!q.multiSelect) return { picked: [], other: answer };
+  const parts = labels.some((l) => l.includes(', '))
+    ? splitByLabels(answer, labels)
+    : answer.split(', ');
+  const picked = labels.filter((l) => parts.includes(l));
+  const rest = parts.filter((p) => !labels.includes(p));
+  return { picked, other: rest.length > 0 ? rest.join(', ') : null };
+}
+
+function splitByLabels(answer: string, labels: readonly string[]): string[] {
+  const out: string[] = [];
+  const byLength = [...labels].sort((a, b) => b.length - a.length);
+  let rest = answer;
+  while (rest.length > 0) {
+    const hit = byLength.find((l) => rest === l || rest.startsWith(`${l}, `));
+    if (!hit) {
+      out.push(rest);
+      break;
+    }
+    out.push(hit);
+    rest = rest.slice(hit.length + 2);
+  }
+  return out;
+}
