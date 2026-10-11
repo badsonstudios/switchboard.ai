@@ -1580,8 +1580,11 @@ export function SessionsRail(props: {
                 })}
                 style={{
                   fontSize: 10,
-                  // an override is a state worth seeing without hovering
-                  opacity: groupOverride(props.policies, g.id) ? 1 : 0.55,
+                  // an override is a state worth seeing without hovering: full
+                  // ink. Without one it is the readable grey, and NOT faded
+                  // (#1211): this is an enabled control, and 0.55 made it
+                  // look like a disabled one.
+                  color: groupOverride(props.policies, g.id) ? 'var(--text)' : 'var(--muted)',
                 }}
               >
                 {t('ladder.policyGroupIcon')}

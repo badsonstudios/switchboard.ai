@@ -119,8 +119,11 @@ export function StripPill(props: {
         color: 'inherit',
         textAlign: 'start',
         cursor: 'pointer',
-        // a folded-away session that is calm steps back; one that needs you does not
-        opacity: props.folded && !paint.lit ? 0.72 : 1,
+        // NO `opacity` here (#1211). A folded-away session that is calm used to
+        // be faded to 0.72, which fades the words AND the fill under them: its
+        // 9.5px label measured about 3.8:1 on an enabled, clickable pill. It
+        // steps back by its NAME going to the readable grey instead (below),
+        // beside the dashed edge it already had.
       }}
     >
       {props.dropEdge && (
@@ -175,7 +178,8 @@ export function StripPill(props: {
               minInlineSize: 0,
               fontSize: 11.5,
               fontWeight: paint.lit ? 700 : 600,
-              color: 'var(--text)',
+              // a folded-away session that is calm steps back; one that needs you does not
+              color: props.folded && !paint.lit ? 'var(--muted)' : 'var(--text)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
