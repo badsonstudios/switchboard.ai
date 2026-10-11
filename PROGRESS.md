@@ -67,8 +67,9 @@
 >    independent review: it is one token swapped in 36 places and a test.
 >    ⚠️ The ticket says "needs eyes as much as numbers"; nobody has looked
 >    at it but me, in two screenshots.
-> 5. **#1211 — text dimmed by opacity. IN PROGRESS, started 2026-10-11,
->    branch `feature/1211-opacity-dims`.** The five
+> 5. **#1211 — text dimmed by opacity.
+>    DONE 2026-10-11, PR #1246 (`bf659102`), merged, NOT released.**
+>    The ticket is closed. The five
 >    places: a folded calm pill (its NAME goes to `--muted`), sidechain rows
 >    in the feed (the fade is removed, not replaced: the indent and the
 >    dashed spine already say "helper"), a find hit that cannot be jumped to
@@ -81,8 +82,7 @@
 >    review: five one-line colour changes and a scan.
 > 6. #1020 — two modals open at once. Not started.
 > 7. **#1017 — palette entry for the outline toggle. IN PROGRESS, started
->    2026-10-11, branch `feature/1017-outline-command` (stacked on #1211's;
->    built before #1020).** `view.documentOutline`, palette-only, enabled by
+>    2026-10-11, branch `feature/1017-outline-command`.** `view.documentOutline`, palette-only, enabled by
 >    the chip's own rule: each viewer says whether it is offering an outline
 >    (`setOutlineOffered`) and the command is enabled while any does.
 > 8. #744 — the Electron cache directory. Not started.
