@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { registerSessionIpc, SessionIpcDeps } from './ipc';
+import { MAX_PROMPT_CHARS } from '../../shared/prompt-attachments';
 import { ProviderCapabilities } from '../extensibility/contributions';
 import { PersistedSession } from '../workspace/store';
 import { SessionIdentity } from './session-manager';
@@ -4729,6 +4730,27 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     h.call('sessions:submitPrompt', 'live-1', 'fix the login redirect');
     expect(stored(h).taskLabel).toBe('mine, thanks');
     expect(stored(h).labelSource).toBe('user');
+  });
+
+  describe('`sessions:submitPrompt` has a ceiling on the words (#499)', () => {
+    it('sends a prompt of exactly the limit, and refuses one character more, whole', () => {
+      const h = streamSession();
+      const most = 'a'.repeat(MAX_PROMPT_CHARS);
+      expect(h.call('sessions:submitPrompt', 'live-1', most)).toBe(true);
+      expect(h.submitted).toHaveLength(1);
+      expect(h.submitted[0].text).toHaveLength(MAX_PROMPT_CHARS);
+
+      expect(h.call('sessions:submitPrompt', 'live-1', `${most}b`)).toBe(false);
+      // REFUSED, not cut: nothing shorter went in its place
+      expect(h.submitted).toHaveLength(1);
+    });
+
+    it('a prompt past the reference’s 50,000 characters goes whole', () => {
+      const h = streamSession();
+      const long = 'word '.repeat(20_000); // 100,000 characters
+      expect(h.call('sessions:submitPrompt', 'live-1', long)).toBe(true);
+      expect(h.submitted[0].text).toBe(long);
+    });
   });
 
   it('writes nothing when the send was REFUSED', () => {

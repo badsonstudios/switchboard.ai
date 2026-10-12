@@ -229,3 +229,14 @@ describe('the sweep', () => {
     expect(loadStashedAttachments('gone')).toHaveLength(1);
   });
 });
+
+describe('names read back from disk are made inert again (#499)', () => {
+  it('a stored name with a direction override cannot reverse the sentence it is printed in', async () => {
+    const RLO = String.fromCodePoint(0x202e);
+    bridge({ [attachmentDraftKey('card-9')]: [`report${RLO}`, 'server.log'] });
+    await loadUiState();
+    const names = lostAttachmentNames('card-9');
+    expect(names).toEqual(['report', 'server.log']);
+    expect(names.join(', ').includes(RLO)).toBe(false);
+  });
+});

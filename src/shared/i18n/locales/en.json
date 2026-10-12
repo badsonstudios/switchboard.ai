@@ -1138,6 +1138,7 @@
     "openPageNamed": "Open {name} in your browser",
     "pagePicture": "A picture of the page {name}",
     "pageNote": "A picture of the top of this page as it is now. Scripts did not run and nothing was loaded from the web. Click it to open the real page.",
+    "promptTooLong": "That prompt is too long to send: {length, number} characters, and the most that can go is {max, number}. Nothing has been sent or cleared. Save the long part as a text file and attach it instead; Claude reads an attached file whole.",
     "pictureFromTool": "Picture from {tool}",
     "pictureFromToolNth": "Picture {n} from {tool}",
     "pictureAttached": "Attached picture",

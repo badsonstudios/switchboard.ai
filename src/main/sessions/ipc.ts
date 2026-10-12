@@ -114,7 +114,7 @@ import type { DispatchResults } from './dispatch-results';
 import { buildDispatchPrompt } from './dispatch-prompt';
 import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
-import { sanitizePromptAttachments } from '../../shared/prompt-attachments';
+import { isPromptTooLong, sanitizePromptAttachments } from '../../shared/prompt-attachments';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
@@ -1192,6 +1192,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // that visibly did not go.
   broker.handle('sessions:submitPrompt', (_e, sessionId: string, text: string, attachments?: unknown) => {
     if (typeof sessionId !== 'string' || typeof text !== 'string') return false;
+    // A CEILING ON THE WORDS (#499). The composer checks the same number and
+    // says why; this is the check that holds when the caller is not the
+    // composer. Refused whole, never cut: see `MAX_PROMPT_CHARS`.
+    if (isPromptTooLong(text)) {
+      log.warn('sessions:submitPrompt refused: the prompt text is too long', {
+        sessionId,
+        length: text.length,
+      });
+      return false;
+    }
     const clean = sanitizePromptAttachments(attachments);
     if (clean === null) return false;
     const sent = manager.submitPrompt(sessionId, text, clean);

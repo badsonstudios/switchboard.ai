@@ -485,3 +485,26 @@ describe('toPromptAttachments — what actually crosses the IPC boundary', () =>
     ]);
   });
 });
+
+// #499. The override is built from its code point, never typed into a file.
+describe('a file whose name carries direction overrides (#499)', () => {
+  const RLO = String.fromCodePoint(0x202e);
+  const LRO = String.fromCodePoint(0x202d);
+  const hostile = `invoice${RLO}fdp${LRO}.exe${RLO}`;
+
+  it('is attached under the name as it is really spelled, for every kind of file', async () => {
+    const text = new File(['hello'], `${hostile}.txt`, { type: 'text/plain' });
+    const pdf = new File([new Uint8Array([37, 80, 68, 70])], `${hostile}.pdf`, { type: 'application/pdf' });
+    const png = new File([new Uint8Array([1, 2, 3])], `${hostile}.png`, { type: 'image/png' });
+    const { attachments, rejected } = await readAttachments([text, pdf, png], 0, 'drop');
+    expect(rejected).toBeNull();
+    expect(attachments.map((a) => a.name)).toEqual(['invoicefdp.exe.txt', 'invoicefdp.exe.pdf', 'invoicefdp.exe.png']);
+    for (const a of attachments) expect(a.name.includes(RLO) || a.name.includes(LRO)).toBe(false);
+  });
+
+  it('...and that is the title that is SENT: what the chip shows is what Claude is told', async () => {
+    const text = new File(['hello'], `${hostile}.txt`, { type: 'text/plain' });
+    const { attachments } = await readAttachments([text], 0, 'drop');
+    expect(toPromptAttachments(attachments)).toEqual([{ kind: 'text', title: 'invoicefdp.exe.txt', text: 'hello' }]);
+  });
+});
