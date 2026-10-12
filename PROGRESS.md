@@ -3,13 +3,28 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶ 2026-10-12 — SIX TICKETS, IN FLIGHT
+> # ✅ 2026-10-12 — SIX TICKETS: ALL LANDED, NOT RELEASED
+>
+> **All six are merged to `main` and their tickets are closed. Nothing is in
+> flight. All of it sits in `0.8.122 — unreleased`. DO NOT CUT A RELEASE
+> unless the owner asks.**
 >
 > The owner was shown ten tickets in priority order and said: *"All right,
-> let's do 1 through 5 and number 9."* Each is its own item, one PR in CI at
-> a time, one report at the end for all six. Everything lands in
-> `0.8.122 — unreleased`. **DO NOT CUT A RELEASE** unless he asks. The brief
-> is `.claude/work_files/CONTINUE-SIX-TICKETS.md`.
+> let's do 1 through 5 and number 9."* Each was its own item, one PR in CI at
+> a time, one report at the end for all six.
+>
+> **⏸ NEXT IS #1258, AND IT IS NOT STARTED.** Mid-run he filed it (no "need
+> you" notice for a held approval or a question) and said: *"look at the new
+> ticket and see if you can figure out what happened. Let me know before you
+> start the ticket."* The diagnosis is on the ticket (2026-10-12): a held
+> approval's status is overwritten to `working` by the next stream event, the
+> event feed drops it, and every "N need you" readout counts from that feed.
+> 13 of 46 held approvals in his log, back to 0.8.114. **Wait for his go-ahead
+> before changing anything for it.**
+>
+> Tickets filed during the run: **#1259** (a divider where a conversation was
+> compacted) and **#1261** (the read scope: a link that goes out and back on
+> POSIX, and timing).
 >
 > **The order:** #1240, #1241, #1026, #499, #1028, #702.
 >
@@ -28,7 +43,9 @@
 > 5. **#1028 — ReadScope: the existence oracle and the ancestor walk.
 >    DONE 2026-10-12, PR #1264 (`695f4b63`), merged, NOT released.**
 >    The ticket is closed. Green on the first CI run. One adversarial review: its first pass found the fix still leaked through a 41-link chain and cost more than the walk it replaced; both fixed. NARROWED, NOT CLOSED: a link that goes out of the scope and back still tells present from absent on POSIX, and timing differs. Filed #1261 for both.
-> 6. **#702 — grid-drag group membership. IN PROGRESS, started 2026-10-12, branch `feature/702-grid-drag-adoption`.**
+> 6. **#702 — grid-drag group membership.
+>    DONE 2026-10-12, PR #1265 (`5ba48cc8`), merged, NOT released.**
+>    The ticket is closed. Green on the first CI run. Confirmed first: the listener never ran on any path (0 of 5). Removed rather than repaired, because repaired it would erase a session's group when its tab is dropped beside ungrouped ones; a real-mouse spec pins that a drag in the grid leaves every group alone.
 >
 > # ✅ 2026-10-11 — #1239, A PICTURE OF AN HTML MOCK-UP: LANDED, NOT RELEASED
 >
