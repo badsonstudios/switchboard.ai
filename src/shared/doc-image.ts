@@ -100,5 +100,30 @@ export function docImagePath(url: unknown): string | null {
  * the thing that asks for this is markup an agent wrote.
  */
 export function isViewableFile(filePath: string): boolean {
-  return docImageMime(filePath) !== undefined || /[.]html?$/i.test(filePath);
+  return docImageMime(filePath) !== undefined || isPageFile(filePath);
 }
+
+/** Is this file a web page by name? `.html` or `.htm`. */
+export function isPageFile(filePath: string): boolean {
+  return /[.]html?$/i.test(filePath);
+}
+
+/**
+ * The size of a picture OF a page (#1239), in px: the top of the page as a
+ * 1280-wide window would show it.
+ *
+ * Fixed, and shared, because the conversation reserves the picture's room
+ * before the picture exists: it writes these two numbers onto the `<img>`,
+ * and main draws exactly this. The TOP of the page and not the whole of it,
+ * because the conversation caps a picture's height, and a long page squeezed
+ * under that cap is a grey stripe.
+ */
+export const PAGE_SHOT_WIDTH = 1280;
+export const PAGE_SHOT_HEIGHT = 800;
+
+/**
+ * The most main will read for a page it is asked to draw, and for each file
+ * the page pulls in. A mock-up is kilobytes; this is the ceiling that makes a
+ * huge file with an `.html` name cost a refusal rather than a buffer.
+ */
+export const MAX_PAGE_BYTES = 5 * 1024 * 1024;

@@ -51,7 +51,9 @@ test.describe('pictures in the conversation (#1235)', () => {
     await expect(reply).toBeVisible({ timeout: 60_000 });
 
     // ── THE LOCAL SVG IS DRAWN ──────────────────────────────────────────────
-    const picture = reply.locator('img.doc-image');
+    // (the page at the end of the reply is drawn as a picture too, since #1239:
+    // `feed-page-picture.spec.ts`. This is about the SVG.)
+    const picture = reply.locator('img.doc-image:not(.feed-page-image)');
     await expect(picture).toHaveCount(1, { timeout: 30_000 });
     await expect
       .poll(() => picture.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth), { timeout: 30_000 })
@@ -60,7 +62,7 @@ test.describe('pictures in the conversation (#1235)', () => {
     // through the one scheme main answers, never a file: or data: address
     expect(await picture.getAttribute('src')).toMatch(/^sb-doc-image:\/\/local\/\?path=/);
     // ...and it is a BUTTON, named, so the keyboard can open the whole picture
-    const open = reply.locator('button.feed-image-open');
+    const open = reply.locator(':not(.feed-page-shot) > button.feed-image-open');
     await expect(open).toHaveCount(1);
     await expect(open).toHaveAttribute('aria-label', 'Open a mock-up at full size');
     // (the folder may be spelled differently once main has resolved it: the name is the claim)
