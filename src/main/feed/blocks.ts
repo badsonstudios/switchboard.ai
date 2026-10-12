@@ -535,6 +535,76 @@ export interface DerivationContext {
 }
 
 /**
+ * Does the CLI say this entry is NOT FOR THE LIVE VIEW (#1026)?
+ *
+ * A NEW DROP RULE, not a second spelling of `isMeta`'s, and it gets its own
+ * argument: `isMeta` says "the loop wrote this"; this says "this is stored,
+ * and a live view does not show it".
+ *
+ * ── WHAT IT IS, MEASURED (`spike/findings/1026-not-for-the-live-view.md`) ───
+ *
+ * A COMPACTION. When the CLI compacts a conversation (the user's `/compact`,
+ * or on its own when the window fills), it writes the summary that replaces
+ * the history as a `user` message: "This session is being continued from a
+ * previous conversation that ran out of context…", thousands of characters.
+ * Nobody typed it. Until this rule the Feed drew it as a prompt: a pill under
+ * a NEW PROMPT divider, in the prompt list, on both transports.
+ *
+ *   * IN THE TRANSCRIPT it carries `isCompactSummary: true` and
+ *     `isVisibleInTranscriptOnly: true`. Counted over every conversation on
+ *     this machine: 16 lines in 13 files, CLI 2.1.261 to 2.1.288, and all 16
+ *     are that summary. Nothing else has ever carried either flag here.
+ *   * ON THE STREAM it carries neither. The CLI's internal -> wire converter
+ *     writes ONE field for a user message, read off the PATH binary (2.1.288):
+ *
+ *         isSynthetic: e.isMeta || e.isVisibleInTranscriptOnly
+ *                      || e.isCompactSummary || undefined
+ *
+ *     and that is what arrived (`spike/probes/1026/`, real CLI, switchboard's
+ *     own flags): the summary as a `user` frame with `isSynthetic: true` and
+ *     `isReplay: false`. So on the wire the three flags the transcript keeps
+ *     apart are one, in camelCase, and it is the only spelling that reaches
+ *     us. `isSynthetic` is also the documented one: the Agent SDK's user
+ *     message type declares it.
+ *
+ * ── WHY EVERY SPELLING BELOW IS HERE ────────────────────────────────────────
+ *
+ * The rule has to give ONE answer for the same message whichever way it
+ * arrived ("both sources, one renderer"). On the wire, `isSynthetic` is the
+ * OR of three flags; so the transcript side drops the same three: `isMeta`
+ * (the line above this function's call), and the two here. A summary made by
+ * "summarize up to here" is `isCompactSummary` WITHOUT
+ * `isVisibleInTranscriptOnly`, and still `isSynthetic` on the wire: it has to
+ * be dropped from a transcript too, or the same turn would be a prompt on one
+ * transport and nothing on the other.
+ *
+ * `is_visible_in_transcript_only` and `is_compact_summary` are the snake_case
+ * twins the CLI DECLARES on its wire schema ("@internal True when the message
+ * is stored in the transcript but not rendered in the live UI"). They occur
+ * twice each in the whole binary, the schema and a string table, and no
+ * converter writes them: unreachable from our spawn today, by reading. They
+ * are honoured for #997's reason, a guard on a declared field.
+ *
+ * ── AND WHAT IS DELIBERATELY NOT HERE ───────────────────────────────────────
+ *
+ * `is_virtual` / `isVirtual`, the other field #1026 names. The CLI describes
+ * it as "Display-only: rendered in the UI but filtered before API send": the
+ * opposite instruction. A message so marked is one a live view SHOWS. It has
+ * never appeared in a transcript on this machine (0 hits) or on our stream,
+ * and the Feed's default, to render it, is already what it asks for.
+ *
+ * `=== true` throughout, for `isMeta`'s reason: these arrive from another
+ * process, and a truthy test would drop a line over a non-empty string.
+ * `isSynthetic` is read on `user` entries only, which is the only shape the
+ * converter writes it on.
+ */
+function isNotForTheLiveView(entry: Record<string, unknown>): boolean {
+  if (entry.isVisibleInTranscriptOnly === true || entry.is_visible_in_transcript_only === true) return true;
+  if (entry.isCompactSummary === true || entry.is_compact_summary === true) return true;
+  return entry.type === 'user' && entry.isSynthetic === true;
+}
+
+/**
  * What one message means for the Feed. Tolerant by construction: an unknown
  * shape produces an empty list, never a throw — both callers are reading
  * untrusted output from another process.
@@ -576,6 +646,7 @@ export function deriveIntents(
   // these arrive from another process, and a truthy test would drop a line
   // over a non-empty string.
   if (entry.isMeta === true || entry.is_meta === true) return [];
+  if (isNotForTheLiveView(entry)) return [];
   const ts = typeof entry.timestamp === 'string' ? entry.timestamp : undefined;
 
   const local = localCommandText(entry);
@@ -809,7 +880,8 @@ function userIntents(
   //
   // THE ONE ASSUMPTION, stated rather than hidden: that the CLI writes such a
   // turn to the JSONL as an ordinary `user` line, the way it writes every other
-  // one. If it instead marked it `isMeta` / `isVisibleInTranscriptOnly`, the
+  // one. If it instead marked it `isMeta` / `isVisibleInTranscriptOnly` (which
+  // `deriveIntents` drops, the second since #1026), the
   // transcript would derive one block fewer than the stream and session find's
   // file ordinals would run one behind the Feed's `seq` for the rest of that
   // session. UNMEASURED — the repo's real fixture happens to contain only the

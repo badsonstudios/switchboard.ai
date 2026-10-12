@@ -5,6 +5,7 @@
 // end-to-end over real pipes by `npm run check:fake-stream`.
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
+  FAKE_COMPACT_SUMMARY,
   FakeStreamProtocol,
   FakeStreamHost,
   extractText,
@@ -1427,5 +1428,51 @@ describe('a scripted turn (#1082) — what the pictures in the manual are taken 
     out.length = 0;
     p.handle(userMsg('!tools'));
     expect(toolNames()).toEqual(['Bash', 'Edit', 'Read', 'TodoWrite']);
+  });
+});
+
+// #1026. Every shape asserted here is MEASURED against the real CLI 2.1.288
+// (`spike/findings/1026-not-for-the-live-view.md`).
+describe('`/compact` puts the summary on the wire as a synthetic user message (#1026)', () => {
+  it('emits the measured frames in the measured order, with no echo and no reply', () => {
+    proto.handle(userMsg('/compact'));
+    expect(types()).toEqual([
+      'system:status',
+      'system:status',
+      'system:init',
+      'system:compact_boundary',
+      'user',
+      'user',
+      'result:success',
+    ]);
+  });
+
+  it('the summary is marked `isSynthetic` and is NOT a replay; the local-command line is a replay', () => {
+    proto.handle(userMsg('/compact'));
+    const [summary, done] = out.filter((m) => m.type === 'user');
+    expect(summary).toMatchObject({ isSynthetic: true, isReplay: false });
+    expect((summary.message as { content: string }).content).toBe(FAKE_COMPACT_SUMMARY);
+    expect(FAKE_COMPACT_SUMMARY.startsWith('This session is being continued from a previous conversation')).toBe(true);
+    expect(done).toMatchObject({ isReplay: true });
+    expect('isSynthetic' in done).toBe(false);
+  });
+
+  it('keeps the same conversation: nothing rotates and nothing is reset', () => {
+    proto.handle(userMsg('hello'));
+    const before = out.find((m) => m.type === 'system' && m.subtype === 'init')!.session_id;
+    out = [];
+    proto.handle(userMsg('/compact'));
+    expect(out.some((m) => m.type === 'conversation_reset')).toBe(false);
+    expect(out.find((m) => m.subtype === 'init')!.session_id).toBe(before);
+  });
+
+  it('writes the summary to the transcript under the two flags the TRANSCRIPT uses, not the wire one', () => {
+    const lines: Record<string, unknown>[] = [];
+    const p = new FakeStreamProtocol({ ...host, appendTranscript: (l) => lines.push(l) }, () => {});
+    p.handle(userMsg('/compact'));
+    const summary = lines.find((l) => l.type === 'user')!;
+    expect(summary).toMatchObject({ isCompactSummary: true, isVisibleInTranscriptOnly: true });
+    expect('isSynthetic' in summary).toBe(false);
+    expect(lines.some((l) => l.type === 'system' && l.subtype === 'compact_boundary')).toBe(true);
   });
 });
