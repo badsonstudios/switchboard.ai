@@ -104,6 +104,12 @@ on the floor, and say so in your PR.
   browser. It is a picture of the top of the page: scripts do not run, and
   nothing is loaded from the web, so a page that depends on either looks
   plainer than it does in a browser. The line under the picture says so.
+- **Screenshots and attached pictures, shown in the session.** When a tool
+  returns a picture (Claude reads a picture file, or a tool takes a
+  screenshot), the step's box now shows a thumbnail of it. A picture you
+  attach to a prompt is shown on the prompt. Click a thumbnail to open the
+  whole picture. Recent pictures are kept in memory while the app runs; in a
+  very long session the oldest become a box that says "Not shown".
 
 ## 0.8.121 — 2026-10-11
 

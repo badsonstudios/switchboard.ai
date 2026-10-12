@@ -1479,6 +1479,11 @@ const api = {
   transcripts: {
     blocks: (liveId: string): Promise<unknown[]> => ipcRenderer.invoke('transcripts:blocks', liveId),
     /**
+     * Open a picture from the conversation at full size (#1240), by the handle
+     * its block carries. Resolves false when the picture is no longer held.
+     */
+    openPicture: (id: string): Promise<boolean> => ipcRenderer.invoke('feed:openPicture', id),
+    /**
      * The last thing the user asked this session (#631), for the hover on its
      * tab, row or pill: `{text, cut, attachmentOnly}`, with `text: null` when
      * it has not been asked anything. Asked on hover, not kept up to date.

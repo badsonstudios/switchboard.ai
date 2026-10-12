@@ -11,6 +11,7 @@
 // Every message shape is copied from what the REAL CLI emitted during S-10
 // (`spike/s10/probe-*.cjs` + the findings note), not invented.
 
+import { deflateSync } from 'zlib';
 import { errorText } from '../../shared/error-text';
 import { ASK_USER_QUESTION_TOOL } from '../../shared/ask-user-question';
 import { EXIT_PLAN_MODE_TOOL } from '../../shared/plan-mode';
@@ -110,6 +111,58 @@ export interface FakeToolCall {
   /** the result is an error (#1200). The real CLI writes `is_error` on every
    *  result, true or false (spike/findings/1200-is-error-on-a-tool-result.md) */
   isError?: boolean;
+  /**
+   * Pictures the result carries (#1240). With any, the result's `content` is
+   * the ARRAY form: the text item (when there is text) and then one `image`
+   * item each, which is how a `Read` of a picture and an MCP screenshot both
+   * come back.
+   */
+  pictures?: Array<{ mediaType: string; data: string }>;
+}
+
+/** A real 2x1 PNG (one red pixel, one blue), base64: what `!shot` returns. */
+export const FAKE_SHOT_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGP4zwAE/wEHAAH/4iOeWQAAAABJRU5ErkJggg==';
+
+/**
+ * A real PNG of one flat colour at this size, base64: the LARGE picture
+ * `!shot` returns, so the host has something to draw small. Built rather than
+ * pasted because a 1200 x 800 picture is a few hundred bytes of zeros deflated
+ * and a wall of base64 otherwise.
+ */
+export function fakeFlatPng(width: number, height: number): string {
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (bytes: Buffer): number => {
+    let c = 0xffffffff;
+    for (const b of bytes) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc(body), body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 2, 0, 0, 0], 8); // 8 bits, RGB
+  // every row: filter byte 0, then the same blue-grey pixel across
+  const row = Buffer.alloc(1 + width * 3);
+  for (let x = 0; x < width; x++) row.set([0x5b, 0x7f, 0xa6], 1 + x * 3);
+  const rows = Buffer.concat(Array.from({ length: height }, () => row));
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(rows)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]).toString('base64');
 }
 
 /**
@@ -1000,6 +1053,28 @@ export class FakeStreamProtocol {
       return;
     }
 
+    // A tool that answers with PICTURES (#1240): a `Read` of a picture file
+    // (one picture, no text), then a screenshot tool that says something and
+    // returns two: a LARGE one, and one of a type nothing can draw.
+    if (text === '!shot') {
+      const png = { mediaType: 'image/png', data: FAKE_SHOT_PNG };
+      const large = { mediaType: 'image/png', data: fakeFlatPng(1200, 800) };
+      this.emitToolTurn(
+        [
+          { id: 'toolu_fake_shot_1', name: 'Read', input: { file_path: 'shot.png' }, result: '', pictures: [png] },
+          {
+            id: 'toolu_fake_shot_2',
+            name: 'mcp__browser__screenshot',
+            input: { description: 'Take a screenshot' },
+            result: 'SHOT_TAKEN',
+            pictures: [large, { mediaType: 'image/tiff', data: 'AAAA' }],
+          },
+        ],
+        'SHOT_PROSE after the pictures'
+      );
+      return;
+    }
+
     if (text === '!asked') {
       this.emitToolTurn(
         [
@@ -1131,7 +1206,16 @@ export class FakeStreamProtocol {
           {
             type: 'tool_result',
             tool_use_id: call.id,
-            content: call.result,
+            content:
+              call.pictures === undefined
+                ? call.result
+                : [
+                    ...(call.result ? [{ type: 'text', text: call.result }] : []),
+                    ...call.pictures.map((p) => ({
+                      type: 'image',
+                      source: { type: 'base64', media_type: p.mediaType, data: p.data },
+                    })),
+                  ],
             is_error: call.isError === true,
           },
         ],

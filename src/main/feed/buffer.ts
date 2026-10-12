@@ -13,6 +13,8 @@
 // re-emitting a block with a new field is how OUT sections, thinking durations
 // and streamed text all reach the view.
 import { BLOCK_CAP, BlockOrigin, DerivedBlock, FeedBlock, originOf, stamp } from './blocks';
+import type { PictureData } from './picture-data';
+import { feedPictures, type FeedPictureStore } from './pictures';
 
 /**
  * The longest gap between two blocks that can still be read as "how long it
@@ -65,7 +67,9 @@ export class FeedBuffer {
 
   constructor(
     private readonly emit: (b: FeedBlock) => void,
-    private readonly cap = BLOCK_CAP
+    private readonly cap = BLOCK_CAP,
+    /** where a message's pictures are kept (#1240); the app's one store */
+    private readonly pictures: FeedPictureStore = feedPictures
   ) {}
 
   /**
@@ -129,8 +133,14 @@ export class FeedBuffer {
     this.owed.clear();
   }
 
-  /** Add a block, assign it a seq, and emit it. */
-  push(b: DerivedBlock, origin: BlockOrigin): FeedBlock {
+  /**
+   * Add a block, assign it a seq, and emit it.
+   *
+   * `pictures` are the ones the message carried for this block (#1240). They
+   * are KEPT here, in main, and the block is given one handle each: the block
+   * is what crosses to the page, and the bytes must not.
+   */
+  push(b: DerivedBlock, origin: BlockOrigin, pictures?: readonly PictureData[]): FeedBlock {
     // a thinking block's duration becomes known when the NEXT block lands —
     // unless the two are separated by a seam rather than by thought
     // (MAX_THINKING_GAP_MS)
@@ -158,8 +168,17 @@ export class FeedBuffer {
       }
     }
     const block = stamp(b, ++this.seq, origin);
+    if (pictures && pictures.length > 0) block.pictures = this.pictures.keep(this, pictures);
     this.items.push(block);
-    if (this.items.length > this.cap) this.items.splice(0, this.items.length - this.cap);
+    if (this.items.length > this.cap) {
+      // A block past the cap takes its pictures with it (#1240). Nothing can
+      // show them again, and left in the store they would be NEWER than
+      // another session's visible ones, which would then be let go first.
+      for (const gone of this.items.splice(0, this.items.length - this.cap)) {
+        if (gone.pictures) this.pictures.drop(gone.pictures);
+        if (gone.tool?.pictures) this.pictures.drop(gone.tool.pictures);
+      }
+    }
     this.fire(block);
     return block;
   }
@@ -218,12 +237,23 @@ export class FeedBuffer {
     }
   }
 
-  /** Attach tool output to the block that asked for it. Returns true if it landed. */
-  attachResult(toolUseId: string, out: string, failed = false): boolean {
+  /**
+   * Attach tool output to the block that asked for it. Returns true if it landed.
+   *
+   * The result's pictures (#1240) are kept only when it DID land: a result
+   * with no block to sit on has nowhere to show them.
+   */
+  attachResult(
+    toolUseId: string,
+    out: string,
+    failed = false,
+    pictures?: readonly PictureData[]
+  ): boolean {
     const target = this.awaitingResult.get(toolUseId);
     if (!target?.tool || target.tool.out !== undefined) return false;
     target.tool.out = out;
     if (failed) target.tool.failed = true;
+    if (pictures && pictures.length > 0) target.tool.pictures = this.pictures.keep(this, pictures);
     this.awaitingResult.delete(toolUseId);
     this.update(target);
     return true;
@@ -250,5 +280,16 @@ export class FeedBuffer {
     this.items.length = 0;
     this.seq = 0;
     this.awaitingResult.clear();
+    // the old conversation's pictures go with its blocks (#1240)
+    this.pictures.dropOwner(this);
+  }
+
+  /**
+   * The session is gone: let go of what was kept for it (#1240). The blocks
+   * are left as they are, because the owner is about to drop the buffer whole.
+   */
+  dispose(): void {
+    this.disown();
+    this.pictures.dropOwner(this);
   }
 }

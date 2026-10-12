@@ -277,6 +277,9 @@ export const CHANNEL_CAPABILITIES = {
   'fs:openPath': 'shell.openPath',
   // a picture or a page a reply offered (#1235): the same hand-off, type-checked in main
   'fs:openViewable': 'shell.openPath',
+  // a picture from the conversation, by the handle main minted for it (#1240):
+  // main writes its own copy and hands THAT to the system's viewer
+  'feed:openPicture': 'shell.openPath',
   'fs:reveal': 'shell.openPath',
   // Follow the file a viewer has open, so it re-renders when an agent rewrites
   // it (P2-E16-04). `fs.read` and not a capability of its own: it is answered by

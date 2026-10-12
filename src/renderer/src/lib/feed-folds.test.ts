@@ -216,3 +216,27 @@ describe('runs of commands (#1200)', () => {
     expect(run).toMatchObject({ kind: 'explore', searches: 2, reads: 1, commands: 0 });
   });
 });
+
+describe('a result that carried a picture (#1240)', () => {
+  const shot = (): FeedBlockDto =>
+    tool('Read', 'read', { tool: { name: 'Read', category: 'read', summary: 'shot.png', pictures: ['p1'] } });
+
+  it('is an event: never part of a fold, whichever kind it would have been', () => {
+    expect(foldKind(shot())).toBeNull();
+    expect(
+      foldKind(tool('Bash', 'shell', { tool: { name: 'Bash', category: 'shell', summary: 'x', pictures: ['p'] } }))
+    ).toBeNull();
+    // an empty list is no picture
+    expect(foldKind(tool('Read', 'read', { tool: { name: 'Read', category: 'read', summary: 'a', pictures: [] } }))).toBe(
+      'explore'
+    );
+  });
+
+  it('breaks a run of looking around in two, and is in neither half', () => {
+    const before = [read(), grep(), glob()];
+    const picture = shot();
+    const after = [read(), grep(), glob()];
+    const runs = heads(list(...before, picture, ...after));
+    expect(runs).toEqual([before.map((b) => b.seq), after.map((b) => b.seq)]);
+  });
+});

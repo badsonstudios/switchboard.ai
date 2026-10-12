@@ -363,8 +363,42 @@ Opening an HTML or SVG file in your browser opens it as a page, and a page
 can run scripts. Only pictures and web pages can be opened this way; a link
 to anything else on your machine does nothing.
 
-Not shown yet: a screenshot a tool took, and a picture you attached to your
-own prompt.
+### Pictures a tool returned, and pictures you attached
+
+Two more kinds of picture arrive inside the conversation itself, with no file
+in your project behind them:
+
+- **A picture a tool returned.** When Claude reads a picture file, or a tool
+  takes a screenshot, the step's box shows a small picture of what came back.
+- **A picture you attached to a prompt.** It is shown on your prompt, under
+  the line that says *1 image attached*.
+
+Each is a thumbnail in a box of one fixed size, so nothing in the conversation
+moves when it appears. **Click a thumbnail** to open the whole picture in
+whatever your system uses for pictures. From the keyboard, walk the
+conversation with the arrow keys: a thumbnail is one of the stops, and Enter
+opens it.
+
+A step that returned a picture always keeps a box of its own. It is never
+folded into *Explored the code* or *Ran 5 commands*, because the picture is
+what you would be looking for.
+
+**These pictures are kept in memory, not on disk, and not for ever.**
+switchboard.ai holds on to the most recent ones while it is running (about
+64 MB of them across all your sessions). In a long session the oldest are let
+go, and their thumbnails become a box that says **Not shown**. Nothing is
+lost: Claude Code's own saved conversation still has every picture. After you
+restart the app, a resumed session shows the pictures from the recent part of
+the conversation that is replayed.
+
+Opening a picture at full size is the one time a copy is written: a temporary
+file in switchboard.ai's own data folder, which your picture viewer reads.
+That folder is emptied every time the app starts and when it quits.
+
+A picture of a kind that cannot be drawn, one bigger than about 6 MB, or one
+of more than 24 million pixels is also a **Not shown** box. GIF and WebP
+pictures are shown as they are when they are under 1 MB, and as that box when
+they are larger. Hover the box for the reason in full.
 
 ### Opening a link a session gives you
 
@@ -623,9 +657,10 @@ Enter.
 later, that line is what tells you Claude's reply was about a screenshot you can
 no longer see. A picture sent with **nothing typed** gets an entry of its own,
 rather than the reply appearing out of nowhere. The count comes from the message
-that actually went to Claude, so it is never a guess — but it is only a count:
-file names are not shown, and switchboard.ai keeps no copy of the files to show
-you (see below).
+that actually went to Claude, so it is never a guess. File names are not shown.
+A picture you attached is also shown as a small thumbnail under that line (see
+[Pictures a tool returned, and pictures you attached](#pictures-a-tool-returned-and-pictures-you-attached));
+other files are only counted.
 
 #### What happens to each kind of file
 
@@ -643,7 +678,9 @@ The full list of file types is the same one the official Claude Code extension
 for VS Code uses, so anything that works there works here.
 
 Nothing is uploaded anywhere and no copy is left on disk — the file's contents
-travel with your prompt and nowhere else. That is a deliberate choice and it has
+travel with your prompt and nowhere else. (The one exception is a picture you
+choose to open at full size from the conversation afterwards: that writes a
+temporary copy, removed when the app next starts or quits.) That is a deliberate choice and it has
 one visible consequence: **attached files do not survive quitting the app.** An
 unsent prompt's words are saved (they are small, and retyping them is the
 expensive part); a screenshot's pixels are not, because saving them would mean

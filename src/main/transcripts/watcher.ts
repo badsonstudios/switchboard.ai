@@ -802,6 +802,7 @@ export class TranscriptWatcher {
       // never leave a previous watch of this id running under a stale root
       this.sessions.delete(sessionId);
       if (prev) {
+        prev.feed.dispose();
         this.discovery.markDirty(prev.projectsRoot);
         // ...but only if it still holds one. A quiesced session gave its
         // reference back when it froze (#200), and a second release would
@@ -827,6 +828,8 @@ export class TranscriptWatcher {
     // A quiesced predecessor already gave its reference back (#200) — see the
     // refused-root branch above for why releasing it twice is not harmless.
     if (prev && !prev.quiesced) this.discovery.release(prev.projectsRoot);
+    // the watch being replaced had a Feed of its own: its pictures go with it (#1240)
+    prev?.feed.dispose();
     this.sessions.set(sessionId, {
       sessionId,
       cwd: session.cwd,
@@ -1297,6 +1300,8 @@ export class TranscriptWatcher {
     const gone = this.sessions.get(sessionId);
     this.sessions.delete(sessionId);
     if (gone) {
+      // the pictures main was keeping for its conversation go with it (#1240)
+      gone.feed.dispose();
       // Removing a session changes three things a sweep concludes for its
       // SIBLINGS, and no filesystem event describes any of them: its bound file
       // becomes unowned (so `claim()`'s "already owned" check and `isEvidence`
@@ -2183,10 +2188,10 @@ export class TranscriptWatcher {
     const ctx = refs === undefined ? {} : { isMintedRef: refs.guardFor(w.sessionId) };
     for (const intent of deriveIntents(e, DISPLAY_CAPS, ctx)) {
       if (intent.t === 'tool-result') {
-        w.feed.attachResult(intent.toolUseId, intent.out, intent.failed === true);
+        w.feed.attachResult(intent.toolUseId, intent.out, intent.failed === true, intent.pictures);
         continue;
       }
-      const block = w.feed.push(intent.block, origin);
+      const block = w.feed.push(intent.block, origin, intent.pictures);
       if (intent.toolUseId) w.feed.remember(intent.toolUseId, block);
     }
   }

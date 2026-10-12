@@ -29,6 +29,8 @@ import {
   type ContextSection,
 } from '../../shared/injected-context';
 import { classifyInjected, describeInjectedTurn } from './injected';
+import { MAX_FEED_PICTURES_PER_BLOCK } from '../../shared/feed-picture';
+import { picturesIn, type PictureData } from './picture-data';
 
 /**
  * What rode along with a prompt (#491, P2-E10-09/10).
@@ -90,7 +92,19 @@ export interface FeedBlock {
      * payload that is not the shape the CLI documents.
      */
     questions?: SettledQuestion[];
+    /**
+     * The pictures the result carried (#1240): one HANDLE each, in order. The
+     * bytes stay in main (`pictures.ts`); the page asks for a thumbnail by
+     * handle. Absent, never `[]`, for the result that carried none.
+     */
+    pictures?: string[];
   };
+  /**
+   * user: the pictures attached to this prompt (#1240), one handle each. Rides
+   * beside `attachments`, which stays the count: a document is counted and has
+   * no handle, and so is a picture past the per-message limit.
+   */
+  pictures?: string[];
   /** TodoWrite checklist (E10-06) */
   todos?: Array<{ content: string; status: string }>;
   /**
@@ -254,6 +268,13 @@ export interface DerivationCaps {
   edit: number;
   /** how many TodoWrite items are kept */
   todos: number;
+  /**
+   * How many of one message's pictures are handed on (#1240). ABSENT MEANS
+   * NONE, which is every pass but the Feed's: a find does not search pixels
+   * and a context package does not carry them, and neither should be holding
+   * megabytes of base64 it will never read.
+   */
+  pictures?: number;
 }
 
 /** What the Feed renders — the caps this module has always applied. */
@@ -263,6 +284,7 @@ export const DISPLAY_CAPS: DerivationCaps = {
   summary: 120,
   edit: 1500,
   todos: 30,
+  pictures: MAX_FEED_PICTURES_PER_BLOCK,
 };
 
 /** Everything, uncapped — what a find must see (P2-E17-01, §5.31). */
@@ -424,6 +446,13 @@ export interface EmitIntent {
    * a duplicate of it.
    */
   index?: number;
+  /**
+   * `user` blocks: the pictures attached to the prompt (#1240), as the message
+   * carried them. ON THE INTENT AND NOT ON THE BLOCK, because a block is what
+   * crosses to the page and these are the bytes: whoever applies the intent
+   * keeps them and puts handles on the block (`FeedBuffer.push`).
+   */
+  pictures?: PictureData[];
 }
 
 /** Output for a tool block emitted earlier — attaches to it, never a new block. */
@@ -437,6 +466,8 @@ export interface ToolResultIntent {
    * `false`, for a result that is not one.
    */
   failed?: true;
+  /** the pictures the result carried (#1240); see `EmitIntent.pictures` */
+  pictures?: PictureData[];
 }
 
 export type BlockIntent = EmitIntent | ToolResultIntent;
@@ -713,6 +744,11 @@ function userIntents(
     content?: unknown;
   }>;
   const attachments = countAttachments(items);
+  // The pictures themselves (#1240), for the one block that wears the count.
+  // TOP-LEVEL items only, as the count is: a picture nested in a `tool_result`
+  // is the tool's, and is collected with that result below.
+  const attached = picturesIn(items, caps.pictures ?? 0);
+  const shown = attached.length > 0 ? { pictures: attached } : {};
   // The counts belong to the MESSAGE, so exactly ONE block wears them — the
   // first prose block, which is the prompt the attachments were sent with.
   // (`userMessage` puts attachments first and the typed text last, so in
@@ -737,14 +773,18 @@ function userIntents(
         continue;
       }
       const mark = attachments !== undefined && !marked ? { attachments } : {};
+      const pictures = attachments !== undefined && !marked ? shown : {};
       marked = true;
       out.push({
         t: 'block',
         block: { kind: 'user', ...userText(c.text, caps, ctx), ts, ...mark },
         index,
+        ...pictures,
       });
     } else if (c?.type === 'tool_result' && typeof c.tool_use_id === 'string') {
+      const returned = picturesIn(c.content, caps.pictures ?? 0);
       out.push({
+        ...(returned.length > 0 ? { pictures: returned } : {}),
         t: 'tool-result',
         toolUseId: c.tool_use_id,
         out: toolResultText(c.content).slice(0, caps.detail),
@@ -778,7 +818,7 @@ function userIntents(
   // disagrees rather than resolving it, so hits stay snippet-only instead of
   // jumping somewhere wrong (`search.test.ts` pins the in-step case).
   if (attachments !== undefined && !marked) {
-    out.push({ t: 'block', block: { kind: 'user', ts, attachments } });
+    out.push({ t: 'block', block: { kind: 'user', ts, attachments }, ...shown });
   }
   return out;
 }

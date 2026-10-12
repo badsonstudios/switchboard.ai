@@ -31,6 +31,7 @@ import {
   docImagePath,
   isPageFile,
 } from '../../shared/doc-image';
+import { isFeedPictureUrl } from '../../shared/feed-picture';
 import type { FileReadRefusal } from '../../shared/ipc/fs';
 import path from 'path';
 import { isWithinRoot } from './read-scope';
@@ -55,6 +56,13 @@ export interface DocImageDeps {
    * be set up.
    */
   page?: (realPath: string) => Promise<Buffer | null>;
+  /**
+   * Answer for a picture from the CONVERSATION (#1240): the scheme's `feed`
+   * host, which carries a handle and never a path. Absent, every such URL is
+   * refused. The read scope has no say in it and is not asked: what a handle
+   * names is a picture main read out of a message, not a file.
+   */
+  feed?: (url: unknown) => DocImageAnswer;
 }
 
 /** Thrown-shaped errors from `fs` carry a string `code`. */
@@ -260,10 +268,15 @@ export function registerDocImageProtocol(protocol: ProtocolLike, deps: DocImageD
 
   protocol.handle(DOC_IMAGE_SCHEME, async (request) => {
     let answer: DocImageAnswer;
-    const queued = !isPageFile(docImagePath(request.url) ?? '');
+    // DECIDED BY THE HOST, before anything reads the URL as a path (#1240): a
+    // conversation's picture is named by handle, and must never fall through
+    // to the code that resolves paths.
+    const feed = isFeedPictureUrl(request.url);
+    const queued = !feed && !isPageFile(docImagePath(request.url) ?? '');
     if (queued) await turn();
     try {
-      answer = await answerDocImage(request.url, deps);
+      if (feed) answer = deps.feed ? deps.feed(request.url) : { ok: false, reason: 'not-found' };
+      else answer = await answerDocImage(request.url, deps);
     } catch (err) {
       deps.log.warn(`${DOC_IMAGE_SCHEME} failed`, { error: errorText(err) });
       answer = { ok: false, reason: 'unreadable' };

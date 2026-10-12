@@ -280,7 +280,7 @@ export class StreamFeed {
         // this replay — under the newest message. See `absorbSidechain`.
         for (const intent of deriveIntents(e, DISPLAY_CAPS, this.ctx(sessionId))) {
           if (intent.t === 'tool-result') {
-            s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true);
+            s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true, intent.pictures);
             continue;
           }
           // A MAIN-transcript line gets no `agentId`, and not because it was
@@ -292,7 +292,7 @@ export class StreamFeed {
           // (#1140): `history.ts` reads those files and is the only one that
           // knows which entry came out of which.
           const origin = opts.origins?.get(e) ?? { sidechain: e.isSidechain === true };
-          const block = s.buffer.push(intent.block, origin);
+          const block = s.buffer.push(intent.block, origin, intent.pictures);
           if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
           n++;
         }
@@ -368,10 +368,10 @@ export class StreamFeed {
     }
     for (const intent of deriveIntents(entry, DISPLAY_CAPS, this.ctx(sessionId))) {
       if (intent.t === 'tool-result') {
-        s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true);
+        s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true, intent.pictures);
         continue;
       }
-      const block = s.buffer.push(intent.block, origin);
+      const block = s.buffer.push(intent.block, origin, intent.pictures);
       if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
     }
     return true;
@@ -667,7 +667,7 @@ export class StreamFeed {
     const unstreamed = isAssistant && wasNeverStreamed(msg);
     for (const intent of deriveIntents(entry, DISPLAY_CAPS, this.ctx(sessionId))) {
       if (intent.t === 'tool-result') {
-        s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true);
+        s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true, intent.pictures);
         continue;
       }
       // Only an assistant message can complete streamed deltas; a replayed
@@ -689,7 +689,7 @@ export class StreamFeed {
           })
         : // `sidechain: false` — `onMessage` returns early on
           // `parent_tool_use_id`, so nothing that reaches here is one (E18-13)
-          s.buffer.push({ ...intent.block, streaming: false }, { sidechain: false });
+          s.buffer.push({ ...intent.block, streaming: false }, { sidechain: false }, intent.pictures);
       if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
     }
     // Tokens are done for whatever this message named; anything still open is
@@ -922,6 +922,8 @@ export class StreamFeed {
     // pay what is owed first: the last tokens of a session that died mid-turn
     // are still text the user should see
     this.sessions.get(sessionId)?.buffer.flush();
+    // ...and let go of the pictures main was keeping for it (#1240)
+    this.sessions.get(sessionId)?.buffer.dispose();
     this.sessions.delete(sessionId);
   }
 }

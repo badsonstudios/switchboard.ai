@@ -130,6 +130,16 @@ test.describe('pasting an image into the composer (P2-E10-09)', () => {
     //    over the whole window would fail the day a second Feed is mounted
     //    (a pop-out) for a reason with nothing to do with #491.
     await expect(w.locator('[data-feed-attachments]').first()).toHaveText('1 image attached');
+
+    // 6. ...and SHOWS it (#1240). The composer still holds nothing; what is
+    //    drawn is the picture main kept when it read the message the CLI
+    //    echoed back, asked for by handle and never as data.
+    const thumb = w.locator('[data-feed-block="user"] button[data-feed-picture] img').first();
+    await expect(thumb).toHaveAttribute('alt', 'Attached picture');
+    expect(await thumb.getAttribute('src')).toMatch(/^sb-doc-image:\/\/feed\/\?id=[0-9a-f-]{36}$/);
+    await expect
+      .poll(() => thumb.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth), { timeout: 30_000 })
+      .toBe(1);
   });
 
   test('a clipboard with text AND an image keeps both', async () => {

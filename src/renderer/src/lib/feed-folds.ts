@@ -107,6 +107,9 @@ export function isExploration(b: FeedBlockDto): boolean {
  */
 export function foldKind(b: FeedBlockDto): FoldKind | null {
   if (b.kind !== 'tool') return null;
+  // A result that carried a PICTURE is an event too (#1240): the thumbnail is
+  // on the tool's own box, and "Explored the code" would put it out of sight.
+  if ((b.tool?.pictures?.length ?? 0) > 0) return null;
   if (b.tool?.category === 'read') return 'explore';
   if (b.tool?.category === 'shell' && b.tool.failed !== true) return 'shell';
   return null;

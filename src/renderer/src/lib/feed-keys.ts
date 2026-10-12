@@ -63,9 +63,10 @@ export const FEED_COPY_ATTR = 'data-feed-copy';
 // so is the "Open in browser" on a chip. The same rule: they join the list and
 // take no Tab stop. Spelled out here rather than imported from `feed-images`,
 // which would make the key rules depend on the picture pass.
+// And since #1240 so is a thumbnail on a tool's box or on a prompt.
 export const FEED_STOP_SELECTOR =
   `[${FEED_EXPANDER_ATTR}], [${FEED_COPY_ATTR}], ` +
-  'button[data-feed-open-path], button[data-doc-external]';
+  'button[data-feed-open-path], button[data-doc-external], button[data-feed-picture]';
 
 /** What a keystroke inside the conversation region means. */
 export type FeedKeyAction =
