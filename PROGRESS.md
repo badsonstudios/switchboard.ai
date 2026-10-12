@@ -22,7 +22,9 @@
 > 3. **#1026 — two stream flags we do not read.
 >    DONE 2026-10-12, PR #1262 (`07301776`), merged, NOT released.**
 >    The ticket is closed. Green on the first CI run. Probed first: neither field the ticket names reaches our stream; what the flag marks is a compaction summary, which was being drawn as a prompt. Filed #1259 for a divider where a compaction happened.
-> 4. **#499 — composer hardening. IN PROGRESS, started 2026-10-12, branch `feature/499-composer-hardening`.**
+> 4. **#499 — composer hardening.
+>    DONE 2026-10-12, PR #1263 (`f52dd376`), merged, NOT released.**
+>    The ticket is closed. Green on the first CI run. The reference's 50,000 was read again and is no longer a truncation, so the limit is a refusal at a million characters, said under the box; names are cleaned where they come in.
 > 5. **#1028 — ReadScope: the existence oracle and the ancestor walk. IN PROGRESS, started 2026-10-12, branch `feature/1028-read-scope`.**
 > 6. **#702 — grid-drag group membership.** Not started. Reproduce first.
 >
