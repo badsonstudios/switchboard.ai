@@ -711,6 +711,12 @@ are not, and the composer tells you which ones it lost:
 - **Dragging files anywhere else in the window is unchanged.** Dropping a
   *folder* on the app still opens it as a new session; only a drop that lands
   on the prompt box itself becomes an attachment.
+- **The name on the chip is the name Claude is told.** A file's name can carry
+  invisible characters that make it read differently from how it is spelled
+  (a file that looks like `invoiceexe.pdf` and is really a `.exe`). Those
+  characters are taken out when you attach the file, so the chip shows the
+  name as it is really spelled, and that is the name sent with it. The file
+  itself is not touched.
 
 #### When it can't
 
@@ -724,6 +730,7 @@ It tells you, under the box, rather than failing quietly:
 | Dropped a **folder** on the prompt box | "Folders cannot be attached to a prompt." Drop it outside the prompt box to open it as a session, or drop the files inside it |
 | Attached an empty file | It says there is nothing to send |
 | Quit with files attached | "Not restored: …", naming them. Your typed words are still there; attach the files again |
+| Typed or pasted more than a million characters | "That prompt is too long to send", with the two numbers. Nothing is sent, cut or cleared. Save the long part as a text file and attach it: Claude reads an attached file whole |
 
 If a prompt with an attachment can't be sent — the session stopped, say —
 **nothing is cleared**. Your words and your files stay right where they are, and

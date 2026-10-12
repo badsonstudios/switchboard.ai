@@ -25,6 +25,7 @@ import {
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_PAYLOAD_BYTES,
   MAX_ENCODED_FILE_BYTES,
+  cleanAttachmentTitle,
   classifyAttachment,
   utf8Bytes,
   type AttachmentKind,
@@ -37,6 +38,7 @@ export {
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_PAYLOAD_BYTES,
   MAX_ENCODED_FILE_BYTES,
+  cleanAttachmentTitle,
   PDF_MEDIA_TYPE,
   TEXT_FILE_EXTENSIONS,
   classifyAttachment,
@@ -162,7 +164,7 @@ export function filesFromDrop(dt: Pick<DataTransfer, 'files' | 'items'>): Droppe
       entry = null;
     }
     if (entry?.isDirectory) {
-      directories.push(entry.name);
+      directories.push(cleanAttachmentTitle(entry.name));
       continue;
     }
     const file = item.getAsFile();
@@ -341,7 +343,7 @@ export async function readAttachments(
       }
       attachments.push({
         id: `att-${++counter}`,
-        name: file.name,
+        name: cleanAttachmentTitle(file.name),
         kind: 'text',
         mediaType: mediaType || 'text/plain',
         bytes: file.size,
@@ -366,7 +368,7 @@ export async function readAttachments(
     if (kind === 'pdf') {
       attachments.push({
         id: `att-${++counter}`,
-        name: file.name,
+        name: cleanAttachmentTitle(file.name),
         kind: 'pdf',
         mediaType: 'application/pdf',
         bytes: file.size,
@@ -382,7 +384,7 @@ export async function readAttachments(
     const anonymous = origin === 'paste' && (!file.name || file.name === 'image.png');
     attachments.push({
       id: `att-${++counter}`,
-      name: anonymous ? pastedImageName(mediaType as ImageMediaType, now()) : file.name,
+      name: anonymous ? pastedImageName(mediaType as ImageMediaType, now()) : cleanAttachmentTitle(file.name),
       kind: 'image',
       mediaType: mediaType as ImageMediaType,
       bytes: file.size,

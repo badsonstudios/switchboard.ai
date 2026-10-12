@@ -99,6 +99,7 @@ import {
   readAttachments,
   toPromptAttachments,
 } from '../lib/composer-attachments';
+import { MAX_PROMPT_CHARS, isPromptTooLong } from '../../../shared/prompt-attachments';
 import {
   COMPOSER_FONT_SIZE,
   COMPOSER_LINE_RATIO,
@@ -3795,6 +3796,18 @@ function Composer({
 
     /** Send the draft's final form. `notice` is what stays under the box once it went. */
     function dispatch(prompt: string, notice: string | null): void {
+      // TOO LONG TO SEND (#499), measured on what would actually go: the draft
+      // plus anything a mention or a forwarded message added to it. Said here,
+      // with the numbers and what to do instead, because main refuses the same
+      // prompt and its refusal reaches the composer only as "not sent". Nothing
+      // is cleared and nothing is cut.
+      if (isPromptTooLong(prompt)) {
+        setAttachNotice(
+          t('feedView.promptTooLong', { length: prompt.length, max: MAX_PROMPT_CHARS })
+        );
+        box.current?.focus();
+        return;
+      }
       if (attachments.length === 0) {
         // ⚠️ THE DRAFT IS CLEARED ONLY ONCE THE PROMPT HAS GONE (#952).
         //

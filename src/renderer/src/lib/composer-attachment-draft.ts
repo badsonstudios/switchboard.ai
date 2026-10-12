@@ -76,6 +76,7 @@
 // names the files and states the rule instead of guessing at the reason.
 import { uiAll, uiDelete, uiGet, uiSetSoon } from './ui-state';
 import { MAX_ATTACHMENTS, type Attachment } from './composer-attachments';
+import { cleanAttachmentTitle } from '../../../shared/prompt-attachments';
 
 const PREFIX = 'composerDraftAtt.';
 
@@ -210,7 +211,10 @@ export function lostAttachmentNames(cardId: string | undefined): string[] {
   return raw
     .filter((n): n is string => typeof n === 'string' && n.length > 0)
     .slice(0, MAX_ATTACHMENTS)
-    .map((n) => n.slice(0, MAX_NAME_CHARS));
+    // Made inert AGAIN on the way out (#499). Names are cleaned when a file is
+    // attached, but this list was written to disk, possibly by a version that
+    // did not, and it is about to be printed in the middle of a sentence.
+    .map((n) => cleanAttachmentTitle(n.slice(0, MAX_NAME_CHARS)));
 }
 
 /**

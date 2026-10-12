@@ -13,6 +13,7 @@
 // files and PDFs, which are a DIFFERENT block type (`document`, not `image`),
 // and a file called `prompt-images` holding the rule for a `.md` file is how
 // the next reader learns the wrong thing first.
+import { hasUnsafeControl, stripUnsafeControls } from './sibling-message';
 
 /**
  * The three things a file can become, plus the refusal. The reference's own
@@ -222,6 +223,42 @@ export const MAX_ENCODED_FILE_BYTES = Math.floor((MAX_ATTACHMENT_PAYLOAD_BYTES /
 export const MAX_ATTACHMENTS = 8;
 
 /**
+ * The longest prompt TEXT main will send, in characters (#499).
+ *
+ * WHY THERE IS ONE. The composer sent whatever the box held, so the one path
+ * from a renderer to a session's stdin had no ceiling at all: attachments got
+ * theirs in #475, the words never did.
+ *
+ * WHY IT IS NOT THE REFERENCE'S 50,000. #499 was filed against an extension
+ * that cut a pasted prompt at 50,000 characters. Read again on 2026-10-12
+ * (extension 2.1.289): the 50,000 is still in its composer, and it is no
+ * longer a cut. It is the length past which the extension stops SCANNING a
+ * paste for invisible characters (`YM0(text, 50000, …)` answers `undefined`
+ * for anything longer, and the text goes in whole). So the reference does not
+ * truncate, and neither do we: shortening somebody's prompt behind their back
+ * is the "silent helpful transformation" this file's header already refuses
+ * for attachments, and a prompt cut at an arbitrary character is a different
+ * prompt.
+ *
+ * WHAT IT IS INSTEAD: a refusal, out loud, far above anything typed. A
+ * million characters is about a quarter of a million tokens, more than a
+ * standard context window holds, so a prompt past it could not have been
+ * answered anyway; and it is not the way to send that much. A text FILE may
+ * be up to 5 MB and reaches Claude as a document it can read, which is what
+ * the composer's message says to do.
+ *
+ * In CHARACTERS, not bytes: it is compared with `string.length` on both
+ * sides, which costs nothing, and the bound it is protecting is "not
+ * unbounded", not a wire size.
+ */
+export const MAX_PROMPT_CHARS = 1_000_000;
+
+/** Is this prompt text too long to send? The composer and main ask the same question. */
+export function isPromptTooLong(text: string): boolean {
+  return text.length > MAX_PROMPT_CHARS;
+}
+
+/**
  * Something on its way into a turn.
  *
  * A DISCRIMINATED UNION rather than three arrays, because ORDER ACROSS KINDS is
@@ -277,8 +314,43 @@ function isCleanTitle(value: unknown): value is string {
     // control characters have no business in a label and are how a payload
     // smuggles a newline into something that gets rendered
     // eslint-disable-next-line no-control-regex
-    !/[\u0000-\u001f\u007f]/.test(value)
+    !/[\u0000-\u001f\u007f]/.test(value) &&
+    // ...and neither have the ones nobody can see (#499): see `cleanAttachmentTitle`.
+    // The composer takes them out before a title gets here, so one that still
+    // carries any did not come from the composer.
+    !hasUnsafeControl(value)
   );
+}
+
+/**
+ * A file's name, made safe to SHOW and to SEND as a title (#499).
+ *
+ * A FILE NAME IS TEXT SOMEBODY ELSE CHOSE. It arrives from a download, an
+ * archive, a repository, and Unicode lets it carry characters that reorder
+ * what is drawn around it: `invoice` + RIGHT-TO-LEFT OVERRIDE + `fdp.exe`
+ * reads as `invoiceexe.pdf`, and an unterminated override goes on to reverse
+ * whatever the app prints AFTER the name, in a chip, a sentence or a list.
+ * The model, meanwhile, reads the real characters, so the name the user
+ * reviews and the title Claude is given would differ.
+ *
+ * TAKEN OUT, not refused, and at the one place a name comes in
+ * (`composer-attachments.ts`): the list is `sibling-message.ts`'s (the bidi
+ * overrides, embeddings, isolates and marks; the zero-width and invisible
+ * characters; the tag characters that spell ASCII invisibly), plus tab and
+ * newline, which a label has no use for. Refusing would tell a user their own
+ * file "cannot be attached" over a character they cannot see. What is left is
+ * what is shown on the chip AND what is sent, so the two cannot differ.
+ *
+ * Emoji joiners and the basic variation selectors are kept, for that list's
+ * reason: a file may be called anything a person can type.
+ *
+ * A name that was NOTHING BUT such characters comes back as `fallback`.
+ */
+export function cleanAttachmentTitle(name: string, fallback = 'file'): string {
+  const clean = stripUnsafeControls(name)
+    .replace(/[\t\n]/g, ' ')
+    .trim();
+  return clean.length > 0 ? clean : fallback;
 }
 
 /**

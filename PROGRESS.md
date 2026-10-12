@@ -20,7 +20,7 @@
 >    DONE 2026-10-12, PR #1260 (`4d0c2aaa`), merged, NOT released.**
 >    The ticket is closed. Green on the first CI run. Nothing needed reserving: the reader moves 0.1 to 0.5 px. The one attempted fix moved the reader 300 to 420 px and was taken out; no behaviour changed.
 > 3. **#1026 — two stream flags we do not read. IN PROGRESS, started 2026-10-12, branch `feature/1026-transcript-only`.**
-> 4. **#499 — composer hardening.** Not started.
+> 4. **#499 — composer hardening. IN PROGRESS, started 2026-10-12, branch `feature/499-composer-hardening`.**
 > 5. **#1028 — ReadScope: the existence oracle and the ancestor walk.** Not started.
 > 6. **#702 — grid-drag group membership.** Not started. Reproduce first.
 >

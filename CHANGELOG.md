@@ -113,6 +113,15 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A file name cannot disguise itself on its chip.** A file's name can carry
+  invisible characters that reverse how part of it is drawn, so a program
+  could look like a PDF. Those characters are now taken out when you attach a
+  file: the chip shows the name as it is really spelled, and that is the name
+  Claude is given.
+- **A prompt of more than a million characters is refused, and says so.**
+  There was no limit on how much text the prompt box would send. Past a
+  million characters it now tells you, sends nothing, and leaves your text
+  alone. Attach the long part as a text file instead.
 - **A compacted conversation no longer shows a "prompt" you never typed.**
   When Claude Code compacts a conversation (when you press Compact, or on its
   own when the context fills up), it writes itself a long summary that begins
