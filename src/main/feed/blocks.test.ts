@@ -509,7 +509,7 @@ If this event is something the user would act on now, send a PushNotification.
 
   // One block in, one block out: the search engine derives every line to keep
   // its ordinals in step with the Feed's `seq`, so a kind change must not be a
-  // COUNT change. `SESSION_TRANSCRIPT_FACTS.blocks` is the same 1579 it was.
+  // COUNT change. `SESSION_TRANSCRIPT_FACTS.blocks` did not move for it (1579 then; 1578 since #1026).
   it('survives an identity-only derivation as one block', () => {
     const b = blocks(
       deriveIntents({ type: 'user', ...TN, message: { content: PAYLOAD } }, IDENTITY_ONLY_CAPS)
@@ -732,5 +732,73 @@ describe('pictures a message carried (#1240)', () => {
       // ...and the count, which every pass must agree on, is still there
       expect(out[0]).toMatchObject({ block: { attachments: { images: 1, documents: 0 } } });
     }
+  });
+});
+
+describe('what the CLI says is not for the live view (#1026)', () => {
+  const SUMMARY = 'This session is being continued from a previous conversation that ran out of context.';
+  const user = (flags: Record<string, unknown>, content: unknown = SUMMARY) => ({
+    type: 'user',
+    message: { role: 'user', content },
+    ...flags,
+  });
+
+  it('drops a compaction summary as the TRANSCRIPT marks it (16 of 16 real lines carry both flags)', () => {
+    expect(deriveIntents(user({ isCompactSummary: true, isVisibleInTranscriptOnly: true }))).toEqual([]);
+  });
+
+  it('drops it as the STREAM marks it: `isSynthetic`, the one field the wire converter writes', () => {
+    // measured on CLI 2.1.288: the summary's frame, flags and all
+    expect(deriveIntents(user({ isReplay: false, isSynthetic: true }))).toEqual([]);
+    // ...and as text items, the shape a stream user message can also take
+    expect(deriveIntents(user({ isSynthetic: true }, [{ type: 'text', text: SUMMARY }]))).toEqual([]);
+  });
+
+  it('drops each transcript flag ON ITS OWN, because the wire flag is the OR of them', () => {
+    // "summarize up to here" writes `isCompactSummary` WITHOUT the other, and
+    // it is still `isSynthetic` on the wire: one answer for both transports
+    expect(deriveIntents(user({ isCompactSummary: true }))).toEqual([]);
+    expect(deriveIntents(user({ isVisibleInTranscriptOnly: true }))).toEqual([]);
+  });
+
+  it('honours the snake_case twins the CLI declares on its wire schema', () => {
+    expect(deriveIntents(user({ is_visible_in_transcript_only: true }))).toEqual([]);
+    expect(deriveIntents(user({ is_compact_summary: true }))).toEqual([]);
+  });
+
+  it('`=== true` only: these arrive from another process, and a string is not a flag', () => {
+    for (const flags of [
+      { isVisibleInTranscriptOnly: 'true' },
+      { isCompactSummary: 1 },
+      { isSynthetic: 'yes' },
+      { is_visible_in_transcript_only: {} },
+      { isSynthetic: false, isReplay: true },
+    ]) {
+      expect(blocks(deriveIntents(user(flags))), JSON.stringify(flags)).toHaveLength(1);
+    }
+  });
+
+  it('does NOT drop `is_virtual`: the CLI says that one IS rendered in the UI', () => {
+    expect(blocks(deriveIntents(user({ is_virtual: true }, 'a note for the reader')))).toHaveLength(1);
+    expect(blocks(deriveIntents(user({ isVirtual: true }, 'a note for the reader')))).toHaveLength(1);
+  });
+
+  it('reads `isSynthetic` on a `user` entry only, the only shape the converter writes it on', () => {
+    const reply = {
+      type: 'assistant',
+      isSynthetic: true,
+      message: { role: 'assistant', id: 'msg_1', content: [{ type: 'text', text: 'hello' }] },
+    };
+    expect(blocks(deriveIntents(reply))).toHaveLength(1);
+  });
+
+  it('gives every pass the same answer, so the ordinals a find counts stay in step with the Feed', () => {
+    const entry = user({ isCompactSummary: true, isVisibleInTranscriptOnly: true });
+    for (const caps of [DISPLAY_CAPS, FULL_CAPS, IDENTITY_ONLY_CAPS]) expect(deriveIntents(entry, caps)).toEqual([]);
+  });
+
+  it('an ordinary prompt and the echo of one are untouched', () => {
+    expect(blocks(deriveIntents(user({}, 'do it')))).toHaveLength(1);
+    expect(blocks(deriveIntents(user({ isReplay: true }, 'do it')))).toHaveLength(1);
   });
 });

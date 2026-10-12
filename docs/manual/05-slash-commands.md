@@ -70,7 +70,10 @@ There are two shortcuts for this, and they do exactly the same thing:
   can't be undone. Afterwards the Session tab shows a
   **"Conversation cleared — context starts fresh"** divider so you know it took.
 - **Compact conversation** — has Claude summarize the conversation so far to
-  free up context.
+  free up context. The summary is Claude Code's own working note, not
+  something you said, so it is not shown in the Session tab: the conversation
+  simply carries on. (Claude Code also compacts on its own when the context
+  fills up; the same applies.) Nothing yet marks the spot where it happened.
 
 You'll find both on the row just under the prompt box, beside the autonomy and
 model chips, as **Compact** and **Clear** — and in the **⋯** menu in the card

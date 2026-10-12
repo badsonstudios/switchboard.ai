@@ -120,6 +120,15 @@ export interface FakeToolCall {
   pictures?: Array<{ mediaType: string; data: string }>;
 }
 
+/**
+ * What `/compact` leaves in place of the conversation (#1026): the opening of
+ * the real CLI's own summary, word for word, and a marker a test can find.
+ */
+export const FAKE_COMPACT_SUMMARY =
+  'This session is being continued from a previous conversation that ran out of context. ' +
+  'The summary below covers the earlier portion of the conversation.\n\nSummary:\n' +
+  '1. Primary Request and Intent:\n   FAKE-COMPACT-SUMMARY';
+
 /** A real 2x1 PNG (one red pixel, one blue), base64: what `!shot` returns. */
 export const FAKE_SHOT_PNG =
   'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAADUlEQVR4nGP4zwAE/wEHAAH/4iOeWQAAAABJRU5ErkJggg==';
@@ -448,6 +457,9 @@ export class FakeStreamProtocol {
     // not treat as a command and neither does the intercept). A fake stricter
     // than reality hides the mirror image of the bug this file exists to catch.
     if (/^\/clear\s*$/i.test(text)) return this.onClear(cwd);
+    // `/compact` IS NOT AN ORDINARY LOCAL COMMAND EITHER (#1026): it is not
+    // echoed, and what it puts on the wire is its own measured shape.
+    if (/^\/compact\s*$/i.test(text)) return this.onCompact(cwd);
     // The attachments go back out on the echo exactly as they came in
     // (P2-E10-09/10). A fake that quietly dropped them would be a fake that
     // cannot tell a working attachment path from a broken one — which is the
@@ -1611,6 +1623,83 @@ export class FakeStreamProtocol {
     const claimed = this.host.nextSessionId?.();
     this.sessionId = claimed !== undefined && claimed !== gone ? claimed : this.derivedId('c');
     this.emitInit(cwd);
+    this.emitResult();
+  }
+
+  /**
+   * `/compact`, in the shape the real CLI emits it.
+   *
+   * MEASURED 2026-10-12 against the PATH CLI 2.1.288 with our exact argument
+   * list (`spike/probes/1026/`, findings in
+   * `spike/findings/1026-not-for-the-live-view.md`). In order:
+   *
+   *   system:status {status:"compacting"}
+   *   system:status {status:null, compact_result:"success"}
+   *   system:init                      (the SAME session id: nothing rotates)
+   *   system:compact_boundary {compact_metadata}
+   *   user  {isReplay:false, isSynthetic:true}   <- THE SUMMARY, as a string
+   *   user  {isReplay:true}  "<local-command-stdout>Compacted </local-command-stdout>"
+   *   result:success
+   *
+   * No echo of `/compact` itself, and no `assistant` frame at all.
+   *
+   * THE SUMMARY IS THE POINT. It is a `user` message nobody typed, thousands
+   * of characters long, and the only thing that says so on the wire is
+   * `isSynthetic: true`. In the transcript the same message is written with
+   * `isCompactSummary: true` and `isVisibleInTranscriptOnly: true` instead,
+   * and no `isSynthetic`: two spellings of one fact, which is exactly what a
+   * host has to get right and what this fake could not exercise before.
+   */
+  private onCompact(cwd: string): void {
+    const system = (subtype: string, more: Record<string, unknown>): void =>
+      this.emit({ type: 'system', subtype, ...more, session_id: this.sessionId });
+    system('status', { status: 'compacting' });
+    system('status', { status: null, compact_result: 'success' });
+    this.emitInit(cwd);
+    system('compact_boundary', {
+      compact_metadata: { trigger: 'manual', pre_tokens: 32516, post_tokens: 4760 },
+    });
+    const summary = { role: 'user', content: FAKE_COMPACT_SUMMARY };
+    this.emit({
+      type: 'user',
+      message: summary,
+      session_id: this.sessionId,
+      parent_tool_use_id: null,
+      timestamp: new Date().toISOString(),
+      isReplay: false,
+      isSynthetic: true,
+    });
+    this.host.appendTranscript?.({
+      type: 'system',
+      subtype: 'compact_boundary',
+      sessionId: this.sessionId,
+      cwd,
+      timestamp: new Date().toISOString(),
+      isSidechain: false,
+      isMeta: false,
+      content: 'Conversation compacted',
+    });
+    this.host.appendTranscript?.({
+      type: 'user',
+      sessionId: this.sessionId,
+      cwd,
+      timestamp: new Date().toISOString(),
+      isSidechain: false,
+      // measured: this line carries NO `isMeta` key at all
+      isVisibleInTranscriptOnly: true,
+      isCompactSummary: true,
+      message: summary,
+    });
+    this.emit({
+      type: 'user',
+      message: { role: 'user', content: '<local-command-stdout>Compacted </local-command-stdout>' },
+      session_id: this.sessionId,
+      parent_tool_use_id: null,
+      timestamp: new Date().toISOString(),
+      isReplay: true,
+    });
+    // a compacted conversation is a mostly empty window again (#715)
+    this.contextPercent = 6;
     this.emitResult();
   }
 

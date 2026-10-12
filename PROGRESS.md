@@ -17,7 +17,7 @@
 >    DONE 2026-10-12, PR #1257 (`7250cfe2`), merged, NOT released.**
 >    The ticket is closed. Green on the first CI run. One review pass, no blockers; six should-fixes done before the push.
 > 2. **#1241 — scroll position while pictures load. IN PROGRESS, started 2026-10-12, branch `feature/1241-picture-scroll`.**
-> 3. **#1026 — two stream flags we do not read.** Not started.
+> 3. **#1026 — two stream flags we do not read. IN PROGRESS, started 2026-10-12, branch `feature/1026-transcript-only`.**
 > 4. **#499 — composer hardening.** Not started.
 > 5. **#1028 — ReadScope: the existence oracle and the ancestor walk.** Not started.
 > 6. **#702 — grid-drag group membership.** Not started. Reproduce first.

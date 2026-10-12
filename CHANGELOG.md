@@ -111,6 +111,15 @@ on the floor, and say so in your PR.
   whole picture. Recent pictures are kept in memory while the app runs; in a
   very long session the oldest become a box that says "Not shown".
 
+### Fixed
+
+- **A compacted conversation no longer shows a "prompt" you never typed.**
+  When Claude Code compacts a conversation (when you press Compact, or on its
+  own when the context fills up), it writes itself a long summary that begins
+  "This session is being continued from a previous conversation". That
+  summary was being shown in the session as if you had typed it, and listed
+  among your prompts. It is no longer shown.
+
 ## 0.8.121 — 2026-10-11
 
 ### Added

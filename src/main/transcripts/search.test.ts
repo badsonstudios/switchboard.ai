@@ -1046,7 +1046,18 @@ describe('lining a Direct session up (#458)', () => {
       }
       if (e.isMeta === true) continue;
       if (e.type !== 'assistant' && e.type !== 'user') continue;
-      sf.offer('s', { type: e.type, message: e.message, parent_tool_use_id: null });
+      // THE WIRE'S OWN FLAG (#1026). The CLI's converter writes one field for
+      // a user message, `isSynthetic: isMeta || isVisibleInTranscriptOnly ||
+      // isCompactSummary`, and this file holds one line it is true for: a
+      // compaction summary. A stream that was really built from this
+      // conversation carried it, so this one does.
+      const synthetic = e.type === 'user' && (e.isVisibleInTranscriptOnly === true || e.isCompactSummary === true);
+      sf.offer('s', {
+        type: e.type,
+        message: e.message,
+        parent_tool_use_id: null,
+        ...(synthetic ? { isSynthetic: true } : {}),
+      });
     }
     return sf.blocks('s');
   }
@@ -1120,8 +1131,8 @@ describe('lining a Direct session up (#458)', () => {
       //
       // Note what this test can NOT pin, so nobody reads more into it than is
       // there: in this fixture the stream Feed's `seq` happens to equal the
-      // file's ordinal (no sidechain lines, one derivation, so both run 580 to
-      // 1,579), which means an implementation that ignored the offset
+      // file's ordinal (no sidechain lines, one derivation, so both run 579 to
+      // 1,578), which means an implementation that ignored the offset
       // arithmetic and returned `mainIndex` would satisfy every assertion here.
       // The offset itself is pinned by the small-window cases below, where the
       // view starts partway into the file and the two numbers differ.

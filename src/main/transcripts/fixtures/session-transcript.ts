@@ -63,7 +63,16 @@ export const SESSION_TRANSCRIPT = path.join(__dirname, 'session-transcript.jsonl
  */
 export const SESSION_TRANSCRIPT_FACTS = {
   lines: 4697,
-  blocks: 1579,
+  /**
+   * 1,578 SINCE #1026; it was 1,579 for every reader before that, and the
+   * older comments around the tree that say 1,579 are the measurement as it
+   * was taken. The one that went is this file's single compaction summary: a
+   * `user` line marked `isCompactSummary` and `isVisibleInTranscriptOnly`,
+   * which the derivation used to hand on as a prompt and now drops for every
+   * pass alike, so the search engine's ordinals and the Feed's `seq` moved
+   * together.
+   */
+  blocks: 1578,
   toolResults: 1235,
   contentItems: 3356,
   /**

@@ -1215,3 +1215,48 @@ describe('a local slash command (#978)', () => {
     expect(blocks.every((b) => b.streaming !== true)).toBe(true);
   });
 });
+
+describe('a compaction on the stream (#1026)', () => {
+  // The frames `/compact` put on the wire, in order, MEASURED on CLI 2.1.288
+  // with switchboard's own flags (`spike/probes/1026/`). The summary is a
+  // `user` message nobody typed; `isSynthetic` is the only thing that says so.
+  const SUMMARY = 'This session is being continued from a previous conversation that ran out of context. The summary…';
+  const system = (subtype: string, more: Record<string, unknown> = {}): Record<string, unknown> => ({
+    type: 'system',
+    subtype,
+    session_id: CONV,
+    ...more,
+  });
+  const userFrame = (content: string, flags: Record<string, unknown>): Record<string, unknown> => ({
+    type: 'user',
+    message: { role: 'user', content },
+    session_id: CONV,
+    parent_tool_use_id: null,
+    ...flags,
+  });
+  const compaction = (): Record<string, unknown>[] => [
+    system('status', { status: 'compacting' }),
+    system('status', { status: null, compact_result: 'success' }),
+    system('init'),
+    system('compact_boundary', { compact_metadata: { trigger: 'manual', pre_tokens: 32516, post_tokens: 4760 } }),
+    userFrame(SUMMARY, { isReplay: false, isSynthetic: true }),
+    userFrame('<local-command-stdout>Compacted </local-command-stdout>', { isReplay: true }),
+    { type: 'result', subtype: 'success', is_error: false, session_id: CONV },
+  ];
+
+  it('adds NOTHING to the conversation: the summary is not a prompt', () => {
+    feed.offer(SID, userFrame('first question', { isReplay: true }));
+    feed.offer(SID, assistant([{ type: 'text', text: 'first answer' }]));
+    for (const frame of compaction()) feed.offer(SID, frame);
+    feed.offer(SID, userFrame('second question', { isReplay: true }));
+    expect(kinds()).toEqual(['user', 'assistant', 'user']);
+    expect(texts()).toEqual(['first question', 'first answer', 'second question']);
+    // ...and it is not a `/clear`: nothing was wiped
+    expect(resets).toEqual([]);
+  });
+
+  it('a compaction as the very first thing a session does leaves an empty conversation', () => {
+    for (const frame of compaction()) feed.offer(SID, frame);
+    expect(feed.blocks(SID)).toEqual([]);
+  });
+});
