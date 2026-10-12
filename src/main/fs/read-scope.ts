@@ -130,6 +130,74 @@ export interface ReadScopeDeps {
    * comparing what the OS thinks the path is rather than what the caller typed.
    */
   realpath?: (p: string) => string;
+  /**
+   * Describe a path WITHOUT following it, and read where a link points. Used
+   * only on a path that did not resolve, to find the link that led nowhere
+   * (#1028). Injectable for the same reason `realpath` is.
+   */
+  lstat?: (p: string) => { isSymbolicLink(): boolean };
+  readlink?: (p: string) => string;
+}
+
+/**
+ * The longest path `resolve` will look at, in characters (#1028).
+ *
+ * `resolve` is synchronous and runs on the main process, the one every
+ * session's plumbing goes through, and a caller chooses the string. Linux
+ * cannot open a path longer than this at all; nothing real on Windows comes
+ * near it. Past it the answer is `invalid-path`, before the filesystem is
+ * asked anything.
+ */
+export const MAX_SCOPE_PATH_CHARS = 4096;
+
+/**
+ * How many links that lead nowhere `resolve` will follow, one into the next,
+ * before it gives up (#1028).
+ *
+ * SMALL ON PURPOSE. An honest broken link is one hop, occasionally two. And
+ * the number CANNOT be made to agree with the operating system's own limit,
+ * which is the trap the first version fell into: it used 40, "about what the
+ * OS allows", and Windows follows 63. A chain of 41 links to a target outside
+ * the scope then RESOLVED when the target existed (the OS followed all of it:
+ * `out-of-scope`) and ran out of hops here when it did not, which answered
+ * something else. Found by review, reproduced on Windows and Linux.
+ *
+ * So running out is not an answer of its own. It is "could not work out where
+ * this leads", which is `out-of-scope`, the same thing a link out of the
+ * scope answers when its target is there. Whatever the limit, present and
+ * absent then agree.
+ */
+export const MAX_DANGLING_HOPS = 8;
+
+/**
+ * The most times one `resolve` may ask the filesystem to resolve something
+ * while deciding about a path that did not resolve (#1028).
+ *
+ * THE BOUND ON MAIN'S TIME, and the only one that holds against a caller who
+ * can also plant links. The binary search makes one miss cheap, but each hop
+ * through a planted chain searches again over everything beneath it: measured
+ * in review at 576 calls and 126 ms for a 41-link chain under a 4,096-
+ * character path, which is WORSE than the 106 ms walk this change set out to
+ * remove. With this budget the worst case is this many calls and no more,
+ * whatever is planted. Running out answers `out-of-scope`, for the reason
+ * above.
+ */
+export const MAX_MISSING_LOOKUPS = 64;
+
+/**
+ * A link's text, split into names on the separators this platform reads in
+ * one: `/` everywhere, and the backslash as well on Windows. By character
+ * code rather than a pattern, for `list-dir.ts`'s reason.
+ */
+function splitLinkText(text: string): string[] {
+  const BACKSLASH = String.fromCharCode(92);
+  return (path.sep === BACKSLASH ? text.split(BACKSLASH).join('/') : text).split('/');
+}
+
+/** Does this path begin with two separators: another machine, or a device? */
+function isNetworkOrDevice(p: string): boolean {
+  const isSep = (c: string | undefined): boolean => c === '/' || c === String.fromCharCode(92);
+  return isSep(p[0]) && isSep(p[1]);
 }
 
 /** Thrown-shaped errors from `fs` carry a string `code`. */
@@ -169,9 +237,13 @@ export class ReadScope {
   /** folders the APP ships and granted itself — see `addBundled` */
   private readonly bundled = new Set<string>();
   private readonly realpath: (p: string) => string;
+  private readonly lstat: (p: string) => { isSymbolicLink(): boolean };
+  private readonly readlink: (p: string) => string;
 
   constructor(private readonly deps: ReadScopeDeps) {
     this.realpath = deps.realpath ?? ((p: string) => fs.realpathSync.native(p));
+    this.lstat = deps.lstat ?? ((p: string) => fs.lstatSync(p));
+    this.readlink = deps.readlink ?? ((p: string) => fs.readlinkSync(p));
   }
 
   /**
@@ -274,21 +346,192 @@ export class ReadScope {
   }
 
   /**
-   * The nearest ancestor of `p` that actually resolves, or undefined.
+   * The longest leading part of `p` that resolves, and what comes after it.
    *
-   * Used ONLY to decide whether a caller is allowed to be told that something
-   * is missing — see `resolve`. Walks up, so it terminates at the filesystem
-   * root in the worst case, and the loop is bounded by the depth of the path.
+   * `real` is that part as the OS sees it; `segment` is the next component of
+   * `p`, the one resolution stopped at; `rest` is everything after that.
+   * `segment` is undefined when all of `p` resolves. Undefined altogether when
+   * not even the filesystem root does (an unplugged drive).
+   *
+   * A BINARY SEARCH, not a walk (#1028). On a POSIX filesystem, whether a
+   * leading part resolves can only go from yes to no as it gets longer: to
+   * resolve `a/b/c` the kernel has to get through `a` and `a/b` first. So the
+   * longest one that resolves is found in about log2(depth) attempts. The walk
+   * this replaces went up one segment at a time, each a blocking call on the
+   * main process: measured at ~106 ms for a 2,000-segment path, which a
+   * renderer can ask for a thousand times without waiting. The same path is
+   * now about a dozen calls.
+   *
+   * (Windows can open `a\b\c` while refusing `a\b`, so the search may settle
+   * on a shorter part than the longest there. That costs accuracy about WHICH
+   * refusal a caller gets and never the refusal itself: whatever it settles on
+   * is still checked against the scope.)
+   *
+   * `budget.left` is spent one per attempt and shared across a whole
+   * `resolve`; when it is gone this answers undefined. See
+   * `MAX_MISSING_LOOKUPS`.
    */
-  private nearestRealAncestor(p: string): string | undefined {
-    let dir = path.dirname(p);
-    for (;;) {
-      const real = this.tryRealpath(dir);
-      if (real) return real;
-      const parent = path.dirname(dir);
-      if (parent === dir) return undefined;
-      dir = parent;
+  private deepestReal(
+    p: string,
+    budget: { left: number }
+  ): { real: string; segment: string | undefined; rest: string[] } | undefined {
+    const root = path.parse(p).root;
+    const segs = p
+      .slice(root.length)
+      .split(path.sep)
+      .filter((seg) => seg.length > 0);
+    const leading = (n: number): string => (n === 0 ? root : root + segs.slice(0, n).join(path.sep));
+    const attemptAt = (n: number): string | undefined => {
+      budget.left -= 1;
+      return this.tryRealpath(leading(n));
+    };
+    let real = attemptAt(0);
+    if (real === undefined) return undefined;
+    let best = 0;
+    let lo = 1;
+    let hi = segs.length;
+    while (lo <= hi) {
+      if (budget.left <= 0) return undefined;
+      const mid = (lo + hi) >> 1;
+      const attempt = attemptAt(mid);
+      if (attempt === undefined) {
+        hi = mid - 1;
+      } else {
+        real = attempt;
+        best = mid;
+        lo = mid + 1;
+      }
     }
+    return { real, segment: segs[best], rest: segs.slice(best + 1) };
+  }
+
+  /**
+   * Where a link that leads nowhere POINTS, as a path to carry on from: the
+   * link's own text applied to the real folder it sits in, then whatever was
+   * asked for beneath it. Undefined when that cannot be worked out safely.
+   *
+   * ⚠️ A `..` AFTER A NAME IS NOT FOLLOWED, AND THAT IS THE SAFETY OF THIS
+   * FUNCTION. `sub/other/../x` means "x beside wherever `other` REALLY is" to
+   * a POSIX kernel, and `other` may itself be a link out of the scope; worked
+   * out on the string it means `sub/x`. A link written that way would read as
+   * staying inside while leading out, which is the whole class of mistake this
+   * file exists to refuse. LEADING `..`s are different: they are applied to
+   * `realDir`, which has no links left in it, so climbing it as a string and
+   * climbing it for real are the same thing. That covers the ordinary relative
+   * link (`../README.md`); anything stranger gets the cautious answer.
+   */
+  private leadsTo(realDir: string, link: string, rest: readonly string[]): string | undefined {
+    let base: string;
+    let names: string[];
+    if (path.isAbsolute(link)) {
+      // NOT ANOTHER MACHINE, AND NOT A DEVICE. Working out where
+      // `\\host\share\x` leads means asking that host, a login handshake to a
+      // machine a planted link chose; the first attempt to resolve the path
+      // already made one, and this must not make more.
+      if (isNetworkOrDevice(link)) return undefined;
+      base = path.parse(link).root;
+      names = splitLinkText(link.slice(base.length));
+    } else {
+      base = realDir;
+      names = splitLinkText(link).filter((n) => n.length > 0);
+      while (names[0] === '..' || names[0] === '.') {
+        if (names[0] === '..') base = path.dirname(base);
+        names = names.slice(1);
+      }
+    }
+    names = names.filter((n) => n.length > 0 && n !== '.');
+    if (names.includes('..')) return undefined;
+    const led = path.join(base, ...names, ...rest);
+    // a link's text plus what was asked beneath it can be longer than either
+    return led.length > MAX_SCOPE_PATH_CHARS ? undefined : led;
+  }
+
+  /**
+   * A path did not resolve. What may the caller be told?
+   *
+   * THE RULE (#1028): THE ANSWER IS DECIDED BY WHERE THE PATH LEADS, NOT BY
+   * WHETHER ANYTHING IS THERE. A caller may be told "that is not there" about
+   * a place inside the scope, and about nowhere else.
+   *
+   * The first version of this asked one question: is the nearest thing that
+   * DOES resolve in scope? That closed the oracle for any path spelled outside
+   * the scope, and left it open for one spelled inside. Plant `root/probe`, a
+   * link to anywhere on the machine. If the target exists the path resolves,
+   * out of scope, and the answer is `out-of-scope`. If it does not, the
+   * nearest thing that resolves is `root`, in scope, and the answer was
+   * `not-found`. Two answers for one link, differing only in whether a path
+   * the caller may not read exists: an existence check for the whole disk,
+   * spelled from inside a folder the user did grant. (The same held for
+   * `unreadable`, and for a link in the middle of a path.)
+   *
+   * So a link that leads nowhere is FOLLOWED ON PAPER: read where it points,
+   * and ask the question again about that place. The answer is `not-found`
+   * only if the place it leads to is itself inside the scope, which is the
+   * honest broken link in somebody's project, and the viewer can still say so.
+   * A link out of the scope answers `out-of-scope` whether or not its target
+   * exists.
+   *
+   * EVERY WAY OF NOT KNOWING IS `out-of-scope`: a link whose text cannot be
+   * worked out safely, a chain longer than `MAX_DANGLING_HOPS`, a search that
+   * spent `MAX_MISSING_LOOKUPS`. Those are the answer a link out of the scope
+   * gets when its target IS there, so none of them can be told apart from it.
+   *
+   * `lstat` and `readlink` are only ever asked about the direct child of a
+   * folder that is in scope. (`realpath` is asked about places outside it, as
+   * it always was: that is how a place is found to BE outside.)
+   *
+   * ⚠️ WHAT THIS DOES NOT CLOSE, said here so nobody reads "closed" into it:
+   *
+   *  - A LINK THAT GOES OUT AND COMES BACK, on Linux and macOS. `root/via`
+   *    with the text `/outside/X/../../project/README.md` resolves, into the
+   *    scope, exactly when `X` is a folder, and the answer is `ok`; otherwise
+   *    it is a refusal. That is a path that DID resolve, so it never reaches
+   *    this function, and it tells a caller whether `X` exists and is a
+   *    folder. Closing it means walking a path that resolved and refusing a
+   *    route that left the scope on the way, which is a change to the SUCCESS
+   *    path and its own piece of work. (Windows collapses the `..` in a
+   *    link's text on the string, so both cases answer the same there.)
+   *  - TIMING. The reason is the same for present and absent; the work is
+   *    not. A link out of the scope costs two lookups when its target is
+   *    there and about a dozen when it is not, which a caller who repeats the
+   *    question can measure.
+   */
+  private whyMissing(
+    unresolved: string,
+    roots: readonly string[],
+    code: string | undefined
+  ): ScopeRefusal {
+    const inScope = (real: string): boolean => roots.some((root) => isWithinRoot(root, real));
+    const missing: ScopeRefusal =
+      // ENOENT (gone) and ENOTDIR (a segment in the middle is a file) are both
+      // "that path is not there"
+      code === 'ENOENT' || code === 'ENOTDIR' ? 'not-found' : 'unreadable';
+    const budget = { left: MAX_MISSING_LOOKUPS };
+    let at = unresolved;
+    for (let hop = 0; hop <= MAX_DANGLING_HOPS; hop += 1) {
+      const found = this.deepestReal(at, budget);
+      if (!found || !inScope(found.real)) return 'out-of-scope';
+      // Everything resolves after all (a link was repaired under us, or the OS
+      // and this walk disagree). In scope, so it may be named; and it is not
+      // "missing", because something is there.
+      if (found.segment === undefined) return 'unreadable';
+      const stopped = path.join(found.real, found.segment);
+      let link: string | undefined;
+      try {
+        if (this.lstat(stopped).isSymbolicLink()) link = this.readlink(stopped);
+      } catch (err) {
+        const why = errorCode(err);
+        if (why !== 'ENOENT' && why !== 'ENOTDIR') return 'unreadable';
+      }
+      // Nothing there, or a plain file in the way: a miss inside the scope.
+      if (link === undefined) return missing;
+      const next = this.leadsTo(found.real, link, found.rest);
+      if (next === undefined) return 'out-of-scope';
+      at = next;
+    }
+    // More links than we follow. NOT a reason of its own: see
+    // `MAX_DANGLING_HOPS` for the oracle that made of one.
+    return 'out-of-scope';
   }
 
   /**
@@ -308,6 +551,8 @@ export class ReadScope {
       // caller cannot see. There is no correct answer to give it.
       return { ok: false, reason: 'invalid-path' };
     }
+    // Before the filesystem is asked anything: see `MAX_SCOPE_PATH_CHARS`.
+    if (target.length > MAX_SCOPE_PATH_CHARS) return { ok: false, reason: 'invalid-path' };
     const resolved = path.resolve(target);
     const roots = this.roots();
 
@@ -326,36 +571,15 @@ export class ReadScope {
     // if resolving comes first, does the difference between `not-found` and
     // `out-of-scope` become an existence oracle for the whole filesystem —
     // `fs.probe` smuggled inside `fs.read`, the one conflation this capability
-    // exists to prevent? No, and the `catch` below is why: a path that does not
-    // resolve is only reported as missing when the nearest thing that DOES
-    // resolve is itself in scope. Every path outside the scope gets the same
-    // answer whether or not it is there.
+    // exists to prevent? No, and `whyMissing` is why: a path that does not
+    // resolve is only reported as missing when the place it LEADS TO is itself
+    // in scope (#1028). `whyMissing` says exactly what that covers, and the
+    // two things it does not.
     let real: string;
     try {
       real = this.realpath(resolved);
     } catch (err) {
-      // It did not resolve. WHERE it failed to resolve decides what we may say
-      // about it, and this is the whole of the oracle argument above: without
-      // this branch, `/etc/shadow` would answer `out-of-scope` and `/etc/nope`
-      // would answer `not-found`, and a caller that may read neither could map
-      // the filesystem by watching which refusal it got.
-      //
-      // So: walk up to the nearest ancestor that DOES resolve, and run the
-      // scope check on that. If the ancestor is outside the scope, the caller
-      // learns only that it asked for something out of scope — the same answer
-      // the present case gets. If it is inside, the caller was entitled to know
-      // that a file in a folder it may read is not there.
-      const anchor = this.nearestRealAncestor(resolved);
-      if (!anchor || !roots.some((root) => isWithinRoot(root, anchor))) {
-        return { ok: false, reason: 'out-of-scope' };
-      }
-      const code = errorCode(err);
-      // ENOENT (gone, or a symlink pointing at nothing) and ENOTDIR (a segment
-      // in the middle is a file) are both "that path is not there".
-      return {
-        ok: false,
-        reason: code === 'ENOENT' || code === 'ENOTDIR' ? 'not-found' : 'unreadable',
-      };
+      return { ok: false, reason: this.whyMissing(resolved, roots, errorCode(err)) };
     }
 
     // The check, on what the OS says the path really is. This is what catches
