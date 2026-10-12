@@ -3,16 +3,35 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶ 2026-10-11 — #1239, A PICTURE OF AN HTML MOCK-UP: IN PROGRESS
+> # ✅ 2026-10-11 — #1239, A PICTURE OF AN HTML MOCK-UP: LANDED, NOT RELEASED
 >
-> Started 2026-10-11 (evening), branch `feature/1239-page-snapshot`. The owner
-> asked whether a mock-up could be a live frame in the conversation, read the
-> research (on the ticket), and decided: *"I like the rule for now, so maybe
-> we just do pictures of mockups."* So: the SNAPSHOT option. A reply that
-> names a local `.html` file gets a still picture of the page, drawn through
-> the existing picture path; the picture opens the real page. Main draws it
-> in a hidden window with scripts off and no network. The plan is on the
-> ticket. **DO NOT CUT A RELEASE** unless he asks.
+> **DONE 2026-10-11, PR #1255 (`1b76c96e`), merged, NOT released.** The ticket
+> is closed. Green on the first CI run. **Nothing is in flight. Next is the
+> owner's call.** It sits in `0.8.122 — unreleased`. **DO NOT CUT A RELEASE**
+> unless he asks.
+>
+> The owner asked whether a mock-up could be a live frame in the
+> conversation, read the research (on the ticket), and decided: *"I like the
+> rule for now, so maybe we just do pictures of mockups."* So: the SNAPSHOT
+> option. A reply that names a local `.html` file (picture syntax or a plain
+> link) gets a still picture of the page under it, through the existing
+> picture scheme; the picture is a button that opens the real page, and a
+> line under it says what it is. Main draws it (`fs/page-snapshot.ts`) in a
+> hidden offscreen window in its own in-memory session: scripts off; `file:`
+> answered by us, for the page's own folder and the read scope only; every
+> other request cancelled; a content policy; the session offline behind a
+> dead proxy. Nothing is saved: twelve pictures in memory, each valid while
+> the page and every file it asked for are unchanged.
+>
+> Decisions made without asking, all in the report: scripts OFF (so a page
+> built by script, or styled by Tailwind's CDN script, draws plain); the TOP
+> of the page at 1280 x 800, not the whole page; a plain LINK counts, not
+> only picture syntax; at most TWO pages per reply; a failed draw under a
+> link just disappears. One review pass: its blocker (`preconnect` /
+> `dns-prefetch`) could not be reproduced and was closed anyway; six
+> should-fixes done. Not done: a real-symlink test on Windows (needs a
+> privilege; it runs on Linux CI), and nothing tells Claude to link the file.
+> The ticket's "No frame in the conversation" stands, now by his word.
 >
 > # ✅ RELEASED: v0.8.121, 2026-10-11 (PR #1253)
 >
