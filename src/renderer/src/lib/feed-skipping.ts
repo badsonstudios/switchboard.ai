@@ -81,6 +81,21 @@
 //     means exact for content that has not changed unseen, which is every
 //     block the user has ever looked at.
 //
+//     A PICTURE IS THE OTHER CASE (#1241), and here the error is ABOVE the
+//     reader: after a restart the replayed history's pictures load inside
+//     skipped groups, which keep the height they had before the pictures.
+//     Measured (`spike/findings/1241-scroll-position-while-pictures-load.md`):
+//     3,190px reported of a true 5,023, corrected in five steps as the reader
+//     walks up, and NOT ONE of those steps moves the reader (0 of 45 wheel
+//     notches) — the browser's scroll anchoring absorbs each one. What is
+//     wrong meanwhile is the scrollbar's thumb.
+//
+//     ⚠️ DO NOT "FIX" THAT BY RE-MEASURING THE GROUP WHEN THE PICTURE LOADS.
+//     It was built and measured for #1241: un-skipping a group above the view
+//     moved the reader 300-420px in 55 of 57 frames, and did not even correct
+//     the height (after a restart the pictures load before their groups have
+//     a stored height to drop). `e2e/feed-picture-scroll.spec.ts` is the guard.
+//
 //     GROUPS (#716) HAVE THE SAME LIMITATION ONE LEVEL UP, and one more case.
 //     A group whose child LIST changes while it is skipped is caught and
 //     re-measured (`regroup` in the hook). A block that changes size inside a
