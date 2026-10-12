@@ -77,13 +77,18 @@ const neverListed = (name: string): boolean => NEVER_LISTED.has(name.toLowerCase
  * Bounds on the SHAPE of a path, applied before anything resolves it.
  *
  * ⚠️ THIS IS A DENIAL-OF-SERVICE GUARD, NOT A CONTAINMENT ONE — containment is
- * the three checks below and does not depend on it. It is here because
- * `ReadScope.resolve` is SYNCHRONOUS: an unresolvable path sends it walking up
- * one segment at a time doing a blocking `realpathSync` per segment, and this
- * channel asks it twice per call. Measured on the owner's desktop, a
- * 2000-segment path costs ~106 ms of frozen main process, and a renderer can
- * fire a thousand un-awaited calls. That is our breakage costing the user every
- * session in the window, which fail-open forbids.
+ * the three checks below and does not depend on it. It was put here when
+ * `ReadScope.resolve` walked up an unresolvable path one segment at a time, a
+ * blocking `realpathSync` each: measured on the owner's desktop, ~106 ms of
+ * frozen main process for a 2000-segment path, on a channel that asks twice
+ * per call and that a renderer can fire a thousand times without waiting.
+ *
+ * `resolve` no longer does that (#1028: it finds the deepest folder that
+ * exists by binary search, spends at most 64 lookups on a path that does not
+ * resolve, and refuses a path over 4096 characters itself), so this is now
+ * the second of two bounds rather than the only one. It stays: it
+ * is cheap, it refuses before either resolve, and the segment count is a
+ * shape `resolve` does not check.
  *
  * Both numbers are far past anything real: the longest path on a Windows box
  * with long paths enabled is 32,767 characters, and 64 levels of nesting is
@@ -182,17 +187,13 @@ export async function listDirectory(req: unknown, deps: ListDirDeps): Promise<Di
   // CHECK 1 — is the declared root itself in the read scope? Asked first so a
   // caller that invents a root is refused before anything is read.
   //
-  // ⚠️ `ReadScope`'s existence-oracle argument is INHERITED BUT NOT PERFECT, and
-  // it is worth being exact rather than repeating the claim. Its `catch` answers
-  // `not-found` only when the nearest resolvable ancestor is itself in scope,
-  // which closes the oracle for any path *spelled* outside the scope. It does
-  // not close it for a path spelled INSIDE the scope that resolves outside it:
-  // given a symlink `<root>/probe` aimed anywhere on the machine, `out-of-scope`
-  // means the target exists and `not-found` means it does not. That predates
-  // this channel and applies equally to `fs:read`, `fs:watch` and `fs:reveal`;
-  // it requires write access inside a session folder, which the agent already
-  // has. It is written down here rather than quietly re-asserted, and it wants
-  // its own item against E16 rather than a fix on this path only.
+  // `ReadScope`'s existence-oracle argument is inherited, with its limits.
+  // Until #1028 a link `<root>/probe` aimed anywhere on the machine answered
+  // `out-of-scope` when its target existed and `not-found` when it did not,
+  // here and on every other `fs:*` channel. `resolve` now decides a path that
+  // does not resolve by where it LEADS, so both are `out-of-scope`. What is
+  // still open (a link that goes out and comes back, on POSIX; and timing) is
+  // written on `ReadScope.whyMissing`.
   const rootDecision = deps.scope.resolve(root);
   if (!rootDecision.ok) return { ok: false, reason: rootDecision.reason };
 

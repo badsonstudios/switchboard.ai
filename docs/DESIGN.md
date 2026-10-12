@@ -4738,19 +4738,35 @@ for a future reader to rediscover:
   `opendir`'d by name, because Node offers no handle-relative listing. A final
   component swapped for a junction in that window would be followed, exposing
   exactly *one* level of names — the next call re-checks and refuses.
-- **`ReadScope`'s existence oracle is not perfect for a path spelled INSIDE the
-  scope.** Its refusal split closes the oracle for anything spelled outside;
-  given a symlink `<root>/probe` aimed anywhere, `out-of-scope` still means the
-  target exists and `not-found` means it does not. This predates the Files tab
-  and applies equally to `fs:read`, `fs:watch` and `fs:reveal`. It wants its own
-  item against E16, not a fix on this path only.
+- **`ReadScope`'s existence oracle, for a path spelled INSIDE the scope:
+  narrowed 2026-10-12 (#1028), not closed.** Its refusal split closed the
+  oracle for anything spelled outside; given a symlink `<root>/probe` aimed
+  anywhere, `out-of-scope` still meant the target existed and `not-found`
+  meant it did not, on `fs:read`, `fs:watch`, `fs:reveal` and the picture
+  scheme alike. `resolve` now decides a path that does not resolve by where it
+  LEADS: a link that leads nowhere is read and the question is asked again of
+  the place it points to. Out of the scope, the answer is `out-of-scope`
+  whether or not anything is there; inside it, an honest broken link is still
+  `not-found`, so the viewer's message did not have to be traded away. Every
+  way of not knowing (a link text with a `..` after a name, more than eight
+  links in a row, a link to another machine, the lookup budget spent) is
+  `out-of-scope` too. **Still open, and recorded on `ReadScope.whyMissing`:**
+  on Linux and macOS a link whose text goes out of the scope and back
+  (`/outside/X/../../project/README.md`) resolves exactly when `X` is a
+  folder, which is a path that DID resolve and so a change to the success
+  path; and timing, since an absent target costs about a dozen lookups and a
+  present one two.
 - **A denial-of-service bound, which is deliberately not part of containment.**
-  `ReadScope.resolve` is synchronous and walks up one segment at a time on an
-  unresolvable path; measured, a 2000-segment path costs ~106 ms of frozen main
-  process, and a renderer can fire a thousand un-awaited calls. `listDir`
-  therefore refuses a path over 4096 characters or 64 segments *before* either
-  resolve. Containment does not depend on that check, and both numbers are far
-  past anything real.
+  `ReadScope.resolve` is synchronous. It used to walk up one segment at a time
+  on an unresolvable path: measured, a 2000-segment path cost ~106 ms of frozen
+  main process, and a renderer can fire a thousand un-awaited calls. Since
+  #1028 it refuses a path over 4096 characters before asking the filesystem
+  anything, finds the deepest folder that exists by binary search (about a
+  dozen lookups for that path), and spends at most 64 lookups on any one path
+  that does not resolve, however many links are planted under it. `listDir`
+  keeps its own, older refusal of a path over 4096 characters or 64 segments
+  *before* either resolve. Containment depends on none of these, and the
+  numbers are far past anything real.
 
 **Its own capability, `fs.list`.** Between `fs.probe` and `fs.read` because that
 is where its cost sits: more than probing one guessed path at a time, which
