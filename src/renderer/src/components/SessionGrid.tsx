@@ -123,7 +123,6 @@ import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
 import { CONTEXT_DND_TYPE } from '../../../shared/context-drop';
 import type { Ladder } from '../lib/presentation';
-import { pickAdoptedGroupId } from '../lib/groups';
 import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../lib/popout-windows';
 import { strandedByGroup } from '../lib/popout-rescue';
 import { uiGet, uiSet } from '../lib/ui-state';
@@ -1694,24 +1693,41 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       .finally(() => decide('allow', false, undefined, undefined, head));
   };
 
-  // membership follows the panel when the user drags it between dockview
-  // groups in the grid (E12-04)
-  React.useEffect(() => {
-    const d = props.api.onDidGroupChange(() => {
-      if (sessionStore.isTearingDown() || sessionStore.isRestoringLayout()) return;
-      // A LADDER move is not a user drag (P2-E9-05). dockview fires this from
-      // the plain group setter, so our own `moveTo` is indistinguishable from a
-      // tab being dragged — and adopting from it would let a presentation
-      // change rewrite the session's persistent group: tabbing a card would
-      // move it into its stack-mate's group, and expanding it into a fresh
-      // group (no siblings) would adopt `null` and ERASE the membership the
-      // user made. Same guard as isHiding two handlers down.
-      if (cardId && sessionStore.isMoving(cardId)) return;
-      void adoptMembershipFromDockGroup(props);
-    });
-    return () => d.dispose();
-    // props.api is stable for the panel's lifetime
-  }, [props.api, cardId]);
+  // ── A DRAG IN THE GRID DOES NOT CHANGE A SESSION'S GROUP (#702) ───────────
+  //
+  // There used to be a listener here that was meant to make it: "membership
+  // follows the panel when the user drags it between dockview groups in the
+  // grid" (E12-04). On `onDidGroupChange` it looked the panel up, read its new
+  // neighbours, and wrote the first neighbour's persistent group onto the
+  // session, or `null` when the neighbours had none.
+  //
+  // IT NEVER RAN. dockview's `openPanel` sets the panel's group, which fires
+  // the event, BEFORE it registers the panel in that group; so the lookup the
+  // handler opened with (`containerApi.getPanel(id)`) answered `undefined` and
+  // it returned. Measured in the real app with a real mouse
+  // (`spike/findings/702-grid-drag-adoption.md`): on a tab dragged into a
+  // group, split off into a column, dragged onto an ungrouped tab, and popped
+  // out, the event fired, the panel was registered 0 times out of 5, and no
+  // decision was ever reached. A session's group has only ever been changed
+  // from the Sessions list, which is also the only way the manual describes.
+  //
+  // REMOVED RATHER THAN REPAIRED, and that is a decision about the product,
+  // not a shortcut:
+  //
+  //  - Repaired, it would have ERASED groups. Dropping a grouped session's
+  //    tab beside ungrouped ones adopts `null`. Arranging cards is something
+  //    people do all day; none of them has ever lost a group to it, because
+  //    this did not work.
+  //  - It is the wrong layer. Where a card SITS is presentation; which group a
+  //    session BELONGS to is the user's own data. Half a dozen guards around
+  //    this file (`isMoving`, the dock-back arming, the rail-drop flag) exist
+  //    to stop this one listener reading the app's own moves as a drag. They
+  //    still earn their keep for the popout listener below; several of their
+  //    comments describe "E12-04's adoption" as a hazard that could fire. It
+  //    could not, and now there is nothing to fire.
+  //
+  // `e2e/grid-drag-keeps-group.spec.ts` pins the behaviour that was always
+  // there: a drag in the grid moves the card and leaves its group alone.
 
   // Track popout location + implement the two dock-back semantics (E8-04):
   // the pop-out BUTTON toggling in keeps the session alive; the user closing
@@ -4668,14 +4684,10 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
       const dest = dockBackTarget(api, sessionStore.getPresentation(cardId).home);
       // `setMoving`, which replaced E8-04's separate `markDockingBack` flag.
       // Both kept the session alive across the location change — the handler
-      // bails before the suspend either way — and this one ALSO stops E12-04
-      // reading a dock-back as a user drag. That bites HERE and not on the
-      // window-close branch: this is a `moveTo`, i.e. `_doMoveGroupOrPanel`,
-      // where the adoption handler really does run. The card lands in its OWN
-      // slot, which is an EMPTY husk in the ordinary case, so adoption would
-      // see no siblings and erase the session's persistent group outright
-      // (`pickAdoptedGroupId` returns null). Docking a card back is a
-      // placement, not a regrouping.
+      // bails before the suspend either way. (It was also said to stop E12-04
+      // reading a dock-back as a user drag and erasing the session's group.
+      // That listener never ran and was removed in #702; docking a card back
+      // is a placement, and nothing regroups on a placement.)
       sessionStore.setMoving(cardId, true);
       try {
         panel.api.moveTo({ group: dest.group, ...(dest.index >= 0 ? { index: dest.index } : {}) });
@@ -4724,20 +4736,16 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
     // arm — the same swap the company branch made, for the same two reasons.
     // Both keep the session alive across the location change (the handler bails
     // before the suspend either way); this one ALSO covers the settle's own
-    // corrective move below, which goes through `_doMoveGroupOrPanel` where
-    // E12-04's adoption really can fire and would rewrite the session's
-    // persistent group from whatever the destination's tabs happen to belong to.
+    // corrective move below.
     //
-    // #656 SAID THE UNFLAGGED RETURN ALREADY ERASED THAT GROUP. Measured on
-    // unfixed main (2026-08-21): it does not, and the reason is one layer down.
-    // dockview's `openPanel` calls `updateParentGroup` — which fires
-    // `onDidGroupChange` — BEFORE `doAddPanel` registers the panel in its new
-    // group, so `adoptMembershipFromDockGroup`'s own `containerApi.getPanel(id)`
-    // answers `undefined` and it returns before it can decide anything. The
-    // group survived by accident, in code that knows nothing about popouts.
-    // Arming here makes the same outcome DELIBERATE, and it is what stops that
-    // accident becoming a bug the day the adoption handler is repaired. The
-    // guard is the e2e in `popout-dock-back.spec.ts`.
+    // #656 SAID THE UNFLAGGED RETURN ERASED THE SESSION'S GROUP. Measured on
+    // unfixed main (2026-08-21): it did not, because the listener that would
+    // have done it (E12-04's grid-drag adoption) never ran at all: dockview's
+    // `openPanel` fires `onDidGroupChange` BEFORE it registers the panel, so
+    // that listener's own panel lookup answered `undefined`. #702 measured
+    // the same on every path and REMOVED the listener, so there is no longer
+    // anything here that could rewrite a group. The e2e in
+    // `popout-dock-back.spec.ts` still pins that a returning card keeps its.
     //
     // The flag is released by the settle, or by its watchdog if the window
     // never comes back at all.
@@ -5764,29 +5772,6 @@ async function revealNow(api: DockviewApi, cardId: string, focus = true): Promis
     });
   } else if (focus) {
     panel.focus();
-  }
-}
-
-// Grid-drag membership sync (E12-04): after a user drag drops a session panel
-// into a dockview group, it adopts its new siblings' persistent group.
-async function adoptMembershipFromDockGroup(
-  props: IDockviewPanelProps<CardParams>
-): Promise<void> {
-  const cardId = props.params?.cardId;
-  if (!cardId) return;
-  const panel = props.containerApi.getPanel(props.api.id);
-  if (!panel || panel.group.api.location.type !== 'grid') return; // popouts don't regroup
-  const siblingIds = panel.group.panels
-    .map((p) => /^session-(.+)$/.exec(p.id)?.[1])
-    .filter((x): x is string => !!x);
-  const cards = answered(await window.switchboard.sessions.cards()) ?? []; // #650
-  const mine = cards.find((c) => c.cardId === cardId);
-  if (!mine) return; // brand-new card, no record yet — create() carries its groupId
-  const target = pickAdoptedGroupId(cardId, siblingIds, cards);
-  if ((mine.groupId ?? null) !== target) {
-    await window.switchboard.groups.setSessionGroup(cardId, target);
-    // the rail lives in App state — tell it to re-read memberships
-    sessionStore.notifyMembershipChanged();
   }
 }
 

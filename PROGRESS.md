@@ -26,7 +26,7 @@
 >    DONE 2026-10-12, PR #1263 (`f52dd376`), merged, NOT released.**
 >    The ticket is closed. Green on the first CI run. The reference's 50,000 was read again and is no longer a truncation, so the limit is a refusal at a million characters, said under the box; names are cleaned where they come in.
 > 5. **#1028 — ReadScope: the existence oracle and the ancestor walk. IN PROGRESS, started 2026-10-12, branch `feature/1028-read-scope`.**
-> 6. **#702 — grid-drag group membership.** Not started. Reproduce first.
+> 6. **#702 — grid-drag group membership. IN PROGRESS, started 2026-10-12, branch `feature/702-grid-drag-adoption`.**
 >
 > # ✅ 2026-10-11 — #1239, A PICTURE OF AN HTML MOCK-UP: LANDED, NOT RELEASED
 >

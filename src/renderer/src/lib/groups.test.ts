@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { computeAutoGroups, groupChangeLanded, pickAdoptedGroupId, railOrder } from './groups';
+import { computeAutoGroups, groupChangeLanded, railOrder } from './groups';
 
 describe('computeAutoGroups (E12-05 emergent repo/folder groups)', () => {
   it('two ungrouped sessions sharing a key auto-group; singletons do not', () => {
@@ -61,31 +61,6 @@ describe('railOrder (E9-01: what Ctrl+1..9 counts against)', () => {
     const r = railOrder([{ id: 'a' }], [{ id: 'g1' }]);
     expect(r.groups).toEqual([{ id: 'g1', members: [] }]);
     expect(r.flat.map((s) => s.id)).toEqual(['a']);
-  });
-});
-
-describe('pickAdoptedGroupId (E12-04 grid-drag adoption)', () => {
-  const cards = [
-    { cardId: 'a', groupId: 'g1' },
-    { cardId: 'b', groupId: undefined },
-    { cardId: 'c', groupId: 'g2' },
-  ];
-
-  it('adopts the first sibling with a membership', () => {
-    expect(pickAdoptedGroupId('x', ['b', 'a', 'c'], cards)).toBe('g1');
-  });
-
-  it('all-ungrouped destination means ungrouped', () => {
-    expect(pickAdoptedGroupId('x', ['b'], cards)).toBeNull();
-    expect(pickAdoptedGroupId('x', [], cards)).toBeNull();
-  });
-
-  it('ignores itself among the siblings', () => {
-    expect(pickAdoptedGroupId('a', ['a', 'b'], cards)).toBeNull();
-  });
-
-  it('unknown siblings (no record yet) are skipped', () => {
-    expect(pickAdoptedGroupId('x', ['ghost', 'c'], cards)).toBe('g2');
   });
 });
 
