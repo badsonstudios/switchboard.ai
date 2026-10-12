@@ -3,6 +3,17 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ 2026-10-11 — #1239, A PICTURE OF AN HTML MOCK-UP: IN PROGRESS
+>
+> Started 2026-10-11 (evening), branch `feature/1239-page-snapshot`. The owner
+> asked whether a mock-up could be a live frame in the conversation, read the
+> research (on the ticket), and decided: *"I like the rule for now, so maybe
+> we just do pictures of mockups."* So: the SNAPSHOT option. A reply that
+> names a local `.html` file gets a still picture of the page, drawn through
+> the existing picture path; the picture opens the real page. Main draws it
+> in a hidden window with scripts off and no network. The plan is on the
+> ticket. **DO NOT CUT A RELEASE** unless he asks.
+>
 > # ✅ RELEASED: v0.8.121, 2026-10-11 (PR #1253)
 >
 > The owner, after the report on the ten tickets: *"In the meantime, go

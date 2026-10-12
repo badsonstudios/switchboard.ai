@@ -146,6 +146,9 @@ function useImageLabels(): FeedImageLabels {
       openPicture: (name: string) => t('feedView.openPicture', { name }),
       openPage: t('document.openInBrowser'),
       notShown: t('feedView.pictureNotShown'),
+      openPageNamed: (name: string) => t('feedView.openPageNamed', { name }),
+      pagePicture: (name: string) => t('feedView.pagePicture', { name }),
+      pageNote: t('feedView.pageNote'),
     }),
     [t]
   );

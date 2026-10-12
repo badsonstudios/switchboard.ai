@@ -1766,6 +1766,21 @@ mark[data-feed-match-current] {
   outline-offset: 2px;
   border-radius: 4px;
 }
+/* A picture of a web page (#1239): the picture, then the line that says it
+ * is one. A block of its own, so the line sits under the picture and the two
+ * are never split across a line of the reply. */
+.feed-page-shot {
+  display: block;
+  margin: 4px 0;
+}
+.feed-page-shot .feed-image-open {
+  margin-block-end: 2px;
+}
+.feed-page-note {
+  display: block;
+  color: var(--muted);
+  font-size: 10.5px;
+}
 /* why a picture is a chip: readable grey, after the name */
 .feed-image-why {
   color: var(--muted);

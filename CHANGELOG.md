@@ -96,6 +96,15 @@ on the floor, and say so in your PR.
 
 ## 0.8.122 — unreleased
 
+### Added
+
+- **A picture of an HTML mock-up, right in the session.** When Claude writes a
+  mock-up as an `.html` file and its reply links to it, a picture of the page
+  is drawn under the reply. Click the picture to open the real page in your
+  browser. It is a picture of the top of the page: scripts do not run, and
+  nothing is loaded from the web, so a page that depends on either looks
+  plainer than it does in a browser. The line under the picture says so.
+
 ## 0.8.121 — 2026-10-11
 
 ### Added

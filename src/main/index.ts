@@ -51,6 +51,7 @@ import { registerMcpIpc } from './mcp/ipc';
 import { samePath } from './mcp/config';
 import { registerFsIpc } from './fs/ipc';
 import { registerDocImageProtocol } from './fs/doc-image';
+import { createPageShots, electronPageRenderer } from './fs/page-snapshot';
 import { bundledManualDir } from './fs/manual-dir';
 import { ReadScope } from './fs/read-scope';
 import { IpcBroker } from './ipc/broker';
@@ -2677,8 +2678,21 @@ app
     // `fs:read` uses. On the default session's protocol, which is the session
     // the main window and every dockview popout live in. Fail-open: if the
     // registration throws, pictures fall back to chips and nothing else moves.
+    //
+    // A WEB PAGE asked for through it is answered with a picture main draws
+    // (#1239), in a hidden window that runs no script and reaches no network:
+    // `fs/page-snapshot.ts`. The window is made on first use, not here.
     try {
-      registerDocImageProtocol(protocol, { scope: readScope, log: fsLog });
+      const pageShots = createPageShots({
+        render: electronPageRenderer({
+          fromPartition: (partition) => session.fromPartition(partition),
+          createWindow: (options) => new BrowserWindow(options),
+          scope: readScope,
+          log: fsLog,
+        }),
+        log: fsLog,
+      });
+      registerDocImageProtocol(protocol, { scope: readScope, log: fsLog, page: pageShots });
     } catch (err) {
       fsLog.warn('document image scheme could not be registered', { error: errorText(err) });
     }

@@ -13,6 +13,7 @@ import {
   chipForFailedFeedImage,
   FEED_IMAGE_MAX_HEIGHT,
   FEED_OPEN_PATH_ATTR,
+  MAX_PAGE_SHOTS_PER_REPLY,
   type FeedImageLabels,
 } from './feed-images';
 import { FEED_STOP_SELECTOR } from './feed-keys';
@@ -28,6 +29,9 @@ const LABELS: FeedImageLabels = {
   openPicture: (name) => `Open ${name} at full size`,
   openPage: 'Open in browser',
   notShown: 'Not shown.',
+  openPageNamed: (name) => `Open ${name} in your browser`,
+  pagePicture: (name) => `A picture of the page ${name}`,
+  pageNote: 'A picture of the page.',
 };
 const FOLDER = 'C:\\work\\app';
 
@@ -140,6 +144,7 @@ describe('the conversation stays ONE tab stop (#1235)', () => {
       '<img src="a.png"> <img src="https://x.example/b.png"> <img src="page.html">'
     );
     const buttons = [...host.querySelectorAll('button')];
+    // the picture, the remote chip's "Open in browser", and the page's picture
     expect(buttons).toHaveLength(3);
     for (const b of buttons) {
       expect(b.getAttribute('tabindex')).toBe('-1');
@@ -214,13 +219,94 @@ describe('an HTML mock-up (#1235)', () => {
     expect(notes.hasAttribute(FEED_OPEN_PATH_ATTR)).toBe(false);
   });
 
-  it('written with picture syntax it is a chip with "Open in browser", never a frame', () => {
-    const host = pass('<img src="mock.html" alt="the page">');
-    expect(shown(host)).toHaveLength(0);
+  it('written with picture syntax it is a PICTURE of the page (#1239), never a frame', () => {
+    const host = pass('<p>see <img src="mock.html" alt="the page"> here</p>');
     expect(host.querySelector('iframe')).toBeNull();
-    const open = chips(host)[0].querySelector<HTMLButtonElement>(`button[${FEED_OPEN_PATH_ATTR}]`)!;
-    expect(open.textContent).toBe('Open in browser');
+    expect(chips(host)).toHaveLength(0);
+    const [img] = shown(host);
+    // through the picture scheme, like every picture: main answers with a PNG it drew
+    expect(docImagePath(img.getAttribute('src'))).toBe('C:\\work\\app\\mock.html');
+    expect(img.className).toBe('doc-image feed-page-image');
+    expect(img.getAttribute('alt')).toBe('the page');
+    // a BUTTON that opens the real page
+    const open = img.closest('button')!;
     expect(open.getAttribute(FEED_OPEN_PATH_ATTR)).toBe('C:\\work\\app\\mock.html');
+    expect(open.getAttribute('aria-label')).toBe('Open mock.html in your browser');
+    expect(open.getAttribute('tabindex')).toBe('-1');
+    expect(open.matches(FEED_STOP_SELECTOR)).toBe(true);
+    // ...and the line that says it is a picture
+    expect(host.querySelector('.feed-page-shot .feed-page-note')!.textContent).toBe('A picture of the page.');
+    expect(host.textContent).toContain('see');
+    expect(host.textContent).toContain('here');
+  });
+
+  it('its room is reserved before it exists: main draws every page at one size', () => {
+    const img = shown(pass('<img src="mock.html">'))[0];
+    // 1280 x 800, fitted under the height cap with its shape kept
+    expect(img.getAttribute('height')).toBe(String(FEED_IMAGE_MAX_HEIGHT));
+    expect(img.getAttribute('width')).toBe(String(Math.round((1280 * FEED_IMAGE_MAX_HEIGHT) / 800)));
+    // with no words of its own, the picture says what it is a picture of
+    expect(img.getAttribute('alt')).toBe('A picture of the page mock.html');
+  });
+
+  it('a LINK to a page gets the picture UNDER the words it is in, and stays a link', () => {
+    const host = pass('<p>I wrote <a href="mock.html">the mock-up</a> for you.</p><p>next</p>');
+    const [first, shot, next] = [...host.children];
+    expect(first.nodeName).toBe('P');
+    expect(first.textContent).toBe('I wrote the mock-up for you.');
+    expect(first.querySelector('a')!.getAttribute(FEED_OPEN_PATH_ATTR)).toBe('C:\\work\\app\\mock.html');
+    expect(first.querySelector('img')).toBeNull();
+    expect(shot.className).toBe('feed-page-shot feed-page-shot-linked');
+    expect(docImagePath(shot.querySelector('img')!.getAttribute('src'))).toBe('C:\\work\\app\\mock.html');
+    expect(next.textContent).toBe('next');
+  });
+
+  it('under a HEADING it goes after the heading, never inside it', () => {
+    const host = pass('<h2>The <a href="a.html">mock-up</a></h2><p>text</p>');
+    const [heading, shot] = [...host.children];
+    expect(heading.nodeName).toBe('H2');
+    expect(heading.querySelector('img')).toBeNull();
+    expect(shot.className).toContain('feed-page-shot');
+  });
+
+  it('in a list item the picture stays INSIDE the item, where a sibling would not be valid', () => {
+    const host = pass('<ul><li><a href="a.html">a</a> first</li><li>second</li></ul>');
+    const [one, two] = [...host.querySelectorAll('li')];
+    expect(one.lastElementChild!.className).toContain('feed-page-shot');
+    expect(two.querySelector('img')).toBeNull();
+    expect(host.querySelector('ul')!.children).toHaveLength(2);
+  });
+
+  it('a page named twice is drawn once; a reply that lists many pages draws the first few', () => {
+    const twice = pass('<p><a href="a.html">a</a> and again <a href="./a.html">a</a></p>');
+    expect(shown(twice)).toHaveLength(1);
+    // every link still opens its page, drawn or not
+    expect(twice.querySelectorAll(`a[${FEED_OPEN_PATH_ATTR}]`)).toHaveLength(2);
+
+    const many = pass(
+      '<p><a href="1.html">1</a> <a href="2.html">2</a> <a href="3.html">3</a></p><p><img src="4.html" alt="four"></p>'
+    );
+    expect(shown(many)).toHaveLength(MAX_PAGE_SHOTS_PER_REPLY);
+    expect(many.querySelectorAll(`a[${FEED_OPEN_PATH_ATTR}]`)).toHaveLength(3);
+    // past the limit, picture syntax is what it was before: a chip that opens the page
+    const open = chips(many)[0].querySelector<HTMLButtonElement>(`button[${FEED_OPEN_PATH_ATTR}]`)!;
+    expect(open.textContent).toBe('Open in browser');
+    expect(open.getAttribute(FEED_OPEN_PATH_ATTR)).toBe('C:\\work\\app\\4.html');
+  });
+
+  it('while a reply is still arriving a page is not drawn: no window per chunk', () => {
+    const host = pass('<p><a href="mock.html">m</a> <img src="mock.html"></p>', { folder: FOLDER, streaming: true });
+    expect(shown(host)).toHaveLength(0);
+    expect(host.querySelector('.feed-page-shot')).toBeNull();
+  });
+
+  it('⚠️ a reply cannot arrive with a page picture already in it', () => {
+    const host = pass(
+      '<span class="feed-page-shot"><img class="doc-image feed-page-image" src="https://x.example/p.png" data-doc-image-src="C:/secret.html"></span>'
+    );
+    expect(host.querySelector('.feed-page-shot')).toBeNull();
+    expect(host.querySelector('.feed-page-image')).toBeNull();
+    expect(shown(host)).toHaveLength(0);
   });
 
   it('without a folder nothing is openable', () => {
@@ -243,6 +329,34 @@ describe('a picture that would not load (#1235)', () => {
     expect(chip.textContent).toContain('Not shown.');
     expect(host.textContent).toContain('before');
     expect(host.textContent).toContain('after');
+    host.remove();
+  });
+
+  it('a PAGE main could not draw goes back to what it was: a chip that offers the page (#1239)', () => {
+    const host = pass('<p>see <img src="mock.html" alt="the page"> here</p>');
+    document.body.appendChild(host);
+    expect(chipForFailedFeedImage(shown(host)[0], LABELS)).toBe(true);
+    expect(shown(host)).toHaveLength(0);
+    expect(host.querySelector('.feed-page-shot')).toBeNull();
+    expect(host.querySelector('.feed-page-note')).toBeNull();
+    const [chip] = chips(host);
+    expect(chip.textContent).toContain('mock.html');
+    // NOT "it is missing": the page may be there. The offer is to open it, and main decides.
+    expect(chip.textContent).not.toContain('Not shown.');
+    const open = chip.querySelector<HTMLButtonElement>(`button[${FEED_OPEN_PATH_ATTR}]`)!;
+    expect(open.textContent).toBe('Open in browser');
+    expect(open.getAttribute(FEED_OPEN_PATH_ATTR)).toBe('C:\\work\\app\\mock.html');
+    expect(open.getAttribute('tabindex')).toBe('-1');
+    host.remove();
+  });
+
+  it('...and under a LINK it just goes: the link already says everything a chip would', () => {
+    const host = pass('<p>I wrote <a href="mock.html">the mock-up</a>.</p>');
+    document.body.appendChild(host);
+    expect(chipForFailedFeedImage(shown(host)[0], LABELS)).toBe(true);
+    expect(host.querySelector('.feed-page-shot')).toBeNull();
+    expect(chips(host)).toHaveLength(0);
+    expect(host.querySelector('a')!.getAttribute(FEED_OPEN_PATH_ATTR)).toBe('C:\\work\\app\\mock.html');
     host.remove();
   });
 

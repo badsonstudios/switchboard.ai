@@ -327,10 +327,35 @@ reply.
 - **While a reply is still arriving**, pictures are chips; they are drawn when
   the reply is finished.
 
-**HTML mock-ups are not drawn in the conversation.** If the reply links to an
-`.html` file Claude wrote in your project, click the link (or the chip's
-**Open in browser**) and it opens in whatever your system uses for web pages,
-normally your browser. Asking for the mock-up as SVG is how you get it inline.
+#### A mock-up written as a web page
+
+Ask for a mock-up and Claude often writes an `.html` file. When its reply
+links to that file, switchboard shows **a picture of the page** under the
+sentence the link is in, so you can see the mock-up without leaving the
+session.
+
+It is a picture, not the page itself:
+
+- **It shows the top of the page**, as a browser window 1280 pixels wide would.
+  A long page is not shown to the bottom.
+- **Scripts do not run.** You see what the page's HTML and CSS draw. A page
+  that builds itself with script comes out empty or half-drawn.
+- **Nothing is loaded from the web.** The page's own stylesheets, pictures and
+  fonts are used if they sit in the same folder as the page (or a folder
+  inside it). A stylesheet or font from a website, or a design kit that
+  styles the page with a script from the web, is left out, and the page then
+  looks plainer than it does in your browser.
+- **It is the page as it is now.** If Claude changes the file, the picture is
+  taken again the next time the reply is drawn.
+
+**Click the picture** (or the link) to open the real page in your browser,
+where scripts run and everything loads. A line under the picture says all of
+this in one sentence, so you are never left guessing why it looks different.
+
+If the page cannot be drawn, you get the link on its own, or a small chip with
+**Open in browser**. A reply that names many pages has the first two drawn;
+the rest stay links. For a mock-up that looks exactly right in the session,
+ask for one self-contained file: "one HTML file, styles inside it, no scripts".
 
 A link to a file on your machine has a small **▣** after it, so you can tell
 it from a link to the web: it opens that file, whatever the link's words say.

@@ -24,15 +24,19 @@
 // that way has to work from the keyboard: the picture sits in a `<button>`
 // that opens the file in whatever the system uses for it.
 //
-// AN HTML MOCKUP IS NOT DRAWN HERE, and that is a decision, not an oversight:
-// the conversation has no frames and should not gain one casually. A link or
-// picture reference to a local `.html` file gets an "Open in browser" action
-// instead. Drawing a snapshot of the page inline is its own ticket.
+// AN HTML MOCKUP IS SHOWN AS A PICTURE OF THE PAGE (#1239), never as the page.
+// The conversation has no frames, and the owner kept that rule when he was
+// offered a live one: "I like the rule for now, so maybe we just do pictures
+// of mockups." So a picture reference or a link to a local `.html` file gets
+// an `<img>` like any other, pointing at the same scheme, and MAIN draws the
+// page (scripts off, no network: `main/fs/page-snapshot.ts`) and answers with
+// a PNG. The picture is a button that opens the real page, and a line under
+// it says what it is: a picture, of the page as it is now.
 //
 // WHILE A REPLY IS STILL ARRIVING, every picture is a chip. The tail of a
 // streaming reply is re-rendered on each chunk, and main serves pictures
 // `no-store`: an `<img>` there would be re-fetched per chunk.
-import { docImagePath } from '../../../shared/doc-image';
+import { PAGE_SHOT_HEIGHT, PAGE_SHOT_WIDTH, docImagePath, docImageUrl, isPageFile } from '../../../shared/doc-image';
 import { classifyHref } from './document-link';
 import { decorateImages, imageChip, type DecorationLabels } from './document-render';
 
@@ -43,6 +47,13 @@ export const FEED_OPEN_PATH_ATTR = 'data-feed-open-path';
 /** How tall a picture may be drawn in the conversation, in px. The stylesheet
  *  carries the same number as its backstop (`.feed-md .doc-image`). */
 export const FEED_IMAGE_MAX_HEIGHT = 420;
+
+/**
+ * How many pages one reply may have drawn (#1239). Each is a window opened in
+ * main, and a reply that lists every page of a site is a list, not a gallery:
+ * the rest stay what they were, a link or a chip that opens the page.
+ */
+export const MAX_PAGE_SHOTS_PER_REPLY = 2;
 
 /**
  * Fit a picture whose size is KNOWN under the height cap, by its attributes.
@@ -77,9 +88,13 @@ export interface FeedImageLabels extends DecorationLabels {
   openPage: string;
   /** why a picture that would not load is a chip */
   notShown: string;
+  /** "Open {name} in your browser" — the accessible name of a page's picture */
+  openPageNamed: (name: string) => string;
+  /** "A picture of the page {name}" — the text alternative of a page's picture */
+  pagePicture: (name: string) => string;
+  /** the line under a page's picture: what it is, and what it leaves out */
+  pageNote: string;
 }
-
-const HTML_FILE_RE = /\.html?$/i;
 
 /** A file standing in for "somewhere in this folder", for `classifyHref`,
  *  which resolves against the directory of the file a link is IN. */
@@ -126,27 +141,98 @@ export function decorateFeedImages(
   // (a remote picture's "Open in browser", written by the viewer's pass)
   for (const external of [...root.querySelectorAll('button[data-doc-external]')]) arrowStop(external);
 
-  // a chip for a local HTML file (written with picture syntax) can be opened
-  for (const chip of [...root.querySelectorAll('.doc-image-chip')]) {
-    const target = localHtml(chip.getAttribute('title'), from);
+  // A LOCAL HTML FILE (#1239). Written with picture syntax it is a chip by
+  // now; written as a link it is a link that goes nowhere (a reply's relative
+  // href is refused by the link guard). Either way it can be opened, and the
+  // first few in a reply are drawn: each page once, however often it is named.
+  const drawn = new Set<string>();
+  const draw = (target: string): boolean => {
+    if (drawn.has(target) || drawn.size >= MAX_PAGE_SHOTS_PER_REPLY) return false;
+    drawn.add(target);
+    return true;
+  };
+  // ONE pass, in the order the reply reads, so "the first few" means that.
+  for (const el of [...root.querySelectorAll('.doc-image-chip, a[href]')]) {
+    if (el.nodeName !== 'A') {
+      const target = localHtml(el.getAttribute('title'), from);
+      if (!target) continue;
+      if (draw(target)) {
+        const alt = el.querySelector('.doc-image-name')?.textContent ?? '';
+        el.replaceWith(pageShot(el.ownerDocument, target, alt, labels, false));
+      } else {
+        el.append(openPageButton(el.ownerDocument, target, labels));
+      }
+      continue;
+    }
+    const target = localHtml(el.getAttribute('href'), from);
     if (!target) continue;
-    const open = chip.ownerDocument.createElement('button');
-    open.type = 'button';
-    open.className = 'doc-image-open';
-    open.textContent = labels.openPage;
-    open.setAttribute(FEED_OPEN_PATH_ATTR, target);
-    arrowStop(open);
-    chip.append(open);
+    el.setAttribute(FEED_OPEN_PATH_ATTR, target);
+    el.setAttribute('title', `${labels.openPage}: ${target}`);
+    if (!draw(target)) continue;
+    // UNDER the words the link is in, not in the middle of them. After a
+    // paragraph or a heading; at the end of anything else that holds text (a
+    // list item, a table cell), where a sibling would not be valid.
+    const shot = pageShot(el.ownerDocument, target, '', labels, true);
+    const block = el.closest('p, li, td, th, dd, dt, blockquote, h1, h2, h3, h4, h5, h6');
+    if (!block) el.after(shot);
+    else if (/^(P|H[1-6])$/.test(block.nodeName)) block.after(shot);
+    else block.append(shot);
   }
+}
 
-  // ...and so can a plain link to one, which is otherwise a link that goes
-  // nowhere: a reply's relative href is refused by the link guard
-  for (const a of [...root.querySelectorAll('a[href]')]) {
-    const target = localHtml(a.getAttribute('href'), from);
-    if (!target) continue;
-    a.setAttribute(FEED_OPEN_PATH_ATTR, target);
-    a.setAttribute('title', `${labels.openPage}: ${target}`);
-  }
+/** the "Open in browser" on a chip for a local page */
+function openPageButton(doc: Document, target: string, labels: FeedImageLabels): HTMLElement {
+  const open = doc.createElement('button');
+  open.type = 'button';
+  open.className = 'doc-image-open';
+  open.textContent = labels.openPage;
+  open.setAttribute(FEED_OPEN_PATH_ATTR, target);
+  arrowStop(open);
+  return open;
+}
+
+/**
+ * A picture of the page at `target`, as a button that opens the page, with
+ * the line that says what it is.
+ *
+ * ITS SIZE IS KNOWN BEFORE IT EXISTS: main draws every page at one size
+ * (`PAGE_SHOT_WIDTH` x `PAGE_SHOT_HEIGHT`), so the room is reserved from the
+ * first render and a picture that takes a second to draw moves nothing.
+ *
+ * `linked` says the reply's own link is still there above it. If the picture
+ * then fails, it just goes: the link already says everything a chip would.
+ */
+function pageShot(
+  doc: Document,
+  target: string,
+  alt: string,
+  labels: FeedImageLabels,
+  linked: boolean
+): HTMLElement {
+  const name = fileName(target);
+  const holder = doc.createElement('span');
+  holder.className = linked ? 'feed-page-shot feed-page-shot-linked' : 'feed-page-shot';
+  const open = doc.createElement('button');
+  open.type = 'button';
+  open.className = 'feed-image-open';
+  open.setAttribute(FEED_OPEN_PATH_ATTR, target);
+  open.setAttribute('aria-label', labels.openPageNamed(name));
+  open.setAttribute('title', labels.openPageNamed(name));
+  arrowStop(open);
+  const img = doc.createElement('img');
+  img.className = 'doc-image feed-page-image';
+  img.setAttribute('src', docImageUrl(target));
+  img.setAttribute('alt', alt.trim() && alt.trim() !== name ? alt.trim() : labels.pagePicture(name));
+  img.setAttribute('data-doc-image-src', target);
+  img.setAttribute('width', String(PAGE_SHOT_WIDTH));
+  img.setAttribute('height', String(PAGE_SHOT_HEIGHT));
+  capFeedImage(img);
+  open.append(img);
+  const note = doc.createElement('span');
+  note.className = 'feed-page-note';
+  note.textContent = labels.pageNote;
+  holder.append(open, note);
+  return holder;
 }
 
 /**
@@ -167,7 +253,7 @@ function localTarget(href: string | null, from: string): { kind: string; target:
 /** the absolute path of a local `.html` file this href names, or null */
 function localHtml(href: string | null, from: string): string | null {
   const where = localTarget(href, from);
-  return where.kind === 'relative' && HTML_FILE_RE.test(where.target) ? where.target : null;
+  return where.kind === 'relative' && isPageFile(where.target) ? where.target : null;
 }
 
 function fileName(path: string): string {
@@ -186,6 +272,21 @@ export function chipForFailedFeedImage(target: EventTarget | null, labels: FeedI
   const img = target as HTMLElement | null;
   if (!img || img.nodeName !== 'IMG' || !img.classList?.contains('doc-image')) return false;
   const src = img.getAttribute('data-doc-image-src') ?? '';
+  // A picture of a PAGE that main could not draw (#1239). The page may well
+  // be there (it took too long, or it is outside what the app may read), so
+  // what is left is what there was before pages were drawn: the reply's own
+  // link, or a chip that offers to open the page. Main decides whether it can.
+  const page = img.closest('.feed-page-shot');
+  if (page) {
+    if (page.classList.contains('feed-page-shot-linked')) {
+      page.remove();
+      return true;
+    }
+    const chip = imageChip(img.ownerDocument, src, fileName(src), labels);
+    chip.append(openPageButton(img.ownerDocument, src, labels));
+    page.replaceWith(chip);
+    return true;
+  }
   const chip = imageChip(img.ownerDocument, src, img.getAttribute('alt') ?? '', labels);
   chip.setAttribute('title', `${labels.notShown} ${src}`.trim());
   const why = img.ownerDocument.createElement('span');
