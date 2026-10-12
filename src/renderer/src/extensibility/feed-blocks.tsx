@@ -41,6 +41,7 @@ import {
 } from '../lib/feed-images';
 import { rememberImageSize } from '../lib/document-render';
 import { useFeedSurface } from '../lib/feed-surface';
+import { FEED_THUMB_HEIGHT, FEED_THUMB_WIDTH, feedPictureUrl } from '../../../shared/feed-picture';
 import { Markdown } from '../lib/markdown';
 import { handleMarkdownLinkClick, openExternalBridge } from '../lib/markdown-links';
 
@@ -163,6 +164,119 @@ function openLocalFile(path: string): void {
     window as unknown as { switchboard?: { files?: { openViewable?: (p: string) => Promise<unknown> } } }
   ).switchboard?.files;
   void files?.openViewable?.(path)?.catch?.(() => undefined);
+}
+
+/** Ask main to open a picture from the conversation at full size (#1240).
+ *  By HANDLE: main wrote the handle, holds the picture, and decides.
+ *  Resolves false when main no longer holds it (or there is no bridge). */
+async function openFeedPicture(id: string): Promise<boolean> {
+  const transcripts = (
+    window as unknown as { switchboard?: { transcripts?: { openPicture?: (id: string) => Promise<unknown> } } }
+  ).switchboard?.transcripts;
+  try {
+    return (await transcripts?.openPicture?.(id)) === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One picture from the conversation, small (#1240): a thumbnail that is a
+ * button, or the placeholder when main no longer holds the picture.
+ *
+ * THE BOX IS THE SAME SIZE EITHER WAY, and before the picture arrives: the
+ * `width` and `height` are the box's, not the picture's, and the stylesheet
+ * fits the picture inside whole. So nothing below a thumbnail moves when it
+ * loads, or when it turns out not to.
+ *
+ * The three attributes are `FeedCopyButton`'s contract: `data-feed-picture`
+ * puts it in the arrow-key list, `tabIndex={-1}` keeps the conversation one
+ * tab stop, and `data-no-toggle` stops the click folding the box it sits on.
+ */
+function FeedThumbnail({ id, name }: { id: string; name: string }): React.JSX.Element {
+  const { t } = useTranslation();
+  const [gone, setGone] = React.useState(false);
+  if (gone) {
+    return (
+      <span className="feed-thumb feed-thumb-gone" data-feed-picture-gone="" title={t('feedView.pictureGoneHint')}>
+        {/* the words, not a glyph: the name says which one, the rest says why */}
+        <span className="feed-thumb-gone-name">{name}</span>
+        <span>{t('feedView.pictureGone')}</span>
+      </span>
+    );
+  }
+  const open = t('feedView.openPicture', { name });
+  return (
+    <button
+      type="button"
+      className="feed-thumb"
+      data-feed-picture={id}
+      {...NO_TOGGLE}
+      tabIndex={-1}
+      aria-label={open}
+      title={open}
+      onClick={() => {
+        // A press that opens nothing must not look like one that did: main
+        // has let the picture go since the thumbnail was drawn, so the box
+        // says so from now on.
+        void openFeedPicture(id).then((opened) => {
+          if (!opened) setGone(true);
+        });
+      }}
+    >
+      <img
+        src={feedPictureUrl(id)}
+        alt={name}
+        width={FEED_THUMB_WIDTH}
+        height={FEED_THUMB_HEIGHT}
+        decoding="async"
+        draggable={false}
+        onError={() => setGone(true)}
+      />
+    </button>
+  );
+}
+
+/**
+ * The pictures of one message, in a row that wraps (#1240).
+ *
+ * `name` gives each its text alternative, from its place in the row: a
+ * picture a tool returned has no file name and no caption, so "Picture 2 from
+ * Read" is the most that can honestly be said of it.
+ */
+export function FeedPictureStrip({
+  ids,
+  name,
+}: {
+  ids: readonly string[];
+  name: (n: number, count: number) => string;
+}): React.JSX.Element | null {
+  if (ids.length === 0) return null;
+  return (
+    <div className="feed-thumbs" data-feed-pictures={String(ids.length)} {...NO_TOGGLE}>
+      {ids.map((id, i) => (
+        // keyed by the handle, which is unique for ever: a thumbnail's "gone"
+        // state must not pass to whichever picture lands in its slot
+        <FeedThumbnail key={id} id={id} name={name(i + 1, ids.length)} />
+      ))}
+    </div>
+  );
+}
+
+/** The pictures a tool's result carried, under whatever its box shows. */
+function ToolPictures({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const ids = b.tool?.pictures;
+  const tool = b.tool?.name ?? '';
+  if (!ids || ids.length === 0) return null;
+  return (
+    <FeedPictureStrip
+      ids={ids}
+      name={(n, count) =>
+        count === 1 ? t('feedView.pictureFromTool', { tool }) : t('feedView.pictureFromToolNth', { n, tool })
+      }
+    />
+  );
 }
 
 /**
@@ -334,6 +448,7 @@ function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
           </div>
         )}
       </div>
+      <ToolPictures b={b} />
     </ToolBox>
   );
 }
@@ -472,6 +587,7 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
         {hasOut &&
           section(outId, t('feedView.out'), b.tool?.out ?? '', outOpen, () => setOutExpanded(!outOpen))}
       </div>
+      <ToolPictures b={b} />
     </ToolBox>
   );
 }
@@ -712,6 +828,7 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
           </pre>
         )}
       </div>
+      <ToolPictures b={b} />
     </ToolBox>
   );
 }
@@ -835,6 +952,7 @@ function QuestionBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
           {b.tool?.detail}
         </pre>
       )}
+      <ToolPictures b={b} />
     </ToolBox>
   );
 }
@@ -985,14 +1103,13 @@ const ATTACHED_KEY = {
 /**
  * What rode with this prompt, on the prompt (#491).
  *
- * WHY IT IS A COUNT AND NOT A THUMBNAIL. The bytes are gone by the time this
- * renders: WE keep no copy of an attachment after the send — deliberately, and
- * the manual says so out loud — so the Feed has the message's own content
- * blocks and nothing else. (The CLI's own JSONL transcript does hold the base64
- * on disk; that is the CLI's file and not a store of ours to read pixels back
- * out of.) A count is the most this surface can honestly show, and it is the
- * fact the user scrolling back actually needs: whether the reply above was
- * answering a picture they can no longer see.
+ * A COUNT, WITH THE THUMBNAILS UNDER IT SINCE #1240. This used to be the whole
+ * of it, because nothing kept the bytes: the composer lets go of an attachment
+ * at the send, and still does. What changed is that main now keeps the
+ * pictures of the messages it reads, in memory, for the conversation to show
+ * (`main/feed/pictures.ts`), so the prompt can show what it carried. The count
+ * stays because it says what a thumbnail cannot: how many DOCUMENTS rode
+ * along, and that a picture was there even once main has let it go.
  *
  * NO FILENAMES, and that is a choice rather than an omission. A `document`
  * block carries a `title` straight off `File.name`, which is attacker-adjacent
@@ -1207,6 +1324,16 @@ function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
       }}
     >
       {b.attachments && <AttachmentMarker attachments={b.attachments} />}
+      {/* ...and the pictures themselves (#1240), under the count. The count
+          stays: it also covers documents, and a picture past the limit. */}
+      {b.pictures && b.pictures.length > 0 && (
+        <FeedPictureStrip
+          ids={b.pictures}
+          name={(n, count) =>
+            count === 1 ? t('feedView.pictureAttached') : t('feedView.pictureAttachedNth', { n })
+          }
+        />
+      )}
       {/* Injected context (#830), each stretch in its own collapsed row. Keyed
           by the ref, which is unique per section by construction — an index key
           would hand a row's open/shut state to whatever section landed in its

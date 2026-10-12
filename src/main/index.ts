@@ -3,6 +3,7 @@ import {
   app,
   BrowserWindow,
   Menu,
+  nativeImage,
   net,
   Notification,
   powerMonitor,
@@ -52,6 +53,9 @@ import { samePath } from './mcp/config';
 import { registerFsIpc } from './fs/ipc';
 import { registerDocImageProtocol } from './fs/doc-image';
 import { createPageShots, electronPageRenderer } from './fs/page-snapshot';
+import { feedPictures } from './feed/pictures';
+import { createFeedPictureAnswer, emptyFeedPictureDir, openFeedPicture } from './feed/picture-serve';
+import { FEED_THUMB_HEIGHT, FEED_THUMB_WIDTH } from '../shared/feed-picture';
 import { bundledManualDir } from './fs/manual-dir';
 import { ReadScope } from './fs/read-scope';
 import { IpcBroker } from './ipc/broker';
@@ -2692,10 +2696,48 @@ app
         }),
         log: fsLog,
       });
-      registerDocImageProtocol(protocol, { scope: readScope, log: fsLog, page: pageShots });
+      // A PICTURE FROM THE CONVERSATION (#1240) is answered on the same scheme
+      // by handle, as a thumbnail drawn here: twice the box it is shown in, so
+      // it is sharp on a dense display and still a few kilobytes.
+      const feed = createFeedPictureAnswer({
+        store: feedPictures,
+        log: fsLog,
+        draw: (bytes, type) => {
+          const picture = nativeImage.createFromBuffer(bytes);
+          if (picture.isEmpty()) return null;
+          const { width, height } = picture.getSize();
+          const scale = Math.min(1, (FEED_THUMB_WIDTH * 2) / width, (FEED_THUMB_HEIGHT * 2) / height);
+          // already small: what arrived is the thumbnail
+          if (scale >= 1) return { body: bytes, mime: type };
+          const small = picture.resize({
+            width: Math.max(1, Math.round(width * scale)),
+            height: Math.max(1, Math.round(height * scale)),
+            quality: 'good',
+          });
+          return type === 'image/jpeg'
+            ? { body: small.toJPEG(85), mime: 'image/jpeg' }
+            : { body: small.toPNG(), mime: 'image/png' };
+        },
+      });
+      registerDocImageProtocol(protocol, { scope: readScope, log: fsLog, page: pageShots, feed });
     } catch (err) {
       fsLog.warn('document image scheme could not be registered', { error: errorText(err) });
     }
+    // ...and opened at full size by handle. The copy the system's viewer reads
+    // is written under the app's own data folder (never the shared temp
+    // folder, which on Linux anybody can write to), and the folder is emptied
+    // now and again at quit.
+    const feedPictureDir = path.join(app.getPath('userData'), 'feed-pictures');
+    emptyFeedPictureDir(feedPictureDir);
+    app.once('quit', () => emptyFeedPictureDir(feedPictureDir));
+    broker.handle('feed:openPicture', (_e, id: unknown) =>
+      openFeedPicture(id, {
+        store: feedPictures,
+        dir: feedPictureDir,
+        openPath: (file) => shell.openPath(file),
+        log: fsLog,
+      })
+    );
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     broker.handle('notifications:setPrefs', (_e, p: Partial<NotificationPrefs>) => {
       workspace.setNotificationPrefs(p);

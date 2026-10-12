@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   DISPLAY_CAPS,
+  FULL_CAPS,
   DerivedBlock,
   IDENTITY_ONLY_CAPS,
   deriveIntents,
@@ -647,5 +648,89 @@ describe('deriveIntents — injected context inside a user turn (#830)', () => {
       deriveIntents(userLine(prompt), IDENTITY_ONLY_CAPS, { isMintedRef: () => true })
     );
     expect('context' in b).toBe(false);
+  });
+});
+
+describe('pictures a message carried (#1240)', () => {
+  const image = (data: string, media_type = 'image/png') => ({
+    type: 'image',
+    source: { type: 'base64', media_type, data },
+  });
+  const user = (content: unknown) => ({ type: 'user', message: { role: 'user', content } });
+
+  it('hands on the pictures ATTACHED to a prompt, with the block that wears the count', () => {
+    const out = deriveIntents(user([image('AAAA'), image('BBBB', 'image/jpeg'), { type: 'text', text: 'look' }]));
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      t: 'block',
+      block: { kind: 'user', text: 'look', attachments: { images: 2, documents: 0 } },
+      pictures: [
+        { type: 'image/png', data: 'AAAA' },
+        { type: 'image/jpeg', data: 'BBBB' },
+      ],
+    });
+    // the BLOCK carries no bytes: it is what crosses to the page
+    expect(JSON.stringify((out[0] as { block: unknown }).block)).not.toContain('AAAA');
+  });
+
+  it('hands them on for a prompt that was ONLY pictures', () => {
+    const out = deriveIntents(user([image('AAAA')]));
+    expect(out).toEqual([
+      {
+        t: 'block',
+        block: { kind: 'user', ts: undefined, attachments: { images: 1, documents: 0 } },
+        pictures: [{ type: 'image/png', data: 'AAAA' }],
+      },
+    ]);
+  });
+
+  it('hands on the pictures a TOOL returned, with the result, and keeps its text', () => {
+    const out = deriveIntents(
+      user([
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_1',
+          content: [{ type: 'text', text: 'Took a screenshot' }, image('SHOT')],
+        },
+      ])
+    );
+    expect(out).toEqual([
+      {
+        t: 'tool-result',
+        toolUseId: 'toolu_1',
+        out: 'Took a screenshot',
+        pictures: [{ type: 'image/png', data: 'SHOT' }],
+      },
+    ]);
+  });
+
+  it('never reads a tool’s picture as one the user attached, nor the reverse', () => {
+    const out = deriveIntents(
+      user([{ type: 'tool_result', tool_use_id: 'toolu_1', content: [image('SHOT')] }, { type: 'text', text: 'ok' }])
+    );
+    const prompt = out.find((i) => i.t === 'block')!;
+    expect('pictures' in prompt).toBe(false);
+    expect(out.find((i) => i.t === 'tool-result')).toMatchObject({ pictures: [{ data: 'SHOT' }] });
+  });
+
+  it('a plain result and a plain prompt are exactly what they were', () => {
+    const out = deriveIntents(user([{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'done' }]));
+    expect(out).toEqual([{ t: 'tool-result', toolUseId: 'toolu_1', out: 'done' }]);
+    expect('pictures' in deriveIntents(user('hello'))[0]).toBe(false);
+  });
+
+  it('only the Feed’s own pass takes them: a find and an identity pass hold no pictures', () => {
+    const entry = user([
+      image('AAAA'),
+      { type: 'text', text: 'look' },
+      { type: 'tool_result', tool_use_id: 'toolu_1', content: [image('SHOT')] },
+    ]);
+    for (const caps of [FULL_CAPS, IDENTITY_ONLY_CAPS]) {
+      const out = deriveIntents(entry, caps);
+      expect(out).toHaveLength(2);
+      expect(out.some((i) => 'pictures' in i)).toBe(false);
+      // ...and the count, which every pass must agree on, is still there
+      expect(out[0]).toMatchObject({ block: { attachments: { images: 1, documents: 0 } } });
+    }
   });
 });

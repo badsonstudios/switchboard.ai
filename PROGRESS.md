@@ -3,6 +3,23 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ 2026-10-12 — SIX TICKETS, IN FLIGHT
+>
+> The owner was shown ten tickets in priority order and said: *"All right,
+> let's do 1 through 5 and number 9."* Each is its own item, one PR in CI at
+> a time, one report at the end for all six. Everything lands in
+> `0.8.122 — unreleased`. **DO NOT CUT A RELEASE** unless he asks. The brief
+> is `.claude/work_files/CONTINUE-SIX-TICKETS.md`.
+>
+> **The order:** #1240, #1241, #1026, #499, #1028, #702.
+>
+> 1. **#1240 — pictures from tool results and attached pictures. IN PROGRESS, started 2026-10-12, branch `feature/1240-tool-pictures`.**
+> 2. **#1241 — scroll position while pictures load.** Not started.
+> 3. **#1026 — two stream flags we do not read.** Not started.
+> 4. **#499 — composer hardening.** Not started.
+> 5. **#1028 — ReadScope: the existence oracle and the ancestor walk.** Not started.
+> 6. **#702 — grid-drag group membership.** Not started. Reproduce first.
+>
 > # ✅ 2026-10-11 — #1239, A PICTURE OF AN HTML MOCK-UP: LANDED, NOT RELEASED
 >
 > **DONE 2026-10-11, PR #1255 (`1b76c96e`), merged, NOT released.** The ticket

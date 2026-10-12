@@ -245,7 +245,8 @@ function rangesOf(re: RegExp, text: string): Array<readonly [number, number]> {
  * it; and `runCopy` restores `button.textContent` after its flash, silently
  * eating a mark it had wrapped.
  */
-const FEED_CHROME_SELECTOR = `.feed-code-head, [${FEED_COPY_ATTR}]`;
+// (and a picture strip's placeholder words, #1240: the transcript never said them)
+const FEED_CHROME_SELECTOR = `.feed-code-head, [${FEED_COPY_ATTR}], .feed-thumbs`;
 
 /** The React-ownership rule — see this file's header, section 1. */
 function acceptsMark(node: Text): boolean {

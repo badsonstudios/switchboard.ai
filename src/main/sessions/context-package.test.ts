@@ -914,6 +914,10 @@ describe('no model runs on the default path', () => {
     // than the person. Pure string work over one line — a set membership test
     // and five regexes.
     '../feed/injected.ts',
+    // #1240: `blocks.ts` asks it which content items are pictures. Handed an
+    // array, answers a list; the store that KEEPS pictures is a different
+    // module and is not on this path.
+    '../feed/picture-data.ts',
     // #788: `transcript-blocks.ts` reads it to name a subagent's turn. Pure
     // string work over one line plus `node:path`.
     '../feed/agent-attribution.ts',
@@ -943,6 +947,7 @@ describe('no model runs on the default path', () => {
     // #704: it opens nothing. It is handed a string and a plain object and
     // answers a question about them.
     '../feed/injected.ts',
+    '../feed/picture-data.ts',
   ] as const;
 
   const read = (name: string) => {

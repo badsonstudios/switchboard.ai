@@ -7,6 +7,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FeedBuffer } from './buffer';
 import type { BlockOrigin, DerivedBlock, FeedBlock } from './blocks';
+import { FeedPictureStore } from './pictures';
 
 const seed: DerivedBlock = { kind: 'assistant', text: 'hi' };
 
@@ -169,5 +170,78 @@ describe('FeedBuffer origin', () => {
     // fail-open: our breakage never blocks a session
     const buf = new FeedBuffer(vi.fn());
     expect(() => buf.push(seed, { sidechain: false })).not.toThrow();
+  });
+});
+
+describe('FeedBuffer pictures (#1240)', () => {
+  const png = { type: 'image/png', data: 'AAAA' };
+  function withStore(): { buf: FeedBuffer; store: FeedPictureStore; emitted: FeedBlock[] } {
+    let n = 0;
+    const store = new FeedPictureStore(1000, () => `id-${++n}`);
+    const emitted: FeedBlock[] = [];
+    return { buf: new FeedBuffer((b) => emitted.push(b), undefined, store), store, emitted };
+  }
+
+  it('keeps a prompt’s pictures and puts HANDLES on the block, never the bytes', () => {
+    const { buf, store } = withStore();
+    const b = buf.push({ kind: 'user', text: 'look' }, { sidechain: false }, [png, png]);
+    expect(b.pictures).toEqual(['id-1', 'id-2']);
+    expect(JSON.stringify(b)).not.toContain('AAAA');
+    expect(store.get('id-1')).toEqual(png);
+  });
+
+  it('a block with no pictures has no `pictures` key at all', () => {
+    const { buf } = withStore();
+    expect('pictures' in buf.push(seed, { sidechain: false })).toBe(false);
+    expect('pictures' in buf.push(seed, { sidechain: false }, [])).toBe(false);
+  });
+
+  it('puts a result’s pictures on the tool that asked, and re-emits it', () => {
+    const { buf, emitted } = withStore();
+    const tool = buf.push(
+      { kind: 'tool', tool: { name: 'Read', category: 'read', summary: 'shot.png' } },
+      { sidechain: false }
+    );
+    buf.remember('toolu_1', tool);
+    expect(buf.attachResult('toolu_1', '', false, [png])).toBe(true);
+    expect(tool.tool?.pictures).toEqual(['id-1']);
+    expect(emitted[emitted.length - 1]).toBe(tool);
+  });
+
+  it('keeps nothing for a result that had no block to land on', () => {
+    const { buf, store } = withStore();
+    expect(buf.attachResult('toolu_unknown', 'x', false, [png])).toBe(false);
+    expect(store.size).toBe(0);
+  });
+
+  it('a block that falls off the end of the buffer takes its pictures with it', () => {
+    let n = 0;
+    const store = new FeedPictureStore(1000, () => `id-${++n}`);
+    const buf = new FeedBuffer(() => {}, 2, store);
+    const first = buf.push(seed, { sidechain: false }, [png]);
+    const tool = buf.push(
+      { kind: 'tool', tool: { name: 'Read', category: 'read', summary: 'a.png' } },
+      { sidechain: false }
+    );
+    buf.remember('toolu_1', tool);
+    buf.attachResult('toolu_1', '', false, [png]);
+    expect(store.size).toBe(2);
+    buf.push(seed, { sidechain: false }); // pushes `first` out
+    expect(store.get(first.pictures![0])).toBeUndefined();
+    expect(store.get(tool.tool!.pictures![0])).toEqual(png);
+    buf.push(seed, { sidechain: false }); // ...and now the tool
+    expect(store.size).toBe(0);
+  });
+
+  it('lets its pictures go on reset and on dispose, and only its own', () => {
+    const { buf, store } = withStore();
+    const other = new FeedBuffer(() => {}, undefined, store);
+    const mine = buf.push(seed, { sidechain: false }, [png]).pictures![0];
+    const theirs = other.push(seed, { sidechain: false }, [png]).pictures![0];
+    buf.reset();
+    expect(store.get(mine)).toBeUndefined();
+    expect(store.get(theirs)).toEqual(png);
+    other.dispose();
+    expect(store.size).toBe(0);
   });
 });

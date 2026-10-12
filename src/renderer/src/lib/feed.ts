@@ -22,7 +22,12 @@ export interface FeedBlockDto {
     failed?: boolean;
     /** AskUserQuestion: the questions of the call, structured (#1201) */
     questions?: SettledQuestion[];
+    /** the pictures the result carried (#1240): one handle each. The bytes
+     *  stay in main; `shared/feed-picture.ts` turns a handle into a URL. */
+    pictures?: string[];
   };
+  /** user: the pictures attached to this prompt (#1240), one handle each */
+  pictures?: string[];
   todos?: Array<{ content: string; status: string }>;
   /**
    * notice: a turn the HARNESS injected, summarised (#704) — a background task

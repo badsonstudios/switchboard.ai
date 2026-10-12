@@ -1766,6 +1766,60 @@ mark[data-feed-match-current] {
   outline-offset: 2px;
   border-radius: 4px;
 }
+/* Pictures that arrived IN the conversation (#1240): what a tool returned, and
+ * what was attached to a prompt. A row of boxes of ONE size, known before any
+ * picture is, so a thumbnail that arrives late (or never) moves nothing. The
+ * numbers are `FEED_THUMB_WIDTH` and `FEED_THUMB_HEIGHT`. */
+.feed-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-block: 4px 2px;
+  cursor: default;
+}
+.feed-thumb {
+  appearance: none;
+  box-sizing: content-box;
+  display: flex;
+  flex: none;
+  inline-size: 144px;
+  block-size: 108px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--control-edge);
+  border-radius: 4px;
+  background: var(--panel);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+.feed-thumb img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  /* the whole picture, never a crop of it */
+  object-fit: contain;
+}
+.feed-thumb:focus-visible {
+  outline: 2px solid var(--status-working-ink);
+  outline-offset: 2px;
+}
+/* main no longer holds this one: the same box, saying so in words */
+.feed-thumb-gone {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-style: dashed;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 10.5px;
+  text-align: center;
+  white-space: normal;
+  cursor: default;
+}
+.feed-thumb-gone-name {
+  color: var(--text);
+}
 /* A picture of a web page (#1239): the picture, then the line that says it
  * is one. A block of its own, so the line sits under the picture and the two
  * are never split across a line of the reply. */
