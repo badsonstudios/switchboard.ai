@@ -25,8 +25,10 @@
 > 4. **#499 — composer hardening.
 >    DONE 2026-10-12, PR #1263 (`f52dd376`), merged, NOT released.**
 >    The ticket is closed. Green on the first CI run. The reference's 50,000 was read again and is no longer a truncation, so the limit is a refusal at a million characters, said under the box; names are cleaned where they come in.
-> 5. **#1028 — ReadScope: the existence oracle and the ancestor walk. IN PROGRESS, started 2026-10-12, branch `feature/1028-read-scope`.**
-> 6. **#702 — grid-drag group membership.** Not started. Reproduce first.
+> 5. **#1028 — ReadScope: the existence oracle and the ancestor walk.
+>    DONE 2026-10-12, PR #1264 (`695f4b63`), merged, NOT released.**
+>    The ticket is closed. Green on the first CI run. One adversarial review: its first pass found the fix still leaked through a 41-link chain and cost more than the walk it replaced; both fixed. NARROWED, NOT CLOSED: a link that goes out of the scope and back still tells present from absent on POSIX, and timing differs. Filed #1261 for both.
+> 6. **#702 — grid-drag group membership. IN PROGRESS, started 2026-10-12, branch `feature/702-grid-drag-adoption`.**
 >
 > # ✅ 2026-10-11 — #1239, A PICTURE OF AN HTML MOCK-UP: LANDED, NOT RELEASED
 >

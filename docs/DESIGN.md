@@ -5103,8 +5103,15 @@ sessions. Three interactions:
   session *inside that group* (it inherits the group's scope/identity defaults),
   instead of landing in the ungrouped grid.
 - **Move-between:** any session can be dragged from the ungrouped area or one
-  group's header into another (e.g. drop a session under "Dev") — from the rail
-  or the grid; the session's group membership is part of its persisted state.
+  group's header into another (e.g. drop a session under "Dev") — from the
+  Sessions list; the session's group membership is part of its persisted state.
+  *(Amended 2026-10-12, #702. This said "from the rail or the grid". The grid
+  half was built as a side effect of where a tab lands and never ran: measured,
+  its listener returned at its first line on every path. It was removed rather
+  than repaired, because repaired it would erase a session's group whenever its
+  tab was dropped beside ungrouped ones. Arranging cards in the grid is
+  presentation and does not change a group; if a grid gesture for it is ever
+  wanted it should be one that names the group.)*
 - **Empty ≠ gone:** removing the last session from a persistent group leaves the
   group; only an explicit "delete group" removes it (its sessions, if any, fall
   back to ungrouped). Auto-groups (repo/folder) remain emergent and disappear

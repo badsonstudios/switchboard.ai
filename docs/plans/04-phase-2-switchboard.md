@@ -1060,6 +1060,10 @@ Work items:
   DnD); membership persists.
   *Done when:* both drag paths update membership and survive restart; dropping
   into a group visually joins it.
+  *(Corrected 2026-10-12, #702: only the rail half was ever delivered. The grid
+  half's listener never ran, on any path, and was removed. See
+  `spike/findings/702-grid-drag-adoption.md` and DESIGN's amended
+  "Move-between".)*
 - **P2-E12-05 · Repo/folder auto-grouping — M (§7).** *(depends: 02)* Emergent
   groups for sessions sharing a repo/folder; vanish when empty; explicit user
   groups always win (S4).

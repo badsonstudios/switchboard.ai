@@ -326,6 +326,11 @@ a card with its own color and a **colored dot** beside its name.
   keyboard); drag it up from there if you want it higher. A pinned session is
   the one exception: it goes to the front, with the other pinned ones.
 - **Remove a session:** drag it onto empty space in the list, outside any group.
+- **Arranging cards never changes a group.** Dragging a session's tab around
+  the main area (beside another card, into a column of its own, into a stack
+  of tabs) moves where it sits and nothing else. A session's group only
+  changes when you move it in the Sessions list, with the menu, or with the
+  keyboard.
 - **Without dragging:** right-click a session row (or press `Shift+F10` on it)
   and pick a group under **Move to group** — the same list, plus **No group**
   to take it out. See
