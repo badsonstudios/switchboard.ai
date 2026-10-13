@@ -98,6 +98,15 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **More kinds of repeated step fold into one row in a session.** A run of
+  calls to one connected tool server (twenty Atlassian calls, say) is now one
+  row that names the server, how many calls, and every tool that was called
+  with its count. A burst of web searches and page fetches is one row, with
+  what was searched for and which sites. Three or more changes in a row to
+  the same file are one row, **Edited** and the file's name. Open any of them
+  to see each step exactly as before. A step that is waiting for your
+  approval stays out of the folded row until it is done, and one that failed
+  never goes in.
 - **A picture of an HTML mock-up, right in the session.** When Claude writes a
   mock-up as an `.html` file and its reply links to it, a picture of the page
   is drawn under the reply. Click the picture to open the real page in your
@@ -113,6 +122,10 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A failed edit or tool call says so.** Only a failed command was marked
+  **failed**. A change that could not be made, or a call to a tool server that
+  came back with an error, now has **failed** in red on its row and the reason
+  under it.
 - **"N need you" stays up for as long as a session is waiting on you.** When a
   session asked for an approval or asked you a question, the yellow count
   showed for a fraction of a second and went away, while the session was still

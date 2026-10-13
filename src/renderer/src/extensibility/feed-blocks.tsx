@@ -400,6 +400,65 @@ export function ToolBox({
 // `lib/markdown.tsx` when the update dialog (P2-E19-03) became the second
 // caller — one `marked` + DOMPurify pipeline, one sanitizer configuration.
 
+/**
+ * "failed", IN WORDS and in the failure ink (#1200; every kind of call since
+ * #1271).
+ *
+ * A call that failed is never folded away: it stands between two folds as a
+ * row of its own. That only helps if the row SAYS it failed. A command's did;
+ * an edit's and an MCP call's did not, so the one row left standing in a run
+ * of twenty looked like an ordinary row somebody forgot to fold. Red is for
+ * failures (§5.32).
+ */
+function FailedMark(): React.JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <span
+      data-feed-failed
+      style={{
+        marginInlineStart: 'auto',
+        fontSize: 9.5,
+        fontWeight: 700,
+        fontFamily: 'var(--font-ui)',
+        color: 'var(--status-crashed-ink)',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {t('feedView.failed')}
+    </span>
+  );
+}
+
+/**
+ * WHY it failed: the result the call came back with (#1271).
+ *
+ * Only for a failed call, and only on the two rows that had nowhere to show
+ * a result at all. "String to replace not found in file" and an MCP server's
+ * own error are the whole reason the row is standing there.
+ */
+function FailedReason({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
+  const why = b.tool?.failed ? (b.tool.out ?? '').trim() : '';
+  if (why === '') return null;
+  return (
+    <pre
+      data-feed-failed-reason
+      {...NO_TOGGLE}
+      style={{
+        margin: '2px 0 2px 14px',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 10,
+        color: 'var(--status-crashed-ink)',
+        maxBlockSize: 120,
+        overflow: 'auto',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      }}
+    >
+      {why}
+    </pre>
+  );
+}
+
 /** Edit/Write block (E10-06): header + added/removed subtitle + shaded panes. */
 function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
@@ -435,7 +494,9 @@ function EditBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minInlineSize: 0 }}>
             {b.tool?.filePath ?? b.tool?.summary}
           </span>
+          {b.tool?.failed && <FailedMark />}
         </FeedExpander>
+        <FailedReason b={b} />
         <div style={{ fontSize: 9.5, color: 'var(--muted)', marginBlock: 2 }}>
           {t('feedView.editStats', { added, removed })}
         </div>
@@ -567,21 +628,7 @@ function BashBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
               never folded into "Ran N commands", so this is the row that has
               to say so; until now nothing on it did, and you opened OUT to
               find the exit code. Red is for failures (§5.32). */}
-          {b.tool?.failed && (
-            <span
-              data-feed-failed
-              style={{
-                marginInlineStart: 'auto',
-                fontSize: 9.5,
-                fontWeight: 700,
-                fontFamily: 'var(--font-ui)',
-                color: 'var(--status-crashed-ink)',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {t('feedView.failed')}
-            </span>
-          )}
+          {b.tool?.failed && <FailedMark />}
         </FeedExpander>
         {section(inId, t('feedView.in'), b.tool?.summary ?? '', inOpen, () => setInExpanded(!inOpen))}
         {hasOut &&
@@ -788,6 +835,7 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
       >
         {b.tool?.summary}
       </span>
+      {b.tool?.failed && <FailedMark />}
     </>
   );
   return (
@@ -827,6 +875,7 @@ function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
             {b.tool.detail}
           </pre>
         )}
+        <FailedReason b={b} />
       </div>
       <ToolPictures b={b} />
     </ToolBox>

@@ -31,6 +31,7 @@ import {
 import { classifyInjected, describeInjectedTurn } from './injected';
 import { MAX_FEED_PICTURES_PER_BLOCK } from '../../shared/feed-picture';
 import { picturesIn, type PictureData } from './picture-data';
+import { mcpCall, webCall, type McpCall, type WebCall } from '../../shared/tool-fold';
 
 /**
  * What rode along with a prompt (#491, P2-E10-09/10).
@@ -92,6 +93,23 @@ export interface FeedBlock {
      * payload that is not the shape the CLI documents.
      */
     questions?: SettledQuestion[];
+    /**
+     * The file an edit changes, WHOLE (#1271): `file_path`, or a notebook's
+     * `notebook_path`. What a run of edits to one file is compared on. Not
+     * `filePath`, which is `file_path` only and decides which box draws the
+     * call; and not `summary`, which is cut for display, so two long paths
+     * could have read as one file. Absent for every other tool.
+     */
+    editPath?: string;
+    /**
+     * An MCP call: which server and which of its tools (#1271). What lets a
+     * run of calls to ONE server fold into a row that still names every tool
+     * called. Read from the name in `shared/tool-fold`; absent for every
+     * other tool.
+     */
+    mcp?: McpCall;
+    /** A web search or fetch: the query, or the site (#1271). */
+    web?: WebCall;
     /**
      * The pictures the result carried (#1240): one HANDLE each, in order. The
      * bytes stay in main (`pictures.ts`); the page asks for a thumbnail by
@@ -1000,6 +1018,21 @@ function toolIntent(
     tool.description = input.description.slice(0, caps.summary);
   }
   if (typeof input.file_path === 'string') tool.filePath = input.file_path;
+  // what a run of these folds BY (#1271): the server, or what was looked up.
+  // Capped like every other string that rides a block.
+  if (tool.category === 'edit') {
+    const edited = input.file_path ?? input.notebook_path;
+    if (typeof edited === 'string' && edited !== '') tool.editPath = edited;
+  }
+  const mcp = mcpCall(name, input);
+  if (mcp) tool.mcp = { server: mcp.server.slice(0, caps.summary), tool: mcp.tool.slice(0, caps.summary) };
+  const web = webCall(name, input);
+  if (web) {
+    tool.web =
+      web.kind === 'search'
+        ? { kind: 'search', query: web.query.slice(0, caps.summary) }
+        : { kind: 'page', host: web.host.slice(0, caps.summary) };
+  }
   if (typeof input.old_string === 'string') tool.oldString = input.old_string.slice(0, caps.edit);
   if (typeof input.new_string === 'string') tool.newString = input.new_string.slice(0, caps.edit);
   if (name === 'Write' && typeof input.content === 'string') {
