@@ -5108,6 +5108,72 @@ function removePanelKeepingSlot(api: DockviewApi, cardId: string, rung: Ladder):
 }
 
 /**
+ * Is this card waiting on a person RIGHT NOW (#1258)?
+ *
+ * `submitTarget`'s fourth rule is "the one card that needs a human is the one
+ * card auto-minimize must never take away", and it used to be answered from
+ * the session's STATUS alone. That is one of three things the window is told
+ * when a session asks, on three channels, and they do not land together: a
+ * request that arrived between the keystroke and the deferred call could be
+ * in the Events list, and already past the reveal that would have brought the
+ * card back, while the status still read `working`. The card was then hidden
+ * with an approval on it and nothing left to return it (measured: one run in
+ * three when the prompt that hides the card is the one that asks).
+ *
+ * So: the status, OR a request main is holding for it, OR a demand of its own
+ * in the Events list. Whichever the window heard first. Not
+ * `getNeedingCards`: that set also holds a returned review filed on the
+ * author's card, which is a button to press and not a session waiting.
+ */
+function cardWaitsOnHuman(cardId: string): boolean {
+  const state = sessionStore.getState();
+  if (presentStatus(state.sessions.find((s) => s.id === cardId)?.status).needsYou) return true;
+  const mine = (liveId: string): boolean => sessionStore.cardIdForLive(liveId) === cardId;
+  if (state.pendingPermissions.some((p) => mine(p.sessionId))) return true;
+  return state.events.some(
+    (e) => (e.kind === 'needs-permission' || e.kind === 'needs-input') && mine(e.sessionId)
+  );
+}
+
+/**
+ * A card that came back WITHOUT taking focus is still shown (#1258).
+ *
+ * An attention reveal adds the panel `inactive`, so it does not pull the tab
+ * out from under whatever the user is typing in. dockview takes that
+ * literally: in a pane where nothing else is showing, the panel is a tab with
+ * a blank rectangle under it. Measured in the real app: a hidden session
+ * holding an approval came "back" as a label over "No sessions open", with no
+ * approval bar anywhere on screen.
+ *
+ * Selecting it INSIDE its own pane is not a focus steal. `skipSetGroupActive`
+ * leaves the active pane, and so the keyboard, where they were; and it is
+ * only done when the pane has no selected tab, so it never changes what a
+ * pane was showing.
+ *
+ * `group.model.openPanel` is dockview's model API, read against dockview-core
+ * 7.0.2: for a panel already in the group it adds nothing and reorders
+ * nothing, it only selects. Re-read it when that version moves.
+ */
+/**
+ * Old pane id -> the pane that was opened to stand in for it (#1258), so
+ * cards that shared a home come back TOGETHER rather than in a pane each.
+ * Module state like `laddering`: a note about transitions in this run, not
+ * something anything renders from. A stale entry is harmless, because it is
+ * only followed when the pane it names still exists.
+ */
+const rehomed = new Map<string, string>();
+
+function showIfPaneIsBlank(panel: IDockviewPanel): void {
+  const group = panel.group;
+  if (group.activePanel) return;
+  try {
+    group.model.openPanel(panel, { skipSetGroupActive: true });
+  } catch {
+    /* fail-open: a tab with nothing under it is still a tab you can click */
+  }
+}
+
+/**
  * §5.8's auto-minimize on submit (P2-E9-06).
  *
  * The user just sent a prompt; the presentation policy says whether that card
@@ -5130,9 +5196,7 @@ export function applySubmitPolicy(api: DockviewApi | null, cardId: string): Ladd
     poppedOut: p.poppedOut,
     // the same vocabulary the rail rows and the lamps use, so "waiting on a
     // human" cannot mean one thing here and another three feet to the left
-    needsHuman: presentStatus(
-      sessionStore.getState().sessions.find((s) => s.id === cardId)?.status
-    ).needsYou,
+    needsHuman: cardWaitsOnHuman(cardId),
     // §5.8's pinning contract (E9-09): this is the "auto-collapse sweep" it
     // names, and a pinned card sits it out
     pinned: sessionStore.isPinned(cardId),
@@ -5650,7 +5714,12 @@ function moveHome(
       // landing in the grid. The slot record is untouched, so the monitor is
       // still what a later hide-and-click restores.
       try {
-        panel.api.moveTo({ group: api.addGroup(), skipSetActive: !focus });
+        // without focus the new pane must not become the active one either
+        // (#1258): see `revealNow`'s note on `skipSetActive`
+        const fresh = focus
+          ? api.addGroup()
+          : api.addGroup({ referenceGroup: panel.group, direction: 'right', skipSetActive: true });
+        panel.api.moveTo({ group: fresh, skipSetActive: !focus });
       } catch {
         /* fail-open: it stays in the stack, still marked expanded */
       }
@@ -5663,6 +5732,8 @@ function moveHome(
   // the whole transition, which is why both branches above can be skipped.
   sessionStore.setPresentation(cardId, { ladder: 'expanded' });
   if (focus) panel.focus();
+  // a fresh group reached with `skipSetActive` has no selected tab (#1258)
+  else showIfPaneIsBlank(panel);
 }
 
 /** Create a card's panel at its remembered slot (or monitor). */
@@ -5707,7 +5778,43 @@ async function revealNow(api: DockviewApi, cardId: string, focus = true): Promis
   // same one `addSessionCard` uses (#462): a card coming back from `hidden` has
   // exactly the same claim to a VISIBLE group that is not the document area,
   // and the old location-only `find` had the same husk blindness.
-  const refGroup = target ?? sessionCardHome(api);
+  const fallback = target ? undefined : sessionCardHome(api);
+  // A PANE OF ITS OWN, WHEN THE ONE IT LEFT IS GONE AND NOBODY IS TAKING IT TO
+  // THE FRONT (#1258).
+  //
+  // `fallback` is some OTHER card's pane. Landing there with `focus` is fine:
+  // the user clicked, the card becomes the selected tab, they are looking at
+  // it. Landing there WITHOUT focus makes it an unselected tab behind that
+  // other card, which is a card that is "back" and cannot be seen: the
+  // approval bar it came back to show is one more thing to go looking for.
+  // That is what an arrangement of panes side by side did to every reveal,
+  // since a card alone in its pane takes the pane with it when it is hidden.
+  //
+  // So it gets a pane again. Not the same geometry (dockview keeps none for a
+  // group that no longer exists), but its own, visible, and nobody's cursor
+  // moves. `moveHome`'s fresh-group branch makes the same call for the same
+  // reason. An EMPTY fallback is simply used: a second pane beside a blank
+  // one would be the blank rectangle again.
+  //
+  // ONE NEW PANE PER HOME THAT WENT AWAY, not one per card. Three sessions
+  // that were tabs in one pane, all hidden, all asking: the first gets the
+  // pane back and the others rejoin it as tabs behind it, which is what they
+  // were. `rehomed` remembers which new pane stands in for which old one.
+  const goneHome = sessionStore.getPresentation(cardId).slot?.groupId;
+  const standIn = goneHome ? api.groups.find((g) => g.id === rehomed.get(goneHome)) : undefined;
+  const ownPane =
+    !focus && !place.popout && !standIn && !!fallback && fallback.panels.length > 0;
+  let refGroup = target ?? fallback ?? api.addGroup();
+  if (!target && !focus && !place.popout && standIn) refGroup = standIn;
+  else if (ownPane && fallback) {
+    // `skipSetActive`, and it needs the reference to be honoured: a bare
+    // `addGroup()` ALWAYS makes the new pane the active one (dockview-core
+    // 7.0.2, `addGroup`'s last branch), which moves the selected row, the
+    // card the keyboard commands act on and "the card in front" to a session
+    // nobody went to, while the caret stays where it was. Found in review.
+    refGroup = api.addGroup({ referenceGroup: fallback, direction: 'right', skipSetActive: true });
+    if (goneHome) rehomed.set(goneHome, refGroup.id);
+  }
   // ...and the REMEMBERED group can be that same hidden shell: hide card A, pop
   // its group-mate B out, and the group A calls home survives as B's dock-back
   // husk. Revive it rather than landing A at home and 0px wide — exactly what
@@ -5754,6 +5861,7 @@ async function revealNow(api: DockviewApi, cardId: string, focus = true): Promis
     }
   }
   sessionStore.setPresentation(cardId, { ladder: 'expanded' });
+  if (!focus && !place.popout) showIfPaneIsBlank(panel);
   if (place.popout) {
     // It was in its own window and that window is gone: open a new one at the
     // remembered rect, opener-relative (#86). The rect is absolute screen

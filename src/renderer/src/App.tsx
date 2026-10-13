@@ -127,7 +127,7 @@ import type {
 } from '../../shared/push';
 import { revealTargets } from './lib/ladder';
 import { useUrgencyBeat } from './lib/use-urgency-beat';
-import { installSeenWatch } from './lib/seen';
+import { installSeenWatch, noteBroughtForward } from './lib/seen';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
 import { interpretPushAnswer } from './lib/push-answer';
@@ -1686,6 +1686,11 @@ export function App(): React.JSX.Element {
     // inventing a tie-break here would only make the coin look loaded.
     const placing = new Set(plan.cardIds);
     const focusing = new Set(plan.focusIds);
+    // SAID BEFORE THE FOCUS, so the "I looked at it" watch knows this card is
+    // about to be in front by OUR doing (#1258). Without it a session that
+    // finished in a pane beside the one being typed in was marked as seen in
+    // the same frame it was counted, and "1 finished" was a flicker.
+    for (const cardId of plan.focusIds) noteBroughtForward(cardId);
     for (const cardId of plan.cardIds) grid.current?.revealCard(cardId, focusing.has(cardId));
     for (const cardId of plan.focusIds) {
       // through App's own wrapper, not grid's: it records that a DIFFERENT OS

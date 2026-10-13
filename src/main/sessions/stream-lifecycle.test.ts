@@ -9,6 +9,8 @@ import { MainContributions } from '../extensibility/contributions';
 import { SessionTransport, TransportSpawnOptions } from '../transport/transport';
 import type { TransportKind } from '../../shared/transport';
 import { LogSink, createLogger } from '../log/logger';
+import { StreamPermissions } from './stream-permissions';
+import { EventFeed } from '../events/feed';
 
 // ---- the mapper, pure -------------------------------------------------------
 
@@ -770,5 +772,255 @@ describe("the /clear tag comes from `conversation_reset`, not an id change (#753
     expect(() => stream.emit(rec.id, reset('gone'))).not.toThrow();
     expect(() => stream.emit(rec.id, init('native-1'))).not.toThrow();
     expect(mgr.get(rec.id)).toBeUndefined();
+  });
+});
+// #1258 — a held request keeps the session waiting.
+//
+// The owner's log, 2026-10-12 18:31:35 UTC:
+//
+//     working -> needs-permission   cause: permission-held
+//     needs-permission -> working   cause: stream:stream_event   (same second)
+//     ...the approval was answered 35 seconds later
+//
+// 51 of 305 held requests went that way (16 of them questions), and every
+// "N need you" readout hangs off this status by way of the Events list.
+describe('a held request pins the wait (#1258)', () => {
+  const held = { held: true };
+
+  describe('transition, told that something is held', () => {
+    // every one of these is in the log as a cause, or is the same thing by
+    // another road: none of them is an ANSWER
+    const notAnAnswer: Array<[string, Parameters<typeof transition>[1]]> = [
+      ['a stream_event frame', { kind: 'stream', event: 'stream_event' }],
+      ['an assistant frame', { kind: 'stream', event: 'assistant' }],
+      ['a tool finishing beside the held one', { kind: 'hook', event: 'PostToolUse' }],
+      ['a tool starting beside it', { kind: 'hook', event: 'PreToolUse', tool: 'Read' }],
+      ['a prompt typed into the composer', { kind: 'prompt-sent' }],
+      ['the prompt hook', { kind: 'hook', event: 'UserPromptSubmit' }],
+      ["the CLI's idle nag", { kind: 'hook', event: 'Notification', message: 'Claude is waiting for your input' }],
+      ['a late start-up hook', { kind: 'hook', event: 'SessionStart', source: 'resume' }],
+      ['the Stop hook of a turn that is still asking', { kind: 'hook', event: 'Stop' }],
+      ['an answer to ONE of two requests', { kind: 'permission-resolved' }],
+    ];
+    for (const [what, ev] of notAnAnswer) {
+      it(`${what} does not end it`, () => {
+        for (const waiting of ['needs-permission', 'needs-input'] as const) {
+          const r = transition(waiting, ev, held);
+          expect(r).toMatchObject({ status: waiting, changed: false, note: 'request-still-held' });
+        }
+      });
+    }
+
+    it('another request is still a request', () => {
+      expect(transition('needs-permission', { kind: 'permission-held' }, held).status).toBe(
+        'needs-permission'
+      );
+      expect(transition('needs-input', { kind: 'permission-held' }, held).status).toBe(
+        'needs-permission'
+      );
+    });
+
+    // Pinning here would strand the card: the deadline that finally clears the
+    // request would walk a FINISHED session to `working`, with nothing left to
+    // end it.
+    it('the turn ENDING still ends it', () => {
+      const r = transition('needs-permission', { kind: 'stream', event: 'result', subtype: 'success' }, held);
+      expect(r.status).toBe('done');
+    });
+
+    it('a crash and an exit always win', () => {
+      expect(transition('needs-permission', { kind: 'exit', code: 1 }, held).status).toBe('crashed');
+      expect(transition('needs-permission', { kind: 'exit', code: 0 }, held).status).toBe('done');
+    });
+
+    // the pin is about WAITING. A session that is not waiting is not held in
+    // place by a request that has just been raised and not yet registered.
+    it('only a waiting session is pinned', () => {
+      expect(transition('working', { kind: 'stream', event: 'result' }, held).status).toBe('done');
+      expect(transition('idle', { kind: 'prompt-sent' }, held).status).toBe('working');
+      expect(transition('done', { kind: 'stream', event: 'assistant' }, held).status).toBe('working');
+    });
+
+    it('with nothing held, every one of them behaves exactly as before', () => {
+      expect(transition('needs-permission', { kind: 'stream', event: 'stream_event' }).status).toBe('working');
+      expect(transition('needs-permission', { kind: 'permission-resolved' }).status).toBe('working');
+      expect(transition('needs-input', { kind: 'hook', event: 'PostToolUse' }, { held: false }).status).toBe(
+        'working'
+      );
+    });
+  });
+
+  // THE WHOLE CHAIN IN MAIN, wired as `index.ts` wires it: the pump, the real
+  // router, the real feed. What the renderer counts is `feed.list()`.
+  describe('the pump, the router and the Events list together', () => {
+    const ask = (requestId: string, tool = 'Bash') => ({
+      type: 'control_request',
+      request_id: requestId,
+      request: { subtype: 'can_use_tool', tool_name: tool, input: { command: 'gh issue list' } },
+    });
+
+    function wired(): { mgr: SessionManager; perms: StreamPermissions; feed: EventFeed } {
+      const mgr = streamManager();
+      const perms = new StreamPermissions(
+        () => true,
+        (sessionId, ev) => mgr.apply(sessionId, ev),
+        createLogger(new LogSink({ dir }), 'perm'),
+        { hasLiveWindow: () => true }
+      );
+      perms.setAnswerSurfaceProbe(() => true);
+      mgr.onStreamMessage((sessionId, msg) => perms.offer(sessionId, msg));
+      mgr.setHeldRequestProbe((sessionId) => perms.holdsRequestFor(sessionId));
+      const feed = new EventFeed();
+      feed.setHeldRequestProbe((sessionId) => perms.holdsRequestFor(sessionId));
+      mgr.onStatusChange((c) => feed.ingest(c));
+      return { mgr, perms, feed };
+    }
+    const kinds = (feed: EventFeed): string[] => feed.list().map((e) => e.kind);
+
+    it('the frames that follow an approval leave it counted, until it is answered', async () => {
+      const { mgr, perms, feed } = wired();
+      const rec = mgr.create(identity);
+      await tick();
+      mgr.apply(rec.id, { kind: 'prompt-sent' });
+
+      stream.emit(rec.id, ask('req-1'));
+      expect(mgr.get(rec.id)!.status).toBe('needs-permission');
+      const row = feed.list()[0];
+
+      // exactly what the log shows arriving next, and then some
+      for (let i = 0; i < 12; i++) {
+        stream.emit(rec.id, { type: 'stream_event' });
+        stream.emit(rec.id, { type: 'assistant' });
+      }
+      mgr.apply(rec.id, { kind: 'hook', event: 'PostToolUse', tool: 'Read' });
+
+      expect(mgr.get(rec.id)!.status).toBe('needs-permission');
+      expect(feed.list()).toEqual([row]); // the same row: nothing re-announced
+
+      expect(perms.decide(`stream:${rec.id}:req-1`, 'allow')).toBe(true);
+      expect(mgr.get(rec.id)!.status).toBe('working');
+      expect(kinds(feed)).toEqual([]);
+    });
+
+    it('a question takes the same road', async () => {
+      const { mgr, perms, feed } = wired();
+      const rec = mgr.create(identity);
+      await tick();
+      mgr.apply(rec.id, { kind: 'prompt-sent' });
+
+      stream.emit(rec.id, ask('q-1', 'AskUserQuestion'));
+      stream.emit(rec.id, { type: 'stream_event' });
+      stream.emit(rec.id, { type: 'assistant' });
+
+      expect(mgr.get(rec.id)!.status).toBe('needs-permission');
+      expect(kinds(feed)).toEqual(['needs-permission']);
+      perms.decide(`stream:${rec.id}:q-1`, 'deny');
+      expect(kinds(feed)).toEqual([]);
+    });
+
+    it('two asked at once: answering one leaves the other counted, and streaming does not uncount it', async () => {
+      const { mgr, perms, feed } = wired();
+      const rec = mgr.create(identity);
+      await tick();
+      mgr.apply(rec.id, { kind: 'prompt-sent' });
+
+      stream.emit(rec.id, ask('req-1'));
+      stream.emit(rec.id, { type: 'stream_event' });
+      stream.emit(rec.id, ask('req-2'));
+      perms.decide(`stream:${rec.id}:req-1`, 'allow');
+      stream.emit(rec.id, { type: 'assistant' });
+
+      expect(mgr.get(rec.id)!.status).toBe('needs-permission');
+      expect(kinds(feed)).toEqual(['needs-permission']);
+
+      perms.decide(`stream:${rec.id}:req-2`, 'allow');
+      expect(mgr.get(rec.id)!.status).toBe('working');
+      expect(kinds(feed)).toEqual([]);
+    });
+
+    it('the turn ending while something is held finishes the session, and the late answer does not un-finish it', async () => {
+      const { mgr, perms, feed } = wired();
+      const rec = mgr.create(identity);
+      await tick();
+      mgr.apply(rec.id, { kind: 'prompt-sent' });
+
+      stream.emit(rec.id, ask('req-1'));
+      stream.emit(rec.id, { type: 'result', subtype: 'error_during_execution' });
+      expect(mgr.get(rec.id)!.status).toBe('done');
+      expect(kinds(feed)).toEqual(['done']);
+
+      perms.releaseHeld('the deadline');
+      expect(mgr.get(rec.id)!.status).toBe('done');
+    });
+
+    it('a request the CLI withdraws un-pins the session and leaves the count', async () => {
+      const { mgr, perms, feed } = wired();
+      const rec = mgr.create(identity);
+      await tick();
+      mgr.apply(rec.id, { kind: 'prompt-sent' });
+
+      stream.emit(rec.id, ask('req-1'));
+      stream.emit(rec.id, { type: 'stream_event' });
+      expect(kinds(feed)).toEqual(['needs-permission']);
+
+      stream.emit(rec.id, { type: 'control_cancel_request', request_id: 'req-1' });
+
+      expect(perms.holdsRequestFor(rec.id)).toBe(false);
+      expect(mgr.get(rec.id)!.status).toBe('working');
+      expect(kinds(feed)).toEqual([]);
+      // and the next frame is an ordinary frame again
+      stream.emit(rec.id, { type: 'result', subtype: 'success' });
+      expect(mgr.get(rec.id)!.status).toBe('done');
+    });
+
+    it('the session next door is untouched by any of it', async () => {
+      const { mgr, feed } = wired();
+      const asking = mgr.create(identity);
+      const busy = mgr.create(identity);
+      await tick();
+      mgr.apply(asking.id, { kind: 'prompt-sent' });
+      mgr.apply(busy.id, { kind: 'prompt-sent' });
+
+      stream.emit(asking.id, ask('req-1'));
+      stream.emit(busy.id, { type: 'assistant' });
+      stream.emit(busy.id, { type: 'result', subtype: 'success' });
+
+      expect(mgr.get(busy.id)!.status).toBe('done');
+      expect(feed.list().map((e) => `${e.sessionId === asking.id ? 'asking' : 'busy'}:${e.kind}`)).toEqual([
+        'asking:needs-permission',
+        'busy:done',
+      ]);
+    });
+  });
+
+  describe('the probe itself', () => {
+    const ask = {
+      type: 'control_request',
+      request_id: 'req-1',
+      request: { subtype: 'can_use_tool', tool_name: 'Write' },
+    };
+
+    // "I can't tell" must be the behaviour every release before this had, not
+    // a card that can never leave needs-permission
+    it('a probe that throws pins nothing', async () => {
+      const mgr = streamManager();
+      const rec = mgr.create(identity);
+      await tick();
+      mgr.setHeldRequestProbe(() => {
+        throw new Error('the router exploded');
+      });
+      stream.emit(rec.id, ask);
+      expect(() => stream.emit(rec.id, { type: 'assistant' })).not.toThrow();
+      expect(mgr.get(rec.id)!.status).toBe('working');
+    });
+
+    it('no probe at all is the old behaviour, unchanged', async () => {
+      const mgr = streamManager();
+      const rec = mgr.create(identity);
+      await tick();
+      stream.emit(rec.id, ask);
+      stream.emit(rec.id, { type: 'assistant' });
+      expect(mgr.get(rec.id)!.status).toBe('working');
+    });
   });
 });

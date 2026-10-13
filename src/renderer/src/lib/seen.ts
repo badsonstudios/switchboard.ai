@@ -21,10 +21,18 @@
 // whatever focus says). VISIBLE IS NOT SEEN: a card on screen while you are at
 // lunch has not been looked at, and is still counted when you come back.
 //
-// What that test cannot tell apart, and does not try to: a card that came to
-// the front BY ITSELF while you were busy in the same window (a session set to
-// "always jump to it", or the neighbour of a card you just closed). It was put
-// in front of someone who is there, which is way 3 by another road.
+// A CARD THE APP BROUGHT FORWARD IS NOT ONE YOU WENT TO (#1258). This used to
+// say the opposite: a session that jumped to the front by itself "was put in
+// front of someone who is there, which is way 3 by another road". Under the
+// default setting ("jump if its card is on screen") that is EVERY session
+// that finishes in a pane beside the one you are typing in. Measured in the
+// real app: "1 finished" was on screen for under 150 ms. The owner: "it only
+// showed for a fraction of a second, then disappeared again."
+//
+// So the app says when a move was its own (`noteBroughtForward`), and such a
+// card stays counted until you touch it (way 2) or leave and come back
+// (way 1). The neighbour of a card you just closed is still way 1: closing
+// was your move.
 //
 // WAY 2 IS NARROWER THAN "ANY INPUT". A click on the list, a key in the
 // command palette or a dialog, a right-click that opens a menu: none of those
@@ -37,6 +45,26 @@
 // silenced by looking at them, by construction and not by a check here.
 import { sessionStore } from '../store/session-store';
 import { getPopoutWindows, subscribePopoutWindows } from './popout-windows';
+
+/**
+ * Cards that are in front because the APP put them there, not the user.
+ * Module state, like the watch's own maps: it is not something anything
+ * renders from.
+ */
+const broughtForward = new Set<string>();
+
+/**
+ * The app is about to bring this card to the front by itself: a session that
+ * finished or needs you, under a "jump to it" setting. Call it BEFORE the
+ * focus, so the watch reads the mark when the front changes.
+ */
+export function noteBroughtForward(cardId: string | null | undefined): void {
+  // NOT the card that is already in front. Nothing is about to move, so
+  // nothing would ever take the mark off again, and that card's NEXT turn
+  // would finish in front of its owner and be counted as unseen.
+  if (!cardId || cardId === sessionStore.getState().activeCard) return;
+  broughtForward.add(cardId);
+}
 
 /** How recently the window must have been used for "it finished in front of
  *  me" to count as seen. */
@@ -135,11 +163,14 @@ export function installSeenWatch(mainWindow: Window = window): () => void {
 
   const onInput = (win: Window, e: Event): void => {
     lastInput.set(win, Date.now());
-    if (sessionStore.getFinishedCards().size === 0) return;
+    if (broughtForward.size === 0 && sessionStore.getFinishedCards().size === 0) return;
     // way 2: only input inside the card's own body is "touching it"
     const body = activeCardBody(e.target);
     if (!body) return;
     const card = win === mainWindow ? mainFront() : popoutCardOf(body);
+    // touching it is looking at it, however it got to the front; and that
+    // holds whether or not anything has finished YET
+    if (card) broughtForward.delete(card);
     if (card && sessionStore.getFinishedCards().has(card)) markSeen(card);
   };
 
@@ -190,6 +221,11 @@ export function installSeenWatch(mainWindow: Window = window): () => void {
     const before = finished;
     front = nowFront;
     finished = nowFinished;
+    // the mark lasts while that card stays in front: go somewhere else and
+    // coming back to it is an ordinary visit again
+    if (went) {
+      for (const id of [...broughtForward]) if (id !== nowFront) broughtForward.delete(id);
+    }
     if (nowFinished.size === 0) return;
     const now = Date.now();
     // ONLY AT THE MOMENT SOMETHING HAPPENED TO THAT CARD: you just went to it
@@ -203,6 +239,8 @@ export function installSeenWatch(mainWindow: Window = window): () => void {
       card &&
       nowFinished.has(card) &&
       (went || justFinished(card)) &&
+      // in front by the app's own doing: nobody went, nobody was watching it
+      !broughtForward.has(card) &&
       using(mainWindow, now)
     ) {
       markSeen(card);
@@ -217,6 +255,7 @@ export function installSeenWatch(mainWindow: Window = window): () => void {
   });
 
   return () => {
+    broughtForward.clear();
     offStore();
     offPopouts();
     for (const win of [...watched.keys()]) unwatch(win);

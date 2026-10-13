@@ -503,6 +503,18 @@ spot no longer exists, it comes back into the main grid rather than nowhere.
 a question, or finishes while it's collapsed, tabbed or hidden, its card
 reappears in its old spot without you doing anything.
 
+*Its old spot* depends on where it was. If it shared a pane with other
+sessions, it comes back as a tab among them, in the same position, and the tab
+you were on stays the one showing. If it had a **pane to itself**, that pane
+went away with it, so it gets a pane of its own again, with its approval or its
+question showing. That new pane is added beside the others; it may not be the
+same size or on the same side as before. Sessions that shared a pane and were
+all put away come back to one pane together, not one each. The pane you are
+working in stays the one in front.
+
+A session that is **already waiting on you** is never put away by *Hide on
+submit* or *Collapse on submit*, even if you send it another prompt.
+
 It reappears *without stealing your place*. Whatever you were typing in stays
 focused — the returning card waits for you rather than grabbing the screen. Its
 highlighted row in the Sessions list and the Events list are what tell you it's

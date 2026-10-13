@@ -80,7 +80,40 @@ export function isPermissionNotification(ev: SessionEvent): boolean {
   return /permission/i.test(`${ev.notificationType ?? ''} ${ev.message ?? ''}`);
 }
 
-export function transition(current: SessionStatus, ev: SessionEvent): TransitionResult {
+/**
+ * What `transition` cannot work out from the status and the event alone.
+ *
+ * `held` (#1258): is a request from this session still waiting on a person —
+ * an approval or a question that main is holding and nobody has answered?
+ * Passed in rather than looked up, so this stays a pure function; the manager
+ * asks whoever holds them (`SessionManager.setHeldRequestProbe`).
+ */
+export interface TransitionContext {
+  held?: boolean;
+}
+
+/**
+ * The only events that end a wait on a held request (#1258). Everything else
+ * that arrives while one is held is the session doing something BESIDE the
+ * wait, and none of it is an answer.
+ *
+ *  - `permission-held`: another request. Still waiting (and `needs-input`
+ *    becomes `needs-permission`, as it always has).
+ *  - a stream `result`: the turn is OVER. Whatever was asked in it is moot,
+ *    and pinning here would strand the card: the answer or the deadline that
+ *    finally clears the request would walk a finished session to `working`,
+ *    with nothing left to end it.
+ *  - `exit` is handled before this is consulted, as it always was.
+ */
+function endsHeldWait(ev: SessionEvent): boolean {
+  return ev.kind === 'permission-held' || (ev.kind === 'stream' && ev.event === 'result');
+}
+
+export function transition(
+  current: SessionStatus,
+  ev: SessionEvent,
+  ctx: TransitionContext = {}
+): TransitionResult {
   const to = (status: SessionStatus, note?: string): TransitionResult => ({
     status,
     changed: status !== current,
@@ -96,6 +129,49 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
   if (ev.kind === 'exit') {
     // done -> exit(0) is a normal wind-down, not a crash
     return ev.code === 0 || current === 'done' ? to('done') : to('crashed');
+  }
+
+  // A HELD REQUEST PINS THE WAIT (#1258).
+  //
+  // The header's rule, "any working-ish event clears needs-* states", was
+  // written for the PTY, where nothing told us a prompt had been answered. On
+  // the control channel we KNOW: a request is held until it is answered, runs
+  // out of time, or is cancelled by the CLI, and the router that held it says
+  // so each time (`permission-resolved`, applied after it has let go).
+  //
+  // ONE CASE IT DOES NOT SAY SO, known and left: a turn that ends (an
+  // interrupt, say) with a request still in the router and no cancel from the
+  // CLI. `result` ends the wait here, but the request stays held until its
+  // deadline (a question has none), with its bar still on the card. A LATER
+  // request on that session is then pinned behind it until that turn's own
+  // `result`. The router cannot drop it at `result` without knowing that
+  // nothing in the background is still waiting on the answer. Tracked as #1268.
+  //
+  // Without this the session's status was right for one frame. MEASURED, in
+  // the owner's log: 51 of 305 held requests were walked back to `working`
+  // while still held, 16 of them questions, some within a millisecond:
+  //
+  //     stream:stream_event   38     the rest of the message that asked
+  //     stream:assistant      11
+  //     hook:PostToolUse       2     a tool running BESIDE the held one
+  //
+  // The real CLI keeps streaming after it asks (a message can carry several
+  // tool calls), and every "N need you" readout hangs off this status by way
+  // of the Events list. So the approval sat there for up to five minutes under
+  // a card that said "working", counted nowhere.
+  //
+  // Which is why this is not a rule about stream frames. A hook, a prompt typed
+  // into the composer, the CLI's idle nag: none of them answers a request, so
+  // none of them may end the wait. `permission-resolved` is pinned too while
+  // something is STILL held (two calls asked at once, one answered). The
+  // router's `decide` and deadline already decline to send it then; two of
+  // `offer`'s immediate refusals do not, and this covers them.
+  if (
+    ctx.held &&
+    (current === 'needs-permission' || current === 'needs-input') &&
+    !endsHeldWait(ev)
+  ) {
+    return stay('request-still-held');
   }
 
   // A completed turn is TURN-TERMINAL: only a genuinely new turn leaves it.

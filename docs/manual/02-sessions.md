@@ -328,12 +328,20 @@ looking:
 A card that is merely on screen while you are away has **not** been looked at,
 and is still counted when you come back.
 
+Nor has a session that **came to the front by itself**. With the default
+setting, a session that finishes in a pane you can see becomes the one in
+front; that is the app's move, not yours, so it stays counted until you click
+or type in it, or go somewhere else and come back to it.
+
 You can also clear it without going to it: **right-click the session ▸ Mark as
 seen**. And the **N finished** total is a button: click it to mark every
 finished session as seen at once.
 
 **A session that needs you never clears by being looked at.** It leaves the
-count when you answer it. If you dismiss its entry in **Events** instead, the
+count when you answer it, and not before: it stays in **N need you** for as
+long as it is waiting, whatever else it writes in the meantime. The two
+counts sit side by side, **need you** first, and neither takes the place of
+the other. If you dismiss its entry in **Events** instead, the
 highlight and the count both drop, but the word on the row stays colored: it
 is still waiting.
 

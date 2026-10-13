@@ -1692,6 +1692,33 @@ export function permissionHolder(
 }
 
 /**
+ * `permissionHolder`, for a CLI that KEEPS STREAMING after it asks (#1258).
+ *
+ * The real one does: a message can carry several tool calls, and the request
+ * for the first arrives while the rest is still streaming. `!perm` asks and
+ * goes quiet, which is why every count of "a held approval" was green against
+ * a build that showed nothing. See `!permstream` in `fake-stream-protocol.ts`.
+ */
+export function streamingPermissionHolder(
+  a: LaunchedApp
+): (title: string, marker?: string) => Promise<void> {
+  const prompt = streamPrompter(a);
+  return async (title, marker = 'held.sh') => {
+    await pinLabelToFolder(a, title);
+    await prompt(title, `!permstream ${marker}`);
+  };
+}
+
+/** The same for a QUESTION: `!askstream` asks, and the stream goes on (#1258). */
+export function streamingQuestionHolder(a: LaunchedApp): (title: string) => Promise<void> {
+  const prompt = streamPrompter(a);
+  return async (title) => {
+    await pinLabelToFolder(a, title);
+    await prompt(title, '!askstream');
+  };
+}
+
+/**
  * Raise a BASH permission carrying `command` verbatim.
  *
  * For the claims that need a real command string in the held request: the OS

@@ -475,6 +475,10 @@ export class StreamPermissions {
    * is a consequence of the app going away, not a separate fault to report.
    */
   offer(sessionId: string, msg: Record<string, unknown>): void {
+    if (msg.type === 'control_cancel_request') {
+      this.withdrawn(sessionId, asDisplayString(msg.request_id));
+      return;
+    }
     if (msg.type !== 'control_request') return;
     const req = msg.request as Record<string, unknown> | undefined;
     if (req?.subtype !== 'can_use_tool') return;
@@ -1297,6 +1301,41 @@ export class StreamPermissions {
     this.notifyResolved(requestId);
   }
 
+  /**
+   * The CLI took a request BACK (#1258): `control_cancel_request`.
+   *
+   * THE CONTRACT, read from the known-correct consumer and not guessed
+   * (`docs/reference-implementations.md`; the Agent SDK embedded in the VS
+   * Code extension, 2.1.289): the message is `{ type:
+   * 'control_cancel_request', request_id }`, and the SDK's whole answer is to
+   * abort its handler for that id. So: nothing is sent back.
+   *
+   * NOT MEASURED against the CLI on PATH: when it actually sends one (an
+   * interrupt is the likely case). This only reads a message if it arrives;
+   * if the CLI never sends it, nothing here changes.
+   *
+   * Why it matters now. A request nobody will ever answer used to be hidden
+   * by the next stream frame walking the status back to `working`. With a
+   * held request pinning the wait, a withdrawn one left in `pending` would
+   * keep the card waiting, with a bar that answers nothing, until its
+   * deadline; a question has no deadline at all.
+   *
+   * Let go, apply, notify: `failOpen` without the denial.
+   */
+  private withdrawn(sessionId: string, nativeRequestId: string): void {
+    if (!nativeRequestId) return;
+    const requestId = `stream:${sessionId}:${nativeRequestId}`;
+    const p = this.pending.get(requestId);
+    if (!p) return; // answered already, or never ours: nothing to take back
+    this.pending.delete(requestId);
+    if (p.timer) clearTimeout(p.timer);
+    if (!this.holdsAnotherFor(sessionId, requestId)) {
+      this.applyStatus(sessionId, { kind: 'permission-resolved' });
+    }
+    this.log.info('stream permission withdrawn by the CLI', { requestId, sessionId });
+    this.notifyResolved(requestId);
+  }
+
   /** Is this router still holding a request for the session, other than this one? */
   private holdsAnotherFor(sessionId: string, exceptRequestId: string): boolean {
     for (const [id, held] of this.pending) {
@@ -1593,6 +1632,24 @@ export class StreamPermissions {
   clearDispatched(sessionId: string): void {
     if (!this.dispatchedSessions.delete(sessionId)) return;
     this.log.info('dispatched session taken over by a person', { sessionId });
+  }
+
+  /**
+   * Is a request from this session still waiting on a person (#1258)?
+   *
+   * The one question the status machine and the Events list ask of this
+   * router, and they ask it for the same reason: a held request is the fact,
+   * and the session's status is only a report of it. True from the moment
+   * `offer` parks a request until `decide`, the deadline, a lost window or a
+   * teardown takes it out, each of which removes it BEFORE saying so, so the
+   * `permission-resolved` that follows the last one is never asked about a
+   * request that is already gone.
+   */
+  holdsRequestFor(sessionId: string): boolean {
+    for (const held of this.pending.values()) {
+      if (held.sessionId === sessionId) return true;
+    }
+    return false;
   }
 
   pendingRequests(): PermissionRequest[] {

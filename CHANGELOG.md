@@ -113,6 +113,24 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **"N need you" stays up for as long as a session is waiting on you.** When a
+  session asked for an approval or asked you a question, the yellow count
+  showed for a fraction of a second and went away, while the session was still
+  waiting. Approvals ran out unanswered because nothing on screen said one was
+  there. Claude often keeps writing after it asks, and the count was being
+  cleared by that. It now stays, on the list's total, on the group, on the
+  session's row or pill, and in Events, until you answer.
+- **"N finished" stays up until you look.** A session that finished in a pane
+  beside the one you were typing in was marked as seen at once, so the green
+  count flashed and was gone. A session that comes to the front by itself no
+  longer counts as you having looked at it. Click in it, or go to it, and it
+  clears as before.
+- **A hidden session that needs you comes back where you can see it.** A
+  session put away by "Hide on submit" or "Collapse on submit" that then asked
+  for an approval or asked a question could come back as a tab behind another
+  session, or as a blank pane, with its approval nowhere on screen. It now
+  comes back showing, in a pane of its own if it had one, and your cursor
+  stays where it was.
 - **A file name cannot disguise itself on its chip.** A file's name can carry
   invisible characters that reverse how part of it is drawn, so a program
   could look like a PDF. Those characters are now taken out when you attach a

@@ -1476,3 +1476,101 @@ describe('`/compact` puts the summary on the wire as a synthetic user message (#
     expect(lines.some((l) => l.type === 'system' && l.subtype === 'compact_boundary')).toBe(true);
   });
 });
+// #1258 — ask, and KEEP STREAMING. The real CLI does (a message can carry
+// several tool calls; the request for the first arrives while the rest is
+// still streaming), and `!perm` did not, which is why every count of "a held
+// approval" was green against a build that showed nothing.
+describe('!permstream and !askstream: a request, and output after it (#1258)', () => {
+  /** a host with a clock the test turns by hand */
+  function ticking(): { p: FakeStreamProtocol; tick: () => boolean } {
+    const due: Array<() => void> = [];
+    const p = new FakeStreamProtocol({ ...host, later: (_ms, fn) => due.push(fn) }, (m) => out.push(m));
+    return {
+      p,
+      tick: () => {
+        const fn = due.shift();
+        fn?.();
+        return !!fn;
+      },
+    };
+  }
+  const types = (): string[] => out.map((m) => String(m.type));
+  const answer = (p: FakeStreamProtocol, behavior: 'allow' | 'deny'): void => {
+    const req = out.find((m) => m.type === 'control_request') as { request_id: string };
+    p.handle({
+      type: 'control_response',
+      response: { subtype: 'success', request_id: req.request_id, response: { behavior } },
+    });
+  };
+
+  it('the request comes FIRST, and both frame types a host reads as "working" follow it', () => {
+    proto.handle(userMsg('!permstream .claude/x.sh'));
+    const at = types().indexOf('control_request');
+    expect(at).toBeGreaterThanOrEqual(0);
+    const after = types().slice(at + 1);
+    expect(after).toContain('stream_event');
+    expect(after).toContain('assistant');
+    // and the turn has NOT ended: the request is still waiting
+    expect(types()).not.toContain('result');
+  });
+
+  it('it is the same Write request !perm raises', () => {
+    proto.handle(userMsg('!permstream .claude/x.sh'));
+    const req = out.find((m) => m.type === 'control_request') as {
+      request: { subtype: string; tool_name: string; input: { file_path: string } };
+    };
+    expect(req.request.subtype).toBe('can_use_tool');
+    expect(req.request.tool_name).toBe('Write');
+    expect(req.request.input.file_path).toBe('/work/.claude/x.sh');
+  });
+
+  it('!askstream raises the question, with none of the permission furniture', () => {
+    proto.handle(userMsg('!askstream'));
+    const req = out.find((m) => m.type === 'control_request') as {
+      request: Record<string, unknown> & { input: { questions: unknown[] } };
+    };
+    expect(req.request.tool_name).toBe('AskUserQuestion');
+    expect(req.request.input.questions).toHaveLength(1);
+    expect('decision_reason' in req.request).toBe(false);
+    expect(types().slice(types().indexOf('control_request') + 1)).toContain('stream_event');
+  });
+
+  it('with a clock, it goes on streaming for as long as nobody answers', () => {
+    const { p, tick } = ticking();
+    p.handle(userMsg('!permstream .claude/x.sh'));
+    for (let i = 1; i <= 3; i++) {
+      out.length = 0;
+      expect(tick()).toBe(true);
+      expect(types()).toContain('stream_event');
+      expect(types()).toContain('assistant');
+      expect(types()).not.toContain('result');
+    }
+  });
+
+  it('the answer stops it, and is handled exactly as for !perm', () => {
+    const { p, tick } = ticking();
+    p.handle(userMsg('!permstream .claude/x.sh'));
+    tick();
+    answer(p, 'allow');
+    expect(writes).toEqual([{ path: '/work/.claude/x.sh', content: 'echo hi\n' }]);
+    expect(types()).toContain('result');
+
+    out.length = 0;
+    tick(); // the tick that was already due finds nothing held, and says nothing
+    expect(out).toEqual([]);
+    expect(tick()).toBe(false); // and schedules no more
+  });
+
+  it('it stops by itself after ten seconds of ticks: a fixture, not a process that talks for ever', () => {
+    const { p, tick } = ticking();
+    p.handle(userMsg('!permstream .claude/x.sh'));
+    let n = 0;
+    while (tick()) n += 1;
+    expect(n).toBe(40);
+  });
+
+  it('without a clock it is one message after the request, and nothing later', () => {
+    proto.handle(userMsg('!askstream'));
+    expect(out.filter((m) => m.type === 'assistant')).toHaveLength(1);
+  });
+});

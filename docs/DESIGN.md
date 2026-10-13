@@ -1891,6 +1891,15 @@ Consequences worth designing for, not discovering:
 > - **Resolved means gone**: a granted permission / answered input removes
 >   the item (the status change to `working` clears it). A `done` stays
 >   until that session produces something newer.
+>   **Amended 2026-10-13 (#1258): and NOT RESOLVED MEANS NOT GONE.** While
+>   main is still holding a request for a session, neither the status nor
+>   the item leaves the waiting state because of anything else the session
+>   does. The CLI keeps streaming after it asks, and that stream was moving
+>   the status to `working` and taking the item, and every "N need you"
+>   count with it, off the screen: 51 of 305 held requests in the owner's
+>   log. Only the answer, the deadline, the turn ending or the session
+>   dying ends the wait. Enforced twice, in `transition` and in
+>   `EventFeed.ingest`, by the owner's decision.
 > - Each item shows the **session name** with the **task label** beneath it
 >   (never raw session ids).
 > - **Filters** (per the main-window-v1 mockup): All · Needed · By-session.
