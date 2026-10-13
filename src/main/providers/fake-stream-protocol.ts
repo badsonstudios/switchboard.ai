@@ -250,6 +250,15 @@ export interface FakeStreamHost {
    * tests can still name the id they expect.
    */
   nextSessionId?(): string;
+  /**
+   * Run `fn` after `ms` (#1258) — the one thing here that happens LATER.
+   *
+   * This class is synchronous by design, and that made it unable to do what
+   * the real CLI does after it asks for something: go on producing output
+   * while the request waits. Optional like its neighbours: a unit test's host
+   * has no clock, and gets the one synchronous message and nothing after it.
+   */
+  later?(ms: number, fn: () => void): void;
 }
 
 // EVERY call carries an `id`, including the three whose results never come
@@ -893,6 +902,40 @@ export class FakeStreamProtocol {
       return;
     }
 
+    // Ask, and KEEP STREAMING (#1258) — what the real CLI does and no verb here
+    // did.
+    //
+    // MEASURED, from the owner's own log (2026-10-12 18:31:35 UTC, 0.8.121):
+    //
+    //     working -> needs-permission   cause: permission-held
+    //     needs-permission -> working   cause: stream:stream_event   (same second)
+    //     ...the request was answered 35 seconds later
+    //
+    // 13 of 46 held approvals in that log went this way. A real assistant
+    // message can carry several tool calls, and the `can_use_tool` for the
+    // first arrives while the rest of the message is still streaming. `!perm`
+    // asks and then goes quiet, so every test of "a held approval is counted"
+    // was green against a build that showed nothing — the fake was kinder than
+    // the real thing in exactly the dimension the bug lives in (#310's argument,
+    // one item over).
+    //
+    // `!permstream <target>` raises the same `Write` request `!perm` does;
+    // `!askstream` raises the pick-one question. Both then stream on: one whole
+    // assistant message at once (so the order is deterministic), then another
+    // every 250 ms for as long as the request is unanswered, if the host can
+    // tell the time. The answer is handled exactly as for `!perm` / `!ask1`.
+    if (text.startsWith('!permstream ')) {
+      const filePath = this.host.resolve(cwd, text.slice(12).trim());
+      this.streamOnWhileHeld(this.askPermission('Write', { file_path: filePath, content: 'echo hi\n' }));
+      return;
+    }
+    if (text === '!askstream') {
+      this.streamOnWhileHeld(
+        this.askPermission(ASK_USER_QUESTION_TOOL, { questions: [FAKE_QUESTION_ONE] })
+      );
+      return;
+    }
+
     // ONE REQUEST PER TARGET, all of them raised before any answer can arrive
     // (P2-E18-14). A single target is the original behaviour, unchanged.
     //
@@ -1490,7 +1533,26 @@ export class FakeStreamProtocol {
     this.emitResult();
   }
 
-  private askPermission(toolName: string, input: Record<string, unknown>, hang = false): void {
+  /**
+   * Output that keeps arriving after a request was raised (#1258).
+   *
+   * Each piece is a WHOLE message (`message_start` … `message_stop`, with its
+   * `assistant` frame), so the stream stays well formed however many arrive and
+   * both frame types a host maps to "working" are on the wire. Not transcribed:
+   * the subject is the live stream, and a transcript line per tick would be a
+   * second source for the same words.
+   *
+   * Bounded at forty more after the first (ten seconds): a fixture, and a request nobody
+   * answers must not have a child process talking for ever.
+   */
+  private streamOnWhileHeld(requestId: string, tick = 0): void {
+    if (!this.pending.has(requestId)) return;
+    this.emitAssistantText(`STREAMING-ON ${tick}`, false, false);
+    if (tick < 40) this.host.later?.(250, () => this.streamOnWhileHeld(requestId, tick + 1));
+  }
+
+  /** Raises the request and returns its id. */
+  private askPermission(toolName: string, input: Record<string, unknown>, hang = false): string {
     const request_id = `fake-req-${++this.requestSeq}`;
     this.pending.set(request_id, { toolName, input, hang });
     // A QUESTION carries none of the permission furniture (#563), and the real
@@ -1526,6 +1588,7 @@ export class FakeStreamProtocol {
         tool_use_id: `toolu_fake_${this.requestSeq}`,
       },
     });
+    return request_id;
   }
 
   private emitInit(cwd: string): void {

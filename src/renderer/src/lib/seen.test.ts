@@ -7,6 +7,7 @@ import type { EventDto } from '../model/types';
 import {
   installSeenWatch,
   markAllSeen,
+  noteBroughtForward,
   markSeen,
   SEEN_INPUT_WINDOW_MS,
   seenWhileWatching,
@@ -136,8 +137,9 @@ describe('the watch: three ways of looking', () => {
   it('...but a card that came forward with NOBODY THERE has not been looked at', () => {
     // "always jump to it" brings a finished session to the front; closing a
     // card puts its neighbour there. With no input in the window, nobody saw.
-    // (With somebody using the window it does count: it was put in front of
-    // a person who is there.)
+    // (With somebody using the window, closing a card and landing on its
+    // neighbour does count: closing was their move. A jump the app made by
+    // itself does not: see the #1258 tests below.)
     off = installSeenWatch();
     sessionStore.setActiveCard('a');
     sessionStore.setEvents([ev(1, 'live-b', 'done')]);
@@ -187,6 +189,83 @@ describe('the watch: three ways of looking', () => {
     } finally {
       sessionStore.setPresentation('a', { poppedOut: false });
     }
+  });
+
+  // #1258. The owner: "it only showed for a fraction of a second, then
+  // disappeared again." Under the default setting a session that finishes in
+  // a pane beside yours makes itself the card in front, and that used to be
+  // read as you going to it.
+  it('a card the APP brought forward is not one you went to, even while you are typing', () => {
+    off = installSeenWatch();
+    sessionStore.setActiveCard('a');
+    press(); // you are here, busy in a
+    sessionStore.setEvents([ev(1, 'live-b', 'done')]);
+    noteBroughtForward('b'); // "jump if its card is on screen"
+    sessionStore.setActiveCard('b');
+    expect(ack).not.toHaveBeenCalled();
+    // ...and another session's event a moment later does not clear it either
+    sessionStore.setEvents([ev(1, 'live-b', 'done'), ev(2, 'live-c', 'done')]);
+    expect(ack).not.toHaveBeenCalled();
+  });
+
+  it('...until you TOUCH it', () => {
+    off = installSeenWatch();
+    const box = cardBody();
+    sessionStore.setActiveCard('a');
+    press();
+    sessionStore.setEvents([ev(1, 'live-b', 'done')]);
+    noteBroughtForward('b');
+    sessionStore.setActiveCard('b');
+    expect(ack).not.toHaveBeenCalled();
+    touch(box);
+    expect(ack.mock.calls).toEqual([['live-b']]);
+  });
+
+  it('...or go somewhere else and come back to it yourself', () => {
+    off = installSeenWatch();
+    sessionStore.setActiveCard('a');
+    press();
+    sessionStore.setEvents([ev(1, 'live-b', 'done')]);
+    noteBroughtForward('b');
+    sessionStore.setActiveCard('b');
+    press();
+    sessionStore.setActiveCard('a'); // back to what you were doing
+    expect(ack).not.toHaveBeenCalled();
+    press();
+    sessionStore.setActiveCard('b'); // and now you go and look
+    expect(ack.mock.calls).toEqual([['live-b']]);
+  });
+
+  it('a session that finishes in a card the app had already brought forward is not seen either', () => {
+    off = installSeenWatch();
+    sessionStore.setActiveCard('a');
+    press();
+    noteBroughtForward('b'); // it asked a question and jumped forward
+    sessionStore.setActiveCard('b');
+    sessionStore.setEvents([ev(1, 'live-b', 'done')]); // then finished, untouched
+    expect(ack).not.toHaveBeenCalled();
+  });
+
+  // Found in review: the mark had no way off a card that was ALREADY in
+  // front, so its next turn finished in front of its owner and was counted.
+  it('the card you are already in is never marked as brought forward', () => {
+    off = installSeenWatch();
+    sessionStore.setActiveCard('a');
+    press();
+    noteBroughtForward('a'); // it asked, and "jumped" to where it already was
+    sessionStore.setEvents([ev(1, 'live-a', 'done')]);
+    expect(ack.mock.calls).toEqual([['live-a']]);
+  });
+
+  it('touching a card takes the mark off before anything has finished', () => {
+    off = installSeenWatch();
+    const box = cardBody();
+    sessionStore.setActiveCard('a');
+    noteBroughtForward('b'); // it asked a question and came forward
+    sessionStore.setActiveCard('b');
+    touch(box); // you answer it: nothing is finished yet
+    sessionStore.setEvents([ev(1, 'live-b', 'done')]); // and now it finishes, in front of you
+    expect(ack.mock.calls).toEqual([['live-b']]);
   });
 
   it('3. it finishes IN FRONT OF YOU while you are using the window', () => {

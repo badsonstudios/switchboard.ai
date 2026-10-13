@@ -13,6 +13,7 @@
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import {
+  answerHeldPermissions,
   launchApp,
   LaunchedApp,
   tempProjectFolder,
@@ -165,7 +166,6 @@ test.describe('focus-stealing policy (E9-10)', () => {
     await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
     const second = await addSession(a);
     await expect(tabs(w)).toHaveCount(2);
-    const post = await hookPoster(a, 2);
 
     await palette(w, 'When any session needs you: never jump, just mark it in the list');
 
@@ -191,7 +191,10 @@ test.describe('focus-stealing policy (E9-10)', () => {
     // ...and at the other end of the ladder, `focus` brings a session that is
     // not even in the workspace all the way back, and hands it the cursor.
     await palette(w, 'When any session needs you: always jump to it');
-    await post(second, { hook_event_name: 'UserPromptSubmit' }); // answer the hold
+    // ANSWER the hold, through the door the bar's own button uses. This used
+    // to be a posted `UserPromptSubmit`, which only ever looked like an
+    // answer because a hook could clear a request that was still held (#1258).
+    expect(await answerHeldPermissions(a)).toBe(1);
     await expect(listed(w, second)).toHaveAttribute('data-needs-you', 'false', { timeout: 20_000 });
     await permissionHolder(a)(second);
     await expect(tabs(w)).toHaveCount(2, { timeout: 20_000 });

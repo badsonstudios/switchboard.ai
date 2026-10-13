@@ -133,6 +133,7 @@ export class SessionManager {
   private permissionHoldSuppressor:
     | ((sessionId: string, msg: Record<string, unknown>) => boolean)
     | null = null;
+  private heldRequestProbe: ((sessionId: string) => boolean) | null = null;
 
   constructor(
     private readonly registry: ContributionRegistry<MainContributions>,
@@ -1041,12 +1042,49 @@ export class SessionManager {
     return suppress;
   }
 
+  /**
+   * Teach the state machine whether a request is still held (#1258).
+   *
+   * `transition` is a pure function of a status and an event, and the bug
+   * this closes is exactly what that cannot see: an approval is held, the CLI
+   * keeps streaming, and the next frame answers `working` over a session that
+   * is still waiting on a person. Whether something is held is known to the
+   * permission router and to nobody else.
+   *
+   * A setter and a predicate, for the reasons `setPermissionHoldSuppressor`
+   * gives one function up: the two collaborators are cyclic, and this asks
+   * one question and must not be able to answer any others.
+   */
+  setHeldRequestProbe(fn: (sessionId: string) => boolean): void {
+    this.heldRequestProbe = fn;
+  }
+
+  /** Is a request still held for this session? False when nobody can say,
+   *  and false when the probe throws: "I can't tell" must fall back to the
+   *  behaviour every release before this one had, not to a card that can
+   *  never leave `needs-permission`. */
+  private requestHeld(id: string): boolean {
+    if (!this.heldRequestProbe) return false;
+    try {
+      return this.heldRequestProbe(id) === true;
+    } catch (err) {
+      this.log.error('held-request probe threw', { sessionId: id, error: errorText(err) });
+      return false;
+    }
+  }
+
   /** Hook/permission/user events feed the state machine here. */
   apply(id: string, ev: SessionEvent): void {
     const r = this.sessions.get(id);
     if (!r) return; // late events for removed sessions are dropped, not fatal
-    const result = transition(r.status, ev);
-    if (result.note) this.log.debug('session event note', { sessionId: id, note: result.note });
+    // asked only of a session that is waiting: this runs for every delta of
+    // every stream, and the answer cannot matter to any other status
+    const waiting = r.status === 'needs-permission' || r.status === 'needs-input';
+    const result = transition(r.status, ev, { held: waiting && this.requestHeld(id) });
+    // ...and not logged per frame: a held request sits under a stream of them
+    if (result.note && result.note !== 'request-still-held') {
+      this.log.debug('session event note', { sessionId: id, note: result.note });
+    }
     if (!result.changed) return;
     const change: StatusChange = {
       sessionId: id,

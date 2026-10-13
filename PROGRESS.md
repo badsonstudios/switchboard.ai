@@ -3,6 +3,37 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔧 2026-10-13 — #1258, NO "NEED YOU" NOTICE FOR A HELD APPROVAL: IN PROGRESS
+>
+> **IN PROGRESS on `feature/1258-held-request-keeps-need-you`. Nothing is
+> merged.** The owner read the diagnosis and gave the go-ahead with three
+> decisions: **(A) both fixes for the count** (the status machine does not
+> leave "waiting on you" while a request is held; the Events list does not
+> drop the demand while main holds a request); **(B) a hidden or collapsed
+> card that asks is brought back to its slot without taking focus**; **(C) a
+> sound while the app is focused is NOT in this ticket** and gets its own.
+> No release. One report at the end. The plan is on the ticket (2026-10-13).
+>
+> **BUILT, REVIEWED, IN ITS PR.** The fake CLI has `!permstream` and
+> `!askstream` (ask, then KEEP STREAMING); `e2e/approval-stays-counted.spec.ts`
+> failed on `9ea7729e` and passes now. Unit 12,169, lint clean, 154 e2e
+> across the 32 specs of the area. One adversarial review: two blockers in
+> the window half, both fixed.
+>
+> He reported it AGAIN mid-run (2026-10-13, laptop, three sessions): the
+> yellow pill for a fraction of a second, and a green one that also vanished;
+> and asked that the two never replace each other. Both are in this PR: a
+> session that comes to the front BY ITSELF is no longer "looked at" (that
+> is what cleared "1 finished" in under 150 ms), and a test pins the two
+> pills side by side, need-you first.
+>
+> Measured on the way: 51 of 305 held requests overwritten in the log (16
+> questions; a hook did it twice, not only stream frames). A hidden card WAS
+> re-added under the default, but as an unselected tab: a blank pane, or a
+> tab behind another card. Filed: **#1267** (a sound while the app is
+> focused, his decision C) and **#1268** (a request still held when its turn
+> ends keeps its bar; older than this, more visible now).
+>
 > # ✅ 2026-10-12 — SIX TICKETS: ALL LANDED, NOT RELEASED
 >
 > **All six are merged to `main` and their tickets are closed. Nothing is in
@@ -19,8 +50,8 @@
 > start the ticket."* The diagnosis is on the ticket (2026-10-12): a held
 > approval's status is overwritten to `working` by the next stream event, the
 > event feed drops it, and every "N need you" readout counts from that feed.
-> 13 of 46 held approvals in his log, back to 0.8.114. **Wait for his go-ahead
-> before changing anything for it.**
+> 13 of 46 held approvals in his log, back to 0.8.114. *(He gave the go-ahead
+> on 2026-10-13: see the block above.)*
 >
 > Tickets filed during the run: **#1259** (a divider where a conversation was
 > compacted) and **#1261** (the read scope: a link that goes out and back on

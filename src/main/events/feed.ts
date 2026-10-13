@@ -81,7 +81,40 @@ export class EventFeed {
   private nextId = 1;
   private listeners = new Set<(e: FeedEvent | null) => void>();
 
+  private heldRequestProbe: ((sessionId: string) => boolean) | null = null;
+  /** the change `ingest` declined for a session whose demand is still held;
+   *  see `releaseHeld` */
+  private readonly parked = new Map<string, StatusChange>();
+
   constructor(private readonly maxEvents = 500) {}
+
+  /**
+   * Teach the feed whether main is still holding a request for a session
+   * (#1258). See `ingest` for what it is used for and why it is asked here as
+   * well as in the status machine.
+   */
+  setHeldRequestProbe(fn: (sessionId: string) => boolean): void {
+    this.heldRequestProbe = fn;
+  }
+
+  /**
+   * Is this session's row a DEMAND that main is still holding a request for?
+   *
+   * Both halves matter. The probe alone would keep a `done` row alive for a
+   * session that happened to ask again; the row alone is the old behaviour.
+   * Fails open to that old behaviour: a probe that throws must not be the
+   * reason a row can never leave.
+   */
+  private demandStillHeld(sessionId: string): boolean {
+    if (!this.heldRequestProbe) return false;
+    const row = this.events.find((e) => e.sessionId === sessionId && STATUS_KINDS.has(e.kind));
+    if (!row || (row.kind !== 'needs-permission' && row.kind !== 'needs-input')) return false;
+    try {
+      return this.heldRequestProbe(sessionId) === true;
+    } catch {
+      return false;
+    }
+  }
 
   /**
    * Wire to SessionManager.onStatusChange. Returns the feed event, if any.
@@ -96,6 +129,32 @@ export class EventFeed {
    * `STATUS_KINDS`.
    */
   ingest(change: StatusChange): FeedEvent | null {
+    // A DEMAND MAIN IS STILL HOLDING DOES NOT LEAVE BECAUSE THE STATUS MOVED
+    // (#1258).
+    //
+    // Every "N need you" readout counts this list: the Sessions list's
+    // total, each group's own line, the strip's chip, the lit row and pill,
+    // the Events panel. So "cleared without a replacement" below was the
+    // line that took an approval off every one of them at once, the moment
+    // the CLI streamed its next frame and the status read `working` again:
+    // 51 of 305 held requests in the owner's log, with the approval bar the
+    // only thing left that knew, and only if its card was on screen.
+    //
+    // The status machine no longer makes that move (`transition`'s `held`).
+    // This is the second lock on the same door, and it is here on purpose:
+    // the request being held is the FACT, the status is a report of it, and
+    // a list people act on should not depend on every future writer of a
+    // status getting that right.
+    //
+    // ONLY a move to a non-attention state is refused. `done` and `crashed`
+    // still replace the row: a turn that ended, or a session that died, is
+    // not waiting on an answer any more, whatever is left in the router.
+    if (!ATTENTION.has(change.to) && this.demandStillHeld(change.sessionId)) {
+      // remembered, so the row can leave when the request does: see `releaseHeld`
+      this.parked.set(change.sessionId, change);
+      return null;
+    }
+    this.parked.delete(change.sessionId);
     const removed = this.dropStatusFor(change.sessionId);
     if (!ATTENTION.has(change.to)) {
       // cleared without a replacement (e.g. permission granted) — tell
@@ -146,8 +205,28 @@ export class EventFeed {
     );
   }
 
+  /**
+   * A held request was answered, timed out or cancelled: apply any change
+   * `ingest` declined while it was held (#1258).
+   *
+   * Without this the second lock could close and never open. A declined
+   * move to `working` is not repeated by anyone: when the request is finally
+   * answered the status is ALREADY `working`, no change is raised, and the row
+   * would have sat there until the turn ended. Unreachable while the status
+   * machine holds the line itself, which is exactly when a lock nobody
+   * exercises goes wrong unnoticed. Found in review.
+   */
+  releaseHeld(): void {
+    for (const [sessionId, change] of [...this.parked]) {
+      if (this.demandStillHeld(sessionId)) continue; // another one is still waiting
+      this.parked.delete(sessionId);
+      this.ingest(change);
+    }
+  }
+
   /** A session was closed/removed — its event goes with it. */
   forget(sessionId: string): void {
+    this.parked.delete(sessionId);
     // EVERY row filed under it, both families: the card is gone, so there is
     // nowhere for a dispatch-result on it to be read or injected either. The
     // report itself is dropped on the same teardown by `DispatchResults.forget`.

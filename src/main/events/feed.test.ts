@@ -233,3 +233,127 @@ describe('EventFeed — dispatch results (P2-E13-05)', () => {
     expect(seen).toEqual(['dispatch-result']);
   });
 });
+// #1258. The owner: "I don't see any notifications up anywhere, like '1 needs
+// you' … it showed the attention-needed yellow pill up at the top just for a
+// fraction of a second, and then it went away." Every "N need you" readout
+// counts this list, and a status that read `working` again for any reason
+// took the session's row out of it while the request was still being held.
+describe('a demand main is still holding does not leave the list (#1258)', () => {
+  const holding = (...ids: string[]): ((id: string) => boolean) => (id) => ids.includes(id);
+
+  it('a move to working keeps the row, and tells nobody the list changed', () => {
+    const f = new EventFeed();
+    f.setHeldRequestProbe(holding('a'));
+    f.ingest(change('a', 'needs-permission'));
+    const row = f.list()[0];
+    const seen: unknown[] = [];
+    f.onEvent((e) => seen.push(e));
+
+    expect(f.ingest(change('a', 'working'))).toBeNull();
+    f.ingest(change('a', 'idle'));
+
+    // the SAME row, same id: a reveal and a jump keyed on it are not replayed
+    expect(f.list()).toEqual([row]);
+    expect(seen).toEqual([]);
+  });
+
+  it('a question is held the same way', () => {
+    const f = new EventFeed();
+    f.setHeldRequestProbe(holding('a'));
+    f.ingest(change('a', 'needs-input'));
+    f.ingest(change('a', 'working'));
+    expect(f.list().map((e) => e.kind)).toEqual(['needs-input']);
+  });
+
+  // The move that was declined is not made again by anyone: by the time the
+  // request is answered the status already reads `working`, so no change is
+  // raised. The feed has to finish the job itself when the router lets go.
+  it('the declined move is applied when the request is released', () => {
+    const f = new EventFeed();
+    let held = true;
+    f.setHeldRequestProbe(() => held);
+    f.ingest(change('a', 'needs-permission'));
+    f.ingest(change('a', 'working'));
+    const seen: unknown[] = [];
+    f.onEvent((e) => seen.push(e));
+
+    f.releaseHeld(); // one of two answered: still held, nothing moves
+    expect(f.list()).toHaveLength(1);
+    expect(seen).toEqual([]);
+
+    held = false; // the router lets go BEFORE it says so
+    f.releaseHeld();
+    expect(f.list()).toEqual([]);
+    expect(seen).toEqual([null]); // the list changed: subscribers are told
+    f.releaseHeld(); // and once is once
+    expect(seen).toEqual([null]);
+  });
+
+  it('a release with nothing declined does nothing at all', () => {
+    const f = new EventFeed();
+    f.setHeldRequestProbe(() => false);
+    f.ingest(change('a', 'needs-permission'));
+    f.releaseHeld();
+    expect(f.list().map((e) => e.kind)).toEqual(['needs-permission']);
+  });
+
+  it('a real change after a declined one supersedes it', () => {
+    const f = new EventFeed();
+    let held = true;
+    f.setHeldRequestProbe(() => held);
+    f.ingest(change('a', 'needs-permission'));
+    f.ingest(change('a', 'working')); // declined
+    f.ingest(change('a', 'done')); // the turn ended
+    held = false;
+    f.releaseHeld(); // must not wipe the finished row with a stale `working`
+    expect(f.list().map((e) => e.kind)).toEqual(['done']);
+  });
+
+  it('only the session that is held: its neighbour clears normally', () => {
+    const f = new EventFeed();
+    f.setHeldRequestProbe(holding('a'));
+    f.ingest(change('a', 'needs-permission'));
+    f.ingest(change('b', 'needs-permission'));
+    f.ingest(change('b', 'working'));
+    expect(f.list().map((e) => e.sessionId)).toEqual(['a']);
+  });
+
+  // a turn that ENDED, or a session that died, is not waiting on an answer
+  it('done and crashed still replace the row', () => {
+    const f = new EventFeed();
+    f.setHeldRequestProbe(holding('a', 'b'));
+    f.ingest(change('a', 'needs-permission'));
+    f.ingest(change('a', 'done'));
+    f.ingest(change('b', 'needs-permission'));
+    f.ingest(change('b', 'crashed'));
+    expect(f.list().map((e) => `${e.sessionId}:${e.kind}`)).toEqual(['a:done', 'b:crashed']);
+  });
+
+  // the probe is about DEMANDS: a finished row is not kept alive by it
+  it('a finished row is not held by a request that arrives for the same session', () => {
+    const f = new EventFeed();
+    f.setHeldRequestProbe(holding('a'));
+    f.ingest(change('a', 'done'));
+    f.ingest(change('a', 'working'));
+    expect(f.list()).toEqual([]);
+  });
+
+  it('a closed session takes its row with it, held or not', () => {
+    const f = new EventFeed();
+    f.setHeldRequestProbe(holding('a'));
+    f.ingest(change('a', 'needs-permission'));
+    f.forget('a');
+    expect(f.list()).toEqual([]);
+  });
+
+  // fail-open: our blind spot must not be why a row can never leave
+  it('a probe that throws falls back to the old behaviour', () => {
+    const f = new EventFeed();
+    f.setHeldRequestProbe(() => {
+      throw new Error('the router exploded');
+    });
+    f.ingest(change('a', 'needs-permission'));
+    expect(() => f.ingest(change('a', 'working'))).not.toThrow();
+    expect(f.list()).toEqual([]);
+  });
+});

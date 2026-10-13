@@ -152,6 +152,11 @@ const proto = new FakeStreamProtocol(
     // Deriving one inside the protocol could collide with the id another spawn
     // is about to claim, which is #603's bug at one remove.
     nextSessionId: () => claimFakeSessionId(idsDir),
+    // Output that keeps coming after a request was raised (#1258). Unref'd:
+    // stdin is what keeps this process alive, not a fixture's timer.
+    later: (ms, fn) => {
+      setTimeout(fn, ms).unref();
+    },
   },
   (m) => process.stdout.write(JSON.stringify(m) + '\n'),
   { resumedFrom, sessionId }

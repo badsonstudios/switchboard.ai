@@ -1402,6 +1402,10 @@ app
       // is a property of the REQUEST, so the id alone cannot answer it.
       streamPermissions.willAutoAllow(sessionId, msg)
     );
+    // A held request keeps the session waiting, whatever else streams in
+    // (#1258). Only the router knows what it is holding; see
+    // `setHeldRequestProbe`.
+    manager.setHeldRequestProbe((sessionId) => streamPermissions.holdsRequestFor(sessionId));
     // the CLI's own slash-command list, off the same stream (P2-E18-09).
     //
     // A SEPARATE subscription, not a second call inside the one above: the
@@ -1960,6 +1964,10 @@ app
     snapshotPopoutBoxes(); // before the renderer can rewrite the layout (#86)
     createWindow(); // sets currentWindow; IPC/notifier read it via closure
     const feed = new EventFeed();
+    // …and the Events list does not drop a demand main is still holding (#1258):
+    // the same question, asked a second time on purpose. See `EventFeed.ingest`.
+    feed.setHeldRequestProbe((sessionId) => streamPermissions.holdsRequestFor(sessionId));
+    streamPermissions.onPermissionResolved(() => feed.releaseHeld());
 
     // ── the notification rules engine (P2-E14-03, §5.9) ──────────────────
     //

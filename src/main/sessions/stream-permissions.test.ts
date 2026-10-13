@@ -2001,3 +2001,92 @@ describe('the suppressor agrees with the router (P2-E22-03, #974)', () => {
     ).toBe(false);
   });
 });
+// #1258 — the one question the status machine and the Events list ask.
+describe('holdsRequestFor: is this session still waiting on a person? (#1258)', () => {
+  it('true from the offer until the answer, and per session', () => {
+    expect(perms.holdsRequestFor('s1')).toBe(false);
+    perms.offer('s1', canUseTool());
+    expect(perms.holdsRequestFor('s1')).toBe(true);
+    expect(perms.holdsRequestFor('s2')).toBe(false);
+    perms.decide('stream:s1:req-1', 'allow');
+    expect(perms.holdsRequestFor('s1')).toBe(false);
+  });
+
+  it('two held at once: still true after the first is answered', () => {
+    perms.offer('s1', canUseTool('req-1'));
+    perms.offer('s1', canUseTool('req-2', 'C:/p/.claude/other.sh'));
+    perms.decide('stream:s1:req-1', 'allow');
+    expect(perms.holdsRequestFor('s1')).toBe(true);
+    perms.decide('stream:s1:req-2', 'deny');
+    expect(perms.holdsRequestFor('s1')).toBe(false);
+  });
+
+  // THE ORDER IS THE CONTRACT. `permission-resolved` is what un-pins the
+  // session, so the request has to be gone by the time it is applied; a router
+  // that said "resolved" while still holding would leave the card on
+  // needs-permission for ever.
+  it('the request is already gone when permission-resolved is applied', () => {
+    const heldAtApply: boolean[] = [];
+    const p = new StreamPermissions(
+      () => true,
+      (sessionId) => heldAtApply.push(p.holdsRequestFor(sessionId)),
+      createLogger(new LogSink({ dir }), 'perm')
+    );
+    p.offer('s1', canUseTool('req-1'));
+    p.decide('stream:s1:req-1', 'allow');
+    p.offer('s1', canUseTool('req-2'));
+    p.releaseHeld('the window went away');
+    expect(heldAtApply).toEqual([false, false]);
+  });
+
+  it('a closed session holds nothing', () => {
+    perms.offer('s1', canUseTool());
+    perms.forgetSession('s1', 'session closed');
+    expect(perms.holdsRequestFor('s1')).toBe(false);
+  });
+});
+// #1258 — the CLI takes a request back. Read from the reference consumer: the
+// message is `{ type: 'control_cancel_request', request_id }` and the SDK
+// answers it with nothing but an abort.
+describe('a request the CLI withdraws (#1258)', () => {
+  const cancel = (requestId: string) => ({ type: 'control_cancel_request', request_id: requestId });
+
+  it('is let go: no answer is sent, the status is resolved, the bar is told', () => {
+    perms.offer('s1', canUseTool('req-1'));
+    sent.length = 0;
+
+    perms.offer('s1', cancel('req-1'));
+
+    expect(sent).toEqual([]); // the SDK sends nothing back, and neither do we
+    expect(perms.holdsRequestFor('s1')).toBe(false);
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+    expect(resolved).toEqual(['stream:s1:req-1']);
+  });
+
+  it('one of two withdrawn leaves the session waiting on the other', () => {
+    perms.offer('s1', canUseTool('req-1'));
+    perms.offer('s1', canUseTool('req-2', 'C:/p/.claude/other.sh'));
+    perms.offer('s1', cancel('req-1'));
+    expect(applied).toEqual([]);
+    expect(perms.holdsRequestFor('s1')).toBe(true);
+    expect(perms.pendingRequests().map((r) => r.requestId)).toEqual(['stream:s1:req-2']);
+  });
+
+  it('answering it afterwards is a no-op, not a message to a request that is gone', () => {
+    perms.offer('s1', canUseTool('req-1'));
+    perms.offer('s1', cancel('req-1'));
+    sent.length = 0;
+    expect(perms.decide('stream:s1:req-1', 'allow')).toBe(false);
+    expect(sent).toEqual([]);
+  });
+
+  it('a cancel for something never held, for another session, or with no id moves nobody', () => {
+    perms.offer('s1', canUseTool('req-1'));
+    perms.offer('s1', cancel('never-asked'));
+    perms.offer('s2', cancel('req-1'));
+    perms.offer('s1', { type: 'control_cancel_request' });
+    expect(applied).toEqual([]);
+    expect(perms.holdsRequestFor('s1')).toBe(true);
+  });
+});

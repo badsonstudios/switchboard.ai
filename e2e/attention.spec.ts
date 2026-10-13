@@ -5,6 +5,7 @@
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import {
+  answerHeldPermissions,
   launchApp,
   LaunchedApp,
   tempProjectFolder,
@@ -113,8 +114,16 @@ test.describe('attention queue (E9-03)', () => {
 
   test('an answered item leaves the queue', async () => {
     const { w, post, titles } = await threeWaitingSessions();
-    // the human answers the permission: the session goes back to work, which
-    // is not an attention state, so the feed drops its item
+    // The human ANSWERS the permission. Until #1258 this line posted a
+    // `UserPromptSubmit` hook and called that answering it: a hook walked a
+    // session with a request still held back to `working`, and the item left.
+    // That was the bug, in a test's clothes; a held request leaves when it is
+    // answered and at no other time.
+    expect(await answerHeldPermissions(a)).toBe(1);
+    // the fake then finishes that turn, so wait for it before sending the
+    // session back to work, which is not an attention state: the feed drops
+    // its item
+    await expect(w.locator('aside [data-event-kind="done"]')).toHaveCount(2, { timeout: 15_000 });
     await post(titles.permission, { hook_event_name: 'UserPromptSubmit' });
     await expect(eventRows(w)).toHaveCount(2, { timeout: 15_000 });
     await expect
