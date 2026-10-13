@@ -3,6 +3,26 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔧 2026-10-13 — #1271, FOLD MCP CALLS, WEB CALLS AND SAME-FILE EDITS: IN ITS PR
+>
+> **Built and reviewed on `feature/1271-fold-mcp-web-edits`; see the PR for
+> whether it has merged.** The owner: *"Let's go ahead and implement ticket
+> 1271."* Three new folds in the conversation, beside "Explored the code" and
+> "Ran N commands": calls to ONE MCP server (the row names the server, the
+> count and every tool called, rarest first), web searches and fetches, and
+> three or more edits in a row to ONE file (his choice over "any files").
+> A call joins one of these only once its result is in, so one waiting on an
+> approval is never inside a closed row; a failed or denied one never joins.
+>
+> Rule 4 is answered on the ticket: the CLI passes a tool's read-only hint
+> only on `mcp_status`, with its default already applied, so "changes
+> things" cannot be told from silence. Nothing is hidden or marked by a
+> hint; the row naming every tool is the safeguard. Also in it: a failed
+> edit or MCP call now says **failed** and why (only a command did).
+> NOT RELEASED. **DO NOT CUT A RELEASE** unless he asks. The desktop has
+> almost no MCP calls: the laptop is where this gets its real test, and
+> `spike/probes/1271/` has the counting scripts to run there.
+>
 > # ✅ 2026-10-13 — #1258, NO "NEED YOU" NOTICE FOR A HELD APPROVAL: LANDED, NOT RELEASED
 >
 > **DONE 2026-10-13, PR #1269 (`d2546f4f`), merged, NOT released.** The

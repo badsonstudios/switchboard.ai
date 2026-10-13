@@ -7,7 +7,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FEED_VIEW_CAP, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
-import { applyFolds, foldKind, type FoldKind, type FoldRun } from '../lib/feed-folds';
+import { applyFolds, foldFamily, type FoldKind, type FoldRun } from '../lib/feed-folds';
 import { GutterMark } from './ToolIcon';
 import { promptsOf, recallInto } from '../lib/prompt-history';
 import { registerPromptPort } from '../lib/prompt-port';
@@ -185,6 +185,43 @@ const NO_FOLDS: ReadonlySet<number> = new Set();
  *  every reply (`decoration-guard`), like the group and block attributes */
 const FEED_FOLD_ATTR = 'data-feed-fold';
 
+/** How many distinct tools, queries or sites a closed row spells out. */
+const FOLD_PARTS_SHOWN = 8;
+
+/**
+ * What a fold's row lists after its count, in words (#1271).
+ *
+ * The row is a BUTTON, so this text is its name, read out whole by a screen
+ * reader: eighteen distinct search queries would be two thousand characters
+ * of it. The first eight are spelled out and the rest are counted; the
+ * tooltip has every one. An MCP fold lists its rarest tools first, so what is
+ * counted and not named is always the most repeated.
+ */
+function foldPartsText(
+  parts: readonly { name: string; count: number }[],
+  t: (key: string, values?: Record<string, unknown>) => string
+): { parts: string; partsFull: string } {
+  const say = (p: { name: string; count: number }): string =>
+    p.count > 1 ? t('feedView.fold.part', { name: p.name, count: p.count }) : p.name;
+  const join = t('feedView.fold.join');
+  const partsFull = parts.map(say).join(join);
+  if (parts.length <= FOLD_PARTS_SHOWN) return { parts: partsFull, partsFull };
+  const shown = parts.slice(0, FOLD_PARTS_SHOWN).map(say);
+  shown.push(t('feedView.fold.more', { count: parts.length - FOLD_PARTS_SHOWN }));
+  return { parts: shown.join(join), partsFull };
+}
+
+/**
+ * How this platform compares paths, for "consecutive edits to ONE file"
+ * (#1271): Windows and macOS do not tell `Feed.tsx` from `feed.tsx`, as
+ * `main/fs/read-scope.ts` has it. Read once: a platform does not change
+ * under a running window, and a stable object keeps `applyFolds` cheap.
+ */
+const FOLD_OPTIONS = ((): { caseInsensitivePaths: boolean } => {
+  const platform = (globalThis as { switchboard?: { platform?: string } }).switchboard?.platform;
+  return { caseInsensitivePaths: platform === 'win32' || platform === 'darwin' };
+})();
+
 /**
  * A burst of looking around, as ONE row (#1130).
  *
@@ -222,21 +259,63 @@ const FoldRow = React.memo(function FoldRow(props: {
   searches: number;
   reads: number;
   commands: number;
+  /** how many calls the run holds, whatever they were */
+  size: number;
   latest: string;
+  /** mcp: the server, readably. edit: the file's name (#1271) */
+  subject: string;
+  /** edit: the file's whole path, for the tooltip */
+  path: string;
+  /** mcp and web: what was called, already put into words. A STRING, so
+   *  the memo below still compares primitives. */
+  parts: string;
+  /** the same, with nothing left out: the tooltip */
+  partsFull: string;
   sidechain: boolean;
   onToggle: (head: number) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const toggle = (): void => props.onToggle(props.head);
-  const shell = props.kind === 'shell';
-  const counts = shell
-    ? t('feedView.fold.commands', { count: props.commands })
-    : [
-        props.searches > 0 ? t('feedView.fold.searches', { count: props.searches }) : '',
-        props.reads > 0 ? t('feedView.fold.reads', { count: props.reads }) : '',
-      ]
-        .filter(Boolean)
-        .join(t('feedView.fold.join'));
+  const kind = props.kind;
+  const joined = (...items: string[]): string => items.filter(Boolean).join(t('feedView.fold.join'));
+  const title =
+    kind === 'shell'
+      ? t('feedView.fold.shellTitle')
+      : kind === 'mcp'
+        ? props.subject
+        : kind === 'web'
+          ? t('feedView.fold.webTitle')
+          : kind === 'edit'
+            ? t('feedView.fold.editTitle', { file: props.subject })
+            : t('feedView.fold.title');
+  const counts =
+    kind === 'shell'
+      ? t('feedView.fold.commands', { count: props.commands })
+      : kind === 'mcp'
+        ? t('feedView.fold.calls', { count: props.size })
+        : kind === 'edit'
+          ? t('feedView.fold.changes', { count: props.size })
+          : kind === 'web'
+            ? joined(
+                props.searches > 0 ? t('feedView.fold.webSearches', { count: props.searches }) : '',
+                props.reads > 0 ? t('feedView.fold.webPages', { count: props.reads }) : ''
+              )
+            : joined(
+                props.searches > 0 ? t('feedView.fold.searches', { count: props.searches }) : '',
+                props.reads > 0 ? t('feedView.fold.reads', { count: props.reads }) : ''
+              );
+  // What follows the count. For a run of lookups or commands, the newest
+  // call, and only while shut (open, it is the last row below). For MCP and
+  // web calls, WHAT WAS CALLED, open or shut: it is the row's account of
+  // what is inside it, and the safeguard for a tool that changes something.
+  const listed = kind === 'mcp' || kind === 'web';
+  const tail = listed
+    ? props.parts
+    : kind === 'edit'
+      ? ''
+      : !props.open && props.latest !== ''
+        ? t('feedView.fold.latest', { call: props.latest })
+        : '';
   return (
     <div
       {...{ [FEED_FOLD_ATTR]: String(props.head) }}
@@ -258,7 +337,7 @@ const FoldRow = React.memo(function FoldRow(props: {
     >
       {/* the gutter every row reserves, with the picture of what was folded:
           a burst of looking around, or a run of commands (#1207) */}
-      <GutterMark icon={shell ? 'shell' : 'explore'} dot />
+      <GutterMark icon={kind === 'explore' ? 'explore' : kind} dot />
       <div style={{ flex: 1, minInlineSize: 0 }}>
         <ToolBox kind="fold" onToggle={toggle}>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5 }}>
@@ -277,16 +356,41 @@ const FoldRow = React.memo(function FoldRow(props: {
               <span style={{ color: 'var(--muted)', fontSize: 8 }}>
                 {props.open ? t('feedView.fold.caretOpen') : t('feedView.fold.caretClosed')}
               </span>
-              <span style={{ color: 'var(--status-working-ink)', fontWeight: 600, flexShrink: 0 }}>
-                {t(shell ? 'feedView.fold.shellTitle' : 'feedView.fold.title')}
-              </span>
-              {/* The title holds; the counts shorten only once the newest call
-                  beside them has given way entirely (its basis is zero). On a
-                  narrow card nothing spills out of the box — which would give
-                  the whole conversation a sideways scrollbar. */}
               <span
+                data-feed-fold-title
+                // a file's name says which file only as far as its folder
+                // is known: the whole path is one hover away
+                // …and a server's readable name is a rendering of its real one
+                title={kind === 'edit' || kind === 'mcp' ? props.path : undefined}
                 style={{
-                  flex: '0 1 auto',
+                  color: 'var(--status-working-ink)',
+                  fontWeight: 600,
+                  // a fixed phrase holds; a NAME (a server, a file) can be
+                  // any length, and gives way before it spills out of the box
+                  ...(kind === 'mcp' || kind === 'edit'
+                    ? {
+                        flex: '0 1 auto',
+                        minInlineSize: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }
+                    : { flexShrink: 0 }),
+                }}
+              >
+                {title}
+              </span>
+              {/* A fixed title holds; the counts shorten only once the newest
+                  call beside them has given way entirely (its basis is zero).
+                  On a narrow card nothing spills out of the box — which would
+                  give the whole conversation a sideways scrollbar.
+                  Where the title is a NAME (a server, a file) it is the other
+                  way round: the name is what shortens, and "20 calls" is
+                  never cut to "20 c…" by a long one (found in review). */}
+              <span
+                data-feed-fold-count
+                style={{
+                  flex: kind === 'mcp' || kind === 'edit' ? '0 0 auto' : '0 1 auto',
                   minInlineSize: 0,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -295,9 +399,11 @@ const FoldRow = React.memo(function FoldRow(props: {
               >
                 {counts}
               </span>
-              {/* the newest call, only while shut: open, it is the last row below */}
-              {!props.open && props.latest !== '' && (
+              {tail !== '' && (
                 <span
+                  data-feed-fold-parts={listed ? '' : undefined}
+                  // the list can be longer than the row: all of it on hover
+                  title={listed ? props.partsFull : undefined}
                   style={{
                     flex: '1 1 0%',
                     color: 'var(--muted)',
@@ -307,7 +413,7 @@ const FoldRow = React.memo(function FoldRow(props: {
                     minInlineSize: 0,
                   }}
                 >
-                  {t('feedView.fold.latest', { call: props.latest })}
+                  {tail}
                 </span>
               )}
             </FeedExpander>
@@ -1274,7 +1380,10 @@ export function FeedView(props: {
     if (!el) return;
     const seq = Number(el.getAttribute(FEED_SEQ_ATTR));
     const block = blocksRef.current.find((b) => b.seq === seq);
-    if (!block || foldKind(block) === null) return;
+    // the FAMILY, not `foldKind`: an edit or an MCP call cannot fold until its
+    // result is in, and one opened while it was still running must be found
+    // open when it does (#1271)
+    if (!block || foldFamily(block) === null) return;
     setOpenFolds((prev) => (prev.has(seq) ? prev : new Set(prev).add(seq)));
   }, []);
   /**
@@ -1391,8 +1500,11 @@ export function FeedView(props: {
   // element, so a fold that stayed shut would turn a jump into nothing at all.
   // The same rule, for the same reason, that lets `revealed` override the
   // verbosity filter two lines up.
-  const layout = applyFolds(visibleBlocks, (run) =>
-    run.seqs.some((seq) => openFolds.has(seq) || reveal.revealed.has(seq))
+  const layout = applyFolds(
+    visibleBlocks,
+    (run) => run.seqs.some((seq) => openFolds.has(seq) || reveal.revealed.has(seq)),
+    undefined,
+    FOLD_OPTIONS
   );
   foldsRef.current = layout.folds;
   const agentHeads = agentRunHeads(layout.rendered, blocks);
@@ -1743,7 +1855,11 @@ export function FeedView(props: {
                         searches={fold.searches}
                         reads={fold.reads}
                         commands={fold.commands}
+                        size={fold.seqs.length}
                         latest={fold.latest}
+                        subject={fold.subject}
+                        path={fold.path}
+                        {...foldPartsText(fold.parts, t)}
                         sidechain={b.sidechain}
                         onToggle={toggleFold}
                       />

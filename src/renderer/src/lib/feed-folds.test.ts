@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { FeedBlockDto } from './feed';
-import { applyFolds, foldKind, foldRuns, isExploration, FOLD_MIN } from './feed-folds';
+import { applyFolds, foldFamily, foldKind, foldRuns, isExploration, FOLD_MIN } from './feed-folds';
 
 let next = 1;
 const tool = (name: string, category: string, over: Partial<FeedBlockDto> = {}): FeedBlockDto =>
@@ -238,5 +238,329 @@ describe('a result that carried a picture (#1240)', () => {
     const after = [read(), grep(), glob()];
     const runs = heads(list(...before, picture, ...after));
     expect(runs).toEqual([before.map((b) => b.seq), after.map((b) => b.seq)]);
+  });
+});
+// #1271. The owner: "MCP plugin commands are still not grouped. I see in a
+// session right now at least 20 MCP plugin calls in a row for Atlassian."
+describe('three more kinds of fold (#1271)', () => {
+  const runs = (blocks: FeedBlockDto[], opts = {}) => [...foldRuns(blocks, FOLD_MIN, opts).values()];
+  /** a call whose result is in, unless told otherwise */
+  const done = (name: string, category: string, extra: Record<string, unknown> = {}): FeedBlockDto =>
+    ({
+      seq: next++,
+      kind: 'tool',
+      sidechain: false,
+      tool: { name, category, summary: '', out: 'ok', ...extra },
+    }) as unknown as FeedBlockDto;
+  const mcp = (server: string, toolName: string, extra: Record<string, unknown> = {}): FeedBlockDto =>
+    done(`mcp__${server}__${toolName}`, 'other', { mcp: { server, tool: toolName }, ...extra });
+  const search = (query: string, extra: Record<string, unknown> = {}): FeedBlockDto =>
+    done('WebSearch', 'other', { web: { kind: 'search', query }, ...extra });
+  const page = (host: string, extra: Record<string, unknown> = {}): FeedBlockDto =>
+    done('WebFetch', 'other', { web: { kind: 'page', host }, ...extra });
+  const change = (filePath: string, extra: Record<string, unknown> = {}, name = 'Edit'): FeedBlockDto =>
+    done(name, 'edit', { filePath, summary: filePath, ...extra });
+  const ATL = 'plugin_atlassian_atlassian';
+
+  describe('MCP calls, per server', () => {
+    it("the owner's case: twenty Atlassian calls are one row that names the server and every tool", () => {
+      const calls = [
+        ...Array.from({ length: 14 }, () => mcp(ATL, 'getJiraIssue')),
+        ...Array.from({ length: 6 }, () => mcp(ATL, 'searchJiraIssuesUsingJql')),
+      ];
+      const [run, ...rest] = runs(calls);
+      expect(rest).toEqual([]);
+      expect(run.kind).toBe('mcp');
+      expect(run.seqs).toHaveLength(20);
+      expect(run.subject).toBe('Atlassian');
+      // the name as the CLI spells it rides along, for the tooltip
+      expect(run.path).toBe(ATL);
+      expect(run.parts).toEqual([
+        { name: 'searchJiraIssuesUsingJql', count: 6 },
+        { name: 'getJiraIssue', count: 14 },
+      ]);
+      // drawn: one row where there were twenty
+      expect(applyFolds(calls, () => false).rendered).toHaveLength(1);
+    });
+
+    // an MCP tool can change something, and nothing here can know which. The
+    // row is the safeguard, so the one call that is not like the others leads.
+    it('the RAREST tool is listed first, wherever in the run it was called', () => {
+      const calls = [
+        ...Array.from({ length: 9 }, () => mcp(ATL, 'getJiraIssue')),
+        mcp(ATL, 'createJiraIssue'),
+        ...Array.from({ length: 9 }, () => mcp(ATL, 'getJiraIssue')),
+        mcp(ATL, 'addCommentToJiraIssue'),
+      ];
+      expect(runs(calls)[0].parts.map((p) => `${p.name}:${p.count}`)).toEqual([
+        'createJiraIssue:1',
+        'addCommentToJiraIssue:1',
+        'getJiraIssue:18',
+      ]);
+    });
+
+    it('two servers never share a fold', () => {
+      const calls = [
+        mcp(ATL, 'a'), mcp(ATL, 'a'), mcp(ATL, 'a'),
+        mcp('github', 'b'), mcp('github', 'b'), mcp('github', 'b'),
+      ];
+      const found = runs(calls);
+      expect(found.map((r) => r.subject)).toEqual(['Atlassian', 'Github']);
+      expect(found.map((r) => r.seqs.length)).toEqual([3, 3]);
+    });
+
+    it('alternating servers are no run at all', () => {
+      const calls = [mcp(ATL, 'a'), mcp('github', 'b'), mcp(ATL, 'a'), mcp('github', 'b'), mcp(ATL, 'a')];
+      expect(runs(calls)).toEqual([]);
+    });
+
+    it('two servers that READ the same are still two: runs compare the real name', () => {
+      const calls = [
+        mcp('my_server', 'a'), mcp('my_server', 'a'),
+        mcp('my-server', 'a'), mcp('my-server', 'a'),
+      ];
+      expect(runs(calls)).toEqual([]);
+    });
+
+    it('a failed call is its own row, and splits the run around it', () => {
+      const before = Array.from({ length: 4 }, () => mcp(ATL, 'getJiraIssue'));
+      const bad = mcp(ATL, 'getJiraIssue', { failed: true });
+      const after = Array.from({ length: 3 }, () => mcp(ATL, 'getJiraIssue'));
+      const found = runs([...before, bad, ...after]);
+      expect(found.map((r) => r.seqs.length)).toEqual([4, 3]);
+      expect(applyFolds([...before, bad, ...after], () => false).rendered.map((b) => b.seq)).toEqual([
+        before[0].seq,
+        bad.seq,
+        after[0].seq,
+      ]);
+    });
+
+    it('a resource read joins the fold of the server it names', () => {
+      const calls = [
+        mcp('notion', 'search'),
+        done('ReadMcpResourceTool', 'other', { mcp: { server: 'notion', tool: 'ReadMcpResourceTool' } }),
+        mcp('notion', 'search'),
+      ];
+      expect(runs(calls)[0].parts).toEqual([
+        { name: 'ReadMcpResourceTool', count: 1 },
+        { name: 'search', count: 2 },
+      ]);
+    });
+
+    it('a subagent’s calls and the session’s are two runs', () => {
+      const mine = [mcp(ATL, 'a'), mcp(ATL, 'a'), mcp(ATL, 'a')];
+      const theirs = [mcp(ATL, 'a'), mcp(ATL, 'a'), mcp(ATL, 'a')].map((b) => ({
+        ...b,
+        sidechain: true,
+        agentId: 'agent-1',
+      }));
+      expect(runs([...mine, ...theirs]).map((r) => r.seqs.length)).toEqual([3, 3]);
+    });
+  });
+
+  describe('a call that is waiting, or still running, is never inside a closed row', () => {
+    it('an MCP call with no result yet is not folded, and joins when it has one', () => {
+      const settled = [mcp(ATL, 'a'), mcp(ATL, 'a'), mcp(ATL, 'a')];
+      const waiting = mcp(ATL, 'createJiraIssue', { out: undefined });
+      expect(foldKind(waiting)).toBeNull();
+      // it is recognised all the same: a call opened while it runs stays open
+      expect(foldFamily(waiting)).toBe('mcp');
+      expect(runs([...settled, waiting])[0].seqs).toEqual(settled.map((b) => b.seq));
+      const drawn = applyFolds([...settled, waiting], () => false).rendered;
+      expect(drawn.map((b) => b.seq)).toEqual([settled[0].seq, waiting.seq]);
+
+      // the result arrives: the block is re-emitted with `out`, and it joins
+      const answered = { ...waiting, tool: { ...waiting.tool!, out: 'created' } } as FeedBlockDto;
+      expect(runs([...settled, answered])[0].seqs).toHaveLength(4);
+    });
+
+    it('the same for an edit and for a fetch', () => {
+      expect(foldKind(change('a.ts', { out: undefined }))).toBeNull();
+      expect(foldKind(page('example.com', { out: undefined }))).toBeNull();
+      expect(foldKind(change('a.ts'))).toBe('edit');
+      expect(foldKind(page('example.com'))).toBe('web');
+    });
+
+    it('an empty result is a result', () => {
+      expect(foldKind(change('a.ts', { out: '' }))).toBe('edit');
+    });
+
+    it('a waiting call in the MIDDLE splits the run until it is answered', () => {
+      const a = [change('a.ts'), change('a.ts'), change('a.ts')];
+      const held = change('a.ts', { out: undefined });
+      const b = [change('a.ts'), change('a.ts'), change('a.ts')];
+      expect(runs([...a, held, ...b]).map((r) => r.seqs.length)).toEqual([3, 3]);
+    });
+
+    // a denied call comes back as an error result: it must not fold either
+    it('a denied call is a failed call: its own row, for good', () => {
+      const denied = change('a.ts', { failed: true, out: 'The user denied this edit' });
+      expect(foldKind(denied)).toBeNull();
+    });
+
+    // #1200's rule is unchanged: a command joins when it starts
+    it('a command still joins its run the moment it starts', () => {
+      expect(foldKind(bash())).toBe('shell');
+    });
+  });
+
+  describe('web searches and fetches', () => {
+    it('fold together, counted apart, naming what was searched for and where it went', () => {
+      const calls = [
+        search('dockview skipSetActive'),
+        page('github.com'),
+        page('dockview.dev'),
+        search('dockview addGroup'),
+        page('github.com'),
+      ];
+      const [run] = runs(calls);
+      expect(run.kind).toBe('web');
+      expect(run.searches).toBe(2);
+      expect(run.reads).toBe(3);
+      expect(run.commands).toBe(0);
+      expect(run.parts).toEqual([
+        { name: 'dockview skipSetActive', count: 1 },
+        { name: 'github.com', count: 2 },
+        { name: 'dockview.dev', count: 1 },
+        { name: 'dockview addGroup', count: 1 },
+      ]);
+    });
+
+    it('a failed fetch stays out', () => {
+      const calls = [page('a.com'), page('b.com'), page('c.com', { failed: true }), page('d.com')];
+      expect(runs(calls)).toEqual([]);
+    });
+
+    it('a call with nothing to name still counts, and adds no empty name', () => {
+      const calls = [search(''), page(''), search('x')];
+      const [run] = runs(calls);
+      expect(run.seqs).toHaveLength(3);
+      expect(run.parts).toEqual([{ name: 'x', count: 1 }]);
+    });
+
+    it('a web call and an MCP call never share a fold', () => {
+      expect(runs([search('a'), search('b'), mcp(ATL, 'a'), mcp(ATL, 'a')])).toEqual([]);
+    });
+  });
+
+  describe('edits to ONE file', () => {
+    it('five changes to one file are one row, named for the file', () => {
+      const calls = Array.from({ length: 5 }, () => change('src/renderer/src/components/FeedView.tsx'));
+      const [run] = runs(calls);
+      expect(run.kind).toBe('edit');
+      expect(run.subject).toBe('FeedView.tsx');
+      expect(run.path).toBe('src/renderer/src/components/FeedView.tsx');
+      expect(run.seqs).toHaveLength(5);
+      expect(run.parts).toEqual([]);
+      expect(run.latest).toBe('');
+    });
+
+    it('Edit, Write, MultiEdit and NotebookEdit to one path are one run', () => {
+      const calls = [
+        change('a.ts', {}, 'Write'),
+        change('a.ts', {}, 'Edit'),
+        change('a.ts', {}, 'MultiEdit'),
+      ];
+      expect(runs(calls)[0].seqs).toHaveLength(3);
+      // a notebook has no `filePath` (that field picks the box that draws a
+      // call): main stamps the path it changes as `editPath`
+      const cells = Array.from({ length: 3 }, () =>
+        done('NotebookEdit', 'edit', { summary: 'nb/analysis.ipynb', editPath: 'nb/analysis.ipynb' })
+      );
+      expect(runs(cells)[0].subject).toBe('analysis.ipynb');
+    });
+
+    // Found in review: the path used to be read off `summary`, which main
+    // cuts at 120 characters for display.
+    it('two long paths that agree for their first 120 characters are two files', () => {
+      const deep = `${'d'.repeat(130)}/`;
+      const cell = (file: string): FeedBlockDto =>
+        done('NotebookEdit', 'edit', { summary: (deep + file).slice(0, 120), editPath: deep + file });
+      expect(runs([cell('a.ipynb'), cell('b.ipynb'), cell('a.ipynb')])).toEqual([]);
+      const [run] = runs([cell('a.ipynb'), cell('a.ipynb'), cell('a.ipynb')]);
+      expect(run.subject).toBe('a.ipynb');
+      expect(run.path).toBe(`${deep}a.ipynb`);
+    });
+
+    // the owner chose "same file only" over "edited 6 files"
+    it('a run ends where the file changes; each stretch folds only by itself', () => {
+      const calls = [
+        change('a.ts'), change('a.ts'), change('a.ts'),
+        change('b.ts'), change('b.ts'),
+        change('c.ts'), change('c.ts'), change('c.ts'), change('c.ts'),
+      ];
+      expect(runs(calls).map((r) => `${r.subject}:${r.seqs.length}`)).toEqual(['a.ts:3', 'c.ts:4']);
+    });
+
+    it('six files, one change each, is no fold', () => {
+      expect(runs(['a', 'b', 'c', 'd', 'e', 'f'].map((f) => change(`${f}.ts`)))).toEqual([]);
+    });
+
+    it('the same file spelled with the slashes the other way is one file', () => {
+      const back = String.fromCharCode(92);
+      const calls = [change('src/lib/a.ts'), change(`src${back}lib${back}a.ts`), change('src/lib/a.ts')];
+      expect(runs(calls)).toHaveLength(1);
+    });
+
+    it('case counts only where the platform says it does', () => {
+      const calls = [change('C:/p/Feed.tsx'), change('c:/p/feed.tsx'), change('C:/P/FEED.TSX')];
+      expect(runs(calls, { caseInsensitivePaths: true })).toHaveLength(1);
+      expect(runs(calls, { caseInsensitivePaths: false })).toEqual([]);
+      expect(runs(calls)).toEqual([]); // unsaid is the strict reading
+    });
+
+    it('a failed edit is the row the owner needs to see: it stays out and splits the run', () => {
+      const calls = [
+        change('a.ts'), change('a.ts'), change('a.ts'),
+        change('a.ts', { failed: true, out: 'String to replace not found in file.' }),
+        change('a.ts'), change('a.ts'),
+      ];
+      expect(runs(calls).map((r) => r.seqs.length)).toEqual([3]);
+    });
+
+    it('a sentence between two edits ends the run; it is not swallowed', () => {
+      const calls = [change('a.ts'), change('a.ts'), prose(), change('a.ts'), change('a.ts')];
+      expect(runs(calls)).toEqual([]);
+    });
+
+    it('an edit with no path at all is an event, as it always was', () => {
+      const bare = done('Edit', 'edit', { summary: '' });
+      expect(foldFamily(bare)).toBeNull();
+    });
+  });
+
+  describe('the kinds never mix, and the two older ones are untouched', () => {
+    it('a lookup between two edits to one file is the end of one run and the start of nothing', () => {
+      const calls = [change('a.ts'), change('a.ts'), read(), change('a.ts'), change('a.ts')];
+      expect(runs(calls)).toEqual([]);
+    });
+
+    it('LSP is looking around: it joins "Explored the code"', () => {
+      const lsp = done('LSP', 'other');
+      expect(isExploration(lsp)).toBe(true);
+      const [run] = runs([read(), lsp, grep()]);
+      expect(run.kind).toBe('explore');
+      expect(run.reads).toBe(1);
+      expect(run.searches).toBe(2);
+    });
+
+    it('an exploration run and a command run carry none of the new fields', () => {
+      const [explore] = runs([read(), grep(), glob()]);
+      expect([explore.subject, explore.path, explore.parts]).toEqual(['', '', []]);
+      const [web] = runs([search('a'), search('b'), search('c')]);
+      expect([web.subject, web.path]).toEqual(['', '']);
+      const [shell] = runs([bash(), bash(), bash()]);
+      expect([shell.subject, shell.path, shell.parts]).toEqual(['', '', []]);
+    });
+
+    it('a tool of no named kind is an event', () => {
+      for (const name of ['Agent', 'Skill', 'ToolSearch', 'TaskCreate', 'AskUserQuestion']) {
+        expect(foldFamily(done(name, 'other')), name).toBeNull();
+      }
+    });
+
+    it('a result that carried a picture is an event, whatever the kind', () => {
+      expect(foldKind(mcp('browser', 'screenshot', { pictures: ['h1'] }))).toBeNull();
+    });
   });
 });

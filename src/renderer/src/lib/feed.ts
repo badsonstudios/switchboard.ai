@@ -22,6 +22,12 @@ export interface FeedBlockDto {
     failed?: boolean;
     /** AskUserQuestion: the questions of the call, structured (#1201) */
     questions?: SettledQuestion[];
+    /** the file an edit changes, whole: what same-file edits fold on (#1271) */
+    editPath?: string;
+    /** an MCP call: which server, which of its tools (#1271) */
+    mcp?: { server: string; tool: string };
+    /** a web search or fetch: the query, or the site (#1271) */
+    web?: { kind: 'search'; query: string } | { kind: 'page'; host: string };
     /** the pictures the result carried (#1240): one handle each. The bytes
      *  stay in main; `shared/feed-picture.ts` turns a handle into a URL. */
     pictures?: string[];

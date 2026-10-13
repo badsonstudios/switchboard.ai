@@ -63,9 +63,9 @@ This is the conversation, rendered to be read rather than scrolled past:
   again to fold them away. While Claude is still looking, the counts go up in
   place.
 
-  An edit or a helper being sent out always gets its own box. So does a single
-  Read, or two. And a sentence from Claude in the middle of a burst splits it
-  into two boxes with the sentence between them.
+  A helper being sent out always gets its own box. So does a single Read, or
+  two. And a sentence from Claude in the middle of a burst splits it into two
+  boxes with the sentence between them.
 - **A run of commands is one box too.** Three or more commands in a row, with
   nothing else between them, become **Ran**, how many commands, and what the
   most recent one was for. Click it (or press Enter on it) to see each one,
@@ -79,7 +79,40 @@ This is the conversation, rendered to be read rather than scrolled past:
   Claude Code itself reports it so: it exited with an error, it was blocked,
   or nobody approved it.)
 
-  Commands and looking around are never mixed in one box.
+- **Calls to a connected tool server are one box per server.** Three or more
+  calls in a row to the same server (Atlassian, GitHub, anything you have
+  connected) become one box: the server's name, how many calls, and then
+  **every tool that was called, with how many times**, for example
+  *Atlassian · 20 calls · createJiraIssue, searchJiraIssuesUsingJql ×5,
+  getJiraIssue ×14*. The tools called least come first, so the one call that
+  was different from the rest is the first thing you read. If the list is too
+  long for the box, hover it to see all of it.
+
+  That list is there because a tool like these can change something, and
+  switchboard cannot tell which ones do. It does not guess from the name.
+  Calls to two different servers are never put in one box.
+- **A burst on the web is one box.** Three or more searches and page fetches
+  in a row become **Searched the web**, how many searches and how many pages,
+  and then what was searched for and which sites were read.
+- **Several changes to one file are one box.** Three or more edits in a row
+  to the same file become **Edited** and the file's name, with how many
+  changes; hover the name for the whole path. Open it and every change is
+  there with its before and after, exactly as it was. Edits to *different*
+  files are not put together: each file's changes fold only if there are
+  three or more of them in a row.
+
+  **These three wait for the call to finish.** A change, a fetch or a tool
+  call that is waiting for your approval, or still running, stays a box of
+  its own under the folded one, and joins it once it is done. One that
+  **failed**, or that you **denied**, never joins: it keeps its own box, with
+  **failed** in red and the reason under it, in the place where it happened.
+  (Looking around is the one exception, as before: a Read of a file that is
+  not there is part of looking around, and stays inside *Explored the code*.)
+
+  When a box lists more than eight different tools, searches or sites, it
+  names eight and says how many more; hover the list for all of them.
+
+  The different kinds are never mixed in one box.
 
   `Ctrl+F` still finds text inside a folded burst: stepping to a match there
   opens the box.
@@ -168,6 +201,7 @@ The box beside it shows the tool's name and what it was used on, as before.
 | A page | It read a file |
 | A magnifying glass | It searched (for files, or for text in them) |
 | Two magnifying glasses | A burst of reading and searching, folded into one box |
+| A terminal, a globe, a plug or a pencil, on a folded row | A folded run of commands, of web calls, of calls to one tool server, or of changes to one file |
 | A pencil | It edited a file |
 | A page with a plus | It wrote a new file |
 | A notebook | It read or changed a notebook |

@@ -802,3 +802,93 @@ describe('what the CLI says is not for the live view (#1026)', () => {
     expect(blocks(deriveIntents(user({ isReplay: true }, 'do it')))).toHaveLength(1);
   });
 });
+// #1271 — what a run of calls folds BY is read once, in main.
+describe('the fold facts stamped on a tool block (#1271)', () => {
+  const toolBlock = (name: string, input: Record<string, unknown>, caps = DISPLAY_CAPS) =>
+    blocks(
+      deriveIntents(
+        {
+          type: 'assistant',
+          timestamp: 't',
+          message: { id: 'm', content: [{ type: 'tool_use', id: 'toolu_1', name, input }] },
+        },
+        caps
+      )
+    )[0].block.tool!;
+
+  it('an MCP call says which server and which tool', () => {
+    const tool = toolBlock('mcp__plugin_atlassian_atlassian__getJiraIssue', { issueIdOrKey: 'SB-1' });
+    expect(tool.mcp).toEqual({ server: 'plugin_atlassian_atlassian', tool: 'getJiraIssue' });
+    expect(tool.web).toBeUndefined();
+    // and nothing else about the block moved: it is still drawn as it was
+    expect(tool.category).toBe('other');
+    expect(tool.name).toBe('mcp__plugin_atlassian_atlassian__getJiraIssue');
+  });
+
+  it('a resource tool is stamped with the server its input names', () => {
+    expect(toolBlock('ReadMcpResourceTool', { server: 'notion', uri: 'n://x' }).mcp).toEqual({
+      server: 'notion',
+      tool: 'ReadMcpResourceTool',
+    });
+    expect(toolBlock('ListMcpResourcesTool', {}).mcp).toBeUndefined();
+  });
+
+  it('a search says its query, and a fetch its site and never its address', () => {
+    expect(toolBlock('WebSearch', { query: 'dockview addGroup' }).web).toEqual({
+      kind: 'search',
+      query: 'dockview addGroup',
+    });
+    const fetched = toolBlock('WebFetch', { url: 'https://www.example.com/p?token=SECRET', prompt: 'x' });
+    expect(fetched.web).toEqual({ kind: 'page', host: 'example.com' });
+    expect(JSON.stringify(fetched.web)).not.toContain('SECRET');
+  });
+
+  it('every other tool carries neither, absent and not empty', () => {
+    for (const [name, input] of [
+      ['Read', { file_path: 'a.ts' }],
+      ['Bash', { command: 'ls' }],
+      ['Edit', { file_path: 'a.ts', old_string: 'a', new_string: 'b' }],
+      ['Agent', { description: 'x' }],
+    ] as const) {
+      const tool = toolBlock(name, input);
+      expect('mcp' in tool, name).toBe(false);
+      expect('web' in tool, name).toBe(false);
+    }
+  });
+
+  it('an edit carries the path it changes, WHOLE, whichever key named it', () => {
+    const long = `${'d'.repeat(300)}/nb.ipynb`;
+    const nb = toolBlock('NotebookEdit', { notebook_path: long, new_source: 'x' });
+    expect(nb.editPath).toBe(long);
+    expect(nb.summary.length).toBe(DISPLAY_CAPS.summary); // which is why it is not read off this
+    expect(nb.filePath).toBeUndefined(); // and this still picks the box that draws it
+    expect(toolBlock('Edit', { file_path: 'a.ts', old_string: 'a', new_string: 'b' }).editPath).toBe('a.ts');
+    expect(toolBlock('Write', { file_path: 'b.ts', content: 'x' }).editPath).toBe('b.ts');
+    // not for a tool that only reads one
+    expect('editPath' in toolBlock('Read', { file_path: 'a.ts' })).toBe(false);
+    expect('editPath' in toolBlock('Edit', { old_string: 'a' })).toBe(false);
+  });
+
+  it('a resource tool’s server is spelled the way that server’s tools spell it', () => {
+    expect(toolBlock('ReadMcpResourceTool', { server: 'plugin:atlassian:atlassian', uri: 'x' }).mcp).toEqual({
+      server: toolBlock('mcp__plugin_atlassian_atlassian__getJiraIssue', {}).mcp!.server,
+      tool: 'ReadMcpResourceTool',
+    });
+  });
+
+  it('is capped like every other string a block carries', () => {
+    const long = 'q'.repeat(5000);
+    const tool = toolBlock('WebSearch', { query: long });
+    expect((tool.web as { query: string }).query.length).toBe(DISPLAY_CAPS.summary);
+    const big = toolBlock(`mcp__${'s'.repeat(500)}__${'t'.repeat(500)}`, {});
+    expect(big.mcp!.server.length).toBe(DISPLAY_CAPS.summary);
+    expect(big.mcp!.tool.length).toBe(DISPLAY_CAPS.summary);
+  });
+
+  // the pass that reads nothing but identities holds none of this text either,
+  // like every other string it is handed a cap of zero for
+  it('the identity-only pass carries no text here, as for every other field', () => {
+    expect(toolBlock('mcp__github__get_issue', {}, IDENTITY_ONLY_CAPS).mcp).toEqual({ server: '', tool: '' });
+    expect(toolBlock('WebSearch', { query: 'x' }, IDENTITY_ONLY_CAPS).web).toEqual({ kind: 'search', query: '' });
+  });
+});

@@ -18,6 +18,7 @@
 // tool row with no icon among rows that have one would read as "not a tool".
 import { ASK_USER_QUESTION_TOOL } from './ask-user-question';
 import { READ_TOOLS, SHELLISH } from './tool-taxonomy';
+import { MCP_PREFIX, MCP_RESOURCE_TOOLS, WEB_TOOLS } from './tool-fold';
 
 export const TOOL_ICONS = [
   'agent',
@@ -57,7 +58,6 @@ const TODO_TOOLS = ['TodoWrite', 'TodoRead', 'TaskCreate', 'TaskUpdate', 'TaskLi
  *  the same kind of step as running one (found in review; three of these are
  *  in this repo's own captured transcript) */
 const BACKGROUND_SHELL_TOOLS = ['BashOutput', 'KillShell', 'Monitor', 'TaskOutput', 'TaskStop'];
-const WEB_TOOLS = ['WebFetch', 'WebSearch'];
 
 /**
  * The icon for a tool, by its raw name.
@@ -79,7 +79,9 @@ export function toolIconFor(name: string | undefined | null): ToolIconKind {
   if (READ_TOOLS.includes(name)) return 'read';
   if (TODO_TOOLS.includes(name)) return 'todos';
   if (WEB_TOOLS.includes(name)) return 'web';
-  if (name.startsWith('mcp__')) return 'mcp';
+  // ...and the two built-in tools that read an MCP server's resources are
+  // MCP calls by another name (#1271): they fold with that server's calls
+  if (name.startsWith(MCP_PREFIX) || MCP_RESOURCE_TOOLS.includes(name)) return 'mcp';
   return 'other';
 }
 
