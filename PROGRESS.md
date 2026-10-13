@@ -3,10 +3,16 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔧 2026-10-13 — #1258, NO "NEED YOU" NOTICE FOR A HELD APPROVAL: IN PROGRESS
+> # ✅ 2026-10-13 — #1258, NO "NEED YOU" NOTICE FOR A HELD APPROVAL: LANDED, NOT RELEASED
 >
-> **IN PROGRESS on `feature/1258-held-request-keeps-need-you`. Nothing is
-> merged.** The owner read the diagnosis and gave the go-ahead with three
+> **DONE 2026-10-13, PR #1269 (`d2546f4f`), merged, NOT released.** The
+> ticket is closed. Green on the first CI run, four jobs of four. **Nothing
+> is in flight. Next is the owner's call.** It sits in `0.8.122 —
+> unreleased` with the six tickets below. **DO NOT CUT A RELEASE** unless he
+> asks. He has NOT hand-tested it: the tracker has the RE-TEST row, and the
+> laptop with three sessions side by side is where he saw it.
+>
+> The owner read the diagnosis and gave the go-ahead with three
 > decisions: **(A) both fixes for the count** (the status machine does not
 > leave "waiting on you" while a request is held; the Events list does not
 > drop the demand while main holds a request); **(B) a hidden or collapsed
@@ -14,7 +20,7 @@
 > sound while the app is focused is NOT in this ticket** and gets its own.
 > No release. One report at the end. The plan is on the ticket (2026-10-13).
 >
-> **BUILT, REVIEWED, IN ITS PR.** The fake CLI has `!permstream` and
+> **What was built.** The fake CLI has `!permstream` and
 > `!askstream` (ask, then KEEP STREAMING); `e2e/approval-stays-counted.spec.ts`
 > failed on `9ea7729e` and passes now. Unit 12,169, lint clean, 154 e2e
 > across the 32 specs of the area. One adversarial review: two blockers in
