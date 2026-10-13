@@ -3,9 +3,18 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ 2026-10-13 — #1271, FOLD MCP CALLS, WEB CALLS AND SAME-FILE EDITS: LANDED, NOT RELEASED
+> # ✅ RELEASED: v0.8.122, 2026-10-13 (PR #1274)
 >
-> **DONE 2026-10-13, PR #1272 (`2c2c9e51`), merged, NOT released.** The
+> The owner, after the report on #1271: *"All right, why don't you fire off
+> a release."* A plain patch step. It carries the nine items below: #1271,
+> #1258, the six tickets of 2026-10-12 and #1239. `0.8.123 — unreleased` is
+> open. The six tracker rows read "IN v0.8.122, installable now". **Nothing
+> is in flight. DO NOT CUT ANOTHER** unless he asks. None of it has been
+> hand-tested by him yet.
+>
+> # ✅ 2026-10-13 — #1271, FOLD MCP CALLS, WEB CALLS AND SAME-FILE EDITS: LANDED, IN v0.8.122
+>
+> **DONE 2026-10-13, PR #1272 (`2c2c9e51`), merged, in v0.8.122.** The
 > ticket is closed. Green on the first CI run, four jobs of four. **Nothing
 > is in flight. Next is the owner's call.** He has NOT hand-tested it; the
 > tracker has the RE-TEST row. One review pass, no blockers, four
@@ -25,17 +34,17 @@
 > things" cannot be told from silence. Nothing is hidden or marked by a
 > hint; the row naming every tool is the safeguard. Also in it: a failed
 > edit or MCP call now says **failed** and why (only a command did).
-> NOT RELEASED. **DO NOT CUT A RELEASE** unless he asks. The desktop has
+> In v0.8.122 (released 2026-10-13). The desktop has
 > almost no MCP calls: the laptop is where this gets its real test, and
 > `spike/probes/1271/` has the counting scripts to run there.
 >
-> # ✅ 2026-10-13 — #1258, NO "NEED YOU" NOTICE FOR A HELD APPROVAL: LANDED, NOT RELEASED
+> # ✅ 2026-10-13 — #1258, NO "NEED YOU" NOTICE FOR A HELD APPROVAL: LANDED, IN v0.8.122
 >
-> **DONE 2026-10-13, PR #1269 (`d2546f4f`), merged, NOT released.** The
+> **DONE 2026-10-13, PR #1269 (`d2546f4f`), merged, in v0.8.122.** The
 > ticket is closed. Green on the first CI run, four jobs of four. **Nothing
-> is in flight. Next is the owner's call.** It sits in `0.8.122 —
-> unreleased` with the six tickets below. **DO NOT CUT A RELEASE** unless he
-> asks. He has NOT hand-tested it: the tracker has the RE-TEST row, and the
+> is in flight. Next is the owner's call.** It is in **v0.8.122** (released
+> 2026-10-13) with the six tickets below.
+> He has NOT hand-tested it: the tracker has the RE-TEST row, and the
 > laptop with three sessions side by side is where he saw it.
 >
 > The owner read the diagnosis and gave the go-ahead with three
@@ -66,11 +75,10 @@
 > focused, his decision C) and **#1268** (a request still held when its turn
 > ends keeps its bar; older than this, more visible now).
 >
-> # ✅ 2026-10-12 — SIX TICKETS: ALL LANDED, NOT RELEASED
+> # ✅ 2026-10-12 — SIX TICKETS: ALL LANDED, IN v0.8.122
 >
 > **All six are merged to `main` and their tickets are closed. Nothing is in
-> flight. All of it sits in `0.8.122 — unreleased`. DO NOT CUT A RELEASE
-> unless the owner asks.**
+> flight. All of it is in v0.8.122 (released 2026-10-13).**
 >
 > The owner was shown ten tickets in priority order and said: *"All right,
 > let's do 1 through 5 and number 9."* Each was its own item, one PR in CI at
@@ -92,30 +100,29 @@
 > **The order:** #1240, #1241, #1026, #499, #1028, #702.
 >
 > 1. **#1240 — pictures from tool results and attached pictures.
->    DONE 2026-10-12, PR #1257 (`7250cfe2`), merged, NOT released.**
+>    DONE 2026-10-12, PR #1257 (`7250cfe2`), merged, in v0.8.122.**
 >    The ticket is closed. Green on the first CI run. One review pass, no blockers; six should-fixes done before the push.
 > 2. **#1241 — scroll position while pictures load.
->    DONE 2026-10-12, PR #1260 (`4d0c2aaa`), merged, NOT released.**
+>    DONE 2026-10-12, PR #1260 (`4d0c2aaa`), merged, in v0.8.122.**
 >    The ticket is closed. Green on the first CI run. Nothing needed reserving: the reader moves 0.1 to 0.5 px. The one attempted fix moved the reader 300 to 420 px and was taken out; no behaviour changed.
 > 3. **#1026 — two stream flags we do not read.
->    DONE 2026-10-12, PR #1262 (`07301776`), merged, NOT released.**
+>    DONE 2026-10-12, PR #1262 (`07301776`), merged, in v0.8.122.**
 >    The ticket is closed. Green on the first CI run. Probed first: neither field the ticket names reaches our stream; what the flag marks is a compaction summary, which was being drawn as a prompt. Filed #1259 for a divider where a compaction happened.
 > 4. **#499 — composer hardening.
->    DONE 2026-10-12, PR #1263 (`f52dd376`), merged, NOT released.**
+>    DONE 2026-10-12, PR #1263 (`f52dd376`), merged, in v0.8.122.**
 >    The ticket is closed. Green on the first CI run. The reference's 50,000 was read again and is no longer a truncation, so the limit is a refusal at a million characters, said under the box; names are cleaned where they come in.
 > 5. **#1028 — ReadScope: the existence oracle and the ancestor walk.
->    DONE 2026-10-12, PR #1264 (`695f4b63`), merged, NOT released.**
+>    DONE 2026-10-12, PR #1264 (`695f4b63`), merged, in v0.8.122.**
 >    The ticket is closed. Green on the first CI run. One adversarial review: its first pass found the fix still leaked through a 41-link chain and cost more than the walk it replaced; both fixed. NARROWED, NOT CLOSED: a link that goes out of the scope and back still tells present from absent on POSIX, and timing differs. Filed #1261 for both.
 > 6. **#702 — grid-drag group membership.
->    DONE 2026-10-12, PR #1265 (`5ba48cc8`), merged, NOT released.**
+>    DONE 2026-10-12, PR #1265 (`5ba48cc8`), merged, in v0.8.122.**
 >    The ticket is closed. Green on the first CI run. Confirmed first: the listener never ran on any path (0 of 5). Removed rather than repaired, because repaired it would erase a session's group when its tab is dropped beside ungrouped ones; a real-mouse spec pins that a drag in the grid leaves every group alone.
 >
-> # ✅ 2026-10-11 — #1239, A PICTURE OF AN HTML MOCK-UP: LANDED, NOT RELEASED
+> # ✅ 2026-10-11 — #1239, A PICTURE OF AN HTML MOCK-UP: LANDED, IN v0.8.122
 >
-> **DONE 2026-10-11, PR #1255 (`1b76c96e`), merged, NOT released.** The ticket
+> **DONE 2026-10-11, PR #1255 (`1b76c96e`), merged, in v0.8.122.** The ticket
 > is closed. Green on the first CI run. **Nothing is in flight. Next is the
-> owner's call.** It sits in `0.8.122 — unreleased`. **DO NOT CUT A RELEASE**
-> unless he asks.
+> owner's call.** It is in v0.8.122 (released 2026-10-13).
 >
 > The owner asked whether a mock-up could be a live frame in the
 > conversation, read the research (on the ticket), and decided: *"I like the
