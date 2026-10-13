@@ -3,10 +3,16 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔧 2026-10-13 — #1271, FOLD MCP CALLS, WEB CALLS AND SAME-FILE EDITS: IN ITS PR
+> # ✅ 2026-10-13 — #1271, FOLD MCP CALLS, WEB CALLS AND SAME-FILE EDITS: LANDED, NOT RELEASED
 >
-> **Built and reviewed on `feature/1271-fold-mcp-web-edits`; see the PR for
-> whether it has merged.** The owner: *"Let's go ahead and implement ticket
+> **DONE 2026-10-13, PR #1272 (`2c2c9e51`), merged, NOT released.** The
+> ticket is closed. Green on the first CI run, four jobs of four. **Nothing
+> is in flight. Next is the owner's call.** He has NOT hand-tested it; the
+> tracker has the RE-TEST row. One review pass, no blockers, four
+> should-fixes done. Not measured: how a resource tool spells its server
+> (the desktop has no such call).
+>
+> The owner: *"Let's go ahead and implement ticket
 > 1271."* Three new folds in the conversation, beside "Explored the code" and
 > "Ran N commands": calls to ONE MCP server (the row names the server, the
 > count and every tool called, rarest first), web searches and fetches, and
