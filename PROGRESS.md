@@ -3,6 +3,45 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🎛️ ORCHESTRATION RUN — E40 "MORE THAN ONE AI" (#1285–#1296) — STARTED 2026-10-16
+>
+> **Mode:** `/orchestrate`. A Fable session dispatches Opus workers into the
+> worktree pool (`C:\Projects\sb-wt-1..3`) and is the **ONLY writer of this
+> file**. Workers never touch `PROGRESS.md`; they report through handoff files
+> in `.claude/work_files/orchestrator/<issue#>.md`, and this block is rebuilt
+> from those. A fresh session resuming the run reads this block, then the
+> handoff files, then `gh pr list` for every branch named here.
+>
+> **Scope:** the twelve open E40 issues, in the §7 order of
+> `docs/plans/e40-multi-ai-design.md`. **#1284 (install Codex) is CLOSED:**
+> verified 2026-10-16, codex-cli 0.163.0, logged in via ChatGPT (work
+> account). It blocks nothing now.
+>
+> **Merge policy for this run:** internal PRs (seam, probe, engine, catalog)
+> merge on green CI as they finish. **User-facing PRs queue for the owner**
+> and are listed under "Owner's queue" below; the run never merges them.
+>
+> **Active workers (issue → worktree → branch):**
+> - #1286 seam 1 (neutral events) → `sb-wt-1` → `feature/1286-seam-neutral-events` — dispatched 2026-10-16
+> - #1285 Codex-over-ACP probe → `sb-wt-2` → `feature/1285-codex-acp-probe` — dispatched 2026-10-16
+>
+> **Waiting on dependencies:** #1287 + #1288 (after #1286) · #1289 (after
+> #1286 + #1287) · #1291 (after #1289) · #1292 + #1293 (after #1291) ·
+> #1290 (after #1285 + #1289; **re-read #1285's verdict first**) · #1294
+> (after #1287 + #1290 + #1293) · #1295 (after #1294) · #1296 (after #1290).
+>
+> **Merged this run:** none yet.
+>
+> **Owner's queue (user-facing, awaiting his review):** empty.
+>
+> **Blockers:** none. **Stop conditions:** a decision only the owner can
+> make, red CI that is not a known flake, or #1285's verdict changing the
+> epic's shape (ACP vs native `codex app-server`).
+>
+> **Housekeeping on the way in:** PR #1280 (dogfood tracker, docs) was red on
+> Windows only because of the git 2.56 wording #1298 fixed; its branch was
+> updated onto main and it merges on green.
+
 > # 📐 2026-10-15 — E40, MORE THAN ONE AI: DESIGNED AND FILED, NOTHING BUILT YET
 >
 > The owner: *"I want to add the ability to use another account from another
@@ -20,10 +59,11 @@
 >   the model chip, handoff with a divider, Settings → AIs with detection on
 >   every startup, a "Something else" form, and cross-AI dispatch.
 >
-> **BLOCKER (owner): #1284**, installing Codex and logging in with the work
-> account. It blocks only the probe (#1285) and what follows it.
+> **#1284 (installing Codex, logging in with the work account) was the
+> owner's blocker; he closed it 2026-10-16** (codex-cli 0.163.0, ChatGPT work
+> login). *(This line read "BLOCKER (owner): #1284" for a day after.)*
 >
-> **NEXT:** #1286 (seam 1), which needs nothing from him. Nothing is in flight.
+> **The build started 2026-10-16 as an orchestration run: see the block above.**
 
 > # ✅ RELEASED: v0.8.122, 2026-10-13 (PR #1274)
 >
