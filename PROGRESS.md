@@ -22,21 +22,33 @@
 > and are listed under "Owner's queue" below; the run never merges them.
 >
 > **Active workers (issue → worktree → branch):**
-> - #1287 seam 2 (controls, declared) → `sb-wt-1` → `feature/1287-seam-controls` — dispatched 2026-10-16, branched from #1302's head `e12f2b50`
-> - #1288 per-AI surfaces → `sb-wt-2` → `feature/1288-per-ai-surfaces` — dispatched 2026-10-16, same base
+> - #1289 ACP engine + fake ACP agent → `sb-wt-1` → `feature/1289-acp-engine` — dispatched 2026-10-16, branched from #1304's rebased head `d9d0ab16`
+> - #1288 per-AI surfaces → `sb-wt-2` → `feature/1288-per-ai-surfaces` — dispatched 2026-10-16 from `e12f2b50`; told to rebase onto main and warned of #1287's file moves
 >
-> **In CI, awaiting merge:** **#1302** (#1286, seam 1: 14 neutral event
-> types in `engine-events.ts`, Claude translator in
-> `providers/claude-events.ts` behind a new `events` capability; unit 12,292,
-> e2e 512/512 then 510 + 2 load flakes that passed alone; no e2e spec
-> touched). Internal; merges on green. Both wave-2 workers rebase onto it
-> (`git rebase --onto origin/main e12f2b50`) once it lands.
+> **In CI, awaiting merge:** **#1304** (#1287, seam 2: `ProviderCapabilities.controls`,
+> `SessionControls` whose present members ARE the declaration; a missing
+> control answers `unsupported` "Not available with <AI>."; the renderer
+> asks `sessions:controls` and greys out mode, model, Compact, Clear, Stop
+> and the card menu's Clear/Compact; `shared/stream-protocol.ts` is now
+> `providers/claude-protocol.ts`, the grep allowlist is EMPTY; unit 12,331,
+> e2e 511 + 1 colour-serialisation flake that passed alone; e2e comments
+> only). Rebased onto main by the orchestrator (content identical). Internal;
+> merges on green. **#1288 will conflict with its moves** (`stream-protocol`,
+> `effort`, `context-usage`): rebase #1288 after #1304 lands.
 >
-> **Waiting on dependencies:** #1289 (after #1287) · #1291 (after #1289) ·
-> #1292 + #1293 (after #1291) · #1290 (after #1289) · #1294 (after #1287 +
-> #1290 + #1293) · #1295 (after #1294) · #1296 (after #1290).
+> **Waiting on dependencies:** #1291 (after #1289) · #1292 + #1293 (after
+> #1291) · #1290 (after #1289) · #1294 (after #1287 + #1290 + #1293) · #1295
+> (after #1294) · #1296 (after #1290).
 >
 > **Merged this run:**
+> - **#1286 seam 1 → PR #1302 (`5fa32d7c`), 2026-10-16.** 14 neutral event
+>   types in `src/main/sessions/engine-events.ts`; the Claude translator
+>   `providers/claude-events.ts` behind a new optional `events` capability,
+>   declared by the real and the fake Claude adapters. Feed, state machine,
+>   stream-status and health consume only events; `engine-seam.test.ts` is
+>   the grep gate. No e2e spec touched; unit 12,292; e2e 512/512 (second run
+>   510 + 2 load flakes that passed alone). Out of scope, filed as **#1303**:
+>   transcript replay still reads Claude's format outside the provider.
 > - **#1285 probe → PR #1300 (`dd928d10`), 2026-10-16.** `spike/findings/e40-codex-acp.md`.
 >   **VERDICT: Codex rides the general ACP engine; no native engine.** Adapter
 >   `@agentclientprotocol/codex-acp@2.2.2` (bundles its own Codex 0.160.1,
