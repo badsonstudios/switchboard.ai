@@ -384,7 +384,7 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
         forkSession = true;
         // Minted HERE so the card can be bound before the process exists.
         // `globalThis.crypto` rather than a node:crypto import for the reason
-        // `shared/stream-protocol.ts` gives — and it must be a real UUID,
+        // `providers/claude-protocol.ts` gives — and it must be a real UUID,
         // because the CLI validates `--session-id` and refuses anything else.
         forkSessionId = globalThis.crypto.randomUUID();
       } else {

@@ -8,6 +8,7 @@ import type { AutonomyMode } from '../../shared/sessions';
 import type { BusLaunch } from '../bus/launch';
 import { TransportKind } from '../transport/transport';
 import type { EngineTranslator, TranslatorHooks } from '../sessions/engine-events';
+import type { ControlCapability } from '../sessions/engine-controls';
 
 /**
  * Provider adapter contract v0 (§5.3). The full interface grows in P1-E2-02;
@@ -144,6 +145,17 @@ export interface ProviderCapabilities {
    * provider, is exactly the bypass this capability retires.
    */
   events?: EventCapability;
+  /**
+   * What the host can DO to the CLI's sessions — approve, interrupt, switch
+   * model, effort, mode, slash commands, the live MCP verbs — and, by which
+   * members a session's controls have, the DECLARATION the composer greys
+   * missing controls out by (E40 item 04, #1287; `sessions/engine-controls.ts`).
+   *
+   * Absent: the session can be read but not driven — no prompt goes, and
+   * every control answers `unsupported` and shows "Not available with <AI>".
+   * No fallback to Claude's, for the reason `events` has none.
+   */
+  controls?: ControlCapability;
 }
 
 export interface EventCapability {

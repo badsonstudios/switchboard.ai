@@ -5,7 +5,7 @@
 //
 // WHAT IT SHOWS IS WHAT THE SESSION SAYS, never what we last asked for. The
 // CLI can be asked which level is in force (`get_settings`, measured — see
-// shared/effort.ts), so the chip reads it: when the card appears, when the
+// main/providers/claude-effort.ts), so the chip reads it: when the card appears, when the
 // session's model changes, and after every change of its own. A model with no
 // effort levels (Haiku 4.5) answers `null`, and then there is no chip at all:
 // an inert control for something this model does not have would be an offer of

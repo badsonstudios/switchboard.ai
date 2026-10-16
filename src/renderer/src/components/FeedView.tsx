@@ -50,6 +50,7 @@ import {
   stashAttachments,
 } from '../lib/composer-attachment-draft';
 import { interruptSession, resolveDraftMentions, submitPrompt } from '../lib/composer';
+import { controlUnavailable, useAiControls } from '../lib/ai-controls';
 import { mayMention } from '../../../shared/mention-finder';
 import {
   beginHandoffWait,
@@ -2506,6 +2507,24 @@ const HANDOFF_SILENT: React.CSSProperties = {
 };
 
 /**
+ * A control this session's AI lacks, wrapped so its reason can be SEEN (#1287).
+ *
+ * The reason is the control's own `title` too, but Chromium does not hit-test
+ * a `disabled` button, so a tooltip on it never appears — the same fact the
+ * Compact and Clear wrappers below were built around. With no reason, the
+ * element is returned untouched: a control the AI has renders exactly as it
+ * always did, with no extra node around it.
+ */
+function withReason(reason: string | null, el: React.JSX.Element): React.JSX.Element {
+  if (reason === null) return el;
+  return (
+    <span title={reason} data-unavailable-reason="">
+      {el}
+    </span>
+  );
+}
+
+/**
  * Prompt composer (P2-E10-02, Â§5.10): an INPUT ROUTE to the real CLI â€” the
  * text is written to the session's PTY exactly as if typed in the terminal
  * (multiline goes as a bracketed paste so the TUI treats it as one prompt).
@@ -2814,6 +2833,25 @@ function Composer({
    * rendering its footer, and there is nothing to send a `set_model` to.
    */
   const canSwitchModel = transport === 'stream' && sessionId !== '';
+  /**
+   * Which of this row's controls the session's AI LACKS, each as the reason
+   * it gives (E40 item 04, #1287): "Not available with <AI>." — or `null`
+   * for a control it has. Greyed out, never hidden: the control is still
+   * where it always is, disabled, saying why. `null` across the board until
+   * main answers, and for every Claude session, which has them all.
+   *
+   * Effort and the context meter are the exception, and an old one: both
+   * already draw NOTHING when the session has nothing to show, so an AI
+   * without them gets that same nothing rather than a greyed chip with no
+   * value in it.
+   */
+  const aiControls = useAiControls(sessionId);
+  const noModes = controlUnavailable(aiControls, 'modes', t);
+  const noModels = controlUnavailable(aiControls, 'models', t);
+  const noEffort = controlUnavailable(aiControls, 'effort', t);
+  const noContextUsage = controlUnavailable(aiControls, 'contextUsage', t);
+  const noSlashCommands = controlUnavailable(aiControls, 'slashCommands', t);
+  const noInterrupt = controlUnavailable(aiControls, 'interrupt', t);
   const closeModelMenu = (): void => {
     // The REF, not the state — see `modelBusyRef`. Belt to the chip's
     // `disabled` braces, which is what actually stops the click getting here;
@@ -4452,29 +4490,36 @@ function Composer({
               : undefined,
         }}
       />
-      {status === 'working' && (
-        <button
-          onClick={() => void interruptSession(sessionId)}
-          title={t('feedView.stop')}
-          style={{
-            // the same tinted-fill shape as the status pill (#221): the glyph
-            // is TEXT on a 14% wash of its own hue, which measured 2.84:1 on
-            // daylight and 3.37:1 on nordic. The ink clears 5.21:1 everywhere.
-            // The border keeps the hue â€” an edge is not a word (#246).
-            background: CRASHED_WASH,
-            color: 'var(--status-crashed-ink)',
-            border: '1px solid var(--status-crashed)',
-            borderRadius: 8,
-            inlineSize: 30,
-            blockSize: 30,
-            cursor: 'pointer',
-            fontSize: 11,
-            lineHeight: 1,
-          }}
-        >
-          {t('feedView.stopIcon')}
-        </button>
-      )}
+      {status === 'working' &&
+        withReason(
+          noInterrupt,
+          <button
+            onClick={() => {
+              if (noInterrupt === null) void interruptSession(sessionId);
+            }}
+            title={noInterrupt ?? t('feedView.stop')}
+            disabled={noInterrupt !== null}
+            data-unavailable={noInterrupt !== null ? 'interrupt' : undefined}
+            style={{
+              // the same tinted-fill shape as the status pill (#221): the glyph
+              // is TEXT on a 14% wash of its own hue, which measured 2.84:1 on
+              // daylight and 3.37:1 on nordic. The ink clears 5.21:1 everywhere.
+              // The border keeps the hue â€” an edge is not a word (#246).
+              background: CRASHED_WASH,
+              color: 'var(--status-crashed-ink)',
+              border: '1px solid var(--status-crashed)',
+              borderRadius: 8,
+              inlineSize: 30,
+              blockSize: 30,
+              cursor: noInterrupt === null ? 'pointer' : 'default',
+              opacity: noInterrupt === null ? undefined : 0.45,
+              fontSize: 11,
+              lineHeight: 1,
+            }}
+          >
+            {t('feedView.stopIcon')}
+          </button>
+        )}
       <button
         onClick={submit}
         // an attached image with nothing typed is a sendable prompt (E10-09)
@@ -4519,37 +4564,43 @@ function Composer({
             with it, which is the question a chip that applies on next resume
             has to answer. `data-testid` so the e2e that cycles it is not
             pinned to the copy. */}
-        <button
-          onClick={onCycleAutonomy}
-          data-testid="composer-autonomy"
-          // What the session is in NOW comes first when it is not what the chip
-          // sets (#1072) — otherwise the tooltip describes a mode the session
-          // has already left.
-          title={
-            movedTo
-              ? `${t('autonomy.scope.moved', { now: t(`autonomy.${movedTo}`) })}\n\n${autonomyTooltip(t, autonomy, 'session')}`
-              : autonomyTooltip(t, autonomy, 'session')
-          }
-          data-live-mode={movedTo ?? undefined}
-          className={CHIP_CLASS}
-          // THE ROW'S ONE INLINE INK, and only for the one mode that is a
-          // warning: the feed's copy of the grid's autonomy chip, which #221
-          // fixed and this one was missed by (#246). Now measured on the chip's
-          // own fill rather than on the panel behind it — 4.73:1 on nordic,
-          // 5.65:1 on daylight, asserted in tokens.drift.test.ts. Every other
-          // state leaves `color` unset so the class owns it, which is what
-          // `FeedView.session-controls.test.tsx` pins.
-          style={
-            autonomy === 'full-auto' ? { color: 'var(--status-crashed-ink)' } : undefined
-          }
-        >
-          {movedTo
-            ? t('autonomy.nowThenNext', {
-                now: t(`autonomy.${movedTo}`),
-                next: t(`autonomy.${autonomy ?? 'ask'}`),
-              })
-            : t(`autonomy.${autonomy ?? 'ask'}`)}
-        </button>
+        {withReason(
+          noModes,
+          <button
+            onClick={noModes === null ? onCycleAutonomy : undefined}
+            disabled={noModes !== null}
+            data-unavailable={noModes !== null ? 'modes' : undefined}
+            data-testid="composer-autonomy"
+            // What the session is in NOW comes first when it is not what the chip
+            // sets (#1072) — otherwise the tooltip describes a mode the session
+            // has already left.
+            title={
+              noModes ??
+              (movedTo
+                ? `${t('autonomy.scope.moved', { now: t(`autonomy.${movedTo}`) })}\n\n${autonomyTooltip(t, autonomy, 'session')}`
+                : autonomyTooltip(t, autonomy, 'session'))
+            }
+            data-live-mode={movedTo ?? undefined}
+            className={CHIP_CLASS}
+            // THE ROW'S ONE INLINE INK, and only for the one mode that is a
+            // warning: the feed's copy of the grid's autonomy chip, which #221
+            // fixed and this one was missed by (#246). Now measured on the chip's
+            // own fill rather than on the panel behind it — 4.73:1 on nordic,
+            // 5.65:1 on daylight, asserted in tokens.drift.test.ts. Every other
+            // state leaves `color` unset so the class owns it, which is what
+            // `FeedView.session-controls.test.tsx` pins.
+            style={
+              autonomy === 'full-auto' ? { color: 'var(--status-crashed-ink)' } : undefined
+            }
+          >
+            {movedTo
+              ? t('autonomy.nowThenNext', {
+                  now: t(`autonomy.${movedTo}`),
+                  next: t(`autonomy.${autonomy ?? 'ask'}`),
+                })
+              : t(`autonomy.${autonomy ?? 'ask'}`)}
+          </button>
+        )}
         {/* WHICH MODEL, and — since #747 — the switcher for it.
 
             Three shapes, and which one you get is a fact about the session
@@ -4569,50 +4620,56 @@ function Composer({
             • not switchable → the plain span it always was. See
               `canSwitchModel`. */}
         {canSwitchModel ? (
-          <button
-            ref={modelChip}
-            type="button"
-            data-testid="composer-model"
-            title={model ? t('feedView.modelHint') : t('feedView.modelHintUnknown')}
-            aria-haspopup="menu"
-            aria-expanded={modelMenuAt !== null}
-            // Dead, and visibly so, while the menu has a switch on the wire —
-            // see `modelBusy`. This is the door the menu cannot shut for itself.
-            disabled={modelBusy}
-            onClick={(e) => {
-              // A second click on the chip CLOSES, the way every menu button
-              // does — without this the menu would reopen at the same place and
-              // read as a dead click.
-              if (modelMenuAt) return closeModelMenu();
-              setModelMenuAt(e.currentTarget.getBoundingClientRect());
-            }}
-            className={CHIP_CLASS}
-            // WHAT IS LEFT INLINE, and why each of the two survived #1009:
-            //
-            // • `--font-mono`, KEPT ON PURPOSE. The other three chips say
-            //   words; this one says an IDENTIFIER (`claude-sonnet-4-5`), and
-            //   mono is the face this app already gives identifiers — the
-            //   completion rows, the code fence's language tag. The SIZE went
-            //   the other way: it was 9.5px against the row's 10px, which was
-            //   never a decision, and half a pixel of extra smallness on the
-            //   chip that was also wearing the dimmest ink is how a control
-            //   ends up reading as a caption. One row, one size.
-            // • the ellipsis trio, because a model id is the only label here
-            //   long enough to need truncating in a narrow card.
-            //
-            // `cursor` is NOT here any more: it tracked `modelBusy`, which is
-            // the same thing `disabled` says, and `.composer-chip:disabled`
-            // now says it once — along with the `--faint` ink this chip used
-            // to wear at ALL times.
-            style={{
-              fontFamily: 'var(--font-mono)',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              minInlineSize: 0,
-            }}
-          >
-            {model ?? t('feedView.modelUnknown')}
-          </button>
+          withReason(
+            noModels,
+            <button
+              ref={modelChip}
+              type="button"
+              data-testid="composer-model"
+              title={noModels ?? (model ? t('feedView.modelHint') : t('feedView.modelHintUnknown'))}
+              aria-haspopup="menu"
+              aria-expanded={modelMenuAt !== null}
+              // Dead, and visibly so, while the menu has a switch on the wire —
+              // see `modelBusy`. This is the door the menu cannot shut for itself.
+              // And for an AI with no model list at all (#1287).
+              disabled={modelBusy || noModels !== null}
+              data-unavailable={noModels !== null ? 'models' : undefined}
+              onClick={(e) => {
+                if (noModels !== null) return;
+                // A second click on the chip CLOSES, the way every menu button
+                // does — without this the menu would reopen at the same place and
+                // read as a dead click.
+                if (modelMenuAt) return closeModelMenu();
+                setModelMenuAt(e.currentTarget.getBoundingClientRect());
+              }}
+              className={CHIP_CLASS}
+              // WHAT IS LEFT INLINE, and why each of the two survived #1009:
+              //
+              // • `--font-mono`, KEPT ON PURPOSE. The other three chips say
+              //   words; this one says an IDENTIFIER (`claude-sonnet-4-5`), and
+              //   mono is the face this app already gives identifiers — the
+              //   completion rows, the code fence's language tag. The SIZE went
+              //   the other way: it was 9.5px against the row's 10px, which was
+              //   never a decision, and half a pixel of extra smallness on the
+              //   chip that was also wearing the dimmest ink is how a control
+              //   ends up reading as a caption. One row, one size.
+              // • the ellipsis trio, because a model id is the only label here
+              //   long enough to need truncating in a narrow card.
+              //
+              // `cursor` is NOT here any more: it tracked `modelBusy`, which is
+              // the same thing `disabled` says, and `.composer-chip:disabled`
+              // now says it once — along with the `--faint` ink this chip used
+              // to wear at ALL times.
+              style={{
+                fontFamily: 'var(--font-mono)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                minInlineSize: 0,
+              }}
+            >
+              {model ?? t('feedView.modelUnknown')}
+            </button>
+          )
         ) : (
           model && (
             <span
@@ -4654,7 +4711,7 @@ function Composer({
             nobody to ask. It draws nothing for a model with no effort
             levels. `key={sessionId}`: a resumed card is a new session, and
             what the old one was on is not what this one is on. */}
-        {canSwitchModel && (
+        {canSwitchModel && noEffort === null && (
           <EffortChip
             key={`effort-${sessionId}`}
             liveId={sessionId}
@@ -4670,7 +4727,7 @@ function Composer({
             `key={sessionId}` is the other half — a resumed card gets a new live
             id, and this component's "no epoch guard needed" argument rests on a
             sitting ending with its component. */}
-        {canSwitchModel && modelMenuAt && (
+        {canSwitchModel && noModels === null && modelMenuAt && (
           <ModelQuickMenu
             key={`model-menu-${sessionId}`}
             liveId={sessionId}
@@ -4776,15 +4833,16 @@ function Composer({
                   button never appears -- which is exactly when a mouse user
                   needs to be told why. The accessible name carries the reason
                   too, for everyone not using a mouse. */}
-              <span title={t(lockReasonKey(controlsLock) ?? 'grid.menuCompactHint')}>
+              <span title={noSlashCommands ?? t(lockReasonKey(controlsLock) ?? 'grid.menuCompactHint')}>
                 <button
                   data-testid="composer-compact"
+                  data-unavailable={noSlashCommands !== null ? 'slashCommands' : undefined}
                   // Dead while a `/compact` is on the wire. Unlike Clear this
                   // leaves no marker in the conversation, so a double-click
                   // would type the command twice with nothing on screen to say
                   // so -- the same reason the model chip next door has a busy
                   // state.
-                  disabled={controlsLock !== null || compactBusy}
+                  disabled={controlsLock !== null || compactBusy || noSlashCommands !== null}
                   aria-label={controlName(t, 'grid.menuCompact', controlsLock)}
                   onClick={() => {
                     if (compactInFlight.current) return;
@@ -4801,11 +4859,12 @@ function Composer({
                   {t('feedView.compact')}
                 </button>
               </span>
-              <span title={t(lockReasonKey(controlsLock) ?? 'grid.menuClearHint')}>
+              <span title={noSlashCommands ?? t(lockReasonKey(controlsLock) ?? 'grid.menuClearHint')}>
                 <button
                   ref={clearBtn}
                   data-testid="composer-clear"
-                  disabled={controlsLock !== null}
+                  data-unavailable={noSlashCommands !== null ? 'slashCommands' : undefined}
+                  disabled={controlsLock !== null || noSlashCommands !== null}
                   aria-label={controlName(t, 'grid.menuClear', controlsLock)}
                   onClick={() => setConfirmClear(true)}
                   className={CHIP_CLASS}
@@ -4831,7 +4890,7 @@ function Composer({
             own prefix: two siblings sharing a key was a stranded node waiting
             for the right re-render (review). Still per session: a resumed
             card starts from nothing. */}
-        {canSwitchModel && (
+        {canSwitchModel && noContextUsage === null && (
           <ContextMeter
             key={`context-${sessionId}`}
             liveId={sessionId}

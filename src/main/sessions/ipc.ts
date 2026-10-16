@@ -65,6 +65,7 @@ import {
   type SwitchConversationResult,
 } from '../../shared/sessions';
 import type { ProviderCapabilities } from '../extensibility/contributions';
+import type { SessionControlsWire } from '../../shared/engine-controls';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { searchTranscripts } from '../transcripts/search';
 import { listHistory } from '../transcripts/history';
@@ -691,13 +692,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     tearDownStep(liveId, 'streamMode.forgetSession', () => deps.streamMode?.forgetSession(liveId));
     // …and its own Feed blocks (P2-E18-10)
     tearDownStep(liveId, 'streamFeed.forgetSession', () => deps.streamFeed?.forgetSession(liveId));
-    // …and anything the control channel had in flight (#721). Without this a
+    // …and anything its controls had in flight (#721; the provider's own
+    // channel since #1287). Without this a
     // surface awaiting `list_models` from the session the user just closed
     // waits the full 10s timeout before finding out, and paints "the session
     // did not answer" long after the card went. The timeout stays the backstop
     // for a session that merely goes quiet; this is the fast path for one we
     // know is gone.
-    tearDownStep(liveId, 'control.forgetSession', () => manager.control.forgetSession(liveId));
+    tearDownStep(liveId, 'control.forgetSession', () => manager.forgetControls(liveId));
     // marks the kill intentional BEFORE tearing the process down, mirroring
     // kill(): otherwise onExit could see killRequested=false and report a
     // spurious `crashed` for an ordinary suspend/restart (review nit).
@@ -978,9 +980,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // reason `releaseHeldPermissions` is on this line above. Without it, a
     // surface awaiting `list_models` from a session we WATCHED DIE still waits
     // the full 10-second timeout and then reports "the session did not answer".
-    tearDownStep(e.sessionId, 'control.forgetSession', () =>
-      manager.control.forgetSession(e.sessionId)
-    );
+    tearDownStep(e.sessionId, 'control.forgetSession', () => manager.forgetControls(e.sessionId));
     tearDownStep(e.sessionId, 'transcripts.noteSessionExited', () =>
       transcripts.noteSessionExited(e.sessionId)
     );
@@ -1327,6 +1327,21 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   broker.handle('sessions:currentMode', (_e, sessionId: string) => {
     if (typeof sessionId !== 'string') return null;
     return deps.streamMode?.modeFor(sessionId) ?? null;
+  });
+  /**
+   * Which controls this live session's AI has, and its name (E40 item 04,
+   * #1287) — what the composer greys the rest out by, with "Not available
+   * with <AI>". The provider's own declaration (`SessionControls`), read off
+   * the session, so it is right for whichever AI the session runs.
+   *
+   * A PULL, like `currentMode` beside it: the composer that asks is several
+   * layers below where session records live, and the answer cannot change for
+   * a live session (a provider's controls are fixed at spawn). `null` for a
+   * session main does not hold, which the renderer reads as nothing to grey.
+   */
+  broker.handle('sessions:controls', (_e, sessionId: string): SessionControlsWire | null => {
+    if (typeof sessionId !== 'string') return null;
+    return manager.controlsOf(sessionId);
   });
   // "Allow all (this session)": answered at the SERVER — no hold, no
   // needs-permission event, no beep (review P2 #19, Dan round 4).

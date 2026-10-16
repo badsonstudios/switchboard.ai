@@ -5,6 +5,7 @@ import { SessionManager, StatusChange } from './session-manager';
 import { transition } from './state-machine';
 import { streamStatusEvent } from './stream-status';
 import { claudeEvents, translateClaudeFrame } from '../providers/claude-events';
+import { claudeControls } from '../providers/claude-controls';
 import type { SessionEvent } from './state-machine';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions } from '../extensibility/contributions';
@@ -188,8 +189,9 @@ function registryFor(transport: TransportKind): ContributionRegistry<MainContrib
   const r = new ContributionRegistry<MainContributions>();
   r.register('provider-adapter', {
     manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },
-    // these sessions speak Claude's frames, so they declare its translator (#1286)
-    capabilities: { events: claudeEvents },
+    // these sessions speak Claude's frames, so they declare its translator
+    // (#1286) and its controls (#1287)
+    capabilities: { events: claudeEvents, controls: claudeControls },
     buildSpawn: () => ({ command: 'cli', args: [], env: {}, transport }),
   });
   return r;
@@ -890,7 +892,7 @@ describe('a held request pins the wait (#1258)', () => {
         { hasLiveWindow: () => true }
       );
       perms.setAnswerSurfaceProbe(() => true);
-      mgr.onStreamMessage((sessionId, msg) => perms.offer(sessionId, msg));
+      mgr.onEngineEvent((sessionId, ev) => perms.ingest(sessionId, ev));
       mgr.setHeldRequestProbe((sessionId) => perms.holdsRequestFor(sessionId));
       const feed = new EventFeed();
       feed.setHeldRequestProbe((sessionId) => perms.holdsRequestFor(sessionId));

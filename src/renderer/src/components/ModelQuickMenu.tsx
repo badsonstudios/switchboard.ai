@@ -48,7 +48,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { answered } from '../../../shared/ipc/refusal';
-import { readModels, type CliModel } from '../../../shared/stream-protocol';
+import { readModels, type CliModel } from '../../../shared/models';
 import { currentIndex, failureText, modelLabel, rowSubtitle } from '../lib/model-choices';
 import { MENU_EDGE_MARGIN, placeMenu, type MenuPlacement } from '../lib/menu-placement';
 import { directionOf } from '../lib/writing-direction';

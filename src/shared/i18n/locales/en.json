@@ -1078,6 +1078,7 @@
     "modelHintTerminal": "The model last seen in this session's transcript. This session runs in Terminal mode, so switchboard can't switch it.",
     "modelHintInactive": "The model last seen in this session's transcript",
     "modelUnknown": "model?",
+    "controlUnavailable": "Not available with {ai}.",
     "send": "Send to the session",
     "sendIcon": "↑",
     "stop": "Stop Claude — interrupts the current turn",

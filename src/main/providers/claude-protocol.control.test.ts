@@ -14,7 +14,7 @@ import {
   readControlResponse,
   readModels,
   setModelRequest,
-} from './stream-protocol';
+} from './claude-protocol';
 
 describe('what we send', () => {
   it('wraps a verb in the envelope the CLI expects', () => {

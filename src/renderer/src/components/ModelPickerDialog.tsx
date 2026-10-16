@@ -32,7 +32,7 @@ import React from 'react';
 import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
 import { answered } from '../../../shared/ipc/refusal';
-import { readModels, type CliModel } from '../../../shared/stream-protocol';
+import { readModels, type CliModel } from '../../../shared/models';
 // The list's rules — which row is ticked, what a row says, what a failure reads
 // as — are SHARED with the footer's quick menu (#747). They used to be declared
 // here; `lib/model-choices.ts` has the argument for why they moved rather than

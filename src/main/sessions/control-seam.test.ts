@@ -1,10 +1,11 @@
-// The SessionManager ↔ ControlChannel seam (#721).
+// The SessionManager ↔ provider controls seam (#721; through the adapter's
+// `controls` capability since #1287).
 //
-// `control-channel.test.ts` drives the correlator through a hand-rolled port,
-// which proves the correlation rules and NOTHING about whether the port is
-// plugged into the right two methods. Swap `sendToTransport` for `submitPrompt`
-// in the constructor and every test over there still passes — this file is what
-// notices.
+// `claude-control-channel.test.ts` drives the correlator through a hand-rolled
+// port, which proves the correlation rules and NOTHING about whether the port
+// is plugged into the right two things — the session's transport for the
+// write, and the pump's `receive` for the reply. Swap either and every test
+// over there still passes — this file is what notices.
 //
 // It also covers the two things only the manager can decide:
 //
@@ -22,9 +23,11 @@ import { SessionManager } from './session-manager';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions } from '../extensibility/contributions';
 import { claudeEvents } from '../providers/claude-events';
+import { claudeControls } from '../providers/claude-controls';
+import { ControlChannel } from '../providers/claude-control-channel';
 import { SessionTransport } from '../transport/transport';
 import { FakeStreamProtocol, FAKE_MODELS } from '../providers/fake-stream-protocol';
-import { readModels } from '../../shared/stream-protocol';
+import { readModels } from '../../shared/models';
 import { LogSink, createLogger } from '../log/logger';
 import type { TransportKind } from '../../shared/transport';
 
@@ -72,6 +75,12 @@ class DrivableTransport implements SessionTransport {
   }
   remove(): void {}
 
+  /** listen to what the CLI says, beside the session's own pump */
+  tap(l: (m: Record<string, unknown>) => void): () => void {
+    this.listeners.add(l);
+    return () => this.listeners.delete(l);
+  }
+
   /** the CLI answering */
   deliver(msg: Record<string, unknown>): void {
     for (const l of [...this.listeners]) l(msg);
@@ -95,8 +104,9 @@ function registryFor(transport: TransportKind): ContributionRegistry<MainContrib
   const r = new ContributionRegistry<MainContributions>();
   r.register('provider-adapter', {
     manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },
-    // these sessions speak Claude's frames, so they declare its translator (#1286)
-    capabilities: { events: claudeEvents },
+    // these sessions speak Claude's frames, so they declare its translator
+    // (#1286) and its controls (#1287)
+    capabilities: { events: claudeEvents, controls: claudeControls },
     buildSpawn: () => ({ command: 'cli', args: [], env: {}, transport }),
   });
   return r;
@@ -134,7 +144,7 @@ describe('the port is wired to the right two methods', () => {
     expect(t.sent).toHaveLength(1);
     expect(t.sent[0]).toMatchObject({ type: 'control_request', request: { subtype: 'list_models' } });
 
-    // …and the reply comes back through `onStreamMessage`, nested id and all.
+    // …and the reply comes back through the pump to Claude's controls, nested id and all.
     t.deliver({
       type: 'control_response',
       response: { subtype: 'success', request_id: t.idOf(), response: { models: [{ value: 'x' }] } },
@@ -243,9 +253,10 @@ describe('driven against the fake provider’s own implementation', () => {
     const m = managerOn('stream', t);
     const rec = m.create(identity);
 
+    // the model the next init names, as the translator reports it (#1287)
     const inits: unknown[] = [];
-    m.onStreamMessage((_id, msg) => {
-      if (msg.type === 'system' && msg.subtype === 'init') inits.push(msg.model);
+    m.onEngineEvent((_id, ev) => {
+      if (ev.type === 'model') inits.push(ev.id);
     });
 
     await expect(m.setModel(rec.id, 'haiku')).resolves.toEqual({ ok: true, response: {} });
@@ -380,7 +391,14 @@ describe('driven against the fake provider’s own implementation', () => {
     const m = managerOn('stream', t);
     const rec = m.create(identity);
 
-    const v = await m.control.request(rec.id, (id) => ({
+    // No named verb sends an unknown subtype, so a channel of our own on the
+    // same session asks: the manager's transport for the write, the CLI's
+    // stream for the reply — the plumbing Claude's controls use.
+    const channel = new ControlChannel({
+      send: (id, msg) => m.sendToTransport(id, msg),
+      onMessage: (l) => t.tap((msg) => l(rec.id, msg)),
+    });
+    const v = await channel.request(rec.id, (id) => ({
       type: 'control_request' as const,
       request_id: id,
       request: { subtype: 'no_such_verb_xyz' },

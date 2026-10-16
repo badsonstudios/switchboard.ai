@@ -40,8 +40,19 @@ export function streamStatusEvent(e: EngineEvent): SessionEvent | null {
       // The engine handed us a decision — the whole point of E18.
       return { kind: 'permission-held' };
     // Content (chunks, messages, tool calls), the conversation's identity,
-    // compaction and usage are not lifecycle signals. Listed rather than
-    // defaulted so a NEW event type is a decision someone makes.
+    // the control-path notices (a withdrawn request, the command list, the
+    // model, the mode — #1287), compaction and usage are not lifecycle
+    // signals. Listed rather than defaulted so a NEW event type is a decision
+    // someone makes.
+    //
+    // A WITHDRAWN request does not move the status here, and never did: the
+    // CLI's cancel frame was silent for status before the seam too. The
+    // router lets the request go and applies `permission-resolved` itself
+    // (#1258).
+    case 'permission-withdrawn':
+    case 'commands':
+    case 'model':
+    case 'mode':
     case 'conversation':
     case 'conversation-reset':
     case 'message-start':

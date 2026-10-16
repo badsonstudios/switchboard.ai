@@ -13,6 +13,7 @@ import { conversationExists } from '../transcripts/paths';
 import { ensureFolderTrusted } from '../sessions/trust';
 import { claudeProjectsRoot, readAiTitle, writeSessionSettings } from './claude';
 import { claudeEvents } from './claude-events';
+import { claudeControls } from './claude-controls';
 
 /**
  * The compiled fake CLI.
@@ -58,6 +59,9 @@ export const fakeStreamAdapter: ProviderAdapter = {
     // The REAL translator (#1286): the fake replays Claude's own frames, so
     // every e2e on it drives them through the seam the real CLI uses.
     events: claudeEvents,
+    // …and the REAL controls (#1287), for the same reason: the fake answers
+    // Claude's control frames, so every e2e drives the frames the real CLI gets.
+    controls: claudeControls,
     titles: { titleFrom: readAiTitle },
     hooks: { settingsFor: (sessionId, host) => host.buildHookSettings(sessionId) },
     resume: {

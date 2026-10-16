@@ -4,7 +4,8 @@
 // `status` message. Nothing read it, so the chip went on saying "plan" for a
 // session that had started asking about each write.
 import { describe, expect, it, vi } from 'vitest';
-import { autonomyFromPermissionMode, StreamMode } from './stream-mode';
+import { ClaudeFedMode } from './fixtures/claude-fed-stores';
+import { autonomyFromPermissionMode } from '../providers/claude-modes';
 import { AUTONOMY_MODES } from '../../shared/sessions';
 import { AUTONOMY_PERMISSION_MODE } from '../providers/claude';
 
@@ -37,11 +38,11 @@ describe('#1072 — what the CLI calls each mode', () => {
 
 describe('#1072 — following the session`s own announcements', () => {
   it('knows nothing until the CLI has said something', () => {
-    expect(new StreamMode().modeFor('s1')).toBeNull();
+    expect(new ClaudeFedMode().modeFor('s1')).toBeNull();
   });
 
   it('records the mode the CLI announces, and tells whoever is listening', () => {
-    const store = new StreamMode();
+    const store = new ClaudeFedMode();
     const heard = vi.fn();
     store.onChange(heard);
     store.offer('s1', leftPlanMode);
@@ -50,7 +51,7 @@ describe('#1072 — following the session`s own announcements', () => {
   });
 
   it('says it once per change, not once per status message', () => {
-    const store = new StreamMode();
+    const store = new ClaudeFedMode();
     const heard = vi.fn();
     store.onChange(heard);
     store.offer('s1', leftPlanMode);
@@ -62,20 +63,20 @@ describe('#1072 — following the session`s own announcements', () => {
   });
 
   it('keeps sessions apart', () => {
-    const store = new StreamMode();
+    const store = new ClaudeFedMode();
     store.offer('s1', leftPlanMode);
     expect(store.modeFor('s2')).toBeNull();
   });
 
   it('ignores a status message that carries no mode — most of them', () => {
-    const store = new StreamMode();
+    const store = new ClaudeFedMode();
     store.offer('s1', leftPlanMode);
     store.offer('s1', { type: 'system', subtype: 'status', status: 'compacting' });
     expect(store.modeFor('s1')).toBe('ask');
   });
 
   it('keeps what it had when the CLI names a mode we have no word for', () => {
-    const store = new StreamMode();
+    const store = new ClaudeFedMode();
     const heard = vi.fn();
     store.offer('s1', leftPlanMode);
     store.onChange(heard);
@@ -85,7 +86,7 @@ describe('#1072 — following the session`s own announcements', () => {
   });
 
   it('does not take a mode from any other kind of message', () => {
-    const store = new StreamMode();
+    const store = new ClaudeFedMode();
     store.offer('s1', { type: 'system', subtype: 'init', permissionMode: 'default' });
     store.offer('s1', { type: 'assistant', permissionMode: 'default' });
     store.offer('s1', { type: 'result', subtype: 'status', permissionMode: 'default' });
@@ -93,14 +94,14 @@ describe('#1072 — following the session`s own announcements', () => {
   });
 
   it('forgets a session that is gone, so its successor starts with a clean slate', () => {
-    const store = new StreamMode();
+    const store = new ClaudeFedMode();
     store.offer('s1', leftPlanMode);
     store.forgetSession('s1');
     expect(store.modeFor('s1')).toBeNull();
   });
 
   it('survives a listener that throws, and still tells the others', () => {
-    const store = new StreamMode();
+    const store = new ClaudeFedMode();
     const heard = vi.fn();
     store.onChange(() => {
       throw new Error('boom');

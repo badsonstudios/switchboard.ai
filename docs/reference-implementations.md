@@ -239,8 +239,10 @@ lives**. That is the P6 answer for a future CLI that renames a verb — measured
 not hoped. Refusals are written for a human, so pass the CLI's own sentence
 through rather than rewording it.
 
-The implementation of all this is `main/transport/control-channel.ts`; the
-builders and readers are in `shared/stream-protocol.ts`.
+The implementation of all this is `main/providers/claude-control-channel.ts`
+(one per session since #1287, built by `claude-controls.ts`); the builders and
+readers are in `main/providers/claude-protocol.ts` (it was
+`shared/stream-protocol.ts` until the controls moved behind the adapter).
 
 ##### The three MCP verbs, MEASURED (#729, 2026-08-29, PATH CLI 2.1.245)
 

@@ -1,15 +1,19 @@
-// ENGINE SEAM 1 (E40 item 03, #1286): the event path speaks neutral events,
-// and Claude is translated behind its adapter.
+// ENGINE SEAMS 1 AND 2 (E40 items 03 and 04, #1286 and #1287): the event path
+// speaks neutral events, the control path speaks neutral controls, and Claude
+// is translated and driven behind its adapter.
 //
-// Two halves:
-//   1. the PUMP — a provider's translator is the only thing that reads its
-//      frames, and every way it can fail costs a frame, never a session;
-//   2. the GREP — the done-when's "a test fails if a module outside
-//      `src/main/providers/` imports the Claude stream protocol for these
-//      paths". Each check is exact in both directions, so it fails the day a
-//      Claude reading creeps back onto the event path AND the day an
-//      allowlisted control-path reader (#1287) moves without this file being
-//      told.
+// Three parts:
+//   1. the PUMP — a provider's translator and its own controls are the only
+//      things that read its frames, and every way either can fail costs a
+//      frame, never a session;
+//   2. the CONTROLS — what a session can be asked to do is what its provider
+//      DECLARED, a control it lacks is answered `unsupported` and never thrown,
+//      and the declaration is what `sessions:controls` gives the composer to
+//      grey out by (with a test-only provider that declares a reduced set);
+//   3. the GREP — no module outside `src/main/providers/` imports a Claude
+//      wire module or speaks `control_request` / `can_use_tool`, and nothing
+//      subscribes to raw frames at all. Each check is exact in both
+//      directions.
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -17,6 +21,11 @@ import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SessionManager, StatusChange } from './session-manager';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { EventCapability, MainContributions } from '../extensibility/contributions';
+import type { ControlCapability, SessionControls } from './engine-controls';
+import { declaredControls } from './engine-controls';
+import { ENGINE_CONTROLS } from '../../shared/engine-controls';
+import { claudeControls, createClaudeControls } from '../providers/claude-controls';
+import { emptyLog, reducedControls, REDUCED_AI_NAME } from './fixtures/reduced-controls';
 import { SessionTransport, TransportSpawnOptions } from '../transport/transport';
 import { Logger, LogFields } from '../log/logger';
 import { claudeEvents } from '../providers/claude-events';
@@ -26,6 +35,7 @@ import type { EngineEvent } from './engine-events';
 
 class MessageTransport implements SessionTransport {
   listeners = new Map<string, (m: Record<string, unknown>) => void>();
+  sent: unknown[] = [];
   spawn(opts: TransportSpawnOptions) {
     return {
       pid: 1,
@@ -34,6 +44,7 @@ class MessageTransport implements SessionTransport {
         this.listeners.set(opts.id, l);
         return () => {};
       },
+      send: (m: unknown) => void this.sent.push(m),
       kill: () => {},
     };
   }
@@ -74,11 +85,15 @@ beforeEach(() => {
 });
 afterEach(() => cleanupTempDirs());
 
-function managerWith(events: EventCapability | undefined): SessionManager {
+function managerWith(
+  events: EventCapability | undefined,
+  controls?: ControlCapability,
+  displayName = 'P'
+): SessionManager {
   const r = new ContributionRegistry<MainContributions>();
   r.register('provider-adapter', {
-    manifest: { id: 'p', displayName: 'P', version: '0', capabilities: ['sessions.spawn'] },
-    ...(events ? { capabilities: { events } } : {}),
+    manifest: { id: 'p', displayName, version: '0', capabilities: ['sessions.spawn'] },
+    ...(events || controls ? { capabilities: { events, controls } } : {}),
     buildSpawn: () => ({ command: 'cli', args: [], env: {}, transport: 'stream' }),
   });
   const mgr = new SessionManager(r, new MessageTransport(), recordingLogger(lines), dir, { stream });
@@ -94,11 +109,10 @@ const assistant = {
 
 describe('the pump translates through the PROVIDER, and only through it', () => {
   it('a provider with no translator is NOT read as Claude: no events, no streamed status, one warning', () => {
-    const mgr = managerWith(undefined);
+    const controls = reducedControls();
+    const mgr = managerWith(undefined, controls);
     const got: EngineEvent[] = [];
-    const raw: unknown[] = [];
     mgr.onEngineEvent((_id, ev) => got.push(ev));
-    mgr.onStreamMessage((_id, m) => raw.push(m));
     const rec = mgr.create(identity);
 
     stream.emit(rec.id, assistant);
@@ -108,8 +122,8 @@ describe('the pump translates through the PROVIDER, and only through it', () => 
     expect(got).toEqual([]);
     expect(mgr.get(rec.id)!.status).toBe('idle'); // spawn readiness only
     expect(mgr.get(rec.id)!.nativeSessionId).toBeUndefined();
-    // the control path still hears the frames — that half is #1287's
-    expect(raw).toHaveLength(3);
+    // the provider's OWN controls still hear the frames (their replies)
+    expect(controls.log.frames).toHaveLength(3);
     expect(lines.filter((l) => l.level === 'warn' && /no event translator/.test(l.msg))).toHaveLength(1);
   });
 
@@ -128,14 +142,34 @@ describe('the pump translates through the PROVIDER, and only through it', () => 
     expect(changes.map((c) => c.cause)).toEqual(['transport-ready', 'stream:assistant', 'stream:result:success']);
   });
 
-  it('raw frames reach the control path BEFORE their events reach the event path', () => {
-    const mgr = managerWith(claudeEvents);
+  it("a frame reaches the provider's controls BEFORE its events reach the listeners", () => {
     const order: string[] = [];
+    const recording: ControlCapability = {
+      createControls: () => ({ receive: (m) => order.push(`raw:${String(m.type)}`) }),
+    };
+    const mgr = managerWith(claudeEvents, recording);
     mgr.onEngineEvent((_id, ev) => order.push(`event:${ev.type}`));
-    mgr.onStreamMessage((_id, m) => order.push(`raw:${String(m.type)}`));
     const rec = mgr.create(identity);
     stream.emit(rec.id, assistant);
     expect(order).toEqual(['raw:assistant', 'event:activity', 'event:message']);
+  });
+
+  it("controls that THROW on a frame cost that frame's reply only — the events still flow", () => {
+    const throwing: ControlCapability = {
+      createControls: () => ({
+        receive: () => {
+          throw new Error('bad controls');
+        },
+      }),
+    };
+    const mgr = managerWith(claudeEvents, throwing);
+    const got: string[] = [];
+    mgr.onEngineEvent((_id, ev) => got.push(ev.type));
+    const rec = mgr.create(identity);
+    stream.emit(rec.id, assistant);
+    expect(got).toEqual(['activity', 'message']);
+    expect(mgr.get(rec.id)!.status).toBe('working');
+    expect(lines.some((l) => l.level === 'error' && /controls threw on a frame/.test(l.msg))).toBe(true);
   });
 
   it('a translator that THROWS costs that frame only — the next one is read', () => {
@@ -194,7 +228,151 @@ describe('the pump translates through the PROVIDER, and only through it', () => 
   });
 });
 
-// ---- 2. the grep ------------------------------------------------------------
+// ---- 2. the controls --------------------------------------------------------
+
+describe('controls go through the PROVIDER, and only what it declared', () => {
+  const hasAll = [...ENGINE_CONTROLS];
+
+  it('Claude declares every control the host knows (so nothing greys out for it)', () => {
+    const controls = createClaudeControls({ id: 's', send: () => true });
+    expect(declaredControls(controls)).toEqual(hasAll);
+    // …and the plumbing every engine needs
+    expect(typeof controls.prompt).toBe('function');
+    expect(typeof controls.receive).toBe('function');
+  });
+
+  it('a session reports its AI and the controls it has', () => {
+    const mgr = managerWith(claudeEvents, claudeControls, 'Claude Code');
+    const rec = mgr.create(identity);
+    expect(mgr.controlsOf(rec.id)).toEqual({ ai: 'Claude Code', has: hasAll });
+    expect(mgr.controlsOf('no-such-session')).toBeNull();
+  });
+
+  describe('a provider that declares a REDUCED set', () => {
+    it('reports exactly the reduced set, under its own name', () => {
+      const mgr = managerWith(claudeEvents, reducedControls(), REDUCED_AI_NAME);
+      const rec = mgr.create(identity);
+      expect(mgr.controlsOf(rec.id)).toEqual({ ai: REDUCED_AI_NAME, has: ['approvals', 'interrupt'] });
+    });
+
+    it('every control it lacks answers `unsupported`, naming the AI — never a throw', async () => {
+      const mgr = managerWith(claudeEvents, reducedControls(), REDUCED_AI_NAME);
+      const rec = mgr.create(identity);
+      const unsupported = {
+        ok: false,
+        reason: 'unsupported',
+        message: `Not available with ${REDUCED_AI_NAME}.`,
+      };
+      await expect(mgr.listModels(rec.id)).resolves.toEqual(unsupported);
+      await expect(mgr.setModel(rec.id, 'm')).resolves.toEqual(unsupported);
+      await expect(mgr.effort(rec.id)).resolves.toEqual(unsupported);
+      await expect(mgr.setEffort(rec.id, 'high')).resolves.toEqual(unsupported);
+      await expect(mgr.contextUsage(rec.id)).resolves.toEqual(unsupported);
+      await expect(mgr.mcpStatus(rec.id)).resolves.toEqual(unsupported);
+      await expect(mgr.mcpToggle(rec.id, 'x', true)).resolves.toEqual(unsupported);
+      await expect(mgr.mcpReconnect(rec.id, 'x')).resolves.toEqual(unsupported);
+      await expect(mgr.mcpAuthenticate(rec.id, 'x')).resolves.toEqual(unsupported);
+      await expect(mgr.mcpClearAuth(rec.id, 'x')).resolves.toEqual(unsupported);
+      // a session that is gone still says so first
+      await expect(mgr.listModels('gone')).resolves.toMatchObject({ reason: 'session-gone' });
+    });
+
+    it('the controls it HAS are reached in neutral words', () => {
+      const controls = reducedControls();
+      const mgr = managerWith(claudeEvents, controls, REDUCED_AI_NAME);
+      const rec = mgr.create(identity);
+      expect(mgr.interrupt(rec.id)).toBe(true);
+      expect(controls.log.interrupts).toEqual([rec.id]);
+      expect(mgr.answerPermission(rec.id, 'r-0', { behavior: 'deny', message: 'no' })).toBe(true);
+      expect(controls.log.answers).toEqual([
+        { sessionId: rec.id, requestId: 'r-0', decision: { behavior: 'deny', message: 'no' } },
+      ]);
+      mgr.forgetControls(rec.id);
+      expect(controls.log.forgotten).toEqual([rec.id]);
+    });
+
+    it('with no prompt control, a prompt does not go — and the session is not marked working', () => {
+      const mgr = managerWith(claudeEvents, reducedControls(), REDUCED_AI_NAME);
+      const rec = mgr.create(identity);
+      expect(mgr.submitPrompt(rec.id, 'hello')).toBe(false);
+      expect(mgr.get(rec.id)!.status).toBe('idle');
+      expect(lines.some((l) => l.level === 'warn' && /takes no prompt/.test(l.msg))).toBe(true);
+    });
+  });
+
+  it('a provider with NO controls can be read and not driven: nothing throws', async () => {
+    const mgr = managerWith(claudeEvents, undefined, 'Bare');
+    const rec = mgr.create(identity);
+    expect(mgr.controlsOf(rec.id)).toEqual({ ai: 'Bare', has: [] });
+    expect(mgr.interrupt(rec.id)).toBe(false);
+    expect(mgr.submitPrompt(rec.id, 'hi')).toBe(false);
+    expect(mgr.answerPermission(rec.id, 'r', { behavior: 'deny', message: 'x' })).toBe(false);
+    await expect(mgr.listModels(rec.id)).resolves.toMatchObject({ ok: false, reason: 'unsupported' });
+    expect(() => mgr.forgetControls(rec.id)).not.toThrow();
+    expect(lines.filter((l) => l.level === 'warn' && /declares no controls/.test(l.msg))).toHaveLength(1);
+  });
+
+  it('controls that cannot be CREATED leave the session running, with none', () => {
+    const mgr = managerWith(claudeEvents, {
+      createControls: () => {
+        throw new Error('no');
+      },
+    });
+    const rec = mgr.create(identity);
+    stream.emit(rec.id, assistant);
+    expect(mgr.get(rec.id)!.status).toBe('working');
+    expect(mgr.controlsOf(rec.id)).toEqual({ ai: 'P', has: [] });
+    expect(lines.some((l) => l.level === 'error' && /controls could not be created/.test(l.msg))).toBe(true);
+  });
+
+  it('a control that throws, or rejects, is answered as a refusal and logged (P6)', async () => {
+    const broken: ControlCapability = {
+      createControls: (): SessionControls => ({
+        models: {
+          list: () => {
+            throw new Error('sync boom');
+          },
+          set: () => Promise.reject(new Error('async boom')),
+        },
+        interrupt: {
+          interrupt: () => {
+            throw new Error('boom');
+          },
+        },
+        approvals: {
+          answer: () => {
+            throw new Error('boom');
+          },
+        },
+        prompt: () => {
+          throw new Error('boom');
+        },
+      }),
+    };
+    const mgr = managerWith(claudeEvents, broken);
+    const rec = mgr.create(identity);
+    await expect(mgr.listModels(rec.id)).resolves.toMatchObject({ ok: false, reason: 'refused' });
+    await expect(mgr.setModel(rec.id, 'x')).resolves.toMatchObject({ ok: false, reason: 'refused' });
+    expect(mgr.interrupt(rec.id)).toBe(false);
+    expect(mgr.answerPermission(rec.id, 'r', { behavior: 'deny', message: 'x' })).toBe(false);
+    expect(mgr.submitPrompt(rec.id, 'hi')).toBe(false);
+    expect(lines.filter((l) => l.level === 'error' && /control threw|controls threw/.test(l.msg)).length).toBeGreaterThanOrEqual(5);
+    // …and the session is still there, still readable
+    stream.emit(rec.id, assistant);
+    expect(mgr.get(rec.id)!.status).toBe('working');
+  });
+
+  it('removing a session settles what its controls had in flight', () => {
+    const controls = reducedControls(emptyLog());
+    const mgr = managerWith(claudeEvents, controls);
+    const rec = mgr.create(identity);
+    mgr.remove(rec.id);
+    expect(controls.log.forgotten).toEqual([rec.id]);
+    expect(mgr.controlsOf(rec.id)).toBeNull();
+  });
+});
+
+// ---- 3. the grep ------------------------------------------------------------
 
 const ROOT = path.resolve(__dirname, '../../..');
 const rel = (abs: string): string => path.relative(ROOT, abs).split(path.sep).join('/');
@@ -328,9 +506,9 @@ function wireHits(src: string): string[] {
 }
 
 /**
- * The pump: it still holds the raw frame (`m`) — the control path needs it —
- * so it cannot join the import check (it imports `stream-protocol` for
- * #1287), but it must read nothing of the frame on its own account.
+ * The pump: it still holds the raw frame (`m`) — it hands it to the provider's
+ * translator and the provider's own controls — but it must read nothing of
+ * the frame on its own account.
  */
 const READS_NO_WIRE = ['src/main/sessions/session-manager.ts'];
 
@@ -345,6 +523,17 @@ const EVENT_PATH = [
   'src/main/sessions/engine-events.ts',
   'src/main/health/service.ts',
   'src/main/health/corroboration.ts',
+  // …and, since #1287, the control path: neutral events in, neutral controls out
+  'src/main/sessions/stream-permissions.ts',
+  'src/main/sessions/stream-commands.ts',
+  'src/main/sessions/stream-model.ts',
+  'src/main/sessions/stream-mode.ts',
+  'src/main/sessions/engine-controls.ts',
+  'src/shared/engine-controls.ts',
+  'src/shared/models.ts',
+  'src/shared/effort.ts',
+  'src/shared/context-usage.ts',
+  'src/shared/control.ts',
 ];
 
 const TRANSLATOR = /(^|\/)providers\/claude-events$|^\.\/claude-events$/;
@@ -373,7 +562,7 @@ describe('the grep: nothing on the event path reads Claude', () => {
   }
 
   for (const f of READS_NO_WIRE) {
-    it(`${f} holds raw frames for the control path but reads no Claude wire field itself`, () => {
+    it(`${f} hands raw frames to the provider's translator and controls but reads no Claude wire field itself`, () => {
       expect(wireHits(read(f))).toEqual([]);
     });
   }
@@ -392,82 +581,91 @@ describe('the grep: nothing on the event path reads Claude', () => {
 });
 
 /**
- * WHO STILL IMPORTS `shared/stream-protocol` — Claude's OUTBOUND contract
- * (prompt frames and control verbs). Every one of these is on the CONTROL
- * path, which E40 item 04 moves behind the adapter. Exact: a new importer
- * fails, and so does one that stopped importing without being struck off.
+ * Claude's WIRE MODULES — its translator, its controls and everything they
+ * build frames with. Only `src/main/providers/` may import any of them (#1287:
+ * this list was an allowlist of eight control-path importers of
+ * `shared/stream-protocol`, and is now empty — the module itself moved inside
+ * the provider as `claude-protocol.ts`).
  */
-const STREAM_PROTOCOL_IMPORTERS: Record<string, string> = {
-  // #1287: sends the prompt frame, interrupt, and every control verb
-  'src/main/sessions/session-manager.ts': '#1287',
-  // #1287: answers `can_use_tool` (controlResponse)
-  'src/main/sessions/stream-permissions.ts': '#1287',
-  // #1287: correlates `control_response` to the request that asked
-  'src/main/transport/control-channel.ts': '#1287',
-  // #1287: the effort control's verbs (type-only reuse of the request envelope)
-  'src/shared/effort.ts': '#1287',
-  // #1287: the context-usage control's verb
-  'src/shared/context-usage.ts': '#1287',
-  // #1287: the model pickers read `list_models` (CliModel / readModels)
-  'src/renderer/src/components/ModelPickerDialog.tsx': '#1287',
-  'src/renderer/src/components/ModelQuickMenu.tsx': '#1287',
-  'src/renderer/src/lib/model-choices.ts': '#1287',
-};
+const CLAUDE_WIRE_MODULES =
+  /(^|\/)(providers\/)?claude-(events|controls|control-channel|protocol|effort|context-usage|modes)$|(^|\/)stream-protocol$/;
 
 /**
- * WHO STILL SUBSCRIBES TO RAW FRAMES. The control-path stores, each reading
- * Claude's frames itself until #1287 gives them neutral controls.
+ * Claude's CONTROL vocabulary. No production module outside
+ * `src/main/providers/` may speak it in code.
+ *
+ * ONE DOCUMENTED EXCEPTION: `src/main/bus/mcp-attach-check.ts`, the
+ * `check:mcp-attach` harness. It is not app code — it is a local-only script
+ * (`check-scripts.test.ts`'s LOCAL_ONLY map) that spawns the REAL `claude` and
+ * asks it `mcp_status` itself, precisely so the bus is checked against the
+ * CLI rather than against our own controls. Routing it through the provider
+ * would make it test the thing it exists to check.
  */
-const RAW_FRAME_SUBSCRIBERS = [
-  'streamPermissions', // #1287: can_use_tool requests and their answers
-  'streamCommands', // #1287: the CLI's slash-command list (system:init)
-  'streamModel', // #1287: the running model (system:init.model)
-  'streamMode', // #1287: the permission mode (system:status)
-];
+const CONTROL_WIRE = ['control_request', 'control_response', 'control_cancel_request', 'can_use_tool'];
+const SPEAKS_CONTROL_WIRE_ON_PURPOSE = ['src/main/bus/mcp-attach-check.ts'];
 
-describe('the grep: the control path, named until #1287 moves it', () => {
-  it('stream-protocol is imported only by providers/ and the named control-path modules', () => {
+function controlWireHits(src: string): string[] {
+  const code = stripComments(src);
+  return CONTROL_WIRE.filter((w) => new RegExp(`(?<![A-Za-z0-9_])${w}(?![A-Za-z0-9_])`).test(code));
+}
+
+describe('the grep: the control path speaks no provider wire (#1287)', () => {
+  it('the detector itself can fail', () => {
+    expect(controlWireHits("if (m.type === 'control_request') return;")).toEqual(['control_request']);
+    expect(controlWireHits("// a `can_use_tool` request\nconst ok = 1;")).toEqual([]);
+    expect(importSpecifiers("import { a } from '../providers/claude-protocol';").some((s) => CLAUDE_WIRE_MODULES.test(s))).toBe(true);
+    expect(importSpecifiers("import { a } from './claude-effort';").some((s) => CLAUDE_WIRE_MODULES.test(s))).toBe(true);
+    expect(importSpecifiers("import { a } from '../../shared/stream-protocol';").some((s) => CLAUDE_WIRE_MODULES.test(s))).toBe(true);
+    expect(importSpecifiers("import { a } from '../../shared/models';").some((s) => CLAUDE_WIRE_MODULES.test(s))).toBe(false);
+  });
+
+  it('no module outside src/main/providers/ imports a Claude wire module', () => {
     const importers = productionSources().filter(
-      (f) =>
-        f !== 'src/shared/stream-protocol.ts' &&
-        !f.startsWith('src/main/providers/') &&
-        importSpecifiers(read(f)).some((s) => /(^|\/)stream-protocol$/.test(s))
+      (f) => !f.startsWith('src/main/providers/') && importSpecifiers(read(f)).some((s) => CLAUDE_WIRE_MODULES.test(s))
     );
-    expect(importers).toEqual(Object.keys(STREAM_PROTOCOL_IMPORTERS).sort());
+    expect(importers).toEqual([]);
   });
 
-  it('raw frames reach only the named control-path stores, and the Feed and health are not among them', () => {
-    const subscribers: string[] = [];
-    const calls = new Map<string, number>();
-    for (const f of productionSources()) {
-      const code = stripComments(read(f));
-      const n = code.split('.onStreamMessage(').length - 1;
-      if (n === 0) continue;
-      calls.set(f, n);
-      for (const m of code.matchAll(/\.onStreamMessage\(\s*\(\s*\w+\s*,\s*\w+\s*\)\s*=>\s*(\w+)\./g)) {
-        subscribers.push(m[1]);
-      }
+  it('the old shared wire module is gone (it moved inside the provider)', () => {
+    expect(fs.existsSync(path.join(ROOT, 'src/shared/stream-protocol.ts'))).toBe(false);
+    expect(fs.existsSync(path.join(ROOT, 'src/main/transport/control-channel.ts'))).toBe(false);
+  });
+
+  it('no module outside src/main/providers/ speaks control_request or can_use_tool', () => {
+    const speakers = productionSources().filter(
+      (f) => !f.startsWith('src/main/providers/') && controlWireHits(read(f)).length > 0
+    );
+    expect(speakers).toEqual(SPEAKS_CONTROL_WIRE_ON_PURPOSE);
+  });
+
+  it('nothing subscribes to raw frames: the manager has no raw fan-out at all', () => {
+    const subscribers = productionSources().filter((f) => stripComments(read(f)).includes('.onStreamMessage('));
+    expect(subscribers).toEqual([]);
+    expect(stripComments(read('src/main/sessions/session-manager.ts'))).not.toMatch(/\bonStreamMessage\b/);
+  });
+
+  it('the router and the command, model and mode stores hear NEUTRAL events', () => {
+    const code = stripComments(read('src/main/index.ts'));
+    for (const store of ['streamPermissions', 'streamCommands', 'streamModel', 'streamMode']) {
+      expect(code).toMatch(new RegExp(`manager\\.onEngineEvent\\(\\(sessionId, ev\\) => ${store}\\.ingest\\(sessionId, ev\\)\\)`));
     }
-    // index.ts wires the stores and nothing else — EVERY call there must be
-    // one of them, so a subscriber written in a shape the pattern does not
-    // parse (`onStreamMessage(handler)`, a block body) still fails the count.
-    // The manager's one call is its own control channel.
-    expect([...calls.entries()]).toEqual([
-      ['src/main/index.ts', RAW_FRAME_SUBSCRIBERS.length],
-      ['src/main/sessions/session-manager.ts', 1],
-    ]);
-    expect(subscribers.sort()).toEqual([...RAW_FRAME_SUBSCRIBERS].sort());
+    // …and the router answers through the provider, not the transport
+    expect(code).toMatch(/manager\.answerPermission\(sessionId, requestId, decision\)/);
+    expect(code).not.toMatch(/manager\.sendToTransport\(/);
   });
+});
 
+describe('the grep: the Feed and health', () => {
   it('the Feed and health hear NEUTRAL events', () => {
     const code = stripComments(read('src/main/index.ts'));
     expect(code).toMatch(/manager\.onEngineEvent\(\(sessionId, ev\) => streamFeed\.ingest\(sessionId, ev\)\)/);
     expect(code).toMatch(/manager\.onEngineEvent\(\(sessionId, ev\) => health\.noteEvent\(sessionId, ev\)\)/);
   });
 
-  it('both Claude adapters declare the translator', () => {
+  it('both Claude adapters declare the translator and the controls', () => {
     for (const f of ['src/main/providers/claude.ts', 'src/main/providers/fake-stream.ts']) {
       expect(stripComments(read(f))).toMatch(/\bevents: claudeEvents\b/);
+      expect(stripComments(read(f))).toMatch(/\bcontrols: claudeControls\b/);
     }
   });
 });

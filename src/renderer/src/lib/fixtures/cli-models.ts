@@ -12,7 +12,7 @@
 // are now three suites over this data (`model-choices`, `ModelPickerDialog`,
 // `ModelQuickMenu`), and a third hand-typed copy is a third chance to lose the
 // collision quietly.
-import type { CliModel } from '../../../../shared/stream-protocol';
+import type { CliModel } from '../../../../shared/models';
 
 export const CLI_MODELS: CliModel[] = [
   {

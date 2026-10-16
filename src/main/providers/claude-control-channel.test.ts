@@ -11,8 +11,8 @@
 // Everything else is the ordinary contract: one verdict per call, never a
 // rejection, never a leaked pending entry.
 import { describe, it, expect, vi } from 'vitest';
-import { ControlChannel, type ControlPort } from './control-channel';
-import { listModelsRequest, setModelRequest } from '../../shared/stream-protocol';
+import { ControlChannel, type ControlPort } from './claude-control-channel';
+import { listModelsRequest, setModelRequest } from './claude-protocol';
 
 /** A port that records what was written and lets a test answer by hand. */
 function harness(opts: { sendOk?: boolean } = {}) {

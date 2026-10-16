@@ -11,7 +11,7 @@
 // diverge from it silently. #747 says so explicitly: "Don't re-derive that;
 // extract and share."
 
-import type { CliModel } from '../../../shared/stream-protocol';
+import type { CliModel } from '../../../shared/models';
 import type { ControlVerdict } from '../../../shared/control';
 
 /**

@@ -40,6 +40,7 @@
 // value is a bridge, never an authority.
 import { errorText } from '../../shared/error-text';
 import { Logger } from '../log/logger';
+import type { EngineEvent } from './engine-events';
 
 export class StreamModel {
   private readonly bySession = new Map<string, string>();
@@ -67,7 +68,7 @@ export class StreamModel {
   /**
    * Record a value and announce it — but ONLY when it actually moved.
    *
-   * The unchanged check is load-bearing, not tidiness. `offer` runs on every
+   * The unchanged check is load-bearing, not tidiness. `ingest` runs on every
    * turn's `system:init`, and the model is the same on almost all of them, so
    * an unconditional announcement would be one IPC message per turn per session
    * carrying news that nothing happened. It also makes `noteSet` followed by
@@ -89,26 +90,15 @@ export class StreamModel {
   }
 
   /**
-   * Feed one stream message. Ignores everything that is not a `system:init`
-   * carrying a usable `model`.
-   *
-   * A non-string or empty `model` KEEPS whatever we had rather than blanking
-   * it — fail-open (P6), and a stale answer beats no answer for a field whose
-   * only other value is "unknown". Logged at `debug`, not `warn`, because init
-   * arrives every turn and a persistently odd payload would otherwise shout all
-   * day about something nobody can act on.
+   * Feed one engine event: the `model` the engine says this session is on
+   * (#1287 — this read `system:init.model` itself until then). Ignores
+   * everything else. An init with no usable model never becomes an event, so
+   * whatever we had stands — fail-open (P6), and a stale answer beats no
+   * answer for a field whose only other value is "unknown".
    */
-  offer(sessionId: string, msg: Record<string, unknown>): void {
-    if (msg.type !== 'system' || msg.subtype !== 'init') return;
-    const model = msg.model;
-    if (typeof model !== 'string' || !model.trim()) {
-      this.log?.debug('stream init model ignored', {
-        sessionId,
-        got: model === undefined ? 'absent' : typeof model,
-      });
-      return;
-    }
-    this.set(sessionId, model);
+  ingest(sessionId: string, ev: EngineEvent): void {
+    if (ev.type !== 'model') return;
+    this.set(sessionId, ev.id);
   }
 
   /**

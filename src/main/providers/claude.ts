@@ -13,13 +13,14 @@ import { ProviderAdapter, SpawnOptions, SpawnRecipe } from '../extensibility/con
 import { BUS_SERVER_NAME } from '../bus/bus-paths';
 import type { BusLaunch } from '../bus/launch';
 import { SlashCommand } from '../../shared/slash-commands';
-import type { AutonomyMode } from '../../shared/sessions';
 // The transcript LOCATION is Claude's, so the check for "is this conversation
 // really there" belongs to this adapter; the tolerant reader it shares with
 // every other provider stays host-side (see ProviderCapabilities.transcripts).
 import { conversationExists, listConversations, locateConversation } from '../transcripts/paths';
 import { ensureFolderTrusted } from '../sessions/trust';
 import { claudeEvents } from './claude-events';
+import { AUTONOMY_PERMISSION_MODE } from './claude-modes';
+import { claudeControls } from './claude-controls';
 
 const CLI_NAMES = process.platform === 'win32' ? ['claude.cmd', 'claude.exe'] : ['claude'];
 
@@ -275,49 +276,10 @@ export function readAiTitle(line: Record<string, unknown>): string | undefined {
  */
 export const RECENTLY_ACTIVE_MS = 5 * 60 * 1000;
 
-/**
- * §5.9 autonomy profile -> the CLI's `--permission-mode` value.
- *
- * **Every profile names its mode. Nothing is left to the CLI's built-in
- * default** (#587) — because that default moved under us. From CLI **v2.1.228**
- * (macOS/Linux/WSL) and **v2.1.233** on native Windows, the built-in starting
- * mode on Pro/Max/Team plans is `auto` — a classifier reviews each action
- * instead of a person. `ask` used to pass no flag at all and inherit that, so
- * on a current CLI the profile named "ask" no longer asked: everything our
- * PreToolUse hook does not gate (fail-open when the listener is down, tool
- * names outside `PRETOOL_MATCHER`) went to the classifier rather than to Dan.
- * Naming the mode is the whole fix — we still let the CLI enforce it.
- *
- * `default` is Manual mode's config value: "stops and asks you before most
- * actions that edit files, run shell commands, or reach the network". The CLI
- * renamed the *label* to Manual in v2.1.200 and `--help` on 2.1.233 advertises
- * only the `manual` alias — but `default` is the canonical value the SDK,
- * hooks and `permissions.defaultMode` use, it is what `manual` is normalized
- * to, and it is the one that also works on pre-2.1.200 CLIs. So: `default`.
- *
- * Passing the flag is enough; we deliberately do NOT also write
- * `permissions.defaultMode` into the per-session settings file, because
- * `--permission-mode` outranks every settings file in the CLI's own precedence
- * order. One lever, not two.
- *
- * This does not take a mode away from the user: `auto` is in the Shift+Tab
- * cycle whenever the account is eligible, regardless of the start flag.
- *
- * CONTRACT NOTE — semantics last verified **2026-08-19 against `claude`
- * 2.1.233 on PATH** (values probed with `--permission-mode <v> --version`, no
- * token spend: `default`, `manual`, `auto`, `dontAsk`, `acceptEdits`, `plan`,
- * `bypassPermissions` all accepted; a bogus value is rejected, so acceptance
- * is a real signal) and against the SDK enum embedded in the VS Code extension
- * 2.1.226 (`["acceptEdits","auto","bypassPermissions","default","dontAsk",
- * "plan"]` plus a `manual -> default` alias) and the settings schema's
- * `permissions.defaultMode` description. Re-verify on a CLI major bump.
- */
-export const AUTONOMY_PERMISSION_MODE: Record<AutonomyMode, string> = {
-  plan: 'plan',
-  ask: 'default',
-  'auto-edit': 'acceptEdits',
-  'full-auto': 'bypassPermissions',
-};
+// The autonomy -> `--permission-mode` map moved to `claude-modes.ts` (#1287)
+// so the translator can read the CLI's announced mode back without importing
+// this module (which imports the translator). Re-exported: callers unchanged.
+export { AUTONOMY_PERMISSION_MODE };
 
 /**
  * What the CLI accepts for `--session-id`.
@@ -356,6 +318,9 @@ export const claudeAdapter: ProviderAdapter = {
     // E40 item 03 (#1286): stream-json -> the neutral session events the Feed,
     // status and health read. The only reader of Claude frames on that path.
     events: claudeEvents,
+    // E40 item 04 (#1287): every control frame this app writes, and the
+    // declaration of which controls Claude has (all of them).
+    controls: claudeControls,
     // §5.11: the CLI already computed a description of the conversation, so we
     // display it rather than deriving one of our own — which would spend the
     // user's subscription tokens on chrome (P7).

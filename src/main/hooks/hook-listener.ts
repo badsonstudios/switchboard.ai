@@ -526,7 +526,9 @@ export class HookListener {
     // is a different path from the hold: `state-machine`'s Notification arm
     // transitions to `needs-permission` on a regex over the CLI's DEBOUNCED nudge,
     // with no evidence that anything is held. Every real permission arrives as
-    // `can_use_tool` and is mapped exactly (`stream-status.ts`), so a
+    // `can_use_tool`, which Claude's translator turns into a `permission-request`
+    // event (`providers/claude-events.ts`) and `stream-status.ts` maps exactly
+    // (#1286), so a
     // Notification-driven `needs-permission` is at best a duplicate of a status we
     // already set — and at worst a FALSE ALARM, the debounced nudge landing after
     // the request was answered and dragging a working card back to "needs
@@ -546,7 +548,7 @@ export class HookListener {
     // specifically (no permission prompt was drawn), but the channel is confirmed
     // live, so this guard is load-bearing rather than precautionary.
     if (isPermissionNotification(ev)) {
-      this.opts.log.debug('Notification not applied: permissions ride can_use_tool', {
+      this.opts.log.debug('Notification not applied: permissions ride the control channel', {
         sessionId,
         notificationType: ev.notificationType,
       });

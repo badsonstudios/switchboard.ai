@@ -1,16 +1,23 @@
-// The stream-json wire envelopes we WRITE (P2-E18-06).
+// The stream-json wire envelopes we WRITE (P2-E18-06) — CLAUDE'S, and so
+// inside its provider since E40 item 04 (#1287). This was
+// `shared/stream-protocol.ts`; nothing outside `src/main/providers/` may
+// import it now (`sessions/engine-seam.test.ts`), and the renderer's one need
+// from it — the shape of a model in a `list_models` answer — is the neutral
+// `shared/models.ts`.
 //
 // Shapes taken from the SDK envelope the VS Code extension sends and that S-10
-// wrote to the real CLI (`spike/s10/probe-*.cjs`), not invented. Kept in
-// `shared/` because the renderer composes a prompt and main sends it, and one
-// definition is how those stay the same thing.
+// wrote to the real CLI (`spike/s10/probe-*.cjs`), not invented.
 //
 // This is the whole of what `renderer/lib/composer.ts` does for the PTY —
 // bracketed-paste wrapper, a 75ms delayed CR, the S-03 "text+CR in one chunk
 // registers as a paste and never submits" workaround — replaced by a struct.
 // That entire class of timing bug does not exist on this transport.
 
-import type { PromptAttachment } from './prompt-attachments';
+import type { PromptAttachment } from '../../shared/prompt-attachments';
+// `list_models` answers in the neutral shape already; re-exported so a Claude
+// caller has one import (see `shared/models.ts`).
+export type { CliModel } from '../../shared/models';
+export { readModels } from '../../shared/models';
 
 /** A block of prose in a user turn. */
 export interface StreamTextBlock {
@@ -338,38 +345,6 @@ export function controlRequest(
   return { type: 'control_request', request_id: requestId, request };
 }
 
-/**
- * One model the CLI will accept, as `list_models` describes it.
- *
- * Every field but `value` is optional on purpose: `value` is the only one we
- * SEND back, and a CLI that renames a display field must degrade the picker's
- * labels rather than empty it. Measured payload — 5 entries, 3 shown:
- *
- *     {value:"default",  resolvedModel:"claude-opus-5[1m]", displayName:"Default (recommended)",
- *      description:"Opus 5 with 1M context · Best for everyday, complex tasks", …}
- *     {value:"sonnet",   resolvedModel:"claude-sonnet-5",   displayName:"Sonnet", …}
- *     {value:"haiku",    resolvedModel:"claude-haiku-4-5-20251001", displayName:"Haiku"}
- *     // …plus "opus[1m]" and "claude-fable-5[1m]", same shape
- *
- * `supportsEffort` / `supportedEffortLevels` / `supportsFastMode` also ride
- * along and are deliberately NOT modelled HERE. The effort pair is read by
- * `shared/effort.ts` (#1115) straight off the raw payload, for the effort
- * chip; the model picker has no use for it, and a type that claims it here
- * invites a picker that half-supports it.
- *
- * NOTHING IN THE PAYLOAD MARKS THE CURRENT MODEL. Neither does `initialize`
- * (its keys were dumped; there is no current-model field). The only place the
- * running model appears is `system:init.model`, which arrives ONCE PER TURN —
- * so before a session's first turn its model is genuinely unknown, and a
- * picker must say so rather than guess at `default`.
- */
-export interface CliModel {
-  value: string;
-  resolvedModel?: string;
-  displayName?: string;
-  description?: string;
-}
-
 /** `list_models` — the lean call. `initialize` carries the same array inside ~28 KB. */
 export function listModelsRequest(requestId: string): StreamControlRequest {
   return controlRequest(requestId, { subtype: 'list_models' });
@@ -511,7 +486,7 @@ export function mcpReconnectRequest(
  * refusal shapes.
  *
  * ⚠️ **AND THE TEN-SECOND CHANNEL TIMEOUT MAY NOT SURVIVE CONTACT WITH A REAL
- * FLOW.** `CONTROL_TIMEOUT_MS` is 10s (`main/transport/control-channel.ts`) and
+ * FLOW.** `CONTROL_TIMEOUT_MS` is 10s (`claude-control-channel.ts`) and
  * every other verb here answers in milliseconds — but if the CLI's
  * implementation blocks until the browser round trip finishes, a genuine
  * sign-in times out every time while working perfectly. UNMEASURED, like the
@@ -622,31 +597,6 @@ export function readControlResponse(msg: unknown): ParsedControlResponse | null 
     response: payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {},
     error: typeof body.error === 'string' ? body.error : '',
   };
-}
-
-/**
- * The models out of a `list_models` (or `initialize`) payload.
- *
- * Lenient by construction: a malformed entry is dropped rather than failing the
- * whole list, and an entry with no usable `value` is worthless to us because
- * `value` is the only thing `set_model` accepts.
- */
-export function readModels(response: Record<string, unknown>): CliModel[] {
-  const raw = response.models;
-  if (!Array.isArray(raw)) return [];
-  const out: CliModel[] = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== 'object') continue;
-    const e = entry as Record<string, unknown>;
-    if (typeof e.value !== 'string' || !e.value) continue;
-    out.push({
-      value: e.value,
-      ...(typeof e.resolvedModel === 'string' ? { resolvedModel: e.resolvedModel } : {}),
-      ...(typeof e.displayName === 'string' ? { displayName: e.displayName } : {}),
-      ...(typeof e.description === 'string' ? { description: e.description } : {}),
-    });
-  }
-  return out;
 }
 
 /** A reply to a `can_use_tool` control request (P2-E18-07 sends these). */

@@ -1369,10 +1369,11 @@ app
       const w = currentWindow;
       return !!w && !w.isDestroyed() && !w.webContents.isCrashed();
     };
-    // can_use_tool -> the approval bar (P2-E18-07). Answers go back on the same
-    // session's transport, which only the manager can reach.
+    // A permission request -> the approval bar (P2-E18-07). Answers go back
+    // through the session's provider (its `approvals` control, #1287), which
+    // only the manager can reach.
     const streamPermissions = new StreamPermissions(
-      (sessionId, msg) => manager.sendToTransport(sessionId, msg),
+      (sessionId, requestId, decision) => manager.answerPermission(sessionId, requestId, decision),
       // …and the answer ends `needs-permission` immediately, rather than when
       // the CLI next speaks (#310). Same collaborator the hook path gets.
       (sessionId, ev) => manager.apply(sessionId, ev),
@@ -1391,16 +1392,17 @@ app
         folderOf: (sessionId) => manager.get(sessionId)?.identity.folder ?? null,
       }
     );
-    manager.onStreamMessage((sessionId, msg) => streamPermissions.offer(sessionId, msg));
+    // NEUTRAL events, not frames (#1287): the router reads no provider's wire.
+    manager.onEngineEvent((sessionId, ev) => streamPermissions.ingest(sessionId, ev));
     // "Allow all (this session)" means no hold, no needs-permission event and
     // no beep — including in Direct mode (#319). The router answers the call;
     // only the pump can stop the status that rings the bell. See
     // `setPermissionHoldSuppressor`.
-    manager.setPermissionHoldSuppressor((sessionId, msg) =>
+    manager.setPermissionHoldSuppressor((sessionId, ev) =>
       // WILL-AUTO-ALLOW, not IS-ALLOW-ALL (#974). The two were the same
       // question while allow-all was the only standing grant; a per-file one
       // is a property of the REQUEST, so the id alone cannot answer it.
-      streamPermissions.willAutoAllow(sessionId, msg)
+      streamPermissions.willAutoAllow(sessionId, ev)
     );
     // A held request keeps the session waiting, whatever else streams in
     // (#1258). Only the router knows what it is holding; see
@@ -1415,18 +1417,18 @@ app
     // permission router would silently stop the command list updating, for ever
     // and with no symptom but a stale popup.
     const streamCommands = new StreamCommands(createLogger(sink, 'sessions'));
-    manager.onStreamMessage((sessionId, msg) => streamCommands.offer(sessionId, msg));
+    manager.onEngineEvent((sessionId, ev) => streamCommands.ingest(sessionId, ev));
     // Which model each session is actually running (#721). Same shape as the
     // command store above and for the same reason: `system:init` is the only
     // message that carries it, it arrives once per TURN, and nothing can ask
     // for it.
     const streamModel = new StreamModel(createLogger(sink, 'sessions'));
-    manager.onStreamMessage((sessionId, msg) => streamModel.offer(sessionId, msg));
+    manager.onEngineEvent((sessionId, ev) => streamModel.ingest(sessionId, ev));
     // Which MODE each session says it is in (#1072): the CLI leaves plan mode
     // by itself when a plan is approved, and announces it in a `status`
     // message nothing used to read. Its own subscription, like the others.
     const streamMode = new StreamMode(createLogger(sink, 'sessions'));
-    manager.onStreamMessage((sessionId, msg) => streamMode.offer(sessionId, msg));
+    manager.onEngineEvent((sessionId, ev) => streamMode.ingest(sessionId, ev));
     // The Feed, off the same stream (P2-E18-10). A THIRD subscription, for the
     // reason spelled out above: one listener per consumer, one blast radius
     // each. This one carries the most traffic by far — S-11 counted 719
@@ -2095,10 +2097,11 @@ app
       // ⚠️ ONE TURN LATER WHEN THE JOIN WOULD BE EMPTY, AND THE ORDER IS THE
       // REASON (#952, found by porting `permission-toast.spec.ts` off the hook path).
       //
-      // The pump applies the status event and THEN runs its message listeners
-      // (`session-manager.ts`): `streamStatusEvent` maps `can_use_tool` to
+      // The pump applies the status event and THEN runs its engine-event
+      // listeners (`session-manager.ts`): `streamStatusEvent` maps the
+      // `permission-request` event (Claude's `can_use_tool`) to
       // `permission-held`, which walks the card to `needs-permission`, which fires
-      // the rules — all before `StreamPermissions.offer()` has registered the
+      // the rules — all before `StreamPermissions.ingest()` has registered the
       // request. So `pendingPermissionFor` answers null and the toast goes out with
       // no request attached: no Allow/Deny buttons, and a body click that cannot
       // raise the question. That is §5.9's safety half failing silently, and on the
@@ -2773,7 +2776,7 @@ app
     // §5.5 Level 3, experimental and off by default (P2-E11-12). `=== true` for
     // the reason every setter on this file uses it: an absent or non-boolean
     // argument must read as OFF rather than as truthy — the `mcp_toggle` hazard
-    // `shared/stream-protocol.ts` documents, applied to our own wire.
+    // `providers/claude-protocol.ts` documents, applied to our own wire.
     broker.handle('settings:getExperimentalFork', () => workspace.getExperimentalFork());
     broker.handle('settings:setExperimentalFork', (_e, on: boolean) => {
       workspace.setExperimentalFork(on === true);

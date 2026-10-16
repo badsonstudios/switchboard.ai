@@ -7,6 +7,14 @@ import { errorText } from '../../shared/error-text';
 import { randomUUID } from 'crypto';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { EventCapability, MainContributions, SpawnRecipe } from '../extensibility/contributions';
+import type {
+  ControlCapability,
+  PermissionDecision,
+  SessionControls,
+} from './engine-controls';
+import { declaredControls } from './engine-controls';
+import type { EngineControl, SessionControlsWire } from '../../shared/engine-controls';
+import type { PromptAttachment } from '../../shared/prompt-attachments';
 import { Logger } from '../log/logger';
 import {
   DEFAULT_TRANSPORT,
@@ -29,30 +37,7 @@ import {
   SweepResult,
 } from './session-state';
 import { streamStatusEvent } from './stream-status';
-import type { EngineEvent, EngineTranslator } from './engine-events';
-import {
-  interruptRequest,
-  listModelsRequest,
-  mcpAuthenticateRequest,
-  mcpClearAuthRequest,
-  mcpReconnectRequest,
-  mcpStatusRequest,
-  mcpToggleRequest,
-  setModelRequest,
-  userMessage,
-  type PromptAttachment,
-} from '../../shared/stream-protocol';
-import { ControlChannel } from '../transport/control-channel';
-import {
-  appliedModel,
-  effortLevelsFor,
-  getSettingsRequest,
-  readApplied,
-  setEffortRequest,
-  withLevel,
-  type EffortState,
-} from '../../shared/effort';
-import { getContextUsageRequest, readContextUsage } from '../../shared/context-usage';
+import type { EngineEvent, EngineTranslator, PermissionRequestEvent } from './engine-events';
 import type { ControlVerdict } from '../../shared/control';
 
 /**
@@ -128,12 +113,17 @@ export class SessionManager {
    * session is a reference to a dead child nobody can reach to kill.
    */
   private readonly handles = new Map<string, TransportSession>();
-  private readonly streamMessageListeners = new Set<
-    (sessionId: string, msg: Record<string, unknown>) => void
-  >();
+  /**
+   * Each live session's CONTROLS, from its provider (E40 item 04, #1287), and
+   * the provider's display name for the "Not available with <AI>" reason.
+   * Built at spawn beside the translator; dropped in `remove()` with the
+   * handle. A session whose provider declares none has no entry, and every
+   * control answers `unsupported`.
+   */
+  private readonly sessionControls = new Map<string, { controls: SessionControls; ai: string }>();
   private readonly engineEventListeners = new Set<(sessionId: string, ev: EngineEvent) => void>();
   private permissionHoldSuppressor:
-    | ((sessionId: string, msg: Record<string, unknown>) => boolean)
+    | ((sessionId: string, ev: PermissionRequestEvent) => boolean)
     | null = null;
   private heldRequestProbe: ((sessionId: string) => boolean) | null = null;
 
@@ -161,101 +151,60 @@ export class SessionManager {
     extraTransports?: TransportMap
   ) {
     this.transports = { stream: transport, ...extraTransports };
-    // The outbound control channel (#721). Built HERE rather than in
-    // `main/index.ts` because its port is exactly two methods this class
-    // already owns — `sendToTransport` (which answers false for a PTY, and is
-    // therefore the transport gate) and `onStreamMessage` (the app-wide typed
-    // fan-out). Wiring it outside would mean handing both out to a third party
-    // just to hand the result back.
-    this.control = new ControlChannel({
-      send: (id, msg) => this.sendToTransport(id, msg),
-      onMessage: (l) => this.onStreamMessage(l),
-    });
   }
 
-  /**
-   * Ask the CLI something over the stream-json control channel (#721).
-   *
-   * Exposed so `sessions/ipc.ts` can reach it and so teardown can call
-   * `forgetSession`. Consumers should prefer the named verbs below.
-   */
-  readonly control: ControlChannel;
 
   /**
-   * The models this session will accept (#721, #633).
+   * The models this session will accept (#721, #633) — the provider's
+   * `models` control (#1287; Claude: `list_models`). The answer is
+   * `{ models: [...] }` in `shared/models.ts`'s shape.
    *
-   * `list_models` rather than `initialize`: the same array, without the ~28 KB
-   * of commands, agents and account data around it.
-   *
-   * NOTE WHAT THIS CANNOT TELL YOU: nothing in the payload marks the CURRENT
-   * model, and `initialize` has no field for it either (both measured). The
-   * running model appears only on `system:init.model`, once per TURN — so a
-   * picker must treat "which one is selected" as a separate and possibly
-   * unknown question rather than reading it off this list.
+   * NOTE WHAT THIS CANNOT TELL YOU: nothing in Claude's answer marks the
+   * CURRENT model (measured). The running model is a `model` event, once per
+   * TURN — so a picker must treat "which one is selected" as a separate and
+   * possibly unknown question rather than reading it off this list.
    */
   async listModels(id: string): Promise<ControlVerdict> {
-    const gone = this.controlPrecheck(id);
-    return gone ?? this.control.request(id, listModelsRequest);
+    return this.ask(id, 'models', (c) => c.models?.list());
   }
 
   /**
-   * The MCP servers this session really has (#729).
+   * The MCP servers this session really has (#729) — the provider's `mcp`
+   * control. For Claude, THE ONLY SOURCE: the config files reach three of the
+   * CLI's eight runtime scopes, and account connectors and plugin-supplied
+   * servers live in no file at all.
    *
-   * THE ONLY SOURCE. `main/mcp/config.ts` reaches three of the CLI's eight
-   * runtime scopes, and account connectors and plugin-supplied servers live in
-   * no file at all — 3 shown against 16 on the machine that reported #723.
-   *
-   * The answer SETTLES rather than arriving complete: a freshly spawned session
-   * reports `pending` with no tool list for ~5 seconds before it reports
-   * `connected` (measured, `spike/probes/721/probe-mcp-settle.mjs`). This method
-   * is a single round trip and does not hide that — the caller asks again. See
-   * `mcpStatusRequest`.
+   * The answer SETTLES rather than arriving complete: a freshly spawned Claude
+   * session reports `pending` with no tool list for ~5 seconds before it
+   * reports `connected` (measured). This is a single round trip and does not
+   * hide that — the caller asks again.
    */
   async mcpStatus(id: string): Promise<ControlVerdict> {
-    const gone = this.controlPrecheck(id);
-    return gone ?? this.control.request(id, mcpStatusRequest);
+    return this.ask(id, 'mcp', (c) => c.mcp?.status());
   }
 
   /**
    * Turn one MCP server on or off (#729 PR 2).
    *
-   * ⚠️ **THE ARGUMENTS ARE VALIDATED BEFORE THE WIRE, and that is not
-   * defensive habit.** Measured: `mcp_toggle` with a valid `serverName` and NO
-   * `enabled` field answers `success` and **disables the server**. An absent
-   * field reads as falsy at the CLI, so a dropped `enabled` anywhere upstream
-   * turns off a user's server and reports that it worked. `mcpToggleRequest`
-   * refuses a non-boolean rather than coercing one — see its docblock.
-   *
-   * IT PERSISTS to `~/.claude.json` (`projects[<folder>].disabledMcpServers`),
-   * so this is not a session-scoped switch and callers must not describe it as
-   * one.
+   * ⚠️ The arguments are untrusted and the CONTROL validates them before the
+   * wire — for Claude that is not defensive habit: `mcp_toggle` with no
+   * `enabled` answers `success` and **disables the server** (measured; see
+   * `mcpToggleRequest`). IT PERSISTS to `~/.claude.json`, so this is not a
+   * session-scoped switch and callers must not describe it as one.
    */
   async mcpToggle(id: string, serverName: unknown, enabled: unknown): Promise<ControlVerdict> {
-    const gone = this.controlPrecheck(id);
-    if (gone) return gone;
-    const verdict = await this.control.request(id, (requestId) =>
-      mcpToggleRequest(requestId, serverName, enabled)
-    );
+    const verdict = await this.ask(id, 'mcp', (c) => c.mcp?.toggle(serverName, enabled));
     if (verdict.ok) this.log.info('mcp server toggled', { sessionId: id, enabled });
     return verdict;
   }
 
   /**
-   * Re-resolve one MCP server for this session (#729 PR 2).
-   *
-   * DOES TWO JOBS, because measurement says it does: it reconnects a server that
-   * dropped, AND it pulls in one the session never loaded — `mcp_status` is
-   * frozen at spawn, so a server added with `claude mcp add` mid-session is
-   * invisible until this runs. That second job is what lets the pane offer a
-   * button instead of "restart the session" (#714's outcome, now avoidable
-   * wherever there is a live stream session).
+   * Re-resolve one MCP server for this session (#729 PR 2). For Claude it does
+   * two jobs: it reconnects a server that dropped, AND it pulls in one the
+   * session never loaded (`mcp_status` is frozen at spawn).
    */
   async mcpReconnect(id: string, serverName: unknown): Promise<ControlVerdict> {
-    const gone = this.controlPrecheck(id);
-    if (gone) return gone;
-    const verdict = await this.control.request(id, (requestId) =>
-      mcpReconnectRequest(requestId, serverName)
-    );
+    const verdict = await this.ask(id, 'mcp', (c) => c.mcp?.reconnect(serverName));
     if (verdict.ok) this.log.info('mcp server reconnected', { sessionId: id });
     return verdict;
   }
@@ -263,22 +212,14 @@ export class SessionManager {
   /**
    * Start the OAuth flow for one MCP server (#734).
    *
-   * ⚠️ **`ok: true` HERE DOES NOT MEAN "SIGNED IN".** Only the refusals are
-   * measured — there is no claude.ai connector on the dev machine, so what the
-   * CLI answers when a flow really starts is unknown. This method reports the
-   * verdict and nothing more; the sentence the user reads is deliberately
-   * non-committal (`mcp.signInStarted`). See `mcpAuthenticateRequest`.
-   *
-   * REMOTE-ONLY, by the CLI's own rule: a stdio server is refused by TYPE. The
-   * renderer does not offer the control on a stdio row, and this method still
-   * passes the refusal through if something else calls it.
+   * ⚠️ **`ok: true` HERE DOES NOT MEAN "SIGNED IN".** Only Claude's refusals
+   * are measured, so this reports the verdict and nothing more; the sentence
+   * the user reads is deliberately non-committal (`mcp.signInStarted`).
+   * REMOTE-ONLY, by the CLI's own rule: a stdio server is refused by TYPE, and
+   * the refusal is passed through.
    */
   async mcpAuthenticate(id: string, serverName: unknown): Promise<ControlVerdict> {
-    const gone = this.controlPrecheck(id);
-    if (gone) return gone;
-    const verdict = await this.control.request(id, (requestId) =>
-      mcpAuthenticateRequest(requestId, serverName)
-    );
+    const verdict = await this.ask(id, 'mcp', (c) => c.mcp?.authenticate(serverName));
     // NO SERVER NAME IN THIS LINE beyond the session id — an OAuth flow is the
     // one place a name and a timestamp together start to describe an account,
     // and the app log is a file users attach to bug reports. Nothing is logged
@@ -289,19 +230,11 @@ export class SessionManager {
   }
 
   /**
-   * Forget the stored credentials for one MCP server (#734).
-   *
-   * THE ESCAPE HATCH FOR AN UNVERIFIABLE FLOW. `mcpAuthenticate`'s success path
-   * cannot be exercised on this machine, so the first real attempt happens on a
-   * user's laptop — and a sign-in that half-completes needs a way back that does
-   * not involve editing the CLI's own credential store by hand.
+   * Forget the stored credentials for one MCP server (#734) — the escape hatch
+   * for a sign-in whose success path cannot be exercised on the dev machine.
    */
   async mcpClearAuth(id: string, serverName: unknown): Promise<ControlVerdict> {
-    const gone = this.controlPrecheck(id);
-    if (gone) return gone;
-    const verdict = await this.control.request(id, (requestId) =>
-      mcpClearAuthRequest(requestId, serverName)
-    );
+    const verdict = await this.ask(id, 'mcp', (c) => c.mcp?.clearAuth(serverName));
     if (verdict.ok) this.log.info('mcp sign-out requested', { sessionId: id });
     return verdict;
   }
@@ -310,16 +243,14 @@ export class SessionManager {
    * `session-gone` for a session this manager no longer holds — or `null` to
    * carry on.
    *
-   * WITHOUT THIS, A DEAD SESSION READS AS A TERMINAL ONE. `sendToTransport`
-   * answers `false` for both a PTY and a missing handle, and the channel turns
-   * a false into `not-stream` — whose documented meaning is "this session has
-   * no control channel, hand the user to the CLI's own picker in their
-   * terminal". A stale live id (the restart path drops the handle in `remove`
-   * while a renderer may still hold the old one) would therefore tell the user
-   * to go and use a terminal that has nothing to do with their problem.
+   * WITHOUT THIS, A DEAD SESSION READS AS ONE WITH NO CHANNEL. `sendToTransport`
+   * answers `false` for both a handle with no `send` and a missing handle, and
+   * a provider's channel turns a false into `not-stream`. A stale live id (the
+   * restart path drops the handle in `remove` while a renderer may still hold
+   * the old one) would therefore get the wrong explanation for its problem.
    *
    * The two states are genuinely different and only this class can tell them
-   * apart, which is why the check is here rather than in the channel.
+   * apart, which is why the check is here rather than in any provider.
    */
   private controlPrecheck(id: string): ControlVerdict | null {
     if (this.handles.has(id)) return null;
@@ -327,113 +258,93 @@ export class SessionManager {
   }
 
   /**
-   * Switch this session's model, mid-session, with no restart (#721, #633).
-   *
-   * Verified BY EFFECT rather than by its acknowledgement: after `set_model`,
-   * the next turn's `system:init.model`, the assistant message's
-   * `message.model` and `result.modelUsage` all three reported the new model.
-   *
-   * An empty or non-string `model` is refused before the wire — see
-   * `setModelRequest`, and the measurement that forced it.
+   * Run one control verb on a live session (#1287): the precheck above, then
+   * the provider's control — or `unsupported` when its AI has no such control,
+   * and `refused` when the control throws or answers nothing. Never rejects:
+   * a caller that had to wrap every call in try/catch would grow a swallowed
+   * catch eventually, and the surface needs the reason (the #721 rule).
    */
-  async setModel(id: string, model: unknown): Promise<ControlVerdict> {
+  private async ask(
+    id: string,
+    name: EngineControl,
+    run: (c: SessionControls) => Promise<ControlVerdict> | undefined
+  ): Promise<ControlVerdict> {
     const gone = this.controlPrecheck(id);
     if (gone) return gone;
-    const verdict = await this.control.request(id, (requestId) =>
-      setModelRequest(requestId, model)
-    );
+    const entry = this.sessionControls.get(id);
+    let pending: Promise<ControlVerdict> | undefined;
+    try {
+      pending = entry ? run(entry.controls) : undefined;
+    } catch (err) {
+      this.log.error('provider control threw', { sessionId: id, control: name, error: errorText(err) });
+      return { ok: false, reason: 'refused', message: 'the session could not do that' };
+    }
+    if (!pending) {
+      return {
+        ok: false,
+        reason: 'unsupported',
+        message: `Not available with ${entry?.ai ?? this.aiNameOf(id)}.`,
+      };
+    }
+    try {
+      return await pending;
+    } catch (err) {
+      this.log.error('provider control threw', { sessionId: id, control: name, error: errorText(err) });
+      return { ok: false, reason: 'refused', message: 'the session could not do that' };
+    }
+  }
+
+  /** The display name of the AI a session runs, for a reason sentence. */
+  private aiNameOf(id: string): string {
+    const providerId = this.sessions.get(id)?.identity.providerId ?? '';
+    return this.registry.resolve('provider-adapter', providerId)?.manifest.displayName ?? (providerId || 'this AI');
+  }
+
+  /**
+   * Switch this session's model, mid-session, with no restart (#721, #633).
+   *
+   * Claude's is verified BY EFFECT rather than by its acknowledgement: after
+   * `set_model`, the next turn's `system:init.model`, the assistant message's
+   * `message.model` and `result.modelUsage` all three reported the new model.
+   * An empty or non-string `model` is refused before the wire.
+   */
+  async setModel(id: string, model: unknown): Promise<ControlVerdict> {
+    const verdict = await this.ask(id, 'models', (c) => c.models?.set(model));
     if (verdict.ok) this.log.info('model changed', { sessionId: id });
     return verdict;
   }
 
   /**
    * How hard this session's model is thinking, and the levels it could be set
-   * to (#1115). `shared/effort.ts` has the measured contract.
-   *
-   * Two questions to the CLI, because neither answers both: `get_settings`
-   * says what is APPLIED (the level, and the model), `list_models` says which
-   * levels that model takes. A model with no effort levels answers
-   * `effort: null`, and so does a CLI whose `get_settings` has no `applied`
-   * block — in both cases the honest surface is no chip.
+   * to (#1115) — the provider's `effort` control. `{ effort, levels, model }`;
+   * a model with no effort levels answers `effort: null`, and the honest
+   * surface is then no chip.
    */
   async effort(id: string): Promise<ControlVerdict> {
-    const gone = this.controlPrecheck(id);
-    if (gone) return gone;
-    const settings = await this.control.request(id, getSettingsRequest);
-    if (!settings.ok) return settings;
-    const applied = readApplied(settings.response);
-    // `model` rides along (#1174): this is the one `get_settings` a card makes
-    // when it appears, and the same answer says which model the session is on.
-    // The channel seeds the model store from it rather than asking twice.
-    const model = appliedModel(settings.response);
-    if (!applied || applied.effort === null) {
-      const none: EffortState = { effort: null, levels: [] };
-      return { ok: true, response: { ...none, model } };
-    }
-    const models = await this.control.request(id, listModelsRequest);
-    if (!models.ok) return models;
-    // the level in force is always offered, whatever the list says
-    const levels = withLevel(effortLevelsFor(models.response, applied.model), applied.effort);
-    const state: EffortState = { effort: applied.effort, levels };
-    return { ok: true, response: { ...state, model } };
+    return this.ask(id, 'effort', (c) => c.effort?.get());
   }
 
   /**
-   * How full this session's context window is, by the CLI's own count
-   * (#715). `shared/context-usage.ts` has the measured contract.
-   *
-   * ONLY THE NUMBERS LEAVE HERE. The answer lists every memory file by
-   * path and every tool by name; none of that is the renderer's business,
-   * and it is fifty times the size of the four figures that are.
-   *
-   * An answer with no usable fill is `refused`, not a success carrying
-   * zero: the surface shows nothing rather than a confident wrong number.
+   * How full this session's context window is, by the engine's own count
+   * (#715). ONLY THE NUMBERS LEAVE the provider; an answer with no usable fill
+   * is `refused`, not a success carrying zero.
    */
   async contextUsage(id: string): Promise<ControlVerdict> {
-    const gone = this.controlPrecheck(id);
-    if (gone) return gone;
-    const answer = await this.control.request(id, getContextUsageRequest);
-    if (!answer.ok) return answer;
-    const usage = readContextUsage(answer.response);
-    if (!usage) {
-      return { ok: false, reason: 'refused', message: 'the session did not say how full its context is' };
-    }
-    return { ok: true, response: { ...usage } };
+    return this.ask(id, 'contextUsage', (c) => c.contextUsage?.get());
   }
 
   /**
    * Set how hard this session's model thinks, mid-session (#1115).
    *
-   * ⚠️ VERIFIED BY EFFECT, EVERY TIME, because the acknowledgement is worth
-   * nothing: `apply_flag_settings` answers `success` to a level the CLI has
-   * never heard of and changes nothing (measured). So after the set, the
-   * level is READ BACK, and a set that did not take is reported as `refused`
-   * with what the session is actually on. The read costs one more local
-   * round trip and is the difference between a control that works and one
-   * that says it did.
+   * ⚠️ VERIFIED BY EFFECT, EVERY TIME, inside Claude's control: its
+   * acknowledgement is worth nothing (a level the CLI has never heard of
+   * answers `success`), so the level is read back, and a set that did not
+   * take is `refused` with what the session is actually on.
    */
   async setEffort(id: string, level: unknown): Promise<ControlVerdict> {
-    const gone = this.controlPrecheck(id);
-    if (gone) return gone;
-    const sent = await this.control.request(id, (requestId) =>
-      setEffortRequest(requestId, level)
-    );
-    if (!sent.ok) return sent;
-    const settings = await this.control.request(id, getSettingsRequest);
-    if (!settings.ok) return settings;
-    const applied = readApplied(settings.response);
-    const want = typeof level === 'string' ? level.trim() : '';
-    if (!applied || applied.effort !== want) {
-      return {
-        ok: false,
-        reason: 'refused',
-        message: applied?.effort
-          ? `the session did not take "${want}"; it is still on "${applied.effort}"`
-          : `the session did not take "${want}"`,
-      };
-    }
-    this.log.info('effort changed', { sessionId: id, effort: want });
-    return { ok: true, response: { effort: want } };
+    const verdict = await this.ask(id, 'effort', (c) => c.effort?.set(level));
+    if (verdict.ok) this.log.info('effort changed', { sessionId: id, effort: verdict.response.effort });
+    return verdict;
   }
 
   /**
@@ -634,6 +545,12 @@ export class SessionManager {
     this.sessions.set(id, record);
     this.handles.set(id, proc);
     record.pid = proc.pid;
+    // The provider's CONTROLS (E40 item 04, #1287), beside its translator:
+    // what the host can do to this session, and which of those it has. Built
+    // AFTER the handle is in the map, because the session they write to is
+    // `sendToTransport`, which reads it.
+    const controls = this.controlsFor(id, adapter.capabilities?.controls, !!proc.onMessage);
+    if (controls) this.sessionControls.set(id, { controls, ai: adapter.manifest.displayName });
 
     // Stream mode's lifecycle wiring (P2-E18-05). Two things happen here that
     // have no PTY equivalent, and both rest on the same measurement: the CLI
@@ -672,7 +589,8 @@ export class SessionManager {
       let clearPending = false;
       // The provider's translator (E40 item 03, #1286): its frames in, neutral
       // events out. Everything below and every engine-event listener reads
-      // ONLY those; the raw frame still goes to the control path (#1287).
+      // ONLY those; the raw frame goes on to the provider's OWN controls
+      // (#1287), which correlate their replies, and to nothing else.
       const translate = this.translatorFor(id, adapter.capabilities?.events);
       proc.onMessage((m) => {
         const events = this.translateFrame(id, translate, m);
@@ -782,23 +700,17 @@ export class SessionManager {
             this.setNativeSessionId(id, ev.id, cleared ? 'clear' : undefined);
           }
           const status = streamStatusEvent(ev);
-          // `m`, not `ev`, for the suppressor: whether a standing grant covers
-          // THIS request is a control-path question about the request itself
-          // (#974), and controls are #1287's to move behind the adapter.
-          if (status && !this.holdSuppressed(id, status, m)) this.apply(id, status);
+          // The EVENT, for the suppressor: whether a standing grant covers THIS
+          // request is a question about the request itself (#974), and the
+          // `permission-request` event carries the request (#1287).
+          if (status && !this.holdSuppressed(id, status, ev)) this.apply(id, status);
         }
-        // The raw frame, to the CONTROL path (#1287) — permissions, commands,
-        // model, mode, the control channel — then the neutral events to
-        // everyone else. Same order as before the seam: the Feed and health
-        // were the last raw subscribers, and they are the engine-event ones.
-        for (const l of this.streamMessageListeners) {
-          try {
-            l(id, m);
-          } catch (err) {
-            // a broken subscriber must never take the pump down (P6)
-            this.log.error('stream message listener threw', { sessionId: id, error: errorText(err) });
-          }
-        }
+        // The raw frame to the provider's own controls (#1287) — the ONLY raw
+        // reader left, and it is the provider's: the replies to what its
+        // controls asked. Then the neutral events to everyone else, in the
+        // order the stores, the Feed and health subscribed — the order they
+        // heard the frames in before the seam.
+        this.receiveFrame(id, m);
         for (const ev of events) {
           for (const l of this.engineEventListeners) {
             try {
@@ -883,6 +795,10 @@ export class SessionManager {
     // first version of that test asserted the wrong one of the two.)
     this.sessions.delete(id);
     this.handles.delete(id);
+    // …and its controls (#1287): anything still waiting on a reply hears
+    // `session-gone` now, and nothing can write to the handle just dropped.
+    this.forgetControls(id);
+    this.sessionControls.delete(id);
     try {
       // not resolveTransport(): a teardown that THROWS leaves the card
       // half-closed, and fail-open (P6) outranks loudness on this path
@@ -960,7 +876,19 @@ export class SessionManager {
   submitPrompt(id: string, text: string, attachments: readonly PromptAttachment[] = []): boolean {
     const handle = this.handles.get(id);
     if (!handle?.send) return false;
-    handle.send(userMessage(text, attachments));
+    // The turn's FRAME is the provider's (#1287): Claude's `user` message.
+    const prompt = this.sessionControls.get(id)?.controls.prompt;
+    if (!prompt) {
+      this.log.warn('provider takes no prompt: nothing sent', { sessionId: id });
+      return false;
+    }
+    let sent = false;
+    try {
+      sent = prompt(text, attachments);
+    } catch (err) {
+      this.log.error('provider prompt control threw: nothing sent', { sessionId: id, error: errorText(err) });
+    }
+    if (!sent) return false;
     // We know the turn began because WE started it — no round trip, unlike the
     // PTY path waiting on a UserPromptSubmit hook.
     this.apply(id, { kind: 'prompt-sent' });
@@ -968,35 +896,17 @@ export class SessionManager {
   }
 
   /**
-   * Every typed message from every stream session (P2-E18-07).
-   *
-   * The manager is the only thing that holds the handles, so it is the only
-   * place a fan-out can live. Consumers filter by what they care about: the
-   * permission router takes `control_request` (P2-E18-07), the slash-command
-   * store takes `system:init` and `system:commands_changed` (P2-E18-09).
-   *
-   * ⚠️ THE CONTROL PATH ONLY, since #1286. These are a provider's raw frames;
-   * anything that only needs to know WHAT HAPPENED subscribes to
-   * `onEngineEvent` instead and never sees one. The subscribers left here are
-   * the control-path stores E40 item 04 (#1287) moves behind the adapter, and
-   * `engine-seam.test.ts` holds the list.
-   *
-   * Subscribe once per consumer. Each listener is wrapped in its own try/catch
-   * at the call site, so sharing one is sharing a blast radius.
-   */
-  onStreamMessage(l: (sessionId: string, msg: Record<string, unknown>) => void): () => void {
-    this.streamMessageListeners.add(l);
-    return () => this.streamMessageListeners.delete(l);
-  }
-
-  /**
    * Every NEUTRAL event from every stream session (E40 item 03, #1286) — what
-   * happened, in no provider's words (`engine-events.ts`). The Feed and
-   * service health subscribe here; the raw `onStreamMessage` above is the
-   * control path's, and is #1287's to move behind the adapter.
+   * happened, in no provider's words (`engine-events.ts`). The Feed, service
+   * health, the permission router and the command, model and mode stores all
+   * subscribe here (#1287).
    *
-   * Same blast-radius rule as `onStreamMessage`: subscribe once per consumer;
-   * each listener is wrapped in its own try/catch.
+   * ⚠️ THERE IS NO RAW-FRAME FAN-OUT ANY MORE. `onStreamMessage` was deleted
+   * by #1287: a provider's frames reach its translator and its own controls
+   * and nothing else, so no host module can read a provider's wire.
+   *
+   * Subscribe once per consumer: each listener is wrapped in its own
+   * try/catch, so sharing one is sharing a blast radius.
    */
   onEngineEvent(l: (sessionId: string, ev: EngineEvent) => void): () => void {
     this.engineEventListeners.add(l);
@@ -1023,6 +933,7 @@ export class SessionManager {
       return events.createTranslator({
         onUnknown: (frameType) =>
           this.log.info('stream frame type not understood: skipped', { sessionId: id, frameType }),
+        onSkipped: (what, fields) => this.log.debug(what, { sessionId: id, ...fields }),
       });
     } catch (err) {
       this.log.error('event translator could not be created', { sessionId: id, error: errorText(err) });
@@ -1047,22 +958,131 @@ export class SessionManager {
   }
 
   /**
-   * Ask the CLI to interrupt the running turn (#154).
+   * This session's controls, from its provider's `controls` capability — or
+   * none. No fallback to Claude's, for `translatorFor`'s reason: a provider
+   * that declares no controls gets a session that can be read and not driven,
+   * said once in the log.
+   */
+  private controlsFor(
+    id: string,
+    cap: ControlCapability | undefined,
+    typed: boolean
+  ): SessionControls | undefined {
+    if (!cap) {
+      // Said only for a handle that carries typed messages, as the translator's
+      // warning is: a byte-only handle could not be driven by any controls.
+      if (typed) this.log.warn('provider declares no controls: the session cannot be driven', { sessionId: id });
+      return undefined;
+    }
+    try {
+      return cap.createControls({ id, send: (frame) => this.sendToTransport(id, frame) });
+    } catch (err) {
+      this.log.error('session controls could not be created', { sessionId: id, error: errorText(err) });
+      return undefined;
+    }
+  }
+
+  /** One frame to this session's own controls. A throw costs the frame's
+   *  reply, never the pump (P6). */
+  private receiveFrame(id: string, m: Record<string, unknown>): void {
+    const receive = this.sessionControls.get(id)?.controls.receive;
+    if (!receive) return;
+    try {
+      receive(m);
+    } catch (err) {
+      this.log.error('session controls threw on a frame', { sessionId: id, error: errorText(err) });
+    }
+  }
+
+  /**
+   * Ask the engine to interrupt the running turn (#154) — the provider's
+   * `interrupt` control since #1287 (Claude: a `control_request` of subtype
+   * `interrupt`).
    *
-   * Returns false when this session has no typed-message transport — the PTY,
-   * whose interrupt is an Esc keystroke and a genuinely different operation.
-   * The caller falls back, which keeps the renderer transport-ignorant in the
-   * same way `submitPrompt` does.
+   * Returns false when the session has no typed-message transport, or its AI
+   * has no interrupt (the Stop control is greyed out for it). The caller falls
+   * back, which keeps the renderer transport-ignorant in the same way
+   * `submitPrompt` does.
    */
   interrupt(id: string): boolean {
     const handle = this.handles.get(id);
     if (!handle?.send) return false;
-    handle.send(interruptRequest(randomUUID()));
-    this.log.info('interrupt requested', { sessionId: id });
-    return true;
+    const control = this.sessionControls.get(id)?.controls.interrupt;
+    if (!control) {
+      this.log.info('interrupt unavailable: the provider declares none', { sessionId: id });
+      return false;
+    }
+    let sent = false;
+    try {
+      sent = control.interrupt();
+    } catch (err) {
+      this.log.error('provider interrupt control threw', { sessionId: id, error: errorText(err) });
+      return false;
+    }
+    if (sent) this.log.info('interrupt requested', { sessionId: id });
+    return sent;
   }
 
-  /** Send a raw protocol message (control responses — P2-E18-07). */
+  /**
+   * Answer a permission request on this session (P2-E18-07; through the
+   * provider's `approvals` control since #1287). `requestId` is the ENGINE'S
+   * id, as the `permission-request` event carried it. False when it could not
+   * be written: the session is gone, its AI has no approvals, or the control
+   * threw — the router's fail-open paths read false exactly as they always
+   * read a failed write.
+   */
+  answerPermission(id: string, requestId: string, decision: PermissionDecision): boolean {
+    const control = this.sessionControls.get(id)?.controls.approvals;
+    if (!control) {
+      // A provider that RAISES requests but declares no way to answer them is
+      // a provider bug; the router reads false as an undeliverable answer and
+      // fails open as it always has. Said, so the bug has a symptom.
+      this.log.warn('permission answer dropped: the provider declares no approvals', { sessionId: id, requestId });
+      return false;
+    }
+    try {
+      return control.answer(requestId, decision) === true;
+    } catch (err) {
+      this.log.error('provider approvals control threw', { sessionId: id, error: errorText(err) });
+      return false;
+    }
+  }
+
+  /**
+   * Which controls this live session's AI has, and its name (#1287) — what
+   * `sessions:controls` answers the composer, which greys the rest out with
+   * "Not available with <AI>". `null` for a session this manager does not
+   * hold. A held session whose provider declares no controls has an empty
+   * list, with the name read off its adapter.
+   */
+  controlsOf(id: string): SessionControlsWire | null {
+    const r = this.sessions.get(id);
+    if (!r) return null;
+    const entry = this.sessionControls.get(id);
+    if (entry) return { ai: entry.ai, has: declaredControls(entry.controls) };
+    const adapter = this.registry.resolve('provider-adapter', r.identity.providerId);
+    return { ai: adapter?.manifest.displayName ?? r.identity.providerId, has: [] };
+  }
+
+  /**
+   * Give up on everything this session's controls have in flight (#700's
+   * `forgetSession` pattern; it was `control.forgetSession`). The teardown and
+   * the exit path call it so a consumer awaiting a reply from a session the
+   * user just closed hears `session-gone` now, not at the timeout. Idempotent;
+   * never throws.
+   */
+  forgetControls(id: string): void {
+    const forget = this.sessionControls.get(id)?.controls.forget;
+    if (!forget) return;
+    try {
+      forget();
+    } catch (err) {
+      this.log.error('session controls threw on forget', { sessionId: id, error: errorText(err) });
+    }
+  }
+
+  /** Send a raw protocol message — the transport under a provider's controls
+   *  (#1287); nothing in the host composes one. */
   sendToTransport(id: string, msg: unknown): boolean {
     const handle = this.handles.get(id);
     if (!handle?.send) return false;
@@ -1098,7 +1118,9 @@ export class SessionManager {
    * from an allow-all session is exactly as meaningful as before.
    */
   /**
-   * ⚠️ TAKES THE MESSAGE SINCE #974, and the widening is the point. It was
+   * ⚠️ TAKES THE REQUEST SINCE #974 — the raw message until #1287, the
+   * neutral `permission-request` event (which carries it) since — and the
+   * widening is the point. It was
    * `(sessionId) => boolean`, which was enough while the only standing grant was
    * allow-all — a property of the SESSION. A per-file grant is a property of the
    * REQUEST, so the id alone cannot answer it, and without the message a granted
@@ -1106,7 +1128,7 @@ export class SessionManager {
    * message before the router answered it in the same tick.
    */
   setPermissionHoldSuppressor(
-    fn: (sessionId: string, msg: Record<string, unknown>) => boolean
+    fn: (sessionId: string, ev: PermissionRequestEvent) => boolean
   ): void {
     this.permissionHoldSuppressor = fn;
   }
@@ -1117,11 +1139,12 @@ export class SessionManager {
    *  and never when the predicate throws: "I can't tell" must fall back to the
    *  honest status, not to silence (a suppressed hold nobody answers is a card
    *  stuck on `working` while the CLI waits). */
-  private holdSuppressed(id: string, ev: SessionEvent, msg: Record<string, unknown>): boolean {
+  private holdSuppressed(id: string, ev: SessionEvent, cause: EngineEvent): boolean {
     if (ev.kind !== 'permission-held' || !this.permissionHoldSuppressor) return false;
+    if (cause.type !== 'permission-request') return false;
     let suppress = false;
     try {
-      suppress = this.permissionHoldSuppressor(id, msg) === true;
+      suppress = this.permissionHoldSuppressor(id, cause) === true;
     } catch (err) {
       this.log.error('permission-hold suppressor threw', { sessionId: id, error: errorText(err) });
       return false;

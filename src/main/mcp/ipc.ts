@@ -273,6 +273,9 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
         // the pane says something different for it (fall back to the files)
         // than for a CLI that went quiet.
         if (verdict.reason === 'not-stream') return empty('not-stream');
+        // …and neither is `unsupported` (#1287): this session's AI has no live
+        // MCP controls at all. Not a CLI that went quiet, so not a warning.
+        if (verdict.reason === 'unsupported') return empty('unavailable');
         log.warn('mcp:status did not answer', { liveId: id, reason: verdict.reason });
         return empty(verdict.reason === 'session-gone' ? 'no-session' : 'unavailable');
       }

@@ -4,9 +4,9 @@
 // case, and it appears here twice over: once as the routing test, and once end
 // to end through the #134 fake, where the FILE actually gets written.
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { ClaudeFedPermissions } from './fixtures/claude-fed-stores';
 import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
-import { StreamPermissions } from './stream-permissions';
 import { SessionEvent, transition } from './state-machine';
 import { streamStatusEvent } from './stream-status';
 import { translateClaudeFrame } from '../providers/claude-events';
@@ -20,7 +20,7 @@ let requests: PermissionRequest[];
 let resolved: string[];
 /** every `SessionManager.apply` the router made — #310's whole subject */
 let applied: Array<{ sessionId: string; ev: SessionEvent }>;
-let perms: StreamPermissions;
+let perms: ClaudeFedPermissions;
 
 /** The exact payload S-10 probe B captured off the real CLI. */
 function canUseTool(requestId = 'req-1', filePath = 'C:/p/.claude/scripts/coverage.sh') {
@@ -56,7 +56,7 @@ beforeEach(() => {
   requests = [];
   resolved = [];
   applied = [];
-  perms = new StreamPermissions(
+  perms = new ClaudeFedPermissions(
     (sessionId, msg) => {
       sent.push({ sessionId, msg: msg as Record<string, unknown> });
       return true;
@@ -423,7 +423,7 @@ describe('the .claude/ case, end to end against the fake (P2-E18-07)', () => {
       (m) => out.push(m)
     );
     // route the fake's control requests into the router, and our answers back
-    const router = new StreamPermissions(
+    const router = new ClaudeFedPermissions(
       (_id, msg) => {
         proto.handle(msg as Record<string, unknown>);
         return true;
@@ -465,7 +465,7 @@ describe('the .claude/ case, end to end against the fake (P2-E18-07)', () => {
       },
       (m) => out.push(m)
     );
-    const router = new StreamPermissions(
+    const router = new ClaudeFedPermissions(
       (_id, msg) => {
         proto.handle(msg as Record<string, unknown>);
         return true;
@@ -608,8 +608,8 @@ describe('failing open when nobody can answer (#319)', () => {
   function router(opts: {
     hasLiveWindow?: () => boolean;
     holdTimeoutMs?: number;
-  }): StreamPermissions {
-    const p = new StreamPermissions(
+  }): ClaudeFedPermissions {
+    const p = new ClaudeFedPermissions(
       (sessionId, msg) => {
         sent.push({ sessionId, msg: msg as Record<string, unknown> });
         return true;
@@ -835,7 +835,7 @@ describe('the no-window warning re-arms once a window comes back (#334)', () => 
         realLog[level](msg, fields);
       };
     const log = { ...realLog, warn: count('warn'), debug: count('debug') } satisfies Logger;
-    const p = new StreamPermissions(
+    const p = new ClaudeFedPermissions(
       () => true,
       () => {},
       log,
@@ -884,8 +884,8 @@ describe('a session with no card to show it is declined at once (#333)', () => {
   function router(
     probe: ((sessionId: string) => boolean) | null,
     opts: { hasLiveWindow?: () => boolean; holdTimeoutMs?: number } = {}
-  ): StreamPermissions {
-    const p = new StreamPermissions(
+  ): ClaudeFedPermissions {
+    const p = new ClaudeFedPermissions(
       (sessionId, msg) => {
         sent.push({ sessionId, msg: msg as Record<string, unknown> });
         return true;
@@ -1025,7 +1025,7 @@ describe('a session with no card to show it is declined at once (#333)', () => {
         realLog[level](msg, fields);
       };
     const log = { ...realLog, error: count('error'), debug: count('debug') } satisfies Logger;
-    const p = new StreamPermissions(
+    const p = new ClaudeFedPermissions(
       () => true,
       () => {},
       log
@@ -1071,7 +1071,7 @@ describe('a session with no card to show it is declined at once (#333)', () => {
         realLog[level](msg, fields);
       };
     const log = { ...realLog, error: count('error'), debug: count('debug') } satisfies Logger;
-    const p = new StreamPermissions(
+    const p = new ClaudeFedPermissions(
       // what `SessionManager.sendToTransport` returns once the handle is gone
       () => false,
       () => {},
@@ -1098,7 +1098,7 @@ describe('a session with no card to show it is declined at once (#333)', () => {
         realLog.error(msg, fields);
       },
     } satisfies Logger;
-    const p = new StreamPermissions(() => alive, () => {}, log);
+    const p = new ClaudeFedPermissions(() => alive, () => {}, log);
     p.setAnswerSurfaceProbe(() => false);
 
     p.offer('s1', canUseTool('req-1')); // straggler: not delivered, not counted
@@ -1183,7 +1183,7 @@ describe('allow-all is answered at the server (#319)', () => {
   // order because the reverse (liveness first) would turn every allow-all
   // verdict into a denial the moment the user closed the window.
   it('needs no renderer at all: allow-all beats the liveness gate', () => {
-    const p = new StreamPermissions(
+    const p = new ClaudeFedPermissions(
       (sessionId, msg) => {
         sent.push({ sessionId, msg: msg as Record<string, unknown> });
         return true;
@@ -1431,7 +1431,7 @@ describe('a question has no deadline while a window is open (#570)', () => {
   it('is still held long after a permission would have failed open', () => {
     vi.useFakeTimers();
     try {
-      const p = new StreamPermissions(
+      const p = new ClaudeFedPermissions(
         () => true,
         () => {},
         createLogger(new LogSink({ dir }), 'perm')
@@ -1455,7 +1455,7 @@ describe('a question has no deadline while a window is open (#570)', () => {
     vi.useFakeTimers();
     try {
       const sent2: Array<Record<string, unknown>> = [];
-      const p = new StreamPermissions(
+      const p = new ClaudeFedPermissions(
         (_s, msg) => {
           sent2.push(msg as Record<string, unknown>);
           return true;
@@ -1486,7 +1486,7 @@ describe('a question has no deadline while a window is open (#570)', () => {
   // The deadline is gone; the EVENT-driven answers are not, and they are what
   // makes removing it safe rather than reckless.
   it('a lost renderer still denies it, so nothing parks for ever', () => {
-    const p = new StreamPermissions(
+    const p = new ClaudeFedPermissions(
       (sessionId, msg) => {
         sent.push({ sessionId, msg: msg as Record<string, unknown> });
         return true;
@@ -1514,7 +1514,7 @@ describe('a question has no deadline while a window is open (#570)', () => {
   it('an explicit holdTimeoutMs still applies — that is how tests drive it', () => {
     vi.useFakeTimers();
     try {
-      const p = new StreamPermissions(
+      const p = new ClaudeFedPermissions(
         () => true,
         () => {},
         createLogger(new LogSink({ dir }), 'perm'),
@@ -1707,7 +1707,7 @@ describe('a dispatched session and ExitPlanMode (#948, §5.15)', () => {
  * Offer, grant, answer, then wipe the spies: every test here is about what
  * happens to the NEXT request.
  */
-const grant = (p: StreamPermissions, sessionId: string, filePath: string): string | null => {
+const grant = (p: ClaudeFedPermissions, sessionId: string, filePath: string): string | null => {
   p.offer(sessionId, canUseTool('grant-seed', filePath));
   const key = p.allowFile(sessionId, filePath);
   p.decide(`stream:${sessionId}:grant-seed`, 'allow');
@@ -1728,8 +1728,8 @@ const grant = (p: StreamPermissions, sessionId: string, filePath: string): strin
  */
 describe('approve all in this file (P2-E22-03, #974)', () => {
   /** a fresh router that knows where the session lives, for relative paths */
-  const withFolder = (folder: string | null): StreamPermissions => {
-    const p = new StreamPermissions(
+  const withFolder = (folder: string | null): ClaudeFedPermissions => {
+    const p = new ClaudeFedPermissions(
       (sessionId, msg) => {
         sent.push({ sessionId, msg: msg as Record<string, unknown> });
         return true;
@@ -1804,7 +1804,7 @@ describe('approve all in this file (P2-E22-03, #974)', () => {
     };
     perms.offer('s1', q);
     expect(requests).toHaveLength(1);
-    expect(perms.willAutoAllow('s1', q)).toBe(false);
+    expect(perms.willAutoAllowFrame('s1', q)).toBe(false);
   });
 
   describe('one file, two spellings — the #683 fold rule', () => {
@@ -1980,23 +1980,23 @@ describe('the suppressor agrees with the router (P2-E22-03, #974)', () => {
 
   it('true exactly when `offer` would answer at the server', () => {
     const msg = canUseTool('req-1', ABS);
-    expect(perms.willAutoAllow('s1', msg)).toBe(false);
+    expect(perms.willAutoAllowFrame('s1', msg)).toBe(false);
 
     grant(perms, 's1', ABS);
-    expect(perms.willAutoAllow('s1', msg)).toBe(true);
+    expect(perms.willAutoAllowFrame('s1', msg)).toBe(true);
 
     perms.revokeFile('s1', ABS);
-    expect(perms.willAutoAllow('s1', msg)).toBe(false);
+    expect(perms.willAutoAllowFrame('s1', msg)).toBe(false);
 
     perms.setAllowAll('s1');
-    expect(perms.willAutoAllow('s1', msg)).toBe(true);
+    expect(perms.willAutoAllowFrame('s1', msg)).toBe(true);
   });
 
   it('is false for anything that is not a can_use_tool', () => {
     perms.setAllowAll('s1');
-    expect(perms.willAutoAllow('s1', { type: 'assistant' })).toBe(false);
+    expect(perms.willAutoAllowFrame('s1', { type: 'assistant' })).toBe(false);
     expect(
-      perms.willAutoAllow('s1', {
+      perms.willAutoAllowFrame('s1', {
         type: 'control_request',
         request_id: 'x',
         request: { subtype: 'hook_callback' },
@@ -2030,7 +2030,7 @@ describe('holdsRequestFor: is this session still waiting on a person? (#1258)', 
   // needs-permission for ever.
   it('the request is already gone when permission-resolved is applied', () => {
     const heldAtApply: boolean[] = [];
-    const p = new StreamPermissions(
+    const p = new ClaudeFedPermissions(
       () => true,
       (sessionId) => heldAtApply.push(p.holdsRequestFor(sessionId)),
       createLogger(new LogSink({ dir }), 'perm')

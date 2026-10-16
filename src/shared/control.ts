@@ -7,8 +7,10 @@
 // and `SessionRecordWire`'s docblock records what happened the last time a wire
 // type was hand-copied on both sides of this boundary: it drifted twice.)
 //
-// The CHANNEL itself — correlation, timeouts, the pending map — stays in
-// `main/transport/control-channel.ts`, which is main-only and imports these.
+// The CHANNEL itself — correlation, timeouts, the pending map — is Claude's
+// and lives behind its provider (`main/providers/claude-control-channel.ts`,
+// since E40 item 04, #1287). These verdicts are the NEUTRAL answer every
+// provider's controls give (`main/sessions/engine-controls.ts`).
 
 /**
  * Why a control request produced no answer.
@@ -28,8 +30,19 @@
  *                    `set_model` with no `model` field answers `success` and
  *                    silently changes nothing (measured), so an argument we
  *                    dropped must not be able to look like a feature working.
+ *  - `unsupported` — this session's AI has no such control at all (E40 item
+ *                    04, #1287: its provider does not declare it). The
+ *                    composer greys such a control out before it can be
+ *                    asked, so reaching this is a caller that did not look;
+ *                    it is an answer, never a throw (P6).
  */
-export type ControlFailure = 'not-stream' | 'refused' | 'timed-out' | 'session-gone' | 'invalid';
+export type ControlFailure =
+  | 'not-stream'
+  | 'refused'
+  | 'timed-out'
+  | 'session-gone'
+  | 'invalid'
+  | 'unsupported';
 
 export type ControlVerdict =
   | { ok: true; response: Record<string, unknown> }

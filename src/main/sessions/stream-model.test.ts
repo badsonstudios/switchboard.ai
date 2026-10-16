@@ -8,7 +8,7 @@
 //     a fresh card someone opens the picker on before typing;
 //   • an init that arrives without a usable `model` must not blank what we had.
 import { describe, it, expect } from 'vitest';
-import { StreamModel } from './stream-model';
+import { ClaudeFedModel } from './fixtures/claude-fed-stores';
 
 const init = (model?: unknown): Record<string, unknown> => ({
   type: 'system',
@@ -18,20 +18,20 @@ const init = (model?: unknown): Record<string, unknown> => ({
 
 describe('reading the model off system:init', () => {
   it('takes it, and answers it back', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.offer('L1', init('claude-opus-5'));
     expect(s.modelFor('L1')).toBe('claude-opus-5');
   });
 
   it('REPLACES on every init — init is once per TURN, not per session', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.offer('L1', init('claude-opus-5'));
     s.offer('L1', init('claude-haiku-4-5-20251001'));
     expect(s.modelFor('L1')).toBe('claude-haiku-4-5-20251001');
   });
 
   it('keeps sessions apart', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.offer('L1', init('claude-opus-5'));
     s.offer('L2', init('claude-sonnet-5'));
     expect(s.modelFor('L1')).toBe('claude-opus-5');
@@ -45,11 +45,11 @@ describe('the two absences', () => {
     // on something else from their settings, and a picker that ticked a model
     // it had not been told about would be inventing the one fact it exists to
     // report.
-    expect(new StreamModel().modelFor('never-spoke')).toBeNull();
+    expect(new ClaudeFedModel().modelFor('never-spoke')).toBeNull();
   });
 
   it('keeps the last known model when an init arrives without a usable one', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.offer('L1', init('claude-opus-5'));
     for (const bad of [undefined, null, '', '   ', 42, {}, []]) {
       s.offer('L1', init(bad));
@@ -58,7 +58,7 @@ describe('the two absences', () => {
   });
 
   it('stays null rather than storing junk when the FIRST init is unusable', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.offer('L1', init(42));
     expect(s.modelFor('L1')).toBeNull();
   });
@@ -66,7 +66,7 @@ describe('the two absences', () => {
 
 describe('everything else on the wire is ignored', () => {
   it('takes nothing from other message types', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.offer('L1', { type: 'assistant', message: { model: 'claude-opus-5' } });
     s.offer('L1', { type: 'system', subtype: 'commands_changed', model: 'claude-opus-5' });
     s.offer('L1', { type: 'result', modelUsage: { 'claude-opus-5': {} } });
@@ -79,13 +79,13 @@ describe('the optimistic write', () => {
   it('records a model we just set, so the tick moves before the next turn', () => {
     // Without it the picker's tick would only catch up on the user's NEXT
     // prompt, which reads as a control that did not work.
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.noteSet('L1', 'haiku');
     expect(s.modelFor('L1')).toBe('haiku');
   });
 
   it('is a bridge, not an authority — the CLI’s next init wins', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.noteSet('L1', 'haiku');
     s.offer('L1', init('claude-haiku-4-5-20251001'));
     // the CLI's resolved id, not the alias we sent
@@ -93,7 +93,7 @@ describe('the optimistic write', () => {
   });
 
   it('refuses an empty value rather than blanking what is known', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.offer('L1', init('claude-opus-5'));
     s.noteSet('L1', '   ');
     expect(s.modelFor('L1')).toBe('claude-opus-5');
@@ -102,7 +102,7 @@ describe('the optimistic write', () => {
 
 describe('announcing a change (#746)', () => {
   /** every (session, model) a subscriber was told about, in order */
-  function watch(s: StreamModel): { seen: string[]; off: () => void } {
+  function watch(s: ClaudeFedModel): { seen: string[]; off: () => void } {
     const seen: string[] = [];
     const off = s.onChange((sessionId, model) => void seen.push(`${sessionId}=${model}`));
     return { seen, off };
@@ -111,7 +111,7 @@ describe('announcing a change (#746)', () => {
   it('tells a subscriber when an init moves the model', () => {
     // The footer's whole reason to exist: it has to be right without anyone
     // asking. Pull-only was enough for the picker, which asks when it opens.
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     const w = watch(s);
     s.offer('L1', init('claude-opus-5'));
     expect(w.seen).toEqual(['L1=claude-opus-5']);
@@ -120,7 +120,7 @@ describe('announcing a change (#746)', () => {
   it('tells a subscriber about the optimistic write too', () => {
     // This is the one the user is actually watching for — it is what makes the
     // footer move on the switch instead of a turn later.
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     const w = watch(s);
     s.noteSet('L1', 'haiku');
     expect(w.seen).toEqual(['L1=haiku']);
@@ -131,7 +131,7 @@ describe('announcing a change (#746)', () => {
     // carries the same model on almost all of them, so an unconditional
     // announcement is one IPC message per turn per session reporting that
     // nothing happened — and a repaint on the other end to match.
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     const w = watch(s);
     s.offer('L1', init('claude-opus-5'));
     s.offer('L1', init('claude-opus-5'));
@@ -142,7 +142,7 @@ describe('announcing a change (#746)', () => {
   it('does not announce an init the store REFUSED', () => {
     // An unusable init keeps the last known model (see "the two absences"), so
     // there is no change and there must be no announcement of one.
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.offer('L1', init('claude-opus-5'));
     const w = watch(s);
     s.offer('L1', init(42));
@@ -154,7 +154,7 @@ describe('announcing a change (#746)', () => {
     // `noteSet('haiku')` then the CLI's `init('claude-haiku-...')` is a real
     // change (alias -> resolved id) and is announced. But an init that agrees
     // verbatim is not.
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     const w = watch(s);
     s.noteSet('L1', 'claude-haiku-4-5-20251001');
     s.offer('L1', init('claude-haiku-4-5-20251001'));
@@ -162,7 +162,7 @@ describe('announcing a change (#746)', () => {
   });
 
   it('unsubscribes, and one listener throwing costs neither the write nor the others', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     const seen: string[] = [];
     s.onChange(() => {
       throw new Error('listener exploded');
@@ -181,7 +181,7 @@ describe('announcing a change (#746)', () => {
 
 describe('seed: what get_settings said, for a session that has not replied (issue 1174)', () => {
   it('fills the gap, announces it, and reports that it wrote', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     const seen: string[] = [];
     s.onChange((_id, m) => void seen.push(m));
     expect(s.seed('L1', 'claude-opus-5-5')).toBe(true);
@@ -190,7 +190,7 @@ describe('seed: what get_settings said, for a session that has not replied (issu
   });
 
   it('never overwrites an init or a model we set: an older answer must not beat a newer one', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.offer('L1', init('claude-haiku-4-5-20251001'));
     expect(s.seed('L1', 'claude-opus-5-5')).toBe(false);
     expect(s.modelFor('L1')).toBe('claude-haiku-4-5-20251001');
@@ -201,14 +201,14 @@ describe('seed: what get_settings said, for a session that has not replied (issu
   });
 
   it('the next init is still the authority over a seeded value', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.seed('L1', 'claude-opus-5-5');
     s.offer('L1', init('claude-sonnet-5-5'));
     expect(s.modelFor('L1')).toBe('claude-sonnet-5-5');
   });
 
   it('ignores an empty answer, and seeds again after the session is forgotten', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     expect(s.seed('L1', '  ')).toBe(false);
     expect(s.modelFor('L1')).toBeNull();
     s.seed('L1', 'claude-opus-5-5');
@@ -219,7 +219,7 @@ describe('seed: what get_settings said, for a session that has not replied (issu
 
 describe('forgetSession', () => {
   it('drops the session’s model and nobody else’s', () => {
-    const s = new StreamModel();
+    const s = new ClaudeFedModel();
     s.offer('L1', init('claude-opus-5'));
     s.offer('L2', init('claude-sonnet-5'));
     s.forgetSession('L1');
