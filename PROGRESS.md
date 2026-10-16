@@ -22,15 +22,12 @@
 > and are listed under "Owner's queue" below; the run never merges them.
 >
 > **Active workers (issue → worktree → branch):**
-> - #1291 AI catalog + detection + custom AIs + default AI → `sb-wt-3` → `feature/1291-ai-catalog` — dispatched 2026-10-16 from `a19024ed` (= #1306's content); told #1306 merged, rebases onto `7034aa01`. Internal; merges on green.
-> - #1290 Codex provider → `sb-wt-1` → `feature/1290-codex-provider` → **PR #1307, done 2026-10-16, with ONE follow-up owed:** the plan-limit windows are READ (`codex-limits.ts`, app-server `account/rateLimits/read`) but not yet shown, because the usage shape is #1305's and it was not on main. Once #1305 merges the worker rebases and wires `limits` into the per-turn usage event. **USER-FACING → owner's queue; never merged by the run.** `check:codex` passed once for real: 2 turns on `gpt-6-luna` low ("pong" twice), 20,660 + 1,611 input tokens, limits read 37 % (5-hour) / 17 % (weekly), one Codex session created and deleted, no processes left.
-> - `sb-wt-2`: free (#1288's worker finished its rebase).
+> - #1296 cross-AI dispatch ("Run it on") → `sb-wt-2` → `feature/1296-cross-ai-dispatch` — dispatched 2026-10-16 from #1307's head `c30db9bf`; will rebase onto #1307's amended head. User-facing → owner's queue.
+> - #1290 Codex provider → `sb-wt-1` → `feature/1290-codex-provider` → **PR #1307 (user-facing, owner's queue), now doing its follow-up:** rebase onto main (#1305 + #1306 landed), wire the plan-limit windows into the per-turn usage event, declare no price, and add Codex's `detect` capability (from #1291's handoff) once #1308 lands. First pass: `check:codex` passed for real (2 turns on `gpt-6-luna` low, "pong" twice, 20,660 + 1,611 input tokens, limits read 37 % 5-hour / 17 % weekly, one Codex session created and deleted, no processes left).
+> - #1291 AI catalog + detection + custom AIs + default AI → `sb-wt-3` → `feature/1291-ai-catalog` → **PR #1308 (internal), done 2026-10-16, now REBASING** onto `2de78924` (`gh pr update-branch` hit conflicts with #1305 in `contributions.ts` and the adapters). Unit 12,501; e2e 513/513 after fixing a real regression it caused and found (15 blocking PATH scans on the main thread after first paint broke `file-menu.spec.ts`; now one async read). Startup measured alternating builds: window-shown 808/833/816 ms base vs 747/782/797 ms branch. Catalog: Claude + 14 vouched ACP entries with local icons under `src/renderer/public/ai-icons/` (the CSP allows no `data:`/remote images); 42-entry trimmed registry snapshot for the user-pressed diff. Claude detection from `claude --version` + `auth status --json` (measured on 2.1.288). Default AI: first registered provider when unset.
 >
-> **In CI, awaiting merge:** **#1305** (#1288 surfaces, rebased onto `e4b3e270`
-> then bumped onto `7034aa01`; classified internal for this run, see below;
-> unit 12,420, e2e 511 + the `session-history` flake that passed alone; also
-> gives the MCP Manager its "this AI has no MCP list" wording). **#1299**
-> (this file's run block; docs).
+> **In CI, awaiting merge:** **#1299** (this file's run block; docs). **#1308**
+> after its rebase.
 >
 > **#1288 is classified INTERNAL for this run, deliberately.** The skill's
 > rule would call it user-facing (it wrote a manual paragraph and a dogfood
@@ -52,6 +49,20 @@
 > ends with a train PR for him.
 >
 > **Merged this run:**
+> - **#1288 per-AI surfaces → PR #1305 (`2de78924`), 2026-10-16.** Six
+>   capabilities at the end of `ProviderCapabilities` (`usage`, `statusPage`,
+>   `preflight`, `labels`, `mcpManager`, `commandFiles`), Claude's in
+>   `providers/claude-surfaces.ts`; pricing moved to main
+>   (`providers/claude-pricing.ts`), the renderer only displays `estimateUsd`;
+>   an unknown model gets NO price; status bar reads `~$X est` / `≥$X est` /
+>   `no price`; `src/shared/usage-report.ts` carries `PlanLimitWindow` for
+>   Codex's 5-hour/weekly windows; per-turn `usage` events are for AIs
+>   without a transcript (Claude's translator no longer emits them); only a
+>   card's own AI writes its label; the MCP Manager says plainly when an AI
+>   has no MCP list. Review found and fixed one real bug (Claude's
+>   `<synthetic>` model after a local `/cost` was un-pricing a whole session).
+>   Unit 12,420; e2e 511 + the `session-history` flake that passed alone;
+>   manual `03-session-view.md`, CHANGELOG `Changed`, dogfood UNTESTED row.
 > - **#1289 ACP engine → PR #1306 (`7034aa01`), 2026-10-16.** `src/main/providers/acp/`:
 >   JSON-RPC readers, `AcpContent` (update → neutral events), `AcpSession`
 >   (handshake, correlation, controls, setup deadline, re-applying settings
