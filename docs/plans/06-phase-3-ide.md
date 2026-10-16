@@ -274,12 +274,46 @@ door — the same shape as #974's finding that a standing grant had no revoke) �
 **#675** (expired-toast Allow needs a `ToastActivatorCLSID` the NSIS shortcut
 doesn't write — Action Center activation gap).
 
+### E40 — More than one AI *(§5.3 + §5.5 cross-provider + §5.15; pulled forward from Phase 4)*
+
+> **📐 DESIGNED AND FILED 2026-10-15 — read `docs/plans/e40-multi-ai-design.md`
+> before touching this epic.** It is the design record: the owner's decisions,
+> what the code actually looked like, the seam, the ACP engine, and the 13-item
+> breakdown with its order. `mockups/multi-ai.html` is the six-screen visual.
+> Filed as **#1284–#1296** in this milestone.
+
+The owner, 2026-10-14: *"I want to add the ability to use another account from
+another AI company and model."* The provider contract was real, but the Session
+view spoke Claude's wire format directly, and #952 had removed the PTY that
+DESIGN §5.3's "generic adapter" relied on. E40 does three things:
+
+- puts a neutral seam under the Session view (Claude unchanged);
+- builds **one** engine for the Agent Client Protocol, which ~40 coding AIs
+  speak, Codex first;
+- adds the owner-visible half:
+  - the AI icon and status ring;
+  - the AI switch beside the model chip;
+  - handoff with a divider when switching;
+  - Settings → AIs with detection on every startup and a "Something else" form;
+  - cross-AI dispatch.
+
+**Pulls forward DESIGN §8 Phase 4's Codex/Gemini adapters and generic adapter.**
+API-key auth stays in Phase 4. Local models are "later", but come along through
+OpenCode/goose over the same engine.
+
+**#1284 is `[user]`: the owner installs Codex and logs in.** It blocks only the
+probe (#1285) and what follows it. The seam work (#1286 → #1287 → #1289) runs on
+a fake ACP agent and can start immediately.
+
 ---
 
 ## Order
 
 **Before any epic: the owner's dogfood sitting.** 116 untested features, all of
 Dispatch among them. Bugs it files re-order everything below.
+
+**E40 runs ahead of the list below** (owner, 2026-10-15, *"let's get going"*).
+Its seam items need nothing from him; its Codex items wait on #1284.
 
 1. **E23** as soon as the capture lands — it is blocked on evidence, not effort,
    and #719 is the worst open issue in the repo.
@@ -328,3 +362,8 @@ Dispatch among them. Bugs it files re-order everything below.
     with 20 tested against 116 untested and with criterion 5 resting entirely on
     `dispatch.spec.ts`; that was a legitimate call made once, with eyes open. It
     is not a precedent.
+11. **(Added 2026-10-15 with E40.) A second AI is a peer, not a demo.** The owner
+    runs a real Codex session in the same Session view as Claude, switches a
+    card between them and back, and gets a Codex review of a Claude session's
+    work. A further ACP agent is added through "Something else" with no code
+    change. (E40)

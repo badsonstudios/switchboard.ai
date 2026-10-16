@@ -161,7 +161,9 @@ Planning notes:
   > number behind it:** the dogfood tracker reads 20 hand-tested against 116
   > untested, so auditing "every shipped feature" today means auditing features
   > nobody has used. Owner's call which way it goes; see #965's issue comment.
-- Adapter order by likely demand: Codex → Gemini → Aider → generic.
+- ~~Adapter order by likely demand: Codex → Gemini → Aider → generic.~~
+  **Pulled forward into Phase 3 as E40 (2026-10-15)**: one ACP engine, Codex
+  first. See `docs/plans/e40-multi-ai-design.md`. API-key auth stays here.
 - Plugin API alpha gate: only after 2-3 dissimilar internal consumers exist on
   the seams (§5.23) — check the registry's actual consumer list before
   scheduling. **Status 2026-07-26:** the count was 1 and *structurally could
