@@ -22,9 +22,15 @@
 > and are listed under "Owner's queue" below; the run never merges them.
 >
 > **Active workers (issue → worktree → branch):**
-> - #1289 ACP engine + fake ACP agent → `sb-wt-1` → `feature/1289-acp-engine` — dispatched 2026-10-16 from `d9d0ab16` (= #1304's content); told #1304 merged, rebases onto `e4b3e270`
-> - #1288 per-AI surfaces → `sb-wt-2` → `feature/1288-per-ai-surfaces` → **PR #1305, done 2026-10-16, now REBASING onto `e4b3e270`** (its collision map predicted conflicts with #1287's moves; also adding the MCP Manager dialog's `unsupported` wording it had deferred). Merges on green after the rebase.
-> - `sb-wt-3`: `npm ci` running, ready for #1290 + #1291 when #1289 lands.
+> - #1291 AI catalog + detection + custom AIs + default AI → `sb-wt-3` → `feature/1291-ai-catalog` — dispatched 2026-10-16 from `a19024ed` (= #1306's content); told #1306 merged, rebases onto `7034aa01`. Internal; merges on green.
+> - #1290 Codex provider → `sb-wt-1` → `feature/1290-codex-provider` → **PR #1307, done 2026-10-16, with ONE follow-up owed:** the plan-limit windows are READ (`codex-limits.ts`, app-server `account/rateLimits/read`) but not yet shown, because the usage shape is #1305's and it was not on main. Once #1305 merges the worker rebases and wires `limits` into the per-turn usage event. **USER-FACING → owner's queue; never merged by the run.** `check:codex` passed once for real: 2 turns on `gpt-6-luna` low ("pong" twice), 20,660 + 1,611 input tokens, limits read 37 % (5-hour) / 17 % (weekly), one Codex session created and deleted, no processes left.
+> - `sb-wt-2`: free (#1288's worker finished its rebase).
+>
+> **In CI, awaiting merge:** **#1305** (#1288 surfaces, rebased onto `e4b3e270`
+> then bumped onto `7034aa01`; classified internal for this run, see below;
+> unit 12,420, e2e 511 + the `session-history` flake that passed alone; also
+> gives the MCP Manager its "this AI has no MCP list" wording). **#1299**
+> (this file's run block; docs).
 >
 > **#1288 is classified INTERNAL for this run, deliberately.** The skill's
 > rule would call it user-facing (it wrote a manual paragraph and a dogfood
@@ -40,11 +46,26 @@
 > usage events (its transcript count is the one source), so per-turn usage is
 > for AIs without a transcript.
 >
-> **Waiting on dependencies:** #1291 (after #1289) · #1292 + #1293 (after
-> #1291) · #1290 (after #1289) · #1294 (after #1290 + #1293) · #1295
-> (after #1294) · #1296 (after #1290).
+> **Waiting on dependencies:** #1292 + #1293 (after #1291) · #1294 (after
+> #1290 + #1293) · #1295 (after #1294) · #1296 (after #1290). Items that
+> depend on a PR in the owner's queue branch from that PR's head; the run
+> ends with a train PR for him.
 >
 > **Merged this run:**
+> - **#1289 ACP engine → PR #1306 (`7034aa01`), 2026-10-16.** `src/main/providers/acp/`:
+>   JSON-RPC readers, `AcpContent` (update → neutral events), `AcpSession`
+>   (handshake, correlation, controls, setup deadline, re-applying settings
+>   after a load, one prompt in flight), `createAcpProvider({id, displayName,
+>   command, args, env?, modeMap?, authMethodId?, ...})`, and the hermetic
+>   fake ACP agent (`fake-acp`, directives `!think !tool !edit !ask
+>   !cancel-slow !error !unknown !plan !mode !state !mcp !fs`; e2e selects it
+>   with `SWITCHBOARD_FAKE_PROVIDER=acp`). Reuses `StreamService` as the
+>   transport. Permissions: allow → `allow_once`, deny → `reject_once`; Stop →
+>   `session/cancel` + every held request withdrawn. The mode chip now
+>   switches a live session whose AI has `modes.set` (Claude: unsupported, no
+>   change). No client `fs/*`/`terminal/*`. Unit 12,375; e2e 513/513 incl. the
+>   new `acp-session.spec.ts`. One contract breach the worker reported itself:
+>   a 5-second unit run overlapped the e2e suite once; the suite was green.
 > - **#1287 seam 2 → PR #1304 (`e4b3e270`), 2026-10-16.**
 >   `ProviderCapabilities.controls` builds a session's `SessionControls`,
 >   whose present members ARE the declaration (approvals, interrupt, models,
