@@ -408,6 +408,26 @@ export const CHANNEL_CAPABILITIES = {
   'notifications:clearSuppressed': 'settings.write',
   'notifications:setPrefs': 'settings.write',
   'preflight:check': 'environment.probe',
+  // ── THE AIs (E40 item 08, #1291; `main/ai-catalog/ipc.ts`) ─────────────
+  // No new capability: each channel exercises a power already named. Reading
+  // is `settings.read`; choosing the default and removing an entry is
+  // `settings.write`; "Look again" RUNS each AI's version / sign-in check,
+  // which is `environment.probe` by that word's own definition. Adding a
+  // "Something else", testing one, and running an AI's sign-in each DEFINE
+  // OR START A PROGRAM — `sessions.spawn`, never `settings.write`, for the
+  // `mcp.write` reason. "Check for new AIs" is one unauthenticated GET of a
+  // public JSON file that sends nothing — `provider.status` describes it
+  // exactly, and it runs only on a user press.
+  'ais:list': 'settings.read',
+  'ais:default': 'settings.read',
+  'ais:lastRegistryCheck': 'settings.read',
+  'ais:setDefault': 'settings.write',
+  'ais:customRemove': 'settings.write',
+  'ais:lookAgain': 'environment.probe',
+  'ais:customAdd': 'sessions.spawn',
+  'ais:customTest': 'sessions.spawn',
+  'ais:login': 'sessions.spawn',
+  'ais:checkRegistry': 'provider.status',
   // Phone push + webhook (P2-E14-06, §5.9 + §5.29). Three capabilities for four
   // channels because the powers really are three: read the shape of the config,
   // write it (credential store included), and make something leave the machine.
@@ -626,6 +646,9 @@ export const CHANNEL_CAPABILITIES = {
   // a poll the renderer did not ask for finished, or the local corroboration
   // rule raised/cleared (P2-E14-07). Same capability as reading it.
   'health:status': 'provider.status',
+  // the AIs list, the default or a detection answer changed (#1291) — the
+  // same facts `ais:list` / `ais:default` read
+  'ais:changed': 'settings.read',
   // a card gained or lost its live session — re-read `sessions:cards` (#170)
   'sessions:cardsChanged': 'sessions.read',
   'sessions:exited': 'sessions.read',

@@ -42,6 +42,15 @@ export class ContributionRegistry<C extends ContributionMap> {
     this.points.set(point, byId);
   }
 
+  /**
+   * Take one contribution back out. True when there was one. For contributions
+   * the USER defines at runtime (a "Something else" AI, E40 item 08) — the
+   * built-ins are registered once and never removed.
+   */
+  unregister<P extends keyof C & string>(point: P, id: string): boolean {
+    return this.points.get(point)?.delete(id) ?? false;
+  }
+
   resolve<P extends keyof C & string>(point: P, id: string): C[P] | undefined {
     return this.points.get(point)?.get(id) as C[P] | undefined;
   }

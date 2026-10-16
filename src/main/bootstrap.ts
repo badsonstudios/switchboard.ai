@@ -4,6 +4,8 @@ import { registry } from './extensibility';
 import { claudeAdapter } from './providers/claude';
 import { fakeStreamAdapter } from './providers/fake-stream';
 import { fakeAcpAdapter } from './providers/acp/fake-acp';
+import { customAcpProvider } from './providers/acp/custom-acp';
+import type { CustomAi } from '../shared/ais';
 
 export function registerBuiltinContributions(): void {
   // e2e tests swap the real CLI for a fake (hermetic: no login, no network).
@@ -27,4 +29,26 @@ export function registerBuiltinContributions(): void {
     return;
   }
   registry.register('provider-adapter', claudeAdapter);
+}
+
+/**
+ * A "Something else" AI (E40 item 08, #1291) — the one kind of provider the
+ * USER defines, so it is registered at runtime: every persisted one at
+ * startup, and each new one the moment it is added. Here rather than in the
+ * catalog so this stays the only module that registers providers. Returns
+ * false (and registers nothing) when the id is taken — a custom AI never
+ * shadows a built-in.
+ */
+export function registerCustomAi(ai: CustomAi, clientVersion?: string): boolean {
+  if (registry.resolve('provider-adapter', ai.id)) return false;
+  registry.register('provider-adapter', customAcpProvider(ai, clientVersion));
+  return true;
+}
+
+/** Remove a custom AI's provider. Live sessions keep the controls they were
+ *  built with; a card that names it falls back to the default at next start
+ *  (`start-plan.ts`). Only `custom:` ids can be removed. */
+export function unregisterCustomAi(id: string): boolean {
+  if (!id.startsWith('custom:')) return false;
+  return registry.unregister('provider-adapter', id);
 }

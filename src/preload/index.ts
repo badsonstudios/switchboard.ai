@@ -59,6 +59,16 @@ import type { WorkspaceSaveState } from '../shared/workspace';
 import type { HistoryRepairNotice } from '../shared/history-repair';
 import type { ServiceHealthPrefs, ServiceHealthStatus } from '../shared/service-health';
 import type {
+  AiListItem,
+  AiLoginResult,
+  AisSnapshot,
+  CustomAiAddResult,
+  CustomAiDraft,
+  CustomAiTestResult,
+  DefaultAiState,
+  RegistryCheckResult,
+} from '../shared/ais';
+import type {
   PushConfig,
   PushPrefs,
   PushSecretKey,
@@ -1032,6 +1042,37 @@ const api = {
       configPresent: boolean;
       ok: boolean;
     }> => ipcRenderer.invoke('preflight:check'),
+  },
+  /**
+   * The AIs (E40 item 08, #1291): which exist, which are installed and signed
+   * in, the default for new sessions, and "Something else" entries. Detection
+   * runs in main after first paint on every startup; `onChanged` hears it
+   * finish, and every other change. Nothing here touches the network except
+   * `checkRegistry`, which only a button should call.
+   */
+  ais: {
+    list: (): Promise<AiListItem[]> => ipcRenderer.invoke('ais:list'),
+    default: (): Promise<DefaultAiState> => ipcRenderer.invoke('ais:default'),
+    setDefault: (
+      providerId: string
+    ): Promise<{ ok: true; default: DefaultAiState } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('ais:setDefault', providerId),
+    lookAgain: (): Promise<AisSnapshot> => ipcRenderer.invoke('ais:lookAgain'),
+    checkRegistry: (): Promise<RegistryCheckResult> => ipcRenderer.invoke('ais:checkRegistry'),
+    lastRegistryCheck: (): Promise<RegistryCheckResult | null> =>
+      ipcRenderer.invoke('ais:lastRegistryCheck'),
+    custom: {
+      add: (draft: CustomAiDraft): Promise<CustomAiAddResult> => ipcRenderer.invoke('ais:customAdd', draft),
+      remove: (id: string): Promise<boolean> => ipcRenderer.invoke('ais:customRemove', id),
+      test: (draft: CustomAiDraft): Promise<CustomAiTestResult> => ipcRenderer.invoke('ais:customTest', draft),
+    },
+    login: (providerId: string, methodId?: string): Promise<AiLoginResult> =>
+      ipcRenderer.invoke('ais:login', providerId, methodId),
+    onChanged: (cb: (s: AisSnapshot) => void): (() => void) => {
+      const h = (_e: unknown, s: AisSnapshot): void => cb(s);
+      ipcRenderer.on('ais:changed', h);
+      return () => ipcRenderer.removeListener('ais:changed', h);
+    },
   },
   /**
    * Update checks (P2-E19-03). `check` runs one and RESOLVES with the answer;

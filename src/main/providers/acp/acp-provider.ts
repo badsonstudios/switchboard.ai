@@ -15,10 +15,14 @@
 // teardown and the exit path) lets it go.
 import type { AutonomyMode } from '../../../shared/sessions';
 import { BUS_SERVER_NAME } from '../../bus/bus-paths';
-import type { ProviderAdapter, SpawnOptions, SpawnRecipe } from '../../extensibility/contributions';
+import { errorText } from '../../../shared/error-text';
+import type { AiLoginResult } from '../../../shared/ais';
+import type { DetectCapability, ProviderAdapter, SpawnOptions, SpawnRecipe } from '../../extensibility/contributions';
+import { findOnPath } from '../../transport/find-on-path';
 import type { EngineTranslator, TranslatorHooks } from '../../sessions/engine-events';
 import type { ControlSession, SessionControls } from '../../sessions/engine-controls';
 import { readMcpServers, stdioMcpServer } from './acp-protocol';
+import { probeAcpAgent } from './acp-probe';
 import { AcpSession, type Remembered } from './acp-session';
 
 export interface AcpProviderOptions {
@@ -48,6 +52,61 @@ export interface AcpProviderOptions {
   version?: string;
   /** reported to the agent as `clientInfo.version` */
   clientVersion?: string;
+  /**
+   * The `detect` capability (E40 item 08, #1291). ABSENT: a PATH scan for the
+   * command (installed or not; version and login unknown, since asking would
+   * mean starting the agent, and for an npx agent that is a download), and
+   * "Log in" runs the agent's own `authenticate` standalone (`acp-probe.ts`).
+   */
+  detect?: DetectCapability;
+}
+
+/** The default `detect` for an ACP agent: see `AcpProviderOptions.detect`. */
+export function defaultAcpDetect(opts: {
+  command: () => string;
+  args: () => string[];
+  env?: Record<string, string | undefined>;
+  authMethodId?: string;
+  clientVersion?: string;
+}): DetectCapability {
+  return {
+    detect: () => {
+      let found: string | null = null;
+      try {
+        found = findOnPath(opts.command());
+      } catch {
+        found = null;
+      }
+      return Promise.resolve(
+        found
+          ? { installed: true, login: 'unknown', detail: 'this AI does not report its version or sign-in until a session starts' }
+          : { installed: false, login: 'unknown' }
+      );
+    },
+    login: async (signal, methodId): Promise<AiLoginResult> => {
+      let command: string;
+      try {
+        command = opts.command();
+      } catch (err) {
+        return { supported: true, ok: false, reason: err instanceof Error ? err.message : errorText(err) };
+      }
+      const r = await probeAcpAgent({
+        command,
+        args: opts.args(),
+        ...(opts.env ? { env: opts.env } : {}),
+        ...(opts.clientVersion ? { clientVersion: opts.clientVersion } : {}),
+        signal,
+        authenticate: { ...((methodId ?? opts.authMethodId) ? { methodId: methodId ?? opts.authMethodId } : {}) },
+      });
+      if (r.ok) return { supported: true, ok: true };
+      return {
+        supported: true,
+        ok: false,
+        ...(r.error ? { reason: r.error } : {}),
+        ...(r.needsMethod && r.authMethods ? { methods: r.authMethods } : {}),
+      };
+    },
+  };
 }
 
 /** Sessions built but never adopted (a spawn that failed after `buildSpawn`)
@@ -137,6 +196,15 @@ export function createAcpProvider(opts: AcpProviderOptions): ProviderAdapter & {
           return launch ? { mcpServers: [stdioMcpServer(BUS_SERVER_NAME, launch)] } : null;
         },
       },
+      detect:
+        opts.detect ??
+        defaultAcpDetect({
+          command: () => resolve(opts.command),
+          args: () => [...(opts.args ? resolve(opts.args) : [])],
+          ...(opts.env ? { env: opts.env } : {}),
+          ...(opts.authMethodId ? { authMethodId: opts.authMethodId } : {}),
+          ...(opts.clientVersion ? { clientVersion: opts.clientVersion } : {}),
+        }),
     },
 
     buildSpawn(options: SpawnOptions): SpawnRecipe {

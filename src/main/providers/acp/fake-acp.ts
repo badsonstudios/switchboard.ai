@@ -8,7 +8,9 @@
 import fs from 'fs';
 import path from 'path';
 import { createAcpProvider } from './acp-provider';
-import { FAKE_ACP_MODE_MAP } from './fake-acp-agent';
+import type { DetectCapability } from '../../extensibility/contributions';
+import { defaultAcpDetect } from './acp-provider';
+import { FAKE_ACP_MODE_MAP, FAKE_ACP_VERSION } from './fake-acp-agent';
 
 export const FAKE_ACP_PROVIDER_ID = 'fake-acp';
 
@@ -29,13 +31,35 @@ export function fakeAcpCliPath(baseDir: string = __dirname): string {
   return found;
 }
 
+const fakeLaunch = {
+  command: (): string => process.execPath,
+  args: (): string[] => [fakeAcpCliPath()],
+  env: { ELECTRON_RUN_AS_NODE: '1', ELECTRON_NO_ATTACH_CONSOLE: undefined },
+};
+
+/** The engine's default sign-in, pointed at the fake. */
+const fakeAcpLogin: NonNullable<DetectCapability['login']> = (signal, methodId) =>
+  defaultAcpDetect({ ...fakeLaunch, authMethodId: 'fake-login' }).login!(signal, methodId);
+
 export const fakeAcpAdapter = createAcpProvider({
   id: FAKE_ACP_PROVIDER_ID,
   displayName: 'Fake ACP',
   // `process.execPath` in main IS the Electron binary; run as plain Node.
-  command: () => process.execPath,
-  args: () => [fakeAcpCliPath()],
-  env: { ELECTRON_RUN_AS_NODE: '1', ELECTRON_NO_ATTACH_CONSOLE: undefined },
+  ...fakeLaunch,
   modeMap: FAKE_ACP_MODE_MAP,
   authMethodId: 'fake-login',
+  // E40 item 08 (#1291): the fake is always installed (it ships in `out/`),
+  // its version is the one its `initialize` reports, and it is "logged out"
+  // exactly when `FAKE_ACP_REQUIRE_AUTH=1` makes it demand `authenticate`.
+  // "Log in" stays the engine's default: the fake's own `authenticate`, run
+  // standalone.
+  detect: {
+    detect: () =>
+      Promise.resolve({
+        installed: true,
+        version: FAKE_ACP_VERSION,
+        login: process.env.FAKE_ACP_REQUIRE_AUTH === '1' ? 'logged-out' : 'logged-in',
+      }),
+    login: fakeAcpLogin,
+  },
 });

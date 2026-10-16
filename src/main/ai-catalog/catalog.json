@@ -1,0 +1,382 @@
+{
+  "snapshot": "2026-10-15",
+  "entries": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "maker": "Anthropic",
+      "description": "Anthropic's coding agent, hosted on its own native engine",
+      "license": "proprietary",
+      "website": "https://www.anthropic.com/claude-code",
+      "engine": "native",
+      "install": {
+        "kind": "command",
+        "command": "npm i -g @anthropic-ai/claude-code"
+      },
+      "detectCommand": "claude",
+      "runsLocalModels": false,
+      "icon": "claude-code.svg",
+      "providerId": "claude-code"
+    },
+    {
+      "id": "codex-acp",
+      "registryId": "codex-acp",
+      "registryVersion": "2.2.2",
+      "name": "Codex",
+      "maker": "OpenAI",
+      "description": "ACP adapter for OpenAI's coding assistant",
+      "license": "Apache-2.0",
+      "website": "https://github.com/agentclientprotocol/codex-acp",
+      "engine": "acp",
+      "install": {
+        "kind": "command",
+        "command": "npm i -g @openai/codex"
+      },
+      "launch": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@agentclientprotocol/codex-acp@2.2.2"
+        ]
+      },
+      "detectCommand": "codex",
+      "runsLocalModels": false,
+      "icon": "codex-acp.svg",
+      "providerId": "codex"
+    },
+    {
+      "id": "gemini",
+      "registryId": "gemini",
+      "registryVersion": "0.64.0",
+      "name": "Gemini CLI",
+      "maker": "Google",
+      "description": "Google's official CLI for Gemini",
+      "license": "Apache-2.0",
+      "website": "https://geminicli.com",
+      "engine": "acp",
+      "install": {
+        "kind": "command",
+        "command": "npm i -g @google/gemini-cli"
+      },
+      "launch": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@google/gemini-cli@0.64.0",
+          "--acp"
+        ]
+      },
+      "detectCommand": "gemini",
+      "runsLocalModels": false,
+      "icon": "gemini.svg"
+    },
+    {
+      "id": "github-copilot-cli",
+      "registryId": "github-copilot-cli",
+      "registryVersion": "1.0.98",
+      "name": "Copilot",
+      "maker": "GitHub",
+      "description": "GitHub's AI pair programmer",
+      "license": "proprietary",
+      "website": "https://github.com/features/copilot/cli/",
+      "engine": "acp",
+      "install": {
+        "kind": "command",
+        "command": "npm i -g @github/copilot"
+      },
+      "launch": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@github/copilot@1.0.98",
+          "--acp"
+        ]
+      },
+      "detectCommand": "copilot",
+      "runsLocalModels": false,
+      "icon": "github-copilot-cli.svg"
+    },
+    {
+      "id": "cursor",
+      "registryId": "cursor",
+      "registryVersion": "2026.10.14",
+      "name": "Cursor",
+      "maker": "Cursor",
+      "description": "Cursor's coding agent",
+      "license": "proprietary",
+      "website": "https://cursor.com/docs/cli/acp",
+      "engine": "acp",
+      "install": {
+        "kind": "link",
+        "url": "https://cursor.com/docs/cli/acp"
+      },
+      "launch": {
+        "command": "cursor-agent",
+        "args": [
+          "acp"
+        ]
+      },
+      "detectCommand": "cursor-agent",
+      "runsLocalModels": false,
+      "icon": "cursor.svg"
+    },
+    {
+      "id": "opencode",
+      "registryId": "opencode",
+      "registryVersion": "1.19.1",
+      "name": "OpenCode",
+      "maker": "Anomaly",
+      "description": "The open source coding agent",
+      "license": "MIT",
+      "website": "https://opencode.ai",
+      "engine": "acp",
+      "install": {
+        "kind": "command",
+        "command": "npm i -g opencode-ai"
+      },
+      "launch": {
+        "command": "opencode",
+        "args": [
+          "acp"
+        ]
+      },
+      "detectCommand": "opencode",
+      "runsLocalModels": true,
+      "icon": "opencode.svg"
+    },
+    {
+      "id": "goose",
+      "registryId": "goose",
+      "registryVersion": "1.54.0",
+      "name": "goose",
+      "maker": "Block",
+      "description": "A local, extensible, open source AI agent that automates engineering tasks",
+      "license": "Apache-2.0",
+      "website": "https://block.github.io/goose/",
+      "engine": "acp",
+      "install": {
+        "kind": "link",
+        "url": "https://block.github.io/goose/"
+      },
+      "launch": {
+        "command": "goose",
+        "args": [
+          "acp"
+        ]
+      },
+      "detectCommand": "goose",
+      "runsLocalModels": true,
+      "icon": "goose.svg"
+    },
+    {
+      "id": "qwen-code",
+      "registryId": "qwen-code",
+      "registryVersion": "0.25.2",
+      "name": "Qwen Code",
+      "maker": "Alibaba Qwen Team",
+      "description": "Alibaba's Qwen coding assistant",
+      "license": "Apache-2.0",
+      "website": "https://qwenlm.github.io/qwen-code-docs/en/users/overview",
+      "engine": "acp",
+      "install": {
+        "kind": "command",
+        "command": "npm i -g @qwen-code/qwen-code"
+      },
+      "launch": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@qwen-code/qwen-code@0.25.2",
+          "--acp",
+          "--experimental-skills"
+        ]
+      },
+      "detectCommand": "qwen",
+      "runsLocalModels": false,
+      "icon": "qwen-code.svg"
+    },
+    {
+      "id": "mistral-vibe",
+      "registryId": "mistral-vibe",
+      "registryVersion": "2.26.1",
+      "name": "Mistral Vibe",
+      "maker": "Mistral AI",
+      "description": "Mistral's open-source coding assistant",
+      "license": "Apache-2.0",
+      "website": "https://mistral.ai/products/vibe",
+      "engine": "acp",
+      "install": {
+        "kind": "link",
+        "url": "https://mistral.ai/products/vibe"
+      },
+      "launch": {
+        "command": "vibe-acp",
+        "args": []
+      },
+      "detectCommand": "vibe-acp",
+      "runsLocalModels": false,
+      "icon": "mistral-vibe.svg"
+    },
+    {
+      "id": "cline",
+      "registryId": "cline",
+      "registryVersion": "3.0.71",
+      "name": "Cline",
+      "maker": "Cline Bot Inc.",
+      "description": "Autonomous coding agent CLI - capable of creating/editing files, running commands, using the browser, and more",
+      "license": "Apache-2.0",
+      "website": "https://cline.bot/cli",
+      "engine": "acp",
+      "install": {
+        "kind": "command",
+        "command": "npm i -g cline"
+      },
+      "launch": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "cline@3.0.71",
+          "--acp"
+        ]
+      },
+      "detectCommand": "cline",
+      "runsLocalModels": false,
+      "icon": "cline.svg"
+    },
+    {
+      "id": "auggie",
+      "registryId": "auggie",
+      "registryVersion": "0.36.0",
+      "name": "Auggie CLI",
+      "maker": "Augment Code",
+      "description": "Augment Code's powerful software agent, backed by industry-leading context engine",
+      "license": "proprietary",
+      "website": "https://www.augmentcode.com/",
+      "engine": "acp",
+      "install": {
+        "kind": "command",
+        "command": "npm i -g @augmentcode/auggie"
+      },
+      "launch": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@augmentcode/auggie@0.36.0",
+          "--acp"
+        ],
+        "env": {
+          "AUGMENT_DISABLE_AUTO_UPDATE": "1"
+        }
+      },
+      "detectCommand": "auggie",
+      "runsLocalModels": false,
+      "icon": "auggie.svg"
+    },
+    {
+      "id": "kimi",
+      "registryId": "kimi",
+      "registryVersion": "1.52.0",
+      "name": "Kimi CLI",
+      "maker": "Moonshot AI",
+      "description": "Moonshot AI's coding assistant",
+      "license": "MIT",
+      "website": "https://moonshotai.github.io/kimi-cli/",
+      "engine": "acp",
+      "install": {
+        "kind": "link",
+        "url": "https://moonshotai.github.io/kimi-cli/"
+      },
+      "launch": {
+        "command": "kimi",
+        "args": [
+          "acp"
+        ]
+      },
+      "detectCommand": "kimi",
+      "runsLocalModels": false,
+      "icon": "kimi.svg"
+    },
+    {
+      "id": "kilo",
+      "registryId": "kilo",
+      "registryVersion": "7.8.12",
+      "name": "Kilo",
+      "maker": "Kilo Code",
+      "description": "The open source coding agent",
+      "license": "MIT",
+      "website": "https://kilo.ai/",
+      "engine": "acp",
+      "install": {
+        "kind": "command",
+        "command": "npm i -g @kilocode/cli"
+      },
+      "launch": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "@kilocode/cli@7.8.12",
+          "acp"
+        ]
+      },
+      "detectCommand": "kilo",
+      "runsLocalModels": false,
+      "icon": "kilo.svg"
+    },
+    {
+      "id": "junie",
+      "registryId": "junie",
+      "registryVersion": "3659.4.0",
+      "name": "Junie",
+      "maker": "JetBrains",
+      "description": "AI Coding Agent by JetBrains",
+      "license": "proprietary",
+      "website": "https://junie.jetbrains.com",
+      "engine": "acp",
+      "install": {
+        "kind": "link",
+        "url": "https://junie.jetbrains.com"
+      },
+      "launch": {
+        "command": "junie",
+        "args": [
+          "--acp=true"
+        ]
+      },
+      "detectCommand": "junie",
+      "runsLocalModels": false,
+      "icon": "junie.svg"
+    },
+    {
+      "id": "factory-droid",
+      "registryId": "factory-droid",
+      "registryVersion": "0.242.1",
+      "name": "Factory Droid",
+      "maker": "Factory AI",
+      "description": "Factory Droid - AI coding agent powered by Factory AI",
+      "license": "proprietary",
+      "website": "https://factory.ai/product/cli",
+      "engine": "acp",
+      "install": {
+        "kind": "command",
+        "command": "npm i -g droid"
+      },
+      "launch": {
+        "command": "npx",
+        "args": [
+          "-y",
+          "droid@0.242.1",
+          "exec",
+          "--output-format",
+          "acp-daemon"
+        ],
+        "env": {
+          "DROID_DISABLE_AUTO_UPDATE": "true",
+          "FACTORY_DROID_AUTO_UPDATE_ENABLED": "false"
+        }
+      },
+      "detectCommand": "droid",
+      "runsLocalModels": false,
+      "icon": "factory-droid.svg"
+    }
+  ]
+}

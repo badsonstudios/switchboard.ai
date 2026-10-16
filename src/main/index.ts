@@ -19,7 +19,12 @@ import { ArrangementMemories, planDisplayRestore, windowOptionsFrom, WindowState
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
 import os from 'os';
 import { LogSink, createLogger } from './log/logger';
-import { registerBuiltinContributions } from './bootstrap';
+import { registerBuiltinContributions, registerCustomAi, unregisterCustomAi } from './bootstrap';
+import { AisStore } from './ai-catalog/ais-store';
+import { AiCatalogService } from './ai-catalog/service';
+import { registerAisIpc } from './ai-catalog/ipc';
+import { checkRegistry, lastRegistryCheck } from './ai-catalog/registry-refresh';
+import { testAcpCommand } from './providers/acp/custom-acp';
 import { registry } from './extensibility';
 import { StreamService } from './transport/stream-service';
 import { createDiagnosticLogger } from './transport/diagnostics';
@@ -298,6 +303,11 @@ const clock = (): Date => new Date();
 // again on macOS `activate`, and the second window needs the same teardown as
 // the first (P2-E15-09).
 let onRendererLost: ((reason: string) => void) | null = null;
+// E40 item 08 (#1291): the AI detection run waits for the FIRST main window
+// to be shown — after first paint, so startup paint time is unchanged by
+// construction. Taken (and nulled) by the first `ready-to-show`; a later
+// window (macOS `activate`) does not run it again.
+let onFirstWindowShown: (() => void) | null = null;
 // set by the bootstrap once the broker exists; createWindow() runs again on
 // macOS `activate`, so a second window must be granted too (P2-E15-04)
 let grantFirstParty: ((win: BrowserWindow) => void) | null = null;
@@ -724,6 +734,10 @@ function createWindow(): BrowserWindow {
   win.once('ready-to-show', () => {
     win.show();
     log.ui.info('window shown', { restored: !!state.bounds, maximized: state.isMaximized });
+    const afterPaint = onFirstWindowShown;
+    onFirstWindowShown = null;
+    // A turn later, so nothing it does is on the show() path.
+    if (afterPaint) setImmediate(afterPaint);
   });
 
   // external links open in the OS browser (http/https only), never in-app.
@@ -1315,18 +1329,50 @@ app
       mcpClearAuth: (liveId, name) => manager.mcpClearAuth(liveId, name),
     });
     registerBuiltinContributions();
-    log.app.info('contributions registered', { manifests: registry.manifests() });
 
-    // Which provider a brand-new card runs on: the first REGISTERED adapter.
-    // Registration order is precedence (P2-E15-02), and bootstrap is the only
-    // module that registers — so swapping the default is a bootstrap edit, not
-    // a string spread through the session core. Existing cards keep the
-    // provider they were created with (see planSessionStart).
-    const defaultProviderId = (): string => {
-      const first = registry.list('provider-adapter')[0];
-      if (!first) throw new Error('no provider adapter registered — bootstrap did not run');
-      return first.manifest.id;
+    // ── the AIs (E40 item 08, #1291; `ai-catalog/`) ──────────────────────
+    // `ais.json` (custom AIs + the chosen default) is read BEFORE any card can
+    // start, so a card on a "Something else" AI finds its provider registered.
+    // Fail-open: a corrupt file is set aside and the app starts with none.
+    const aisStore = new AisStore(app.getPath('userData'), log.app);
+    try {
+      aisStore.load();
+    } catch (err) {
+      log.app.warn('AIs settings could not be read; starting with none', { error: errorText(err) });
+    }
+    const aiCatalog = new AiCatalogService({
+      store: aisStore,
+      providers: () =>
+        registry.list('provider-adapter').map((p) => ({
+          id: p.manifest.id,
+          displayName: p.manifest.displayName,
+          ...(p.capabilities?.detect ? { detect: p.capabilities.detect } : {}),
+        })),
+      registerCustom: (ai) => registerCustomAi(ai, app.getVersion()),
+      unregisterCustom: (id) => unregisterCustomAi(id),
+      testCommand: (cmd, opts) => testAcpCommand(cmd, { ...opts, clientVersion: app.getVersion() }),
+      checkRegistry: () => checkRegistry({ userDataDir: app.getPath('userData') }),
+      lastRegistryCheck: () => lastRegistryCheck({ userDataDir: app.getPath('userData') }),
+      push: (snapshot) => pushToRenderer?.(currentWindow, 'ais:changed', snapshot),
+      log: log.app,
+    });
+    aiCatalog.registerPersisted();
+    log.app.info('contributions registered', { manifests: registry.manifests() });
+    // Detection runs after the first window is SHOWN, never before; if a
+    // second-instance race already showed one, run now.
+    const startDetection = (): void => {
+      void aiCatalog.detectAll('startup');
     };
+    if (currentWindow && !currentWindow.isDestroyed() && currentWindow.isVisible()) setImmediate(startDetection);
+    else onFirstWindowShown = startDetection;
+
+    // Which provider a brand-new card runs on: the user's chosen default AI
+    // when it is registered, else the first REGISTERED adapter (Claude in
+    // production). Registration order is precedence (P2-E15-02), and bootstrap
+    // is the only module that registers. `ai-catalog/default-ai.ts` has the
+    // rule. Existing cards keep the provider they were created with (see
+    // planSessionStart).
+    const defaultProviderId = (): string => aiCatalog.defaultProviderId();
 
     // session core (E2) bootstrap
     const stateDir = path.join(app.getPath('userData'), 'sessions');
@@ -2385,6 +2431,7 @@ app
         (msg, meta) => log.app.warn(msg, meta)
       )
     );
+    registerAisIpc(broker, aiCatalog);
     busySessions = () =>
       manager
         .list()
@@ -3112,6 +3159,7 @@ app
       cpuHeartbeat.stop(); // the #719 per-process CPU line, and its lag gauge
       eventLoop.stop(); // E21's event-loop histogram (#923)
       processCensus.stop(); // …and the machine-wide process count it carries
+      aiCatalog.dispose(); // a Test or sign-in in flight: abort it, killing what it started
       staticServer?.close();
       scheduleForcedExit();
     });

@@ -135,6 +135,8 @@ describe('the IPC capability map (the done-when: no channel is untagged)', () =>
       // what this check can see; that they are really sent is
       // `audio-sink.test.ts`'s job.
       'src/shared/sounds.ts',
+      // the AIs (#1291); `ais:changed` is pushed from `index.ts`
+      'src/main/ai-catalog/ipc.ts',
     ]
       .map((f) => fs.readFileSync(path.join(process.cwd(), f), 'utf8'))
       .join(' ');

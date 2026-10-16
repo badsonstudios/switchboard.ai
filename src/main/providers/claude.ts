@@ -22,11 +22,12 @@ import { claudeEvents } from './claude-events';
 import { AUTONOMY_PERMISSION_MODE } from './claude-modes';
 import { claudeControls } from './claude-controls';
 import { claudeSurfaces } from './claude-surfaces';
+import { claudeDetect } from './claude-detect';
 
 // S-01's absolute-path lookup. Its own module since #1288 (see there); re-exported
 // so every importer of the adapter module keeps working.
 export { resolveCliPath, scanPath, resetCliPathCache } from './claude-cli-path';
-import { resolveCliPath } from './claude-cli-path';
+import { resetCliPathCache, resolveCliPath } from './claude-cli-path';
 
 /**
  * Write + validate the per-session settings file. Throws rather than letting
@@ -293,6 +294,14 @@ export const claudeAdapter: ProviderAdapter = {
     // E40 item 04 (#1287): every control frame this app writes, and the
     // declaration of which controls Claude has (all of them).
     controls: claudeControls,
+    // E40 item 08 (#1291): installed / version / signed in, each the CLI's own
+    // answer (`--version`, `auth status --json`). Asked after first paint.
+    detect: claudeDetect({
+      resolve: () => {
+        resetCliPathCache();
+        return resolveCliPath();
+      },
+    }),
     // §5.11: the CLI already computed a description of the conversation, so we
     // display it rather than deriving one of our own — which would spend the
     // user's subscription tokens on chrome (P7).
