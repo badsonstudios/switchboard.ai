@@ -98,6 +98,11 @@ on the floor, and say so in your PR.
 
 ### Internal
 
+- One engine for any AI that speaks the Agent Client Protocol, plus a fake
+  agent that speaks it for the tests: a session on it shows in the same
+  Session view as Claude, with its conversation, tool blocks, approvals, Stop
+  and a mode chip that switches it live. No real AI uses it yet (Codex is
+  next), so nothing changes for anyone with only Claude installed.
 - The Session view's conversation, status and service-health readout now hear
   what a session did through an AI-neutral layer, with Claude's own messages
   translated behind its adapter. Nothing looks or behaves differently; it is

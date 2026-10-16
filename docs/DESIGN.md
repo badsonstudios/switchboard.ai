@@ -428,6 +428,25 @@ contract differs in three ways, each deliberate:
   screen with only Claude installed. **One documented exception** to "nothing
   outside `providers/` speaks `control_request`": the local-only
   `check:mcp-attach` harness, which asks the real CLI on purpose.
+- **The ACP engine is the generic adapter** *(E40 item 06, #1289, 2026-10-16)*
+  — it replaces the "generic = PTY only" line above, which #952 killed.
+  `createAcpProvider({id, displayName, command, args, …})`
+  (`providers/acp/`) turns ANY Agent Client Protocol agent into a
+  `ProviderAdapter` declaring `events`, `controls`, `resume` and `mcp`; Codex
+  (#1290) and a user's "Something else" entry (#1291) are registrations, not
+  engines. It rides the stream transport (`launchSpec`, NDJSON, the dead-child
+  path all reused) and is a translator plus controls over it, paired by session
+  id through `createTranslator(hooks, {id})`; `ControlSession.loopback` lets it
+  put the user's prompt (which ACP does not echo) and a cancel's withdrawn
+  requests through the pump. The Session Bus attaches through the same
+  `mcp.configFor` split, in ACP's shape (a stdio server in `session/new`'s
+  `mcpServers`). v1 offers the agent no `fs/*` and no `terminal/*`. It declares
+  no `mcp` control (ACP has no MCP verbs) and a LIVE `modes.set` when the
+  provider maps the host's modes onto its agent's — `sessions:setAutonomy` now
+  calls it on the live session too. Unknown variants are logged once per type
+  and skipped. The mapping table, the fail-open rules and the fake agent are in
+  `docs/plans/e40-multi-ai-design.md` §4 "As built, item 06"; the grep test
+  keeps ACP's wire inside `providers/` exactly as it keeps Claude's.
 
 The host ASKS these — session creation has no branch on which provider it is
 talking to. An adapter that declares nothing spawns a PTY and nothing else: no

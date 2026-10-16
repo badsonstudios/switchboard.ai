@@ -3,6 +3,7 @@
 import { registry } from './extensibility';
 import { claudeAdapter } from './providers/claude';
 import { fakeStreamAdapter } from './providers/fake-stream';
+import { fakeAcpAdapter } from './providers/acp/fake-acp';
 
 export function registerBuiltinContributions(): void {
   // e2e tests swap the real CLI for a fake (hermetic: no login, no network).
@@ -18,6 +19,10 @@ export function registerBuiltinContributions(): void {
   // login — slow, non-hermetic, and spending tokens. Accepting any truthy value
   // and answering with the only fake there is fails safe.
   if (process.env.SWITCHBOARD_FAKE_PROVIDER) {
+    // `acp` (E40 item 06, #1289): the fake ACP agent FIRST, so a new card's
+    // default provider is it (the first registered — `defaultProviderId`),
+    // with the Claude fake beside it. Every other value is exactly as before.
+    if (process.env.SWITCHBOARD_FAKE_PROVIDER === 'acp') registry.register('provider-adapter', fakeAcpAdapter);
     registry.register('provider-adapter', fakeStreamAdapter);
     return;
   }

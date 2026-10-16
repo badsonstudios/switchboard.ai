@@ -797,6 +797,23 @@ function userText(
     : { text: fitted.text, context: fitted.sections };
 }
 
+/**
+ * A user prompt as a Feed block, from its TEXT alone — for an engine whose wire
+ * is not Claude's (E40 item 06, #1289: ACP's `session/prompt` and its
+ * `user_message_chunk` replay). The same prose rules a Claude `user` line gets:
+ * plumbing is dropped, and only markers this app minted fold into context pills
+ * (#830's guard, via `userText`). `null` for nothing to show.
+ */
+export function userPromptIntent(
+  text: string,
+  ts: string | undefined,
+  caps: DerivationCaps,
+  ctx: DerivationContext
+): EmitIntent | null {
+  if (!text.trim() || isPlumbing(text)) return null;
+  return { t: 'block', block: { kind: 'user', ...userText(text, caps, ctx), ts } };
+}
+
 function userIntents(
   entry: Record<string, unknown>,
   message: { content?: unknown },
