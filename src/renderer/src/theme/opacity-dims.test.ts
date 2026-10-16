@@ -29,7 +29,10 @@ const FRACTIONAL = /opacity:[^,}]*?(?:^|[^0-9.])(0?[.][0-9]+)/;
 
 const ALLOWED: Record<string, [number, string]> = {
   'components/ComposeDialog.tsx': [1, 'the Send button while it cannot be pressed'],
-  'components/FeedView.tsx': [1, 'the "drop files here" veil over the prompt box: a surface, shown only mid-drag'],
+  'components/FeedView.tsx': [
+    2,
+    'the "drop files here" veil over the prompt box (a surface, shown only mid-drag), and Stop while it is disabled because the AI has no interrupt (#1287)',
+  ],
   'components/FindBar.tsx': [1, 'the search box while this surface cannot be searched'],
   'components/LayoutPresets.tsx': [1, 'a layout preset that cannot be applied right now'],
   'components/McpAddForm.tsx': [1, 'a button in the add-server form while it is disabled'],

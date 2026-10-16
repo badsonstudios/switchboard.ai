@@ -9,7 +9,7 @@
 // trip end to end.
 //
 // IT SENDS WHAT THE APP SENDS (#667). The prompts below are built by the real
-// `userMessage()` from `shared/stream-protocol`, not by a local helper. This
+// `userMessage()` from `claude-protocol.ts`, not by a local helper. This
 // file used to hand-roll its own envelope, which made it a SECOND, silent
 // definition of a contract that lives in one place — and one that had already
 // drifted: it never carried the `uuid` or `origin` #490 added, so the only
@@ -32,7 +32,7 @@ import os from 'os';
 import path from 'path';
 import { asDisplayString } from '../../shared/display-string';
 import { StreamService, StreamMessage } from '../transport/stream-service';
-import { userMessage } from '../../shared/stream-protocol';
+import { userMessage } from './claude-protocol';
 import { fakeStreamAdapter } from './fake-stream';
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-fake-stream-check-'));

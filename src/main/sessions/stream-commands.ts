@@ -1,4 +1,6 @@
-// The CLI's own slash-command list, off the stream (P2-E18-09).
+// The CLI's own slash-command list, off the stream (P2-E18-09). Read from
+// neutral `commands` events since E40 item 04 (#1287): the two payloads below
+// are parsed by Claude's translator (`providers/claude-events.ts`), not here.
 //
 // `CLAUDE_BUILTIN_COMMANDS` in `main/providers/claude.ts` is 40 hand-curated
 // builtins that the file itself calls "version-volatile by nature… a
@@ -38,6 +40,7 @@
 // ---------------------------------------------------------------------------
 import { Logger } from '../log/logger';
 import { CliCommand } from '../../shared/slash-commands';
+import type { EngineEvent } from './engine-events';
 
 export class StreamCommands {
   private readonly bySession = new Map<string, CliCommand[]>();
@@ -46,42 +49,29 @@ export class StreamCommands {
   constructor(private readonly log?: Logger) {}
 
   /**
-   * Feed one stream message. Ignores everything that does not carry a command
-   * list — which is almost all of them.
+   * Feed one engine event (#1287 — this read `system:init` /
+   * `commands_changed` itself until then; the translator does now, with the
+   * same parsing). Ignores everything that is not a `commands` list.
+   *
+   * REPLACES, never appends: an engine re-sends its whole list (Claude: on
+   * every turn's init). A frame whose list was not a list never becomes an
+   * event at all, so whatever we had stands — fail-open (P6), and a stale list
+   * is strictly better than no list. (That skip is logged at debug where it is
+   * decided, by the translator's `onSkipped`; the pump writes the line.)
    */
-  offer(sessionId: string, msg: Record<string, unknown>): void {
-    if (msg.type !== 'system') return;
-    const isInit = msg.subtype === 'init';
-    if (!isInit && msg.subtype !== 'commands_changed') return;
-    const list = isInit ? msg.slash_commands : msg.commands;
-
-    // Not an array: an init without the field, or a shape we have not seen.
-    // Keep whatever we had rather than blanking the popup — fail-open (P6), and
-    // a stale list is strictly better than no list.
-    //
+  ingest(sessionId: string, ev: EngineEvent): void {
+    if (ev.type !== 'commands') return;
     // Logged because the symptom otherwise has none: the popup keeps working,
-    // showing a list that quietly stopped tracking the CLI. `debug`, not `warn`
-    // — `init` arrives every turn, so a persistently odd payload would shout
-    // once per turn all day.
-    if (!Array.isArray(list)) {
-      this.log?.debug('stream command list ignored: not an array', {
-        sessionId,
-        subtype: String(msg.subtype),
-        got: list === undefined ? 'absent' : typeof list,
-      });
-      return;
-    }
-
-    const parsed = list.map(parseEntry).filter((c): c is CliCommand => c !== null);
-    if (parsed.length !== list.length) {
+    // showing a list that quietly lost entries. `debug`, not `warn` — the list
+    // arrives every turn.
+    if (ev.dropped > 0) {
       this.log?.debug('stream command list had unusable entries', {
         sessionId,
-        kept: parsed.length,
-        offered: list.length,
+        kept: ev.commands.length,
+        offered: ev.commands.length + ev.dropped,
       });
     }
-    // REPLACE. See the header: init is once per TURN.
-    this.bySession.set(sessionId, parsed);
+    this.bySession.set(sessionId, ev.commands.map((c) => ({ ...c })));
   }
 
   /**
@@ -105,18 +95,4 @@ export class StreamCommands {
   forgetSession(sessionId: string): void {
     this.bySession.delete(sessionId);
   }
-}
-
-/** One entry, in either of the two shapes the CLI uses. */
-function parseEntry(entry: unknown): CliCommand | null {
-  if (typeof entry === 'string') return entry.trim() ? { name: entry } : null;
-  if (entry && typeof entry === 'object') {
-    const o = entry as Record<string, unknown>;
-    if (typeof o.name !== 'string' || !o.name.trim()) return null;
-    return {
-      name: o.name,
-      description: typeof o.description === 'string' ? o.description : undefined,
-    };
-  }
-  return null;
 }

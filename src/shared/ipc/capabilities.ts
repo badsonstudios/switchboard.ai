@@ -464,6 +464,9 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:currentModel': 'sessions.read',
   // Pure app-side state too: the mode the session last announced (#1072).
   'sessions:currentMode': 'sessions.read',
+  // Pure app-side state: which controls the session's AI declared, and its
+  // name (E40 item 04, #1287). Nothing is asked of the session itself.
+  'sessions:controls': 'sessions.read',
   'sessions:setModel': 'sessions.write',
   // Effort (#1115): the same split as the model. Reading asks the live CLI
   // two questions and changes nothing; setting changes how the session

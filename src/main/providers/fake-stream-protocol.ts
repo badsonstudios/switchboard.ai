@@ -1322,7 +1322,7 @@ export class FakeStreamProtocol {
       });
       return;
     }
-    // #1115 — both verbs as MEASURED on 2.1.288 (shared/effort.ts):
+    // #1115 — both verbs as MEASURED on 2.1.288 (claude-effort.ts):
     //  * `get_settings` answers `{effective, sources, applied}`, and `applied`
     //    carries the model and the effort actually in force;
     //  * `apply_flag_settings` answers `success` WITH NO PAYLOAD, and — the
@@ -1345,7 +1345,7 @@ export class FakeStreamProtocol {
       return;
     }
     // #715 — `get_context_usage` as MEASURED on 2.1.288
-    // (shared/context-usage.ts): the fill as a whole-number `percentage`
+    // (claude-context-usage.ts): the fill as a whole-number `percentage`
     // with the counts behind it, among much else. `memoryFiles` is here
     // with a path in it on purpose: the real answer carries paths, and the
     // app must not pass them on.
@@ -1895,7 +1895,7 @@ export class FakeStreamProtocol {
 /**
  * Pull the image blocks out of the SDK's user envelope (P2-E10-09).
  *
- * The shape the VS Code extension writes and `shared/stream-protocol.ts`
+ * The shape the VS Code extension writes and `claude-protocol.ts`
  * reproduces: `{type:"image",source:{type:"base64",media_type,data}}`. Anything
  * that is not exactly that is ignored rather than guessed at — the fake's job
  * is to be a strict reader of the contract, so a block we got wrong shows up as

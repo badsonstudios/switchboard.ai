@@ -379,11 +379,15 @@ export class StreamFeed {
         // purpose is that a new message type is a DECISION rather than a
         // silent no-op. It was a silent no-op, and it cost a user-visible bug.
         return this.onConversationReset(sessionId, ev);
-      // Not content: status, compaction and usage are other consumers'.
-      // Listed rather than defaulted so a NEW event type is somebody's
-      // decision rather than a silent no-op.
+      // Not content: status, the control-path notices (#1287), compaction
+      // and usage are other consumers'. Listed rather than defaulted so a NEW
+      // event type is somebody's decision rather than a silent no-op.
       case 'activity':
       case 'permission-request':
+      case 'permission-withdrawn':
+      case 'commands':
+      case 'model':
+      case 'mode':
       case 'compaction':
       case 'usage':
         return;

@@ -395,7 +395,7 @@ export function failureMessage(
  * same problem.
  *
  * `refused` PASSES THE CLI'S OWN SENTENCE THROUGH, on the same reasoning
- * `mcp/cli.ts` and `control-channel.ts` both record: it is the CLI's
+ * `mcp/cli.ts` and `claude-control-channel.ts` both record: it is the CLI's
  * explanation of its own refusal, and ours would be a guess at what it meant.
  *
  * Exported and pure, so the mapping is unit-tested rather than asserted through
@@ -407,7 +407,7 @@ export function controlFailure(
   /**
    * A verb-specific sentence for `timed-out` — and #734 is why the seam exists.
    *
-   * ⚠️ **THE CONTROL CHANNEL ALLOWS TEN SECONDS (`control-channel.ts`) AND A
+   * ⚠️ **THE CONTROL CHANNEL ALLOWS TEN SECONDS (`claude-control-channel.ts`) AND A
    * SIGN-IN IS A HUMAN WALKING TO A BROWSER.** If the CLI's `mcp_authenticate`
    * blocks until the flow completes — plausible, and completely UNMEASURED,
    * because no connector exists on the machine this was built on — then every

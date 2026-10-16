@@ -212,11 +212,108 @@ describe('result', () => {
   });
 });
 
-describe('control frames — the EVENT half only', () => {
-  it('can_use_tool is a permission request', () => {
-    expect(translateClaudeFrame({ type: 'control_request', request: { subtype: 'can_use_tool' } })).toEqual([
-      { type: 'permission-request' },
+describe('control frames — what the CLI announces (#1287)', () => {
+  it('can_use_tool is a permission request, carrying the ask', () => {
+    // S-10 probe B's shape, plus every optional field the router reads
+    expect(
+      translateClaudeFrame({
+        type: 'control_request',
+        request_id: 'req-1',
+        request: {
+          subtype: 'can_use_tool',
+          tool_name: 'Write',
+          input: { file_path: 'C:/p/.claude/x.sh', content: 'y' },
+          decision_reason: 'Path is in a sensitive directory',
+          decision_reason_type: 'safetyCheck',
+          display_name: 'Write file',
+          permission_suggestions: [{ type: 'setMode', mode: 'acceptEdits' }],
+          tool_use_id: 'toolu_1',
+        },
+      })
+    ).toEqual([
+      {
+        type: 'permission-request',
+        requestId: 'req-1',
+        tool: 'Write',
+        input: { file_path: 'C:/p/.claude/x.sh', content: 'y' },
+        reason: 'Path is in a sensitive directory',
+        reasonType: 'safetyCheck',
+        displayName: 'Write file',
+        suggestions: [{ type: 'setMode', mode: 'acceptEdits' }],
+      },
     ]);
+  });
+
+  it('a bare can_use_tool is still a request — unanswerable, with the defaults the router used', () => {
+    // An id-less request still moves the status (the CLI IS waiting); the
+    // router declines to hold what it cannot answer.
+    expect(translateClaudeFrame({ type: 'control_request', request: { subtype: 'can_use_tool' } })).toEqual([
+      { type: 'permission-request', requestId: '', tool: 'unknown', input: {} },
+    ]);
+    // a numeric id is a string by the time anyone compares it
+    expect(
+      translateClaudeFrame({ type: 'control_request', request_id: 0, request: { subtype: 'can_use_tool' } })
+    ).toMatchObject([{ requestId: '0' }]);
+  });
+
+  it('control_cancel_request withdraws the request it names', () => {
+    expect(translateClaudeFrame({ type: 'control_cancel_request', request_id: 'req-1' })).toEqual([
+      { type: 'permission-withdrawn', requestId: 'req-1' },
+    ]);
+  });
+
+  it('system:init carries the conversation, the command list and the model — each its own event', () => {
+    expect(
+      translateClaudeFrame({
+        type: 'system',
+        subtype: 'init',
+        session_id: 'conv-1',
+        slash_commands: ['clear', 'compact', '', 7],
+        model: 'claude-opus-5-5',
+      })
+    ).toEqual([
+      { type: 'conversation', id: 'conv-1' },
+      { type: 'commands', commands: [{ name: 'clear' }, { name: 'compact' }], dropped: 2 },
+      { type: 'model', id: 'claude-opus-5-5' },
+    ]);
+    // nothing usable: no commands event (the store keeps its list), no model
+    expect(translateClaudeFrame({ type: 'system', subtype: 'init', model: '  ' })).toEqual([]);
+  });
+
+  it('commands_changed re-advertises the whole list, with descriptions', () => {
+    expect(
+      translateClaudeFrame({
+        type: 'system',
+        subtype: 'commands_changed',
+        commands: [{ name: 'review', description: 'Review a PR', argumentHint: '<pr>' }, { name: '' }],
+      })
+    ).toEqual([{ type: 'commands', commands: [{ name: 'review', description: 'Review a PR' }], dropped: 1 }]);
+    expect(translateClaudeFrame({ type: 'system', subtype: 'commands_changed', commands: 'x' })).toEqual([]);
+  });
+
+  it('a field it understood but could not use is SAID, for the debug log — the stores used to say it', () => {
+    const said: Array<[string, Record<string, string>]> = [];
+    const skipped = (what: string, fields: Record<string, string>): void => void said.push([what, fields]);
+    translateClaudeFrame({ type: 'system', subtype: 'init', session_id: 'c', slash_commands: 'x' }, skipped);
+    translateClaudeFrame({ type: 'system', subtype: 'commands_changed' }, skipped);
+    translateClaudeFrame({ type: 'system', subtype: 'status', permissionMode: 'dontAsk' }, skipped);
+    expect(said).toEqual([
+      ['stream command list ignored: not an array', { subtype: 'init', got: 'string' }],
+      ['stream init model ignored', { got: 'absent' }],
+      ['stream command list ignored: not an array', { subtype: 'commands_changed', got: 'absent' }],
+      ['stream status mode ignored', { got: 'dontAsk' }],
+    ]);
+  });
+
+  it('system:status names the mode, in the host vocabulary — and only a mode we have a name for', () => {
+    expect(translateClaudeFrame({ type: 'system', subtype: 'status', permissionMode: 'default' })).toEqual([
+      { type: 'mode', mode: 'ask' },
+    ]);
+    expect(translateClaudeFrame({ type: 'system', subtype: 'status', permissionMode: 'plan' })).toEqual([
+      { type: 'mode', mode: 'plan' },
+    ]);
+    expect(translateClaudeFrame({ type: 'system', subtype: 'status', permissionMode: 'auto' })).toEqual([]);
+    expect(translateClaudeFrame({ type: 'system', subtype: 'status', status: 'compacting' })).toEqual([]);
   });
 
   // hook_callback and mcp_message ride the same channel; treating every control

@@ -1,6 +1,6 @@
 // Reading and setting the effort level (#1115): the request builders and the
 // two readers. The contract they encode was measured against the real CLI; see
-// the header of effort.ts.
+// the header of claude-effort.ts.
 import { describe, it, expect } from 'vitest';
 import {
   effortLevelsFor,
@@ -9,7 +9,7 @@ import {
   readApplied,
   setEffortRequest,
   withLevel,
-} from './effort';
+} from './claude-effort';
 
 describe('the two requests', () => {
   it('asks for settings by the verb the CLI answers', () => {

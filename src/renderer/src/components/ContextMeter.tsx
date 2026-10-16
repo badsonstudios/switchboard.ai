@@ -4,7 +4,7 @@
 // bar, and "when you get over 60%, you should reset it or compact it there".
 //
 // THE NUMBER IS THE CLI'S OWN. `get_context_usage` answers the fill directly
-// (measured: shared/context-usage.ts), so nothing here counts tokens or knows a
+// (measured: main/providers/claude-context-usage.ts), so nothing here counts tokens or knows a
 // model's window. It is asked when the card appears, when a turn ends, when
 // the model changes (the window is a different size), and every so often
 // while a turn runs, because one long turn of tool calls is exactly how a

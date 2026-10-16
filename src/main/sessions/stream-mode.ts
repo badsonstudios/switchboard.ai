@@ -1,4 +1,5 @@
-// Which permission mode is this session in RIGHT NOW? (#1072)
+// Which permission mode is this session in RIGHT NOW? (#1072) Read from
+// neutral `mode` events since E40 item 04 (#1287).
 //
 // ── WHY THIS STORE HAS TO EXIST ─────────────────────────────────────────────
 //
@@ -31,26 +32,9 @@
 // the mode it was started at — which, until the CLI says otherwise, is the
 // truth.
 import { errorText } from '../../shared/error-text';
-import { AUTONOMY_MODES, type AutonomyMode } from '../../shared/sessions';
+import type { AutonomyMode } from '../../shared/sessions';
 import { Logger } from '../log/logger';
-import { AUTONOMY_PERMISSION_MODE } from '../providers/claude';
-
-/**
- * The CLI's `permissionMode` value → our profile, or `null` for one we have no
- * name for.
- *
- * Derived from `AUTONOMY_PERMISSION_MODE` rather than written out a second
- * time, so the two directions cannot disagree. The CLI has modes we do not
- * offer (`auto`, `dontAsk`); for those the honest answer is "unknown", and the
- * caller keeps showing what it had rather than a profile that is merely close.
- */
-export function autonomyFromPermissionMode(value: unknown): AutonomyMode | null {
-  if (typeof value !== 'string') return null;
-  for (const mode of AUTONOMY_MODES) {
-    if (AUTONOMY_PERMISSION_MODE[mode] === value) return mode;
-  }
-  return null;
-}
+import type { EngineEvent } from './engine-events';
 
 export class StreamMode {
   private readonly bySession = new Map<string, AutonomyMode>();
@@ -66,26 +50,15 @@ export class StreamMode {
   }
 
   /**
-   * Feed one stream message. Ignores everything that is not a `system` /
-   * `status` carrying a `permissionMode` we have a name for.
-   *
-   * `status` messages carry other things too (and may carry no mode at all), so
-   * an absent field is the ordinary case and says nothing. An UNKNOWN value
-   * keeps whatever we had — fail-open (P6): a stale chip beats a wrong one —
-   * and is logged at `debug`, because a CLI that grows a mode would otherwise
-   * shout on every announcement about something nobody here can act on.
+   * Feed one engine event: the `mode` the engine says this session is in,
+   * already in the host's vocabulary (#1287 — this read Claude's
+   * `system:status.permissionMode` itself until then; the mapping, and the
+   * rule that a mode we have no name for is not sent, are Claude's translator's
+   * now: `providers/claude-modes.ts`). Ignores everything else.
    */
-  offer(sessionId: string, msg: Record<string, unknown>): void {
-    if (msg.type !== 'system' || msg.subtype !== 'status') return;
-    if (msg.permissionMode === undefined) return;
-    const mode = autonomyFromPermissionMode(msg.permissionMode);
-    if (!mode) {
-      this.log?.debug('stream status mode ignored', {
-        sessionId,
-        got: typeof msg.permissionMode === 'string' ? msg.permissionMode.slice(0, 40) : typeof msg.permissionMode,
-      });
-      return;
-    }
+  ingest(sessionId: string, ev: EngineEvent): void {
+    if (ev.type !== 'mode') return;
+    const mode = ev.mode;
     // only when it actually moved: one IPC message per real change, not per status
     if (this.bySession.get(sessionId) === mode) return;
     this.bySession.set(sessionId, mode);

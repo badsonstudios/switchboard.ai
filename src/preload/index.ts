@@ -53,6 +53,7 @@ import type {
 import type { FeatureRequestDraft, FeedbackResult } from '../shared/feedback';
 import type { PerfBatch, PerfLoopDelay } from '../shared/perf';
 import type { ControlVerdict } from '../shared/control';
+import type { SessionControlsWire } from '../shared/engine-controls';
 import type { NotificationPrefs } from '../shared/notifications';
 import type { WorkspaceSaveState } from '../shared/workspace';
 import type { HistoryRepairNotice } from '../shared/history-repair';
@@ -637,7 +638,7 @@ const api = {
       ipcRenderer.invoke('sessions:setEffort', sessionId, level),
     /**
      * How full this session's context window is (#715). A success carries
-     * `ContextUsage` (`shared/context-usage.ts`): the percentage by the
+     * `ContextUsage` (`shared/context-usage.ts`; measured in `main/providers/claude-context-usage.ts`): the percentage by the
      * CLI's own count, and the token counts behind it. Only those numbers
      * cross: the CLI's full answer names files on the user's machine.
      */
@@ -660,6 +661,13 @@ const api = {
      */
     currentMode: (sessionId: string): Promise<AutonomyMode | null> =>
       ipcRenderer.invoke('sessions:currentMode', sessionId),
+    /**
+     * Which controls this live session's AI has, and its name (E40 item 04,
+     * #1287): a control not in `has` is greyed out with "Not available with
+     * <ai>". `null` for a session main does not hold — grey nothing out.
+     */
+    controls: (sessionId: string): Promise<SessionControlsWire | null> =>
+      ipcRenderer.invoke('sessions:controls', sessionId),
     /** future gated calls for this LIVE session answer 'allow' in main (P2 #19) */
     allowAllSession: (liveId: string): Promise<void> =>
       ipcRenderer.invoke('sessions:allowAllSession', liveId),

@@ -4,6 +4,7 @@
 // obeys them. Both are needed: a pure function nobody calls correctly is still
 // a Claude-shaped session start.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { ClaudeFedCommands, ClaudeFedModel, ClaudeFedPermissions } from './fixtures/claude-fed-stores';
 import fs from 'fs';
 import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
@@ -12,11 +13,8 @@ import { MAX_PROMPT_CHARS } from '../../shared/prompt-attachments';
 import { ProviderCapabilities } from '../extensibility/contributions';
 import { PersistedSession } from '../workspace/store';
 import { SessionIdentity } from './session-manager';
-import { StreamCommands } from './stream-commands';
-import { StreamPermissions } from './stream-permissions';
 import type { FeedDerivation } from '../transcripts/watcher';
 import { ClaudeFedFeed } from '../feed/fixtures/claude-fed-feed';
-import { StreamModel } from './stream-model';
 import { Logger } from '../log/logger';
 import { SlashCommand } from '../../shared/slash-commands';
 import { readAiTitle } from '../providers/claude';
@@ -113,11 +111,11 @@ function harness(
     known?: SlashCommand[];
     /** the CLI's own list, off the stream (P2-E18-09) — the real class, so the
      *  test exercises the real wiring rather than a stand-in for it */
-    streamCommands?: StreamCommands;
+    streamCommands?: ClaudeFedCommands;
     /** the stream transport's approval router (P2-E18-07) — the real class too.
      *  Absent from this harness until #202, which meant `tearDownLive`'s call to
      *  it was a no-op in every test in this file. */
-    streamPermissions?: StreamPermissions;
+    streamPermissions?: ClaudeFedPermissions;
     /** the Feed built from typed messages (P2-E18-10) — the real class, again */
     streamFeed?: ClaudeFedFeed;
     /**
@@ -127,7 +125,7 @@ function harness(
      * optimistic `noteSet` and the teardown's `forgetSession` were all
      * no-opping their way through every test in this file.
      */
-    streamModel?: StreamModel;
+    streamModel?: ClaudeFedModel;
     /** make the control channel REFUSE a `set_model`, so the no-news-on-refusal
      *  half of #746's push is assertable rather than assumed */
     setModelVerdict?: unknown;
@@ -378,7 +376,12 @@ function harness(
       // exact ordered list by several tests, and a new entry in it would fail
       // them for a reason that has nothing to do with what they test. The
       // wiring gets its own pin instead — "gives up in-flight control requests".
-      control: { forgetSession: controlForgot },
+      // (`control.forgetSession` until #1287, when the channel moved behind
+      // the provider and the manager grew `forgetControls`.)
+      forgetControls: controlForgot,
+      // Which controls a session's AI declared (#1287): Claude's full set.
+      controlsOf: (id: string) =>
+        id ? { ai: 'Claude Code', has: ['approvals', 'interrupt', 'models', 'effort', 'contextUsage', 'modes', 'slashCommands', 'mcp'] } : null,
       // The two control-channel verbs (#721). The manager's own behaviour is
       // covered in `control-seam.test.ts` against a real one; these record the
       // call so the HANDLERS' argument checks can be pinned.
@@ -774,12 +777,12 @@ function harness(
  * for ever — and the renderer must be told the bar can go.
  */
 function streamPerms(): {
-  perms: StreamPermissions;
+  perms: ClaudeFedPermissions;
   /** every `control_response` the router pushed back down the stream */
   sent: Array<{ sessionId: string; msg: Record<string, unknown> }>;
 } {
   const sent: Array<{ sessionId: string; msg: Record<string, unknown> }> = [];
-  const perms = new StreamPermissions(
+  const perms = new ClaudeFedPermissions(
     (sessionId, msg) => {
       sent.push({ sessionId, msg: msg as Record<string, unknown> });
       return true;
@@ -1869,7 +1872,7 @@ describe('registerSessionIpc — @ session summaries (P2-E11-07)', () => {
 
 // P2-E18-09 — where the composer's command list comes from.
 //
-// Through the REAL handler and the REAL StreamCommands, because the whole item
+// Through the REAL handler and the REAL ClaudeFedCommands, because the whole item
 // is a wiring decision: which of two lists reaches the popup, and when.
 describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
   let dir: string;
@@ -1891,7 +1894,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
     const h = harness(undefined, dir, {
       liveIds: ['live-1'],
       known: curated,
-      streamCommands: new StreamCommands(),
+      streamCommands: new ClaudeFedCommands(),
     });
 
     const list = (await h.call('sessions:slashCommands', 'live-1')) as SlashCommand[];
@@ -1900,7 +1903,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
   });
 
   it('uses the CLI list once it arrives, keeping our descriptions and badges', async () => {
-    const streamCommands = new StreamCommands();
+    const streamCommands = new ClaudeFedCommands();
     const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated, streamCommands });
 
     streamCommands.offer('live-1', init(['clear', 'startup', 'cli-only']));
@@ -1919,7 +1922,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
   });
 
   it('a session with no stream list is unaffected by another session that has one', async () => {
-    const streamCommands = new StreamCommands();
+    const streamCommands = new ClaudeFedCommands();
     const h = harness(undefined, dir, {
       liveIds: ['live-1', 'live-2'],
       known: curated,
@@ -1939,7 +1942,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
   // facts, but the done-when is "falls back … rather than showing nothing", and
   // an empty popup is empty whichever fact produced it.
   it('an EMPTY advertised list falls back too, not just a missing one', async () => {
-    const streamCommands = new StreamCommands();
+    const streamCommands = new ClaudeFedCommands();
     const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated, streamCommands });
 
     streamCommands.offer('live-1', init([]));
@@ -1952,7 +1955,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
   // suite green. A live id is never reused, so the cost of the leak is small —
   // but "small and untested" is how a leak becomes permanent.
   it('drops a session list when its live session is dropped', async () => {
-    const streamCommands = new StreamCommands();
+    const streamCommands = new ClaudeFedCommands();
     const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated, streamCommands });
     await h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 't' });
     streamCommands.offer('live-1', init(['cli-only']));
@@ -2007,7 +2010,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
       // session next REPLIES. So switching left the footer on the old name for
       // a whole turn, and a control whose effect is invisible reads as a
       // control that did nothing. This is the push that fixes it.
-      const streamModel = new StreamModel();
+      const streamModel = new ClaudeFedModel();
       const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated, streamModel });
 
       expect(await h.call('sessions:setModel', 'live-1', 'haiku')).toMatchObject({ ok: true });
@@ -2022,7 +2025,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
       // `get_settings` answers which model a session is on before it has taken
       // a turn. The card's one read when it appears carries it, and the model
       // store is seeded from that — pushed, so the chip says it unasked.
-      const streamModel = new StreamModel();
+      const streamModel = new ClaudeFedModel();
       const h = harness(undefined, dir, {
         liveIds: ['live-1'],
         known: curated,
@@ -2049,7 +2052,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
     });
 
     it('an effort read with no model in it (an older CLI) leaves the model unknown (#1174)', async () => {
-      const streamModel = new StreamModel();
+      const streamModel = new ClaudeFedModel();
       const h = harness(undefined, dir, {
         liveIds: ['live-1'],
         known: curated,
@@ -2065,7 +2068,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
       // `system:init` arrives once per TURN, carrying the same model on almost
       // all of them. Announcing every one would be an IPC message and a
       // renderer repaint per turn per session reporting that nothing happened.
-      const streamModel = new StreamModel();
+      const streamModel = new ClaudeFedModel();
       const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated, streamModel });
       const models = (): unknown[] =>
         h.pushed.filter((p) => p.channel === 'sessions:model').map((p) => p.payload);
@@ -2089,7 +2092,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
       // The session is untouched, so there is no news. A push here would move
       // the footer to a model the session is not running — the same class of
       // lie this item exists to remove, from the other direction.
-      const streamModel = new StreamModel();
+      const streamModel = new ClaudeFedModel();
       const h = harness(undefined, dir, {
         liveIds: ['live-1'],
         known: curated,
@@ -2188,7 +2191,7 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
     expect(await h.call('sessions:slashCommands', 42)).toEqual([]);
   });
 
-  it('works with no StreamCommands wired at all — the PTY-only wiring', async () => {
+  it('works with no ClaudeFedCommands wired at all — the PTY-only wiring', async () => {
     const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated });
 
     const list = (await h.call('sessions:slashCommands', 'live-1')) as SlashCommand[];
@@ -3133,7 +3136,7 @@ describe('a card respawning over a crashed session reaps it (#187)', () => {
     // stream session's blocks and its advertised slash commands go too, and the
     // new session starts from nothing rather than inheriting a dead CLI's answers
     const streamFeed = new ClaudeFedFeed();
-    const streamCommands = new StreamCommands();
+    const streamCommands = new ClaudeFedCommands();
     const exitCodes: Record<string, number> = {};
     const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
       prior: card(),
@@ -3345,7 +3348,7 @@ describe('a retired session takes its parked approvals with it (#202)', () => {
     expect(h.call('sessions:pendingPermissions')).toEqual([]);
   });
 
-  it('the PTY-only wiring works with no StreamPermissions at all', () => {
+  it('the PTY-only wiring works with no ClaudeFedPermissions at all', () => {
     const h = harness(undefined, dir, { prior: card() });
     start(h);
 
@@ -3437,7 +3440,7 @@ describe('a stream request for an unbound session is declined, not parked (#333)
 // not disagree about whether a session was reachable.
 //
 // There is one channel now. `setAnswerSurfaceProbe` survives on
-// `StreamPermissions` and is still wired from `cardOfLive`; its tests live in
+// `ClaudeFedPermissions` and is still wired from `cardOfLive`; its tests live in
 // `stream-permissions.test.ts`. The requirement that two channels agree is the
 // only thing lost, and only because there is no second channel to disagree with.
 
@@ -3547,7 +3550,7 @@ describe('a teardown step that throws releases the rest anyway (#219)', () => {
   it('three failing steps still leave a fully retired session', () => {
     const { perms, sent } = streamPerms();
     const streamFeed = new ClaudeFedFeed();
-    const streamCommands = new StreamCommands();
+    const streamCommands = new ClaudeFedCommands();
     const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
       prior: card(),
       transport: 'stream',
@@ -3890,10 +3893,10 @@ describe('a session that exits on its own releases what it was holding (#271)', 
   // of it — asserted here rather than only the absence of a throw, which every
   // `tearDownStep` guarantees for free and would make this vacuous.
   // Named for the PTY-only wiring until #952; what it actually pins is a wiring
-  // with NO `StreamPermissions` at all — a read-only registration, which is still
+  // with NO `ClaudeFedPermissions` at all — a read-only registration, which is still
   // a real shape — and that the exit path still tears the hook registration down
   // through it rather than depending on a router being there.
-  it('a wiring with no StreamPermissions still releases the hook registration', () => {
+  it('a wiring with no ClaudeFedPermissions still releases the hook registration', () => {
     const h = harness(undefined, dir, { prior: card() });
     start(h);
 
@@ -4051,7 +4054,7 @@ describe('a card cannot be renamed to nothing (#294)', () => {
 // Events row), and a session whose window was closed could not run a gated tool
 // at all.
 //
-// These use the REAL `StreamPermissions`, so what is asserted is the wiring end
+// These use the REAL `ClaudeFedPermissions`, so what is asserted is the wiring end
 // to end: one IPC call in, a `control_response` on the transport out, and
 // nothing pushed at the renderer in between.
 describe('allow-all is granted on both channels (#319)', () => {

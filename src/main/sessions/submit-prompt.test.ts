@@ -12,8 +12,9 @@ import { SessionManager } from './session-manager';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions } from '../extensibility/contributions';
 import { claudeEvents } from '../providers/claude-events';
+import { claudeControls } from '../providers/claude-controls';
 import { SessionTransport } from '../transport/transport';
-import { userMessage, controlResponse } from '../../shared/stream-protocol';
+import { userMessage, controlResponse } from '../providers/claude-protocol';
 import {
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_PAYLOAD_BYTES,
@@ -52,8 +53,9 @@ function registryFor(transport: TransportKind): ContributionRegistry<MainContrib
   const r = new ContributionRegistry<MainContributions>();
   r.register('provider-adapter', {
     manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },
-    // these sessions speak Claude's frames, so they declare its translator (#1286)
-    capabilities: { events: claudeEvents },
+    // these sessions speak Claude's frames, so they declare its translator
+    // (#1286) and its controls (#1287)
+    capabilities: { events: claudeEvents, controls: claudeControls },
     buildSpawn: () => ({ command: 'cli', args: [], env: {}, transport }),
   });
   return r;
@@ -114,7 +116,7 @@ describe('userMessage — the envelope S-10 wrote to the real CLI (P2-E18-06)', 
 
 // THE CONTRACT, PINNED (#490). Both fields were read out of `claude` 2.1.233 on
 // PATH — the compiled binary embeds its own zod schemas and dedup pass. The
-// reasoning is in `shared/stream-protocol.ts`; these tests exist so that a
+// reasoning is in `providers/claude-protocol.ts`; these tests exist so that a
 // future edit that drops either field fails here rather than silently in a
 // session six months from now.
 describe('userMessage — uuid and origin (#490)', () => {

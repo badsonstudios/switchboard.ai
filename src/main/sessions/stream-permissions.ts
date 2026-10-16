@@ -1,5 +1,13 @@
 // can_use_tool -> the approval bar (P2-E18-07).
 //
+// PROVIDER-NEUTRAL SINCE E40 item 04 (#1287). This router reads no wire: the
+// request arrives as a `permission-request` engine event (Claude's translator
+// reads the `can_use_tool` off the frame), and the answer leaves as a neutral
+// `PermissionDecision` through `SendToSession`, which the provider's
+// `approvals` control turns into its own frame. Everything below about Claude's
+// `can_use_tool` is still true of Claude; it is just no longer this file's
+// business how the request was spelled.
+//
 // THE REASON THIS EPIC EXISTS.
 //
 // Measured 2026-08-01: editing a file in a project's own `.claude/` folder
@@ -31,8 +39,8 @@ import { MAX_DENIAL_REASON_CHARS, type PermissionRequest } from '../../shared/ip
 import { targetPath } from '../../shared/tool-paths';
 import { HOST_STYLE } from '../fs/read-scope';
 import { Logger } from '../log/logger';
-import { asDisplayString } from '../../shared/display-string';
-import { controlResponse } from '../../shared/stream-protocol';
+import type { PermissionDecision } from './engine-controls';
+import type { EngineEvent, PermissionRequestEvent } from './engine-events';
 import { ASK_USER_QUESTION_TOOL } from '../../shared/ask-user-question';
 import { EXIT_PLAN_MODE_TOOL } from '../../shared/plan-mode';
 import { SessionEvent } from './state-machine';
@@ -170,8 +178,20 @@ function answersLookRight(answers: unknown): boolean {
   return entries.every(([q, a]) => q.length > 0 && typeof a === 'string' && a.trim().length > 0);
 }
 
-/** How we answer: the manager knows which transport a session is on. */
-export type SendToSession = (sessionId: string, msg: unknown) => boolean;
+/**
+ * How we answer: `SessionManager.answerPermission`, which hands the decision to
+ * the session's provider (its `approvals` control) — the manager knows which
+ * session that is, and the PROVIDER knows its wire (#1287; for Claude a
+ * `control_response` to the `can_use_tool`). `requestId` is the engine's own id,
+ * as the `permission-request` event carried it. False = it could not be
+ * written, which every fail-open path below already reads as "the session is
+ * gone".
+ */
+export type SendToSession = (
+  sessionId: string,
+  requestId: string,
+  decision: PermissionDecision
+) => boolean;
 
 /**
  * How a decision reaches the STATUS machine — `SessionManager.apply` (#310).
@@ -452,9 +472,19 @@ export class StreamPermissions {
   }
 
   /**
-   * Offer one `control_request` to the user. Ignores anything that is not
-   * `can_use_tool` — `hook_callback` and `mcp_message` ride the same channel
-   * and are plumbing, not questions.
+   * The router's subscription (`manager.onEngineEvent`, #1287): a request to
+   * offer, or one the engine took back. Every other event is someone else's.
+   */
+  ingest(sessionId: string, ev: EngineEvent): void {
+    if (ev.type === 'permission-withdrawn') this.withdrawn(sessionId, ev.requestId);
+    else if (ev.type === 'permission-request') this.offerRequest(sessionId, ev);
+  }
+
+  /**
+   * Offer one permission request to the user. The engine's translator has
+   * already decided it IS one (for Claude, a `can_use_tool` — `hook_callback`
+   * and `mcp_message` ride the same channel and are plumbing, not questions)
+   * and read the ask off it.
    *
    * Four ways out — the first three in the hook path's order (#319), the fourth
    * added by #333:
@@ -474,20 +504,12 @@ export class StreamPermissions {
    * window open" is the true and useful one when both are so — the missing card
    * is a consequence of the app going away, not a separate fault to report.
    */
-  offer(sessionId: string, msg: Record<string, unknown>): void {
-    if (msg.type === 'control_cancel_request') {
-      this.withdrawn(sessionId, asDisplayString(msg.request_id));
-      return;
-    }
-    if (msg.type !== 'control_request') return;
-    const req = msg.request as Record<string, unknown> | undefined;
-    if (req?.subtype !== 'can_use_tool') return;
-
-    const nativeRequestId = asDisplayString(msg.request_id);
+  private offerRequest(sessionId: string, ev: PermissionRequestEvent): void {
+    const nativeRequestId = ev.requestId;
     if (!nativeRequestId) {
       // Unanswerable: with no id there is nothing to echo back, so offering it
       // would park the card on a question whose answer goes nowhere.
-      this.log.warn('can_use_tool with no request_id — ignored', { sessionId });
+      this.log.warn('permission request with no request id — ignored', { sessionId });
       return;
     }
     // Namespaced so a stream request can never collide with a hook request id
@@ -498,15 +520,13 @@ export class StreamPermissions {
     const request: PermissionRequest = {
       requestId,
       sessionId,
-      tool: asDisplayString(req.tool_name, 'unknown'),
-      input: (req.input as Record<string, unknown>) ?? {},
+      tool: ev.tool,
+      input: ev.input,
       source: 'stream',
-      reason: typeof req.decision_reason === 'string' ? req.decision_reason : undefined,
-      reasonType: typeof req.decision_reason_type === 'string' ? req.decision_reason_type : undefined,
-      displayName: typeof req.display_name === 'string' ? req.display_name : undefined,
-      suggestions: Array.isArray(req.permission_suggestions)
-        ? (req.permission_suggestions as Array<Record<string, unknown>>)
-        : undefined,
+      reason: ev.reason,
+      reasonType: ev.reasonType,
+      displayName: ev.displayName,
+      suggestions: ev.suggestions,
     };
 
     // 0. A DISPATCHED SESSION ASKING TO LEAVE PLAN MODE (#948).
@@ -586,7 +606,8 @@ export class StreamPermissions {
         'found as your reply and stop.';
       const delivered = this.send(
         sessionId,
-        controlResponse(nativeRequestId, { behavior: 'deny', message })
+        nativeRequestId,
+        { behavior: 'deny', message }
       );
       // The `permission-held` `streamStatusEvent` applied one message ago has to
       // end, exactly as it does on the two deny branches below — otherwise the
@@ -635,7 +656,7 @@ export class StreamPermissions {
     //    renderer, so the user would not even see what they missed. A question
     //    holds like any other request and waits for a person.
     if (this.allowAllSessions.has(sessionId) && !isQuestion(request.tool)) {
-      const sent = this.send(sessionId, controlResponse(nativeRequestId, { behavior: 'allow', updatedInput: request.input }));
+      const sent = this.send(sessionId, nativeRequestId, { behavior: 'allow', updatedInput: request.input });
       // NO `applyStatus`, deliberately, and this is the exact mirror of the
       // hook path: `maybeHold` returns 'answered' for an allow-all session and
       // the caller applies nothing, because a question that was never asked has
@@ -686,7 +707,8 @@ export class StreamPermissions {
     if (!isQuestion(request.tool) && this.fileGranted(sessionId, request.input)) {
       const sent = this.send(
         sessionId,
-        controlResponse(nativeRequestId, { behavior: 'allow', updatedInput: request.input })
+        nativeRequestId,
+        { behavior: 'allow', updatedInput: request.input }
       );
       this.log.debug('gated call auto-allowed (per-file grant)', {
         sessionId,
@@ -715,7 +737,7 @@ export class StreamPermissions {
       this.noWindowWarned.add(sessionId);
       const where = { sessionId, requestId, tool: request.tool };
       const message = this.unavailable('No switchboard window was open to review this request');
-      this.send(sessionId, controlResponse(nativeRequestId, { behavior: 'deny', message }));
+      this.send(sessionId, nativeRequestId, { behavior: 'deny', message });
       // Unlike `forgetSession`, this session is ALIVE and carries on: the
       // `permission-held` that `streamStatusEvent` already applied one message
       // ago has to end, or the card the user eventually reopens shows a
@@ -758,7 +780,8 @@ export class StreamPermissions {
       );
       const delivered = this.send(
         sessionId,
-        controlResponse(nativeRequestId, { behavior: 'deny', message })
+        nativeRequestId,
+        { behavior: 'deny', message }
       );
       // Same reason as the no-window branch: an unbound session that is still
       // ALIVE carries on, so the `permission-held` applied one message ago has
@@ -913,7 +936,7 @@ export class StreamPermissions {
     // the words `unavailable` uses for every other undeliverable verdict.
     const undeliverable =
       decision === 'allow' && isQuestion(p.request.tool) && updatedInput !== undefined && !answered;
-    const payload = undeliverable
+    const payload: PermissionDecision = undeliverable
       ? {
           behavior: 'deny',
           message: this.unavailable('Your answer to this question could not be delivered'),
@@ -928,7 +951,7 @@ export class StreamPermissions {
       });
     }
 
-    const sent = this.send(p.sessionId, controlResponse(p.nativeRequestId, payload));
+    const sent = this.send(p.sessionId, p.nativeRequestId, payload);
     // Before `notifyResolved`, so this half stays a mirror image
     // of `HookListener.decide` — a divergence between the two would be a trap
     // for whoever reads one to understand the other, which is the shape of the
@@ -1116,7 +1139,7 @@ export class StreamPermissions {
    *    input is the answer channel. Letting a renderer rewrite a `Bash` input on
    *    the way to allow would turn our approval bar into a place where the
    *    command the user READ and the command that RUNS are different strings.
-   * 2. **A plain JSON object**, so `controlResponse` cannot be handed a class
+   * 2. **A plain JSON object**, so the provider's answer cannot be handed a class
    *    instance, an array or a prototype-polluted shape.
    * 3. **Round-trips through JSON**, which is what the transport will do to it
    *    anyway — a value that cannot survive that (a cycle, a BigInt) must fail
@@ -1201,7 +1224,7 @@ export class StreamPermissions {
       if (p.sessionId !== sessionId) continue;
       this.pending.delete(id);
       if (p.timer) clearTimeout(p.timer);
-      this.send(p.sessionId, controlResponse(p.nativeRequestId, { behavior: 'deny', message: why }));
+      this.send(p.sessionId, p.nativeRequestId, { behavior: 'deny', message: why });
       this.log.info('stream permission auto-denied', { requestId: id, sessionId, why });
       this.notifyResolved(id);
     }
@@ -1287,7 +1310,7 @@ export class StreamPermissions {
     this.pending.delete(requestId);
     if (p.timer) clearTimeout(p.timer);
     const message = this.unavailable('Nobody in switchboard answered this request in time');
-    this.send(p.sessionId, controlResponse(p.nativeRequestId, { behavior: 'deny', message }));
+    this.send(p.sessionId, p.nativeRequestId, { behavior: 'deny', message });
     // the same guard as `decide`: one of two holds timing out must not walk
     // the session to `working` over the one that is still waiting (#1202)
     if (!this.holdsAnotherFor(p.sessionId, requestId)) {
@@ -1467,13 +1490,12 @@ export class StreamPermissions {
    * be answered in the same tick. The done-when says "never hold, never emit
    * `needs-permission` and never beep"; this is the last two.
    *
-   * Deliberately takes the raw message rather than a parsed request: the pump
-   * has the message and nothing else, and parsing it twice is how the two ends
-   * would come to disagree about what counts.
+   * Takes the `permission-request` EVENT (#1287) — the same one `offer` is
+   * handed, parsed once by the provider's translator — so the two ends cannot
+   * come to disagree about what counts. (It took the raw message until then,
+   * for that same reason: the pump had nothing else.)
    */
-  willAutoAllow(sessionId: string, msg: Record<string, unknown>): boolean {
-    const req = msg.request as Record<string, unknown> | undefined;
-    if (msg.type !== 'control_request' || req?.subtype !== 'can_use_tool') return false;
+  willAutoAllow(sessionId: string, ev: PermissionRequestEvent): boolean {
     // ⚠️ THE SAME UNANSWERABLE-REQUEST GUARD `offer` OPENS WITH, and it has to be
     // here too (review). `offer` drops a `can_use_tool` with no `request_id`
     // before it answers anything — there is nothing to echo back. Without the
@@ -1482,8 +1504,8 @@ export class StreamPermissions {
     // `permission-held`, and the CLI would park with nothing on screen, no
     // badge, no bar and no beep. Latent for allow-all before #974; a second
     // grant is a second way to reach it.
-    if (!asDisplayString(msg.request_id)) return false;
-    const tool = asDisplayString(req.tool_name);
+    if (!ev.requestId) return false;
+    const tool = ev.tool;
     // A QUESTION IS EXEMPT FROM BOTH RUNGS (#563). "Allow all tools in this
     // session" is not "answer all questions in this session", and neither is
     // "approve everything in this file" — a question holds and waits for a
@@ -1491,7 +1513,7 @@ export class StreamPermissions {
     // would suppress and hold the same message.
     if (isQuestion(tool)) return false;
     if (this.allowAllSessions.has(sessionId)) return true;
-    return this.fileGranted(sessionId, req.input);
+    return this.fileGranted(sessionId, ev.input);
   }
 
   /**

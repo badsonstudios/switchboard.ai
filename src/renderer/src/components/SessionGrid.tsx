@@ -140,6 +140,7 @@ import {
   lockReasonKey,
   sessionControlLock,
 } from '../lib/session-controls';
+import { controlUnavailable, useAiControls } from '../lib/ai-controls';
 import { type TransportKind } from '../../../shared/transport';
 import type {
   AutonomyMode,
@@ -1119,6 +1120,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // no panel can see it.
   const controlsLock = sessionControlLock(status, ended);
   const controlsLocked = controlsLock !== null;
+  // …and whether this session's AI runs slash commands at all (#1287): the
+  // composer's Compact and Clear grey out by the same declaration, with the
+  // same "Not available with <AI>." `null` for Claude and while unknown.
+  const aiControls = useAiControls(live?.id ?? '');
+  const noSlashCommands = controlUnavailable(aiControls, 'slashCommands', t);
+  const slashLocked = controlsLocked || noSlashCommands !== null;
   const spawning = React.useRef(false);
   const folder = props.params?.folder;
   // What the card CALLS itself, on screen (#250). The store's copy first, so a
@@ -1942,7 +1949,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // The picker's answer FIRST, the transcript's as the fallback (#746).
     //
     // Not `model` alone, and the difference is a whole transport: `StreamModel`
-    // is fed only from `onStreamMessage` (`main/index.ts`), so a **Terminal-mode
+    // is fed only from the stream's `model` events (`main/index.ts`), so a **Terminal-mode
     // session never produces one at all** — and neither does a stream session
     // before its first `system:init`, which includes every resumed card at the
     // moment it appears (`priorModel` seeds `usage` for exactly that reason).
@@ -2737,21 +2744,23 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                         <StandingGrantsSection liveId={live.id} grants={standingGrants} />
                         <div style={{ borderBlockEnd: '1px solid var(--border)', marginBlock: 3 }} />
                         <button
-                          disabled={controlsLocked}
-                          title={t(lockReasonKey(controlsLock) ?? 'grid.menuClearHint')}
+                          disabled={slashLocked}
+                          title={noSlashCommands ?? t(lockReasonKey(controlsLock) ?? 'grid.menuClearHint')}
+                          data-unavailable={noSlashCommands !== null ? 'slashCommands' : undefined}
                           onClick={() => setConfirmClear(true)}
-                          style={menuItemStyle(controlsLocked)}
+                          style={menuItemStyle(slashLocked)}
                         >
                           {t('grid.menuClear')}
                         </button>
                         <button
-                          disabled={controlsLocked}
-                          title={t(lockReasonKey(controlsLock) ?? 'grid.menuCompactHint')}
+                          disabled={slashLocked}
+                          title={noSlashCommands ?? t(lockReasonKey(controlsLock) ?? 'grid.menuCompactHint')}
+                          data-unavailable={noSlashCommands !== null ? 'slashCommands' : undefined}
                           onClick={() => {
                             void compactConversation(live.id);
                             setMenuOpen(false);
                           }}
-                          style={menuItemStyle(controlsLocked)}
+                          style={menuItemStyle(slashLocked)}
                         >
                           {t('grid.menuCompact')}
                         </button>

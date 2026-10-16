@@ -275,7 +275,8 @@ test.describe('allow-all in Direct mode answers at the server (#319)', () => {
 // needs-permission, and the SESSION fires it, not the test.
 //
 // A Direct session runs BOTH signal channels into one state machine.
-// `stream-status.ts` maps `can_use_tool` -> `needs-permission` exactly; the hook
+// Claude's translator turns `can_use_tool` into a `permission-request` event and
+// `stream-status.ts` maps that to `needs-permission` exactly; the hook
 // `Notification` arm in `state-machine.ts` transitions on a regex over the CLI's
 // DEBOUNCED nudge, with no evidence anything is held. On stream every real
 // permission arrives on the control channel, so the hook route is a duplicate at

@@ -102,6 +102,11 @@ on the floor, and say so in your PR.
   what a session did through an AI-neutral layer, with Claude's own messages
   translated behind its adapter. Nothing looks or behaves differently; it is
   the first half of letting a second AI drive the same view.
+- The second half: approvals, Stop, the model and effort chips, the mode chip,
+  slash commands and the live MCP controls now go through the AI's own
+  adapter, and each AI says which of them it has. A control an AI lacks will
+  grey out with "Not available with <AI>"; Claude has them all, so nothing
+  looks or behaves differently today.
 
 ## 0.8.122 — 2026-10-13
 

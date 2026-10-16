@@ -1,5 +1,13 @@
 // The outbound control_request channel (#721) — the missing half of stream-json.
 //
+// CLAUDE'S, AND BEHIND ITS ADAPTER since E40 item 04 (#1287): this was
+// `main/transport/control-channel.ts`, one per `SessionManager`, listening to
+// every session's frames. It is now one per SESSION, built by
+// `claude-controls.ts` and fed that session's frames through
+// `SessionControls.receive`. The class itself is unchanged — its port is still
+// "send" and "subscribe" — so the correlation rules below, and their tests,
+// stand as they were.
+//
 // WHAT WAS MISSING, precisely. We have always been able to WRITE a control
 // request (`StreamSession.send`, and `SessionManager.interrupt` has sent one
 // since #154) and always been able to READ messages (`onStreamMessage`). What
@@ -32,7 +40,7 @@
 //  * **The PTY has no control channel at all.** Decided once, here, rather than
 //    per feature (#721's own constraint): `not-stream` is a first-class verdict
 //    and every consumer gets the same honest answer.
-import { readControlResponse, type StreamControlRequest } from '../../shared/stream-protocol';
+import { readControlResponse, type StreamControlRequest } from './claude-protocol';
 import type { ControlVerdict } from '../../shared/control';
 
 // The verdict types live in `shared/control.ts` — they cross IPC, so main, the
@@ -41,12 +49,13 @@ import type { ControlVerdict } from '../../shared/control';
 export type { ControlFailure, ControlVerdict } from '../../shared/control';
 
 /**
- * The narrow slice of `SessionManager` this needs.
+ * The narrow slice of a session this needs (`claude-controls.ts` builds it
+ * from the provider's `ControlSession`).
  *
  * A port rather than the manager itself, so the correlation logic is unit-tested
  * against two functions instead of a process tree. `send` returning `false` is
  * the transport gate: `SessionManager.sendToTransport` answers false when the
- * handle has no `send`, which is precisely the PTY.
+ * handle has no `send`.
  */
 export interface ControlPort {
   send(sessionId: string, msg: unknown): boolean;
@@ -77,14 +86,19 @@ export class ControlChannel {
   private readonly pending = new Map<string, Pending>();
   private readonly unsubscribe: () => void;
   /**
-   * One counter for the whole channel, so an id is unique ACROSS sessions and
+   * One counter for EVERY channel, so an id is unique ACROSS sessions and
    * `pending` can be a single flat map. `sb-` prefixed rather than a UUID
    * because these ids end up in logs and in a protocol trace, and `sb-7` tells
    * you at a glance that we sent it — a UUID tells you nothing and costs 36
    * characters per line. (`interrupt` still mints a UUID; it correlates
    * nothing, so it never needed to be readable.)
+   *
+   * STATIC since #1287, when the one channel per manager became one per
+   * session: a per-instance counter would have every session's first request
+   * be `sb-1`, and a log line naming `sb-1` would stop saying which one. Kept
+   * app-wide, the ids read exactly as they did before.
    */
-  private seq = 0;
+  private static seq = 0;
 
   constructor(port: ControlPort, opts: { timeoutMs?: number } = {}) {
     this.port = port;
@@ -96,7 +110,7 @@ export class ControlChannel {
    * Send one control request and wait for its answer.
    *
    * `build` is a FUNCTION of the id rather than a prepared object, so the
-   * builders in `shared/stream-protocol.ts` own both the shape and the
+   * builders in `claude-protocol.ts` own both the shape and the
    * validation. A builder that returns `null` has refused the arguments, and
    * nothing is written — that is the `invalid` verdict, and it is how the
    * measured `set_model`-with-no-field silent no-op is made impossible.
@@ -105,7 +119,7 @@ export class ControlChannel {
     sessionId: string,
     build: (requestId: string) => StreamControlRequest | null
   ): Promise<ControlVerdict> {
-    const requestId = `sb-${++this.seq}`;
+    const requestId = `sb-${++ControlChannel.seq}`;
     // GUARDED, because this function's contract is that it resolves a verdict
     // and NEVER rejects — and a builder is caller-supplied code. Today's
     // builders cannot throw, but the one that eventually validates something
@@ -228,12 +242,12 @@ export class ControlChannel {
    * Unsubscribe and settle everything outstanding.
    *
    * NO PRODUCTION CALLER TODAY, and that is deliberate rather than an
-   * oversight: `SessionManager` owns exactly one of these and lives as long as
-   * the app, so there is nothing to dispose of before exit — and the pending
-   * timers are `unref`'d, so an outstanding request cannot hold the process
-   * open. It exists so that the class is not the reason a future
-   * short-lived manager (a test host, a second window's worth of state) leaks a
-   * listener into the fan-out.
+   * oversight: since #1287 each session's controls own one of these, its
+   * subscription is to that session's own listener set (which goes with the
+   * session), and `forgetSession` already settles what was in flight — and the
+   * pending timers are `unref`'d, so an outstanding request cannot hold the
+   * process open. It exists so that the class is not the reason a longer-lived
+   * owner leaks a listener into a shared fan-out.
    */
   dispose(): void {
     this.unsubscribe();
@@ -248,10 +262,11 @@ export class ControlChannel {
     if (!parsed) return; // not a control response, or one with no id we can use
     const p = this.pending.get(parsed.requestId);
     if (!p) return; // a reply to something we already gave up on, or never sent
-    // THE SESSION HAS TO MATCH. Ids are unique across the channel, so a
-    // mismatch cannot happen by accident — but the map is flat and the fan-out
-    // is app-wide, so checking costs one comparison and removes the whole class
-    // of "session A's answer resolved session B's request" from consideration.
+    // THE SESSION HAS TO MATCH. Ids are unique across every channel, and since
+    // #1287 each channel only hears its own session's frames, so a mismatch
+    // cannot happen by accident. Kept as defence in depth: it costs one
+    // comparison and removes the whole class of "session A's answer resolved
+    // session B's request" from consideration, whoever wires the port.
     if (p.sessionId !== sessionId) return;
     p.settle(
       parsed.ok

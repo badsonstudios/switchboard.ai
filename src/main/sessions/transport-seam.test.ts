@@ -24,6 +24,7 @@ import { AUTONOMY_PERMISSION_MODE } from '../providers/claude';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions, SpawnRecipe } from '../extensibility/contributions';
 import { claudeEvents } from '../providers/claude-events';
+import { claudeControls } from '../providers/claude-controls';
 import {
   DEFAULT_SESSION_TRANSPORT,
   DEFAULT_TRANSPORT,
@@ -51,8 +52,9 @@ function registryWith(recipe: Partial<SpawnRecipe>): ContributionRegistry<MainCo
   const r = new ContributionRegistry<MainContributions>();
   r.register('provider-adapter', {
     manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },
-    // these sessions speak Claude's frames, so they declare its translator (#1286)
-    capabilities: { events: claudeEvents },
+    // these sessions speak Claude's frames, so they declare its translator
+    // (#1286) and its controls (#1287)
+    capabilities: { events: claudeEvents, controls: claudeControls },
     buildSpawn: () => ({ command: 'cli', args: [], env: {}, ...recipe }),
   });
   return r;
@@ -244,8 +246,9 @@ describe('a transport REQUEST loses to the adapter’s answer (P2-E18-17)', () =
     const r = new ContributionRegistry<MainContributions>();
     r.register('provider-adapter', {
       manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },
-      // these sessions speak Claude's frames, so they declare its translator (#1286)
-      capabilities: { events: claudeEvents },
+      // these sessions speak Claude's frames, so they declare its translator
+    // (#1286) and its controls (#1287)
+      capabilities: { events: claudeEvents, controls: claudeControls },
       buildSpawn: (o) => {
         asked.push(o.transport);
         return { command: 'cli', args: [], env: {}, ...recipe };

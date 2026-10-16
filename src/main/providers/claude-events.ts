@@ -7,8 +7,15 @@
 // Feed, the status machine, the pump's native-id bookkeeping and service
 // health used to read them directly; each of their Claude-specific readings
 // moved here unchanged, and what they receive now is `sessions/engine-events.ts`.
-// The CONTROL path — `can_use_tool` answers, `control_response`, the model,
-// mode and slash-command stores — still reads raw frames, and is #1287.
+// Since E40 item 04 (#1287) it also says what the CONTROL frames announce: a
+// `can_use_tool` becomes a `permission-request` carrying the ask (and a
+// `control_cancel_request` a `permission-withdrawn`), `system:init` /
+// `commands_changed` the command list, `system:init.model` the model, and
+// `system:status.permissionMode` the mode. Each reading moved here from the
+// store that used to make it (`stream-permissions`, `stream-commands`,
+// `stream-model`, `stream-mode`), unchanged. ANSWERING is not this file's:
+// replies (`control_response`) are correlated by Claude's controls
+// (`claude-controls.ts`), which the pump hands every frame.
 //
 // PURE AND STATELESS for Claude: every piece of state the old readers kept
 // (the Feed's assembly map, the `/clear` latch) belongs to the consumer and
@@ -30,6 +37,9 @@
 // Readiness comes from the spawn succeeding, which is the pump's, not ours.
 // ---------------------------------------------------------------------------
 import { deriveIntents } from '../feed/blocks';
+import { asDisplayString } from '../../shared/display-string';
+import type { CliCommand } from '../../shared/slash-commands';
+import { autonomyFromPermissionMode } from './claude-modes';
 import type { EventCapability } from '../extensibility/contributions';
 import type {
   ChunkKind,
@@ -44,15 +54,14 @@ import type {
  * a silent no-op — an unlisted type is reported once through `onUnknown`.
  *
  * - `control_request` other than `can_use_tool` (`hook_callback`,
- *   `mcp_message`) is plumbing; `control_response` / `control_cancel_request`
- *   belong to the control path (#1287), which reads them raw.
+ *   `mcp_message`) is plumbing; `control_response` is a REPLY, correlated by
+ *   Claude's controls (`claude-controls.ts`), not an event.
  * - `rate_limit_event`, `transcript_mirror`, `active_goal`, `keep_alive`:
  *   measured (S-10, S-11), not lifecycle. S-11 saw 0 keep_alives in 8 hours,
  *   so nothing may be built on its cadence.
  */
 const UNDERSTOOD_SILENT = new Set([
   'control_response',
-  'control_cancel_request',
   'rate_limit_event',
   'transcript_mirror',
   'active_goal',
@@ -254,6 +263,11 @@ function finite(n: unknown): number | undefined {
   return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
 }
 
+/** What a field the translator could not use WAS, for the skip log. */
+function kind(v: unknown): string {
+  return v === undefined ? 'absent' : typeof v;
+}
+
 /** `{a: undefined}` -> `{}`, so an event never carries a key it has no value for. */
 function defined<T extends object>(o: T): T {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
@@ -263,7 +277,10 @@ function defined<T extends object>(o: T): T {
  * What one Claude frame means, or `null` for a frame type this translator does
  * not know (the caller reports it once).
  */
-export function translateClaudeFrame(m: Record<string, unknown>): EngineEvent[] | null {
+export function translateClaudeFrame(
+  m: Record<string, unknown>,
+  skipped?: TranslatorHooks['onSkipped']
+): EngineEvent[] | null {
   const type = typeof m.type === 'string' ? m.type : '';
   switch (type) {
     case 'system': {
@@ -271,9 +288,47 @@ export function translateClaudeFrame(m: Record<string, unknown>): EngineEvent[] 
       // the resume identity (E18-05, #404). `&& id` rejects the empty string,
       // as every consumer always did: learning '' would make the first REAL id
       // look like a change.
+      //
+      // It also carries the CLI's slash-command list (P2-E18-09) and the model
+      // the session is running (#721) — the only frame that says either, once
+      // per TURN, and nothing can ask for them. Each is its own event so a
+      // store reads only its own; an absent or unusable field sends nothing
+      // and the store keeps what it had.
       if (m.subtype === 'init') {
+        const out: EngineEvent[] = [];
         const id = typeof m.session_id === 'string' ? m.session_id : '';
-        return id ? [{ type: 'conversation', id }] : [];
+        if (id) out.push({ type: 'conversation', id });
+        const commands = commandsEvent(m.slash_commands);
+        if (commands) out.push(commands);
+        else skipped?.('stream command list ignored: not an array', { subtype: 'init', got: kind(m.slash_commands) });
+        if (typeof m.model === 'string' && m.model.trim()) out.push({ type: 'model', id: m.model });
+        else skipped?.('stream init model ignored', { got: kind(m.model) });
+        return out;
+      }
+      // A plugin or skill change mid-session re-advertises the WHOLE list
+      // under `commands` (not `slash_commands` — a different key on a
+      // different subtype).
+      if (m.subtype === 'commands_changed') {
+        const commands = commandsEvent(m.commands);
+        if (!commands) {
+          skipped?.('stream command list ignored: not an array', { subtype: 'commands_changed', got: kind(m.commands) });
+        }
+        return commands ? [commands] : [];
+      }
+      // The mode the CLI says it is in (#1072): it leaves plan mode by itself
+      // when a plan is approved, and announces it here. `status` carries other
+      // things too and may carry no mode at all, so an absent field says
+      // nothing; a mode we have no name for (`auto`, `dontAsk`) is not sent —
+      // a stale chip beats a wrong one (P6).
+      if (m.subtype === 'status') {
+        if (m.permissionMode === undefined) return [];
+        const mode = autonomyFromPermissionMode(m.permissionMode);
+        if (!mode) {
+          skipped?.('stream status mode ignored', {
+            got: typeof m.permissionMode === 'string' ? m.permissionMode.slice(0, 40) : typeof m.permissionMode,
+          });
+        }
+        return mode ? [{ type: 'mode', mode }] : [];
       }
       // `/compact`'s marker (#748 probe 3; shape in
       // `spike/findings/1026-not-for-the-live-view.md`):
@@ -291,8 +346,7 @@ export function translateClaudeFrame(m: Record<string, unknown>): EngineEvent[] 
           },
         ];
       }
-      // status / commands_changed / post_turn_summary / local_command:
-      // informational, or the control path's (#1287)
+      // post_turn_summary / local_command: informational
       return [];
     }
 
@@ -347,14 +401,71 @@ export function translateClaudeFrame(m: Record<string, unknown>): EngineEvent[] 
     case 'control_request': {
       // `can_use_tool` is the CLI handing us a decision. Other control
       // requests (`hook_callback`, `mcp_message`) are plumbing and must not
-      // move the status. ANSWERING it is the control path's (#1287).
-      const req = m.request as { subtype?: unknown } | undefined;
-      return req?.subtype === 'can_use_tool' ? [{ type: 'permission-request' }] : [];
+      // move the status. ANSWERING it is Claude's `approvals` control
+      // (`claude-controls.ts`), which echoes `requestId` back.
+      const req = m.request as Record<string, unknown> | undefined;
+      return req?.subtype === 'can_use_tool' ? [permissionRequest(m, req)] : [];
     }
+
+    case 'control_cancel_request':
+      // The CLI took a `can_use_tool` back before anyone answered it.
+      return [{ type: 'permission-withdrawn', requestId: asDisplayString(m.request_id) }];
 
     default:
       return UNDERSTOOD_SILENT.has(type) ? [] : null;
   }
+}
+
+/**
+ * The ask out of a `can_use_tool` — field for field what `StreamPermissions`
+ * read off the frame before #1287, with the same defaults. The id is at the
+ * TOP level on this direction (the reply nests its id; see
+ * `readControlResponse`), and an id-less request still becomes an event with
+ * `requestId: ''`: the status says the CLI is waiting, as it always did, and
+ * the router declines to hold what it cannot answer.
+ */
+function permissionRequest(m: Record<string, unknown>, req: Record<string, unknown>): EngineEvent {
+  return {
+    type: 'permission-request',
+    requestId: asDisplayString(m.request_id),
+    tool: asDisplayString(req.tool_name, 'unknown'),
+    input: (req.input as Record<string, unknown>) ?? {},
+    ...defined({
+      reason: typeof req.decision_reason === 'string' ? req.decision_reason : undefined,
+      reasonType: typeof req.decision_reason_type === 'string' ? req.decision_reason_type : undefined,
+      displayName: typeof req.display_name === 'string' ? req.display_name : undefined,
+      suggestions: Array.isArray(req.permission_suggestions)
+        ? (req.permission_suggestions as Array<Record<string, unknown>>)
+        : undefined,
+    }),
+  };
+}
+
+/**
+ * A command list off `system:init.slash_commands` or `commands_changed.commands`,
+ * or `null` when the field is not a list (the store keeps what it had).
+ *
+ * TWO SPELLINGS, BOTH MEASURED (moved from `stream-commands.ts`): bare names
+ * in `system:init`, `{name, description, argumentHint}` in `commands_changed`.
+ * An unreadable entry is dropped and counted rather than failing the list.
+ */
+function commandsEvent(list: unknown): EngineEvent | null {
+  if (!Array.isArray(list)) return null;
+  const commands = list.map(parseCommand).filter((c): c is CliCommand => c !== null);
+  return { type: 'commands', commands, dropped: list.length - commands.length };
+}
+
+function parseCommand(entry: unknown): CliCommand | null {
+  if (typeof entry === 'string') return entry.trim() ? { name: entry } : null;
+  if (entry && typeof entry === 'object') {
+    const o = entry as Record<string, unknown>;
+    if (typeof o.name !== 'string' || !o.name.trim()) return null;
+    return {
+      name: o.name,
+      description: typeof o.description === 'string' ? o.description : undefined,
+    };
+  }
+  return null;
 }
 
 /** The `events` capability both Claude adapters declare. */
@@ -362,7 +473,7 @@ export const claudeEvents: EventCapability = {
   createTranslator(hooks: TranslatorHooks): EngineTranslator {
     const reported = new Set<string>();
     return (frame) => {
-      const events = translateClaudeFrame(frame);
+      const events = translateClaudeFrame(frame, hooks.onSkipped);
       if (events !== null) return events;
       const type = typeof frame.type === 'string' ? frame.type : '(no type)';
       if (!reported.has(type)) {

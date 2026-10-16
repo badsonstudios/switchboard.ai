@@ -111,6 +111,40 @@ channel, and every `shared/stream-protocol` importer. The transcript replay
 into the Feed still reads Claude's transcript format (a transcript-reader seam,
 not this one). `engine-seam.test.ts` names both lists and fails if either drifts.
 
+**As built, item 04 (#1287, 2026-10-16).** The controls are
+`src/main/sessions/engine-controls.ts`, declared through a new optional
+`controls` capability (DESIGN §5.3); Claude's are
+`src/main/providers/claude-controls.ts`. Both lists above are now EMPTY: no
+module outside `src/main/providers/` imports a Claude wire module or speaks
+`control_request` / `can_use_tool` (one documented exception, the local-only
+`check:mcp-attach` harness), and nothing subscribes to raw frames. The
+declaration is the shape of a session's `SessionControls` — a member present is
+a control it has — and the composer reads it through `sessions:controls`
+(`{ai, has}`) to grey a missing control out with "Not available with <AI>."
+(screen 3). How an ACP provider (item 06) declares exactly what item 02
+measured (`spike/findings/e40-codex-acp.md`):
+
+| Control | Claude | ACP (Codex, measured) |
+|---|---|---|
+| `approvals.answer(id, decision)` | `control_response` `{behavior, updatedInput \| message}` | `session/request_permission` answered by `optionId`, chosen by kind: allow -> `allow_once`, deny -> `reject_once` (no `reject_always`); `updatedInput` and `message` have no field and are dropped. The request id can be `0` — the event carries it as a string |
+| `interrupt` | `control_request:interrupt` | `session/cancel` (notification) |
+| `models.list` / `set` | `list_models` / `set_model` | `configOptions` `category:"model"` / `session/set_config_option` (the reply is the truth) |
+| `effort.get` / `set` | `get_settings` + `list_models` / `apply_flag_settings`, verified by effect | `configOptions` `thought_level` / `set_config_option` |
+| `contextUsage.get` | `get_context_usage` | the last `usage_update {used, size}` |
+| `modes` | no live `set` (`--permission-mode` at next start) | `session/set_mode` (live `set`) |
+| `slashCommands` | `/name` as prompt text | `/name` as prompt text |
+| `mcp` | `mcp_status` / `toggle` / `reconnect` / `authenticate` / `clear_auth` | none: not declared |
+| `prompt` (plumbing) | the `user` frame | `session/prompt` |
+
+The announcements went the other way, onto the event model: `permission-request`
+(now carrying the ask), `permission-withdrawn`, `commands`
+(`available_commands_update`), `model` and `mode` (`current_mode_update`, or the
+`set_*` reply, since item 02 saw no update notification follow a set).
+**Not done here, on purpose:** the mode chip still means "applies at the next
+start" — Claude has no live switch, and `ModeControl.set` has no caller until a
+provider that has one ships (item 06). Load does not restore Codex's settings
+(item 02, Q5); re-applying model, effort and mode after a resume is item 06's.
+
 ---
 
 ## 4. One general engine: the Agent Client Protocol (items 02, 06, 07, 08)

@@ -13,7 +13,7 @@ import {
   extractImages,
 } from './fake-stream-protocol';
 import { FAKE_SESSION_ID, fakeSessionId } from './fake-stream-ids';
-import { userMessage } from '../../shared/stream-protocol';
+import { userMessage } from './claude-protocol';
 
 let out: Record<string, unknown>[];
 let writes: Array<{ path: string; content: string }>;
@@ -840,7 +840,7 @@ describe('uuid and origin on the echo (#490)', () => {
   });
 
   // The whole envelope our own builder produces makes the round trip.
-  it('round-trips what shared/stream-protocol actually builds', () => {
+  it('round-trips what claude-protocol actually builds', () => {
     const sent = userMessage('hello');
     proto.handle(sent as unknown as Record<string, unknown>);
     const echo = userEcho();

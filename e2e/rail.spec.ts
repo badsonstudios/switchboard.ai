@@ -15,7 +15,8 @@
 // worst.
 //
 // So a test that wants a needy row asks for a REAL permission: `!perm` makes the
-// fake stream CLI request one, it is held by `StreamPermissions`, and the status
+// fake stream CLI request one, Claude's translator turns it into a
+// `permission-request` event, it is held by `StreamPermissions`, and the status
 // comes from `stream-status.ts`. That is a better test than the one it replaced
 // — it drives the path the product actually uses, rather than a nudge that
 // happened to move the same attribute.

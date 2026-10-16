@@ -398,6 +398,36 @@ contract differs in three ways, each deliberate:
   replay into the Feed (`hydrate` / `absorbSidechain`) still reads Claude's
   transcript format, under the `transcripts` bullet just above.
   `engine-seam.test.ts` pins both lists exactly.
+- **`controls` is an eighth capability** *(E40 item 04, #1287, 2026-10-16)* —
+  the second half of the seam. `controls.createControls(session)` returns one
+  session's `SessionControls` (`sessions/engine-controls.ts`): `approvals`
+  (answer a request with a neutral `allow` + input / `deny` + message),
+  `interrupt`, `models` (list, set), `effort` (get, set), `contextUsage`, `modes`
+  (with an optional live `set`), `slashCommands` and the live `mcp` verbs, plus
+  the plumbing every engine needs (`prompt`, `receive` for reply correlation,
+  `forget`). **The members present ARE the declaration**: there is no second
+  list. `sessions:controls` sends the composer `{ai, has}` and it greys out any
+  control a session's AI lacks — disabled, in place, "Not available with <AI>."
+  — in both directions, since a control is just a name a session does or does
+  not have (effort and the context meter draw nothing, as they already did with
+  nothing to show). A control a provider lacks is answered `unsupported` (a new
+  `ControlFailure`), never thrown; a control that throws is a logged refusal;
+  controls that cannot be created leave the session readable and undriveable.
+  What the engine ANNOUNCES about its controls became events: `permission-request`
+  now carries the ask, plus `permission-withdrawn`, `commands`, `model` and
+  `mode` — so the permission router and the command, model and mode stores read
+  `onEngineEvent` like the Feed, and the manager's raw `onStreamMessage` fan-out
+  is GONE (a provider's frames reach only its translator and its own controls).
+  Claude's are `providers/claude-controls.ts` with its `ControlChannel` (now one
+  per session, `providers/claude-control-channel.ts`), and every Claude wire
+  module moved inside the provider: `shared/stream-protocol.ts` is
+  `providers/claude-protocol.ts`, and the Claude halves of `shared/effort.ts`
+  and `shared/context-usage.ts` are `providers/claude-effort.ts` /
+  `claude-context-usage.ts`; the renderer's model shape is the neutral
+  `shared/models.ts`. Claude declares every control, so nothing changes on
+  screen with only Claude installed. **One documented exception** to "nothing
+  outside `providers/` speaks `control_request`": the local-only
+  `check:mcp-attach` harness, which asks the real CLI on purpose.
 
 The host ASKS these — session creation has no branch on which provider it is
 talking to. An adapter that declares nothing spawns a PTY and nothing else: no

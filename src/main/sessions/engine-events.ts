@@ -9,10 +9,15 @@
 // those modules may read a provider's frames; `engine-seam.test.ts` pins it.
 //
 // WHAT IS NOT HERE, ON PURPOSE: the CONTROLS (approve/deny, interrupt, model,
-// mode, slash commands). Those are "what you can do to it", and they are E40
-// item 04 (#1287). `permission-request` below is only the EVENT half of an
-// approval — the fact that the engine is waiting — which the status machine
-// has always needed; answering it stays on the control path.
+// mode, slash commands). Those are "what you can do to it" — provider methods
+// declared through the adapter's `controls` capability (E40 item 04, #1287;
+// `sessions/engine-controls.ts`). What IS here is what the engine ANNOUNCES
+// about them: a request waiting on a decision (`permission-request`, which
+// carries the ask, and `permission-withdrawn`), the commands it offers
+// (`commands`), the model it is on (`model`) and the mode it is in (`mode`).
+// The permission router and the command, model and mode stores read these
+// through `onEngineEvent`, like the Feed; answering goes back through
+// `SessionControls`.
 //
 // SHAPED SO AN ACP TRANSLATOR CAN TARGET IT (§4). ACP's `session/update`
 // variants land as: `agent_message_chunk` / `agent_thought_chunk` -> `chunk`
@@ -20,12 +25,16 @@
 // `tool-call-start` plus a `message` carrying the tool block; `tool_call_update`
 // with output -> a `message` carrying a tool result; `plan` -> a `message`
 // carrying a todos block; a `session/prompt` response -> `turn-end`;
-// `session/request_permission` -> `permission-request`. Mode and command
-// updates are controls-shaped and belong with #1287.
+// `session/request_permission` -> `permission-request`;
+// `available_commands_update` -> `commands`; `current_mode_update` (or a
+// `session/set_mode` reply) -> `mode`; the model in `session/new`'s
+// `models.currentModelId` or a `set_config_option` reply -> `model`.
 //
 // MAIN-ONLY. Nothing here crosses IPC: `message.derive` is a function, and the
 // Feed's blocks, not these, are what the renderer receives.
 import type { BlockIntent, DerivationCaps, DerivationContext } from '../feed/blocks';
+import type { CliCommand } from '../../shared/slash-commands';
+import type { AutonomyMode } from '../../shared/sessions';
 
 /**
  * The engine is producing output for the running turn — the status machine's
@@ -138,11 +147,73 @@ export interface TurnEndEvent {
 }
 
 /**
- * The engine is waiting on a decision from a person. The EVENT half of an
- * approval only — answering it is a control (#1287).
+ * The engine is waiting on a decision from a person, and what it is asking.
+ *
+ * The status machine reads only that it happened (`permission-held`); the
+ * permission router reads the ask and answers it through the provider's
+ * `approvals` control, naming `requestId` (#1287). Field by field this is what
+ * the router used to read off Claude's `can_use_tool` itself, with the same
+ * defaults, so a standing grant that covers a request is decided on exactly
+ * the same values it always was.
  */
 export interface PermissionRequestEvent {
   type: 'permission-request';
+  /**
+   * The ENGINE'S OWN id for this request — what the answer must name. `''`
+   * when the engine sent none: the request cannot be answered, and the router
+   * drops it (the status still says it is waiting, as it always did). A
+   * string even where the wire's id is a number: ACP's first request id is
+   * `0`, measured (`spike/findings/e40-codex-acp.md` Q3).
+   */
+  requestId: string;
+  /** the tool asking, `'unknown'` when the engine did not say */
+  tool: string;
+  /** the tool's input as the engine sent it (`{}` when absent) */
+  input: Record<string, unknown>;
+  /** why the engine is asking, in its own words */
+  reason?: string;
+  /** the engine's own classification of `reason` */
+  reasonType?: string;
+  /** a human name for the tool, when the engine has one */
+  displayName?: string;
+  /** the engine's suggested standing rules, passed through unread */
+  suggestions?: Array<Record<string, unknown>>;
+}
+
+/**
+ * The engine took a request back before anyone answered it (the CLI cancelled
+ * the tool call). Nothing to answer any more; the router lets it go.
+ */
+export interface PermissionWithdrawnEvent {
+  type: 'permission-withdrawn';
+  requestId: string;
+}
+
+/**
+ * The commands this engine offers right now, in full — a REPLACEMENT, not a
+ * delta. `dropped` counts entries the translator could not read (logged by the
+ * store, at debug).
+ */
+export interface CommandsEvent {
+  type: 'commands';
+  commands: CliCommand[];
+  dropped: number;
+}
+
+/** The model the engine says this session is running. Never empty. */
+export interface ModelEvent {
+  type: 'model';
+  id: string;
+}
+
+/**
+ * The mode the engine says this session is in, already in the host's own
+ * vocabulary. An engine mode with no host name is not sent: a stale chip
+ * beats a wrong one (P6).
+ */
+export interface ModeEvent {
+  type: 'mode';
+  mode: AutonomyMode;
 }
 
 /**
@@ -181,6 +252,10 @@ export type EngineEvent =
   | MessageEvent
   | TurnEndEvent
   | PermissionRequestEvent
+  | PermissionWithdrawnEvent
+  | CommandsEvent
+  | ModelEvent
+  | ModeEvent
   | CompactionEvent
   | UsageEvent;
 
@@ -203,4 +278,14 @@ export interface TranslatorHooks {
    * per frame.
    */
   onUnknown?(frameType: string): void;
+  /**
+   * A frame the translator DID understand but could not use — a command list
+   * that is not a list, a model that is blank, a mode with no host name — so
+   * it sent nothing and the stores keep what they had (#1287). For the log,
+   * at debug: the stores logged these themselves when they read the frames,
+   * because the symptom otherwise has none (a popup or a chip that quietly
+   * stopped tracking the engine). A property, not a method, for #663's reason:
+   * the translator hands the slot on as a value.
+   */
+  onSkipped?: (what: string, fields: Record<string, string>) => void;
 }
