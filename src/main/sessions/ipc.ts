@@ -3129,6 +3129,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     if (!isAutonomyMode(autonomy)) return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
     if (prior) deps.persist.upsert({ ...prior, autonomy });
+    // …and NOW, on the live session, when its AI has a live switch (E40 item
+    // 06, #1289: ACP's `session/set_mode`). Claude's has none, so for Claude
+    // this is a no-op and the stored choice still applies at the next start.
+    // Fire-and-forget: the AI announces the mode it is really in through
+    // `mode` events, which is what the chip's live state reads.
+    for (const [liveId, cid] of cardOfLive) {
+      if (cid === cardId) void manager.setMode(liveId, autonomy);
+    }
   });
 
   // Freeform task label for a card (E7-03), persisted across restarts — and

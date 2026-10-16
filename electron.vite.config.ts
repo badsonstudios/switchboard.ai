@@ -86,6 +86,9 @@ export default defineConfig({
           // adapter spawns, run under `electron --run-as-node` like the checks
           'fake-stream-cli': 'src/main/providers/fake-stream-cli.ts',
           'fake-stream-check': 'src/main/providers/fake-stream-check.ts',
+          // the fake ACP agent (E40 item 06, #1289) — the same shape for the
+          // general ACP engine: a real program the fake ACP adapter spawns
+          'fake-acp-cli': 'src/main/providers/acp/fake-acp-cli.ts',
           // the Session Bus MCP server (P2-E11-02) — a real program the CLI
           // spawns from --mcp-config, run under `electron --run-as-node`. It
           // MUST be an entry: as a chunk it would be inside app.asar under a

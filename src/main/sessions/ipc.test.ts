@@ -393,6 +393,12 @@ function harness(
         controlCalls.push(['setModel', id, model]);
         return Promise.resolve(opts.setModelVerdict ?? { ok: true, response: {} });
       },
+      // The live mode switch (#1289). The real one answers `unsupported` for
+      // an AI without one (Claude) and does nothing.
+      setMode: (id: string, mode: unknown) => {
+        controlCalls.push(['setMode', id, mode]);
+        return Promise.resolve({ ok: false, reason: 'unsupported', message: 'Not available with Claude Code.' });
+      },
       effort: (id: string) => {
         controlCalls.push(['effort', id]);
         return Promise.resolve(
@@ -4255,6 +4261,24 @@ describe('a refused sessions call answers null and says why — it never throws 
         cardId: 'card-1',
         autonomy: 'yolo',
       });
+    });
+
+    // #1289: the mode chip switches a LIVE session too, when its AI has a live
+    // switch. The stored choice still lands for the next start either way.
+    it('setAutonomy stores the mode AND asks the live session to switch', () => {
+      const h = harness(undefined, dir);
+      const rec = h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' }) as { id: string };
+      h.call('sessions:setAutonomy', 'card-1', 'plan');
+      expect(h.upserted.at(-1)?.autonomy).toBe('plan');
+      expect(h.controlCalls).toContainEqual(['setMode', rec.id, 'plan']);
+    });
+
+    it('setAutonomy on a card with no live session only stores it, and an unknown mode reaches nothing', () => {
+      const h = harness(undefined, dir);
+      h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
+      h.call('sessions:setAutonomy', 'card-2', 'plan');
+      h.call('sessions:setAutonomy', 'card-1', 'yolo');
+      expect(h.controlCalls.filter((c) => c[0] === 'setMode')).toEqual([]);
     });
 
     it('a KNOWN autonomy still lands on the card — the guard filters, it does not eat', () => {

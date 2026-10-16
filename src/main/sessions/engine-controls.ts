@@ -106,8 +106,9 @@ export interface ContextUsageControl {
  * `set` is OPTIONAL and Claude's has none: its mode is `--permission-mode`,
  * applied at the next start from the card's setting (§5.9), and the CLI
  * announces where it really is through `mode` events. An engine with a live
- * switch (ACP `session/set_mode`) declares `set`; nothing calls it yet — the
- * mode chip keeps its next-start meaning until a provider needs otherwise.
+ * switch (ACP `session/set_mode`) declares `set`, and the mode chip
+ * (`sessions:setAutonomy`) calls it on the live session as well as storing the
+ * card's choice for the next start (E40 item 06, #1289).
  */
 export interface ModeControl {
   set?(mode: AutonomyMode): Promise<ControlVerdict>;
@@ -178,6 +179,19 @@ export interface ControlSession {
    * no typed channel or is gone.
    */
   send(frame: unknown): boolean;
+  /**
+   * Hand a frame of the PROVIDER'S OWN making to this session's translator and
+   * controls, exactly as if the engine had sent it (E40 item 06, #1289).
+   *
+   * For the events only the provider can know about: an engine that does not
+   * echo the user's prompt back (ACP; Claude does, `--replay-user-messages`)
+   * still has to put the prompt in the Feed, and a cancel that settles held
+   * permission requests has to withdraw them. The provider recognises its own
+   * frames by identity, so nothing the engine writes can pass as one.
+   * Synchronous; a no-op once the session is gone. Optional so a test double
+   * need not supply it.
+   */
+  loopback?(frame: Record<string, unknown>): void;
 }
 
 /** The adapter capability: how a provider builds one session's controls. */
