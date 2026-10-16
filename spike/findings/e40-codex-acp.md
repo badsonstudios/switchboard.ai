@@ -424,3 +424,44 @@ owner today because `claude.cmd` is under `C:\Users\dheinz\AppData\Roaming\npm`
 (no space). It would bite a Windows user whose profile path has a space, on
 every `execSpec` caller (`mcp/cli.ts`, `mcp/health.ts`,
 `bus/mcp-attach-check.ts`, `providers/claude-oneshot.ts`).
+
+---
+
+## Addendum (#1290, 2026-10-16): `codex app-server` logged out, for detection and the limits reader
+
+**Probe:** `spike/probes/1290/probe-e-app-server-logged-out.mjs`, which reuses
+`../1285/lib.mjs`. **Captures:** `spike/probes/1290/captures/e-app-server-out.jsonl`
+and `e-app-server-in.jsonl`, redacted at write time. A grep of both captures
+for the email and the account id returns 0 hits.
+
+**Cost:** zero model turns and zero tokens.
+
+**Setup:** the logged-out run used an empty temp `CODEX_HOME`, so the real
+login was never touched. The temp folder was deleted afterwards.
+
+**Processes:** `tasklist | grep -i codex` was empty before, after each run and
+at the end. Both runs logged `exited on stdin EOF`.
+
+| Call | Logged out (empty `CODEX_HOME`) | Logged in (`~/.codex`) |
+|---|---|---|
+| `initialize` | `{userAgent, codexHome: <the temp dir>, …}` in 242 ms | the same, in 155 ms |
+| `account/read {refreshToken:false}` | `{"account":null,"requiresOpenaiAuth":true,"workspaceRouting":null}` in 3 ms | `{"account":{"type":"chatgpt","email":…,"planType":"team"},"requiresOpenaiAuth":true,…}` in 1,415 ms |
+| `account/rateLimits/read` | **error** `{"code":-32600,"message":"codex account authentication required to read rate limits"}` in 1 ms | `primary {usedPercent: 9, windowDurationMins: 300}`, `secondary {usedPercent: 12, windowDurationMins: 10080}` in 465 ms |
+| stdin EOF → exit | 917 ms | 255 ms |
+| stderr | 269 bytes: Codex refuses to create helper binaries under a temp `codex_home` (a warning only) | 0 bytes |
+
+**What #1290 built on this:**
+
+- **Login state:** `account: null` means logged out. An object with a `type`
+  means logged in, with `planType` as the plan. Anything else is unknown.
+  `_auth/status_update` over ACP says the same thing, but only inside an ACP
+  session, so the app-server read is the cheaper probe.
+- **The limits reader:** a logged-out error means "no windows". It is not
+  drawn as 0%.
+
+**Not measured:**
+
+- `account/read` for an **API-key** login. The reader still answers
+  `logged-in` for any account `type`, but the plan is absent.
+- Whether `workspace-write` asks before an in-workspace shell command. #1285
+  measured approvals only in `read-only`.

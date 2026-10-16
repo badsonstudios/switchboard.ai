@@ -37,6 +37,7 @@
 import type { ControlVerdict } from '../../../shared/control';
 import { errorText } from '../../../shared/error-text';
 import type { AutonomyMode } from '../../../shared/sessions';
+import type { PlanLimitWindow } from '../../../shared/usage-report';
 import type { PromptAttachment } from '../../../shared/prompt-attachments';
 import type { ControlSession, PermissionDecision, SessionControls } from '../../sessions/engine-controls';
 import type { EngineEvent, TranslatorHooks } from '../../sessions/engine-events';
@@ -102,6 +103,12 @@ export interface AcpSessionConfig {
   authMethodId?: string;
   /** reported to the agent as `clientInfo.version` */
   clientVersion: string;
+  /**
+   * The account's plan-limit windows, read beside the agent (Codex: one
+   * `codex app-server` call, #1290). Called at ready and after every turn;
+   * expected to cache. Absent: no limits are ever reported.
+   */
+  limits?: () => Promise<PlanLimitWindow[] | undefined>;
 }
 
 /** What a provider remembers of a conversation across its sessions (in memory). */
@@ -157,6 +164,13 @@ export class AcpSession {
   /** frames already handled — the translator and `receive` both see each one */
   private readonly handled = new WeakSet<object>();
   private readonly minted = new WeakMap<object, Minted>();
+  /**
+   * The host mode the card last asked for (its start autonomy, then each live
+   * `set`). Read back by `modeEvent` when two host modes share one agent mode
+   * (#1290: Codex's ask and auto-edit are both `workspace-write`), so the chip
+   * keeps the user's choice instead of jumping to the first match.
+   */
+  private hostMode: AutonomyMode | undefined;
   private readonly readyWaiters = new Set<(ok: boolean) => void>();
   private setupError: string | undefined;
   private setupTimer: ReturnType<typeof setTimeout> | undefined;
@@ -166,7 +180,9 @@ export class AcpSession {
     private readonly start: AcpStart,
     private readonly cfg: AcpSessionConfig,
     private readonly memory: Map<string, Remembered>
-  ) {}
+  ) {
+    this.hostMode = start.autonomy;
+  }
 
   // ── wiring ──────────────────────────────────────────────────────────────
 
@@ -417,7 +433,16 @@ export class AcpSession {
         reason: 'refused',
         message: `${this.cfg.displayName} has no mode for "${mode}"`,
       };
-    return this.setSetting('mode', want, { mode });
+    // After the session is open (so the open's own readback still compares
+    // against the mode the card started at), and before the send: the reply's
+    // readback (`modeEvent`) runs as the reply arrives, ahead of this promise
+    // settling. Put back if the set fails.
+    if (!(await this.whenReady())) return this.notOpen();
+    const prior = this.hostMode;
+    this.hostMode = mode;
+    const verdict = await this.setSetting('mode', want, { mode });
+    if (!verdict.ok && this.hostMode === mode) this.hostMode = prior;
+    return verdict;
   }
 
   /** The shared body of every `set`: wait for the session, send, VERIFY. */
@@ -722,7 +747,33 @@ export class AcpSession {
     this.setupTimer = undefined;
     for (const w of this.readyWaiters) w(true);
     this.readyWaiters.clear();
+    // the windows before the first turn, so a fresh card shows where it stands
+    this.readLimits();
     this.drain();
+  }
+
+  /**
+   * Ask the provider's plan-limits reader (`AcpSessionConfig.limits`) and put
+   * what it answers through the pump as a TOKEN-FREE `usage` event — the
+   * ledger adds nothing and replaces the windows (#1290). Fail-open: a reader
+   * that rejects, throws or answers nothing sends nothing; a session that has
+   * gone meanwhile sends nothing either.
+   */
+  private readLimits(): void {
+    const reader = this.cfg.limits;
+    if (!reader) return;
+    let pending: Promise<PlanLimitWindow[] | undefined>;
+    try {
+      pending = reader();
+    } catch {
+      return;
+    }
+    void Promise.resolve(pending)
+      .then((limits) => {
+        if (!limits || limits.length === 0 || this.phase === 'gone') return;
+        this.loopback([{ type: 'usage', limits }]);
+      })
+      .catch(() => {});
   }
 
   private drain(): void {
@@ -749,11 +800,22 @@ export class AcpSession {
       const input = n(usage.inputTokens);
       const output = n(usage.outputTokens);
       const cached = n(usage.cachedReadTokens);
+      const written = n(usage.cachedWriteTokens);
+      const thought = n(usage.thoughtTokens);
       if (input !== undefined) ev.inputTokens = input;
       if (output !== undefined) ev.outputTokens = output;
       if (cached !== undefined) ev.cacheReadTokens = cached;
+      if (written !== undefined) ev.cacheWriteTokens = written;
+      // inside output, never added to it (the ledger caps it at output)
+      if (thought !== undefined) ev.thinkingTokens = thought;
+      const model = this.currentModel();
+      if (model) ev.model = model;
       events.push(ev);
     }
+    // Plan limits, when the provider reads them: after every turn (cached by
+    // the reader, so a burst costs one read). A cancelled turn too — its
+    // tokens are unknown, but the account's windows still moved.
+    this.readLimits();
     // the next queued prompt goes after this turn's events are out
     queueMicrotask(() => this.drain());
     return events;
@@ -871,7 +933,12 @@ export class AcpSession {
   private modeEvent(agentMode: string): EngineEvent[] {
     const map = this.cfg.modeMap;
     if (!map) return [];
-    const host = (Object.keys(map) as AutonomyMode[]).find((k) => map[k] === agentMode);
+    // the card's own choice first, when it means this agent mode
+    const asked = this.hostMode;
+    const host =
+      asked && map[asked] === agentMode
+        ? asked
+        : (Object.keys(map) as AutonomyMode[]).find((k) => map[k] === agentMode);
     return host ? [{ type: 'mode', mode: host }] : [];
   }
 

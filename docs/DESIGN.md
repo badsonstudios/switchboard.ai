@@ -465,6 +465,21 @@ contract differs in three ways, each deliberate:
   registry gained `unregister` for them. The default AI for new cards is a
   setting; when unset, it is the first registered provider, so registration
   order stays precedence. Design record §4 "As built, item 08".
+- **Codex is the first real ACP registration** *(E40 item 07, #1290,
+  2026-10-16)*:
+  - **What runs:** `providers/codex/` runs the pinned
+    `@agentclientprotocol/codex-acp@2.2.2` through `npx`, with the ChatGPT
+    sign-in as its auth method.
+  - **Modes:** the mode map never selects Codex's "Auto review" `agent` mode,
+    which uses a hidden approver.
+  - **Plan limits:** read beside the engine, not by it. One zero-token
+    `codex app-server` `account/rateLimits/read` answers the 5-hour and weekly
+    windows, which ACP carries only as `/status` text.
+  - **Registration:** after Claude, so Claude stays the first and default
+    provider, and only when `npx` is on PATH (a PATH scan, no child process).
+    That is nearly every machine with Node, Codex installed or not; with no
+    `npx`, nothing registers.
+  - **Details:** design record §4 "As built, item 07".
 
 - **Six surface capabilities: `usage`, `statusPage`, `preflight`, `labels`,
   `mcpManager`, `commandFiles`** *(E40 item 05, #1288, 2026-10-16)* — the app's

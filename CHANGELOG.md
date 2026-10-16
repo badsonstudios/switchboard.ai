@@ -96,6 +96,18 @@ on the floor, and say so in your PR.
 
 ## 0.8.123 — unreleased
 
+### Added
+
+- Codex, OpenAI's coding AI, can run in the same Session view as Claude: its
+  replies, the commands it runs, its approval questions, Stop, its models and
+  effort, a mode chip that switches it live, and resuming a conversation. Its
+  usage shows its tokens and, in the status-bar usage tooltip, your ChatGPT
+  plan's 5-hour and weekly limits, with no dollar figure. Every Codex question
+  is put to you: the app never uses
+  Codex's "Auto review" mode, where a hidden model approves things for you.
+  There is no AI picker yet, so a new session is still a Claude session, and
+  nothing changes for anyone without Codex.
+
 ### Changed
 
 - A session on a model switchboard has no price for no longer shows a made-up

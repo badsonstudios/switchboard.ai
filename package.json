@@ -28,7 +28,8 @@
     "check:transcripts": "node scripts/run-electron-node.js out/main/transcript-check.js",
     "check:fake-stream": "node scripts/run-electron-node.js out/main/fake-stream-check.js",
     "check:bus": "node scripts/run-electron-node.js out/main/bus-check.js",
-    "check:mcp-attach": "node scripts/run-electron-node.js out/main/mcp-attach-check.js"
+    "check:mcp-attach": "node scripts/run-electron-node.js out/main/mcp-attach-check.js",
+    "check:codex": "node scripts/run-electron-node.js out/main/codex-check.js"
   },
   "dependencies": {
     "dockview-react": "^7.0.2",

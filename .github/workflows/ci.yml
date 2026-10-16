@@ -59,7 +59,7 @@ jobs:
       # the first and only thing that executes the UNIX-DOMAIN-SOCKET path,
       # which #760's findings note lists under "what is NOT proven".
       - run: npm run check:bus
-      # The remaining three check:* scripts are LOCAL-ONLY and deliberately have
+      # The remaining four check:* scripts are LOCAL-ONLY and deliberately have
       # no job here (#182). The first two each drive the REAL `claude` CLI
       # through a real model turn:
       #   check:adapter     - two headless `-p` turns: plants a marker word,
@@ -84,6 +84,11 @@ jobs:
       #                       checks (that the USER'S OWN servers survived the
       #                       merge) is by definition about a configured machine,
       #                       which a runner is not. #763.
+      # A fourth drives a DIFFERENT AI, for the same reason as the first two:
+      #   check:codex       - two real Codex turns (one, then a resume through
+      #                       session/load) on the owner's ChatGPT plan, plus a
+      #                       zero-token plan-limits read. Real tokens, and a
+      #                       runner has no Codex login. #1290.
       # A runner has no subscription login, and giving it one would mean either
       # an ANTHROPIC_API_KEY or spending Dan's subscription tokens on every PR -
       # two hard constraints we do not cross (.claude/CLAUDE.md). Nor is there a

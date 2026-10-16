@@ -438,6 +438,52 @@ We never see a password and store nothing.
 
 The preload exposes all of these as `switchboard.ais`.
 
+**As built, item 07 (#1290, 2026-10-16).** Codex is `src/main/providers/codex/`:
+
+- **`codex-provider.ts`** is `codexAdapter = createAcpProvider({id: 'codex',
+  displayName: 'Codex', command: <absolute npx>, args: ['-y',
+  '@agentclientprotocol/codex-acp@2.2.2'], modeMap, authMethodId: 'chat-gpt'})`.
+  The adapter is pinned, it runs its own bundled Codex, and `CODEX_PATH` is
+  unset.
+- **The mode map** (the owner's working assumption, reversible):
+
+  | Card mode | Codex mode |
+  |---|---|
+  | ask | `workspace-write` |
+  | plan | `read-only` |
+  | auto-edit | `workspace-write` |
+  | full-auto | `agent-full-access` |
+
+  **Codex's default `agent` ("Auto review") is in no slot.** In #1285 its
+  hidden guardian approved an action without asking and spent 7,262 tokens
+  that no count showed. Ask and auto-edit share a Codex mode, so
+  `AcpSession.modeEvent` now prefers the card's own choice when two host modes
+  map to one agent mode. Before this change the chip jumped to the first match.
+- **The limits reader** (`codex-limits.ts` over `codex-app-server.ts`) is a
+  one-question `codex app-server` exchange through `StreamSession`. It sends
+  `initialize`, then `initialized`, then `account/rateLimits/read`, and matches
+  replies by id, because these frames carry no `jsonrpc`. `primary`/`secondary`
+  become `PlanLimitWindow`s with ISO `resetsAt` (Codex sends epoch seconds).
+  There is a 10 s deadline, one read in flight at a time, a 60 s cache (a
+  failure is cached too), and every failure fails open to no windows. It is a
+  reader, not an engine: no thread, no turn, no tokens.
+- **Detection** (`codex-detect.ts`): `codexInstalled()`, `npxPath()`,
+  `codexVersion()` (from `codex --version`) and `codexLoginState()` (from
+  app-server `account/read`: `account: null` means logged out). Combined in
+  `detectCodex(signal)`, which is Codex's `detect` capability, replacing the
+  engine's default PATH scan. That scan would find `npx` and call Codex
+  installed on any machine with Node. "Installed" means the `codex` CLI.
+  Both probes honour the runner's 5 s signal, which kills the child and
+  answers `unknown`. "Log in" stays the engine's: a standalone
+  `authenticate` with `chat-gpt`.
+- **Registration** (`bootstrap.ts`): after Claude, so Claude stays the
+  default. It happens only on a real launch, never a fake-provider e2e run,
+  and only when `npx` is on PATH. That check is a PATH scan with no child
+  process. With no `npx`, the registry holds exactly what it held before.
+- **`check:codex`** (local-only, real tokens) runs one turn and one resume
+  through the real `SessionManager` + `StreamService` + `codexAdapter` in a
+  temp folder.
+
 ---
 
 ## 5. The screens (`mockups/multi-ai.html`)
@@ -524,6 +570,18 @@ AI's real SVG.
 3. **07** when both 02 and 06 are in.
 4. **11 → 12** and **13** last. They are the owner-visible payoff, and need a
    real second AI.
+
+**As built, item 07 (#1290):** Codex is registered (see §4 "As built, item
+07"), but no card can be put on it from the UI until item 11's switch lands.
+Until then the only route is a card's persisted `providerId`. So item 11 is
+where "a new session on Codex" becomes a click. **The 5-hour and weekly
+windows are wired** (after the rebase onto #1288): `createAcpProvider` takes
+a `limits` reader, which the engine calls when the session is ready and
+after every turn. It sends the answer through its own loopback as a
+token-free `usage` event. `EventUsageLedger` adds 0 tokens and replaces
+the windows, and they show in the status-bar usage tooltip. Codex declares
+`usage.estimateCostUsd: () => undefined`. The per-turn event also carries
+`cacheWriteTokens`, `thinkingTokens` and `model`.
 
 **Epic exit:**
 

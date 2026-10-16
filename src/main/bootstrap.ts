@@ -6,6 +6,7 @@ import { fakeStreamAdapter } from './providers/fake-stream';
 import { fakeAcpAdapter } from './providers/acp/fake-acp';
 import { customAcpProvider } from './providers/acp/custom-acp';
 import type { CustomAi } from '../shared/ais';
+import { codexAdapter, shouldRegisterCodex } from './providers/codex/codex-provider';
 
 export function registerBuiltinContributions(): void {
   // e2e tests swap the real CLI for a fake (hermetic: no login, no network).
@@ -29,6 +30,9 @@ export function registerBuiltinContributions(): void {
     return;
   }
   registry.register('provider-adapter', claudeAdapter);
+  // Codex (E40 item 07, #1290): AFTER Claude, so Claude stays the default; a
+  // PATH scan only, so startup is never held up (see `shouldRegisterCodex`).
+  if (shouldRegisterCodex()) registry.register('provider-adapter', codexAdapter);
 }
 
 /**
