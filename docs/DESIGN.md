@@ -376,6 +376,28 @@ contract differs in three ways, each deliberate:
   says only where its conversations live and whether a given one is resumable. The
   day a provider writes a different transcript FORMAT is the day the reader moves
   behind the seam.
+- **`events` is a seventh capability** *(E40 item 03, #1286, 2026-10-16)* — the
+  first half of the 2026-10-15 seam above. `events.createTranslator()` returns a
+  per-session translator from the provider's wire frames to a NEUTRAL session
+  event model (`sessions/engine-events.ts`: chunks opening/growing/closing at an
+  index, a tool call opening by name, the authoritative message, turn end with a
+  `failed` flag, permission request, conversation id and reset, compaction,
+  usage, plus one `activity` per output frame for status). The Feed, the status
+  machine (via `stream-status.ts`), the pump's native-id bookkeeping and service
+  health read ONLY those; Claude's translator is `providers/claude-events.ts`,
+  declared by the real adapter and the fake (so every e2e replays real Claude
+  frames through it). There is **no fallback**: a provider without the
+  capability gets no Feed and no streamed status, rather than having its frames
+  read as Claude's. An unknown frame type is logged once per session and
+  skipped; a translator that throws costs that frame. A message's content is
+  carried in the Feed's own block vocabulary through `message.derive(caps, ctx)`
+  — a function, because the display caps and the #830 forgery guard are the
+  host's. **Not moved, on purpose:** the control path (approvals, interrupt,
+  model, mode, slash commands — the raw `onStreamMessage` subscribers and every
+  `shared/stream-protocol` importer) is item 04 (#1287); and the transcript
+  replay into the Feed (`hydrate` / `absorbSidechain`) still reads Claude's
+  transcript format, under the `transcripts` bullet just above.
+  `engine-seam.test.ts` pins both lists exactly.
 
 The host ASKS these — session creation has no branch on which provider it is
 talking to. An adapter that declares nothing spawns a PTY and nothing else: no

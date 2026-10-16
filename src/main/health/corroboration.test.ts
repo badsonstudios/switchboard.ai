@@ -8,7 +8,6 @@ import {
   CORROBORATION_MIN_SESSIONS,
   CORROBORATION_WINDOW_MS,
   CorroborationTracker,
-  turnOutcome,
 } from './corroboration';
 
 const T0 = 1_000_000;
@@ -99,27 +98,5 @@ describe('clearing', () => {
     t.noteError('b', T0);
     expect(t.evaluate(T0).raised).toBe(true);
     expect(t.evaluate(T0 + 1_000).raised).toBe(false);
-  });
-});
-
-describe('what counts as an error', () => {
-  it('reads the two fields the protocol documents', () => {
-    expect(turnOutcome({ type: 'result', is_error: true })).toBe(true);
-    expect(turnOutcome({ type: 'result', subtype: 'error_during_execution' })).toBe(true);
-    expect(turnOutcome({ type: 'result', subtype: 'error_max_turns' })).toBe(true);
-  });
-
-  it('a clean result is a recovery', () => {
-    expect(turnOutcome({ type: 'result', subtype: 'success', is_error: false })).toBe(false);
-  });
-
-  it('everything else is not a verdict at all', () => {
-    // null, not false: a stream_event must not be able to CLEAR the evidence,
-    // which is what returning false here would mean
-    expect(turnOutcome({ type: 'stream_event' })).toBeNull();
-    expect(turnOutcome({ type: 'assistant' })).toBeNull();
-    expect(turnOutcome({ type: 'rate_limit_event' })).toBeNull();
-    expect(turnOutcome(null)).toBeNull();
-    expect(turnOutcome('result')).toBeNull();
   });
 });

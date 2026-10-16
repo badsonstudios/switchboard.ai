@@ -6,6 +6,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ServiceHealthStatus } from '../../shared/service-health';
 import { StatuspageProbe } from './statuspage';
 import { MAX_POLL_MS, MIN_POLL_MS, pollIntervalFor, ServiceHealthService } from './service';
+import { translateClaudeFrame } from '../providers/claude-events';
+
+// The service takes neutral events (#1286). These tests keep the real Claude
+// `result` frames they were written with and translate them as the pump does.
+const noteFrame = (svc: ServiceHealthService, id: string, frame: Record<string, unknown>): void => {
+  for (const ev of translateClaudeFrame(frame) ?? []) svc.noteEvent(id, ev);
+};
 
 const log = () => ({ info: vi.fn(), warn: vi.fn(), debug: vi.fn() });
 
@@ -230,7 +237,7 @@ describe('polling can be off, and off changes nothing else', () => {
   it('still corroborates locally with polling off — that half asks nobody', async () => {
     const { svc, pushed } = make({ poll: false });
     svc.start();
-    for (const id of ['a', 'b', 'c']) svc.noteStreamMessage(id, { type: 'result', is_error: true });
+    for (const id of ['a', 'b', 'c']) noteFrame(svc, id, { type: 'result', is_error: true });
     const last = pushed[pushed.length - 1];
     expect(last.reason).toBe('polling-off');
     expect(last.corroboration).toMatchObject({ sessions: 3 });
@@ -277,12 +284,12 @@ describe('local corroboration rides the same record', () => {
     const { svc, pushed } = make();
     svc.start();
     await vi.waitFor(() => expect(pushed.length).toBe(1));
-    svc.noteStreamMessage('a', { type: 'result', is_error: true });
-    svc.noteStreamMessage('b', { type: 'result', is_error: true });
+    noteFrame(svc, 'a', { type: 'result', is_error: true });
+    noteFrame(svc, 'b', { type: 'result', is_error: true });
     expect(pushed[pushed.length - 1].corroboration).toBeNull();
-    svc.noteStreamMessage('c', { type: 'result', is_error: true });
+    noteFrame(svc, 'c', { type: 'result', is_error: true });
     expect(pushed[pushed.length - 1].corroboration).toMatchObject({ sessions: 3 });
-    svc.noteStreamMessage('b', { type: 'result', subtype: 'success' });
+    noteFrame(svc, 'b', { type: 'result', subtype: 'success' });
     expect(pushed[pushed.length - 1].corroboration).toBeNull();
     svc.stop();
   });
@@ -291,7 +298,7 @@ describe('local corroboration rides the same record', () => {
     const { svc, pushed } = make();
     svc.start();
     await vi.waitFor(() => expect(pushed.length).toBe(1));
-    for (const id of ['a', 'b', 'c']) svc.noteStreamMessage(id, { type: 'result', is_error: true });
+    for (const id of ['a', 'b', 'c']) noteFrame(svc, id, { type: 'result', is_error: true });
     expect(pushed[pushed.length - 1].corroboration).not.toBeNull();
     svc.forgetSession('a');
     expect(pushed[pushed.length - 1].corroboration).toBeNull();
@@ -304,7 +311,7 @@ describe('local corroboration rides the same record', () => {
     const { svc, pushed } = make({ windowMs: 10 * 60_000 });
     svc.start();
     await vi.waitFor(() => expect(pushed.length).toBe(1));
-    for (const id of ['a', 'b', 'c']) svc.noteStreamMessage(id, { type: 'result', is_error: true });
+    for (const id of ['a', 'b', 'c']) noteFrame(svc, id, { type: 'result', is_error: true });
     await vi.advanceTimersByTimeAsync(MIN_POLL_MS + 10);
     await vi.waitFor(() => expect(svc.current().checkedAt).toBeDefined());
     expect(svc.current().corroboration).toMatchObject({ sessions: 3 });
@@ -315,7 +322,7 @@ describe('local corroboration rides the same record', () => {
     const { svc, pushed } = make();
     svc.start();
     await vi.waitFor(() => expect(pushed.length).toBe(1));
-    for (const id of ['a', 'b', 'c']) svc.noteStreamMessage(id, { type: 'result', is_error: true });
+    for (const id of ['a', 'b', 'c']) noteFrame(svc, id, { type: 'result', is_error: true });
     expect(pushed[pushed.length - 1].corroboration).not.toBeNull();
     // the injected window is a minute; the sweep runs every 30s
     await vi.advanceTimersByTimeAsync(90_000);

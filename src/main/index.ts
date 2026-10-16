@@ -1438,7 +1438,8 @@ app
     // saying no is invisible (the section just renders expanded).
     const contextRefs = new ContextRefs();
     const streamFeed = new StreamFeed(createLogger(sink, 'sessions'), contextRefs);
-    manager.onStreamMessage((sessionId, msg) => streamFeed.offer(sessionId, msg));
+    // NEUTRAL events, not frames (#1286): the Feed reads no provider's wire.
+    manager.onEngineEvent((sessionId, ev) => streamFeed.ingest(sessionId, ev));
     // A turn that never produced a `result` must not leave a block claiming to
     // still be filling in (#140). The session's exit is the last honest moment
     // to say so.
@@ -1466,7 +1467,7 @@ app
       isOnline: () => net.isOnline(),
       probeDeps: { userAgent: app.getVersion() },
     });
-    manager.onStreamMessage((sessionId, msg) => health.noteStreamMessage(sessionId, msg));
+    manager.onEngineEvent((sessionId, ev) => health.noteEvent(sessionId, ev));
     // A session that is gone stops corroborating anything.
     manager.onSessionExit((e) => health.forgetSession(e.sessionId));
     const hooks = new HookListener({

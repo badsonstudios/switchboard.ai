@@ -30,12 +30,19 @@ export type SessionEvent =
   | { kind: 'permission-resolved' }
   | { kind: 'user-input' } // user typed into the terminal
   /**
-   * A stream-json message (P2-E18-05) — stream mode's equivalent of a hook,
-   * and deliberately a SEPARATE kind rather than a synthesised `hook`: these
-   * are not hooks, and `describeCause` must not claim they are when someone is
-   * reading a transition log to work out where a status came from.
+   * What the session's own traffic says about the turn (P2-E18-05) — stream
+   * mode's equivalent of a hook, and deliberately a SEPARATE kind rather than a
+   * synthesised `hook`: these are not hooks, and `describeCause` must not claim
+   * they are when someone is reading a transition log to work out where a
+   * status came from.
+   *
+   * NEUTRAL SINCE E40 item 03 (#1286): `signal` is all the state machine may
+   * branch on — `output` (the turn is producing something) or `turn-end` (it is
+   * over, failed or not). It used to be the CLI's own frame name. `label` is
+   * the frame the engine actually sent, kept for the transition log ONLY
+   * (`stream:<label>`), which is why the log reads exactly as it did.
    */
-  | { kind: 'stream'; event: string; subtype?: string }
+  | { kind: 'stream'; signal: 'output' | 'turn-end'; label: string }
   /** We wrote a prompt to the session's transport (P2-E18-05). */
   | { kind: 'prompt-sent' }
   /**
@@ -99,14 +106,14 @@ export interface TransitionContext {
  *
  *  - `permission-held`: another request. Still waiting (and `needs-input`
  *    becomes `needs-permission`, as it always has).
- *  - a stream `result`: the turn is OVER. Whatever was asked in it is moot,
+ *  - a stream `turn-end`: the turn is OVER. Whatever was asked in it is moot,
  *    and pinning here would strand the card: the answer or the deadline that
  *    finally clears the request would walk a finished session to `working`,
  *    with nothing left to end it.
  *  - `exit` is handled before this is consulted, as it always was.
  */
 function endsHeldWait(ev: SessionEvent): boolean {
-  return ev.kind === 'permission-held' || (ev.kind === 'stream' && ev.event === 'result');
+  return ev.kind === 'permission-held' || (ev.kind === 'stream' && ev.signal === 'turn-end');
 }
 
 export function transition(
@@ -191,9 +198,7 @@ export function transition(
     // conversation, or a message the CLI had queued: S-11 watched one written
     // during a 150s stall get picked up 144s after we resumed reading).
     if (ev.kind === 'prompt-sent') return to('working');
-    if (ev.kind === 'stream' && (ev.event === 'assistant' || ev.event === 'stream_event')) {
-      return to('working');
-    }
+    if (ev.kind === 'stream' && ev.signal === 'output') return to('working');
     return stay('idle-after-done');
   }
 
@@ -216,21 +221,22 @@ export function transition(
       // round trip to learn it: WE did the writing.
       return to('working');
     case 'stream':
-      switch (ev.event) {
-        case 'assistant':
-        case 'stream_event':
+      switch (ev.signal) {
+        case 'output':
           // Output is arriving. Normally a no-op after `prompt-sent`; it
           // matters when nobody told us a turn began.
           return to('working');
-        case 'result':
-          // Stream mode's `Stop`. `subtype` distinguishes success from an
-          // error, but both END the turn — a failed turn is finished, not
-          // running, and the error surfaces in the feed rather than the badge.
+        case 'turn-end':
+          // Stream mode's `Stop`. Success and error both END the turn — a
+          // failed turn is finished, not running, and the error surfaces in
+          // the feed rather than the badge. (An unknown frame never reaches
+          // here at all: the engine's translator reports and drops it.)
           return to('done');
-        default:
-          // Same posture as an unknown hook (§5.26): log, never transition.
-          return stay(`unknown-stream:${ev.event}`);
       }
+      // unreachable while `signal` is a closed union; kept so a widened one
+      // stays inert (§5.26's posture for an unknown hook) rather than falling
+      // through to the hook arm
+      return stay('unknown-stream');
     case 'hook':
       switch (ev.event) {
         case 'SessionStart':
