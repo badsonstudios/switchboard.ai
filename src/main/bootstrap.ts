@@ -27,6 +27,10 @@ export function registerBuiltinContributions(): void {
     // with the Claude fake beside it. Every other value is exactly as before.
     if (process.env.SWITCHBOARD_FAKE_PROVIDER === 'acp') registry.register('provider-adapter', fakeAcpAdapter);
     registry.register('provider-adapter', fakeStreamAdapter);
+    // `both` (E40 item 13, #1296): the Claude fake FIRST — so it stays the
+    // default, as Claude does on a real launch with Codex present — and the
+    // fake ACP agent AFTER it, as a second AI to dispatch onto.
+    if (process.env.SWITCHBOARD_FAKE_PROVIDER === 'both') registry.register('provider-adapter', fakeAcpAdapter);
     return;
   }
   registry.register('provider-adapter', claudeAdapter);

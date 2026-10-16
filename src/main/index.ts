@@ -2900,11 +2900,19 @@ app
     //   * `conversationIdFor` reads the LIVE record, not the persisted card: a
     //     fork adopts the conversation this session is in right now, and the
     //     record is the only thing that knows the CLI's own id for it.
-    //   * `targetProviderId` is `defaultProviderId`, because a dispatched card is
-    //     always brand new and `planSessionStart` gives a card with no prior
-    //     exactly that. Named rather than assumed: `fork-adoption` REFUSES on a
-    //     provider mismatch (§5.5 — transcript formats are not interchangeable),
-    //     and a refusal computed against a guess is worse than no refusal at all.
+    //   * `providers` is the registry's own list (#1296, "Run it on"). This
+    //     replaced a `targetProviderId` pinned to `defaultProviderId`, which was
+    //     right while a dispatch had no AI choice: the target is now the user's
+    //     pick or the author's own AI, refused if it is not on this list, and
+    //     carried to `sessions:create` on the pending dispatch. `fork-adoption`
+    //     still refuses a provider mismatch (§5.5 — transcript formats are not
+    //     interchangeable), now against the real target rather than the default.
+    //   * `loginStateOf` reads the AI CATALOG's last detection (#1291) — the
+    //     same answer Settings → AIs shows, produced by each provider's own
+    //     `detect` at startup and after an in-app login. A read, not a probe: no
+    //     child process per dialog open. No detection yet (startup still
+    //     running, or an AI with no `detect`) is `unknown`: not dimmed, not
+    //     refused.
     const dispatches = registerDispatchIpc({
       broker,
       log: createLogger(sink, 'dispatch'),
@@ -2919,7 +2927,14 @@ app
         return answer.ok ? answer.value.text : undefined;
       },
       experimentalFork: () => workspace.getExperimentalFork(),
-      targetProviderId: defaultProviderId,
+      providers: () =>
+        registry
+          .list('provider-adapter')
+          .map((p) => ({ id: p.manifest.id, name: p.manifest.displayName })),
+      loginStateOf: (providerId) =>
+        Promise.resolve(
+          aiCatalog.list().find((i) => i.providerId === providerId)?.detection?.login ?? 'unknown'
+        ),
     });
     // ── THE ROUND-TRIP (P2-E13-05, §5.15) — Phase 2 exit criterion 5 ────────
     //

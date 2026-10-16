@@ -511,6 +511,47 @@ The preload exposes all of these as `switchboard.ais`.
    - "Something else": name / command / arguments, then Test.
 6. **Cross-AI review** *(item 13)*: **Run it on** in the dispatch dialog.
 
+   **As built, item 13 (#1296, 2026-10-16):**
+   - **The picker.** `dispatch:options` now carries `ais` (every registered
+     provider, by display name, with a login state) and `currentAi` (the author's
+     provider). The dialog lists the author's AI first as "Same as this session
+     (<AI>)" and selects it. It shows the row only when there is a choice (two or
+     more AIs), or when the role prefers an AI it cannot use. With one AI the
+     dialog is unchanged.
+   - **The request.** `dispatch:prepare` takes `targetProviderId`; absent means
+     the author's own AI. The old `targetProviderId: defaultProviderId` pin is
+     gone. The dep is now the registry's provider list.
+     - A target that is not registered is refused (`dispatch.refusal.aiMissing`).
+     - A target that is definitely logged out is refused
+       (`dispatch.refusal.aiLoggedOut`).
+     - Neither ever falls back.
+     - `PendingDispatch.providerId` carries the target. `sessions:create`
+       starts the brand-new card on it, and refuses visibly if it stopped being
+       registered before the spawn.
+   - **The bus.** The reviewer gets the bus through the target's own
+     `mcp.configFor`, so ACP passes it in `session/new` `mcpServers`. There is no
+     Codex-specific code. The e2e (`dispatch-cross-ai.spec.ts`, launched with the
+     new `SWITCHBOARD_FAKE_PROVIDER=both`: the Claude fake first, the fake ACP
+     agent beside it) proves the attachment and the findings round trip. The
+     fake's `!mcp` reports the server it was handed; it is not an MCP client and
+     calls no tool.
+   - **Login state comes from item 08's catalog** (#1291). `loginStateOf`
+     reads `aiCatalog.list()`'s last `detection.login` for the provider. That
+     answer is produced by each provider's own `detect`, at startup (after
+     first paint) and after an in-app login. It is a read, not a probe, so a
+     dialog open starts no child process. An AI with no detection yet, or no
+     `detect`, is `unknown`, which is shown undimmed and never refused.
+     `prepare` refuses a definite logged-out. A first-cut stopgap reader
+     (`providers/login-states.ts`, a cached `codexLoginState()`) was deleted
+     at the rebase onto #1291.
+   - **Role templates** may carry `preferredProviderId`, checked for shape only.
+     A preferred AI that is missing or logged out is named in the dialog, and
+     Dispatch stays off until the user picks another AI. The built-ins have
+     none.
+   - **The prompt is unchanged.** It has no Claude-only references. The round
+     trip reads the reviewer's last turn, not a bus tool, so neither AI is told
+     about the bus.
+
 **Placeholders in the mockup, not facts:** model names, version numbers, plan
 names and the email address. The icons are stand-ins; the registry ships each
 AI's real SVG.

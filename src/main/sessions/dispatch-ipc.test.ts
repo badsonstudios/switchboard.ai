@@ -18,8 +18,14 @@
 //    which is re-sent on every remount — so `consume` is what stops a reviewer
 //    being briefed twice mid-conversation.
 //  * A REFUSAL NAMES ITS OWN REASON. Keys, not sentences, and the right key.
-import { describe, it, expect } from 'vitest';
-import { registerDispatchIpc, DISPATCH_TTL_MS, MAX_PENDING_DISPATCHES } from './dispatch-ipc';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  registerDispatchIpc,
+  DISPATCH_TTL_MS,
+  LOGIN_WAIT_MS,
+  MAX_PENDING_DISPATCHES,
+  OPTIONS_LOGIN_WAIT_MS,
+} from './dispatch-ipc';
 import type { DispatchContextDeps } from './dispatch-context';
 import { IpcBroker } from '../ipc/broker';
 import { LogFields, Logger } from '../log/logger';
@@ -28,7 +34,7 @@ import {
   isSaneRoleTemplate,
   type RoleTemplate,
 } from '../../shared/dispatch';
-import type { DispatchOptions, DispatchPrepared } from '../../shared/dispatch-wire';
+import type { DispatchAiLogin, DispatchOptions, DispatchPrepared } from '../../shared/dispatch-wire';
 import { SessionQueries, type DiffSource, type SessionSummary } from './queries';
 import en from '../../shared/i18n/locales/en.json';
 
@@ -72,9 +78,14 @@ function harness(
     cleanTree?: boolean;
     /** what `taskStatementOf` answers, per session id */
     tasks?: Record<string, string>;
+    /** the registered AIs (#1296); default Claude, plus `provider` when it names another */
+    providers?: Array<{ id: string; name: string }>;
+    /** each AI's login answer; absent = no `loginStateOf` dep at all */
+    logins?: Record<string, DispatchAiLogin | 'throw' | 'hang' | 'slow-out'>;
   } = {}
 ) {
   const handlers = new Map<string, Handler>();
+  const loginAsks: string[] = [];
   const logs: { level: string; msg: string; fields?: LogFields }[] = [];
   const broker = {
     handle: (channel: string, fn: Handler) => handlers.set(channel, fn),
@@ -110,17 +121,36 @@ function harness(
     // that ignored the guard entirely.
     taskStatementOf: (id) => opts.tasks?.[id],
     experimentalFork: () => opts.fork === true,
-    targetProviderId: () => opts.provider ?? 'claude-code',
+    providers: () =>
+      opts.providers ?? [
+        { id: 'claude-code', name: 'Claude Code' },
+        ...(opts.provider && opts.provider !== 'claude-code' ? [{ id: opts.provider, name: opts.provider }] : []),
+      ],
+    ...(opts.logins === undefined
+      ? {}
+      : {
+          loginStateOf: (id: string) => {
+            loginAsks.push(id);
+            const v = opts.logins![id];
+            if (v === 'throw') return Promise.reject(new Error('login check exploded'));
+            if (v === 'hang') return new Promise<never>(() => {});
+            // a COLD check: answers logged-out after a second, as Codex's ~1.6 s does
+            if (v === 'slow-out')
+              return new Promise<DispatchAiLogin>((r) => setTimeout(() => r('logged-out'), 1_000));
+            return Promise.resolve(v ?? 'unknown');
+          },
+        }),
   });
   const call = (channel: string, ...args: unknown[]): unknown => {
     const h = handlers.get(channel);
     if (!h) throw new Error(`no handler for ${channel}`);
     return h(null, ...args);
   };
-  const options = (id = AUTHOR): DispatchOptions => call('dispatch:options', id) as DispatchOptions;
+  const options = (id = AUTHOR): Promise<DispatchOptions> =>
+    call('dispatch:options', id) as Promise<DispatchOptions>;
   const prepare = (req: unknown): Promise<DispatchPrepared> =>
     call('dispatch:prepare', req) as Promise<DispatchPrepared>;
-  return { call, options, prepare, registry, logs, handlers };
+  return { call, options, prepare, registry, logs, handlers, loginAsks };
 }
 
 /** The `ok: true` half, or a failure with the refusal in the message. */
@@ -134,16 +164,16 @@ async function prepared(
 }
 
 describe('dispatch:options', () => {
-  it('offers the three built-ins first, then the user\u2019s', () => {
+  it('offers the three built-ins first, then the user\u2019s', async () => {
     const { options } = harness({ templates: [userTemplate()] });
-    const names = options().templates.map((x) => x.name);
+    const names = (await options()).templates.map((x) => x.name);
     expect(names.slice(0, 3)).toEqual(BUILT_IN_TEMPLATES.map((t) => t.name));
     expect(names[3]).toBe('Security review');
   });
 
-  it('marks which are built-in, and carries each one\u2019s policies', () => {
+  it('marks which are built-in, and carries each one\u2019s policies', async () => {
     const { options } = harness({ templates: [userTemplate()] });
-    const rows = options().templates;
+    const rows = (await options()).templates;
     expect(rows.filter((x) => x.builtIn)).toHaveLength(3);
     expect(rows.find((x) => x.id === 'mine-1')?.builtIn).toBe(false);
     const reviewer = rows.find((x) => x.id === REVIEWER_ID)!;
@@ -151,21 +181,21 @@ describe('dispatch:options', () => {
     expect(reviewer.autonomy).toBe('plan');
   });
 
-  it('⚠️ never hands out a rolePrompt — a menu row does not need one', () => {
+  it('⚠️ never hands out a rolePrompt — a menu row does not need one', async () => {
     const { options } = harness({ templates: [userTemplate()] });
-    for (const row of options().templates) {
+    for (const row of (await options()).templates) {
       expect(row).not.toHaveProperty('rolePrompt');
     }
   });
 
-  it('⚠️ DEDUPES BY ID, and says so — a React key cannot collide', () => {
+  it('⚠️ DEDUPES BY ID, and says so — a React key cannot collide', async () => {
     // Reachable only by hand-editing `workspace.json`: `keepSane` does not dedupe,
     // deliberately and consistently with the other five persisted lists. The cost
     // is at the surface, so the fix is here.
     const { options, logs } = harness({
       templates: [userTemplate({ name: 'First' }), userTemplate({ name: 'Second' })],
     });
-    const rows = options().templates;
+    const rows = (await options()).templates;
     expect(rows.filter((x) => x.id === 'mine-1')).toHaveLength(1);
     // FIRST WINS, matching `upsertDispatchTemplate`'s own `findIndex` — so the row
     // the user sees is the row an edit would actually change.
@@ -173,41 +203,41 @@ describe('dispatch:options', () => {
     expect(logs.some((l) => l.msg.includes('duplicate dispatch template id'))).toBe(true);
   });
 
-  it('greys out a `full` template while the fork flag is off, with a key that exists', () => {
+  it('greys out a `full` template while the fork flag is off, with a key that exists', async () => {
     const { options } = harness({ templates: [userTemplate({ contextPolicy: 'full' })] });
-    const row = options().templates.find((x) => x.id === 'mine-1')!;
+    const row = (await options()).templates.find((x) => x.id === 'mine-1')!;
     expect(row.refusalKey).toBe('dispatch.refusal.fullContext');
     // A KEY, NOT A SENTENCE (§5.21), and one the catalogue actually has — the
     // failure this catches is a renderer printing the key itself on screen.
     expect(en.dispatch.refusal.fullContext).toBeTruthy();
   });
 
-  it('...and stops greying it out when the flag is on', () => {
+  it('...and stops greying it out when the flag is on', async () => {
     const { options } = harness({
       templates: [userTemplate({ contextPolicy: 'full' })],
       fork: true,
     });
-    expect(options().templates.find((x) => x.id === 'mine-1')?.refusalKey).toBeUndefined();
+    expect((await options()).templates.find((x) => x.id === 'mine-1')?.refusalKey).toBeUndefined();
   });
 
-  it('refuses a Phase 3 workspace policy with its own reason', () => {
+  it('refuses a Phase 3 workspace policy with its own reason', async () => {
     const { options } = harness({
       templates: [userTemplate({ workspacePolicy: 'fresh-worktree' })],
     });
-    expect(options().templates.find((x) => x.id === 'mine-1')?.refusalKey).toBe(
+    expect((await options()).templates.find((x) => x.id === 'mine-1')?.refusalKey).toBe(
       'dispatch.refusal.freshWorktree'
     );
   });
 
-  it('hands back the author’s opening prompt as the task default', () => {
+  it('hands back the author’s opening prompt as the task default', async () => {
     // The field the dialog prefills, and the whole reason a dispatch has a task
     // line at all. Read through the SAME query the bundle would have used, so the
     // prefill and the fallback cannot describe different text.
     const { options } = harness({ tasks: { [AUTHOR]: 'do it.' } });
-    expect(options().taskStatement).toBe('do it.');
+    expect((await options()).taskStatement).toBe('do it.');
   });
 
-  it('omits a task default that is only whitespace', () => {
+  it('omits a task default that is only whitespace', async () => {
     // `''` and `'   '` both mean "nothing was recorded", and an absent field is what
     // leaves the dialog's box empty rather than pre-filled with three spaces the
     // user then has to notice and delete.
@@ -216,19 +246,19 @@ describe('dispatch:options', () => {
     const CRLF = String.fromCharCode(13) + String.fromCharCode(10);
     for (const blank of ['', '   ', CRLF + String.fromCharCode(9)]) {
       const { options } = harness({ tasks: { [AUTHOR]: blank } });
-      expect(options().taskStatement, JSON.stringify(blank)).toBeUndefined();
+      expect((await options()).taskStatement, JSON.stringify(blank)).toBeUndefined();
     }
   });
 
-  it('never refuses — a bad session id costs the task default and nothing else', () => {
+  it('never refuses — a bad session id costs the task default and nothing else', async () => {
     // The GUARD is what this pins: with a real `taskStatementOf` behind it, an
     // implementation that passed a non-string straight through would answer the
     // author's task for `null` or `42`. Asserted against a harness that WOULD have
     // answered, which the first version of this test could not claim.
     const { call, options } = harness({ templates: [userTemplate()], tasks: { [AUTHOR]: 'do it.' } });
-    expect(options().taskStatement).toBe('do it.'); // it really does answer
+    expect((await options()).taskStatement).toBe('do it.'); // it really does answer
     for (const bad of [undefined, null, 42, '']) {
-      const answer = call('dispatch:options', bad) as DispatchOptions;
+      const answer = (await call('dispatch:options', bad)) as DispatchOptions;
       expect(answer.templates.length, JSON.stringify(bad)).toBe(4);
       expect(answer.taskStatement, JSON.stringify(bad)).toBeUndefined();
       // …and the folder goes the same way, for the same reason.
@@ -242,15 +272,15 @@ describe('dispatch:options', () => {
     // description of a fact `prepare` settles a moment later, and the one on
     // screen would be the one that spawned nothing. Pinned by comparing the two.
     const h = harness();
-    expect(h.options().folder).toBe('C:/Projects/TradingApp');
-    expect((await prepared(h)).folder).toBe(h.options().folder);
+    expect((await h.options()).folder).toBe('C:/Projects/TradingApp');
+    expect((await prepared(h)).folder).toBe((await h.options()).folder);
   });
 
-  it('omits the folder when the session does not resolve', () => {
+  it('omits the folder when the session does not resolve', async () => {
     const { options } = harness({ sessions: [] });
-    expect(options().folder).toBeUndefined();
+    expect((await options()).folder).toBeUndefined();
     // Still every template, because this channel never refuses.
-    expect(options().templates).toHaveLength(3);
+    expect((await options()).templates).toHaveLength(3);
   });
 });
 
@@ -325,7 +355,8 @@ describe('dispatch:prepare', () => {
       conversationId: '11111111-2222-3333-4444-555555555555',
       provider: 'some-other-cli',
     });
-    const answer = await h.prepare({ from: AUTHOR, templateId: 'mine-1' });
+    // The target is now the user's pick (#1296), not a dep pinned to the default.
+    const answer = await h.prepare({ from: AUTHOR, templateId: 'mine-1', targetProviderId: 'some-other-cli' });
     expect(answer.ok).toBe(false);
     expect(answer.ok === false && answer.reasonKey).toBe('dispatch.refusal.crossProviderFork');
   });
@@ -412,5 +443,153 @@ describe('the pending registry', () => {
     expect(h.registry.peek(ids[0])).toBeUndefined();
     expect(h.registry.peek(ids[ids.length - 1])).toBeTruthy();
     expect(h.logs.some((l) => l.msg.includes('stay under the cap'))).toBe(true);
+  });
+});
+
+// ── "RUN IT ON" (E40 item 13, #1296) ─────────────────────────────────────────
+//
+// The dispatch chooses its AI: the user's pick, else the author's own. The
+// claims that a plausible wrong implementation gets wrong:
+//  * a target that is not registered is REFUSED, never swapped for the default;
+//  * only a DEFINITE logged-out refuses — `unknown` (and a check that throws or
+//    hangs) goes ahead, because our login check failing must not block a dispatch;
+//  * the author's own AI is never asked about, and nothing is asked at all for
+//    the palette's session-less read at app mount.
+describe('Run it on (#1296)', () => {
+  const two = [
+    { id: 'claude-code', name: 'Claude Code' },
+    { id: 'codex', name: 'Codex' },
+  ];
+
+  it('lists every registered AI with its login, and names the author’s own', async () => {
+    const h = harness({ providers: two, logins: { codex: 'logged-out' } });
+    const o = await h.options();
+    expect(o.currentAi).toBe('claude-code');
+    expect(o.ais).toEqual([
+      { id: 'claude-code', name: 'Claude Code', login: 'unknown' },
+      { id: 'codex', name: 'Codex', login: 'logged-out' },
+    ]);
+    // the author's own AI is running a session right now; it is not asked
+    expect(h.loginAsks).toEqual(['codex']);
+  });
+
+  it('asks about NO logins for a session-less read (the palette at app mount)', async () => {
+    const h = harness({ providers: two, logins: { codex: 'logged-in' } });
+    const o = (await h.call('dispatch:options', '')) as DispatchOptions;
+    expect(o.ais?.map((a) => a.login)).toEqual(['unknown', 'unknown']);
+    expect(o.currentAi).toBeUndefined();
+    expect(h.loginAsks).toEqual([]);
+  });
+
+  it('a login check that throws, or never answers, reads as `unknown` (fail-open)', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness({
+        providers: [...two, { id: 'gemini', name: 'Gemini CLI' }],
+        logins: { codex: 'throw', gemini: 'hang' },
+      });
+      const pending = h.options();
+      await vi.advanceTimersByTimeAsync(LOGIN_WAIT_MS + 10);
+      const o = await pending;
+      expect(o.ais?.map((a) => [a.id, a.login])).toEqual([
+        ['claude-code', 'unknown'],
+        ['codex', 'unknown'],
+        ['gemini', 'unknown'],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('⚠️ the dialog does NOT wait for a cold login check — prepare does, and still refuses', async () => {
+    // Review: a menu click that did nothing for ~1.6 s read as broken. So options
+    // waits only long enough for a cached answer; prepare waits the full bound,
+    // behind the dialog's own "Preparing…" state.
+    vi.useFakeTimers();
+    try {
+      const h = harness({ providers: two, logins: { codex: 'slow-out' } });
+      const opening = h.options();
+      await vi.advanceTimersByTimeAsync(OPTIONS_LOGIN_WAIT_MS + 10);
+      expect((await opening).ais?.find((a) => a.id === 'codex')?.login).toBe('unknown');
+      const going = h.prepare({ from: AUTHOR, templateId: REVIEWER_ID, targetProviderId: 'codex' });
+      await vi.advanceTimersByTimeAsync(1_100);
+      const answer = await going;
+      expect(answer.ok === false && answer.reasonKey).toBe('dispatch.refusal.aiLoggedOut');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('carries a template’s preferred AI to the dialog', async () => {
+    const h = harness({ providers: two, templates: [userTemplate({ preferredProviderId: 'codex' })] });
+    const row = (await h.options()).templates.find((x) => x.id === 'mine-1')!;
+    expect(row.preferredProviderId).toBe('codex');
+    // …and the built-ins carry none
+    for (const b of (await h.options()).templates.filter((x) => x.builtIn)) {
+      expect(b).not.toHaveProperty('preferredProviderId');
+    }
+  });
+
+  it('prepares onto the chosen AI, and the pending dispatch carries it', async () => {
+    const h = harness({ providers: two, logins: { codex: 'logged-in' } });
+    const answer = await prepared(h, { from: AUTHOR, templateId: REVIEWER_ID, targetProviderId: 'codex' });
+    expect(h.registry.peek(answer.dispatchId)?.providerId).toBe('codex');
+  });
+
+  it('with no target named, runs on the AUTHOR’S own AI', async () => {
+    const h = harness({
+      providers: [
+        { id: 'codex', name: 'Codex' },
+        { id: 'claude-code', name: 'Claude Code' },
+      ],
+    });
+    // Codex is FIRST (the "default"); the author is on Claude — the author wins.
+    const answer = await prepared(h);
+    expect(h.registry.peek(answer.dispatchId)?.providerId).toBe('claude-code');
+  });
+
+  it('⚠️ REFUSES a target that is not registered — never the default instead', async () => {
+    const h = harness({ providers: two });
+    const answer = await h.prepare({ from: AUTHOR, templateId: REVIEWER_ID, targetProviderId: 'gemini' });
+    expect(answer.ok).toBe(false);
+    expect(answer.ok === false && answer.reasonKey).toBe('dispatch.refusal.aiMissing');
+    expect(en.dispatch.refusal.aiMissing).toBeTruthy();
+  });
+
+  it('REFUSES a target that is definitely logged out', async () => {
+    const h = harness({ providers: two, logins: { codex: 'logged-out' } });
+    const answer = await h.prepare({ from: AUTHOR, templateId: REVIEWER_ID, targetProviderId: 'codex' });
+    expect(answer.ok === false && answer.reasonKey).toBe('dispatch.refusal.aiLoggedOut');
+    expect(en.dispatch.refusal.aiLoggedOut).toBeTruthy();
+  });
+
+  it('goes ahead when the login is `unknown`', async () => {
+    const h = harness({ providers: two, logins: {} });
+    await expect(
+      prepared(h, { from: AUTHOR, templateId: REVIEWER_ID, targetProviderId: 'codex' })
+    ).resolves.toBeTruthy();
+  });
+
+  it('refuses a malformed target id at the door (§5.29)', async () => {
+    const h = harness({ providers: two });
+    for (const bad of [42, '', 'has space', 'x'.repeat(101)]) {
+      const answer = await h.prepare({ from: AUTHOR, templateId: REVIEWER_ID, targetProviderId: bad });
+      expect(answer.ok, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it('a `full` dispatch onto ANOTHER AI is refused (the fork gate reads the real target)', async () => {
+    const h = harness({
+      providers: two,
+      templates: [userTemplate({ contextPolicy: 'full' })],
+      fork: true,
+      conversationId: '11111111-2222-3333-4444-555555555555',
+    });
+    const answer = await h.prepare({ from: AUTHOR, templateId: 'mine-1', targetProviderId: 'codex' });
+    expect(answer.ok === false && answer.reasonKey).toBe('dispatch.refusal.crossProviderFork');
+    // …and onto the SAME AI it goes
+    await expect(
+      prepared(h, { from: AUTHOR, templateId: 'mine-1', targetProviderId: 'claude-code' })
+    ).resolves.toBeTruthy();
   });
 });

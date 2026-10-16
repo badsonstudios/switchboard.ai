@@ -107,6 +107,13 @@ on the floor, and say so in your PR.
   Codex's "Auto review" mode, where a hidden model approves things for you.
   There is no AI picker yet, so a new session is still a Claude session, and
   nothing changes for anyone without Codex.
+- A second opinion from a different AI: the Dispatch box has a new **Run it
+  on** row, so a Code Reviewer sent from a Claude session can run on Codex,
+  and its findings come back to the Claude session just as a Claude review's
+  do. An AI that is not logged in is dimmed. A role of your own can name the
+  AI it prefers, and if that AI can't be used the box says why instead of
+  quietly running the role on another AI. With only one AI set up, the box is
+  unchanged.
 
 ### Changed
 

@@ -524,6 +524,16 @@ describe('dispatch role templates (P2-E13-01, §5.15)', () => {
     expect(b.listDispatchTemplates()).toHaveLength(1);
   });
 
+  it('a template’s preferred AI is persisted with it (#1296)', () => {
+    const a = makeStore(file);
+    a.load();
+    expect(a.upsertDispatchTemplate(tmpl('t1', { preferredProviderId: 'codex' }))).toBe(true);
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.listDispatchTemplates()[0].preferredProviderId).toBe('codex');
+  });
+
   it('the built-in three are never written to the file — the done-when’s other half', () => {
     // ⚠️ THE POINT. They are CODE (`shared/dispatch.ts`), so improving one
     // improves it for everybody on upgrade; copied into each install's

@@ -5641,6 +5641,7 @@ describe('sessions:create carrying a dispatch (P2-E13-03, §5.15)', () => {
     template: template(),
     from: 'live-author',
     folder: dir,
+    providerId: 'generic',
     at: Date.now(),
     ...over,
   });
@@ -5694,6 +5695,41 @@ describe('sessions:create carrying a dispatch (P2-E13-03, §5.15)', () => {
     await create(h);
     expect(h.created[0]).toBeTruthy();
     expect(h.upserted[0].autonomy).toBe('plan');
+  });
+
+  // ── "RUN IT ON" (#1296): the dispatch chose the AI ──────────────────────
+  it('A NEW DISPATCHED CARD STARTS ON THE AI THE DISPATCH CHOSE, not the default', async () => {
+    const h = harness(undefined, dir, {
+      dispatch: pending({ providerId: 'codex' }),
+      registered: ['generic', 'codex'],
+    });
+    await create(h);
+    expect(h.upserted[0].identity.providerId).toBe('codex');
+    expect(h.submitted).toHaveLength(1);
+  });
+
+  it('⚠️ a chosen AI that is NO LONGER REGISTERED is refused — never the default instead', async () => {
+    const h = harness(undefined, dir, { dispatch: pending({ providerId: 'codex' }) });
+    expect(await create(h)).toBeNull();
+    expect(h.created).toHaveLength(0);
+    expect(h.upserted).toHaveLength(0);
+    // NOT SPENT: the refusal is before the point of no return, so "Try again"
+    // (once the AI is back) still carries the briefing.
+    expect(h.spent).toEqual([]);
+  });
+
+  it('a dispatched card that already exists keeps its persisted AI on a restart', async () => {
+    // `prior` wins, like every card: the dispatch's choice is for its FIRST start.
+    const h = harness(undefined, dir, {
+      dispatch: pending({ providerId: 'codex' }),
+      registered: ['generic', 'codex'],
+      prior: {
+        id: 'card-1',
+        identity: { title: 'Security review of App', folder: dir, providerId: 'generic' },
+      } as unknown as PersistedSession,
+    });
+    await create(h);
+    expect(h.upserted[0].identity.providerId).toBe('generic');
   });
 
   it('a spawn that THROWS spends the briefing and says it is gone', async () => {
