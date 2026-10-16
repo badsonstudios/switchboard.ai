@@ -3,6 +3,146 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🎛️ ORCHESTRATION RUN — E40 "MORE THAN ONE AI" (#1285–#1296) — STARTED 2026-10-16
+>
+> **Mode:** `/orchestrate`. A Fable session dispatches Opus workers into the
+> worktree pool (`C:\Projects\sb-wt-1..3`) and is the **ONLY writer of this
+> file**. Workers never touch `PROGRESS.md`; they report through handoff files
+> in `.claude/work_files/orchestrator/<issue#>.md`, and this block is rebuilt
+> from those. A fresh session resuming the run reads this block, then the
+> handoff files, then `gh pr list` for every branch named here.
+>
+> **Scope:** the twelve open E40 issues, in the §7 order of
+> `docs/plans/e40-multi-ai-design.md`. **#1284 (install Codex) is CLOSED:**
+> verified 2026-10-16, codex-cli 0.163.0, logged in via ChatGPT (work
+> account). It blocks nothing now.
+>
+> **Merge policy for this run:** internal PRs (seam, probe, engine, catalog)
+> merge on green CI as they finish. **User-facing PRs queue for the owner**
+> and are listed under "Owner's queue" below; the run never merges them.
+>
+> **Active workers (issue → worktree → branch):**
+> - #1296 cross-AI dispatch ("Run it on") → `sb-wt-2` → `feature/1296-cross-ai-dispatch` — dispatched 2026-10-16 from #1307's head `c30db9bf`; will rebase onto #1307's amended head. User-facing → owner's queue.
+> - #1290 Codex provider → `sb-wt-1` → `feature/1290-codex-provider` → **PR #1307 (user-facing, owner's queue), now doing its follow-up:** rebase onto main (#1305 + #1306 landed), wire the plan-limit windows into the per-turn usage event, declare no price, and add Codex's `detect` capability (from #1291's handoff) once #1308 lands. First pass: `check:codex` passed for real (2 turns on `gpt-6-luna` low, "pong" twice, 20,660 + 1,611 input tokens, limits read 37 % 5-hour / 17 % weekly, one Codex session created and deleted, no processes left).
+> - #1291 AI catalog + detection + custom AIs + default AI → `sb-wt-3` → `feature/1291-ai-catalog` → **PR #1308 (internal), done 2026-10-16, now REBASING** onto `2de78924` (`gh pr update-branch` hit conflicts with #1305 in `contributions.ts` and the adapters). Unit 12,501; e2e 513/513 after fixing a real regression it caused and found (15 blocking PATH scans on the main thread after first paint broke `file-menu.spec.ts`; now one async read). Startup measured alternating builds: window-shown 808/833/816 ms base vs 747/782/797 ms branch. Catalog: Claude + 14 vouched ACP entries with local icons under `src/renderer/public/ai-icons/` (the CSP allows no `data:`/remote images); 42-entry trimmed registry snapshot for the user-pressed diff. Claude detection from `claude --version` + `auth status --json` (measured on 2.1.288). Default AI: first registered provider when unset.
+>
+> **In CI, awaiting merge:** **#1299** (this file's run block; docs). **#1308**
+> after its rebase.
+>
+> **#1288 is classified INTERNAL for this run, deliberately.** The skill's
+> rule would call it user-facing (it wrote a manual paragraph and a dogfood
+> row), but the owner's dispatch instructions named #1286/#1287/#1288 "seam
+> items… refactors with NO visible change", and the one visible change is the
+> done-when he filed: an unknown model no longer shows an invented
+> Sonnet-rate price. The status bar now reads `~$X est` as before, `≥$X est`
+> when some sessions have no price, and `no price` when none do. Nothing
+> changes for a Claude-only user on known models. His lever is "revert that".
+> Two decisions it made, for him to confirm or reverse: (a) only a card's own
+> AI writes its AI label (one AI's conversation is never sent to another
+> company's model just to name a card); (b) Claude no longer sends per-turn
+> usage events (its transcript count is the one source), so per-turn usage is
+> for AIs without a transcript.
+>
+> **Waiting on dependencies:** #1292 + #1293 (after #1291) · #1294 (after
+> #1290 + #1293) · #1295 (after #1294) · #1296 (after #1290). Items that
+> depend on a PR in the owner's queue branch from that PR's head; the run
+> ends with a train PR for him.
+>
+> **Merged this run:**
+> - **#1288 per-AI surfaces → PR #1305 (`2de78924`), 2026-10-16.** Six
+>   capabilities at the end of `ProviderCapabilities` (`usage`, `statusPage`,
+>   `preflight`, `labels`, `mcpManager`, `commandFiles`), Claude's in
+>   `providers/claude-surfaces.ts`; pricing moved to main
+>   (`providers/claude-pricing.ts`), the renderer only displays `estimateUsd`;
+>   an unknown model gets NO price; status bar reads `~$X est` / `≥$X est` /
+>   `no price`; `src/shared/usage-report.ts` carries `PlanLimitWindow` for
+>   Codex's 5-hour/weekly windows; per-turn `usage` events are for AIs
+>   without a transcript (Claude's translator no longer emits them); only a
+>   card's own AI writes its label; the MCP Manager says plainly when an AI
+>   has no MCP list. Review found and fixed one real bug (Claude's
+>   `<synthetic>` model after a local `/cost` was un-pricing a whole session).
+>   Unit 12,420; e2e 511 + the `session-history` flake that passed alone;
+>   manual `03-session-view.md`, CHANGELOG `Changed`, dogfood UNTESTED row.
+> - **#1289 ACP engine → PR #1306 (`7034aa01`), 2026-10-16.** `src/main/providers/acp/`:
+>   JSON-RPC readers, `AcpContent` (update → neutral events), `AcpSession`
+>   (handshake, correlation, controls, setup deadline, re-applying settings
+>   after a load, one prompt in flight), `createAcpProvider({id, displayName,
+>   command, args, env?, modeMap?, authMethodId?, ...})`, and the hermetic
+>   fake ACP agent (`fake-acp`, directives `!think !tool !edit !ask
+>   !cancel-slow !error !unknown !plan !mode !state !mcp !fs`; e2e selects it
+>   with `SWITCHBOARD_FAKE_PROVIDER=acp`). Reuses `StreamService` as the
+>   transport. Permissions: allow → `allow_once`, deny → `reject_once`; Stop →
+>   `session/cancel` + every held request withdrawn. The mode chip now
+>   switches a live session whose AI has `modes.set` (Claude: unsupported, no
+>   change). No client `fs/*`/`terminal/*`. Unit 12,375; e2e 513/513 incl. the
+>   new `acp-session.spec.ts`. One contract breach the worker reported itself:
+>   a 5-second unit run overlapped the e2e suite once; the suite was green.
+> - **#1287 seam 2 → PR #1304 (`e4b3e270`), 2026-10-16.**
+>   `ProviderCapabilities.controls` builds a session's `SessionControls`,
+>   whose present members ARE the declaration (approvals, interrupt, models,
+>   effort, contextUsage, modes with optional live `set`, slashCommands
+>   marker, the live `mcp.*` verbs). A missing control answers
+>   `unsupported` "Not available with <AI>." and never throws. The renderer
+>   asks `sessions:controls` and greys out the mode chip, model chip,
+>   Compact, Clear, Stop and the card menu's Clear/Compact (tested with a
+>   reduced-set fake AI). `shared/stream-protocol.ts` is now
+>   `providers/claude-protocol.ts`; the Claude halves of `effort` and
+>   `context-usage` moved under `providers/`; `SessionManager.onStreamMessage`
+>   is deleted; the grep allowlist is EMPTY (one documented exception: the
+>   local-only `check:mcp-attach` harness). Unit 12,331; e2e 511 + 1
+>   colour-serialisation flake that passed alone; e2e comments only. Accepted
+>   theoretical regression, recorded: a translator throw on a permission
+>   frame would hide the request from the router (no such path exists).
+> - **#1286 seam 1 → PR #1302 (`5fa32d7c`), 2026-10-16.** 14 neutral event
+>   types in `src/main/sessions/engine-events.ts`; the Claude translator
+>   `providers/claude-events.ts` behind a new optional `events` capability,
+>   declared by the real and the fake Claude adapters. Feed, state machine,
+>   stream-status and health consume only events; `engine-seam.test.ts` is
+>   the grep gate. No e2e spec touched; unit 12,292; e2e 512/512 (second run
+>   510 + 2 load flakes that passed alone). Out of scope, filed as **#1303**:
+>   transcript replay still reads Claude's format outside the provider.
+> - **#1285 probe → PR #1300 (`dd928d10`), 2026-10-16.** `spike/findings/e40-codex-acp.md`.
+>   **VERDICT: Codex rides the general ACP engine; no native engine.** Adapter
+>   `@agentclientprotocol/codex-acp@2.2.2` (bundles its own Codex 0.160.1,
+>   not the PATH 0.163.0). Measured, all seven questions: clean spawn via the
+>   `launchSpec` shape, pure-JSON stdout; Session Bus attaches through
+>   `session/new` `mcpServers`; seven `session/update` variants; permission
+>   kinds `allow_once | allow_always | reject_once` (reject ends the turn);
+>   models/effort/modes via `configOptions`; `session/load` resumes across a
+>   process exit but **resets model/effort/mode**; per-turn tokens in the
+>   prompt result; **AGENTS.md only, never CLAUDE.md**. **The one gap:** plan
+>   limits (5-hour + weekly) reach ACP only as `/status` markdown; a zero-token
+>   `codex app-server` `account/rateLimits/read` returns them structured, so
+>   **#1290 gains a small limits reader, not an engine.** Design record not
+>   amended (verdict is the default). 9 model turns on the cheapest model.
+>   No codex processes left; 3 probe sessions deleted from his history.
+>
+> **Owner's queue (user-facing, awaiting his review):** empty.
+>
+> **Decisions queued for the owner (not blocking; needed by #1290):**
+> 1. Codex's default mode `agent` ("Auto review") lets a **hidden reviewer
+>    model approve tool calls without asking** (measured: an MCP call was
+>    auto-approved, 7,262 uncounted tokens). `workspace-write` or `read-only`
+>    route approvals to the user. Which should a Switchboard Codex session
+>    default to? The run's working assumption for #1290: **`workspace-write`**,
+>    because the approval bar is the product and a hidden approver bypasses it.
+> 2. Run the adapter's bundled Codex (0.160.1) or point `CODEX_PATH` at his
+>    installed one (0.163.0)? Not measured; #1290 will use the bundled one
+>    unless told otherwise.
+>
+> **Filed mid-run:** **#1301** (`win-cmd.ts` `execSpec` cannot launch a `.cmd`
+> whose path has a space; the ACP engine must use the `launchSpec` shape
+> meanwhile) · **#1303** (transcript replay into the Feed still reads Claude's
+> format outside the provider; wanted by #1294).
+>
+> **Blockers:** none. **Stop conditions:** a decision only the owner can
+> make that blocks a track, or red CI that is not a known flake. (#1285's
+> verdict did NOT change the epic's shape.)
+>
+> **Housekeeping on the way in:** PR #1280 (dogfood tracker, docs) was red on
+> Windows only because of the git 2.56 wording #1298 fixed; its branch was
+> updated onto main and it merges on green.
+
 > # 📐 2026-10-15 — E40, MORE THAN ONE AI: DESIGNED AND FILED, NOTHING BUILT YET
 >
 > The owner: *"I want to add the ability to use another account from another
@@ -20,10 +160,11 @@
 >   the model chip, handoff with a divider, Settings → AIs with detection on
 >   every startup, a "Something else" form, and cross-AI dispatch.
 >
-> **BLOCKER (owner): #1284**, installing Codex and logging in with the work
-> account. It blocks only the probe (#1285) and what follows it.
+> **#1284 (installing Codex, logging in with the work account) was the
+> owner's blocker; he closed it 2026-10-16** (codex-cli 0.163.0, ChatGPT work
+> login). *(This line read "BLOCKER (owner): #1284" for a day after.)*
 >
-> **NEXT:** #1286 (seam 1), which needs nothing from him. Nothing is in flight.
+> **The build started 2026-10-16 as an orchestration run: see the block above.**
 
 > # ✅ RELEASED: v0.8.122, 2026-10-13 (PR #1274)
 >
