@@ -84,6 +84,33 @@ format. After E40:
 2.1.28x, and it carries detail no common protocol does. The seam wraps it; it
 does not replace it.
 
+**As built, item 03 (#1286, 2026-10-16).** The event model is
+`src/main/sessions/engine-events.ts`; Claude's translator is
+`src/main/providers/claude-events.ts`, declared through a new optional
+`events` capability (DESIGN §5.3). How the model is meant to take an ACP agent
+(item 06) without a second refactor:
+
+| Neutral event | Claude source | ACP source (item 06) |
+|---|---|---|
+| `activity` | every `assistant` / `stream_event` frame | any `session/update` during a prompt |
+| `chunk-open` / `chunk` / `chunk-close` | `content_block_*` text and thinking | `agent_message_chunk` / `agent_thought_chunk` (the translator owns the index) |
+| `message-start` / `message-end` | `message_start` / `message_stop` | synthesised by the translator |
+| `tool-call-start` | `content_block_start` tool_use | `tool_call` |
+| `message` (content in the Feed's block vocabulary) | `assistant` / `user` | `tool_call` input, `tool_call_update` output, `plan` (todos) |
+| `turn-end {failed}` | `result` (`is_error` / `error_*`) | the `session/prompt` response (`stopReason`, or an error) |
+| `permission-request` | `control_request:can_use_tool` | `session/request_permission` |
+| `conversation` / `conversation-reset` | `system:init` / `conversation_reset` | `session/new` / `session/load` id |
+| `compaction`, `usage` | `system:compact_boundary`, `result.usage` | none in ACP's spec (item 02 measures Codex) |
+
+Turn START is not an event: Claude announces none, and an ACP turn begins with
+our own `session/prompt`, so the host's existing `prompt-sent` is it. Mode and
+command updates are controls-shaped and are item 04's. Left on the raw frame
+path for item 04 (#1287): the permission router (and its hold suppressor, which
+reads the request), the slash-command, model and mode stores, the control
+channel, and every `shared/stream-protocol` importer. The transcript replay
+into the Feed still reads Claude's transcript format (a transcript-reader seam,
+not this one). `engine-seam.test.ts` names both lists and fails if either drifts.
+
 ---
 
 ## 4. One general engine: the Agent Client Protocol (items 02, 06, 07, 08)

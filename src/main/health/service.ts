@@ -18,7 +18,8 @@ import {
   ServiceIncident,
   UNKNOWN_HEALTH,
 } from '../../shared/service-health';
-import { CorroborationOptions, CorroborationTracker, turnOutcome } from './corroboration';
+import { CorroborationOptions, CorroborationTracker } from './corroboration';
+import type { EngineEvent } from '../sessions/engine-events';
 import { probeStatuspage, ProbeDeps, StatuspageProbe } from './statuspage';
 
 /**
@@ -286,13 +287,16 @@ export class ServiceHealthService {
   // ── the local half ────────────────────────────────────────────────────────
 
   /**
-   * A stream message from some session. Only a `result` says anything, and
-   * only its error-ness is read — see `turnOutcome`.
+   * A neutral event from some session (#1286). Only the end of a turn says
+   * anything, and only whether it failed is read. Which of an engine's frames
+   * counts as a failed turn is the engine's translator's decision (Claude's:
+   * `turnOutcome` in `providers/claude-events.ts`); every other event is "not
+   * a verdict", which must not be confused with a good one — or every chunk
+   * would count as a recovery.
    */
-  noteStreamMessage(sessionId: string, msg: unknown): void {
-    const outcome = turnOutcome(msg);
-    if (outcome === null) return;
-    if (outcome) this.tracker.noteError(sessionId, this.now());
+  noteEvent(sessionId: string, ev: EngineEvent): void {
+    if (ev.type !== 'turn-end') return;
+    if (ev.failed) this.tracker.noteError(sessionId, this.now());
     else this.tracker.noteRecovery(sessionId);
     this.evaluateLocal();
   }

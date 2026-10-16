@@ -130,7 +130,7 @@ describe('state machine vs the recorded real cycle (S-06 artifact)', () => {
     }
     // …and the queued `/clear` finishing is what ends it
     expect(transition(status, { kind: 'hook', event: 'SessionStart', source: 'clear' }).status).toBe('idle');
-    expect(transition(status, { kind: 'stream', event: 'result' }).status).toBe('done');
+    expect(transition(status, { kind: 'stream', signal: 'turn-end', label: 'result' }).status).toBe('done');
   });
 
   it('start-up with nothing queued still reads idle (Dan 2026-07-22: resumed sessions claimed to be working at boot)', () => {

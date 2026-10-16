@@ -107,25 +107,3 @@ export class CorroborationTracker {
     return { raised: true, sessions, since: new Date(oldest).toISOString() };
   }
 }
-
-/**
- * Does this stream message mean "the turn ended badly"?
- *
- * The CLI's `result` message carries `is_error` and an `error_*` subtype; a
- * failed turn is otherwise indistinguishable from a finished one (the session
- * status machine deliberately treats both as `done` — a failed turn IS over).
- * So this is the only place the difference is read, and it reads exactly the
- * two fields the protocol documents rather than sniffing text.
- *
- * Returns `true` for an errored result, `false` for a clean one, and `null`
- * for every other message — "not a verdict" has to be distinguishable from
- * "a good verdict" or every `stream_event` would count as a recovery.
- */
-export function turnOutcome(msg: unknown): boolean | null {
-  if (!msg || typeof msg !== 'object') return null;
-  const m = msg as { type?: unknown; subtype?: unknown; is_error?: unknown };
-  if (m.type !== 'result') return null;
-  if (m.is_error === true) return true;
-  if (typeof m.subtype === 'string' && m.subtype.startsWith('error')) return true;
-  return false;
-}

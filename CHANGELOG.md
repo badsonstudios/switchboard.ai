@@ -96,6 +96,13 @@ on the floor, and say so in your PR.
 
 ## 0.8.123 — unreleased
 
+### Internal
+
+- The Session view's conversation, status and service-health readout now hear
+  what a session did through an AI-neutral layer, with Claude's own messages
+  translated behind its adapter. Nothing looks or behaves differently; it is
+  the first half of letting a second AI drive the same view.
+
 ## 0.8.122 — 2026-10-13
 
 ### Added

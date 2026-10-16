@@ -7,6 +7,7 @@ import { CapabilityManifest } from '../../shared/extensibility/registry';
 import type { AutonomyMode } from '../../shared/sessions';
 import type { BusLaunch } from '../bus/launch';
 import { TransportKind } from '../transport/transport';
+import type { EngineTranslator, TranslatorHooks } from '../sessions/engine-events';
 
 /**
  * Provider adapter contract v0 (§5.3). The full interface grows in P1-E2-02;
@@ -129,6 +130,29 @@ export interface ProviderCapabilities {
    * and later no read tools and no `send_to_session`.
    */
   mcp?: McpCapability;
+  /**
+   * The CLI's session traffic can be translated into the host's NEUTRAL event
+   * model (E40 item 03, #1286; `sessions/engine-events.ts`). This is how the
+   * Feed, the status machine and service health hear what happened without
+   * reading any provider's wire format — Claude's translator lives behind its
+   * adapter (`providers/claude-events.ts`).
+   *
+   * Absent: the session still spawns and its frames still reach the control
+   * path, but nothing is translated, so its card shows no Feed and no status
+   * beyond the spawn. There is deliberately NO fallback to Claude's
+   * translation: reading every stream session as Claude, whatever its
+   * provider, is exactly the bypass this capability retires.
+   */
+  events?: EventCapability;
+}
+
+export interface EventCapability {
+  /**
+   * A fresh translator for one session. Called once, at spawn. MUST NOT
+   * THROW; a throw is caught at the call site and the session runs with no
+   * translator, which costs its Feed and not the app (P6).
+   */
+  createTranslator(hooks: TranslatorHooks): EngineTranslator;
 }
 
 /**

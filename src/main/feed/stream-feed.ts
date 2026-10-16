@@ -1,4 +1,14 @@
-// The Feed, fed by typed messages (P2-E18-10).
+// The Feed, fed by the session's NEUTRAL events (P2-E18-10; neutral since E40
+// item 03, #1286).
+//
+// IT READS NO PROVIDER'S FRAMES. Claude's stream-json is translated into
+// `sessions/engine-events.ts` by `providers/claude-events.ts`, behind the
+// adapter, and this class sees only the result: chunks opening, growing and
+// closing at an index; a tool call opening by name; the authoritative message
+// that supersedes them; the turn's end; the conversation's identity and its
+// reset. The header below still describes the CLAUDE frames, because they are
+// the measured case the assembly rule was built for — read "deltas" as
+// `chunk` events and "the `assistant` message" as a `message` event.
 //
 // Same blocks, better source. In PTY mode the Feed is built by tailing the
 // JSONL transcript — a file poll, so text arrives in bursts a poll apart and
@@ -52,6 +62,7 @@ import { errorText } from '../../shared/error-text';
 import { Logger } from '../log/logger';
 import { toolCategory } from '../../shared/tool-taxonomy';
 import {
+  BlockIntent,
   BlockOrigin,
   DerivationContext,
   DerivedBlock,
@@ -61,6 +72,13 @@ import {
   TEXT_CAP,
   deriveIntents,
 } from './blocks';
+import type {
+  ChunkKind,
+  ConversationEvent,
+  ConversationResetEvent,
+  EngineEvent,
+  MessageEvent,
+} from '../sessions/engine-events';
 import type { ContextRefs } from './context-refs';
 import { FeedBuffer } from './buffer';
 
@@ -81,69 +99,6 @@ import { FeedBuffer } from './buffer';
 function supersedes(streamed: FeedBlock, kind: FeedBlock['kind']): boolean {
   if (streamed.kind === kind) return true;
   return streamed.kind === 'tool' && kind === 'todos';
-}
-
-/**
- * Could this `assistant` message have been built by `stream_event` deltas?
- *
- * `true` means it could not, and therefore that it must not claim a block the
- * deltas opened.
- *
- * ── THE BUG (#978) ────────────────────────────────────────────────────────
- *
- * A local slash command (`/usage`, `/cost`, `/context`) arrives as a bare
- * `system:init -> assistant -> result`: no `message_start`, no deltas, no
- * `message_stop`. So it never reaches `endMessage`, which is the only thing
- * that CLEARS the assembly map — `finalize` deliberately does not (#154: an
- * interrupted turn's `assistant` can arrive after its own `result`).
- *
- * If anything is still sitting in that map, `claim()`'s index-miss fallback
- * hands it over: the fallback takes ANY open block of a superseding kind,
- * because the real CLI reports content index 0 on every `assistant` message of
- * a multi-block turn. The local command's text then REPLACES that block's text,
- * in place, at the same seq — text the user has already read, silently
- * overwritten. It is the failure `supersedes()` refuses a kind disagreement to
- * avoid, arriving through the one door that check does not cover.
- *
- * ── THE TWO MARKERS, AND WHY BOTH ─────────────────────────────────────────
- *
- * `local_command_run` / `local_command_source` are the CLI stating that the
- * turn was a local command. They are the precise signal and the one to prefer —
- * MEASURED on 2.1.280, `spike/findings/978-local-slash-commands-on-stream.md`.
- * They are also NEW: S-11 captured the same turn on 2.1.220 and neither field
- * was there.
- *
- * `model: "<synthetic>"` is the older, broader one, and it generalises the rule
- * rather than merely widening CLI coverage: `<synthetic>` is the CLI saying no
- * model produced this message. Nothing a model did not produce can be the
- * completion of a token stream, because there were no tokens.
- *
- * ⚠️ THE BREADTH WAS CHECKED AGAINST THE BINARY, not reasoned about (the
- * standing rule, `docs/reference-implementations.md`). In CLI 2.1.280
- * `<synthetic>` appears in exactly three assistant builders — a
- * `PushNotification` tool_use, a `"(no content)"` / `"No response requested."`
- * text message, and one generic — and **all three construct their `content`
- * inline**. None re-sends text that deltas produced, so this guard cannot
- * strand a streamed block or duplicate a reply. `local_command_source` is
- * emitted by one builder only, which the CLI's own schema calls *"the
- * local-command twin"*; it cannot ride on a model turn.
- *
- * The residual risk is the generic builder, whose `content` comes from its
- * callers. If one ever re-sent streamed content, this would APPEND a block
- * rather than replace one — an extra block, never lost text, which is the same
- * direction `supersedes()` already chose on purpose.
- *
- * DELIBERATELY NOT a check for "were there any deltas this turn?". That is the
- * same fact one inference further away, and it would need turn-scoped state
- * this class keeps for a different purpose — the assembly map outliving the
- * tokens is load-bearing (see its declaration) and reading it as "a stream
- * happened" is how the two facts get collapsed again.
- */
-function wasNeverStreamed(msg: Record<string, unknown>): boolean {
-  if (msg.local_command_run != null || msg.local_command_source != null) return true;
-  const message = msg.message;
-  if (typeof message !== 'object' || message === null) return false;
-  return (message as Record<string, unknown>).model === '<synthetic>';
 }
 
 interface StreamedSession {
@@ -377,34 +332,68 @@ export class StreamFeed {
     return true;
   }
 
-  /** Feed one typed message from one stream session. */
-  offer(sessionId: string, msg: Record<string, unknown>): void {
-    switch (typeof msg.type === 'string' ? msg.type : '') {
-      case 'stream_event':
-        return this.onStreamEvent(sessionId, msg);
-      case 'assistant':
-      case 'user':
-        return this.onMessage(sessionId, msg);
-      case 'result':
+  /**
+   * Feed one NEUTRAL event from one stream session (#1286). What each Claude
+   * frame becomes is `providers/claude-events.ts`'s decision; the cases below
+   * are what each event means for the Feed.
+   */
+  ingest(sessionId: string, ev: EngineEvent): void {
+    switch (ev.type) {
+      case 'message-start':
+        // A new message supersedes whatever the last one left behind — it may
+        // have ended without its authoritative message, or without a turn end.
+        this.endMessage(this.ensure(sessionId));
+        return;
+      case 'chunk-open':
+        this.open(this.ensure(sessionId), ev.index, ev.kind);
+        return;
+      case 'tool-call-start':
+        this.openTool(this.ensure(sessionId), ev.index, ev.name, ev.toolCallId);
+        return;
+      case 'chunk':
+        this.onChunk(this.ensure(sessionId), ev.index, ev.kind, ev.text);
+        return;
+      case 'chunk-close': {
+        const s = this.ensure(sessionId);
+        this.stopStreaming(s, s.assembling.get(ev.index));
+        return;
+      }
+      case 'message-end':
+        // Tokens have stopped. The assembly map has NOT expired: the
+        // authoritative message still has to find these blocks. See the header.
+        this.closeStreaming(this.ensure(sessionId));
+        return;
+      case 'message':
+        return this.onMessage(sessionId, ev);
+      case 'turn-end':
         // The turn is over — nothing more will arrive for whatever it left
         // open. This is the ordinary way a turn ends; `finalize` is also called
         // when the session exits, which is the way it is not.
         return this.finalize(sessionId);
-      case 'system':
-        return this.onSystem(sessionId, msg);
-      case 'conversation_reset':
-        // The CLI saying, in as many words, that it threw the conversation
-        // away. #748: this used to fall through the `default` below and be
-        // dropped — in a switch whose stated purpose is that a new message
-        // type is a DECISION rather than a silent no-op. It was a silent
-        // no-op, and it cost a user-visible bug.
-        return this.onConversationReset(sessionId, msg);
-      default:
-        // rate_limit_event, transcript_mirror, control_request, keep_alive,
-        // and `system`'s own non-init subtypes (`status`, `compact_boundary` —
-        // both measured, #748 probe 3): not content. Defaulted explicitly so a
-        // NEW message type is somebody's decision rather than a silent no-op.
+      case 'conversation':
+        return this.onConversation(sessionId, ev);
+      case 'conversation-reset':
+        // The engine saying, in as many words, that it threw the conversation
+        // away. #748: Claude's frame for this used to fall through the
+        // `default` of this switch and be dropped — in a switch whose stated
+        // purpose is that a new message type is a DECISION rather than a
+        // silent no-op. It was a silent no-op, and it cost a user-visible bug.
+        return this.onConversationReset(sessionId, ev);
+      // Not content: status, compaction and usage are other consumers'.
+      // Listed rather than defaulted so a NEW event type is somebody's
+      // decision rather than a silent no-op.
+      case 'activity':
+      case 'permission-request':
+      case 'compaction':
+      case 'usage':
         return;
+      default: {
+        // COMPILE-TIME: a new `EngineEvent` type fails `tsc` here until
+        // somebody decides what it means for the Feed. At run time it is
+        // ignored, which is the fail-open direction.
+        const unhandled: never = ev;
+        return unhandled;
+      }
     }
   }
 
@@ -505,8 +494,8 @@ export class StreamFeed {
    * latch twice needs no guard. A third consumer should re-use this ruling
    * rather than re-derive it a third time.
    */
-  private onConversationReset(sessionId: string, msg: Record<string, unknown>): void {
-    const gone = typeof msg.session_id === 'string' ? msg.session_id : undefined;
+  private onConversationReset(sessionId: string, ev: ConversationResetEvent): void {
+    const gone = ev.discarded;
     const s = this.ensure(sessionId);
     // ALREADY THROWN THIS ONE AWAY. The question is about the conversation the
     // frame NAMES, not about which one we think we are in — see `discarded`,
@@ -519,7 +508,8 @@ export class StreamFeed {
   }
 
   /**
-   * A `system` message. Only one of them concerns the Feed.
+   * The engine naming the conversation this turn runs in — for Claude, the
+   * `system:init` frame, which is what the rest of this note is about.
    *
    * `system:init` arrives ONCE PER TURN (S-11 measured 26 for 25 turns), so it
    * must never be read as "the session started" — the fact every item in this
@@ -539,10 +529,9 @@ export class StreamFeed {
    * inert for the reason it always was — measured (#748 probe 3), it emits an
    * init carrying the SAME session_id, and no `conversation_reset` at all.
    */
-  private onSystem(sessionId: string, msg: Record<string, unknown>): void {
-    if (msg.subtype !== 'init') return;
-    const id = typeof msg.session_id === 'string' ? msg.session_id : undefined;
-    if (!id) return;
+  private onConversation(sessionId: string, ev: ConversationEvent): void {
+    // never empty: the translator drops an init that names no conversation
+    const id = ev.id;
     const s = this.ensure(sessionId);
     if (s.conversationId === undefined || s.conversationId === id) {
       s.conversationId = id;
@@ -578,94 +567,55 @@ export class StreamFeed {
     }
   }
 
-  private onStreamEvent(sessionId: string, msg: Record<string, unknown>): void {
-    const ev = msg.event as Record<string, unknown> | undefined;
-    if (!ev || typeof ev.type !== 'string') return;
-    // ⚠️ THE GUARD STAYS, AND #977 IS WHY IT IS NOT A GAP ANY MORE. It used to
-    // say "E18-13 owns it"; E18-13 landed and chose the other source.
-    //
-    // A subagent's words reach the Feed from its own transcript file, which the
-    // watcher already tails and now derives (`deriveFeed: 'sidechains'`).
-    // Dropping them here is what stops the same text arriving twice.
-    //
-    // Nothing is lost by dropping DELTAS in particular: measured on the PATH CLI
-    // 2.1.280, **zero** `stream_event` frames carried a `parent_tool_use_id`,
-    // with or without `--forward-subagent-text`. A subagent's reply is one
-    // finished message, never a token stream, so there was no streaming half to
-    // give up (`spike/findings/e18-977-stream-sidechains.md`).
-    if (msg.parent_tool_use_id != null) return;
-    const s = this.ensure(sessionId);
-    const index = typeof ev.index === 'number' ? ev.index : 0;
-    switch (ev.type) {
-      case 'message_start':
-        // A new message supersedes whatever the last one left behind — it may
-        // have ended without an `assistant` message, or without a `result`.
-        this.endMessage(s);
-        return;
-      case 'content_block_start':
-        this.open(s, index, ev.content_block as Record<string, unknown> | undefined);
-        return;
-      case 'content_block_delta': {
-        const delta = ev.delta as { type?: string; text?: string; thinking?: string } | undefined;
-        const piece =
-          delta?.type === 'text_delta'
-            ? delta.text
-            : delta?.type === 'thinking_delta'
-              ? delta.thinking
-              : undefined;
-        // input_json_delta and signature_delta carry nothing renderable. A tool
-        // row built from half-written JSON is worse than one that appears a
-        // beat later, so tool INPUT comes from the `assistant` message only.
-        if (typeof piece !== 'string' || piece === '') return;
-        // Opened lazily when needed: `content_block_start` is the CLI's to send
-        // and we do not get to require it. A delta with no block is still text
-        // the user should see.
-        const block =
-          this.streamingAt(s, index) ??
-          this.open(s, index, { type: delta?.type === 'thinking_delta' ? 'thinking' : 'text' });
-        if (!block) return;
-        block.text = ((block.text ?? '') + piece).slice(0, TEXT_CAP);
-        // NOT `update`: this runs once per token, and an immediate re-emit of
-        // the whole block per token is what #1013 measured. See
-        // `STREAM_COALESCE_MS`.
-        s.buffer.updateSoon(block);
-        return;
-      }
-      case 'content_block_stop':
-        this.stopStreaming(s, s.assembling.get(index));
-        return;
-      case 'message_stop':
-        // Tokens have stopped. The assembly map has NOT expired: the
-        // `assistant` message still has to find these blocks. See the header.
-        this.closeStreaming(s);
-        return;
-      default:
-        return;
-    }
+  /**
+   * One chunk of prose for the block at `index`.
+   *
+   * Opened lazily when needed: an opening event is the engine's to send and we
+   * do not get to require it. A chunk with no block is still text the user
+   * should see. (A subagent's chunks never arrive: the translator drops them,
+   * #977 — see `providers/claude-events.ts`.)
+   */
+  private onChunk(s: StreamedSession, index: number, kind: ChunkKind, piece: string): void {
+    if (piece === '') return;
+    const block = this.streamingAt(s, index) ?? this.open(s, index, kind);
+    block.text = ((block.text ?? '') + piece).slice(0, TEXT_CAP);
+    // NOT `update`: this runs once per token, and an immediate re-emit of
+    // the whole block per token is what #1013 measured. See
+    // `STREAM_COALESCE_MS`.
+    s.buffer.updateSoon(block);
   }
 
-  /** An `assistant` or `user` message: the authoritative version of a turn. */
-  private onMessage(sessionId: string, msg: Record<string, unknown>): void {
-    // See `onStreamEvent`: sidechain content comes from the transcript since
-    // #977, and dropping it here is what keeps one `FeedBuffer` from receiving
-    // the same subagent text from two sources. Without
-    // `--forward-subagent-text` — which we deliberately do not pass — the only
-    // thing that would arrive here is the subagent's SEEDING prompt anyway.
-    if (msg.parent_tool_use_id != null) return;
+  /**
+   * The authoritative version of a message.
+   *
+   * A sidechain (subagent) message never arrives: its content comes from the
+   * subagent's transcript since #977 (`absorbSidechain`), and the translator
+   * drops it on the stream so one `FeedBuffer` cannot receive the same text
+   * from two sources.
+   */
+  private onMessage(sessionId: string, ev: MessageEvent): void {
     const s = this.ensure(sessionId);
-    // The stream carries no timestamp of its own, and the Feed shows one (and
-    // times thinking blocks by it). Ours is honest to the millisecond for a
-    // message we have just received — more than a transcript's is.
-    const entry = { ...msg, timestamp: new Date().toISOString() };
-    const isAssistant = msg.type === 'assistant';
+    const isAssistant = ev.role === 'assistant';
     // ⚠️ A MESSAGE NOTHING STREAMED MUST NOT CLAIM A STREAMED BLOCK (#978).
-    // The full argument, and the two markers it turns on, are on
-    // `wasNeverStreamed`. In one line: `claim()`'s index-miss fallback takes ANY
-    // open block of a superseding kind, which is right for a model's reply and
-    // wrong for a message no model produced — it would replace text the user has
-    // already read.
-    const unstreamed = isAssistant && wasNeverStreamed(msg);
-    for (const intent of deriveIntents(entry, DISPLAY_CAPS, this.ctx(sessionId))) {
+    // The full argument, and the two Claude markers it turns on, are on
+    // `wasNeverStreamed` in `providers/claude-events.ts`. In one line:
+    // `claim()`'s index-miss fallback takes ANY open block of a superseding
+    // kind, which is right for a model's reply and wrong for a message no model
+    // produced — it would replace text the user has already read.
+    const unstreamed = isAssistant && ev.unstreamed;
+    let intents: BlockIntent[];
+    try {
+      intents = ev.derive(DISPLAY_CAPS, this.ctx(sessionId));
+    } catch (err) {
+      // `derive` is the engine's code; a throw costs this message, never the
+      // session's Feed (P6)
+      this.log?.error('message derivation threw: message skipped', {
+        sessionId,
+        error: errorText(err),
+      });
+      return;
+    }
+    for (const intent of intents) {
       if (intent.t === 'tool-result') {
         s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true, intent.pictures);
         continue;
@@ -687,8 +637,8 @@ export class StreamFeed {
             ts: streamed.ts ?? intent.block.ts,
             streaming: false,
           })
-        : // `sidechain: false` — `onMessage` returns early on
-          // `parent_tool_use_id`, so nothing that reaches here is one (E18-13)
+        : // `sidechain: false` — the translator never sends a sidechain
+          // message, so nothing that reaches here is one (E18-13)
           s.buffer.push({ ...intent.block, streaming: false }, { sidechain: false }, intent.pictures);
       if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
     }
@@ -802,56 +752,49 @@ export class StreamFeed {
   }
 
   /**
-   * Start a block for one content index.
+   * Start a prose block (text or thinking) for one content index.
    *
-   * The `content_block` the CLI sends carries the block's type and, for a tool
-   * call, its `name` — whole, not as partial JSON. Opening a tool row here is
-   * what keeps a message's blocks in the ORDER the model produced them: a
-   * streamed block takes its seq when it opens, so a `[tool_use, text]` message
-   * that opened only the text would render the two the wrong way round. The row
-   * is a shell — name only — until the `assistant` message fills in its input.
-   *
-   * Returns undefined for a content type we cannot render at all, rather than
-   * inventing a block for it.
+   * Never reuses a block that has stopped: a turn that ended without its
+   * authoritative message leaves its entry in the map (see `finalize`), and
+   * appending the next turn's tokens to it would grow one endless bubble.
    */
-  private open(
-    s: StreamedSession,
-    index: number,
-    cb: Record<string, unknown> | undefined
-  ): FeedBlock | undefined {
-    // Never reuse a block that has stopped: a turn that ended without an
-    // `assistant` message leaves its entry in the map (see `finalize`), and
-    // appending the next turn's tokens to it would grow one endless bubble.
-    const streaming = this.streamingAt(s, index);
-    if (streaming) return streaming;
-    const type = typeof cb?.type === 'string' ? cb.type : 'text';
-    let seed: DerivedBlock;
-    if (type === 'text' || type === 'thinking') {
-      seed = { kind: type === 'thinking' ? 'thinking' : 'assistant', text: '' };
-    } else if (type === 'tool_use' && typeof cb?.name === 'string') {
-      seed = {
-        kind: 'tool',
-        tool: { name: cb.name, category: toolCategory(cb.name), summary: '' },
-        // `content_block_start` carries the tool_use id alongside the name, so
-        // the row is addressable by session find (#458) from the instant it
-        // opens rather than only once the `assistant` message supersedes it —
-        // which for a long Bash call is the whole of it. The message's own
-        // derivation sets the identical value (`blocks.ts`).
-        //
-        // INFERRED from the Anthropic streaming shape (`content_block_start`
-        // carries the whole `content_block`, and a `tool_use` block's `id` is
-        // part of it), NOT measured: the S-11 probe recorded a thinking/text
-        // turn only, so no real `tool_use` start is in our captured record. It
-        // FAILS OPEN — no id means no `srcId` until the message lands, and the
-        // alignment still has every other anchor in the window.
-        ...(typeof cb.id === 'string' ? { srcId: `tool:${cb.id}` } : {}),
-      };
-    } else {
-      return undefined;
-    }
-    // `sidechain: false` unconditionally — live sidechain traffic never reaches
-    // here at all (`parent_tool_use_id != null` returns early in both
-    // `onStreamEvent` and `onMessage`); rendering it is E18-13's.
+  private open(s: StreamedSession, index: number, kind: ChunkKind): FeedBlock {
+    return (
+      this.streamingAt(s, index) ??
+      this.start(s, index, { kind: kind === 'thinking' ? 'thinking' : 'assistant', text: '' })
+    );
+  }
+
+  /**
+   * Start a tool row for one content index, from the tool's NAME alone.
+   *
+   * Opening it here is what keeps a message's blocks in the ORDER the model
+   * produced them: a streamed block takes its seq when it opens, so a
+   * `[tool_use, text]` message that opened only the text would render the two
+   * the wrong way round. The row is a shell — name only — until the
+   * authoritative message fills in its input.
+   *
+   * `toolCallId`, when the engine says it this early, makes the row
+   * addressable by session find (#458) from the instant it opens rather than
+   * only once the message supersedes it — which for a long Bash call is the
+   * whole of it. The message's own derivation sets the identical value
+   * (`blocks.ts`). Absent fails open: no `srcId` until the message lands, and
+   * the alignment still has every other anchor in the window. (For Claude the
+   * id is INFERRED from the streaming shape, not measured — see the
+   * translator.)
+   */
+  private openTool(s: StreamedSession, index: number, name: string, toolCallId?: string): void {
+    if (this.streamingAt(s, index)) return;
+    this.start(s, index, {
+      kind: 'tool',
+      tool: { name, category: toolCategory(name), summary: '' },
+      ...(toolCallId !== undefined ? { srcId: `tool:${toolCallId}` } : {}),
+    });
+  }
+
+  private start(s: StreamedSession, index: number, seed: DerivedBlock): FeedBlock {
+    // `sidechain: false` unconditionally — live sidechain traffic never
+    // reaches here at all (the translator drops it); rendering it is E18-13's.
     const block = s.buffer.push(
       { ...seed, ts: new Date().toISOString(), streaming: true },
       { sidechain: false }

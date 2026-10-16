@@ -21,6 +21,7 @@ import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SessionManager } from './session-manager';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions } from '../extensibility/contributions';
+import { claudeEvents } from '../providers/claude-events';
 import { SessionTransport } from '../transport/transport';
 import { FakeStreamProtocol, FAKE_MODELS } from '../providers/fake-stream-protocol';
 import { readModels } from '../../shared/stream-protocol';
@@ -94,6 +95,8 @@ function registryFor(transport: TransportKind): ContributionRegistry<MainContrib
   const r = new ContributionRegistry<MainContributions>();
   r.register('provider-adapter', {
     manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },
+    // these sessions speak Claude's frames, so they declare its translator (#1286)
+    capabilities: { events: claudeEvents },
     buildSpawn: () => ({ command: 'cli', args: [], env: {}, transport }),
   });
   return r;

@@ -10,7 +10,7 @@ import path from 'path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { BLOCK_CAP, DETAIL_CAP, FeedBlock, TEXT_CAP, deriveIntents } from '../feed/blocks';
 import { FeedBuffer } from '../feed/buffer';
-import { StreamFeed } from '../feed/stream-feed';
+import { ClaudeFedFeed } from '../feed/fixtures/claude-fed-feed';
 import { tempDir } from '../../test-temp-dirs';
 import {
   SESSION_TRANSCRIPT,
@@ -1036,7 +1036,7 @@ describe('lining a Direct session up (#458)', () => {
    * replaced, never to a wrong jump.
    */
   function streamFeedOf(lines: string[]): FeedBlock[] {
-    const sf = new StreamFeed();
+    const sf = new ClaudeFedFeed();
     for (const line of lines) {
       let e: Record<string, unknown>;
       try {
@@ -1431,7 +1431,7 @@ describe('lining a Direct session up (#458)', () => {
       },
     ];
     const file = transcript('mid-turn.jsonl', entries);
-    const sf = new StreamFeed();
+    const sf = new ClaudeFedFeed();
     for (const e of entries.slice(0, 2)) {
       const m = e as { type: string; message: unknown };
       sf.offer('s', { type: m.type, message: m.message, parent_tool_use_id: null });

@@ -9,6 +9,7 @@ import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { StreamPermissions } from './stream-permissions';
 import { SessionEvent, transition } from './state-machine';
 import { streamStatusEvent } from './stream-status';
+import { translateClaudeFrame } from '../providers/claude-events';
 import { MAX_DENIAL_REASON_CHARS, type PermissionRequest } from '../../shared/ipc/permissions';
 import { FakeStreamProtocol } from '../providers/fake-stream-protocol';
 import { LogSink, createLogger, LogFields, Logger } from '../log/logger';
@@ -536,7 +537,9 @@ describe('a decision resolves the status, without waiting for the CLI (#310)', (
     // 1. the CLI asks: this is what put the card in needs-permission — the
     //    same message, through the same mapper `SessionManager` uses
     const asking = canUseTool();
-    expect(transition('working', streamStatusEvent(asking)!).status).toBe('needs-permission');
+    // (through Claude's translator first, as the pump does since #1286)
+    const [held] = (translateClaudeFrame(asking) ?? []).map(streamStatusEvent);
+    expect(transition('working', held!).status).toBe('needs-permission');
     perms.offer('s1', asking);
 
     // 2. the user answers. Nothing else arrives — no assistant, no

@@ -12,6 +12,7 @@ import { SlashCommand } from '../../shared/slash-commands';
 import { conversationExists } from '../transcripts/paths';
 import { ensureFolderTrusted } from '../sessions/trust';
 import { claudeProjectsRoot, readAiTitle, writeSessionSettings } from './claude';
+import { claudeEvents } from './claude-events';
 
 /**
  * The compiled fake CLI.
@@ -54,6 +55,9 @@ export const fakeStreamAdapter: ProviderAdapter = {
   // nothing about the seam.
   capabilities: {
     transcripts: { projectsRoot: claudeProjectsRoot },
+    // The REAL translator (#1286): the fake replays Claude's own frames, so
+    // every e2e on it drives them through the seam the real CLI uses.
+    events: claudeEvents,
     titles: { titleFrom: readAiTitle },
     hooks: { settingsFor: (sessionId, host) => host.buildHookSettings(sessionId) },
     resume: {

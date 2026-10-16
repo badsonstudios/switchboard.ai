@@ -19,6 +19,7 @@ import type { AutonomyMode } from '../../shared/sessions';
 // every other provider stays host-side (see ProviderCapabilities.transcripts).
 import { conversationExists, listConversations, locateConversation } from '../transcripts/paths';
 import { ensureFolderTrusted } from '../sessions/trust';
+import { claudeEvents } from './claude-events';
 
 const CLI_NAMES = process.platform === 'win32' ? ['claude.cmd', 'claude.exe'] : ['claude'];
 
@@ -352,6 +353,9 @@ export const claudeAdapter: ProviderAdapter = {
   // wrong (§5.23's own test).
   capabilities: {
     transcripts: { projectsRoot: claudeProjectsRoot },
+    // E40 item 03 (#1286): stream-json -> the neutral session events the Feed,
+    // status and health read. The only reader of Claude frames on that path.
+    events: claudeEvents,
     // §5.11: the CLI already computed a description of the conversation, so we
     // display it rather than deriving one of our own — which would spend the
     // user's subscription tokens on chrome (P7).

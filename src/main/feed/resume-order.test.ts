@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { StreamFeed } from './stream-feed';
+import { ClaudeFedFeed } from './fixtures/claude-fed-feed';
 import { firstTurnStamp, mergeHistory, readSidechains, replayResumedHistory } from './history';
 import { TranscriptWatcher, slugForCwd } from '../transcripts/watcher';
 import { LogSink, createLogger } from '../log/logger';
@@ -108,14 +108,14 @@ function writeConversation(): void {
   );
 }
 
-const textsOf = (feed: StreamFeed): string[] =>
+const textsOf = (feed: ClaudeFedFeed): string[] =>
   feed
     .blocks(SID)
     .slice()
     .sort((a, b) => a.seq - b.seq)
     .map((b) => (b as unknown as { text?: string }).text ?? '');
 
-function resume(feed: StreamFeed): number {
+function resume(feed: ClaudeFedFeed): number {
   const log = createLogger(new LogSink({ dir: logDir }), 'transcripts');
   // `sessions:create`, in the order it runs: watch, then replay, with nothing
   // yielding to the event loop in between.
@@ -143,7 +143,7 @@ describe('a resumed Direct session and its subagent transcripts (#1140)', () => 
   // the watcher appended every subagent file after the replayed conversation.
   it('ends on the newest message, with the subagent where it ran', async () => {
     writeConversation();
-    const feed = new StreamFeed();
+    const feed = new ClaudeFedFeed();
     expect(resume(feed)).toBe(6);
     // The watcher DID bind, find the subagent file and offer both its lines —
     // which is the moment they used to land under the newest reply.
@@ -170,7 +170,7 @@ describe('a resumed Direct session and its subagent transcripts (#1140)', () => 
   // that runs AFTER the resume, which is the whole of #977 on a resumed card.
   it('still shows a subagent that runs after the resume', async () => {
     writeConversation();
-    const feed = new StreamFeed();
+    const feed = new ClaudeFedFeed();
     resume(feed);
     await offeredAtLeast(2);
     const subs = path.join(root, slugForCwd(cwd), NATIVE, 'subagents');
@@ -191,7 +191,7 @@ describe('a resumed Direct session and its subagent transcripts (#1140)', () => 
   });
 
   it('a session that was never resumed takes every subagent line, old stamps included', () => {
-    const feed = new StreamFeed();
+    const feed = new ClaudeFedFeed();
     feed.offer(SID, {
       type: 'assistant',
       message: { role: 'assistant', content: [{ type: 'text', text: 'the session speaks' }] },
@@ -213,7 +213,7 @@ describe('the backlog cutoff on its own (#1140)', () => {
   const main = { type: 'assistant', message: { content: [{ type: 'text', text: 'replayed' }] } };
 
   it('drops a line stamped AT the replay, keeps one a millisecond later', () => {
-    const feed = new StreamFeed();
+    const feed = new ClaudeFedFeed();
     feed.hydrate(SID, [main], { sidechainBacklogBefore: T });
     // taken — TRUE — and not shown
     expect(feed.absorbSidechain(SID, subLine('before', new Date(T - 1).toISOString()), origin)).toBe(true);
@@ -223,7 +223,7 @@ describe('the backlog cutoff on its own (#1140)', () => {
   });
 
   it('lets a line with no readable timestamp through, as it always was', () => {
-    const feed = new StreamFeed();
+    const feed = new ClaudeFedFeed();
     feed.hydrate(SID, [main], { sidechainBacklogBefore: T });
     feed.absorbSidechain(SID, subLine('no stamp'), origin);
     feed.absorbSidechain(SID, subLine('garbage stamp', 'yesterday-ish'), origin);
@@ -231,7 +231,7 @@ describe('the backlog cutoff on its own (#1140)', () => {
   });
 
   it('a replay WITHOUT a cutoff (the old call shape) drops nothing', () => {
-    const feed = new StreamFeed();
+    const feed = new ClaudeFedFeed();
     feed.hydrate(SID, [main]);
     feed.absorbSidechain(SID, subLine('old', new Date(T - 1).toISOString()), origin);
     expect(textsOf(feed)).toEqual(['replayed', 'old']);
@@ -239,7 +239,7 @@ describe('the backlog cutoff on its own (#1140)', () => {
 
   // A refused replay replayed nothing, so it has no backlog to speak for.
   it('a REFUSED replay sets no cutoff', () => {
-    const feed = new StreamFeed();
+    const feed = new ClaudeFedFeed();
     feed.offer(SID, { type: 'assistant', message: { content: [{ type: 'text', text: 'live' }] } });
     expect(feed.hydrate(SID, [main], { sidechainBacklogBefore: T })).toBe(0);
     feed.absorbSidechain(SID, subLine('old', new Date(T - 1).toISOString()), origin);
@@ -247,7 +247,7 @@ describe('the backlog cutoff on its own (#1140)', () => {
   });
 
   it('survives a cleared conversation: the old backlog stays out, new work comes in', () => {
-    const feed = new StreamFeed();
+    const feed = new ClaudeFedFeed();
     feed.hydrate(SID, [main], { sidechainBacklogBefore: T });
     feed.offer(SID, { type: 'conversation_reset', session_id: NATIVE });
     feed.absorbSidechain(SID, subLine('old', new Date(T - 1).toISOString()), origin);
@@ -257,7 +257,7 @@ describe('the backlog cutoff on its own (#1140)', () => {
 
   // Two files interleaved must not cross their tool results over.
   it('pairs each tool result with its own call across interleaved files', () => {
-    const feed = new StreamFeed();
+    const feed = new ClaudeFedFeed();
     const call = (id: string, minute: number): Record<string, unknown> => ({
       type: 'assistant',
       timestamp: at(minute),

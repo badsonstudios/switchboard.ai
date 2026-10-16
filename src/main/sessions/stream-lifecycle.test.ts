@@ -4,6 +4,8 @@ import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SessionManager, StatusChange } from './session-manager';
 import { transition } from './state-machine';
 import { streamStatusEvent } from './stream-status';
+import { claudeEvents, translateClaudeFrame } from '../providers/claude-events';
+import type { SessionEvent } from './state-machine';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions } from '../extensibility/contributions';
 import { SessionTransport, TransportSpawnOptions } from '../transport/transport';
@@ -13,40 +15,53 @@ import { StreamPermissions } from './stream-permissions';
 import { EventFeed } from '../events/feed';
 
 // ---- the mapper, pure -------------------------------------------------------
+//
+// Since #1286 the mapper reads NEUTRAL events and Claude's translator decides
+// what each frame means. These cases keep the real frames and run them
+// through both, which is the path the pump takes.
+const statusOf = (frame: Record<string, unknown>): SessionEvent | null => {
+  const out = (translateClaudeFrame(frame) ?? [])
+    .map(streamStatusEvent)
+    .filter((e): e is SessionEvent => e !== null);
+  // one frame moves the status at most once — the property the mapper had
+  // when it read frames itself
+  expect(out.length).toBeLessThanOrEqual(1);
+  return out[0] ?? null;
+};
 
 describe('streamStatusEvent — which messages mean anything (P2-E18-05)', () => {
   // THE trap. `system:init` reads like "the session started", and it is emitted
   // ONCE PER TURN (S-11: 4 turns -> 4 inits), ~10-20ms after a prompt WE sent.
   // A host that transitions on it re-initialises every single turn.
   it('system:init means NOTHING — it is a per-turn marker, not a session start', () => {
-    expect(streamStatusEvent({ type: 'system', subtype: 'init', session_id: 'x' })).toBeNull();
+    expect(statusOf({ type: 'system', subtype: 'init', session_id: 'x' })).toBeNull();
   });
 
   it('other system subtypes are informational too', () => {
-    expect(streamStatusEvent({ type: 'system', subtype: 'status' })).toBeNull();
-    expect(streamStatusEvent({ type: 'system', subtype: 'commands_changed' })).toBeNull();
+    expect(statusOf({ type: 'system', subtype: 'status' })).toBeNull();
+    expect(statusOf({ type: 'system', subtype: 'commands_changed' })).toBeNull();
   });
 
   it('assistant output and deltas mean a turn is running', () => {
-    expect(streamStatusEvent({ type: 'assistant' })).toEqual({
+    expect(statusOf({ type: 'assistant' })).toEqual({
       kind: 'stream',
-      event: 'assistant',
-      subtype: undefined,
+      signal: 'output',
+      label: 'assistant',
     });
-    expect(streamStatusEvent({ type: 'stream_event' })?.kind).toBe('stream');
+    expect(statusOf({ type: 'stream_event' })?.kind).toBe('stream');
   });
 
   it('result ends the turn, and carries its subtype', () => {
-    expect(streamStatusEvent({ type: 'result', subtype: 'success' })).toEqual({
+    expect(statusOf({ type: 'result', subtype: 'success' })).toEqual({
       kind: 'stream',
-      event: 'result',
-      subtype: 'success',
+      signal: 'turn-end',
+      label: 'result:success',
     });
   });
 
   it('a can_use_tool control request is a held permission', () => {
     expect(
-      streamStatusEvent({ type: 'control_request', request: { subtype: 'can_use_tool' } })
+      statusOf({ type: 'control_request', request: { subtype: 'can_use_tool' } })
     ).toEqual({ kind: 'permission-held' });
   });
 
@@ -55,23 +70,23 @@ describe('streamStatusEvent — which messages mean anything (P2-E18-05)', () =>
   // with nothing to answer.
   it('other control requests do NOT touch status', () => {
     expect(
-      streamStatusEvent({ type: 'control_request', request: { subtype: 'hook_callback' } })
+      statusOf({ type: 'control_request', request: { subtype: 'hook_callback' } })
     ).toBeNull();
     expect(
-      streamStatusEvent({ type: 'control_request', request: { subtype: 'mcp_message' } })
+      statusOf({ type: 'control_request', request: { subtype: 'mcp_message' } })
     ).toBeNull();
-    expect(streamStatusEvent({ type: 'control_request' })).toBeNull();
+    expect(statusOf({ type: 'control_request' })).toBeNull();
   });
 
   it('content and telemetry messages are not lifecycle signals', () => {
     for (const type of ['rate_limit_event', 'transcript_mirror', 'active_goal', 'keep_alive', 'user']) {
-      expect(streamStatusEvent({ type })).toBeNull();
+      expect(statusOf({ type })).toBeNull();
     }
   });
 
   it('a message with no type at all is ignored rather than throwing', () => {
-    expect(streamStatusEvent({})).toBeNull();
-    expect(streamStatusEvent({ type: 42 })).toBeNull();
+    expect(statusOf({})).toBeNull();
+    expect(statusOf({ type: 42 })).toBeNull();
   });
 });
 
@@ -98,7 +113,7 @@ describe('stream transitions (P2-E18-05)', () => {
   });
 
   it('result ends the turn', () => {
-    expect(transition('working', { kind: 'stream', event: 'result', subtype: 'success' })).toMatchObject({
+    expect(transition('working', { kind: 'stream', signal: 'turn-end', label: 'result:success' })).toMatchObject({
       status: 'done',
     });
   });
@@ -107,26 +122,31 @@ describe('stream transitions (P2-E18-05)', () => {
   // in a badge that says the session is still busy.
   it('an ERROR result also ends the turn', () => {
     expect(
-      transition('working', { kind: 'stream', event: 'result', subtype: 'error_during_execution' })
+      transition('working', { kind: 'stream', signal: 'turn-end', label: 'result:error_during_execution' })
     ).toMatchObject({ status: 'done' });
   });
 
   // S-11 watched a message written during a 150s stall get picked up 144s after
   // we resumed reading — a turn we never saw begin.
   it('output arriving revives a done session even with no prompt-sent', () => {
-    expect(transition('done', { kind: 'stream', event: 'assistant' })).toMatchObject({
+    expect(transition('done', { kind: 'stream', signal: 'output', label: 'assistant' })).toMatchObject({
       status: 'working',
     });
   });
 
-  it('an unknown stream event is logged, never transitioned (§5.26 posture)', () => {
-    const r = transition('working', { kind: 'stream', event: 'something_new' });
-    expect(r.changed).toBe(false);
-    expect(r.note).toContain('unknown-stream');
+  // An unknown FRAME never reaches the state machine at all since #1286: the
+  // translator reports it (once per type) and drops it, so nothing can
+  // transition on it — the same §5.26 posture, one layer earlier.
+  it('an unknown stream frame is logged, never transitioned (§5.26 posture)', () => {
+    const unknown: string[] = [];
+    const translate = claudeEvents.createTranslator({ onUnknown: (t) => unknown.push(t) });
+    expect(translate({ type: 'something_new' })).toEqual([]);
+    expect(translate({ type: 'something_new' })).toEqual([]);
+    expect(unknown).toEqual(['something_new']);
   });
 
   it('crashed stays terminal against stream traffic too', () => {
-    expect(transition('crashed', { kind: 'stream', event: 'assistant' }).changed).toBe(false);
+    expect(transition('crashed', { kind: 'stream', signal: 'output', label: 'assistant' }).changed).toBe(false);
     expect(transition('crashed', { kind: 'transport-ready' }).changed).toBe(false);
   });
 });
@@ -168,6 +188,8 @@ function registryFor(transport: TransportKind): ContributionRegistry<MainContrib
   const r = new ContributionRegistry<MainContributions>();
   r.register('provider-adapter', {
     manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },
+    // these sessions speak Claude's frames, so they declare its translator (#1286)
+    capabilities: { events: claudeEvents },
     buildSpawn: () => ({ command: 'cli', args: [], env: {}, transport }),
   });
   return r;
@@ -791,8 +813,8 @@ describe('a held request pins the wait (#1258)', () => {
     // every one of these is in the log as a cause, or is the same thing by
     // another road: none of them is an ANSWER
     const notAnAnswer: Array<[string, Parameters<typeof transition>[1]]> = [
-      ['a stream_event frame', { kind: 'stream', event: 'stream_event' }],
-      ['an assistant frame', { kind: 'stream', event: 'assistant' }],
+      ['a stream_event frame', { kind: 'stream', signal: 'output', label: 'stream_event' }],
+      ['an assistant frame', { kind: 'stream', signal: 'output', label: 'assistant' }],
       ['a tool finishing beside the held one', { kind: 'hook', event: 'PostToolUse' }],
       ['a tool starting beside it', { kind: 'hook', event: 'PreToolUse', tool: 'Read' }],
       ['a prompt typed into the composer', { kind: 'prompt-sent' }],
@@ -824,7 +846,7 @@ describe('a held request pins the wait (#1258)', () => {
     // request would walk a FINISHED session to `working`, with nothing left to
     // end it.
     it('the turn ENDING still ends it', () => {
-      const r = transition('needs-permission', { kind: 'stream', event: 'result', subtype: 'success' }, held);
+      const r = transition('needs-permission', { kind: 'stream', signal: 'turn-end', label: 'result:success' }, held);
       expect(r.status).toBe('done');
     });
 
@@ -836,13 +858,13 @@ describe('a held request pins the wait (#1258)', () => {
     // the pin is about WAITING. A session that is not waiting is not held in
     // place by a request that has just been raised and not yet registered.
     it('only a waiting session is pinned', () => {
-      expect(transition('working', { kind: 'stream', event: 'result' }, held).status).toBe('done');
+      expect(transition('working', { kind: 'stream', signal: 'turn-end', label: 'result' }, held).status).toBe('done');
       expect(transition('idle', { kind: 'prompt-sent' }, held).status).toBe('working');
-      expect(transition('done', { kind: 'stream', event: 'assistant' }, held).status).toBe('working');
+      expect(transition('done', { kind: 'stream', signal: 'output', label: 'assistant' }, held).status).toBe('working');
     });
 
     it('with nothing held, every one of them behaves exactly as before', () => {
-      expect(transition('needs-permission', { kind: 'stream', event: 'stream_event' }).status).toBe('working');
+      expect(transition('needs-permission', { kind: 'stream', signal: 'output', label: 'stream_event' }).status).toBe('working');
       expect(transition('needs-permission', { kind: 'permission-resolved' }).status).toBe('working');
       expect(transition('needs-input', { kind: 'hook', event: 'PostToolUse' }, { held: false }).status).toBe(
         'working'

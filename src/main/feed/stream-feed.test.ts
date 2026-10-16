@@ -5,7 +5,7 @@
 // the VS Code extension consumes (`message_start` / `content_block_start` /
 // `content_block_delta` / `content_block_stop`, addressed by `index`).
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { StreamFeed } from './stream-feed';
+import { ClaudeFedFeed } from './fixtures/claude-fed-feed';
 import { STREAM_COALESCE_MS } from './buffer';
 import { FeedBlock } from './blocks';
 import {
@@ -17,12 +17,12 @@ import {
 const SID = 'live-1';
 const CONV = '00000000-conv-4000-8000-000000000000';
 
-let feed: StreamFeed;
+let feed: ClaudeFedFeed;
 let seen: FeedBlock[];
 let resets: Array<string | undefined>;
 
 beforeEach(() => {
-  feed = new StreamFeed();
+  feed = new ClaudeFedFeed();
   seen = [];
   resets = [];
   feed.onBlock((_sid, b) => seen.push({ ...b }));
@@ -1007,7 +1007,7 @@ describe('replaying a resumed conversation (#395)', () => {
  * above the one this tests. Nothing enforced it.
  */
 describe('subagent lines from the transcript (#977)', () => {
-  let feed: StreamFeed;
+  let feed: ClaudeFedFeed;
   const SID = 'live-sc';
   const origin = { sidechain: true as const, agentId: 'aaaaaa11', agentName: 'digger' };
   const subLine = (text: string) => ({
@@ -1025,7 +1025,7 @@ describe('subagent lines from the transcript (#977)', () => {
   });
 
   beforeEach(() => {
-    feed = new StreamFeed();
+    feed = new ClaudeFedFeed();
   });
 
   /**

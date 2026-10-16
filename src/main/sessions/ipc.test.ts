@@ -15,7 +15,7 @@ import { SessionIdentity } from './session-manager';
 import { StreamCommands } from './stream-commands';
 import { StreamPermissions } from './stream-permissions';
 import type { FeedDerivation } from '../transcripts/watcher';
-import { StreamFeed } from '../feed/stream-feed';
+import { ClaudeFedFeed } from '../feed/fixtures/claude-fed-feed';
 import { StreamModel } from './stream-model';
 import { Logger } from '../log/logger';
 import { SlashCommand } from '../../shared/slash-commands';
@@ -119,7 +119,7 @@ function harness(
      *  it was a no-op in every test in this file. */
     streamPermissions?: StreamPermissions;
     /** the Feed built from typed messages (P2-E18-10) — the real class, again */
-    streamFeed?: StreamFeed;
+    streamFeed?: ClaudeFedFeed;
     /**
      * Which model each live session runs (#721), and since #746 the source the
      * session FOOTER is pushed from. The real class — it was absent from this
@@ -2383,7 +2383,7 @@ describe('the Feed has two sources and one channel (P2-E18-10)', () => {
   const caps = { transcripts: { projectsRoot: () => '/root' } };
 
   it("a STREAM session tells the watcher to derive its SIDECHAINS and nothing else", () => {
-    const h = harness(caps, dir, { transport: 'stream', streamFeed: new StreamFeed() });
+    const h = harness(caps, dir, { transport: 'stream', streamFeed: new ClaudeFedFeed() });
 
     h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
 
@@ -2403,7 +2403,7 @@ describe('the Feed has two sources and one channel (P2-E18-10)', () => {
   });
 
   it('the backlog for a stream session comes from the stream, not the transcript', () => {
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const h = harness(caps, dir, { transport: 'stream', liveIds: ['live-1'], streamFeed });
     streamFeed.offer('live-1', {
       type: 'assistant',
@@ -2428,7 +2428,7 @@ describe('the Feed has two sources and one channel (P2-E18-10)', () => {
   });
 
   it('a stream session\'s blocks are forgotten when its live session is dropped', () => {
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const h = harness(caps, dir, { transport: 'stream', liveIds: ['live-1'], streamFeed });
     h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
     streamFeed.offer('live-1', {
@@ -2489,7 +2489,7 @@ describe('a resumed Direct session replays its history (#395)', () => {
 
   it('the prior conversation is in the Feed before the CLI says anything', () => {
     seedTranscript();
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const h = harness(capsWith(() => root), dir, {
       transport: 'stream',
       liveIds: ['live-1'],
@@ -2519,7 +2519,7 @@ describe('a resumed Direct session replays its history (#395)', () => {
 
   it('a session that is NOT resuming starts empty, whatever is on disk', () => {
     seedTranscript();
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const h = harness(
       { transcripts: { projectsRoot: () => root }, resume: { canResume: () => false } },
       dir,
@@ -2539,7 +2539,7 @@ describe('a resumed Direct session replays its history (#395)', () => {
     // resuming into a Session view nothing can fill. The transcript is on disk
     // the whole time; only the declaration is missing.
     seedTranscript();
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const h = harness(
       {
         transcripts: { projectsRoot: () => '' },
@@ -2562,7 +2562,7 @@ describe('a resumed Direct session replays its history (#395)', () => {
 
   it('a resumed card whose transcript is gone still starts — empty, not broken', () => {
     // nothing seeded: `canResume` said yes and the file is not there
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const h = harness(capsWith(() => root), dir, {
       transport: 'stream',
       liveIds: ['live-1'],
@@ -2578,7 +2578,7 @@ describe('a resumed Direct session replays its history (#395)', () => {
 
   it('does not read a root the watcher just refused', () => {
     seedTranscript();
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const h = harness(capsWith(() => root), dir, {
       transport: 'stream',
       liveIds: ['live-1'],
@@ -2669,7 +2669,7 @@ describe('the resume link degrades but is never destroyed (#484)', () => {
     );
   }
 
-  const start = (prior?: PersistedSession, streamFeed?: StreamFeed) => {
+  const start = (prior?: PersistedSession, streamFeed?: ClaudeFedFeed) => {
     const h = harness(claudeShaped(), dir, {
       transport: 'stream',
       liveIds: ['live-1'],
@@ -2697,7 +2697,7 @@ describe('the resume link degrades but is never destroyed (#484)', () => {
 
     // the user quits here without prompting, so `B.jsonl` is never written.
     // Launch 2:
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const second = start(afterNewId, streamFeed);
 
     // back in A — not a fresh session over the top of it
@@ -2815,7 +2815,7 @@ describe('the resume link degrades but is never destroyed (#484)', () => {
 
     it('and the history really comes back into the Feed', () => {
       seedTranscript(A, 'sixty-seven kilobytes of real work');
-      const streamFeed = new StreamFeed();
+      const streamFeed = new ClaudeFedFeed();
       start(priorCard({ folder: dir, id: 'card-1', nativeSessionId: B }), streamFeed);
       expect(streamFeed.blocks('live-1').map((b) => b.text)).toEqual([
         'sixty-seven kilobytes of real work',
@@ -2933,7 +2933,7 @@ describe('a transcript reset never blanks a stream session (P2-E18-10)', () => {
   });
 
   it('a STREAM session does not', () => {
-    const h = harness(caps, dir, { transport: 'stream', liveIds: ['live-1'], streamFeed: new StreamFeed() });
+    const h = harness(caps, dir, { transport: 'stream', liveIds: ['live-1'], streamFeed: new ClaudeFedFeed() });
 
     for (const l of h.resets) l('live-1', 'clear');
 
@@ -2941,7 +2941,7 @@ describe('a transcript reset never blanks a stream session (P2-E18-10)', () => {
   });
 
   it('…but its OWN reset still reaches the renderer', () => {
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const h = harness(caps, dir, { transport: 'stream', liveIds: ['live-1'], streamFeed });
 
     // the CLI minting a new conversation: a second init with a different id
@@ -3132,7 +3132,7 @@ describe('a card respawning over a crashed session reaps it (#187)', () => {
     // the reap is the SAME teardown `dropLive` runs, not a subset of it — so a
     // stream session's blocks and its advertised slash commands go too, and the
     // new session starts from nothing rather than inheriting a dead CLI's answers
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const streamCommands = new StreamCommands();
     const exitCodes: Record<string, number> = {};
     const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
@@ -3546,7 +3546,7 @@ describe('a teardown step that throws releases the rest anyway (#219)', () => {
   // single catch that resumes at a fixed point.
   it('three failing steps still leave a fully retired session', () => {
     const { perms, sent } = streamPerms();
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const streamCommands = new StreamCommands();
     const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
       prior: card(),
@@ -4566,7 +4566,7 @@ describe('transcripts:search over a stream session (P2-E17-01, #458)', () => {
       // The FILE stamps a time. The STREAM cannot, which is the whole gap.
       JSON.stringify({ type: 'assistant', timestamp: '2026-08-11T00:00:00.000Z', message }) + '\n'
     );
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const h = harness({ transcripts: { projectsRoot: () => '/root' } }, dir, {
       transport: 'stream',
       liveIds: ['live-1'],
@@ -4673,7 +4673,7 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
    * the default here — a `pty` case is pinned separately below.
    */
   const streamSession = (over: Record<string, unknown> = {}) => {
-    const streamFeed = new StreamFeed();
+    const streamFeed = new ClaudeFedFeed();
     const h = harness(claudeLike, dir, {
       prior: card(),
       transport: 'stream',
@@ -4965,7 +4965,7 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     /** `start` is `sessions:create`, and its REPLY is half of what the card
      *  shows — so it is handed back rather than dropped. */
     const startCard = (resumes: boolean, prior: PersistedSession) => {
-      const streamFeed = new StreamFeed();
+      const streamFeed = new ClaudeFedFeed();
       const h = harness(resumingCaps(resumes), dir, { prior, transport: 'stream', streamFeed });
       const reply = start(h) as { taskLabel?: string };
       return { ...h, reply };
@@ -5005,7 +5005,7 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
       // and every other test here would still pass, because their fixtures have
       // `prior` and the new record agreeing. A field the start is what sets is
       // the only thing that can tell the two apart.
-      const streamFeed = new StreamFeed();
+      const streamFeed = new ClaudeFedFeed();
       const h = harness(resumingCaps(false), dir, {
         prior: withConversation(),
         transport: 'stream',
@@ -5035,7 +5035,7 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
       // one its label names, which is #886's done-when word for word: it could
       // not reopen the conversation the label describes. The on-screen adoption
       // notice is what says why, and the next prompt renames the card.
-      const streamFeed = new StreamFeed();
+      const streamFeed = new ClaudeFedFeed();
       const h = harness(
         {
           transcripts: { projectsRoot: () => dir },
