@@ -498,8 +498,15 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     // `(null)` instead — a git BUILD difference, measured the hard way. What is
     // common to every git is that it says "not a git repository" here, and that
     // phrase is only in the pane if the reason arrived.
+    //
+    // Correction, git 2.56 (CI Windows image of 2026-10-07): NOT every git. That
+    // one names the fault instead, "gitfile does not point to a valid
+    // repository", so both wordings are accepted. Either is git's reason, and
+    // either only reaches the pane if the reason arrived.
     await expect(
-      w.getByText(/couldn't read this project's git — not a git repository/i)
+      w.getByText(
+        /couldn't read this project's git — (not a git repository|gitfile does not point to a valid repository)/i
+      )
     ).toBeVisible({ timeout: 15_000 });
     // …and the placeholder itself never reaches a screen. i18next-icu expands
     // `{reason}`; a `{{reason}}` written out of mustache habit renders verbatim,
