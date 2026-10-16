@@ -22,21 +22,58 @@
 > and are listed under "Owner's queue" below; the run never merges them.
 >
 > **Active workers (issue → worktree → branch):**
-> - #1286 seam 1 (neutral events) → `sb-wt-1` → `feature/1286-seam-neutral-events` — dispatched 2026-10-16
-> - #1285 Codex-over-ACP probe → `sb-wt-2` → `feature/1285-codex-acp-probe` — dispatched 2026-10-16
+> - #1287 seam 2 (controls, declared) → `sb-wt-1` → `feature/1287-seam-controls` — dispatched 2026-10-16, branched from #1302's head `e12f2b50`
+> - #1288 per-AI surfaces → `sb-wt-2` → `feature/1288-per-ai-surfaces` — dispatched 2026-10-16, same base
 >
-> **Waiting on dependencies:** #1287 + #1288 (after #1286) · #1289 (after
-> #1286 + #1287) · #1291 (after #1289) · #1292 + #1293 (after #1291) ·
-> #1290 (after #1285 + #1289; **re-read #1285's verdict first**) · #1294
-> (after #1287 + #1290 + #1293) · #1295 (after #1294) · #1296 (after #1290).
+> **In CI, awaiting merge:** **#1302** (#1286, seam 1: 14 neutral event
+> types in `engine-events.ts`, Claude translator in
+> `providers/claude-events.ts` behind a new `events` capability; unit 12,292,
+> e2e 512/512 then 510 + 2 load flakes that passed alone; no e2e spec
+> touched). Internal; merges on green. Both wave-2 workers rebase onto it
+> (`git rebase --onto origin/main e12f2b50`) once it lands.
 >
-> **Merged this run:** none yet.
+> **Waiting on dependencies:** #1289 (after #1287) · #1291 (after #1289) ·
+> #1292 + #1293 (after #1291) · #1290 (after #1289) · #1294 (after #1287 +
+> #1290 + #1293) · #1295 (after #1294) · #1296 (after #1290).
+>
+> **Merged this run:**
+> - **#1285 probe → PR #1300 (`dd928d10`), 2026-10-16.** `spike/findings/e40-codex-acp.md`.
+>   **VERDICT: Codex rides the general ACP engine; no native engine.** Adapter
+>   `@agentclientprotocol/codex-acp@2.2.2` (bundles its own Codex 0.160.1,
+>   not the PATH 0.163.0). Measured, all seven questions: clean spawn via the
+>   `launchSpec` shape, pure-JSON stdout; Session Bus attaches through
+>   `session/new` `mcpServers`; seven `session/update` variants; permission
+>   kinds `allow_once | allow_always | reject_once` (reject ends the turn);
+>   models/effort/modes via `configOptions`; `session/load` resumes across a
+>   process exit but **resets model/effort/mode**; per-turn tokens in the
+>   prompt result; **AGENTS.md only, never CLAUDE.md**. **The one gap:** plan
+>   limits (5-hour + weekly) reach ACP only as `/status` markdown; a zero-token
+>   `codex app-server` `account/rateLimits/read` returns them structured, so
+>   **#1290 gains a small limits reader, not an engine.** Design record not
+>   amended (verdict is the default). 9 model turns on the cheapest model.
+>   No codex processes left; 3 probe sessions deleted from his history.
 >
 > **Owner's queue (user-facing, awaiting his review):** empty.
 >
+> **Decisions queued for the owner (not blocking; needed by #1290):**
+> 1. Codex's default mode `agent` ("Auto review") lets a **hidden reviewer
+>    model approve tool calls without asking** (measured: an MCP call was
+>    auto-approved, 7,262 uncounted tokens). `workspace-write` or `read-only`
+>    route approvals to the user. Which should a Switchboard Codex session
+>    default to? The run's working assumption for #1290: **`workspace-write`**,
+>    because the approval bar is the product and a hidden approver bypasses it.
+> 2. Run the adapter's bundled Codex (0.160.1) or point `CODEX_PATH` at his
+>    installed one (0.163.0)? Not measured; #1290 will use the bundled one
+>    unless told otherwise.
+>
+> **Filed mid-run:** **#1301** (`win-cmd.ts` `execSpec` cannot launch a `.cmd`
+> whose path has a space; the ACP engine must use the `launchSpec` shape
+> meanwhile) · **#1303** (transcript replay into the Feed still reads Claude's
+> format outside the provider; wanted by #1294).
+>
 > **Blockers:** none. **Stop conditions:** a decision only the owner can
-> make, red CI that is not a known flake, or #1285's verdict changing the
-> epic's shape (ACP vs native `codex app-server`).
+> make that blocks a track, or red CI that is not a known flake. (#1285's
+> verdict did NOT change the epic's shape.)
 >
 > **Housekeeping on the way in:** PR #1280 (dogfood tracker, docs) was red on
 > Windows only because of the git 2.56 wording #1298 fixed; its branch was
