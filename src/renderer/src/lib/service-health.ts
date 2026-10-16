@@ -77,6 +77,20 @@ export interface TooltipLine {
  */
 export function healthTooltip(status: ServiceHealthStatus): TooltipLine[] {
   const tone = healthTone(status);
+  // NO STATUS PAGE (#1288) is its own sentence and the whole of the page half:
+  // the state words name Anthropic, and this AI is not it. The local half
+  // still applies — sessions here failing together needs no page.
+  if (status.reason === 'no-status-page') {
+    const out: TooltipLine[] = [
+      status.providerName
+        ? { key: 'health.noStatusPage', params: { name: status.providerName } }
+        : { key: 'health.noStatusPageUnnamed' },
+    ];
+    if (status.corroboration) {
+      out.push({ key: 'health.corroborated', params: { count: status.corroboration.sessions } });
+    }
+    return out;
+  }
   // Our verdict leads, always. The page's own summary follows when it gave one
   // — it is more specific than we can be, but it is also untranslated marketing
   // copy, and a tooltip must not consist only of words we did not choose.

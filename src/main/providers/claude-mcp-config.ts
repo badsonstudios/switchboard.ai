@@ -1,5 +1,10 @@
 // Reading the MCP config the `claude` CLI owns (§5.17, #632).
 //
+// CLAUDE'S, AND ONLY CLAUDE'S (#1288). This lived in `main/mcp/config.ts` until E40
+// item 05 moved it behind the Claude provider: it is reached only through the
+// `mcpManager` capability (`claude-surfaces.ts`), so an AI with no MCP list
+// never has `~/.claude.json` read or `claude mcp` run on its behalf.
+//
 // §5.17 IN ONE LINE: "read the real config files; mutate via the real CLI".
 // This is the read half, and it is a pure function of two parsed JSON blobs —
 // no `fs` below the entry point, no CLI, no clock — so the whole scope-
@@ -13,8 +18,8 @@
 // §5.17 said "read the real config files" all along, so the design was right
 // and the ticket had drifted. Do not re-derive this; re-probe if the CLI moves.
 //
-// The CLI still owns every WRITE (`main/mcp/cli.ts`) and the one fact no file
-// holds — whether a server is actually connected (`main/mcp/health.ts`).
+// The CLI still owns every WRITE (`main/providers/claude-mcp-cli.ts`) and the one fact no file
+// holds — whether a server is actually connected (`main/providers/claude-mcp-health.ts`).
 //
 // ── WHAT THESE FILES CANNOT TELL YOU (#723, 2026-08-28) ──────────────────────
 //
@@ -37,6 +42,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { samePath } from '../project-key';
+import { redactUrl } from '../mcp/redact-url';
 import type {
   McpApproval,
   McpInventoryWire,
@@ -123,35 +129,6 @@ function targetOf(raw: RawServer): string {
   if (typeof raw.command === 'string' && raw.command) return raw.command;
   if (typeof raw.url === 'string' && raw.url) return redactUrl(raw.url);
   return '';
-}
-
-/**
- * A remote endpoint with its credentials taken out.
- *
- * REMOTE MCP SERVERS ROUTINELY CARRY THE SECRET IN THE URL — `https://
- * user:token@host/mcp` and `?api_key=…` are both documented forms — so
- * `raw.url` is a secret-carrying field in exactly the way `env` and `headers`
- * are, and the first version of this file rendered it verbatim onto the screen.
- * Caught in review; the docstring on `McpServerWire` claimed no field could
- * carry a value and was wrong about two of them.
- *
- * What survives is what identifies the server — scheme, host, port, path — and
- * the NAMES of the query parameters, which is the same trade `envKeys` makes.
- * A string that will not parse as a URL is not guessed at: it is reported as
- * unparseable rather than half-redacted, because a partial redaction of an
- * unknown format is how a secret survives in the tail.
- */
-export function redactUrl(url: string): string {
-  let u: URL;
-  try {
-    u = new URL(url);
-  } catch {
-    return '(unreadable address)';
-  }
-  u.username = '';
-  u.password = '';
-  for (const key of [...u.searchParams.keys()]) u.searchParams.set(key, '…');
-  return u.toString();
 }
 
 // `samePath` LIVED HERE and now lives in `main/project-key.ts` (#724).

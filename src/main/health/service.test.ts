@@ -5,7 +5,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ServiceHealthStatus } from '../../shared/service-health';
 import { StatuspageProbe } from './statuspage';
-import { MAX_POLL_MS, MIN_POLL_MS, pollIntervalFor, ServiceHealthService } from './service';
+import {
+  MAX_POLL_MS,
+  MIN_POLL_MS,
+  pollIntervalFor,
+  ServiceHealthService,
+  type ServiceHealthDeps,
+} from './service';
 import { translateClaudeFrame } from '../providers/claude-events';
 
 // The service takes neutral events (#1286). These tests keep the real Claude
@@ -34,6 +40,9 @@ const INCIDENT = {
   impact: 'major' as const,
 };
 
+/** any Statuspage host: the probe is injected, so nothing is fetched */
+const PAGE = 'https://status.example.test';
+
 /** a service with everything injected — no timers of its own until started */
 function make(over: Partial<Parameters<typeof buildDeps>[0]> = {}) {
   const pushed: ServiceHealthStatus[] = [];
@@ -52,8 +61,10 @@ function buildDeps(o: {
   feedOverride?: string;
   now?: () => number;
   windowMs?: number;
+  statusPage?: ServiceHealthDeps['statusPage'];
 }) {
   return {
+    statusPage: o.statusPage ?? (() => ({ base: PAGE })),
     getPrefs: () => ({ poll: o.poll !== false }),
     push: (s: ServiceHealthStatus) => o.pushed.push(s),
     log: o.log,
@@ -137,6 +148,7 @@ describe('a failure is quiet', () => {
   it('a push that throws does not take the poll down', async () => {
     const l = log();
     const svc = new ServiceHealthService({
+      statusPage: () => ({ base: PAGE }),
       getPrefs: () => ({ poll: true }),
       push: () => {
         throw new Error('window is gone');
@@ -185,6 +197,7 @@ describe('polling can be off, and off changes nothing else', () => {
     const l = log();
     const pushed: ServiceHealthStatus[] = [];
     const svc = new ServiceHealthService({
+      statusPage: () => ({ base: PAGE }),
       getPrefs: () => ({ poll }),
       push: (s) => pushed.push(s),
       log: l,
@@ -204,6 +217,7 @@ describe('polling can be off, and off changes nothing else', () => {
     let poll = true;
     const pushed: ServiceHealthStatus[] = [];
     const svc = new ServiceHealthService({
+      statusPage: () => ({ base: PAGE }),
       getPrefs: () => ({ poll }),
       push: (s) => pushed.push(s),
       log: log(),
@@ -275,6 +289,81 @@ describe('offline', () => {
     });
     svc.start();
     await vi.waitFor(() => expect(probe).toHaveBeenCalled());
+    svc.stop();
+  });
+});
+
+describe('an AI with no status page (#1288)', () => {
+  const none = () => ({ none: true as const, providerName: 'Codex' });
+
+  it('asks nothing, and says which AI has no page', async () => {
+    const { svc, pushed, probe } = make({ statusPage: none });
+    svc.start();
+    await vi.waitFor(() => expect(pushed.length).toBe(1));
+    expect(probe).not.toHaveBeenCalled();
+    expect(pushed[0]).toMatchObject({ state: 'unknown', reason: 'no-status-page', providerName: 'Codex' });
+    // ...and a re-check is cheap and silent: still nothing fetched, no re-push
+    await vi.advanceTimersByTimeAsync(MIN_POLL_MS + 10);
+    expect(probe).not.toHaveBeenCalled();
+    expect(pushed).toHaveLength(1);
+    svc.stop();
+  });
+
+  it('polls the page the provider names', async () => {
+    const seen: string[] = [];
+    const probe = vi.fn(async (d: { base: string }) => {
+      seen.push(d.base);
+      return ok();
+    });
+    const { svc, pushed } = make({
+      probe: probe as unknown as () => Promise<StatuspageProbe>,
+      statusPage: () => ({ base: 'https://status.other.test' }),
+    });
+    svc.start();
+    await vi.waitFor(() => expect(pushed.length).toBe(1));
+    expect(seen).toEqual(['https://status.other.test']);
+    svc.stop();
+  });
+
+  it('the dev seam still wins, so a test stub is polled whatever the provider says', async () => {
+    const { svc, probe, pushed } = make({ statusPage: none, feedOverride: 'http://127.0.0.1:9/stub' });
+    svc.start();
+    await vi.waitFor(() => expect(pushed.length).toBe(1));
+    expect(probe).toHaveBeenCalledTimes(1);
+    expect(pushed[0].reason).toBe('ok');
+    svc.stop();
+  });
+
+  it('a lookup that THROWS is "no page", logged, never a rejection', async () => {
+    const { svc, pushed, probe, log: l } = make({
+      statusPage: () => {
+        throw new Error('registry exploded');
+      },
+    });
+    svc.start();
+    await vi.waitFor(() => expect(pushed.length).toBe(1));
+    expect(probe).not.toHaveBeenCalled();
+    expect(pushed[0].reason).toBe('no-status-page');
+    expect(l.warn).toHaveBeenCalled();
+    svc.stop();
+  });
+
+  it('the local half still works: sessions here failing together needs no page', async () => {
+    const { svc, pushed } = make({ statusPage: none });
+    svc.start();
+    await vi.waitFor(() => expect(pushed.length).toBe(1));
+    for (const id of ['a', 'b', 'c']) noteFrame(svc, id, { type: 'result', is_error: true });
+    expect(pushed[pushed.length - 1]).toMatchObject({
+      reason: 'no-status-page',
+      corroboration: { sessions: 3 },
+    });
+    svc.stop();
+  });
+
+  it('polling off still wins over everything: the user said stop', async () => {
+    const { svc, pushed } = make({ statusPage: none, poll: false });
+    svc.start();
+    expect(pushed.at(-1)?.reason).toBe('polling-off');
     svc.stop();
   });
 });
@@ -378,6 +467,7 @@ describe('an answer that arrives too late', () => {
     let poll = true;
     const pushed: ServiceHealthStatus[] = [];
     const svc = new ServiceHealthService({
+      statusPage: () => ({ base: PAGE }),
       getPrefs: () => ({ poll }),
       push: (s) => pushed.push(s),
       log: log(),
@@ -401,6 +491,7 @@ describe('an answer that arrives too late', () => {
     const d = deferred();
     const pushed: ServiceHealthStatus[] = [];
     const svc = new ServiceHealthService({
+      statusPage: () => ({ base: PAGE }),
       getPrefs: () => ({ poll: true }),
       push: (s) => pushed.push(s),
       log: log(),

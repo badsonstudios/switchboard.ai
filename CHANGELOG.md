@@ -96,6 +96,14 @@ on the floor, and say so in your PR.
 
 ## 0.8.123 — unreleased
 
+### Changed
+
+- A session on a model switchboard has no price for no longer shows a made-up
+  dollar figure. Before, it was priced as if it were Sonnet. Its tokens are
+  still counted. The status-bar total now reads `≥$X est` when some sessions
+  could not be priced, and `no price` when none could. Hover over it to see how
+  many were left out. Known Claude models are priced exactly as before.
+
 ### Internal
 
 - The Session view's conversation, status and service-health readout now hear

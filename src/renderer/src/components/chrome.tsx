@@ -18,6 +18,7 @@ import { SessionsPlacementSwitch } from './SessionsPlacementSwitch';
 import { autonomyTooltip } from '../lib/autonomy';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
+import type { PlanLimitWindow } from '../../../shared/usage-report';
 
 const barStyle: React.CSSProperties = {
   background: 'var(--titlebar-bg)',
@@ -365,6 +366,10 @@ export function StatusBar(props: {
   cliVersion?: string | null;
   totalOutputTokens?: number;
   totalCostUsd?: number;
+  /** live sessions with tokens and NO price, so not in `totalCostUsd` (#1288) */
+  unpricedSessions?: number;
+  /** plan-limit windows an AI reported (#1288) — account-wide, never summed */
+  planLimits?: PlanLimitWindow[];
   /** §5.14's attention-queue count (P2-E14-01) — the queue's depth */
   attentionCount?: number;
   /** and the accelerator that walks it, for the readout's tooltip */

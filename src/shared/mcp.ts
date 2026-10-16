@@ -175,6 +175,12 @@ export interface McpInventoryWire {
    * the servers it DID find, which is both halves of the truth.
    */
   unreadable: readonly McpUnreadableWire[];
+  /**
+   * The AI this folder's sessions run on keeps no MCP list switchboard can
+   * read (#1288). An honest empty state, not "you have no servers": the pane
+   * says which, and offers nothing to add or remove.
+   */
+  unsupported?: boolean;
 }
 
 /** What `mcp:health` answers — a name→state map, merged onto the inventory the
@@ -392,8 +398,11 @@ export interface McpStatusWire {
    * answer (`unavailable`). #723 shipped because "no servers configured" was
    * rendered for a case that meant "we cannot see them", and this field is what
    * stops that recurring on the new path.
+   *
+   * `unsupported` (#1288): the session's AI has no live MCP controls at all —
+   * not a CLI that went quiet, so not `unavailable`, and the pane says so.
    */
-  reason: 'ok' | 'no-session' | 'not-stream' | 'unavailable';
+  reason: 'ok' | 'no-session' | 'not-stream' | 'unavailable' | 'unsupported';
 }
 
 /** One `KEY=value` / `Header: value` pair as the add form collects it.

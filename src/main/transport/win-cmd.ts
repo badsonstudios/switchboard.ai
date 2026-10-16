@@ -260,7 +260,7 @@ export function execSpec(
   for (const a of args) {
     // THROWS rather than mangles — see `CONTROL_CHARS` and `DOUBLE_QUOTE`.
     // Every caller in this family already resolves a verdict for a throw
-    // (`mcp/cli.ts` catches it into `cli-failed`), so this surfaces as a
+    // (`providers/claude-mcp-cli.ts` catches it into `cli-failed`), so this surfaces as a
     // refusal, not a crash.
     if (CONTROL_CHARS.test(a)) {
       throw new Error('cmd.exe arguments cannot contain control characters');

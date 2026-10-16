@@ -14,6 +14,7 @@ import { ProviderCapabilities } from '../extensibility/contributions';
 import { PersistedSession } from '../workspace/store';
 import { SessionIdentity } from './session-manager';
 import type { FeedDerivation } from '../transcripts/watcher';
+import type { EngineEvent } from './engine-events';
 import { ClaudeFedFeed } from '../feed/fixtures/claude-fed-feed';
 import { Logger } from '../log/logger';
 import { SlashCommand } from '../../shared/slash-commands';
@@ -99,6 +100,14 @@ function harness(
     submitAccepts?: boolean;
     /** what the injected one-shot answers; absent = a plain successful label */
     oneShotResult?: { ok: true; text: string } | { ok: false; failure: string };
+    /**
+     * Which providers offer a labeler (#1288). Absent = every one does, which
+     * is how this harness behaved before labels were per provider. A function
+     * that throws plays a broken capability lookup.
+     */
+    labelerFor?: (providerId: string) => boolean;
+    /** the labeler THROWS instead of resolving — contributor code breaking its promise */
+    oneShotThrows?: boolean;
     /** transcript size the watcher reports, for the staleness gates (#758) */
     transcriptLines?: number;
     /** the watcher refuses a root it cannot poll safely */
@@ -329,6 +338,10 @@ function harness(
   const statusListeners: Array<(c: { sessionId: string; to: string }) => void> = [];
   /** every contained one-shot the label path asked for, in order (#758) */
   const oneShotCalls: Array<{ prompt: string; cwd: string }> = [];
+  /** which provider each label run asked for a labeler (#1288) */
+  const labelersAskedFor: string[] = [];
+  /** the IPC layer's `manager.onEngineEvent` subscribers (#1288's event usage) */
+  const engineListeners: Array<(sessionId: string, ev: EngineEvent) => void> = [];
   /** every prompt handed to the manager, in order (#883) */
   const submitted: Array<{ id: string; text: string }> = [];
   /** every `dispatches.peek` / `dispatches.consume` the spawn path made (#948) */
@@ -366,6 +379,10 @@ function harness(
       },
       onSessionExit: (l: (e: { sessionId: string; code: number; crashed: boolean }) => void) => {
         exitListeners.push(l);
+      },
+      onEngineEvent: (l: (sessionId: string, ev: EngineEvent) => void) => {
+        engineListeners.push(l);
+        return () => {};
       },
       // The outbound control channel (#721). The REAL manager builds this in
       // its constructor and it is never absent, so the stub carries one too —
@@ -599,10 +616,18 @@ function harness(
     // whatever the test wants — so "did this spend anything?" is a length check
     // on an array rather than an inference from a label that may not have
     // changed for three other reasons.
-    runOneShot: (req: { prompt: string; cwd: string }) => {
-      oneShotCalls.push({ prompt: req.prompt, cwd: req.cwd });
-      const answer = opts.oneShotResult ?? { ok: true as const, text: 'Wire up the parser\n' };
-      return Promise.resolve(answer);
+    //
+    // Per provider since #1288: `labelersAskedFor` records which AI was asked,
+    // and `opts.labelerFor` decides which ones have a labeler at all.
+    labelerFor: (providerId: string) => {
+      labelersAskedFor.push(providerId);
+      if (opts.labelerFor && !opts.labelerFor(providerId)) return undefined;
+      return (req: { prompt: string; cwd: string }) => {
+        if (opts.oneShotThrows) throw new Error('labeler exploded');
+        oneShotCalls.push({ prompt: req.prompt, cwd: req.cwd });
+        const answer = opts.oneShotResult ?? { ok: true as const, text: 'Wire up the parser\n' };
+        return Promise.resolve(answer);
+      };
     },
     // §5.5 Level 3 (P2-E11-12). OFF in the harness by default, matching the
     // shipped default — a fixture that defaulted it ON would let every fork
@@ -719,6 +744,11 @@ function harness(
     },
     /** what the injected one-shot was asked to run, in order (#758) */
     oneShotCalls,
+    labelersAskedFor,
+    /** Play the session manager: an engine event from a live session (#1288). */
+    fireEngineEvent: (sessionId: string, ev: EngineEvent) => {
+      for (const l of engineListeners) l(sessionId, ev);
+    },
     watched,
     cards,
     /**
@@ -4790,6 +4820,54 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     expect(labels(h)).toEqual([{ cardId: 'card-1', label: 'Wire up the parser' }]);
   });
 
+  describe('per AI (#1288): the card’s own AI names it, or nothing does', () => {
+    it('asks the AI the live session is on', () => {
+      const h = streamSession({ aiLabels: true });
+      h.fireStatus('live-1', 'done');
+      // the live record's provider — the harness's live session is on `generic`
+      expect(h.labelersAskedFor).toEqual(['generic']);
+      expect(h.oneShotCalls).toHaveLength(1);
+    });
+
+    it('an AI with NO labeler gets no AI label, and no other AI is asked', async () => {
+      const h = streamSession({ aiLabels: true, labelerFor: () => false });
+      h.fireStatus('live-1', 'done');
+      await settle();
+      // asked about its OWN AI only: the conversation is never handed to a
+      // different company's model to be named
+      expect(h.labelersAskedFor).toEqual(['generic']);
+      expect(h.oneShotCalls).toEqual([]);
+      expect(stored(h).taskLabel).toBeUndefined();
+      // …and that is not a run in flight: a later turn asks again rather than
+      // being throttled by a run that never happened
+      h.fireStatus('live-1', 'done');
+      expect(h.labelersAskedFor).toEqual(['generic', 'generic']);
+    });
+
+    it('a labeler that THROWS instead of resolving costs the label and nothing else', async () => {
+      const h = streamSession({ aiLabels: true, oneShotThrows: true });
+      expect(() => h.fireStatus('live-1', 'done')).not.toThrow();
+      await settle();
+      expect(stored(h).taskLabel).toBeUndefined();
+    });
+
+    it('a labeler lookup that THROWS costs the label and nothing else', async () => {
+      const h = streamSession({
+        aiLabels: true,
+        labelerFor: () => {
+          throw new Error('capability exploded');
+        },
+      });
+      expect(() => h.fireStatus('live-1', 'done')).not.toThrow();
+      await settle();
+      expect(h.oneShotCalls).toEqual([]);
+      expect(h.warn).toHaveBeenCalledWith(
+        'ai label skipped: could not ask the provider for a labeler',
+        expect.objectContaining({ providerId: 'generic' })
+      );
+    });
+  });
+
   it('only a FINISHED turn triggers it — a starting one never does', () => {
     // `working` already has a meaning on this listener (it tells the watcher a
     // conversation exists), and labelling there would ask what a session is
@@ -5769,5 +5847,139 @@ describe('sessions:create carrying a dispatch (P2-E13-03, §5.15)', () => {
       await create(h);
       expect(h.submitted[0].text, t.name).toContain(t.rolePrompt.split('\n')[0]);
     }
+  });
+});
+
+describe('usage, per AI (#1288)', () => {
+  let dir: string;
+  tempDirEach('sb-usage-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir);
+
+  const usagePushes = (h: { pushed: Array<{ channel: string; payload: unknown }> }) =>
+    h.pushed
+      .filter((p) => p.channel === 'sessions:usage')
+      .map((p) => p.payload as { sessionId: string; estimateUsd?: number; usage: { input: number; output: number }; limits?: unknown[]; model?: string });
+
+  const SPENT = { input: 1e6, output: 1e6, cacheRead: 0, cacheCreate: 0 };
+
+  it('the transcript snapshot carries the PROVIDER’s price', () => {
+    const h = harness(
+      {
+        transcripts: { projectsRoot: () => '/roots/claude' },
+        usage: { estimateCostUsd: (u, model) => (model === 'known' ? u.output / 1e6 : undefined) },
+      },
+      dir,
+      { prior: card() }
+    );
+    start(h);
+    h.fireSnapshot({ sessionId: 'live-1', usage: SPENT, model: 'known' });
+    expect(usagePushes(h).at(-1)?.estimateUsd).toBe(1);
+  });
+
+  it('an unknown model gets NO price — the field is absent, not 0 and not Sonnet', () => {
+    const h = harness(
+      {
+        transcripts: { projectsRoot: () => '/roots/claude' },
+        usage: { estimateCostUsd: () => undefined },
+      },
+      dir,
+      { prior: card() }
+    );
+    start(h);
+    h.fireSnapshot({ sessionId: 'live-1', usage: SPENT, model: 'some-new-model' });
+    const last = usagePushes(h).at(-1)!;
+    expect(last.usage.output).toBe(1e6); // the tokens still go
+    expect('estimateUsd' in last).toBe(false);
+  });
+
+  it('a provider that declares no price list: tokens, and no price', () => {
+    const h = harness({ transcripts: { projectsRoot: () => '/roots/x' } }, dir, { prior: card() });
+    start(h);
+    h.fireSnapshot({ sessionId: 'live-1', usage: SPENT, model: 'anything' });
+    expect('estimateUsd' in usagePushes(h).at(-1)!).toBe(false);
+  });
+
+  it('a price list that THROWS or answers nonsense is no price, and the snapshot still goes', () => {
+    for (const estimateCostUsd of [
+      () => {
+        throw new Error('price list exploded');
+      },
+      () => NaN,
+      () => -3,
+    ]) {
+      const h = harness(
+        { transcripts: { projectsRoot: () => '/roots/x' }, usage: { estimateCostUsd } },
+        dir,
+        { prior: card() }
+      );
+      start(h);
+      h.fireSnapshot({ sessionId: 'live-1', usage: SPENT, model: 'm' });
+      const pushes = usagePushes(h);
+      expect(pushes).toHaveLength(1);
+      expect('estimateUsd' in pushes[0]).toBe(false);
+    }
+  });
+
+  describe('an AI that reports usage per turn (the `usage` engine event)', () => {
+    it('adds the turns up, prices them, and keeps the latest plan-limit windows', () => {
+      const h = harness(
+        { usage: { estimateCostUsd: (u) => u.input / 1e6 } }, // no `transcripts`
+        dir,
+        { prior: card() }
+      );
+      start(h);
+      h.fireEngineEvent('live-1', { type: 'usage', inputTokens: 1e6, outputTokens: 10, model: 'm1' });
+      h.fireEngineEvent('live-1', {
+        type: 'usage',
+        inputTokens: 1e6,
+        outputTokens: 5,
+        limits: [{ id: 'primary', usedPercent: 3, windowMinutes: 300, resetsAt: '2026-10-16T15:19:00Z' }],
+      });
+      const last = usagePushes(h).at(-1)!;
+      expect(last.usage.input).toBe(2e6);
+      expect(last.usage.output).toBe(15);
+      expect(last.model).toBe('m1'); // the last model NAMED, not erased by a turn that named none
+      expect(last.estimateUsd).toBe(2);
+      expect(last.limits).toEqual([
+        { id: 'primary', usedPercent: 3, windowMinutes: 300, resetsAt: '2026-10-16T15:19:00Z' },
+      ]);
+    });
+
+    it('tokens WITHOUT a price when the AI has no price list (Codex’s case)', () => {
+      const h = harness({}, dir, { prior: card() });
+      start(h);
+      h.fireEngineEvent('live-1', { type: 'usage', inputTokens: 11962, cacheReadTokens: 7296, outputTokens: 11 });
+      const last = usagePushes(h).at(-1)!;
+      expect(last.usage).toMatchObject({ input: 11962, cacheRead: 7296, output: 11 });
+      expect('estimateUsd' in last).toBe(false);
+    });
+
+    it('ONE PATH PER PROVIDER: a provider with transcripts has its usage events ignored', () => {
+      const h = harness({ transcripts: { projectsRoot: () => '/roots/x' } }, dir, { prior: card() });
+      start(h);
+      h.fireEngineEvent('live-1', { type: 'usage', inputTokens: 5, outputTokens: 5 });
+      expect(usagePushes(h)).toEqual([]);
+    });
+
+    it('ignores every other event, and a frame draining after the exit cannot restart the count', () => {
+      const h = harness({}, dir, { prior: card() });
+      start(h);
+      h.fireEngineEvent('live-1', { type: 'turn-end', failed: false, label: 'x' });
+      expect(usagePushes(h)).toEqual([]);
+      h.fireEngineEvent('live-1', { type: 'usage', inputTokens: 7 });
+      h.fireExit('live-1');
+      h.fireEngineEvent('live-1', { type: 'usage', inputTokens: 1 });
+      // the last push is still the real total, not a fresh count of 1
+      expect(usagePushes(h)).toHaveLength(1);
+      expect(usagePushes(h).at(-1)!.usage.input).toBe(7);
+    });
+
+    it('a provider that reports NOTHING sends nothing: no snapshot, no invented zeroes', () => {
+      const h = harness({}, dir, { prior: card() });
+      start(h);
+      // no transcript, no usage event: the provider declares and reports nothing
+      h.fireStatus('live-1', 'done');
+      expect(usagePushes(h)).toEqual([]);
+    });
   });
 });

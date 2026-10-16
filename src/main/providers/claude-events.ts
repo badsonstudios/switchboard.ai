@@ -376,27 +376,14 @@ export function translateClaudeFrame(
       // not lifecycle: no activity.
       return messageEvent('user', m);
 
-    case 'result': {
+    case 'result':
       // The turn is over. This is stream mode's `Stop` hook.
-      const out: EngineEvent[] = [
-        { type: 'turn-end', failed: turnOutcome(m) === true, label: labelOf(type, m) },
-      ];
-      // usage: {input_tokens, output_tokens, cache_read_input_tokens} — the
-      // shape the fake replays from a captured result frame
-      const u = m.usage;
-      if (u && typeof u === 'object') {
-        const usage = u as Record<string, unknown>;
-        out.push({
-          type: 'usage',
-          ...defined({
-            inputTokens: finite(usage.input_tokens),
-            outputTokens: finite(usage.output_tokens),
-            cacheReadTokens: finite(usage.cache_read_input_tokens),
-          }),
-        });
-      }
-      return out;
-    }
+      //
+      // NO `usage` EVENT, deliberately (#1288). `result.usage` is per turn and
+      // has no cache-write split, no thinking share and no subagent files;
+      // Claude's usage is its transcript ledger, which has all three. One
+      // usage path per provider — see `UsageEvent`.
+      return [{ type: 'turn-end', failed: turnOutcome(m) === true, label: labelOf(type, m) }];
 
     case 'control_request': {
       // `can_use_tool` is the CLI handing us a decision. Other control

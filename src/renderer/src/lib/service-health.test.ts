@@ -97,4 +97,25 @@ describe('the tooltip', () => {
   it('drops a checkedAt that is not a time', () => {
     expect(keys({ ...base, checkedAt: 'whenever' })).not.toContain('health.checkedAt');
   });
+
+  describe('an AI with no status page (#1288)', () => {
+    const noPage = { ...base, state: 'unknown', reason: 'no-status-page' } as const;
+
+    it('says which AI has none — and nothing about Anthropic', () => {
+      const lines = healthTooltip({ ...noPage, providerName: 'Codex' });
+      expect(lines).toEqual([{ key: 'health.noStatusPage', params: { name: 'Codex' } }]);
+      expect(lines.map((l) => l.key)).not.toContain('health.state.unknown');
+    });
+
+    it('an unnamed AI gets the unnamed sentence, not a raw placeholder', () => {
+      expect(keys(noPage)).toEqual(['health.noStatusPageUnnamed']);
+    });
+
+    it('still carries the local corroboration', () => {
+      expect(keys({ ...noPage, providerName: 'Codex', corroboration: { sessions: 3 } })).toEqual([
+        'health.noStatusPage',
+        'health.corroborated',
+      ]);
+    });
+  });
 });

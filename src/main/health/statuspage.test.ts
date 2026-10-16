@@ -12,8 +12,9 @@ import {
   probeStatuspage,
   readIncidents,
   REQUEST_TIMEOUT_MS,
-  STATUSPAGE_BASE,
 } from './statuspage';
+// The page is the PROVIDER's to name since #1288; these tests poll Claude's.
+import { CLAUDE_STATUSPAGE_BASE as STATUSPAGE_BASE } from '../providers/claude-surfaces';
 
 /** verbatim from https://status.anthropic.com/api/v2/status.json (2026-08-11) */
 const LIVE_STATUS = {
@@ -147,14 +148,14 @@ describe('the deadline', () => {
           init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
         })
     ) as unknown as typeof fetch;
-    const probe = probeStatuspage({ fetchImpl });
+    const probe = probeStatuspage({ base: STATUSPAGE_BASE, fetchImpl });
     await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 10);
     await expect(probe).resolves.toMatchObject({ state: 'unknown', reason: 'network' });
   });
 
   it('clears its timer when the answer arrives in time', async () => {
     vi.useFakeTimers();
-    const p = await probeStatuspage({ fetchImpl: feed(LIVE_STATUS, LIVE_UNRESOLVED) });
+    const p = await probeStatuspage({ base: STATUSPAGE_BASE, fetchImpl: feed(LIVE_STATUS, LIVE_UNRESOLVED) });
     expect(p.state).toBe('operational');
     // a leaked 8s timer per poll would show up here as a pending timer
     expect(vi.getTimerCount()).toBe(0);
@@ -164,6 +165,7 @@ describe('the deadline', () => {
 describe('one poll', () => {
   it('reads the live all-clear', async () => {
     const p = await probeStatuspage({
+      base: STATUSPAGE_BASE,
       fetchImpl: feed(LIVE_STATUS, LIVE_UNRESOLVED, { 'cache-control': 'max-age=10, public' }),
     });
     expect(p.state).toBe('operational');
@@ -175,6 +177,7 @@ describe('one poll', () => {
 
   it('reads an outage with its incident', async () => {
     const p = await probeStatuspage({
+      base: STATUSPAGE_BASE,
       fetchImpl: feed(
         { status: { indicator: 'major', description: 'Partial System Outage' } },
         { incidents: [INCIDENT] }
@@ -190,7 +193,7 @@ describe('one poll', () => {
       seen.push(init);
       return jsonResponse(url.includes('incidents') ? LIVE_UNRESOLVED : LIVE_STATUS);
     }) as unknown as typeof fetch;
-    await probeStatuspage({ fetchImpl });
+    await probeStatuspage({ base: STATUSPAGE_BASE, fetchImpl });
     expect(seen.every((i) => i.redirect === 'follow')).toBe(true);
   });
 
@@ -200,7 +203,7 @@ describe('one poll', () => {
       urls.push(url);
       return jsonResponse(url.includes('incidents') ? LIVE_UNRESOLVED : LIVE_STATUS);
     }) as unknown as typeof fetch;
-    await probeStatuspage({ fetchImpl });
+    await probeStatuspage({ base: STATUSPAGE_BASE, fetchImpl });
     expect(urls).toEqual([
       `${STATUSPAGE_BASE}/api/v2/status.json`,
       `${STATUSPAGE_BASE}/api/v2/incidents/unresolved.json`,
@@ -213,7 +216,7 @@ describe('one poll', () => {
       init = i;
       return jsonResponse(LIVE_STATUS);
     }) as unknown as typeof fetch;
-    await probeStatuspage({ fetchImpl, userAgent: '0.4.0' });
+    await probeStatuspage({ base: STATUSPAGE_BASE, fetchImpl, userAgent: '0.4.0' });
     expect(init?.body).toBeUndefined();
     expect(init?.method ?? 'GET').toBe('GET');
     expect(Object.keys(init?.headers as Record<string, string>).sort()).toEqual([
@@ -226,7 +229,7 @@ describe('one poll', () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('ENOTFOUND');
     }) as unknown as typeof fetch;
-    const p = await probeStatuspage({ fetchImpl });
+    const p = await probeStatuspage({ base: STATUSPAGE_BASE, fetchImpl });
     expect(p).toMatchObject({ state: 'unknown', reason: 'network', incidents: [] });
   });
 
@@ -234,7 +237,7 @@ describe('one poll', () => {
     const fetchImpl = vi.fn(async () =>
       ({ ok: false, status: 503, headers: { get: () => null } }) as unknown as Response
     ) as unknown as typeof fetch;
-    expect((await probeStatuspage({ fetchImpl })).reason).toBe('network');
+    expect((await probeStatuspage({ base: STATUSPAGE_BASE, fetchImpl })).reason).toBe('network');
   });
 
   it('is unknown when the body is not the JSON it promised', async () => {
@@ -248,11 +251,11 @@ describe('one poll', () => {
         },
       }) as unknown as Response
     ) as unknown as typeof fetch;
-    expect((await probeStatuspage({ fetchImpl })).reason).toBe('network');
+    expect((await probeStatuspage({ base: STATUSPAGE_BASE, fetchImpl })).reason).toBe('network');
   });
 
   it('is bad-response when the schema moved', async () => {
-    const p = await probeStatuspage({ fetchImpl: feed({ page: {} }, LIVE_UNRESOLVED) });
+    const p = await probeStatuspage({ base: STATUSPAGE_BASE, fetchImpl: feed({ page: {} }, LIVE_UNRESOLVED) });
     expect(p).toMatchObject({ state: 'unknown', reason: 'bad-response' });
   });
 
@@ -262,7 +265,7 @@ describe('one poll', () => {
       if (url.includes('incidents')) throw new Error('nope');
       return jsonResponse(LIVE_STATUS);
     }) as unknown as typeof fetch;
-    const p = await probeStatuspage({ fetchImpl });
+    const p = await probeStatuspage({ base: STATUSPAGE_BASE, fetchImpl });
     expect(p.state).toBe('operational');
     expect(p.incidents).toEqual([]);
   });
@@ -271,6 +274,6 @@ describe('one poll', () => {
     const fetchImpl = (() => {
       throw new TypeError('synchronously rude');
     }) as unknown as typeof fetch;
-    await expect(probeStatuspage({ fetchImpl })).resolves.toMatchObject({ state: 'unknown' });
+    await expect(probeStatuspage({ base: STATUSPAGE_BASE, fetchImpl })).resolves.toMatchObject({ state: 'unknown' });
   });
 });

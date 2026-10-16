@@ -46,19 +46,12 @@
 import path from 'path';
 import { IpcBroker } from '../ipc/broker';
 import { Logger } from '../log/logger';
-import { readInventory, samePath } from './config';
-import { checkHealth } from './health';
+import { samePath } from '../project-key';
 import { readMcpStatus } from './status';
 import { enrichRuntime, notLoaded } from './merge';
-import { runMcp } from './cli';
-import {
-  RESET_APPROVALS_ARGS,
-  buildAddArgs,
-  buildRemoveArgs,
-  validateAdd,
-  validateRemoveName,
-  validateScope,
-} from '../../shared/mcp-args';
+import { validateAdd, validateRemoveName, validateScope } from '../../shared/mcp-args';
+import type { McpManagerCapability } from '../extensibility/contributions';
+import { errorText } from '../../shared/error-text';
 import type {
   McpAddRequest,
   McpHealthWire,
@@ -97,6 +90,18 @@ export interface McpIpcDeps {
    * repo the user has not opened.
    */
   isSessionFolder: (folder: string) => boolean;
+  /**
+   * WHOSE MCP list this folder has (#1288): the `mcpManager` capability of the
+   * AI the folder's sessions run on, or null when none of them declares one.
+   *
+   * The config files and the CLI that edits them are the PROVIDER's — Claude's
+   * are `~/.claude.json`, `.mcp.json` and `claude mcp`, in
+   * `providers/claude-mcp-*.ts` — so nothing in this module reads a file or
+   * spawns a program itself any more. Null is an honest empty state, not an
+   * error: the list answers `unsupported`, health answers `ok: false`, and
+   * the writes are refused.
+   */
+  managerFor: (folder: string) => McpManagerCapability | null;
   /**
    * The live session behind an id, or null. Absent in a read-only wiring (and
    * in #632's tests), which is why every handler that takes a `liveId` treats
@@ -146,6 +151,12 @@ export interface McpIpcDeps {
  */
 const empty = (folder: string): McpInventoryWire => ({ folder, servers: [], unreadable: [] });
 
+/** A write the provider could not attempt, said the way every other refusal is. */
+const REFUSED: McpMutationResult = { ok: false, reason: 'refused' };
+
+/** The empty answer for a folder whose AI keeps no MCP list we can read (#1288). */
+const unsupported = (folder: string): McpInventoryWire => ({ ...empty(folder), unsupported: true });
+
 /**
  * Every value in a request that must never come back on screen.
  *
@@ -184,6 +195,34 @@ function secretsIn(request: McpAddRequest): string[] {
 export function registerMcpIpc(deps: McpIpcDeps): void {
   const { broker, log } = deps;
 
+  /**
+   * The folder's MCP manager, fail-open: a lookup that throws is "this AI has
+   * none", logged, rather than a channel that rejects behind a modal.
+   */
+  const managerOf = (channel: string, folder: string): McpManagerCapability | null => {
+    try {
+      return deps.managerFor(folder);
+    } catch (err) {
+      log.warn(`${channel}: could not ask the provider for its MCP list`, { error: errorText(err) });
+      return null;
+    }
+  };
+
+  /**
+   * Run one of the provider's MCP calls without letting it reject. The
+   * capability promises never to; this keeps "nothing here reaches the
+   * renderer as a rejection" true for a provider that breaks the promise,
+   * synchronously or not.
+   */
+  const settled = async <T>(channel: string, fallback: T, run: () => Promise<T>): Promise<T> => {
+    try {
+      return await run();
+    } catch (err) {
+      log.warn(`${channel}: the provider's MCP call threw`, { error: errorText(err) });
+      return fallback;
+    }
+  };
+
   /** One gate, every channel — so they cannot drift into disagreeing about
    *  which folders are answerable. */
   const allowed = (channel: string, folder: unknown): folder is string => {
@@ -204,7 +243,15 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
   // watch-and-cache, not a thread.
   broker.handle('mcp:list', (_e, folder: unknown): McpInventoryWire => {
     if (!allowed('mcp:list', folder)) return empty(typeof folder === 'string' ? folder : '');
-    return readInventory(folder, log);
+    const manager = managerOf('mcp:list', folder);
+    if (!manager) return unsupported(folder);
+    try {
+      return manager.inventory(folder, log);
+    } catch (err) {
+      // The capability promises not to throw; this is the belt on the braces.
+      log.warn('mcp:list: the provider could not read its MCP list', { error: errorText(err) });
+      return empty(folder);
+    }
   });
 
   // The health check. It SPAWNS THE CLI, which is why it is its own channel and
@@ -220,7 +267,9 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
       // and the difference is already in the log where it belongs.
       return { folder: typeof folder === 'string' ? folder : '', states: {}, ok: false };
     }
-    const result = await checkHealth(folder);
+    const manager = managerOf('mcp:health', folder);
+    if (!manager) return { folder, states: {}, ok: false };
+    const result = await settled('mcp:health', { ok: false, states: {} }, () => manager.health(folder));
     return { folder, states: result.states, ok: result.ok };
   });
 
@@ -274,8 +323,10 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
         // than for a CLI that went quiet.
         if (verdict.reason === 'not-stream') return empty('not-stream');
         // …and neither is `unsupported` (#1287): this session's AI has no live
-        // MCP controls at all. Not a CLI that went quiet, so not a warning.
-        if (verdict.reason === 'unsupported') return empty('unavailable');
+        // MCP controls at all. Not a CLI that went quiet, so not a warning —
+        // and its own reason (#1288), so the pane can say THAT instead of
+        // "the session didn't answer".
+        if (verdict.reason === 'unsupported') return empty('unsupported');
         log.warn('mcp:status did not answer', { liveId: id, reason: verdict.reason });
         return empty(verdict.reason === 'session-gone' ? 'no-session' : 'unavailable');
       }
@@ -285,7 +336,15 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
       // approval state — are folded in before the wire, so the pane draws a row
       // rather than computing one. Two local file reads on a call that has
       // already paid for a process round trip.
-      const configured = readInventory(folder, log).servers;
+      // No manager: the session's own list still shows, with no row marked as
+      // file-backed — there is no file to edit, so nothing is removable.
+      const manager = managerOf('mcp:status', folder);
+      let configured: McpInventoryWire['servers'] = [];
+      try {
+        configured = manager ? manager.inventory(folder, log).servers : [];
+      } catch (err) {
+        log.warn('mcp:status: the provider could not read its MCP list', { error: errorText(err) });
+      }
       const servers = enrichRuntime(readMcpStatus(verdict.response), configured);
       return {
         sessionId: id,
@@ -328,8 +387,10 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
     // is the one channel whose request carries credentials, and `runMcp`
     // redacts them out of the CLI's words BEFORE it applies the length bound —
     // the other order let a secret straddling the 600th character survive as a
-    // prefix (`cli.ts`'s `detailFrom`).
-    const result = await runMcp(folder, buildAddArgs(request), { secrets: secretsIn(request) });
+    // prefix (`claude-mcp-cli.ts`'s `detailFrom`).
+    const manager = managerOf('mcp:add', folder);
+    if (!manager) return { ok: false, reason: 'refused' };
+    const result = await settled('mcp:add', REFUSED, () => manager.add(folder, request, secretsIn(request)));
     if (result.ok) log.info('mcp server added', { name: request.name, scope: request.scope });
     else log.warn('mcp:add failed', { name: request.name, reason: result.reason });
     return result;
@@ -353,7 +414,11 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
         log.warn('mcp:remove refused: invalid scope');
         return { ok: false, reason: 'invalid', error: scopeError };
       }
-      const result = await runMcp(folder, buildRemoveArgs(name as string, scope as McpScope));
+      const manager = managerOf('mcp:remove', folder);
+      if (!manager) return { ok: false, reason: 'refused' };
+      const result = await settled('mcp:remove', REFUSED, () =>
+        manager.remove(folder, name as string, scope as McpScope)
+      );
       if (result.ok) log.info('mcp server removed', { name, scope });
       else log.warn('mcp:remove failed', { name, scope, reason: result.reason });
       return result;
@@ -370,7 +435,9 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
   // owns, on a shape it can change under us — which was declined on P7.
   broker.handle('mcp:resetApprovals', async (_e, folder: unknown): Promise<McpMutationResult> => {
     if (!allowed('mcp:resetApprovals', folder)) return { ok: false, reason: 'refused' };
-    const result = await runMcp(folder, RESET_APPROVALS_ARGS);
+    const manager = managerOf('mcp:resetApprovals', folder);
+    if (!manager) return { ok: false, reason: 'refused' };
+    const result = await settled('mcp:resetApprovals', REFUSED, () => manager.resetApprovals(folder));
     if (result.ok) log.info('mcp project approvals reset', { folder });
     else log.warn('mcp:resetApprovals failed', { folder, reason: result.reason });
     return result;

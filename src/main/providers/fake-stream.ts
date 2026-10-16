@@ -14,6 +14,7 @@ import { ensureFolderTrusted } from '../sessions/trust';
 import { claudeProjectsRoot, readAiTitle, writeSessionSettings } from './claude';
 import { claudeEvents } from './claude-events';
 import { claudeControls } from './claude-controls';
+import { claudeSurfaces } from './claude-surfaces';
 
 /**
  * The compiled fake CLI.
@@ -74,6 +75,11 @@ export const fakeStreamAdapter: ProviderAdapter = {
     // makes, for the same reason (P2-E11-12, #801). See the note there. The
     // absence IS the gate: every adapter registers under `claude-code`, so
     // nothing else distinguishes a fake from the real CLI here.
+    //
+    // Claude's per-AI surfaces, the real ones (#1288): the fake changes how a
+    // session is hosted, not what its price list, preflight, labeler, MCP list
+    // or command files are — so the e2e suite keeps exercising that code.
+    ...claudeSurfaces,
   },
 
   // The FALLBACK list — what the composer offers before the CLI has spoken.

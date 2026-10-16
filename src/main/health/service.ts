@@ -54,8 +54,20 @@ export function pollIntervalFor(maxAgeMs: number | undefined): number {
   return Math.min(Math.max(maxAgeMs, MIN_POLL_MS), MAX_POLL_MS);
 }
 
+/**
+ * Which page to poll, asked of the provider whose dot this is (#1288): the
+ * DEFAULT provider, the one a new session starts on. `none` when that AI
+ * publishes no status page, and then nothing is fetched at all.
+ */
+export type StatusPageTarget = { base: string } | { none: true; providerName: string };
+
 export interface ServiceHealthDeps {
   getPrefs: () => ServiceHealthPrefs;
+  /**
+   * Asked on every poll, so a change of default provider is picked up without
+   * a restart. A throw reads as "no page" for a provider we could not name.
+   */
+  statusPage: () => StatusPageTarget;
   /** push the current record to whichever window is live */
   push: (status: ServiceHealthStatus) => void;
   log: {
@@ -100,6 +112,7 @@ function signature(s: ServiceHealthStatus): string {
     s.checkedAt ?? '',
     s.incidents.map((i) => `${i.id}:${i.status}:${i.impact}`),
     s.corroboration ? s.corroboration.sessions : 0,
+    s.providerName ?? '',
   ]);
 }
 
@@ -234,6 +247,20 @@ export class ServiceHealthService {
   private async poll(): Promise<void> {
     if (this.stopped) return;
     if (!this.pollingOn()) return this.goDark('polling-off');
+    // WHICH page (#1288). The dev seam's URL wins, so a test stub is polled
+    // whatever the provider says; otherwise it is the provider's own, and a
+    // provider with none is never asked anything — no request, no timer worth
+    // the name, and a tooltip that says why.
+    const override = this.overrideOff() ? undefined : this.deps.feedOverride?.trim() || undefined;
+    const target: StatusPageTarget = override ? { base: override } : this.target();
+    if ('none' in target) {
+      this.noStatusPage(target.providerName);
+      // Cheap — nothing leaves the machine — and it is how a change of
+      // default provider to one WITH a page is noticed without a restart.
+      this.schedule(MIN_POLL_MS);
+      return;
+    }
+    const base = target.base;
     // Offline: ask nothing, say "unknown", and keep the timer running so the
     // dot comes back on its own when the network does.
     if (this.deps.isOnline && !safeOnline(this.deps)) {
@@ -243,13 +270,12 @@ export class ServiceHealthService {
       return;
     }
 
-    const base = this.overrideOff() ? undefined : this.deps.feedOverride?.trim() || undefined;
     let probe: StatuspageProbe;
     try {
       const impl = this.deps.probeImpl ?? probeStatuspage;
       probe = await impl({
         ...this.deps.probeDeps,
-        ...(base ? { base } : {}),
+        base,
         now: () => new Date(this.now()),
         log: (msg, meta) => this.deps.log.debug?.(msg, meta),
       });
@@ -271,6 +297,38 @@ export class ServiceHealthService {
     if (this.stopped || !this.pollingOn()) return;
     this.applyProbe(probe);
     this.schedule(pollIntervalFor(probe.maxAgeMs));
+  }
+
+  /** The provider's answer, fail-open: a throw is "no page we can name". */
+  private target(): StatusPageTarget {
+    try {
+      const t = this.deps.statusPage();
+      if ('base' in t && typeof t.base === 'string' && t.base) return { base: t.base };
+      if ('none' in t) return { none: true, providerName: t.providerName };
+    } catch (err) {
+      this.deps.log.warn('provider status: could not ask which page to poll', {
+        error: errorText(err),
+      });
+    }
+    return { none: true, providerName: '' };
+  }
+
+  /**
+   * This AI publishes no status page (#1288). `unknown`, like every other way
+   * of not knowing, with its own reason so the tooltip can say which way. The
+   * local half — sessions here failing together — keeps working: it never
+   * needed the page.
+   */
+  private noStatusPage(providerName: string): void {
+    this.knownIncidents = new Set();
+    this.status = {
+      state: 'unknown',
+      reason: 'no-status-page',
+      incidents: [],
+      ...(providerName ? { providerName } : {}),
+      corroboration: this.status.corroboration,
+    };
+    this.pushIfChanged();
   }
 
   private schedule(ms: number): void {

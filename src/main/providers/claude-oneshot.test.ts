@@ -15,9 +15,9 @@ vi.mock('child_process', async (importOriginal) => {
   return { ...real, spawn: vi.fn() };
 });
 
-vi.mock('./claude', () => ({ resolveCliPath: vi.fn(() => 'C:\\npm\\claude.cmd') }));
+vi.mock('./claude-cli-path', () => ({ resolveCliPath: vi.fn(() => 'C:\\npm\\claude.cmd') }));
 
-import { resolveCliPath } from './claude';
+import { resolveCliPath } from './claude-cli-path';
 import {
   CONTAINED_ARGS,
   DEFAULT_ONESHOT_MODEL,

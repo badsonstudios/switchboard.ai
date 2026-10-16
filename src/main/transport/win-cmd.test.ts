@@ -213,7 +213,7 @@ describe('execSpec', () => {
   it('REFUSES a control character rather than silently truncating', () => {
     // A caret cannot escape a newline: `a\nb` reaches the child as `a`. A
     // launcher that quietly delivers something other than what it was given is
-    // not a safe launcher, so this throws — and `mcp/cli.ts` turns the throw
+    // not a safe launcher, so this throws — and `providers/claude-mcp-cli.ts` turns the throw
     // into a refusal the user can read.
     const LF = String.fromCharCode(10);
     const NUL = String.fromCharCode(0);

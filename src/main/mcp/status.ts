@@ -1,6 +1,6 @@
 // The session's REAL MCP inventory, off the `mcp_status` control request (#729).
 //
-// WHAT THIS FIXES. `config.ts` reads three files and reaches three of the CLI's
+// WHAT THIS FIXES. `claude-mcp-config.ts` reads three files and reaches three of the CLI's
 // eight runtime scopes. The two blocs that dominate a real machine — claude.ai
 // account connectors and plugin-supplied servers — live in NO file, so nothing
 // on that path can ever see them: 3 servers shown against 16 the CLI actually
@@ -9,10 +9,10 @@
 //
 // ── IT ALSO RETIRES A TEXT PARSER ────────────────────────────────────────────
 //
-// `health.ts` exists because `claude mcp list --json` does not, so connection
+// `claude-mcp-health.ts` exists because `claude mcp list --json` does not, so connection
 // state had to be scraped out of prose and matched on glyphs (`✔`, `✘`, `⏸`).
 // `mcp_status` answers `status` as a STRING, per server, structured — so for a
-// live session that scraping is dead weight. `health.ts` stays for the SUSPENDED
+// live session that scraping is dead weight. `claude-mcp-health.ts` stays for the SUSPENDED
 // card, which has no control channel and no other source; see `merge.ts`.
 //
 // ── THE MEASUREMENT THAT SHAPES THE WHOLE FILE ───────────────────────────────
@@ -25,7 +25,7 @@
 // so `serverInfo` and `tools` are ABSENT FOR SECONDS on a fresh session, not
 // missing. Every field but `name` is therefore optional here, and their absence
 // is never read as a fault.
-import { redactUrl } from './config';
+import { redactUrl } from './redact-url';
 import type {
   McpRuntimeScope,
   McpRuntimeServer,
@@ -97,7 +97,7 @@ function statusOf(raw: unknown): McpRuntimeStatus {
  * How the session reaches this server — the field that decides whether the row
  * may offer sign-in (#734).
  *
- * ⚠️ **THIS IS NOT `config.ts`'s `transportOf`, AND THE DIFFERENCE IS THE BUG
+ * ⚠️ **THIS IS NOT `claude-mcp-config.ts`'s `transportOf`, AND THE DIFFERENCE IS THE BUG
  * THAT GOT THE FIELD DELETED.** That one reads a MISSING `type` as `stdio`,
  * correctly: it is parsing a config file the CLI wrote, and `claude mcp add
  * <name> -- <cmd>` with no `--transport` writes a stdio server, so `stdio` is

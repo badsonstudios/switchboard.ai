@@ -429,6 +429,42 @@ contract differs in three ways, each deliberate:
   outside `providers/` speaks `control_request`": the local-only
   `check:mcp-attach` harness, which asks the real CLI on purpose.
 
+- **Six surface capabilities: `usage`, `statusPage`, `preflight`, `labels`,
+  `mcpManager`, `commandFiles`** *(E40 item 05, #1288, 2026-10-16)* — the app's
+  chrome around a session stops assuming Claude. Claude's six live together in
+  `providers/claude-surfaces.ts`, and the real adapter and the e2e fake declare
+  the same object.
+  - `usage` prices the provider's own tokens in main. An unknown model gets no
+    price; there is no shared fallback table (§5.13).
+  - `statusPage` names a Statuspage host. The health dot polls the DEFAULT
+    provider's page; one with none is never polled and reads "no status page
+    for <AI>" (§5.14).
+  - `preflight` checks one provider. Every registered provider is checked, and
+    the top-level answer is the default provider's. A provider with no check is
+    "not checked", never "broken".
+  - `labels` is the contained one-shot that names a card. Only the card's OWN
+    AI labels it: no conversation is sent to another vendor's model to be
+    named.
+  - `mcpManager` is the MCP Manager's file reads and CLI writes. It is a
+    sibling of `mcp`, which stays the spawn-time bus wiring. Without it the
+    Manager says the AI has no MCP list, and every write is refused.
+  - `commandFiles` is the `/`-popup's disk scan. Without it the popup shows the
+    builtins only.
+
+  The Claude modules moved into `providers/` (`claude-mcp-config/-cli/-health`,
+  `claude-command-files`, `claude-pricing`, `claude-preflight`, and
+  `claude-cli-path`, which breaks an import cycle). `providers/per-ai-surfaces.test.ts`
+  fails if a surface module hard-codes Claude again. **Usage has one path per
+  provider.** A provider with `transcripts` is counted by the transcript ledger.
+  A provider without them reports a per-turn `usage` engine event (tokens,
+  model, plan-limit windows), which `usage/event-usage.ts` adds up. Claude's
+  translator therefore emits no `usage` event: `result.usage` lacks the
+  cache-write split, the thinking share and subagent files. The Manager's
+  live-session verbs (`mcp_status`, toggle, reconnect, auth) are #1287's
+  `controls.mcp`; an AI without them answers `unsupported`, which the Manager
+  now says as "this AI has no MCP list that switchboard can ask it for" rather
+  than "the session didn't answer".
+
 The host ASKS these — session creation has no branch on which provider it is
 talking to. An adapter that declares nothing spawns a PTY and nothing else: no
 settings written, no transcript watch, no resume attempted, nothing done to the
@@ -2107,13 +2143,33 @@ Surfaces in switchboard.ai:
 > §8 and `03-later-phases.md` both say to plan those three together rather than
 > shipping the rail bar alone.
 >
-> ⚠️ **One shipped behaviour still contradicts this section.**
+> ~~⚠️ **One shipped behaviour still contradicts this section.**
 > `renderer/src/lib/usage.ts`'s `estimateCostUsd` lives in the renderer's UI
 > layer and **defaults an unknown model to Sonnet rates** — it invents a number,
 > which the rule above forbids in as many words ("an unknown version must show
-> tokens with **no cost**"). Recorded in `03-later-phases.md` since 2026-07-29 as
-> a thing to fix when usage work is scheduled; recorded here because it is a
-> spec violation that is live in the app today, not a plan note.
+> tokens with **no cost**").~~ **Fixed by E40 item 05 (#1288, 2026-10-16;
+> AR-P2-12's code consequence).**
+>
+> - Pricing is now each provider's `usage` capability, in main. Claude's table
+>   is `main/providers/claude-pricing.ts`, unchanged rates, calibration test
+>   included.
+> - The renderer receives `estimateUsd` and only displays it. An absent figure
+>   means **no price**: the strip shows a dash, and the status-bar total is
+>   counted as short (`≥$X est`, or `no price`) rather than priced at another
+>   model's rate.
+> - An AI that reports usage per turn instead of in a transcript (Codex) shows
+>   its tokens through the same message. It can also carry plan-limit windows
+>   (percent used, reset time), which the status-bar tooltip lists.
+>
+> **Still open for E26, deliberately not done here:**
+> - an unknown numeric VERSION of a known family is still priced at the family
+>   rate, because refusing it needs a version table, and a missing row there
+>   would take the price off sessions that have one today;
+> - the table is code, not JSON data;
+> - cache writes are not split by TTL;
+> - Bedrock and Vertex ids are not normalised.
+>
+> E26 extends the capability rather than building a second engine.
 
 **Context fill: the meter under the prompt box (#715, 2026-10-09).** A second
 number, distinct from spend: how full a session's context window is, 0 to
@@ -2151,6 +2207,18 @@ and knows no model's window size. Rules:
 - **Local corroboration**: if multiple sessions concurrently hit API errors/overload
   responses, raise a "possible provider issue" banner even before the status page
   updates (status pages lag reality). Per-provider once adapters exist.
+
+> **As built, per AI (E40 item 05, #1288, 2026-10-16).**
+> - The page is the PROVIDER's: a `statusPage` capability names a Statuspage
+>   host. Claude's is the address above, in `providers/claude-surfaces.ts`.
+> - The dot follows the DEFAULT provider and asks it on every poll.
+> - An AI that publishes no page is never polled. Its dot is `unknown` with the
+>   reason `no-status-page`, and the tooltip reads "No public status page for
+>   <AI>". Local corroboration still works, since it never needed the page.
+> - The dev override (`SWITCHBOARD_STATUS_FEED`) still wins, so the e2e stubs
+>   are unchanged.
+> - Not done: the state words in `en.json` (`health.state.*`) still say
+>   "Anthropic", which is only true while the default AI is Claude.
 
 **Status bar** (bottom of main window): service health dot · plan-usage meter ·
 active sessions count · attention-queue count.

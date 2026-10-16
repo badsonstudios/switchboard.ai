@@ -43,7 +43,7 @@
 // run time. Its scope vocabulary in 2.1.245 is `local` · `user` · `project` ·
 // `enterprise` · `managed` · `builtin` · `dynamic` · `skills`, plus a separate
 // claude.ai connector class; `dynamic` covers `--mcp-config`, plugins, the IDE
-// bridge and chrome. `main/mcp/config.ts` reads three files and can therefore
+// bridge and chrome. `main/providers/claude-mcp-config.ts` reads three files and can therefore
 // reach three of those. The two blocs that dominate a real machine — account
 // connectors and plugin-contributed servers — live in NO file, so they are
 // missing BY CONSTRUCTION rather than by a bug in the merge.
@@ -395,7 +395,7 @@ export function failureMessage(
  * same problem.
  *
  * `refused` PASSES THE CLI'S OWN SENTENCE THROUGH, on the same reasoning
- * `mcp/cli.ts` and `claude-control-channel.ts` both record: it is the CLI's
+ * `providers/claude-mcp-cli.ts` and `claude-control-channel.ts` both record: it is the CLI's
  * explanation of its own refusal, and ours would be a guess at what it meant.
  *
  * Exported and pure, so the mapping is unit-tested rather than asserted through
@@ -424,6 +424,11 @@ export function controlFailure(
       return verdict.message || t('mcp.error.refused');
     case 'not-stream':
       return t('mcp.control.notStream');
+    // The session's AI has no live MCP controls (#1288, after #1287). Not a
+    // refusal of THIS request and not a broken connection: the AI simply has
+    // no such verb, and "we could not run that" would read as a fault.
+    case 'unsupported':
+      return t('mcp.control.unsupported');
     case 'session-gone':
       return t('mcp.reconnect.no-session');
     case 'timed-out':
@@ -1730,6 +1735,13 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
   const nothingToShow = runtime
     ? runtime.length === 0 && notLoaded.length === 0
     : servers.length === 0 && unreadable.length === 0;
+  /**
+   * This folder's AI keeps no MCP list we can read (#1288). Not "you have no
+   * servers" — a different sentence — and nothing to add, reset or reconnect,
+   * since main would refuse every one. Only on the CONFIG path: a session that
+   * answered with its own list has spoken for itself.
+   */
+  const unsupportedList = inventory?.unsupported === true && !runtime;
 
   return (
     <div
@@ -1860,8 +1872,11 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
                 where files are exactly what we did not read and no footer is
                 rendered to correct it. Review caught it. */}
             {nothingToShow && (
-              <p style={{ margin: 0, padding: '14px', fontSize: 11.5, color: 'var(--muted)' }}>
-                {t(runtime ? 'mcp.emptyRuntime' : 'mcp.empty')}
+              <p
+                {...(unsupportedList ? { 'data-mcp-unsupported': '' } : {})}
+                style={{ margin: 0, padding: '14px', fontSize: 11.5, color: 'var(--muted)' }}
+              >
+                {t(unsupportedList ? 'mcp.unsupported' : runtime ? 'mcp.emptyRuntime' : 'mcp.empty')}
               </p>
             )}
             {/* THE RUNTIME LIST WINS WHENEVER WE HAVE ONE (#729). It is a
@@ -1969,7 +1984,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
 
         {/* The action bar. Everything here acts on the SESSION or the folder;
             per-server actions live on their rows. */}
-        {props.folder && !formOpen && (
+        {props.folder && !formOpen && !unsupportedList && (
           <div
             style={{
               display: 'flex',
@@ -2055,7 +2070,10 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             caveat for a silent subset on exactly the cards least able to notice.
             The `reason` beneath it names WHICH of the three cases this is, which
             is the part #723 could not say at all. */}
-        {props.folder && !loading && !runtime && (
+        {/* Not for an AI with no MCP list (#1288): "only what its config files
+            say", and why the session could not be asked, are both sentences about
+            files and a control channel this AI does not have. */}
+        {props.folder && !loading && !runtime && !unsupportedList && (
           <div
             data-mcp-configured-only
             data-mcp-status-reason={status?.reason ?? undefined}
@@ -2077,17 +2095,21 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             CLI: `mcp_toggle` and `mcp_reconnect` are both real on the control
             protocol, measured 2026-08-29. That sentence is not repeated here.
             What remains true is that add and remove go through the real CLI, and
-            that a row this pane cannot mutate is one no config file declares. */}
-        <div
-          style={{
-            padding: '10px 14px',
-            borderBlockStart: '1px solid var(--border)',
-            fontSize: 10.5,
-            color: 'var(--muted)',
-          }}
-        >
-          {t('mcp.cliNote')}
-        </div>
+            that a row this pane cannot mutate is one no config file declares.
+            ...and none of it is true of an AI with no MCP list (#1288): there is
+            no CLI to run and no row to mutate, so the note is not drawn. */}
+        {!unsupportedList && (
+          <div
+            style={{
+              padding: '10px 14px',
+              borderBlockStart: '1px solid var(--border)',
+              fontSize: 10.5,
+              color: 'var(--muted)',
+            }}
+          >
+            {t('mcp.cliNote')}
+          </div>
+        )}
       </div>
     </div>
   );

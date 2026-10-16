@@ -95,12 +95,16 @@ import {
   shouldRelabel,
   type AiLabelState,
 } from './ai-label';
-// TYPE-ONLY, and deliberately so: the contained run is INJECTED (`runOneShot`
+// TYPE-ONLY, and deliberately so: the contained run is INJECTED (`labelerFor`
 // below) rather than imported and called. This file's tests drive every other
 // collaborator through `deps`, with no module mocking anywhere in the suite, and
 // a hard import here would have made the one path that spends the owner's
-// subscription the one path no test could reach.
-import type { OneShotRequest, OneShotResult } from '../providers/claude-oneshot';
+// subscription the one path no test could reach. The shapes are the
+// provider-neutral ones the `labels` capability declares (#1288).
+import type { OneShotRequest, OneShotResult } from '../extensibility/contributions';
+import { priceUsage } from '../usage/price';
+import { EventUsageLedger } from '../usage/event-usage';
+import type { UsageReport } from '../../shared/usage-report';
 import { renderBlock } from './transcript-blocks';
 // #877: the size vocabulary, shared so main's guard and the dialog's options
 // cannot drift apart.
@@ -184,18 +188,25 @@ export interface SessionIpcDeps {
   taskLabelSize?: () => TaskLabelSize;
   setTaskLabelSize?: (size: TaskLabelSize) => void;
   /**
-   * Run one CONTAINED `claude -p` and hand back what it said (#758).
+   * The contained one-shot that names a card on `providerId`, or `undefined`
+   * when that AI offers none (#758; per provider since #1288).
    *
    * Injected for two reasons. The obvious one is testability — see the
    * type-only import above. The other is that containment is a PROVIDER
-   * concern: `providers/claude-oneshot.ts` owns which flags make a turn
-   * harmless (measured in `spike/findings/758-label-containment.md`), and this
-   * module has no business assembling an argv.
+   * concern: the `labels` capability owns which flags make a turn harmless
+   * (Claude's: `providers/claude-oneshot.ts`, measured in
+   * `spike/findings/758-label-containment.md`), and this module has no
+   * business assembling an argv.
    *
-   * Absent = no AI labels, silently. A wiring that cannot run one-shots is not
-   * broken; it is a wiring where this feature does not exist.
+   * THE CARD'S OWN AI, NEVER ANOTHER ONE. A card on an AI with no labeler gets
+   * no AI label — its conversation is not sent to a different company's model
+   * to be named. The instant label and the AI's own title still apply.
+   *
+   * Absent, or answering `undefined` = no AI labels, silently. A wiring that
+   * cannot run one-shots is not broken; it is a wiring where this feature does
+   * not exist.
    */
-  runOneShot?: (req: OneShotRequest) => Promise<OneShotResult>;
+  labelerFor?: (providerId: string) => ((req: OneShotRequest) => Promise<OneShotResult>) | undefined;
   /**
    * §5.5 Level 3 — fork adoption, experimental and OFF by default (P2-E11-12).
    *
@@ -810,13 +821,39 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     clearAutoLabel(cardId, 'the conversation was cleared or rebound');
   };
 
+  /**
+   * The labeler for the AI this live session runs on — the LIVE record's
+   * provider, which is what the session actually started on, falling back to
+   * the card's. `undefined` (no AI labels for it) when that AI offers none, or
+   * when asking threw: a broken capability costs the label, nothing else.
+   */
+  const labelerOf = (
+    liveId: string,
+    card: PersistedSession
+  ): ((req: OneShotRequest) => Promise<OneShotResult>) | undefined => {
+    if (!deps.labelerFor) return undefined;
+    const providerId = manager.get(liveId)?.identity.providerId || card.identity.providerId;
+    try {
+      return deps.labelerFor(providerId);
+    } catch (err) {
+      log.warn('ai label skipped: could not ask the provider for a labeler', {
+        providerId,
+        error: errorText(err),
+      });
+      return undefined;
+    }
+  };
+
   const maybeAiLabel = (liveId: string): void => {
-    const runOneShot = deps.runOneShot;
-    if (!runOneShot) return; // a wiring without one simply has no AI labels
+    if (!deps.labelerFor) return; // a wiring without one simply has no AI labels
     const cardId = cardOfLive.get(liveId);
     if (!cardId) return;
     const card = deps.persist.list().find((s) => s.id === cardId);
     if (!card) return;
+    // Asked BEFORE any throttle state is touched, so an AI with no labeler
+    // never looks to `shouldRelabel` like a run that is out or just happened.
+    const runOneShot = labelerOf(liveId, card);
+    if (!runOneShot) return;
 
     const snap = transcripts.snapshot(liveId);
     const state = aiLabelState.get(cardId) ?? {};
@@ -866,7 +903,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     const startedLines = snap?.lines ?? 0;
     aiLabelState.set(cardId, { lastRunAt: Date.now(), lastLines: startedLines, inFlight: true });
 
-    void runOneShot({ prompt: buildLabelPrompt(excerpt), cwd: card.identity.folder })
+    // A provider's labeler promises never to reject; one that THROWS instead
+    // (#1288: it is contributor code now, not one known function) is read as a
+    // run that failed to start, so the `.finally` below still clears the
+    // in-flight latch and the status listener this runs inside is untouched.
+    let run: Promise<OneShotResult>;
+    try {
+      run = runOneShot({ prompt: buildLabelPrompt(excerpt), cwd: card.identity.folder });
+    } catch (err) {
+      run = Promise.resolve({ ok: false, failure: 'spawn-failed', ms: 0, detail: errorText(err) });
+    }
+    void run
       .then((res) => {
         // Re-read the card: the whole point of `acceptAiLabel` is that it may
         // have become the user's while we were waiting.
@@ -998,8 +1045,85 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // per-turn firehose despite `system:init` arriving every turn.
   streamModel?.onChange((sessionId, model) => send('sessions:model', { sessionId, model }));
   deps.streamMode?.onChange((sessionId, mode) => send('sessions:mode', { sessionId, mode }));
+
+  // ── Usage, per AI (#1288) ─────────────────────────────────────────────────
+  //
+  // Which AI a live session is on, asked of the LIVE record: that is the
+  // provider it actually started on. `undefined` for a session we no longer
+  // know, and for a lookup that threw — both read as "declares nothing".
+  const capsOfLive = (liveId: string): ProviderCapabilities | undefined => {
+    const providerId = manager.get(liveId)?.identity.providerId;
+    if (!providerId) return undefined;
+    return safeCapabilities(providerId);
+  };
+  /** `capabilitiesOf`, fail-open and said out loud. */
+  function safeCapabilities(providerId: string): ProviderCapabilities | undefined {
+    try {
+      return deps.capabilitiesOf(providerId);
+    } catch (err) {
+      log.warn('usage: could not ask the provider what it declares; showing no price', {
+        providerId,
+        error: errorText(err),
+      });
+      return undefined;
+    }
+  }
+  const priceOfLive = (
+    liveId: string,
+    usage: UsageReport['usage'],
+    model: string | undefined
+  ): number | undefined =>
+    priceUsage(capsOfLive(liveId), usage, model, (msg, meta) =>
+      log.warn(msg, { sessionId: liveId, ...meta })
+    );
+  /**
+   * The cards' persisted totals, priced the same way, for the two replies that
+   * hand a card its stored usage (`priorUsage`). Priced by the CARD's provider:
+   * there is no live session to ask yet.
+   */
+  const priceOfCard = (card: PersistedSession | undefined): number | undefined => {
+    if (!card?.usage) return undefined;
+    return priceUsage(safeCapabilities(card.identity.providerId), card.usage, card.model, (msg, meta) =>
+      log.warn(msg, { cardId: card.id, ...meta })
+    );
+  };
+  // An AI that reports usage per turn instead of writing a transcript we read
+  // (the `usage` engine event). ONE PATH PER PROVIDER: a provider that declares
+  // `transcripts` is counted by the transcript ledger above, so its usage
+  // events, if any, are not added a second time here.
+  const eventUsage = new EventUsageLedger();
+  // A session that has EXITED keeps its last total; a frame still draining
+  // after the exit must not start a fresh count from zero and push a smaller
+  // number over the real one (found in review). Ids are never reused.
+  const usageEnded = new Set<string>();
+  manager.onEngineEvent((sessionId, ev) => {
+    if (ev.type !== 'usage' || usageEnded.has(sessionId)) return;
+    const caps = capsOfLive(sessionId);
+    if (caps?.transcripts) return;
+    const totals = eventUsage.absorb(sessionId, ev);
+    const estimateUsd = priceUsage(caps, totals.usage, totals.model, (msg, meta) =>
+      log.warn(msg, { sessionId, ...meta })
+    );
+    const report: UsageReport = {
+      sessionId,
+      usage: totals.usage,
+      ...(totals.model ? { model: totals.model } : {}),
+      ...(estimateUsd !== undefined ? { estimateUsd } : {}),
+      ...(totals.limits ? { limits: totals.limits } : {}),
+    };
+    send('sessions:usage', report);
+  });
+  manager.onSessionExit((e) => {
+    usageEnded.add(e.sessionId);
+    eventUsage.forget(e.sessionId);
+  });
+
   transcripts.onUpdate((snap) => {
-    send('sessions:usage', snap);
+    // THE PRICE IS THE PROVIDER'S, worked out here and handed over (#1288). The
+    // renderer used to price every session off one table and charge an unknown
+    // model at Sonnet's rate; `estimateUsd` absent now means "no price".
+    const estimateUsd = priceOfLive(snap.sessionId, snap.usage, snap.model);
+    send('sessions:usage', estimateUsd === undefined ? snap : { ...snap, estimateUsd });
     // A snapshot that has ingested nothing has nothing to SAY about usage, and
     // since P2-E15-10 these fire on binding transitions too — including the
     // zeroed snapshot a /clear or a corrected mis-bind installs before the
@@ -1878,6 +2002,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           priorUsage: prior?.usage,
           priorModel: prior?.model,
           priorCliCost: prior?.cliCost,
+          priorEstimateUsd: priceOfCard(prior),
           autonomy: prior?.autonomy ?? running.autonomy,
           taskLabel: prior && visibleTaskLabel(prior, deps.autoLabels()),
         };
@@ -2598,6 +2723,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         priorUsage: prior?.usage,
         priorModel: prior?.model,
         priorCliCost: prior?.cliCost,
+        priorEstimateUsd: priceOfCard(prior),
         autonomy,
         taskLabel: shown && visibleTaskLabel(shown, deps.autoLabels()),
       };

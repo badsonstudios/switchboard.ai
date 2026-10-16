@@ -5,7 +5,7 @@
 //
 // Because there were two answers to one question, and the difference was a
 // silent bug. `sessions/trust.ts` normalised separators and stopped;
-// `mcp/config.ts` normalised separators AND folded case on win32. Same file,
+// `providers/claude-mcp-config.ts` normalised separators AND folded case on win32. Same file,
 // same map, two keying rules — so auto-trust wrote `hasTrustDialogAccepted`
 // under `c:/Projects/Foo` while the CLI read `C:/Projects/Foo`, and the feature
 // was off while every layer reported success.
@@ -35,7 +35,7 @@
 //   • On macOS, a case-variant key is not matched, so #724's phantom-entry bug
 //     is still reachable there. Known, unfixed, and worth its own ticket — the
 //     shipping target is Windows and widening the fold would also change what
-//     `mcp/config.ts` merges, which is a bigger decision than this item.
+//     `providers/claude-mcp-config.ts` merges, which is a bigger decision than this item.
 //   • `projectKey` rewrites `\` to `/` unconditionally, which on POSIX folds a
 //     legal filename (`/home/dan/a\b`) into a path (`/home/dan/a/b`). Harmless
 //     in practice — the CLI keys projects with forward slashes — but it means
@@ -83,7 +83,7 @@ export function projectKey(folder: string): string {
  * other scope as empty, which reads on screen as "you have no local servers"
  * rather than as the ambiguity it is.
  *
- * Moved here from `mcp/config.ts` (#724). It was never really an MCP concern —
+ * Moved here from `mcp/config.ts`, now `providers/claude-mcp-config.ts` (#724). It was never really an MCP concern —
  * `main/index.ts` already imported it to gate session folders, which has nothing
  * to do with MCP — and leaving it there is what let the trust path grow a second
  * rule instead of importing this one.
@@ -119,7 +119,7 @@ export interface ResolvedProjectKeys {
  *  plain object. Without this, an ARRAY `projects` passes the type check,
  *  `Object.keys` yields indices, and the caller's write lands on a property
  *  `JSON.stringify` drops — a silent no-op that still reports success, which is
- *  the exact failure mode #724 is about. Same guard `mcp/config.ts` uses. */
+ *  the exact failure mode #724 is about. Same guard `providers/claude-mcp-config.ts` uses. */
 export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }

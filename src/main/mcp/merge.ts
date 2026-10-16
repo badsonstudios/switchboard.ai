@@ -44,7 +44,7 @@
 // asserted as not-file-backed. The module's own failure direction settles it: a
 // missing button, never a button that deletes the wrong thing.
 //
-// `config.ts` deliberately does not deduplicate across scopes, and showing that
+// `claude-mcp-config.ts` deliberately does not deduplicate across scopes, and showing that
 // collision is what the manager is FOR — which is the other reason a name-only
 // match was never safe here.
 import type { McpRuntimeServer, McpServerWire } from '../../shared/mcp';
@@ -64,7 +64,7 @@ export function matchConfig(
   // sixteen-server machine this exists for.
   const exact = new Map<string, McpServerWire>();
   for (const c of configured) {
-    // FIRST WINS on a duplicate `scope:name`. `config.ts` can legitimately
+    // FIRST WINS on a duplicate `scope:name`. `claude-mcp-config.ts` can legitimately
     // produce one (the case-variant `projects` keys #724 is about), and either
     // entry is an equally true answer to "can this be removed" — what must not
     // happen is the pairing changing between renders.
@@ -106,7 +106,7 @@ export function enrichRuntime(
       headerKeys: c.headerKeys,
       // APPROVAL COMES FROM THE FILE AND ONLY THE FILE. `mcp_status` has no
       // field for it — it is derived from two LISTS on the project entry
-      // (`enabledMcpjsonServers` / `disabledMcpjsonServers`) that `config.ts`
+      // (`enabledMcpjsonServers` / `disabledMcpjsonServers`) that `claude-mcp-config.ts`
       // reads. Without carrying it across, "waiting for your approval" would
       // stop rendering on the path most sessions are on, and an unapproved
       // `.mcp.json` server would report "not connected" — the symptom instead

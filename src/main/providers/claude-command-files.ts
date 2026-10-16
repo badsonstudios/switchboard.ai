@@ -1,3 +1,7 @@
+// Claude's command and skill FILES (#1288: the `commandFiles` capability, moved
+// here from `main/capabilities/slash-commands.ts` — `.claude/` is Claude's, so an
+// AI without the capability never has it scanned on its behalf).
+//
 // Slash-command discovery (P2-E10-07, §5.17/§5.19 seed): what can the user
 // type after '/' in this session? Merges the provider's builtin catalog with
 // the project's and user's own commands and skills — plain files under
@@ -12,8 +16,10 @@
 // shows up immediately.
 import { errorText } from '../../shared/error-text';
 import { promises as fsp } from 'fs';
+import os from 'os';
 import path from 'path';
 import { mergeCommands, SlashCommand, SlashCommandSource } from '../../shared/slash-commands';
+import type { CommandFilesCapability } from '../extensibility/contributions';
 
 const MAX_COMMAND_DEPTH = 3; // subdirs namespace commands: sub/cmd.md -> /sub:cmd
 const FRONTMATTER_BYTES = 4096; // descriptions live in the first few lines
@@ -52,6 +58,18 @@ export async function scanSlashCommands(
   ]);
   return mergeCommands(builtins, ...scanned);
 }
+
+/**
+ * The `commandFiles` capability (#1288): Claude's commands and skills live
+ * under `.claude/` in the project and in the user's home. Builtins are not
+ * this capability's business — the host merges them in — so none are passed.
+ * `mergeCommands` ranks by source and keeps the first of a tie, so merging the
+ * builtins in afterwards picks the same winner as merging them in here.
+ */
+export const claudeCommandFiles: CommandFilesCapability = {
+  scan: (folder, log) =>
+    scanSlashCommands({ cwd: folder, userClaudeDir: path.join(os.homedir(), '.claude') }, [], log),
+};
 
 /** `<dir>/**\/*.md` -> one command per file; subdirectories namespace with ':'. */
 async function scanCommandsDir(
