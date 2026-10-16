@@ -22,25 +22,45 @@
 > and are listed under "Owner's queue" below; the run never merges them.
 >
 > **Active workers (issue → worktree → branch):**
-> - #1289 ACP engine + fake ACP agent → `sb-wt-1` → `feature/1289-acp-engine` — dispatched 2026-10-16, branched from #1304's rebased head `d9d0ab16`
-> - #1288 per-AI surfaces → `sb-wt-2` → `feature/1288-per-ai-surfaces` — dispatched 2026-10-16 from `e12f2b50`; told to rebase onto main and warned of #1287's file moves
+> - #1289 ACP engine + fake ACP agent → `sb-wt-1` → `feature/1289-acp-engine` — dispatched 2026-10-16 from `d9d0ab16` (= #1304's content); told #1304 merged, rebases onto `e4b3e270`
+> - #1288 per-AI surfaces → `sb-wt-2` → `feature/1288-per-ai-surfaces` → **PR #1305, done 2026-10-16, now REBASING onto `e4b3e270`** (its collision map predicted conflicts with #1287's moves; also adding the MCP Manager dialog's `unsupported` wording it had deferred). Merges on green after the rebase.
+> - `sb-wt-3`: `npm ci` running, ready for #1290 + #1291 when #1289 lands.
 >
-> **In CI, awaiting merge:** **#1304** (#1287, seam 2: `ProviderCapabilities.controls`,
-> `SessionControls` whose present members ARE the declaration; a missing
-> control answers `unsupported` "Not available with <AI>."; the renderer
-> asks `sessions:controls` and greys out mode, model, Compact, Clear, Stop
-> and the card menu's Clear/Compact; `shared/stream-protocol.ts` is now
-> `providers/claude-protocol.ts`, the grep allowlist is EMPTY; unit 12,331,
-> e2e 511 + 1 colour-serialisation flake that passed alone; e2e comments
-> only). Rebased onto main by the orchestrator (content identical). Internal;
-> merges on green. **#1288 will conflict with its moves** (`stream-protocol`,
-> `effort`, `context-usage`): rebase #1288 after #1304 lands.
+> **#1288 is classified INTERNAL for this run, deliberately.** The skill's
+> rule would call it user-facing (it wrote a manual paragraph and a dogfood
+> row), but the owner's dispatch instructions named #1286/#1287/#1288 "seam
+> items… refactors with NO visible change", and the one visible change is the
+> done-when he filed: an unknown model no longer shows an invented
+> Sonnet-rate price. The status bar now reads `~$X est` as before, `≥$X est`
+> when some sessions have no price, and `no price` when none do. Nothing
+> changes for a Claude-only user on known models. His lever is "revert that".
+> Two decisions it made, for him to confirm or reverse: (a) only a card's own
+> AI writes its AI label (one AI's conversation is never sent to another
+> company's model just to name a card); (b) Claude no longer sends per-turn
+> usage events (its transcript count is the one source), so per-turn usage is
+> for AIs without a transcript.
 >
 > **Waiting on dependencies:** #1291 (after #1289) · #1292 + #1293 (after
-> #1291) · #1290 (after #1289) · #1294 (after #1287 + #1290 + #1293) · #1295
+> #1291) · #1290 (after #1289) · #1294 (after #1290 + #1293) · #1295
 > (after #1294) · #1296 (after #1290).
 >
 > **Merged this run:**
+> - **#1287 seam 2 → PR #1304 (`e4b3e270`), 2026-10-16.**
+>   `ProviderCapabilities.controls` builds a session's `SessionControls`,
+>   whose present members ARE the declaration (approvals, interrupt, models,
+>   effort, contextUsage, modes with optional live `set`, slashCommands
+>   marker, the live `mcp.*` verbs). A missing control answers
+>   `unsupported` "Not available with <AI>." and never throws. The renderer
+>   asks `sessions:controls` and greys out the mode chip, model chip,
+>   Compact, Clear, Stop and the card menu's Clear/Compact (tested with a
+>   reduced-set fake AI). `shared/stream-protocol.ts` is now
+>   `providers/claude-protocol.ts`; the Claude halves of `effort` and
+>   `context-usage` moved under `providers/`; `SessionManager.onStreamMessage`
+>   is deleted; the grep allowlist is EMPTY (one documented exception: the
+>   local-only `check:mcp-attach` harness). Unit 12,331; e2e 511 + 1
+>   colour-serialisation flake that passed alone; e2e comments only. Accepted
+>   theoretical regression, recorded: a translator throw on a permission
+>   frame would hide the request from the router (no such path exists).
 > - **#1286 seam 1 → PR #1302 (`5fa32d7c`), 2026-10-16.** 14 neutral event
 >   types in `src/main/sessions/engine-events.ts`; the Claude translator
 >   `providers/claude-events.ts` behind a new optional `events` capability,
