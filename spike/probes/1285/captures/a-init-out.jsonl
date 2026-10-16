@@ -1,0 +1,13 @@
+{"t":1,"dir":"note","text":"spawn","extra":{"file":"cmd.exe","argv":["/c","C:\\Program Files\\nodejs\\npx.cmd","-y","@agentclientprotocol/codex-acp@2.2.2"],"cwd":"C:\\Projects\\sb-wt-2\\spike\\probes\\1285\\sandbox","envOverrides":{"CODEX_HOME":"C:\\Users\\dheinz\\AppData\\Local\\Temp\\codex-home-empty-zX36zz"}}}
+{"t":346,"dir":"note","text":"processes at start","extra":{"codex":[]}}
+{"t":346,"dir":"out","frame":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{"fs":{"readTextFile":false,"writeTextFile":false},"terminal":false},"clientInfo":{"name":"switchboard-probe-1285","version":"0.0.0"}}}}
+{"t":1112,"dir":"note","text":"first-stdout","extra":{"t":1112,"bytes":"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":1,\"agentInfo\":{\"name\":\"@agentclientprotocol/codex-acp\",\"title\":\"Code"}}
+{"t":1112,"dir":"in","frame":{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentInfo":{"name":"@agentclientprotocol/codex-acp","title":"Codex","version":"2.2.2"},"agentCapabilities":{"auth":{"logout":{}},"providers":{},"loadSession":true,"promptCapabilities":{"embeddedContext":true,"image":true},"sessionCapabilities":{"resume":{},"list":{},"close":{},"delete":{},"fork":{},"additionalDirectories":{},"subagents":{}},"mcpCapabilities":{"acp":false,"http":true,"sse":false},"_meta":{"authStatus":{}}},"authMethods":[{"id":"api-key","name":"API Key","description":"Use an API key to authenticate","_meta":{"api-key":{"provider":"openai"}}},{"id":"chat-gpt","name":"ChatGPT","description":"Use ChatGPT to authenticate"}],"_meta":{"steering":{"supported":true}}}}}
+{"t":1112,"dir":"note","text":"initialize ms","extra":{"ms":766}}
+{"t":1113,"dir":"out","frame":{"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"C:\\Projects\\sb-wt-2\\spike\\probes\\1285\\sandbox","mcpServers":[]}}}
+{"t":1118,"dir":"in","frame":{"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"Authentication required"}}}
+{"t":1445,"dir":"note","text":"processes before close","extra":{"codex":["\"codex.exe\",\"49096\",\"Console\",\"1\",\"43,840 K\""]}}
+{"t":1445,"dir":"in","frame":{"jsonrpc":"2.0","method":"_auth/status_update","params":{"authStatus":{"kind":"none","label":"Not logged in"}}}}
+{"t":3483,"dir":"note","text":"exit","extra":{"code":0,"sig":null}}
+{"t":3483,"dir":"note","text":"exited on stdin EOF","extra":{"code":0,"sig":null}}
+{"t":3982,"dir":"note","text":"processes after close","extra":{"codex":[]}}
