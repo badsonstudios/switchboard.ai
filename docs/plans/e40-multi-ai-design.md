@@ -103,6 +103,11 @@ does not replace it.
 | `compaction` | `system:compact_boundary` | none in ACP's spec (item 02 measures Codex) |
 | `usage` | **none** since item 05: Claude's usage is its transcript ledger | Codex: the `session/prompt` result's `usage` (measured, item 02 Q6) |
 
+*(The ACP column was a proposal; item 06 made it real, and §4 "As built, item
+06" has the table as built. Where they differ: the user's own prompt is a
+`message` the provider loops back, `tool-call-start` is not used, and
+`usage` comes from the `session/prompt` result.)*
+
 Turn START is not an event: Claude announces none, and an ACP turn begins with
 our own `session/prompt`, so the host's existing `prompt-sent` is it. Mode and
 command updates are controls-shaped and are item 04's. Left on the raw frame
@@ -234,6 +239,83 @@ The protocol surface, from the spec:
 **What is measured versus assumed:** everything in this section came from the
 ACP site, the registry JSON and OpenAI's app-server docs. Nothing has been run
 against a real Codex yet; item 02 exists for that.
+
+**As built, item 06 (#1289, 2026-10-16).** The engine is
+`src/main/providers/acp/`: `acp-protocol.ts` (JSON-RPC frames and readers),
+`acp-session.ts` (one session: handshake, correlation, controls, lifecycle),
+`acp-events.ts` (`session/update` -> neutral events) and `acp-provider.ts`
+(`createAcpProvider({id, displayName, command, args?, env?, modeMap?,
+authMethodId?, version?, clientVersion?})`, which #1290 and #1291 register
+instances of). It is NOT a transport: `StreamService` already spawns through
+`launchSpec` (`cmd.exe /c <absolute .cmd>`, the shape item 02 measured working),
+frames NDJSON, skips a line that is not JSON, and reports a dead child to the
+manager, which ends the session as it ends a dead Claude CLI. The engine is a
+translator and a set of controls over it. Two optional seam members made that
+possible, both unused by Claude: `createTranslator(hooks, {id})` pairs one
+session's translator with its controls, and `ControlSession.loopback(frame)`
+lets a provider put a frame of its own making through the pump (ACP does not
+echo the user's prompt, and a cancel must withdraw held permission requests).
+A looped-back frame is recognised by identity, so an agent cannot forge one.
+
+The handshake: `initialize` (no `fs`, `terminal: false`) -> `session/load` when
+resuming and the agent says `loadSession`, else `session/new`, both with `cwd`
+and the Session Bus in `mcpServers` -> on -32000, `authenticate` with the
+provider's `authMethodId` once, then `session/new` again (no method named: the
+error is shown; `authenticate` is unmeasured) -> a failed load falls back to
+`session/new` -> model, effort and mode are re-applied (load resets them,
+item 02 Q5) -> ready. Prompts sent earlier queue; one prompt is in flight at a
+time. Model and effort are remembered per conversation **in memory**, so an app
+restart loses them and the agent's defaults stand; the mode comes from the
+card's autonomy through `modeMap`.
+
+The real mapping (it replaces the item 03 proposal above where they differ):
+
+| ACP | Neutral event |
+|---|---|
+| `agent_message_chunk` / `agent_thought_chunk` | `message-start`, `chunk-open`, `chunk`… One SEGMENT per run of one kind (and one `messageId`). ACP sends no authoritative message, so the segment's close sends `chunk-close`, `message-end` and a `message` carrying the whole text, which claims the streamed block |
+| `user_message_chunk` (load replay only) | `message {role:user}` |
+| our own `session/prompt` | `message {role:user}`, by loopback |
+| `tool_call` | `message-start` + `message` carrying a tool block (`toolCallId` = `toolUseId`; `kind` -> category: execute=shell, edit/delete/move=edit, read/search/fetch=read). Terminal content is ignored |
+| `tool_call_update` at `completed` / `failed` | `message` carrying the result: content text, a line per diff, `Exit code N` from `_meta.terminal_exit`, else `rawOutput`; `failed` from the status. Earlier updates draw nothing |
+| `plan` | a todos block |
+| `available_commands_update` | `commands` |
+| `current_mode_update`, `config_option_update`, a `set_*` reply, `session/new` / `load` | `mode` (through `modeMap`; an unmapped mode sends nothing) and `model` |
+| `usage_update` | no event: the context meter's answer |
+| `session_info_update` | understood, silent; Codex's `waitingOnApproval` is NOT used |
+| `session/new` / `session/load` result | `conversation {id}` |
+| `session/prompt` result | `turn-end {failed:false, label:"acp:<stopReason>"}` + `usage`; held permissions are withdrawn. `cancelled` is not a failure |
+| a `session/prompt` error | a visible "<AI> reported an error: …" block + `turn-end {failed:true}` |
+| `session/request_permission` | `permission-request {requestId: String(id), tool: title, input: rawInput}` |
+| `activity` | every `session/update` that produced events while a prompt is in flight; never during a load replay |
+
+Permissions are answered by KIND with the option's `optionId`: allow ->
+`allow_once` (never `allow_always`; no `allow_once` offered fails the answer);
+deny -> `reject_once`, else `reject_always`, else the `cancelled` outcome. Stop
+sends `session/cancel` and answers every held request `cancelled`.
+
+**Fail-open, as built.** A frame that is not JSON-RPC, an unknown update
+variant, an unknown notification (`_auth/status_update` included) and an
+unknown agent request are each reported ONCE per type per session (the
+translator's `onUnknown`, logged at info) and skipped; an unknown request is
+answered -32601 (`fs/*` and `terminal/*` too). A session that cannot be opened
+says why on screen, settles any queued turn as failed and refuses further
+prompts. No promise the controls hand out rejects; a control waits up to 20 s
+for the session to open and 30 s for a reply.
+
+**Declared controls** (`controlsOf`): `approvals`, `interrupt`, `models`,
+`effort`, `contextUsage`, `modes`, `slashCommands`. **No `mcp`.** `modes.set` is
+live only when the provider gives a `modeMap`; `sessions:setAutonomy` now also
+calls it on the card's live session (a no-op for Claude). Attachments: images
+when the agent says `promptCapabilities.image`, text files as text blocks; a PDF
+(or an image the agent cannot take) refuses the prompt rather than dropping it.
+
+**The fake** (`fake-acp-agent.ts`, run as `out/main/fake-acp-cli.js`; provider
+`fake-acp`, "Fake ACP"; registered first when `SWITCHBOARD_FAKE_PROVIDER=acp`):
+frames shaped on the Codex captures, `configOptions` for model, effort and mode,
+`session/load` replaying history from `<home>/.fake-acp/`, and the directives
+`!think`, `!tool`, `!edit`, `!ask`, `!cancel-slow`, `!error`, `!unknown`, `!plan`,
+`!mode`, `!state`, `!mcp`, `!fs`. `FAKE_ACP_REQUIRE_AUTH=1` requires
+`authenticate`.
 
 ---
 

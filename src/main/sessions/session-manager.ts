@@ -549,7 +549,14 @@ export class SessionManager {
     // what the host can do to this session, and which of those it has. Built
     // AFTER the handle is in the map, because the session they write to is
     // `sendToTransport`, which reads it.
-    const controls = this.controlsFor(id, adapter.capabilities?.controls, !!proc.onMessage);
+    // The frame pump, named so a provider's `loopback` can reach it (E40 item
+    // 06, #1289): a frame of the provider's own making goes through exactly the
+    // path an engine frame does. Undefined for a byte-only handle and after the
+    // session is gone, when a loopback is a no-op.
+    let pump: ((m: Record<string, unknown>) => void) | undefined;
+    const controls = this.controlsFor(id, adapter.capabilities?.controls, !!proc.onMessage, (frame) => {
+      if (this.handles.has(id)) pump?.(frame);
+    });
     if (controls) this.sessionControls.set(id, { controls, ai: adapter.manifest.displayName });
 
     // Stream mode's lifecycle wiring (P2-E18-05). Two things happen here that
@@ -592,7 +599,7 @@ export class SessionManager {
       // ONLY those; the raw frame goes on to the provider's OWN controls
       // (#1287), which correlate their replies, and to nothing else.
       const translate = this.translatorFor(id, adapter.capabilities?.events);
-      proc.onMessage((m) => {
+      pump = (m) => {
         const events = this.translateFrame(id, translate, m);
         for (const ev of events) {
           // `conversation_reset` — the CLI saying, in as many words, that it
@@ -721,7 +728,8 @@ export class SessionManager {
             }
           }
         }
-      });
+      };
+      proc.onMessage(pump);
     }
     proc.onExit((code) => {
       record.exitCode = code;
@@ -930,11 +938,14 @@ export class SessionManager {
       return undefined;
     }
     try {
-      return events.createTranslator({
-        onUnknown: (frameType) =>
-          this.log.info('stream frame type not understood: skipped', { sessionId: id, frameType }),
-        onSkipped: (what, fields) => this.log.debug(what, { sessionId: id, ...fields }),
-      });
+      return events.createTranslator(
+        {
+          onUnknown: (frameType) =>
+            this.log.info('stream frame type not understood: skipped', { sessionId: id, frameType }),
+          onSkipped: (what, fields) => this.log.debug(what, { sessionId: id, ...fields }),
+        },
+        { id }
+      );
     } catch (err) {
       this.log.error('event translator could not be created', { sessionId: id, error: errorText(err) });
       return undefined;
@@ -966,7 +977,8 @@ export class SessionManager {
   private controlsFor(
     id: string,
     cap: ControlCapability | undefined,
-    typed: boolean
+    typed: boolean,
+    loopback: (frame: Record<string, unknown>) => void
   ): SessionControls | undefined {
     if (!cap) {
       // Said only for a handle that carries typed messages, as the translator's
@@ -975,7 +987,7 @@ export class SessionManager {
       return undefined;
     }
     try {
-      return cap.createControls({ id, send: (frame) => this.sendToTransport(id, frame) });
+      return cap.createControls({ id, send: (frame) => this.sendToTransport(id, frame), loopback });
     } catch (err) {
       this.log.error('session controls could not be created', { sessionId: id, error: errorText(err) });
       return undefined;
@@ -1021,6 +1033,22 @@ export class SessionManager {
     }
     if (sent) this.log.info('interrupt requested', { sessionId: id });
     return sent;
+  }
+
+  /**
+   * Switch this live session's mode NOW, when its AI has a live switch (E40
+   * item 06, #1289: ACP `session/set_mode`). Claude's `modes` declares no
+   * `set` — its mode is `--permission-mode`, applied at the next start — so
+   * for a Claude session this answers `unsupported` and does nothing, which is
+   * exactly what the mode chip did before. Never throws.
+   */
+  async setMode(id: string, mode: AutonomyMode): Promise<ControlVerdict> {
+    const verdict = await this.ask(id, 'modes', (c) => c.modes?.set?.(mode));
+    if (verdict.ok) this.log.info('mode switched live', { sessionId: id, mode });
+    else if (verdict.reason !== 'unsupported') {
+      this.log.info('live mode switch refused', { sessionId: id, mode, reason: verdict.reason });
+    }
+    return verdict;
   }
 
   /**

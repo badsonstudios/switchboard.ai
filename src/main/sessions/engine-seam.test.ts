@@ -655,6 +655,50 @@ describe('the grep: the control path speaks no provider wire (#1287)', () => {
   });
 });
 
+/**
+ * The ACP engine's WIRE MODULES (E40 item 06, #1289) — the same discipline as
+ * Claude's. Only `src/main/providers/` may import them; `bootstrap.ts` imports
+ * the fake ACP ADAPTER (`acp/fake-acp`), which is the registration and not the
+ * wire, so it is not on this list.
+ */
+const ACP_WIRE_MODULES = /(^|\/)(acp\/)?(acp-protocol|acp-events|acp-session|fake-acp-agent)$/;
+/** ACP's wire vocabulary, in code. */
+const ACP_WIRE = [
+  'session/request_permission',
+  'session/prompt',
+  'session/update',
+  'session/set_config_option',
+  'sessionUpdate',
+  'agent_message_chunk',
+  'tool_call_update',
+];
+
+function acpWireHits(src: string): string[] {
+  const code = stripComments(src);
+  return ACP_WIRE.filter((w) => code.includes(w));
+}
+
+describe('the grep: nothing outside the providers speaks ACP (#1289)', () => {
+  it('the detector itself can fail', () => {
+    expect(acpWireHits("if (u.sessionUpdate === 'agent_message_chunk') return;")).toEqual(['sessionUpdate', 'agent_message_chunk']);
+    expect(acpWireHits('// a `session/update` notification\nconst ok = 1;')).toEqual([]);
+    expect(importSpecifiers("import { a } from '../providers/acp/acp-protocol';").some((s) => ACP_WIRE_MODULES.test(s))).toBe(true);
+    expect(importSpecifiers("import { a } from './providers/acp/fake-acp';").some((s) => ACP_WIRE_MODULES.test(s))).toBe(false);
+  });
+
+  it('no module outside src/main/providers/ imports an ACP wire module', () => {
+    const importers = productionSources().filter(
+      (f) => !f.startsWith('src/main/providers/') && importSpecifiers(read(f)).some((s) => ACP_WIRE_MODULES.test(s))
+    );
+    expect(importers).toEqual([]);
+  });
+
+  it('no module outside src/main/providers/ speaks ACP in code', () => {
+    const speakers = productionSources().filter((f) => !f.startsWith('src/main/providers/') && acpWireHits(read(f)).length > 0);
+    expect(speakers).toEqual([]);
+  });
+});
+
 describe('the grep: the Feed and health', () => {
   it('the Feed and health hear NEUTRAL events', () => {
     const code = stripComments(read('src/main/index.ts'));

@@ -219,7 +219,13 @@ export interface EventCapability {
    * THROW; a throw is caught at the call site and the session runs with no
    * translator, which costs its Feed and not the app (P6).
    */
-  createTranslator(hooks: TranslatorHooks): EngineTranslator;
+  //
+  // `session.id` is switchboard's id for the session, the same id the
+  // provider's `buildSpawn` and `controls.createControls` were handed. Claude's
+  // translator is stateless and ignores it; an engine whose events depend on
+  // what its controls ASKED (ACP: which JSON-RPC id is the prompt, which is
+  // `session/new`) pairs the two by it (E40 item 06, #1289).
+  createTranslator(hooks: TranslatorHooks, session?: { id: string }): EngineTranslator;
 }
 
 /**
