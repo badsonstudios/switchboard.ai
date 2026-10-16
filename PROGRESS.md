@@ -3,6 +3,28 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 📐 2026-10-15 — E40, MORE THAN ONE AI: DESIGNED AND FILED, NOTHING BUILT YET
+>
+> The owner: *"I want to add the ability to use another account from another
+> AI company and model."* After a readiness check, mockups and two rounds of
+> questions, E40 is in `docs/plans/06-phase-3-ide.md` with its design record
+> at `docs/plans/e40-multi-ai-design.md` and the six-screen mockup at
+> `mockups/multi-ai.html`. Filed as **#1284–#1296**, milestone Phase 3.
+> **It runs ahead of the rest of Phase 3** (owner's call).
+>
+> **The shape:**
+> - A neutral seam under the Session view, with Claude unchanged.
+> - One engine for the Agent Client Protocol (~40 coding AIs speak it), Codex
+>   first.
+> - The owner-visible half: the AI icon with a status ring, the AI switch beside
+>   the model chip, handoff with a divider, Settings → AIs with detection on
+>   every startup, a "Something else" form, and cross-AI dispatch.
+>
+> **BLOCKER (owner): #1284**, installing Codex and logging in with the work
+> account. It blocks only the probe (#1285) and what follows it.
+>
+> **NEXT:** #1286 (seam 1), which needs nothing from him. Nothing is in flight.
+
 > # ✅ RELEASED: v0.8.122, 2026-10-13 (PR #1274)
 >
 > The owner, after the report on #1271: *"All right, why don't you fire off

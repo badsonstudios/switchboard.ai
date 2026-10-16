@@ -1429,7 +1429,14 @@ describe('a git switchboard could not READ is not a folder without git (#785)', 
     // The witness that the fixture really did produce the confusable message —
     // without it this passes against a damaged repo that failed some other way
     // entirely, and the finding would go untested.
-    expect(bad.unreadable).toContain('not a git repository');
+    //
+    // Git 2.56 (the CI Windows image of 2026-10-07) stopped saying the
+    // confusable thing here and names the fault instead: "gitfile does not
+    // point to a valid repository". Older git, including the 2.51 on the
+    // owner's desktop, still says "not a git repository". Either one proves the
+    // fixture failed on the dangling gitdir, and the discriminator has to keep
+    // working for users on both.
+    expect(bad.unreadable).toMatch(/not a git repository|gitfile does not point to a valid repository/);
     expect(bad.isRepo).toBe(false);
     // …and the common case stays plain. No reason, no alarm, nothing for the
     // pane to draw but "Not a git repository", which is TRUE here.

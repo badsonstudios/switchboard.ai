@@ -229,6 +229,17 @@ tool becomes a hostable session). Codex/Gemini/Aider adapters grow capabilities 
 those CLIs expose them. **Design rule: no feature may assume Claude-only, but features
 may degrade gracefully to "Claude-only for now."**
 
+> **⚠️ SUPERSEDED IN PART, 2026-10-15 (E40, `docs/plans/e40-multi-ai-design.md`).**
+> "Generic adapter = PTY only" stopped being possible when #952 removed the PTY.
+> **The generic adapter is now an engine for the Agent Client Protocol (ACP)**, the
+> JSON-RPC-over-stdio protocol that ~40 coding AIs speak to host applications
+> (Codex via an OpenAI-co-authored adapter, Gemini CLI, Copilot, OpenCode, goose,
+> and more). Claude keeps its native stream-json engine. Under both engines sits a
+> provider-neutral seam: events (what happened) and declared controls (what you
+> can do), so the Session view is the same for every AI. The "Claude-only for
+> now" rule becomes literal: a provider declares its controls, and an undeclared
+> one greys out with a reason.
+
 **As built (P2-E15-01, 2026-07-30)** — the sketch above is the intent; the shipped
 contract differs in three ways, each deliberate:
 
@@ -5407,8 +5418,11 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
   review dashboard)
 
 **Phase 4 — the ecosystem**
-- Codex / Gemini / Aider adapters (PTY + whatever structure they expose)
-- Generic adapter (host any CLI)
+- ~~Codex / Gemini / Aider adapters (PTY + whatever structure they expose)~~
+  ~~Generic adapter (host any CLI)~~ **PULLED FORWARD into Phase 3 as E40
+  (owner, 2026-10-15), reshaped:** one ACP engine instead of per-vendor PTY
+  adapters (there is no PTY since #952), Codex first. Aider has no ACP entry
+  and is not in E40. See `docs/plans/e40-multi-ai-design.md`.
 - API-key auth mode per session (env injection + OS credential store; real-dollar
   cost display on usage chips)
 - ~~MCP Manager pane~~ **PULLED FORWARD into Phase 2 (owner, 2026-08-16:

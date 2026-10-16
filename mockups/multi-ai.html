@@ -1,0 +1,315 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Multi-AI mockups</title>
+<style>
+:root{--bg:#242933;--panel:#2b313d;--panel2:#333a48;--border:#3b4252;--chip:#39414f;--bar:#20252e;--text:#e5e9f0;--muted:#a5aec0;--faint:#6d7689;--frame:#848ea5;
+--blue:#58a6ff;--green:#3fb950;--amber:#e3b341;--orange:#f0883e;--red:#f0776b;--pink:#ec4f86;
+--claude:#d97757;--codex:#e8eaf0;--gemini:#7b9cff;}
+*{box-sizing:border-box}
+body{margin:0;background:#111;font-family:"Segoe UI",system-ui,sans-serif;color:var(--text);font-size:13px}
+.mono{font-family:Consolas,"Cascadia Mono",monospace}
+.frame{width:1360px;height:860px;background:var(--bg);position:relative;overflow:hidden;margin:0 0 40px 0;display:flex;flex-direction:column}
+.title{height:36px;background:var(--bar);display:flex;align-items:center;padding:0 12px;gap:8px;border-bottom:1px solid var(--border);flex:none}
+.title b{font-weight:600}.title .v{color:var(--muted);font-size:11px}
+.tb{margin-left:auto;display:flex;gap:6px}
+.btn{border:1px solid var(--frame);border-radius:4px;padding:2px 9px;font-size:12px;color:var(--text);background:transparent;white-space:nowrap}
+.body{flex:1;display:flex;min-height:0}
+.rail{width:288px;border-right:1px solid var(--border);display:flex;flex-direction:column;flex:none}
+.railhead{display:flex;align-items:center;padding:12px 12px;gap:6px}
+.eyebrow{font-size:10px;letter-spacing:1.4px;color:var(--muted);font-weight:600}
+.railhead .btn{font-size:11px}
+.railgroup{margin:0 10px;border:1px solid var(--frame);border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:6px}
+.card{background:var(--panel2);border-radius:5px;padding:7px 9px 7px 12px;position:relative;border-left:3px solid var(--acc,#58a6ff)}
+.card .row{display:flex;align-items:center;gap:6px}
+.card .name{font-weight:600;font-size:13px}
+.card .st{margin-left:auto;font-size:11px;font-weight:600}
+.card .task{font-family:Consolas,monospace;font-size:11px;color:var(--muted);margin-top:3px;line-height:1.35}
+.card.need{outline:1.5px solid var(--orange)}
+.railfoot{margin-top:auto;border-top:1px solid var(--border);padding:8px 12px;font-size:11px;color:var(--muted);display:flex}
+.main{flex:1;padding:12px 14px 8px 14px;display:flex;flex-direction:column;min-width:0}
+.dock{flex:1;border:1px solid var(--blue);border-radius:3px;display:flex;flex-direction:column;min-height:0;background:var(--panel)}
+.tabs{display:flex;background:var(--panel2);height:34px;align-items:flex-end;padding-left:4px;gap:2px;flex:none}
+.tab{display:flex;align-items:center;gap:7px;padding:0 14px;height:30px;border-radius:4px 4px 0 0;font-weight:600;color:var(--muted)}
+.tab.on{background:var(--panel);color:var(--text)}
+.tab .x{color:var(--muted);margin-left:8px;font-weight:400}
+.lang{font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;background:rgba(88,166,255,.25);color:#9cc8ff}
+.hdr{display:flex;align-items:center;gap:10px;padding:0 12px;height:36px;background:color-mix(in srgb,var(--acc,#58a6ff) 22%,var(--panel));flex:none}
+.pill{font-size:11px;padding:1px 7px;border-radius:4px;background:var(--chip);color:var(--muted)}
+.pill.done{color:var(--green)}.pill.need{color:var(--orange);background:rgba(240,136,62,.15)}.pill.work{color:var(--blue)}
+.subtabs{display:flex;gap:4px;padding:6px 12px 0;border-bottom:1px solid var(--border);align-items:flex-end;flex:none}
+.subtabs div{padding:6px 14px;color:var(--muted);font-size:13px}
+.subtabs .on{color:var(--text);font-weight:600;border-top:2px solid var(--blue);background:var(--panel2);border-radius:3px 3px 0 0}
+.feed{flex:1;overflow:hidden;padding:10px 16px 6px 22px;display:flex;flex-direction:column;gap:9px;min-height:0}
+.user{background:var(--chip);border-radius:6px;padding:7px 12px}
+.tool{background:var(--panel2);border-radius:6px;padding:7px 12px;font-family:Consolas,monospace;font-size:12px;color:var(--muted)}
+.tool b{color:var(--text);font-family:"Segoe UI";font-weight:600}
+.composer{padding:6px 12px 8px;flex:none}
+.box{border:1px solid var(--frame);border-radius:5px;padding:9px 12px;color:var(--faint)}
+.cbar{display:flex;gap:6px;margin-top:6px;align-items:center;font-size:12px}
+.cbar .c{border:1px solid var(--frame);border-radius:4px;padding:1px 8px;white-space:nowrap}
+.cbar .c.dis{opacity:.38;border-style:dashed}
+.cbar .ctx{margin-left:auto;color:var(--muted);font-size:11px}
+.status{height:26px;background:var(--bar);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 12px;font-size:12px;gap:8px;flex:none}
+.status .r{margin-left:auto;display:flex;gap:14px;align-items:center;font-family:Consolas,monospace;font-size:11px;color:var(--muted)}
+/* AI glyphs */
+.ai{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:4px;font-size:11px;font-weight:700;flex:none;line-height:1}
+.ai.claude{background:rgba(217,119,87,.22);color:var(--claude)}
+.ai.codex{background:rgba(232,234,240,.16);color:var(--codex)}
+.ai.gemini{background:rgba(123,156,255,.22);color:var(--gemini)}
+.ai.ollama{background:rgba(165,174,192,.2);color:#cfd5e2}
+.ai.lg{width:28px;height:28px;font-size:17px;border-radius:7px}
+.ai.ring{box-shadow:0 0 0 1.5px var(--ringc)}
+/* annotations */
+.ann{position:absolute;background:var(--pink);color:#fff;font-weight:600;font-size:15px;padding:4px 10px;border-radius:5px;box-shadow:0 2px 10px rgba(0,0,0,.4);z-index:20;white-space:nowrap}
+.hl{position:absolute;border:2.5px solid var(--pink);border-radius:7px;z-index:19;box-shadow:0 0 0 3px rgba(236,79,134,.25)}
+.menu{position:absolute;background:var(--panel2);border:1px solid var(--frame);border-radius:6px;box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:10;padding:5px 0;font-size:13px}
+.mi{display:flex;gap:10px;align-items:center;padding:7px 14px}
+.mi .sub{color:var(--muted);font-size:11.5px}
+.mi.dim{opacity:.55}
+.sep{height:1px;background:var(--border);margin:4px 0}
+.mh{font-size:10px;letter-spacing:1.3px;color:var(--faint);font-weight:600;padding:6px 14px 2px}
+.modal{position:absolute;background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.6);z-index:10;display:flex;flex-direction:column}
+.scrim{position:absolute;inset:0;background:rgba(10,12,16,.55);z-index:9}
+.mhd{padding:14px 18px 0;font-size:16px;font-weight:600}
+.stabs{display:flex;gap:4px;padding:8px 18px 0;border-bottom:1px solid var(--border)}
+.stabs div{padding:7px 10px;color:var(--muted);font-size:14px}
+.stabs .on{color:var(--text);border-bottom:2px solid var(--blue)}
+.mbody{padding:12px 18px;overflow:hidden;flex:1}
+.h3{font-weight:600;font-size:14px;margin:12px 0 4px}
+.p{color:var(--muted);line-height:1.45}
+.airow{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;margin-top:8px;background:var(--panel2)}
+.airow .n{font-weight:600;font-size:14px}
+.airow .d{color:var(--muted);font-size:12px;margin-top:2px}
+.ok{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}
+.right{margin-left:auto;display:flex;gap:6px;align-items:center}
+.tag{font-size:10.5px;border:1px solid var(--frame);border-radius:10px;padding:0 7px;color:var(--muted)}
+.tag.def{border-color:var(--blue);color:var(--blue)}
+.select{border:1px solid var(--frame);border-radius:4px;padding:3px 10px;display:inline-flex;gap:8px;align-items:center;background:var(--panel2)}
+.input{border:1px solid var(--frame);border-radius:4px;padding:6px 10px;background:var(--bg);font-family:Consolas,monospace;font-size:12px}
+.lbl{font-size:12px;font-weight:600;margin:10px 0 4px}
+.divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;margin:4px 0}
+.divider:before,.divider:after{content:"";flex:1;height:1px;background:var(--frame);opacity:.6}
+.dv{display:flex;gap:8px;align-items:center;border:1px solid var(--frame);border-radius:14px;padding:3px 12px;background:var(--panel2);color:var(--text)}
+.link{color:var(--blue)}
+.caption{color:#ccc;font:600 18px "Segoe UI";margin:18px 0 8px}
+</style></head><body>
+
+<!-- ============ 1. THE WORKSPACE WITH TWO AIS ============ -->
+<div class="frame" id="s1">
+ <div class="title"><b>switchboard.ai</b><span class="v mono">v0.9.0</span>
+  <div class="tb"><span class="btn">‣ commands</span><span class="btn">left</span><span class="btn">AI labels</span><span class="btn">one beep</span><span class="btn">ask</span><span class="btn">🔔 on</span></div></div>
+ <div class="body">
+  <div class="rail">
+   <div class="railhead"><span class="eyebrow">SESSIONS · 4</span><span style="margin-left:auto" class="btn">+ group</span><span class="btn">+ session</span></div>
+   <div class="railgroup">
+    <div class="card" style="--acc:#58a6ff"><div class="row"><span class="ai claude">✳</span><span class="name">acme-storefront</span><span class="st" style="color:var(--muted)">done</span></div><div class="task">Add a dark mode toggle to the settings page</div></div>
+    <div class="card need" style="--acc:#39c5bb"><div class="row"><span class="ai codex">◎</span><span class="name">billing-api</span><span class="st" style="color:var(--orange)">needs you</span></div><div class="task">Run the production build and fix whatever breaks</div></div>
+    <div class="card" style="--acc:#a78bfa"><div class="row"><span class="ai claude">✳</span><span class="name">docs-site</span><span class="st" style="color:var(--blue)">working</span></div><div class="task">Rewrite the auth guide for the new token flow</div></div>
+    <div class="card" style="--acc:#e3b341"><div class="row"><span class="ai codex">◎</span><span class="name">acme-storefront</span><span class="st" style="color:var(--blue)">working</span></div><div class="task">Review: dark mode toggle (from acme-storefront)</div></div>
+   </div>
+   <div class="railfoot">4 sessions<span style="margin-left:auto;color:var(--orange)">1 needs you</span></div>
+  </div>
+  <div class="main">
+   <div class="dock" style="--acc:#39c5bb">
+    <div class="tabs">
+     <div class="tab"><span class="ai claude">✳</span>acme-storefront<span class="lang">JS</span><span class="x">✕</span></div>
+     <div class="tab on"><span class="ai codex ring" style="--ringc:var(--orange)">◎</span>billing-api<span class="lang" style="background:rgba(57,197,187,.25);color:#7fe0d8">Go</span><span class="x">✕</span></div>
+    </div>
+    <div class="hdr"><span class="ai codex">◎</span><span>Run the production build and fix whatever breaks</span><span style="margin-left:auto" class="pill need">needs you</span><span class="pill">context</span><span style="color:var(--muted)">⋯</span></div>
+    <div class="subtabs"><div class="on">Session</div><div>Changes 2</div><div>Files</div><div>History</div><span style="margin-left:auto;color:var(--muted);font-size:12px;padding-bottom:6px">⎇ main</span></div>
+    <div class="feed">
+     <div class="user">Run the production build and fix whatever breaks</div>
+     <div>The build fails in two places. I'll fix the type error in <span class="mono">payouts.go</span> first, then re-run.</div>
+     <div class="tool"><b>Ran</b> &nbsp;go build ./... &nbsp;<span class="bad">exit 1</span></div>
+     <div class="tool"><b>Edit</b> &nbsp;internal/payouts/payouts.go &nbsp;+4 −2</div>
+     <div style="border-top:2px solid var(--orange);margin-top:auto;padding-top:10px">
+      <div><b style="color:var(--orange)">Allow command?</b> <span class="mono" style="color:var(--muted)">go test ./internal/...</span></div>
+      <div style="color:var(--muted);margin:5px 0 8px">Codex wants to run a command outside its sandbox.</div>
+      <div style="display:flex;gap:8px"><span class="btn" style="background:#2f7d3b;border-color:#2f7d3b">Allow</span><span class="btn">Allow for this session</span><span class="btn">Deny</span><span class="btn">Deny with feedback…</span></div>
+     </div>
+    </div>
+    <div class="composer"><div class="box">Prompt this session — Enter to send, Shift+Enter for a new line</div>
+     <div class="cbar"><span class="c">◌ ask</span><span class="c"><span class="ai codex" style="width:13px;height:13px;font-size:9px;vertical-align:-2px">◎</span> Codex ▾</span><span class="c">gpt-5-codex ▾</span><span class="c">effort: medium ▾</span><span class="c dis">Compact</span><span class="c">Clear</span><span class="ctx">context 12% · weekly limit 41%</span></div></div>
+   </div>
+  </div>
+ </div>
+ <div class="status">4 sessions <span style="color:var(--orange)">1 waiting</span>
+  <div class="r"><span><span class="ai claude" style="width:13px;height:13px;font-size:9px">✳</span> claude 2.1.288 <span class="ok">●</span></span><span><span class="ai codex" style="width:13px;height:13px;font-size:9px">◎</span> codex 0.48 <span class="ok">●</span></span><span>theme: nordic</span></div></div>
+ <!-- annotations -->
+ <div class="hl" style="left:27px;top:92px;width:22px;height:220px"></div>
+ <div class="ann" style="left:330px;top:330px">◀ 1 Every session shows which AI it's on</div>
+ <div class="hl" style="left:510px;top:50px;width:178px;height:34px"></div>
+ <div class="ann" style="left:710px;top:52px">2 Tab icon = the AI; ring colour = its status</div>
+ <div class="ann" style="left:20px;top:372px">▲ 3 Same project, two AIs:</div>
+ <div class="ann" style="left:20px;top:406px">a Codex review of Claude's work</div>
+ <div class="hl" style="left:362px;top:793px;width:88px;height:27px"></div>
+ <div class="ann" style="left:805px;top:793px;font-size:13px;padding:2px 8px">◀ 4 The AI switch, next to the model</div>
+ <div class="hl" style="left:1025px;top:837px;width:240px;height:22px"></div>
+ <div class="ann" style="left:1000px;top:690px">5 Each AI's version and health ▼</div>
+</div>
+
+<!-- ============ 2. THE SWITCH MENU ============ -->
+<div class="frame" id="s2">
+ <div class="title"><b>switchboard.ai</b><span class="v mono">v0.9.0</span><div class="tb"><span class="btn">‣ commands</span><span class="btn">left</span><span class="btn">AI labels</span><span class="btn">🔔 on</span></div></div>
+ <div class="body">
+  <div class="rail"><div class="railhead"><span class="eyebrow">SESSIONS · 1</span><span style="margin-left:auto" class="btn">+ session</span></div>
+   <div class="railgroup"><div class="card" style="--acc:#58a6ff"><div class="row"><span class="ai claude">✳</span><span class="name">acme-storefront</span><span class="st" style="color:var(--muted)">done</span></div><div class="task">Add a dark mode toggle to the settings page</div></div></div>
+   <div class="railfoot">1 session</div></div>
+  <div class="main"><div class="dock" style="--acc:#58a6ff">
+   <div class="tabs"><div class="tab on"><span class="ai claude">✳</span>acme-storefront<span class="lang">JS</span><span class="x">✕</span></div></div>
+   <div class="hdr"><span class="ai claude">✳</span><span>Add a dark mode toggle to the settings page</span><span style="margin-left:auto" class="pill done">done</span><span class="pill">context</span></div>
+   <div class="subtabs"><div class="on">Session</div><div>Changes 3</div><div>Files</div><div>History</div></div>
+   <div class="feed">
+    <div class="user">Add a dark mode toggle to the settings page</div>
+    <div>I'll add the toggle next to the existing email setting and wire it to the theme the stylesheet already reads.</div>
+    <div class="tool"><b>Read</b> &nbsp;src\pages\SettingsPage.tsx</div>
+    <div class="tool"><b>Edit</b> &nbsp;src\pages\SettingsPage.tsx &nbsp;+6 −1</div>
+    <div class="tool"><b>Bash</b> &nbsp;npm test -- settings &nbsp;<span class="ok">✓ 4 tests</span></div>
+    <div>The <b>Dark mode</b> toggle is on the settings page and the tests pass. One thing left: the choice is not remembered after a reload yet.</div>
+   </div>
+   <div class="composer"><div class="box">Prompt this session — Enter to send, Shift+Enter for a new line</div>
+    <div class="cbar"><span class="c">◌ ask</span><span class="c" style="outline:2px solid var(--blue)"><span class="ai claude" style="width:13px;height:13px;font-size:9px;vertical-align:-2px">✳</span> Claude ▾</span><span class="c">opus ▾</span><span class="c">effort: medium ▾</span><span class="c">Compact</span><span class="c">Clear</span><span class="ctx">context 4% · 5-hour 22%</span></div></div>
+  </div></div>
+ </div>
+ <div class="status">1 session<div class="r"><span>claude 2.1.288 <span class="ok">●</span></span><span>codex 0.48 <span class="ok">●</span></span></div></div>
+ <!-- the menu -->
+ <div class="menu" style="left:322px;top:478px;width:430px">
+  <div class="mh">AI FOR THIS SESSION</div>
+  <div class="mi"><span style="width:12px">✓</span><span class="ai claude lg">✳</span><div><div><b>Claude Code</b></div><div class="sub">Logged in · Max plan · opus</div></div></div>
+  <div class="mi"><span style="width:12px"></span><span class="ai codex lg">◎</span><div><div><b>Codex</b> <span class="tag">work account</span></div><div class="sub">Logged in · ChatGPT Business · gpt-5-codex</div></div></div>
+  <div class="mi dim"><span style="width:12px"></span><span class="ai gemini lg">✦</span><div><div><b>Gemini CLI</b></div><div class="sub">Not installed — <span class="link">set it up…</span></div></div></div>
+  <div class="sep"></div>
+  <div class="mi" style="color:var(--muted);font-size:12px;line-height:1.4;padding-top:4px">Switching hands this conversation over: the new AI gets a summary of it. Switch back and Claude picks up exactly where it left off.</div>
+  <div class="sep"></div>
+  <div class="mi"><span class="link">Manage AIs…</span><span style="margin-left:auto;color:var(--faint);font-size:11px" class="mono">Ctrl+Shift+A</span></div>
+ </div>
+ <div class="ann" style="left:770px;top:520px">1 Pick the AI — installed and logged-in ones are live</div>
+ <div class="ann" style="left:770px;top:640px">2 One that's missing says so, with a way to set it up</div>
+ <div class="ann" style="left:770px;top:705px">3 Says plainly what a switch does</div>
+</div>
+
+<!-- ============ 3. AFTER A SWITCH: THE HANDOFF IN THE CONVERSATION ============ -->
+<div class="frame" id="s3">
+ <div class="title"><b>switchboard.ai</b><span class="v mono">v0.9.0</span><div class="tb"><span class="btn">‣ commands</span><span class="btn">🔔 on</span></div></div>
+ <div class="body">
+  <div class="rail"><div class="railhead"><span class="eyebrow">SESSIONS · 1</span><span style="margin-left:auto" class="btn">+ session</span></div>
+   <div class="railgroup"><div class="card" style="--acc:#58a6ff"><div class="row"><span class="ai codex">◎</span><span class="name">acme-storefront</span><span class="st" style="color:var(--blue)">working</span></div><div class="task">Remember the dark mode choice between visits</div></div></div>
+   <div class="railfoot">1 session</div></div>
+  <div class="main"><div class="dock" style="--acc:#58a6ff">
+   <div class="tabs"><div class="tab on"><span class="ai codex">◎</span>acme-storefront<span class="lang">JS</span><span class="x">✕</span></div></div>
+   <div class="hdr"><span class="ai codex">◎</span><span>Remember the dark mode choice between visits</span><span style="margin-left:auto" class="pill work">working</span><span class="pill">context</span></div>
+   <div class="subtabs"><div class="on">Session</div><div>Changes 3</div><div>Files</div><div>History</div></div>
+   <div class="feed">
+    <div style="opacity:.75" class="tool"><b>Bash</b> &nbsp;npm test -- settings &nbsp;<span class="ok">✓ 4 tests</span></div>
+    <div style="opacity:.75"><span class="ai claude" style="vertical-align:-3px">✳</span> The <b>Dark mode</b> toggle is on the settings page and the tests pass. One thing left: the choice is not remembered after a reload yet.</div>
+    <div class="divider"><span class="dv"><span class="ai claude">✳</span> Claude Code &nbsp;→&nbsp; <span class="ai codex">◎</span> Codex &nbsp;·&nbsp; <span style="color:var(--muted)">2:41 PM · handed a summary of 14 turns</span> &nbsp;<span class="link">see what it was told</span></span></div>
+    <div class="user">Yes — remember it between visits</div>
+    <div><span class="ai codex" style="vertical-align:-3px">◎</span> I'll persist the choice in <span class="mono">localStorage</span> and read it before first paint so there's no flash.</div>
+    <div class="tool"><b>Edit</b> &nbsp;src\hooks\useTheme.ts &nbsp;+9 −2</div>
+    <div class="tool"><b>Ran</b> &nbsp;npm test -- theme &nbsp;<span style="color:var(--blue)">running…</span></div>
+   </div>
+   <div class="composer"><div class="box">Prompt this session — Enter to send, Shift+Enter for a new line</div>
+    <div class="cbar"><span class="c">◌ ask</span><span class="c"><span class="ai codex" style="width:13px;height:13px;font-size:9px;vertical-align:-2px">◎</span> Codex ▾</span><span class="c">gpt-5-codex ▾</span><span class="c">effort: medium ▾</span><span class="c dis" style="outline:2px solid var(--pink);outline-offset:2px">Compact</span><span class="c">Clear</span><span class="c" style="border-style:dashed;opacity:.38">/review</span><span class="ctx">context 6% · weekly limit 41%</span></div></div>
+  </div></div>
+ </div>
+ <div class="status">1 session<div class="r"><span>claude 2.1.288 <span class="ok">●</span></span><span>codex 0.48 <span class="ok">●</span></span></div></div>
+ <!-- tooltip -->
+ <div class="menu" style="left:520px;top:752px;width:260px;padding:8px 12px;font-size:12px;color:var(--muted)">Not available with Codex. Switch back to Claude to use it.</div>
+ <div class="ann" style="left:330px;top:430px">▲ 1 The hand-over is marked right in the conversation</div>
+ <div class="ann" style="left:850px;top:470px">▲ 2 Open it to read exactly what Codex was told</div>
+ <div class="ann" style="left:820px;top:752px">3 Claude-only buttons grey out, with a reason</div>
+ <div class="ann" style="left:880px;top:792px;font-size:13px">(and a Codex-only one greys out when you're on Claude)</div>
+</div>
+
+<!-- ============ 4. SETTINGS → AIs ============ -->
+<div class="frame" id="s4">
+ <div class="title"><b>switchboard.ai</b><span class="v mono">v0.9.0</span></div>
+ <div class="body" style="filter:none"><div class="rail"></div><div class="main"></div></div>
+ <div class="scrim"></div>
+ <div class="modal" style="left:300px;top:50px;width:820px;height:760px">
+  <div class="mhd">Settings</div>
+  <div class="stabs"><div>Appearance</div><div>General</div><div class="on">AIs</div><div>Notifications</div><div>Sessions</div><div>Diagnostics</div><div>Advanced</div></div>
+  <div class="mbody">
+   <div class="p">The AIs your sessions can run on. Switchboard looks for them on this computer when it starts; each one keeps its own login, so nothing here asks for your password.</div>
+   <div class="h3">New sessions start on</div>
+   <span class="select"><span class="ai claude">✳</span> Claude Code ▾</span>
+   <div class="h3" style="margin-top:16px">Found on this computer</div>
+   <div class="airow"><span class="ai claude lg">✳</span><div><div class="n">Claude Code <span class="tag def">default</span></div><div class="d"><span class="ok">● Logged in</span> · Max plan · <span class="mono">claude 2.1.288</span></div></div><div class="right"><span class="btn">Details</span></div></div>
+   <div class="airow"><span class="ai codex lg">◎</span><div><div class="n">Codex</div><div class="d"><span class="ok">● Logged in</span> · dan@work.com · ChatGPT Business · <span class="mono">codex 0.48</span></div></div><div class="right"><span class="btn">Make default</span><span class="btn">Details</span></div></div>
+   <div class="airow"><span class="ai gemini lg">✦</span><div><div class="n">Gemini CLI</div><div class="d"><span class="warn">● Installed, not logged in</span> · <span class="mono">gemini 0.45</span></div></div><div class="right"><span class="btn" style="border-color:var(--blue);color:var(--blue)">Log in…</span></div></div>
+   <div class="h3" style="margin-top:16px">Not found</div>
+   <div class="airow" style="opacity:.8"><span class="ai ollama lg">◇</span><div><div class="n">OpenCode <span class="tag">runs local models</span></div><div class="d">Not installed. <span class="mono">npm i -g opencode-ai</span> &nbsp;<span class="link">copy</span></div></div><div class="right"><span class="btn">Hide</span></div></div>
+   <div style="display:flex;gap:8px;margin-top:16px"><span class="btn" style="padding:5px 12px">+ Add an AI…</span><span class="btn" style="padding:5px 12px">Look again</span></div>
+  </div>
+  <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex"><span class="btn" style="margin-left:auto;padding:5px 16px">Done</span></div>
+ </div>
+ <div class="ann" style="left:1130px;top:200px">1 Pick the default</div>
+ <div class="ann" style="left:1130px;top:300px">2 Found automatically,</div>
+ <div class="ann" style="left:1130px;top:336px">with login state</div>
+ <div class="ann" style="left:1130px;top:430px">3 Log in = the AI's own</div>
+ <div class="ann" style="left:1130px;top:466px">sign-in, in your browser</div>
+ <div class="ann" style="left:1130px;top:560px">4 Known AIs you don't have</div>
+ <div class="ann" style="left:1130px;top:680px">5 Anything else → Add</div>
+</div>
+
+<!-- ============ 5. ADD AN AI ============ -->
+<div class="frame" id="s5">
+ <div class="title"><b>switchboard.ai</b><span class="v mono">v0.9.0</span></div>
+ <div class="body"><div class="rail"></div><div class="main"></div></div>
+ <div class="scrim"></div>
+ <div class="modal" style="left:240px;top:40px;width:880px;height:780px">
+  <div class="mhd">Add an AI</div>
+  <div class="stabs"><div class="on">From the list</div><div>Something else</div></div>
+  <div class="mbody">
+   <div class="p">These AIs all speak one shared language for coding tools (the Agent Client Protocol), so Switchboard can host any of them the same way. Install one, log in with its own sign-in, and it appears in the AI switch.</div>
+   <div style="display:flex;gap:8px;margin:10px 0"><span class="input" style="flex:1;color:var(--faint)">Search 40+ AIs…</span><span class="select">All ▾</span><span class="select">☐ Runs local models</span></div>
+   <div class="airow"><span class="ai gemini lg">✦</span><div><div class="n">Gemini CLI <span class="tag">Google</span></div><div class="d">Free tier with a Google account</div></div><div class="right"><span class="ok">✓ installed</span></div></div>
+   <div class="airow"><span class="ai lg" style="background:rgba(165,174,192,.2)">⌘</span><div><div class="n">GitHub Copilot <span class="tag">GitHub</span></div><div class="d">Uses your Copilot subscription</div></div><div class="right"><span class="mono" style="color:var(--muted);font-size:11px">npm i -g @github/copilot</span><span class="btn">Copy</span></div></div>
+   <div class="airow"><span class="ai lg" style="background:rgba(165,174,192,.2)">▲</span><div><div class="n">Cursor <span class="tag">Cursor</span></div><div class="d">Uses your Cursor account</div></div><div class="right"><span class="btn">How to install</span></div></div>
+   <div class="airow"><span class="ai ollama lg">◇</span><div><div class="n">OpenCode <span class="tag">open source</span> <span class="tag" style="border-color:var(--green);color:var(--green)">local models</span></div><div class="d">Any provider, or a model running on this machine via Ollama</div></div><div class="right"><span class="btn">Copy</span></div></div>
+   <div class="airow"><span class="ai lg" style="background:rgba(165,174,192,.2)">🪿</span><div><div class="n">goose <span class="tag">Block</span> <span class="tag" style="border-color:var(--green);color:var(--green)">local models</span></div><div class="d">Open source; works with Ollama</div></div><div class="right"><span class="btn">Copy</span></div></div>
+   <div class="airow"><span class="ai lg" style="background:rgba(165,174,192,.2)">Q</span><div><div class="n">Qwen Code <span class="tag">Alibaba</span></div><div class="d">Free tier</div></div><div class="right"><span class="btn">Copy</span></div></div>
+   <div class="p" style="font-size:11.5px;margin-top:10px">The list ships inside Switchboard and only refreshes when you press <span class="link">Check for new AIs</span>. Nothing is sent anywhere until you do.</div>
+  </div>
+ </div>
+ <div class="modal" style="left:760px;top:430px;width:560px;height:360px;z-index:12;border-color:var(--frame)">
+  <div class="mhd" style="font-size:14px">Something else <span style="color:var(--muted);font-weight:400">— any AI that speaks the protocol</span></div>
+  <div class="mbody">
+   <div class="lbl">Name</div><div class="input" style="font-family:'Segoe UI'">My local Qwen</div>
+   <div class="lbl">Command</div><div class="input">opencode acp</div>
+   <div class="lbl">Arguments (optional)</div><div class="input">--model ollama/qwen3-coder</div>
+   <div style="display:flex;gap:8px;margin-top:14px;align-items:center"><span class="ok">✓ Started it and it answered — 3 models found</span><span class="btn" style="margin-left:auto">Test</span><span class="btn" style="border-color:var(--blue);color:var(--blue)">Add</span></div>
+  </div>
+ </div>
+ <div class="ann" style="left:20px;top:150px">1 A built-in list</div>
+ <div class="ann" style="left:20px;top:186px">of AIs that plug in</div>
+ <div class="ann" style="left:20px;top:420px">2 Local models</div>
+ <div class="ann" style="left:20px;top:456px">are just one more</div>
+ <div class="ann" style="left:900px;top:395px">3 Or point at any program</div>
+</div>
+
+<!-- ============ 6. CROSS-AI REVIEW ============ -->
+<div class="frame" id="s6">
+ <div class="title"><b>switchboard.ai</b><span class="v mono">v0.9.0</span></div>
+ <div class="body"><div class="rail"></div><div class="main"></div></div>
+ <div class="scrim"></div>
+ <div class="modal" style="left:330px;top:70px;width:760px;height:600px">
+  <div class="mhd" style="display:flex">Dispatch this work <span style="color:var(--muted);font-weight:400;margin-left:8px">from acme-storefront</span><span style="margin-left:auto">✕</span></div>
+  <div class="mbody">
+   <div class="p">A dispatched session is a full session of its own — its own card, its own context, its own permissions.</div>
+   <div class="airow" style="border-color:var(--frame)"><span>●</span><div><div class="n">Code Reviewer <span class="tag">built-in</span></div><div class="d">Clean-room — the diff and the task, nothing else · in this folder</div></div><div class="right mono" style="font-size:11px;color:var(--muted)">runs at plan</div></div>
+   <div class="airow"><span style="opacity:0">●</span><div><div class="n">Doc Writer <span class="tag">built-in</span></div><div class="d">Briefed — the goal, the decisions and the files touched</div></div></div>
+   <div class="h3" style="margin-top:18px">Run it on</div>
+   <div style="display:flex;gap:8px">
+    <span class="airow" style="margin:0;padding:8px 14px"><span class="ai claude">✳</span> Claude Code <span class="sub" style="color:var(--muted);font-size:11px">same as this session</span></span>
+    <span class="airow" style="margin:0;padding:8px 14px;border-color:var(--blue);outline:1px solid var(--blue)"><span class="ai codex">◎</span> <b>Codex</b> <span style="color:var(--blue);font-size:11px">a second opinion</span></span>
+    <span class="airow" style="margin:0;padding:8px 14px;opacity:.5"><span class="ai gemini">✦</span> Gemini CLI <span style="font-size:11px;color:var(--muted)">not logged in</span></span>
+   </div>
+   <div class="p" style="margin-top:8px;font-size:12px">A different AI reviewing the work catches what the author's own blind spots hide. Its findings come back to this session like any other review.</div>
+   <div class="lbl" style="margin-top:16px">What was this session asked to do?</div>
+   <div class="input" style="font-family:'Segoe UI';font-size:13px;height:50px">Add a dark mode toggle to the settings page</div>
+  </div>
+  <div style="padding:10px 18px;border-top:1px solid var(--border);display:flex"><span class="btn" style="margin-left:auto;padding:5px 16px">Dispatch</span></div>
+ </div>
+ <div class="ann" style="left:1100px;top:306px">◀ 1 Choose which AI does the review</div>
+</div>
+</body></html>
