@@ -47,12 +47,13 @@
 // silently receive all 33 tools — the loudest possible silent failure.
 import { errorText } from '../../shared/error-text';
 import { ChildProcess, spawn } from 'child_process';
-import { resolveCliPath } from './claude';
+import { resolveCliPath } from './claude-cli-path';
 import { execSpec } from '../transport/win-cmd';
 import { buildEnv } from '../transport/env';
 import { killTree } from '../transport/kill-tree';
 import { trackChild } from '../diagnostics/live-children';
 import type { Logger } from '../log/logger';
+import type { OneShotFailure, OneShotRequest, OneShotResult } from '../extensibility/contributions';
 
 /**
  * The containment posture, as one list so no caller can assemble a weaker one.
@@ -111,32 +112,12 @@ export const DEFAULT_ONESHOT_TIMEOUT_MS = 45_000;
  */
 export const MAX_ONESHOT_OUTPUT = 64 * 1024;
 
-export type OneShotFailure =
-  /** no `claude` on PATH — the app's normal "not installed" state, not an error */
-  | 'no-cli'
-  /** our deadline fired and the tree was killed */
-  | 'timeout'
-  /** the child never started, or `execSpec` refused the argv */
-  | 'spawn-failed'
-  /** the CLI ran and exited non-zero (a bad model name, a rate limit) */
-  | 'cli-failed';
-
-export type OneShotResult =
-  | { ok: true; text: string; ms: number; truncated: boolean }
-  | { ok: false; failure: OneShotFailure; ms: number; detail?: string };
-
-export interface OneShotRequest {
-  /** the whole prompt. Goes on STDIN and is NEVER an argument. */
-  prompt: string;
-  /**
-   * Where to run. `--restricted` confines the file tools to it — but the #760
-   * lesson is that this is a convenience, not the containment. The containment
-   * is that there are no tools.
-   */
-  cwd: string;
-  model?: string;
-  timeoutMs?: number;
-}
+// The request and result shapes are the provider-neutral ones the `labels`
+// capability declares (#1288); this module is Claude's implementation of it.
+// `cwd`: `--restricted` confines the file tools to it — but the #760 lesson is
+// that this is a convenience, not the containment. The containment is that
+// there are no tools. `no-cli` means no `claude` on PATH.
+export type { OneShotFailure, OneShotRequest, OneShotResult };
 
 export interface OneShotDeps {
   log: Logger;
@@ -146,7 +127,7 @@ export interface OneShotDeps {
  * Run one contained prompt and hand back what the CLI said.
  *
  * **NEVER REJECTS.** Every outcome is a resolved value, which is the same
- * discipline `mcp/cli.ts` and `mcp/health.ts` use and the reason fail-open (P6)
+ * discipline `providers/claude-mcp-cli.ts` and `providers/claude-mcp-health.ts` use and the reason fail-open (P6)
  * is structural here rather than a promise: the caller is a label refresher, and
  * a label that failed to arrive must cost the session nothing at all.
  */

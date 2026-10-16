@@ -190,6 +190,9 @@ interface TranscriptHead {
  *  turn a fix for unbounded work into unbounded memory. */
 const HEAD_CACHE_MAX = 4096;
 
+/** The `message.model` the CLI writes on lines it made itself (DESIGN §5.13). */
+const SYNTHETIC_MODEL = '<synthetic>';
+
 /**
  * Bytes of BACKLOG one `drain` slice may absorb before yielding (#742).
  *
@@ -2209,7 +2212,14 @@ export class TranscriptWatcher {
     const message = e.message as
       | { usage?: Record<string, number>; content?: unknown; model?: string }
       | undefined;
-    if (typeof message?.model === 'string') w.snap.model = message.model;
+    // `<synthetic>` is not a model (DESIGN §5.13): it is what the CLI writes on
+    // lines it made itself — a local `/cost` or `/context`, an API error — with
+    // zero tokens. Letting it overwrite the session's model would make the
+    // whole session's price "unknown" until the next real reply (#1288, found
+    // in review: the price list no longer guesses for a name it does not know).
+    if (typeof message?.model === 'string' && message.model !== SYNTHETIC_MODEL) {
+      w.snap.model = message.model;
+    }
     const usage = message?.usage;
     if (usage) {
       // Subagent files INCLUDED — they are separate files, not sidechains of

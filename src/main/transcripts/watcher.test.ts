@@ -218,6 +218,27 @@ describe('live usage totals + tolerant reader (the done-when)', () => {
   });
 });
 
+describe('the model the session is priced by (#1288)', () => {
+  it('a `<synthetic>` line does not replace the real model', async () => {
+    // The CLI writes `<synthetic>` on lines it made itself (a local `/cost`, an
+    // API error). The price list has no rate for it — rightly — so if it became
+    // the session's model the whole session would lose its price.
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [
+      entry({ message: { model: 'claude-opus-5', usage: { input_tokens: 5, output_tokens: 10 } } }),
+      entry({ message: { model: '<synthetic>', usage: { input_tokens: 0, output_tokens: 0 } } }),
+    ]);
+    await waitFor(() => watcher.snapshot('s1')!.lines >= 2);
+    expect(watcher.snapshot('s1')!.model).toBe('claude-opus-5');
+
+    // ...and a real model change still lands
+    writeLines(file, [entry({ message: { model: 'claude-haiku-4-5', usage: { output_tokens: 1 } } })]);
+    await waitFor(() => watcher.snapshot('s1')!.lines >= 3);
+    expect(watcher.snapshot('s1')!.model).toBe('claude-haiku-4-5');
+  });
+});
+
 describe('the CLI’s own cost accounting (#787)', () => {
   const costState = (over: Record<string, unknown> = {}) =>
     entry({

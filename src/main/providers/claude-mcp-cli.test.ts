@@ -11,7 +11,7 @@
 // The CLI's own error TEXT is fixture data captured on 2026-08-26 by making the
 // real CLI fail each way.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { MUTATION_TIMEOUT_MS, runMcp } from './cli';
+import { MUTATION_TIMEOUT_MS, runMcp } from './claude-mcp-cli';
 
 type ExecFileImpl = (
   file: string,
@@ -23,7 +23,7 @@ type ExecFileImpl = (
 let execFileImpl: ExecFileImpl | null = null;
 
 // MODULE-MOCKED rather than spied, for the reason `health.test.ts` records:
-// `cli.ts` imports `execFile` by name and the real module's properties are
+// `claude-mcp-cli.ts` imports `execFile` by name and the real module's properties are
 // non-configurable, so `vi.spyOn` throws "Cannot redefine property".
 vi.mock('child_process', () => ({
   execFile: (...args: Parameters<ExecFileImpl>) => execFileImpl?.(...args),

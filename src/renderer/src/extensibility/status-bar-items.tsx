@@ -13,6 +13,7 @@ import { formatTokens, formatUsd } from '../lib/usage';
 import { healthTone, healthTooltip } from '../lib/service-health';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
+import type { PlanLimitWindow } from '../../../shared/usage-report';
 
 const MONO: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10 };
 
@@ -21,9 +22,54 @@ function SessionCount({ count }: { count: number }): React.JSX.Element {
   return <span>{t('statusbar.sessions', { count })}</span>;
 }
 
-function Usage({ tokens, cost }: { tokens: number; cost: number }): React.JSX.Element {
+/**
+ * The workspace's tokens and spend.
+ *
+ * THREE WORDINGS, because a total that leaves sessions out must say so
+ * (#1288). Every session priced: `~$X est`, exactly as before. Some sessions
+ * on a model with no known price: `≥$X est`, since the total is short by an
+ * amount nobody reported. None priced: `no price`, rather than `$0.00`, which
+ * would read as "this cost nothing". The tooltip, in the last two, counts the
+ * sessions left out; and any plan-limit window an AI reported is listed there.
+ */
+function Usage({
+  tokens,
+  cost,
+  unpriced,
+  limits,
+}: {
+  tokens: number;
+  cost: number;
+  unpriced: number;
+  limits: PlanLimitWindow[];
+}): React.JSX.Element {
   const { t } = useTranslation();
-  return <span style={MONO}>{t('statusbar.usage', { tokens: formatTokens(tokens), cost: formatUsd(cost) })}</span>;
+  const n = formatTokens(tokens);
+  const text =
+    unpriced === 0
+      ? t('statusbar.usage', { tokens: n, cost: formatUsd(cost) })
+      : cost > 0
+        ? t('statusbar.usagePartial', { tokens: n, cost: formatUsd(cost) })
+        : t('statusbar.usageNoPrice', { tokens: n });
+  const tip = [
+    ...(unpriced > 0 ? [t('statusbar.usageUnpricedTitle', { count: unpriced })] : []),
+    ...limits.map((w) => limitLine(t, w)),
+  ];
+  return (
+    <span style={MONO} {...(tip.length ? { title: tip.join(' · ') } : {})}>
+      {text}
+    </span>
+  );
+}
+
+/** "5h: 3% used, resets 15:19" — the AI's own label, or its window id. */
+function limitLine(t: (key: string, params?: Record<string, unknown>) => string, w: PlanLimitWindow): string {
+  const label = w.label ?? w.id;
+  const pct = Math.round(w.usedPercent);
+  const at = w.resetsAt ? new Date(w.resetsAt) : null;
+  return at && !Number.isNaN(at.getTime())
+    ? t('statusbar.limitResets', { label, pct, time: at.toLocaleString() })
+    : t('statusbar.limit', { label, pct });
 }
 
 function CliVersion({ version }: { version: string }): React.JSX.Element {
@@ -172,7 +218,12 @@ export const statusBarItems: StatusBarItemContribution[] = [
     // null when there is nothing to say — the item decides, not the bar
     render: (ctx) =>
       ctx.totalOutputTokens ? (
-        <Usage tokens={ctx.totalOutputTokens} cost={ctx.totalCostUsd ?? 0} />
+        <Usage
+          tokens={ctx.totalOutputTokens}
+          cost={ctx.totalCostUsd ?? 0}
+          unpriced={ctx.unpricedSessions ?? 0}
+          limits={ctx.planLimits ?? []}
+        />
       ) : null,
   },
   {

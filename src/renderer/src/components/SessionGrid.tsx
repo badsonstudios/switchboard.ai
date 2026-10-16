@@ -627,6 +627,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [usage, setUsage] = React.useState<{
     usage: Usage;
     model?: string;
+    /** the provider's price, from main; absent = no price (#1288) */
+    estimateUsd?: number;
     cliCost?: CliCost;
   } | null>(null);
   const [binding, setBinding] = React.useState<{
@@ -1319,6 +1321,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         setUsage({
           usage: record.priorUsage ?? ZERO_USAGE,
           model: record.priorModel,
+          estimateUsd: record.priorEstimateUsd,
           cliCost: record.priorCliCost,
         });
         if (record.taskLabel) setTaskLabel(record.taskLabel);
@@ -1388,6 +1391,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         sessionId: string;
         usage: Usage;
         model?: string;
+        estimateUsd?: number;
         cliCost?: CliCost;
         plan?: { total: number; completed: number; inProgress: number };
         binding?: BindingState;
@@ -1397,7 +1401,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       // `cliCost` is taken straight from the snapshot, undefined included: a
       // `/clear` blanks it along with the token totals, and the card must stop
       // showing the discarded conversation's figure at the same moment (#787).
-      setUsage({ usage: s.usage, model: s.model, cliCost: s.cliCost });
+      // `estimateUsd` likewise: absent on this snapshot means no price NOW.
+      setUsage({ usage: s.usage, model: s.model, estimateUsd: s.estimateUsd, cliCost: s.cliCost });
       setPlan(s.plan && s.plan.total > 0 ? s.plan : null);
       if (s.binding) setBinding({ binding: s.binding, bindingDiag: s.bindingDiag ?? null });
     });

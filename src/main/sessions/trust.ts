@@ -22,7 +22,7 @@ function claudeConfigPath(): string {
   return path.join(os.homedir(), '.claude.json');
 }
 
-// `projectKey` used to live here, WITHOUT the case fold that `mcp/config.ts`
+// `projectKey` used to live here, WITHOUT the case fold that `providers/claude-mcp-config.ts`
 // applied to the same map — which is #724: this path wrote
 // `hasTrustDialogAccepted` under `c:/Projects/Foo` while the CLI read
 // `C:/Projects/Foo`, so auto-trust silently did nothing. Re-exported rather

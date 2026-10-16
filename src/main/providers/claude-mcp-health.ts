@@ -1,7 +1,12 @@
 // Is the CLI actually talking to these servers? (§5.17, #632)
 //
+// CLAUDE'S, AND ONLY CLAUDE'S (#1288). This lived in `main/mcp/health.ts` until E40
+// item 05 moved it behind the Claude provider: it is reached only through the
+// `mcpManager` capability (`claude-surfaces.ts`), so an AI with no MCP list
+// never has `~/.claude.json` read or `claude mcp` run on its behalf.
+//
 // THE ONE FACT NO CONFIG FILE HOLDS, and therefore the only thing in the MCP
-// manager worth shelling out for. `main/mcp/config.ts` reads the definitions;
+// manager worth shelling out for. `main/providers/claude-mcp-config.ts` reads the definitions;
 // this asks the CLI what became of them.
 //
 // WHY IT IS PARSED OUT OF HUMAN TEXT. Because there is no other way:
@@ -26,7 +31,7 @@
 //     No MCP servers configured. Use `claude mcp add` to add a server.
 //
 // AND IT ONLY EVER SPEAKS ABOUT ROWS THE CONFIG FILES ALREADY HOLD (#723). The
-// pane keys this map by name onto `config.ts`'s inventory, so a server the CLI
+// pane keys this map by name onto `claude-mcp-config.ts`'s inventory, so a server the CLI
 // reports and no file declares contributes nothing and renders nowhere. That is
 // deliberate — `parseHealthLine` leans on it, refusing to invent rows from prose
 // it cannot parse — but it is also why the pane cannot show claude.ai connectors
@@ -37,7 +42,7 @@
 // "List CONFIGURED MCP servers" and has no more to give. The runtime inventory
 // has one source, the `mcp_status` control request (#721).
 import { execFile } from 'child_process';
-import { resolveCliPath } from '../providers/claude';
+import { resolveCliPath } from './claude-cli-path';
 import { execSpec } from '../transport/win-cmd';
 import type { McpHealth } from '../../shared/mcp';
 

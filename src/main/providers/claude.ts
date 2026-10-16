@@ -21,40 +21,12 @@ import { ensureFolderTrusted } from '../sessions/trust';
 import { claudeEvents } from './claude-events';
 import { AUTONOMY_PERMISSION_MODE } from './claude-modes';
 import { claudeControls } from './claude-controls';
+import { claudeSurfaces } from './claude-surfaces';
 
-const CLI_NAMES = process.platform === 'win32' ? ['claude.cmd', 'claude.exe'] : ['claude'];
-
-let cachedCliPath: string | null | undefined;
-
-/**
- * Resolve the claude CLI to an absolute path by scanning PATH. Positive
- * results are cached; a miss is re-scanned each call so installing the CLI
- * mid-run doesn't require an app restart.
- */
-export function resolveCliPath(envPath = process.env.PATH ?? ''): string | null {
-  if (cachedCliPath != null) return cachedCliPath;
-  cachedCliPath = scanPath(envPath);
-  return cachedCliPath;
-}
-
-export function scanPath(envPath: string): string | null {
-  for (const dir of envPath.split(path.delimiter).filter(Boolean)) {
-    for (const name of CLI_NAMES) {
-      const full = path.join(dir, name);
-      try {
-        if (fs.statSync(full).isFile()) return full;
-      } catch {
-        /* keep scanning */
-      }
-    }
-  }
-  return null;
-}
-
-/** test seam */
-export function resetCliPathCache(): void {
-  cachedCliPath = undefined;
-}
+// S-01's absolute-path lookup. Its own module since #1288 (see there); re-exported
+// so every importer of the adapter module keeps working.
+export { resolveCliPath, scanPath, resetCliPathCache } from './claude-cli-path';
+import { resolveCliPath } from './claude-cli-path';
 
 /**
  * Write + validate the per-session settings file. Throws rather than letting
@@ -416,6 +388,9 @@ export const claudeAdapter: ProviderAdapter = {
         return launch ? claudeMcpConfig(launch) : null;
       },
     },
+    // E40 item 05 (#1288): price list, status page, preflight, labeler, MCP
+    // list and command files — `claude-surfaces.ts`, shared with the e2e fake.
+    ...claudeSurfaces,
   },
 
   slashCommands(): SlashCommand[] {

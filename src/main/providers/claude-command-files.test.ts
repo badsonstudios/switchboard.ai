@@ -3,7 +3,7 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SlashCommand } from '../../shared/slash-commands';
-import { scanSlashCommands } from './slash-commands';
+import { scanSlashCommands } from './claude-command-files';
 
 let root: string;
 const cwd = (): string => path.join(root, 'project');

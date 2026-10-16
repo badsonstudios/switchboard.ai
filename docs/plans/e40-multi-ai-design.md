@@ -100,7 +100,8 @@ does not replace it.
 | `turn-end {failed}` | `result` (`is_error` / `error_*`) | the `session/prompt` response (`stopReason`, or an error) |
 | `permission-request` | `control_request:can_use_tool` | `session/request_permission` |
 | `conversation` / `conversation-reset` | `system:init` / `conversation_reset` | `session/new` / `session/load` id |
-| `compaction`, `usage` | `system:compact_boundary`, `result.usage` | none in ACP's spec (item 02 measures Codex) |
+| `compaction` | `system:compact_boundary` | none in ACP's spec (item 02 measures Codex) |
+| `usage` | **none** since item 05: Claude's usage is its transcript ledger | Codex: the `session/prompt` result's `usage` (measured, item 02 Q6) |
 
 *(The ACP column was a proposal; item 06 made it real, and §4 "As built, item
 06" has the table as built. Where they differ: the user's own prompt is a
@@ -149,6 +150,42 @@ The announcements went the other way, onto the event model: `permission-request`
 start" — Claude has no live switch, and `ModeControl.set` has no caller until a
 provider that has one ships (item 06). Load does not restore Codex's settings
 (item 02, Q5); re-applying model, effort and mode after a resume is item 06's.
+
+**As built, item 05 (#1288, 2026-10-16).** Six optional capabilities are
+appended to `ProviderCapabilities`, and Claude's six live in
+`providers/claude-surfaces.ts`, which the real adapter and the fake both
+declare. With nothing declared, each surface shows an honest empty state:
+
+| Capability | What it answers | With nothing declared |
+|---|---|---|
+| `usage` | `estimateCostUsd(tokens, model)` → USD or `undefined` | tokens, no dollar figure |
+| `statusPage` | `{ base }`, a Statuspage host | "No public status page for <AI>"; nothing fetched |
+| `preflight` | `check()` → `{cliPath, version, configPresent, ok}` | "not checked"; no banner |
+| `labels` | `run(req)`, the contained one-shot | no AI label (the card's own AI only) |
+| `mcpManager` | inventory, health, add, remove, reset approvals | "This AI has no MCP server list…"; writes refused |
+| `commandFiles` | `scan(folder)`, the `/` disk scan | builtins only |
+
+How usage fits a second AI without another refactor:
+- **One shape.** `shared/usage-report.ts` defines `{usage, model?, estimateUsd?,
+  limits?}`. `limits` is `PlanLimitWindow[]`: `id`, `label?`, `usedPercent`,
+  `windowMinutes?`, `resetsAt?`. That is Codex's measured
+  `account/rateLimits/read`, so item 07 fills it as it is.
+- **One path per provider.** A provider with `transcripts` is counted by the
+  transcript ledger. One without them sends per-turn `usage` events (tokens,
+  model, limits), which `usage/event-usage.ts` adds up and prices through the
+  provider. The result goes out on the same `sessions:usage` message.
+- **Item 07's job:** fill `usage` from the `session/prompt` result, and `limits`
+  from the native call.
+- **Gaps item 07 inherits, from item 02 Q6:**
+  - a cancelled turn reports `usage: null` and adds nothing;
+  - the guardian and title-generator turns are not counted;
+  - nothing is persisted, so a relaunch counts from zero.
+
+What stayed Claude's, on purpose:
+- the Manager's live-session verbs (`mcp_status`, toggle, reconnect, auth),
+  which are item 04's `controls.mcp`. An AI without them answers
+  `unsupported`, and the Manager says so in its own words;
+- the `health.state.*` strings, which still name Anthropic.
 
 ---
 

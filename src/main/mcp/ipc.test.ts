@@ -1,8 +1,8 @@
 // The MCP seam's §5.29 gate, and how it says no (#632 read, #714 write).
 //
 // THE CLAIM UNDER TEST IS THE FOLDER CHECK, and it is the only real logic in
-// `ipc.ts` — everything else delegates to `config.ts`, `health.ts`, `args.ts`
-// and `cli.ts`, which have their own files. It earns a test of its own because
+// `ipc.ts` — everything else delegates to `claude-mcp-config.ts`, `claude-mcp-health.ts`, `args.ts`
+// and `claude-mcp-cli.ts`, which have their own files. It earns a test of its own because
 // the folder is UNTRUSTED RENDERER INPUT that decides three dangerous things:
 // which `.mcp.json` gets read off the disk, which directory a child process is
 // spawned in, and — since #714 — which repo's checked-in `.mcp.json` gets a new
@@ -17,9 +17,11 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { registerMcpIpc, McpLiveSession } from './ipc';
 import { IpcBroker } from '../ipc/broker';
 import { LogFields, Logger } from '../log/logger';
-import * as health from './health';
-import * as cli from './cli';
-import * as config from './config';
+import * as health from '../providers/claude-mcp-health';
+import * as cli from '../providers/claude-mcp-cli';
+import * as config from '../providers/claude-mcp-config';
+import { claudeSurfaces } from '../providers/claude-surfaces';
+import type { McpManagerCapability } from '../extensibility/contributions';
 import type { McpAddRequest, McpStatusWire } from '../../shared/mcp';
 import type { ControlVerdict } from '../../shared/control';
 
@@ -34,6 +36,11 @@ interface HarnessOpts {
   status?: (liveId: string) => Promise<ControlVerdict>;
   /** wire the two auth verbs (#734), or omit for the no-control-channel case */
   auth?: boolean;
+  /**
+   * The folder's MCP manager (#1288). Absent = Claude's real one, which is what
+   * every test here was written against; `null` = an AI that declares none.
+   */
+  manager?: McpManagerCapability | null;
 }
 
 function harness(folders: string[], opts: HarnessOpts = {}) {
@@ -61,6 +68,7 @@ function harness(folders: string[], opts: HarnessOpts = {}) {
     broker,
     log,
     isSessionFolder: (f) => folders.includes(f),
+    managerFor: () => (opts.manager === undefined ? claudeSurfaces.mcpManager! : opts.manager),
     liveSession: (id) => opts.sessions?.[id] ?? null,
     ...(opts.withPty === false
       ? {}
@@ -199,6 +207,16 @@ describe('mcp:status — the real inventory, over the control channel (#729)', (
     expect(res).toMatchObject({ reason: 'not-stream', servers: [] });
     // NOT LOGGED AS A FAILURE, because it is not one — it is a permanent
     // property of that transport, and the pane says something different for it.
+    expect(h.warnings).toHaveLength(0);
+  });
+
+  it('says `unsupported` for an AI with no live MCP controls — not "did not answer" (#1288)', async () => {
+    const h = harness(['/ok'], {
+      ...live,
+      status: async () => ({ ok: false, reason: 'unsupported', message: 'Not available with Codex.' }),
+    });
+    const res = (await h.call('mcp:status', '/ok', 's1')) as McpStatusWire;
+    expect(res).toMatchObject({ reason: 'unsupported', servers: [] });
     expect(h.warnings).toHaveLength(0);
   });
 
@@ -459,7 +477,7 @@ describe('mcp:add', () => {
     // WHY THE SECRETS GO IN RATHER THAN THE DETAIL BEING FILTERED ON THE WAY
     // OUT: redaction has to happen before the 600-character bound, or a secret
     // straddling the boundary is no longer an exact substring and its prefix
-    // survives. `cli.ts` owns both steps so they cannot be reordered.
+    // survives. `claude-mcp-cli.ts` owns both steps so they cannot be reordered.
     const spy = vi.spyOn(cli, 'runMcp').mockResolvedValue({ ok: true });
     const h = harness(['/ok']);
     await h.call('mcp:add', '/ok', {
@@ -694,5 +712,71 @@ describe('mcp:authenticate / mcp:clearAuth — signing in and out (#734)', () =>
     const h = harness(['/ok'], { ...live, auth: true });
     await h.call(channel, '/ok', 's1', 42);
     expect(h.authed).toEqual([{ verb, liveId: 's1', name: 42 }]);
+  });
+});
+
+describe('an AI that keeps no MCP list (#1288)', () => {
+  it('mcp:list answers an honest empty state, marked unsupported, and reads no file', async () => {
+    const spy = vi.spyOn(config, 'readInventory');
+    const h = harness(['/ok'], { manager: null });
+    expect(await h.call('mcp:list', '/ok')).toEqual({
+      folder: '/ok',
+      servers: [],
+      unreadable: [],
+      unsupported: true,
+    });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('mcp:health says it did not run, and spawns nothing', async () => {
+    const spy = vi.spyOn(health, 'checkHealth');
+    const h = harness(['/ok'], { manager: null });
+    expect(await h.call('mcp:health', '/ok')).toEqual({ folder: '/ok', states: {}, ok: false });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('every write is refused, and no CLI is run', async () => {
+    const spy = vi.spyOn(cli, 'runMcp');
+    const h = harness(['/ok'], { manager: null });
+    expect(await h.call('mcp:add', '/ok', GOOD_ADD)).toEqual({ ok: false, reason: 'refused' });
+    expect(await h.call('mcp:remove', '/ok', 'sentry', 'local')).toEqual({ ok: false, reason: 'refused' });
+    expect(await h.call('mcp:resetApprovals', '/ok')).toEqual({ ok: false, reason: 'refused' });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('a manager lookup that THROWS is the same empty state, logged, never a rejection', async () => {
+    const h = harness(['/ok'], {
+      manager: {
+        inventory: () => {
+          throw new Error('provider exploded');
+        },
+        health: () => Promise.reject(new Error('provider exploded')),
+        add: () => {
+          throw new Error('provider exploded'); // synchronously, before any promise exists
+        },
+        remove: () => Promise.reject(new Error('provider exploded')),
+        resetApprovals: () => Promise.resolve({ ok: true }),
+      },
+    });
+    expect(await h.call('mcp:list', '/ok')).toEqual({ folder: '/ok', servers: [], unreadable: [] });
+    expect(await h.call('mcp:health', '/ok')).toEqual({ folder: '/ok', states: {}, ok: false });
+    expect(await h.call('mcp:add', '/ok', GOOD_ADD)).toEqual({ ok: false, reason: 'refused' });
+    expect(await h.call('mcp:remove', '/ok', 'sentry', 'local')).toEqual({ ok: false, reason: 'refused' });
+    expect(h.warnings.some((w) => /could not read its MCP list/.test(w.msg))).toBe(true);
+  });
+
+  it('the folder gate still runs first: a refused folder never reaches the provider', async () => {
+    const inventory = vi.fn();
+    const h = harness(['/ok'], {
+      manager: {
+        inventory,
+        health: vi.fn(),
+        add: vi.fn(),
+        remove: vi.fn(),
+        resetApprovals: vi.fn(),
+      } as unknown as McpManagerCapability,
+    });
+    await h.call('mcp:list', '/elsewhere');
+    expect(inventory).not.toHaveBeenCalled();
   });
 });

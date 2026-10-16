@@ -26,6 +26,7 @@ import type { HistoryRepairNotice } from '../../shared/history-repair';
 import { EventDto } from './components/EventsPanel';
 import { EventsDrawer } from './components/EventsDrawer';
 import { Usage, CliCost, addUsage, sumCostUsd, ZERO_USAGE } from './lib/usage';
+import type { PlanLimitWindow } from '../../shared/usage-report';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { holdSiblingMessage } from './lib/sibling-hold';
 import { DEFAULT_AUTONOMY, nextAutonomy } from './lib/autonomy';
@@ -790,7 +791,7 @@ export function App(): React.JSX.Element {
   const [hasCapture, setHasCapture] = useState(false);
   const [perfSummaryData, setPerfSummaryData] = useState<PerfSummary | null>(null);
   const [usageByLive, setUsageByLive] = useState<
-    Map<string, { usage: Usage; model?: string; cliCost?: CliCost }>
+    Map<string, { usage: Usage; estimateUsd?: number; cliCost?: CliCost; limits?: PlanLimitWindow[] }>
   >(new Map());
   const grid = React.useRef<GridController | null>(null);
 
@@ -875,9 +876,22 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const offUsage = bridge.sessions?.onUsage?.((snap) => {
-      const s = snap as { sessionId: string; usage: Usage; model?: string; cliCost?: CliCost };
+      const s = snap as {
+        sessionId: string;
+        usage: Usage;
+        estimateUsd?: number;
+        cliCost?: CliCost;
+        limits?: PlanLimitWindow[];
+      };
+      // `estimateUsd` is the PROVIDER's price, worked out in main (#1288);
+      // absent means no price, and `sumCostUsd` counts it rather than guessing.
       setUsageByLive((prev) =>
-        new Map(prev).set(s.sessionId, { usage: s.usage, model: s.model, cliCost: s.cliCost })
+        new Map(prev).set(s.sessionId, {
+          usage: s.usage,
+          estimateUsd: s.estimateUsd,
+          cliCost: s.cliCost,
+          limits: s.limits,
+        })
       );
     });
     // prune a dead live id so the workspace total doesn't double-count after a
@@ -909,6 +923,16 @@ export function App(): React.JSX.Element {
   // guess to the total. The rule lives in `usage.ts` now, where a test reaches
   // it — inlined here, a mutation round showed nothing could.
   const workspaceCost = sumCostUsd(usageByLive.values());
+  // Plan-limit windows are ACCOUNT-wide, so they are never summed: for each
+  // window id, the session latest in `usageByLive`'s order (roughly the newest
+  // session, since a Map keeps first-insertion order) speaks for it (#1288).
+  // Sessions on one account report the same windows, so which one wins is a
+  // question of freshness by seconds, not of correctness. Claude reports none.
+  const workspaceLimits = (() => {
+    const byId = new Map<string, PlanLimitWindow>();
+    for (const v of usageByLive.values()) for (const w of v.limits ?? []) byId.set(w.id, w);
+    return [...byId.values()];
+  })();
 
   // The speaker for main's cues (P2-E14-05a). This window and no other: a
   // dockview popout ships no script of ours, so `main/events/audio-sink.ts`
@@ -3071,7 +3095,9 @@ export function App(): React.JSX.Element {
         serviceHealth={serviceHealth}
         cliVersion={cliVersion}
         totalOutputTokens={workspaceUsage.output}
-        totalCostUsd={workspaceCost}
+        totalCostUsd={workspaceCost.usd}
+        unpricedSessions={workspaceCost.unpriced}
+        {...(workspaceLimits.length ? { planLimits: workspaceLimits } : {})}
         attentionCount={attentionDepth}
         attentionHottest={attentionHottest}
         attentionBinding={queueBindingLabel}

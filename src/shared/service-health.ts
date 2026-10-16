@@ -31,7 +31,9 @@ export type ServiceHealthReason =
   /** the request never landed: DNS, timeout, refused */
   | 'network'
   /** it landed and made no sense: non-2xx, unparseable, schema moved */
-  | 'bad-response';
+  | 'bad-response'
+  /** the AI publishes no status page, so nothing is ever asked (#1288) */
+  | 'no-status-page';
 
 /** One unresolved incident, reduced to what a tooltip and a notice can use. */
 export interface ServiceIncident {
@@ -76,6 +78,11 @@ export interface ServiceHealthStatus {
   checkedAt?: string;
   /** null unless the local rule is currently raised */
   corroboration: ServiceCorroboration | null;
+  /**
+   * The AI this record is about, by display name — set with `no-status-page`,
+   * so the tooltip can say WHICH AI has no page (#1288).
+   */
+  providerName?: string;
 }
 
 export interface ServiceHealthPrefs {

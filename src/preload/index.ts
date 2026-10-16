@@ -352,6 +352,8 @@ const api = {
           priorModel?: string;
           /** the CLI's own cost figure for this card's last conversation (#787) */
           priorCliCost?: CliCost;
+          /** the provider's price for `priorUsage`; absent = no price (#1288) */
+          priorEstimateUsd?: number;
           autonomy?: AutonomyMode;
           taskLabel?: string;
         })

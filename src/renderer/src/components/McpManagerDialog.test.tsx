@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // The MCP Manager pane (#632, §5.17) — PR 1, read-only.
 //
-// The scope MODEL is `main/mcp/config.ts`'s and is tested there on real file
-// fixtures; the health PARSER is `main/mcp/health.ts`'s. This file owns what
+// The scope MODEL is `main/providers/claude-mcp-config.ts`'s and is tested there on real file
+// fixtures; the health PARSER is `main/providers/claude-mcp-health.ts`'s. This file owns what
 // only a mounted dialog can answer:
 //
 //   • the two-call shape — draw from the config, fill the status in after —
@@ -321,6 +321,19 @@ describe('what it says when there is nothing to say', () => {
   it('says the session has none, which is a different sentence', async () => {
     await mount();
     expect(text()).toContain('No MCP servers are configured');
+  });
+
+  it('an AI with no MCP list says THAT, and offers nothing to add or reset (#1288)', async () => {
+    listAnswer = (folder) => ({ folder, servers: [], unreadable: [], unsupported: true });
+    await mount();
+    expect(text()).toContain('This AI has no MCP server list');
+    expect(text()).not.toContain('No MCP servers are configured');
+    expect(text()).not.toContain('Add server');
+    expect(document.querySelector('[data-mcp-unsupported]')).not.toBeNull();
+    // ...and none of the Claude-shaped footers: no "only what its config files
+    // say", no "Adding and removing run Claude Code's own commands"
+    expect(document.querySelector('[data-mcp-configured-only]')).toBeNull();
+    expect(text()).not.toContain('Claude Code');
   });
 });
 
@@ -1023,6 +1036,8 @@ describe('when the session cannot answer, the pane says WHICH reason', () => {
     ['not-stream', 'no live connection'],
     ['unavailable', 'answer'],
     ['no-session', 'Start this session'],
+    // #1288: the AI has no live MCP at all — said as that, not as "didn't answer"
+    ['unsupported', 'This AI has no MCP list that switchboard can ask it for'],
   ])('falls back to the config list and explains `%s`', async (reason, phrase) => {
     // #723 exists because "no servers configured" was rendered for a case that
     // meant "we cannot see them". An empty list with no reason would bring that
@@ -1709,6 +1724,8 @@ describe('controlFailure — the control channel speaks a different vocabulary',
     ['session-gone', 'mcp.reconnect.no-session'],
     ['timed-out', 'mcp.control.timedOut'],
     ['invalid', 'mcp.error.refused'],
+    // #1288: an AI with no live MCP controls is neither a refusal nor a fault
+    ['unsupported', 'mcp.control.unsupported'],
   ])('maps %s to its own sentence', (reason, key) => {
     // NOT `failureMessage`'s vocabulary. "Claude Code isn't installed" and
     // "this session can't be asked" are different problems and read differently.

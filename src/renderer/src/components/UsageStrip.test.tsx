@@ -54,7 +54,7 @@ afterEach(() => {
   host.remove();
 });
 
-function render(props: { model?: string; cliCost?: CliCost; usage?: Usage }): void {
+function render(props: { estimateUsd?: number; cliCost?: CliCost; usage?: Usage }): void {
   act(() => {
     root.render(<UsageStrip usage={USAGE} {...props} />);
   });
@@ -63,28 +63,34 @@ function render(props: { model?: string; cliCost?: CliCost; usage?: Usage }): vo
 /** The `<span>` holding the cost, found by its tooltip rather than by index. */
 function costSpan(): HTMLElement {
   const spans = [...host.querySelectorAll('span[title]')] as HTMLElement[];
-  const found = spans.find((s) => /\$/.test(s.textContent ?? ''));
+  const found = spans.find((s) => /\$|—/.test(s.textContent ?? ''));
   expect(found, 'no cost span rendered').toBeTruthy();
   return found!;
 }
 
 describe('UsageStrip cost figure', () => {
   it('shows our estimate with a ~ and the estimate tooltip', () => {
-    render({ model: 'claude-opus-5' });
+    render({ estimateUsd: 30 });
     expect(costSpan().textContent).toBe('~$30.00');
     expect(costSpan().getAttribute('title')).toBe(en.usage.costTitleEstimate);
   });
 
   it('shows the CLI’s own figure with NO ~ and its own tooltip', () => {
-    render({ model: 'claude-opus-5', cliCost: cli() });
+    render({ estimateUsd: 30, cliCost: cli() });
     expect(costSpan().textContent).toBe('$42.50');
     expect(costSpan().getAttribute('title')).toBe(en.usage.costTitleCli);
   });
 
   it('shows ≥ and the floor tooltip when the CLI could not price a model', () => {
-    render({ model: 'claude-opus-5', cliCost: cli({ hasUnknownModelCost: true }) });
+    render({ estimateUsd: 30, cliCost: cli({ hasUnknownModelCost: true }) });
     expect(costSpan().textContent).toBe('≥$42.50');
     expect(costSpan().getAttribute('title')).toBe(en.usage.costTitleCliFloor);
+  });
+
+  it('shows a dash and says why when the provider gave no price (#1288)', () => {
+    render({});
+    expect(costSpan().textContent).toBe('—');
+    expect(costSpan().getAttribute('title')).toBe(en.usage.costTitleNone);
   });
 
   it('the three tooltips are genuinely three different strings', () => {
@@ -105,12 +111,12 @@ describe('UsageStrip cost figure', () => {
     // wrong dialect renders its braces verbatim to the user (see test-i18n.ts);
     // the number assertions above would still pass on `{cost}` if the strip
     // fell back to the key.
-    render({ model: 'claude-opus-5', cliCost: cli() });
+    render({ estimateUsd: 30, cliCost: cli() });
     expect(host.textContent).not.toMatch(/[{}]/);
   });
 
   it('renders the tokens beside the cost, so the exact signal is not lost', () => {
-    render({ model: 'claude-opus-5', cliCost: cli() });
+    render({ estimateUsd: 30, cliCost: cli() });
     expect(host.textContent).toContain('1.00M');
   });
 });

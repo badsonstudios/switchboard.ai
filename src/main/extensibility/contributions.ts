@@ -9,6 +9,16 @@ import type { BusLaunch } from '../bus/launch';
 import { TransportKind } from '../transport/transport';
 import type { EngineTranslator, TranslatorHooks } from '../sessions/engine-events';
 import type { ControlCapability } from '../sessions/engine-controls';
+// the per-AI surfaces (#1288)
+import type { Logger } from '../log/logger';
+import type { UsageTokens } from '../../shared/usage-report';
+import type {
+  McpAddRequest,
+  McpHealth,
+  McpInventoryWire,
+  McpMutationResult,
+  McpScope,
+} from '../../shared/mcp';
 
 /**
  * Provider adapter contract v0 (§5.3). The full interface grows in P1-E2-02;
@@ -156,6 +166,51 @@ export interface ProviderCapabilities {
    * No fallback to Claude's, for the reason `events` has none.
    */
   controls?: ControlCapability;
+  // ── Per-AI surfaces (E40 item 05, #1288) ─────────────────────────────────
+  //
+  // The app's chrome around a session (what it cost, whether the AI's service
+  // is up, whether the AI is installed, the card's label, the MCP list, the
+  // `/` command files) used to assume Claude. Each is now a question asked of
+  // the provider, and a provider that declares none of them gets an honest
+  // empty state on every one: no price, "no status page", no preflight claim,
+  // no AI label, "no MCP list". Every call is wrapped by its caller; a throw
+  // costs that surface and nothing else (P6).
+  /**
+   * The provider can put a price on its own tokens (DESIGN §5.13). Absent: the
+   * session shows its tokens and NO dollar figure. There is no shared fallback
+   * table, because a fallback rate is a number nobody reported.
+   */
+  usage?: UsageCapability;
+  /**
+   * The provider publishes a Statuspage-style status page (§5.14). Absent: the
+   * service-health dot says there is no status page for this AI and nothing is
+   * fetched.
+   */
+  statusPage?: StatusPageCapability;
+  /**
+   * The provider can check that its program is installed and plausibly logged
+   * in (§5.25). Absent: preflight makes no claim about this provider, and in
+   * particular raises no "not installed" banner on no evidence.
+   */
+  preflight?: PreflightCapability;
+  /**
+   * The provider can run one CONTAINED prompt to name a card (#758). Absent:
+   * cards on this provider get no AI label; the instant label and the AI's own
+   * title still apply.
+   */
+  labels?: LabelCapability;
+  /**
+   * The provider keeps a user-editable MCP server list the Manager can show
+   * and change (§5.17). A SIBLING of `mcp`, not part of it: `mcp` is the
+   * spawn-time Session Bus wiring, this is the user's own configuration.
+   * Absent: the Manager says this AI has no MCP list it can read.
+   */
+  mcpManager?: McpManagerCapability;
+  /**
+   * The provider reads the user's own `/` commands and skills from disk
+   * (§5.17). Absent: the composer lists the provider's builtins only.
+   */
+  commandFiles?: CommandFilesCapability;
 }
 
 export interface EventCapability {
@@ -552,3 +607,97 @@ export interface SpawnRecipe {
 export type MainContributions = {
   'provider-adapter': ProviderAdapter;
 };
+
+// ── The per-AI surface capabilities (E40 item 05, #1288) ───────────────────
+//
+// The single-function slots are PROPERTY signatures, for `TitleCapability`'s
+// reason (#663): implementers assign free functions that never use `this`.
+
+export interface UsageCapability {
+  /**
+   * What `tokens` cost on `model`, in USD, or `undefined` when this provider
+   * cannot say: an unknown model, or no model named yet. MUST NOT THROW; a
+   * throw is caught and read as `undefined`.
+   *
+   * An ESTIMATE, and the caller labels it as one. `undefined` must never be
+   * turned into zero or into another model's price by anyone downstream.
+   */
+  estimateCostUsd: (tokens: UsageTokens, model?: string) => number | undefined;
+}
+
+export interface StatusPageCapability {
+  /** a Statuspage v2 host: `<base>/api/v2/status.json` is read */
+  base: string;
+}
+
+/** One provider's preflight answer (P1-E6-03, §5.25). Facts, not advice. */
+export interface ProviderPreflight {
+  /** where the provider's program was found, or null */
+  cliPath: string | null;
+  /** what it said its version was, or null */
+  version: string | null;
+  /** heuristic: the provider's config exists in the profile (a login happened) */
+  configPresent: boolean;
+  ok: boolean;
+}
+
+export interface PreflightCapability {
+  /** Look, now. Re-run on demand, so installing mid-run is noticed. Never rejects. */
+  check: () => Promise<ProviderPreflight>;
+}
+
+export type OneShotFailure =
+  /** the provider's program is not installed — a normal state, not an error */
+  | 'no-cli'
+  /** our deadline fired and the tree was killed */
+  | 'timeout'
+  /** the child never started, or the argv was refused */
+  | 'spawn-failed'
+  /** the program ran and exited non-zero (a bad model name, a rate limit) */
+  | 'cli-failed';
+
+export type OneShotResult =
+  | { ok: true; text: string; ms: number; truncated: boolean }
+  | { ok: false; failure: OneShotFailure; ms: number; detail?: string };
+
+export interface OneShotRequest {
+  /** the whole prompt. Goes on STDIN and is NEVER an argument. */
+  prompt: string;
+  /** where to run */
+  cwd: string;
+  model?: string;
+  timeoutMs?: number;
+}
+
+export interface LabelCapability {
+  /**
+   * Run one prompt with NO tools and hand back what the AI said (#758). The
+   * containment is the provider's to get right (Claude's is measured in
+   * `spike/findings/758-label-containment.md`). NEVER REJECTS.
+   */
+  run: (req: OneShotRequest, deps: { log: Logger }) => Promise<OneShotResult>;
+}
+
+export interface McpManagerCapability {
+  /** The servers this provider's own config files declare for `folder`. Never throws. */
+  inventory(
+    folder: string,
+    log?: { warn: (msg: string, fields?: Record<string, unknown>) => void }
+  ): McpInventoryWire;
+  /** Whether the provider is connected to them. Never rejects. */
+  health(folder: string): Promise<{ states: Record<string, McpHealth>; ok: boolean }>;
+  /** Add a server. The request is already validated by the host. Never rejects. */
+  add(folder: string, request: McpAddRequest, secrets: readonly string[]): Promise<McpMutationResult>;
+  /** Remove one. Name and scope already validated. Never rejects. */
+  remove(folder: string, name: string, scope: McpScope): Promise<McpMutationResult>;
+  /** Forget every project-scope approval for `folder`. Never rejects. */
+  resetApprovals(folder: string): Promise<McpMutationResult>;
+}
+
+export interface CommandFilesCapability {
+  /**
+   * The user's and the project's own commands and skills for a session in
+   * `folder`. NEVER REJECTS: a scan that fails answers what it gathered.
+   */
+  scan: (folder: string, log?: (msg: string) => void) => Promise<SlashCommand[]>;
+}

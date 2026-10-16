@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { buildInventory, readInventory, samePath } from './config';
+import { buildInventory, readInventory, samePath } from './claude-mcp-config';
 
 /** exactly what `claude mcp add -s project probe-a -- node fake-server.js`
  *  wrote into `.mcp.json` (probed) */

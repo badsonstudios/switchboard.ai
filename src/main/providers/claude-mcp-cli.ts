@@ -1,6 +1,11 @@
 // Running `claude mcp <verb>` — the write half of §5.17 (#714).
 //
-// "Read the real config files; mutate via the real CLI." `config.ts` is the
+// CLAUDE'S, AND ONLY CLAUDE'S (#1288). This lived in `main/mcp/cli.ts` until E40
+// item 05 moved it behind the Claude provider: it is reached only through the
+// `mcpManager` capability (`claude-surfaces.ts`), so an AI with no MCP list
+// never has `~/.claude.json` read or `claude mcp` run on its behalf.
+//
+// "Read the real config files; mutate via the real CLI." `claude-mcp-config.ts` is the
 // read half and never spawns anything. This is the only file in the app that
 // makes the CLI CHANGE something, and it is deliberately thin: `args.ts` decides
 // what goes on the command line, `transport/win-cmd.ts` decides how it survives
@@ -35,7 +40,7 @@
 // user verbatim (`reason: 'cli-failed'`, `detail`), and the only thing we add
 // is a length bound so a runaway stack trace cannot become the dialog.
 import { execFile } from 'child_process';
-import { resolveCliPath } from '../providers/claude';
+import { resolveCliPath } from './claude-cli-path';
 import { execSpec } from '../transport/win-cmd';
 import type { McpMutationResult } from '../../shared/mcp';
 
@@ -102,7 +107,7 @@ function detailFrom(stdout: string, stderr: string, secrets: readonly string[]):
 
 export interface RunMcpOptions {
   /** `undefined` = resolve from PATH; an explicit `null` = "there is no CLI",
-   *  which is the seam `health.ts` already uses to test the miss */
+   *  which is the seam `claude-mcp-health.ts` already uses to test the miss */
   bin?: string | null;
   timeoutMs?: number;
   /** injected for the #127 reason — see `execSpec` */

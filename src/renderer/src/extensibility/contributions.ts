@@ -25,6 +25,7 @@ import type { FeedBlockDto } from '../lib/feed';
 import type { ThemeDefinition, ThemeId } from '../theme/theme';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
+import type { PlanLimitWindow } from '../../../shared/usage-report';
 import type { DecideHeld } from '../../../shared/ipc/permissions';
 import type { TransportKind } from '../../../shared/transport';
 
@@ -311,7 +312,15 @@ export interface StatusBarContext {
   themeNameKey: string;
   cliVersion?: string | null;
   totalOutputTokens?: number;
+  /** the sum over the sessions that HAVE a price (#1288) */
   totalCostUsd?: number;
+  /**
+   * Live sessions with tokens and no price — not in `totalCostUsd` at any
+   * rate (#1288). Absent or 0: every session with tokens was priced.
+   */
+  unpricedSessions?: number;
+  /** plan-limit windows an AI reported (#1288) — account-wide, never summed */
+  planLimits?: PlanLimitWindow[];
   /**
    * The provider's service health as main last reported it (P2-E14-07, §5.14).
    * Optional: a bar rendered before the first push — or in a test that does not

@@ -35,6 +35,7 @@
 import type { BlockIntent, DerivationCaps, DerivationContext } from '../feed/blocks';
 import type { CliCommand } from '../../shared/slash-commands';
 import type { AutonomyMode } from '../../shared/sessions';
+import type { PlanLimitWindow } from '../../shared/usage-report';
 
 /**
  * The engine is producing output for the running turn — the status machine's
@@ -218,8 +219,9 @@ export interface ModeEvent {
 
 /**
  * The engine compacted the conversation's context. Token counts as the engine
- * reported them, when it did. No consumer yet: carried so per-AI surfaces
- * (#1288) do not have to reach for a provider's frames to learn it.
+ * reported them, when it did. No consumer yet — the per-AI surfaces item
+ * (#1288) turned out not to need it — but carried so the first surface that
+ * does (a compaction marker in the Feed) need not reach for a provider's frames.
  */
 export interface CompactionEvent {
   type: 'compaction';
@@ -229,14 +231,29 @@ export interface CompactionEvent {
 }
 
 /**
- * What the turn cost in tokens, as the engine reported it. No consumer yet —
- * usage is still read from Claude's transcripts; per-AI usage is #1288.
+ * What ONE TURN cost, as the engine reported it (#1288). A DELTA: the host adds
+ * turns up (`usage/event-usage.ts`). `limits` is not a delta; the latest report
+ * replaces the last.
+ *
+ * ONE USAGE PATH PER PROVIDER. This is the path for an engine that writes no
+ * transcript the host can read (Codex over ACP reports per-turn tokens in its
+ * `session/prompt` result, `spike/findings/e40-codex-acp.md` Q6). A provider
+ * that declares `transcripts` gets its usage from the transcript ledger, which
+ * carries detail no per-turn report does (cache writes, thinking, subagent
+ * files), and its usage events are ignored — so Claude's translator emits none.
  */
 export interface UsageEvent {
   type: 'usage';
   inputTokens?: number;
   outputTokens?: number;
   cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  /** the part of `outputTokens` spent thinking — inside it, never added */
+  thinkingTokens?: number;
+  /** the model the turn ran on, as the engine names it — the price lookup's key */
+  model?: string;
+  /** plan-limit windows, when the engine reports them */
+  limits?: PlanLimitWindow[];
 }
 
 export type EngineEvent =

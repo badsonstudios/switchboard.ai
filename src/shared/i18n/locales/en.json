@@ -876,8 +876,11 @@
       "offline": "You appear to be offline, so nothing was checked.",
       "polling-off": "Status checks are turned off.",
       "network": "Couldn't reach the status page.",
-      "bad-response": "The status page answered something we couldn't read."
+      "bad-response": "The status page answered something we couldn't read.",
+      "no-status-page": "This AI has no public status page."
     },
+    "noStatusPage": "No public status page for {name}, so nothing is checked.",
+    "noStatusPageUnnamed": "No public status page for this AI, so nothing is checked.",
     "page": "The status page says: {page}",
     "incident": "{name} — {status}",
     "corroborated": "{count, plural, one {# session here} other {# sessions here}} hit errors recently.",
@@ -1198,6 +1201,11 @@
   "statusbar": {
     "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",
     "usage": "↓{tokens} · ~{cost} est",
+    "usagePartial": "↓{tokens} · ≥{cost} est",
+    "usageNoPrice": "↓{tokens} · no price",
+    "usageUnpricedTitle": "{count, plural, one {# session uses a model with no known price, so it is not in this total.} other {# sessions use a model with no known price, so they are not in this total.}} Token counts are exact.",
+    "limit": "{label}: {pct}% used",
+    "limitResets": "{label}: {pct}% used, resets {time}",
     "attention": "{count, plural, =0 {none waiting} other {# waiting}}",
     "attentionTitle": "Sessions waiting on you — {binding} goes to the next one",
     "theme": "theme: {theme}"
@@ -1212,9 +1220,10 @@
     "thinking": "({n} thinking)",
     "thinkingTitle": "{pct}% of the output tokens were the model thinking before it answered. Already counted in the output figure, not on top of it.",
     "cacheTitle": "Cache-read tokens",
-    "costTitleEstimate": "Our estimate, from public per-model rates — a floor, since cache writes are billed at two rates the transcript doesn't separate. Claude Code writes its own exact figure when the session ends. You are billed by your subscription, not per token.",
+    "costTitleEstimate": "An estimate, from this AI's public per-model rates — a floor, since not every billed detail is in what the AI reports. Some AIs (Claude Code among them) write their own exact figure when the session ends. You are billed by your subscription, not per token.",
     "costTitleCli": "Claude Code's own figure for this session, read from its transcript after the session ended. You are billed by your subscription, not per token.",
-    "costTitleCliFloor": "Claude Code's own figure for this session — at least this much. It used a model it could not price, so its own total is short. You are billed by your subscription, not per token."
+    "costTitleCliFloor": "Claude Code's own figure for this session — at least this much. It used a model it could not price, so its own total is short. You are billed by your subscription, not per token.",
+    "costTitleNone": "No price: this AI did not give one for this model, so none is shown rather than a guess. The token counts are exact."
   },
   "report": {
     "title": "Report a problem",
@@ -1608,6 +1617,7 @@
     "noSession": "Open a session to see the MCP servers it has configured.",
     "loading": "Reading your configuration…",
     "empty": "No MCP servers are configured in this session's files.",
+    "unsupported": "This AI has no MCP server list that switchboard can read, so there is nothing to show or change here.",
     "noCommand": "(no command recorded)",
     "carries": "Carries: {keys}",
     "scopeUnreadable": "Could not read {file} — check it for a syntax error. This affects: {scopes}.",
@@ -1616,7 +1626,8 @@
     "whyConfiguredOnly": {
       "no-session": "Start this session to see everything it really has.",
       "not-stream": "This session has no live connection to Claude Code, so it can't be asked for the full list — only what its config files say.",
-      "unavailable": "The session didn't answer when asked for the full list."
+      "unavailable": "The session didn't answer when asked for the full list.",
+      "unsupported": "This AI has no MCP list that switchboard can ask it for."
     },
     "cliNote": "Adding and removing run Claude Code's own commands. Servers that don't come from a configuration file can be shown, signed in to, turned off and reconnected here, but not removed.",
     "tools": "{count, plural, one {# tool} other {# tools}}: {names}",
@@ -1647,7 +1658,8 @@
     "reconnectedNone": "There are no servers to reconnect.",
     "control": {
       "notStream": "This session can't be asked to do that — it has no live connection to Claude Code. Restarting it usually fixes this.",
-      "timedOut": "The session didn't answer. It may be busy or stuck."
+      "timedOut": "The session didn't answer. It may be busy or stuck.",
+      "unsupported": "This AI has no MCP controls that switchboard can use, so that can't be done here."
     },
     "emptyRuntime": "This session has no MCP servers.",
     "notLoadedHint": "Added or changed since this session started. Use Reconnect, or restart it, to pick them up.",

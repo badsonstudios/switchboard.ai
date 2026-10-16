@@ -878,6 +878,25 @@ own figures in the conversation.
 **You are billed by your subscription, not per token**, so none of this is a
 bill.
 
+### The total in the status bar
+
+The bottom bar adds up every open session: `↓12k · ~$1.50 est` means 12,000
+tokens out, and an estimated $1.50 if those tokens had been paid for one by one.
+The estimate comes from each AI's own price list.
+
+**A model with no known price gets no dollar figure.** switchboard does not
+guess one from a different model. That happens with a model released after
+your copy of switchboard, or an AI that does not publish prices. It shows in
+two ways:
+
+- `↓12k · ≥$1.50 est` — some sessions could not be priced, so the real total
+  is at least this much. Hover over it to see how many sessions are missing.
+- `↓12k · no price` — none of the open sessions could be priced. The token
+  count is still exact.
+
+(Before this change, an unknown model was priced as if it were Sonnet. That
+gave a confident number that nobody had actually reported.)
+
 ## What happened to the Terminal tab
 
 Cards used to have a fourth tab showing the real Claude Code terminal. **It has

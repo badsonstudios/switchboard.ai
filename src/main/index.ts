@@ -43,13 +43,9 @@ import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
 import { HistoryRepairLog } from './sessions/history-repair-log';
 import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
-// The contained one-shot behind AI task labels (#758). Wired in here rather
-// than imported by `sessions/ipc.ts`, so the argv that makes a turn harmless
-// stays a provider concern and the label path stays injectable.
-import { runContainedPrompt } from './providers/claude-oneshot';
 import { registerGroupIpc } from './workspace/group-ipc';
 import { registerMcpIpc } from './mcp/ipc';
-import { samePath } from './mcp/config';
+import { samePath } from './project-key';
 import { registerFsIpc } from './fs/ipc';
 import { registerDocImageProtocol } from './fs/doc-image';
 import { createPageShots, electronPageRenderer } from './fs/page-snapshot';
@@ -112,10 +108,10 @@ import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc
 import { registerDispatchIpc } from './sessions/dispatch-ipc';
 import { DispatchResults } from './sessions/dispatch-results';
 import { runPreflight } from './preflight';
+import { slashCommandsFor } from './slash-commands-for';
 import { startStaticServer, StaticServer } from './static-server';
 import { installCspHeaders } from './csp';
 import { parsePopoutFeatures } from './popout-bounds';
-import { scanSlashCommands } from './capabilities/slash-commands';
 import { buildMenuTemplate } from './app-menu';
 import { UpdateService, FEED_ENV, isAllowedReleaseUrl } from './update/service';
 import { UpdateInstaller, UPDATE_DIR_NAME, resolveHandshake, resolveOffer } from './update/install';
@@ -1282,6 +1278,24 @@ app
         const rec = manager.list().find((s) => s.id === liveId);
         return rec ? { folder: rec.identity.folder } : null;
       },
+      // WHOSE list (#1288): the first AI, among the ones this folder's sessions
+      // and cards run on, that keeps an MCP list we can read. Live sessions
+      // first, because that is the provider actually running there now. Null —
+      // the Manager's honest "this AI has no MCP list" — when none does.
+      managerFor: (folder) => {
+        const want = path.resolve(folder);
+        const ids = [
+          ...manager.list().map((s) => s.identity),
+          ...workspace.listSessions().map((s) => s.identity),
+        ]
+          .filter((i) => samePath(path.resolve(i.folder), want))
+          .map((i) => i.providerId);
+        for (const id of new Set(ids)) {
+          const m = registry.resolve('provider-adapter', id)?.capabilities?.mcpManager;
+          if (m) return m;
+        }
+        return null;
+      },
       // NO `typeIntoPty` (#952) — there is no PTY to type into, and the handler
       // that used it (`mcp:reconnect`) is gone. `mcpReconnect` below is the
       // control-channel verb that does the job properly.
@@ -1464,6 +1478,15 @@ app
       // build has no environment variable that can move a user-visible
       // endpoint.
       feedOverride: app.isPackaged ? undefined : process.env[SERVICE_STATUS_FEED_ENV],
+      // WHICH page (#1288): the default provider's own, read per poll. One with
+      // no `statusPage` capability is never polled, and the dot says so.
+      statusPage: () => {
+        const adapter = registry.resolve('provider-adapter', defaultProviderId());
+        const page = adapter?.capabilities?.statusPage;
+        return page
+          ? { base: page.base }
+          : { none: true as const, providerName: adapter?.manifest.displayName ?? '' };
+      },
       // "no polling when offline is detected" (§5.14). Electron's own answer,
       // not a heuristic of ours.
       isOnline: () => net.isOnline(),
@@ -2348,7 +2371,20 @@ app
     feed.onEvent((e) => {
       if (e) notifier.handle(e); // null = pure removal, nothing to announce
     });
-    broker.handle('preflight:check', () => runPreflight());
+    // Every registered AI checks itself (#1288); the answer the banner and the
+    // status-bar version read is the DEFAULT provider's, so with Claude alone
+    // registered this is exactly the check it always was.
+    broker.handle('preflight:check', () =>
+      runPreflight(
+        registry.list('provider-adapter').map((a) => ({
+          providerId: a.manifest.id,
+          name: a.manifest.displayName,
+          capabilities: a.capabilities,
+        })),
+        defaultProviderId(),
+        (msg, meta) => log.app.warn(msg, meta)
+      )
+    );
     busySessions = () =>
       manager
         .list()
@@ -2924,12 +2960,18 @@ app
       // Its own log subsystem, not `ipc`: a labeler that starts failing (a rate
       // limit, a CLI upgrade that renames a flag) should be findable without
       // reading every IPC line, and this is the one path that spends money.
-      runOneShot: ((): ((req: Parameters<typeof runContainedPrompt>[0]) => ReturnType<typeof runContainedPrompt>) => {
+      //
+      // Through the card's own provider since #1288 (`labels` capability; Claude's
+      // is the contained `claude -p` on haiku). An AI without one gets no AI label.
+      labelerFor: (() => {
         // Built ONCE, not per call: a label run happens on every finished turn
         // across every open session, and minting a logger each time is pure
         // churn for the life of the app.
         const aiLabelLog = createLogger(sink, 'ai-label');
-        return (req) => runContainedPrompt(req, { log: aiLabelLog });
+        return (providerId: string) => {
+          const labels = registry.resolve('provider-adapter', providerId)?.capabilities?.labels;
+          return labels ? (req: Parameters<typeof labels.run>[0]) => labels.run(req, { log: aiLabelLog }) : undefined;
+        };
       })(),
       // §5.5 Level 3 (P2-E11-12). A thunk, not a snapshot: the flag can be
       // turned off while cards are open, and the next fork request must see
@@ -2951,14 +2993,16 @@ app
       isRegisteredProvider: (providerId) => !!registry.resolve('provider-adapter', providerId),
       defaultProviderId,
       repoRoot: (folder) => gitService.root(folder),
+      // The user's own command FILES are the provider's to find (#1288,
+      // `commandFiles`; Claude's read `.claude/`). Without the capability the
+      // composer lists the builtins alone.
+      //
+      // `warn`: everything this callback carries is a scan that failed and fell
+      // open to a shorter list. The line you grep for after "my commands
+      // vanished" should not sit at info among routine chatter.
       slashCommands: (folder, providerId) =>
-        scanSlashCommands(
-          { cwd: folder, userClaudeDir: path.join(os.homedir(), '.claude') },
-          registry.resolve('provider-adapter', providerId)?.slashCommands?.() ?? [],
-          // `warn`: everything this callback carries is a scan that failed and
-          // fell open to a shorter list. The line you grep for after "my
-          // commands vanished" should not sit at info among routine chatter.
-          (msg) => log.app.warn(msg)
+        slashCommandsFor(registry.resolve('provider-adapter', providerId), folder, (msg, meta) =>
+          log.app.warn(msg, meta)
         ),
       // NO `preferredTransport` (#952). `SWITCHBOARD_TRANSPORT` was the app-wide
       // override — below a card's own choice, above the default (#381) — and it

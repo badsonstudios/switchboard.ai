@@ -1,8 +1,9 @@
 // Live usage readout for a session card (P2-E7-01, #787). Tokens are the
 // primary, exact signal. The dollar figure has TWO possible sources and the
-// strip says which one it is showing: our estimate while the session runs, the
-// CLI's own number once it has ended. `costLine` owns that choice; this file
-// only renders what it decided.
+// strip says which one it is showing: the provider's estimate while the session
+// runs, the CLI's own number once it has ended — or no price at all, when the
+// provider has none for this model (#1288). `costLine` owns that choice; this
+// file only renders what it decided.
 // `inline` renders just the spans (for embedding in the shared card header);
 // otherwise it renders its own strip.
 import React from 'react';
@@ -11,18 +12,21 @@ import { Usage, CliCost, formatTokens, costLine, thinkingPart } from '../lib/usa
 
 export function UsageStrip(props: {
   usage: Usage;
-  model?: string;
+  /** the provider's own estimate, from main; absent = no price (#1288) */
+  estimateUsd?: number;
   cliCost?: CliCost;
   inline?: boolean;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const u = props.usage;
-  const cost = costLine(u, props.model, props.cliCost);
+  const cost = costLine(u, props.estimateUsd, props.cliCost);
   const thinking = thinkingPart(u);
-  // Three distinct tooltips, because the three cases make genuinely different
-  // claims and a single "estimated cost" string would be a lie in two of them.
+  // Four distinct tooltips, because the four cases make genuinely different
+  // claims and a single "estimated cost" string would be a lie in three of them.
   const costTitle =
-    cost.source === 'cli'
+    cost.source === 'none'
+      ? t('usage.costTitleNone')
+      : cost.source === 'cli'
       ? cost.floor
         ? t('usage.costTitleCliFloor')
         : t('usage.costTitleCli')

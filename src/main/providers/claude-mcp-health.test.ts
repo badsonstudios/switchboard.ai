@@ -6,10 +6,10 @@
 // flag that does not exist. If the CLI's wording moves, re-probe and update the
 // fixture; do not adjust the parser to a guess.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { checkHealth, parseHealth, parseHealthLine } from './health';
+import { checkHealth, parseHealth, parseHealthLine } from './claude-mcp-health';
 
 /**
- * `child_process` is MODULE-MOCKED rather than spied: `health.ts` imports
+ * `child_process` is MODULE-MOCKED rather than spied: `claude-mcp-health.ts` imports
  * `execFile` by name, and the real module's properties are non-configurable, so
  * `vi.spyOn(cp, 'execFile')` throws "Cannot redefine property".
  */

@@ -1,4 +1,9 @@
-// One poll of the provider's public status page (P2-E14-07, §5.14).
+// One poll of a provider's public status page (P2-E14-07, §5.14).
+//
+// WHICH page is the PROVIDER's to say (#1288): its `statusPage` capability names
+// a Statuspage host (Claude's is in `providers/claude-surfaces.ts`), and one
+// that names none is never polled — `service.ts` reports "no status page".
+// Nothing in this file knows any provider's address.
 //
 // One function, two GETs, one plain record — the `update/checker.ts` shape, and
 // for the same reason: this file reports facts, `service.ts` decides what to do
@@ -18,21 +23,17 @@
 //   • `/api/v2/status.json`               → `{ status: { indicator, description } }`
 //   • `/api/v2/incidents/unresolved.json` → `{ incidents: [...] }`
 //
-// DESIGN §5.14 names `status.anthropic.com`. As of 2026-08-11 that host answers
-// **302 → status.claude.com** for both paths (verified against the live page
-// while building this), so `redirect: 'follow'` is not optional — without it
-// every poll reads an HTML redirect body and the dot sits on "unknown" forever.
-// The base stays the DESIGN one: it is the documented address, and following
-// its own redirect is how a rename is supposed to be absorbed.
+// A page can move: Claude's documented host answers **302** to its new one for
+// both paths (verified 2026-08-11 while building this), so `redirect: 'follow'`
+// is not optional — without it every poll reads an HTML redirect body and the
+// dot sits on "unknown" forever. Following the page's own redirect is how a
+// rename is supposed to be absorbed.
 import { errorText } from '../../shared/error-text';
 import {
   ServiceHealthReason,
   ServiceHealthState,
   ServiceIncident,
 } from '../../shared/service-health';
-
-/** The page DESIGN §5.14 names. Overridable — see `SERVICE_STATUS_FEED_ENV`. */
-export const STATUSPAGE_BASE = 'https://status.anthropic.com';
 
 /**
  * Dev/test only, and honoured only in an unpackaged build: point the poller at
@@ -68,8 +69,8 @@ export interface StatuspageProbe {
 }
 
 export interface ProbeDeps {
-  /** overridable for tests and the dev seam; defaults to the real page */
-  base?: string;
+  /** the Statuspage host to ask — the provider's, or the dev seam's */
+  base: string;
   /** injected in unit tests; defaults to the runtime's own fetch */
   fetchImpl?: typeof fetch;
   now?: () => Date;
@@ -159,10 +160,10 @@ export function readIncidents(body: unknown): ServiceIncident[] {
  * line. There is no branch in this file that produces something the user has to
  * dismiss (§5.14's "never an error that nags").
  */
-export async function probeStatuspage(deps: ProbeDeps = {}): Promise<StatuspageProbe> {
+export async function probeStatuspage(deps: ProbeDeps): Promise<StatuspageProbe> {
   const now = deps.now ?? (() => new Date());
   const checkedAt = now().toISOString();
-  const base = (deps.base ?? STATUSPAGE_BASE).replace(/\/+$/, '');
+  const base = deps.base.replace(/\/+$/, '');
   const doFetch = deps.fetchImpl ?? globalThis.fetch;
   const unknown = (reason: ServiceHealthReason): StatuspageProbe => ({
     state: 'unknown',

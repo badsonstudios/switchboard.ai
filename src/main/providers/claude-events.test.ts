@@ -194,21 +194,18 @@ describe('result', () => {
     ]);
   });
 
-  it('carries the usage it reported, and only the numbers', () => {
+  it('emits NO usage event: Claude’s usage is its transcript ledger (#1288)', () => {
+    // One usage path per provider. `result.usage` is per turn and lacks the
+    // cache-write split, the thinking share and subagent files, all of which
+    // the transcript ledger has; a usage event here would be a second, poorer
+    // count of the same tokens that the host then has to know to ignore.
     expect(
       translateClaudeFrame({
         type: 'result',
         subtype: 'success',
         usage: { input_tokens: 2, output_tokens: 6, cache_read_input_tokens: 0 },
       })
-    ).toEqual([
-      { type: 'turn-end', failed: false, label: 'result:success' },
-      { type: 'usage', inputTokens: 2, outputTokens: 6, cacheReadTokens: 0 },
-    ]);
-    expect(translateClaudeFrame({ type: 'result', usage: { input_tokens: 'x' } })).toEqual([
-      { type: 'turn-end', failed: false, label: 'result' },
-      { type: 'usage' },
-    ]);
+    ).toEqual([{ type: 'turn-end', failed: false, label: 'result:success' }]);
   });
 });
 
