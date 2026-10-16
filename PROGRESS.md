@@ -22,12 +22,46 @@
 > and are listed under "Owner's queue" below; the run never merges them.
 >
 > **Active workers (issue → worktree → branch):**
-> - #1296 cross-AI dispatch ("Run it on") → `sb-wt-2` → `feature/1296-cross-ai-dispatch` — dispatched 2026-10-16 from #1307's head `c30db9bf`; will rebase onto #1307's amended head. User-facing → owner's queue.
-> - #1290 Codex provider → `sb-wt-1` → `feature/1290-codex-provider` → **PR #1307 (user-facing, owner's queue), now doing its follow-up:** rebase onto main (#1305 + #1306 landed), wire the plan-limit windows into the per-turn usage event, declare no price, and add Codex's `detect` capability (from #1291's handoff) once #1308 lands. First pass: `check:codex` passed for real (2 turns on `gpt-6-luna` low, "pong" twice, 20,660 + 1,611 input tokens, limits read 37 % 5-hour / 17 % weekly, one Codex session created and deleted, no processes left).
-> - #1291 AI catalog + detection + custom AIs + default AI → `sb-wt-3` → `feature/1291-ai-catalog` → **PR #1308 (internal), done 2026-10-16, now REBASING** onto `2de78924` (`gh pr update-branch` hit conflicts with #1305 in `contributions.ts` and the adapters). Unit 12,501; e2e 513/513 after fixing a real regression it caused and found (15 blocking PATH scans on the main thread after first paint broke `file-menu.spec.ts`; now one async read). Startup measured alternating builds: window-shown 808/833/816 ms base vs 747/782/797 ms branch. Catalog: Claude + 14 vouched ACP entries with local icons under `src/renderer/public/ai-icons/` (the CSP allows no `data:`/remote images); 42-entry trimmed registry snapshot for the user-pressed diff. Claude detection from `claude --version` + `auth status --json` (measured on 2.1.288). Default AI: first registered provider when unset.
+> - #1293 AI icon + status ring (screen 1) → `sb-wt-1` → `feature/1293-ai-icon` — dispatched 2026-10-16 from #1308's head `17579415`. User-facing → owner's queue.
+> - #1292 Settings → AIs tab + Add-an-AI dialog (screens 4, 5) → `sb-wt-3` → `feature/1292-settings-ais` — dispatched 2026-10-16 from `17579415`. User-facing → owner's queue.
+> - #1296 cross-AI dispatch ("Run it on", screen 6) → `sb-wt-2` → `feature/1296-cross-ai-dispatch` — dispatched 2026-10-16 from #1307's head `c30db9bf`; told to rebase onto #1307's amended head `ed7e9805`. User-facing → owner's queue.
 >
-> **In CI, awaiting merge:** **#1299** (this file's run block; docs). **#1308**
-> after its rebase.
+> **In CI, awaiting merge:** **#1308** (#1291 catalog + detection + custom AIs
+> + default AI; internal). Rebased onto `2de78924` by its worker (conflicts
+> with #1305 in `contributions.ts`, `claude.ts`, `index.ts`; both sides kept),
+> then bumped onto `67140d33`. Unit 12,590; e2e 513/513. It found and fixed a
+> real regression of its own (15 blocking PATH scans on the main thread after
+> first paint broke `file-menu.spec.ts`; now one async read). Startup
+> measured alternating builds: window-shown 808/833/816 ms base vs
+> 747/782/797 ms branch. Catalog: Claude + 14 vouched ACP entries, icons in
+> `src/renderer/public/ai-icons/` (the CSP allows no `data:`/remote images),
+> a 42-entry trimmed registry snapshot for the user-pressed diff; `detect`
+> capability right after `controls`; Claude detection from `claude --version`
+> + `auth status --json` (measured on 2.1.288); custom AIs in
+> `userData/ais.json` as `custom:<slug>`, refused input listed in the
+> handoff; default AI = the user's choice else the first registered provider.
+> **One hunk owed after it merges:** Codex's `detect` capability in #1307
+> (built as `detectCodex(signal)` in `codex-detect.ts`, not yet wired;
+> without it the catalog reports Codex installed whenever `npx` exists).
+>
+> **Owner's queue (user-facing, awaiting his review; the run never merges these):**
+> - **#1307 — #1290 Codex provider** (head `ed7e9805`, on main `2de78924`).
+>   Codex registered when `npx` is on PATH (PATH scan only; Claude stays the
+>   default); adapter `@agentclientprotocol/codex-acp@2.2.2` pinned, bundled
+>   Codex 0.160.1; `modeMap`: ask + auto-edit → `workspace-write`, plan →
+>   `read-only`, full-auto → `agent-full-access`; **Codex's hidden-reviewer
+>   `agent` mode is never used**; `authMethodId: 'chat-gpt'`; plan-limit
+>   windows read via `codex app-server account/rateLimits/read` (60-second
+>   cache) and shown in the status-bar usage tooltip; no dollar figure;
+>   `check:codex` (local-only, real tokens) passed twice for real, the second
+>   run showing the windows end to end (5-hour 67 %, weekly 21 %); manual
+>   `docs/manual/23-using-codex.md`; dogfood row. **Until the AI switch
+>   (#1294) lands, no button starts a Codex session** — the dogfood row says
+>   how to point a card at Codex by editing `workspace.json` with the app
+>   closed. Decisions for him to confirm or reverse: never "Auto review";
+>   ask → `workspace-write` (edits without asking; `read-only` would ask but
+>   Codex once declined instead of asking in that mode); bundled Codex over
+>   the installed CLI; registering whenever `npx` is present.
 >
 > **#1288 is classified INTERNAL for this run, deliberately.** The skill's
 > rule would call it user-facing (it wrote a manual paragraph and a dogfood
@@ -117,9 +151,8 @@
 >   amended (verdict is the default). 9 model turns on the cheapest model.
 >   No codex processes left; 3 probe sessions deleted from his history.
 >
-> **Owner's queue (user-facing, awaiting his review):** empty.
->
-> **Decisions queued for the owner (not blocking; needed by #1290):**
+> **Decisions queued for the owner (not blocking; #1290 shipped on the
+> working assumptions below, see the owner's queue above):**
 > 1. Codex's default mode `agent` ("Auto review") lets a **hidden reviewer
 >    model approve tool calls without asking** (measured: an MCP call was
 >    auto-approved, 7,262 uncounted tokens). `workspace-write` or `read-only`
