@@ -13,8 +13,9 @@ menu is quicker; the picker asks you to confirm.
 
 ![The model menu open above the model name under the prompt box, with the model in use ticked](img/model-menu.png)
 
-At the bottom of a session, next to the autonomy chip, there's a small button
-showing the model that session is running — it looks like the buttons either
+At the bottom of a session, next to the AI chip (the one that names the AI,
+such as **Claude Code** — see [Switching a session to another AI](25-switching-ais.md)),
+there's a small button showing the model that session is running — it looks like the buttons either
 side of it, because it is one. **Click it.**
 
 A short menu drops open — or opens upward, if the session is near the bottom of

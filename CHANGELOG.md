@@ -107,6 +107,12 @@ on the floor, and say so in your PR.
   Codex's "Auto review" mode, where a hidden model approves things for you.
   There is no AI picker yet, so a new session is still a Claude session, and
   nothing changes for anyone without Codex.
+- A session can switch to another AI: the AI chip before the model chip lists
+  each AI with its login state, and picking one moves the card to it, with a
+  line in the conversation marking the switch. Switching back resumes the
+  conversation the card had with that AI, exactly where it stopped. A switch
+  while a turn is running asks first. The first switch to an AI starts it
+  fresh for now; handing it a summary of the conversation comes next.
 
 ### Changed
 

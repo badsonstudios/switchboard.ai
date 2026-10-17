@@ -139,6 +139,41 @@ export function recordNativeId(
   };
 }
 
+/**
+ * A conversation this card has with an AI it is NOT on right now (E40 item 11,
+ * #1294) — parked by a switch, un-parked by switching back. The same three
+ * fields the head carries for the current AI, so a switch back puts them back
+ * exactly, plus the usage the strip showed for it.
+ */
+export interface ParkedConversation extends NativeLineage {
+  nativeSessionId: string;
+  /** ISO timestamp of the switch that parked it */
+  parkedAt: string;
+}
+
+/** The per-AI half of a card: everything parked, keyed by provider id. */
+export interface ParkedConversations {
+  conversations?: Record<string, ParkedConversation>;
+}
+
+/**
+ * Every native id this card HOLDS — its own chain, what it ceded (#539), and
+ * every conversation it has parked with another AI (#1294).
+ *
+ * The question "is this conversation some card's?" must count the parked ones.
+ * A Claude conversation parked while the card is on Codex is still that card's:
+ * it switches back into it. Leaving it out would let another Claude card in the
+ * same folder ADOPT it as an orphan, and the two would then append to one
+ * transcript — the #484 / #539 failure from a new direction.
+ */
+export function heldNativeIds(card: (NativeLineage & ParkedConversations) | undefined): string[] {
+  const out = [...resumeCandidates(card), ...(card?.cededNativeIds ?? [])];
+  for (const parked of Object.values(card?.conversations ?? {})) {
+    out.push(...resumeCandidates(parked), ...(parked.cededNativeIds ?? []));
+  }
+  return out;
+}
+
 /** Normalize whatever the workspace file had. Shared with the store's load so
  *  a hand-edited array of numbers cannot reach the resume walk. */
 export function sanitizeLineage(value: unknown): string[] | undefined {

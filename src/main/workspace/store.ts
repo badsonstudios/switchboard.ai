@@ -22,7 +22,8 @@ import path from 'path';
 import { Rectangle } from 'electron';
 import { LogFields, Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
-import { sanitizeLineage } from '../sessions/lineage';
+import { sanitizeLineage, type ParkedConversation } from '../sessions/lineage';
+import { MAX_AI_SWITCHES, isProviderIdShape, isSaneAiSwitchMark, type AiSwitchMark } from '../../shared/ai-switch';
 import { ACCENTS, RETIRED_ACCENTS } from '../../shared/accents';
 import { GROUP_PALETTE, RETIRED_GROUP_COLORS } from '../../shared/group-palette';
 import { outOfReserved } from '../../shared/reserved-hue';
@@ -166,6 +167,34 @@ export interface PersistedSession {
    * gate open. Stored per CARD so a deliberate pipeline survives a resume.
    */
   acceptFromSiblings?: boolean;
+  /**
+   * The conversations this card has with the AIs it is NOT on (E40 item 11,
+   * #1294), keyed by provider id — parked by a switch, put back by switching
+   * back. The AI it IS on keeps its conversation in the fields above, exactly as
+   * before; see `sessions/ai-switch.ts` for why it is not stored here twice.
+   *
+   * New in v4. An older build (v3) that opens a v4 file takes the newer-file
+   * rule below — read-only, never written back — so it cannot lose these, and
+   * its cards still name the AI they are on and that AI's conversation.
+   */
+  conversations?: Record<string, PersistedParked>;
+  /**
+   * Every AI switch this card has made, oldest first, bounded
+   * (`MAX_AI_SWITCHES`) — the Feed's divider data, persisted so the divider
+   * survives a relaunch (#1294; #1295 fills in the briefing fields).
+   */
+  aiSwitches?: AiSwitchMark[];
+}
+
+/**
+ * One parked conversation (#1294): the lineage fields, plus the usage numbers
+ * the strip showed for it, so switching back shows that conversation's totals
+ * rather than the other AI's.
+ */
+export interface PersistedParked extends ParkedConversation {
+  usage?: PersistedSession['usage'];
+  model?: string;
+  cliCost?: CliCost;
 }
 
 /**
@@ -399,7 +428,7 @@ export interface WorkspaceState {
 }
 
 /** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
-export const CURRENT_VERSION = 3;
+export const CURRENT_VERSION = 4;
 
 /**
  * Version dispatch (P2-E15-13, §5.26, AR-P2-9).
@@ -489,14 +518,37 @@ function dropPtyTransport(raw: Record<string, unknown>): Record<string, unknown>
   return lifted ? { ...raw, sessions: next } : raw;
 }
 
+/**
+ * v3 -> v4 (E40 item 11, #1294): a card can hold one conversation PER AI.
+ *
+ * ⚠️ AN IDENTITY ON PURPOSE, and the reason is the shape, not laziness. The AI a
+ * card is on keeps its conversation in the head fields every build already
+ * reads (`identity.providerId`, `nativeSessionId`, its lineage), and only the
+ * AIs it is NOT on go in the new `conversations` map. A v3 card is therefore
+ * already a valid v4 card that has never switched: one AI, its conversation in
+ * the head, nothing parked. Copying the head into `conversations` as well would
+ * give one conversation two copies that the lineage writer updates one of.
+ *
+ * What v4 buys is the OTHER direction: a v3 build that opens a v4 file takes
+ * the newer-file rule in `load()` — read-only, never written back — so it
+ * cannot save over the parked conversations it does not know about. Its cards
+ * still load with their `providerId` and `nativeSessionId` intact (unknown
+ * fields ride through `keepSane`), so it shows the user the AI each card is on.
+ */
+function liftToPerAiConversations(raw: Record<string, unknown>): Record<string, unknown> {
+  return raw;
+}
+
 const MIGRATIONS: Record<number, Migration | undefined> = {
   // Each entry lifts its version ALL THE WAY to the current one — they are not
   // chained. v1 needs both passes: #873's `'pty'` clear, then #952's sweep of
   // anything else this host cannot spawn. Composed here rather than made one
   // function so each keeps its own reason.
-  1: (raw) => dropUnknownTransport(dropPtyTransport(raw)),
-  2: dropUnknownTransport, // v2 -> v3: the transport kind is gone (#952)
-  3: (raw) => raw, // identity: v3 IS the current shape
+  1: (raw) => liftToPerAiConversations(dropUnknownTransport(dropPtyTransport(raw))),
+  // v2 -> v4: the transport kind is gone (#952), then the per-AI lift (#1294)
+  2: (raw) => liftToPerAiConversations(dropUnknownTransport(raw)),
+  3: liftToPerAiConversations, // v3 -> v4 (#1294): see above — no card changes
+  4: (raw) => raw, // identity: v4 IS the current shape
 };
 
 /** No entry for this version (a future file, or a table gap): read it as-is. */
@@ -767,9 +819,21 @@ export class WorkspaceStore {
                 nativeSessionLineage: sanitizeLineage(s.nativeSessionLineage),
                 cededNativeIds: sanitizeLineage(s.cededNativeIds),
               };
-        if (!withLineage.groupId || groupIds.has(withLineage.groupId)) return withLineage;
-        orphaned.push(withLineage.id);
-        return { ...withLineage, groupId: undefined };
+        // The per-AI half (#1294), normalized the same way and for the same
+        // reason: every resume after a switch back reads it. Silent, like the
+        // lineage — absence is the normal state of every card that never
+        // switched, and a ragged entry is dropped rather than warned about.
+        const withAis =
+          withLineage.conversations === undefined && withLineage.aiSwitches === undefined
+            ? withLineage
+            : {
+                ...withLineage,
+                conversations: sanitizeParked(withLineage.conversations, withLineage.identity.providerId),
+                aiSwitches: sanitizeAiSwitches(withLineage.aiSwitches),
+              };
+        if (!withAis.groupId || groupIds.has(withAis.groupId)) return withAis;
+        orphaned.push(withAis.id);
+        return { ...withAis, groupId: undefined };
       });
       // TWO CARDS, ONE CONVERSATION — untied here, once, at the only moment the
       // whole card list is in one place (#539). The policy and every reason for
@@ -2088,6 +2152,44 @@ function isSaneSession(s: unknown): s is PersistedSession {
     typeof x?.identity?.providerId === 'string' &&
     typeof x?.layoutSlot === 'number'
   );
+}
+
+/**
+ * A card's parked conversations as read off the file (#1294): only
+ * provider-id-shaped keys, only entries with a real conversation id, lineages
+ * through the same sanitizer as the head's. An entry under the AI the card is
+ * ON is dropped as well — that AI's conversation is the head, and a second copy
+ * here would be the one a switch away overwrites the head with.
+ */
+function sanitizeParked(v: unknown, currentProvider: string): Record<string, PersistedParked> | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const out: Record<string, PersistedParked> = {};
+  for (const [providerId, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (!isProviderIdShape(providerId) || providerId === currentProvider) continue;
+    if (!raw || typeof raw !== 'object') continue;
+    const p = raw as Partial<PersistedParked>;
+    if (typeof p.nativeSessionId !== 'string' || !p.nativeSessionId) continue;
+    // Named fields only — nothing else off a hand-editable file rides along to
+    // the renderer when the conversation is put back.
+    const usage = p.usage && typeof p.usage === 'object' && ['input', 'output', 'cacheRead', 'cacheCreate'].every((k) => typeof (p.usage as Record<string, unknown>)[k] === 'number') ? p.usage : undefined;
+    out[providerId] = {
+      nativeSessionId: p.nativeSessionId,
+      nativeSessionLineage: sanitizeLineage(p.nativeSessionLineage),
+      cededNativeIds: sanitizeLineage(p.cededNativeIds),
+      parkedAt: typeof p.parkedAt === 'string' ? p.parkedAt : '',
+      ...(usage ? { usage } : {}),
+      ...(typeof p.model === 'string' ? { model: p.model } : {}),
+      ...(p.cliCost && typeof p.cliCost === 'object' ? { cliCost: p.cliCost } : {}),
+    };
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** A card's switch marks as read off the file: the sane ones, newest kept. */
+function sanitizeAiSwitches(v: unknown): AiSwitchMark[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const kept = v.filter(isSaneAiSwitchMark).slice(-MAX_AI_SWITCHES);
+  return kept.length > 0 ? kept : undefined;
 }
 
 function isSaneGroup(g: unknown): g is PersistedGroup {

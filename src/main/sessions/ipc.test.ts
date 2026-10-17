@@ -191,6 +191,9 @@ function harness(
      * spent exactly once". A registry that only answered could not express either.
      */
     dispatch?: PendingDispatch;
+    /** #1294: what each AI is called, and the briefing hook #1295 fills */
+    providerName?: SessionIpcDeps['providerName'];
+    aiSwitchBriefing?: SessionIpcDeps['aiSwitchBriefing'];
   } = {}
 ) {
   const created: Array<{
@@ -710,6 +713,8 @@ function harness(
     resolveMentions: opts.resolveMentions,
     cancelHandoff: opts.cancelHandoff,
     contextOffer: opts.contextOffer,
+    providerName: opts.providerName,
+    aiSwitchBriefing: opts.aiSwitchBriefing,
   } as unknown as SessionIpcDeps;
 
   const ipc = registerSessionIpc(deps);
@@ -6004,6 +6009,248 @@ describe('usage, per AI (#1288)', () => {
       // no transcript, no usage event: the provider declares and reports nothing
       h.fireStatus('live-1', 'done');
       expect(usagePushes(h)).toEqual([]);
+    });
+  });
+});
+
+// E40 item 11 (#1294): a card switched from one AI to another, and back. The
+// pure re-pointing is `ai-switch.test.ts`; this pins that the CHANNEL and the
+// ordinary start obey it — park on the way out, resume on the way back, ask
+// before stopping a turn, brief only a fresh first start.
+describe('sessions:switchAi — one card, one conversation per AI (#1294)', () => {
+  let folder: string;
+  tempDirEach('sb-switch-ai-', (d) => (folder = d));
+
+  /** both AIs resume any id they are handed (an ACP agent's rule) */
+  const caps = (): ProviderCapabilities => ({ resume: { canResume: () => true } });
+  const names: Record<string, string> = { generic: 'Claude Code', other: 'Codex' };
+  const make = (over: Parameters<typeof harness>[2] = {}) =>
+    harness(caps(), folder, {
+      prior: priorCard({ folder, nativeSessionId: 'claude-1' }),
+      registered: ['generic', 'other'],
+      providerName: (id) => names[id],
+      status: 'idle',
+      spawnIds: ['live-1', 'live-2', 'live-3', 'live-4', 'live-5'],
+      ...over,
+    });
+  const start = (h: ReturnType<typeof harness>) =>
+    h.call('sessions:create', { cardId: 'card-1', folder, title: 't' }) as { id: string };
+  const switchTo = (h: ReturnType<typeof harness>, providerId: unknown, extra: Record<string, unknown> = {}) =>
+    h.call('sessions:switchAi', { cardId: 'card-1', providerId, ...extra });
+  const card = (h: ReturnType<typeof harness>) => h.cards.find((c) => c.id === 'card-1');
+
+  it('Claude → Codex → Claude: the way back resumes the ORIGINAL Claude conversation', () => {
+    const h = make();
+    start(h);
+    expect(h.created[0].resumeSessionId).toBe('claude-1');
+
+    expect(switchTo(h, 'other')).toEqual({ ok: true, changed: true });
+    // the Claude session is gone, and its conversation is PARKED, not dropped
+    expect(h.removed).toEqual(['live-1']);
+    expect(card(h)?.identity.providerId).toBe('other');
+    expect(card(h)?.nativeSessionId).toBeUndefined();
+    expect(card(h)?.conversations?.generic?.nativeSessionId).toBe('claude-1');
+    expect(card(h)?.aiSwitches?.map((m) => [m.from.name, m.to.name, m.briefed])).toEqual([
+      ['Claude Code', 'Codex', false],
+    ]);
+
+    // the re-armed start is FRESH on Codex: it has never been on Codex
+    const codex = start(h);
+    expect(h.created[1].identity.providerId).toBe('other');
+    expect(h.created[1].resumeSessionId).toBeUndefined();
+    h.fireNativeId(codex.id, 'codex-1');
+    expect(card(h)?.nativeSessionId).toBe('codex-1');
+
+    expect(switchTo(h, 'generic')).toEqual({ ok: true, changed: true });
+    expect(card(h)?.nativeSessionId).toBe('claude-1');
+    expect(card(h)?.conversations?.other?.nativeSessionId).toBe('codex-1');
+    expect(card(h)?.conversations?.generic).toBeUndefined();
+
+    // …and THIS start resumes it, through the ordinary path
+    start(h);
+    expect(h.created[2].identity.providerId).toBe('generic');
+    expect(h.created[2].resumeSessionId).toBe('claude-1');
+
+    // and Codex, a second time, resumes Codex's own
+    expect(switchTo(h, 'other')).toEqual({ ok: true, changed: true });
+    start(h);
+    expect(h.created[3].resumeSessionId).toBe('codex-1');
+  });
+
+  it('a switch to the AI the card is already on changes nothing', () => {
+    const h = make();
+    start(h);
+    expect(switchTo(h, 'generic')).toEqual({ ok: true, changed: false });
+    expect(h.removed).toEqual([]);
+    expect(card(h)?.aiSwitches).toBeUndefined();
+  });
+
+  it.each([
+    ['a missing provider id', undefined, 'bad-request'],
+    ['a provider id that is not one', '../codex', 'bad-request'],
+    ['an AI this run did not register', 'gemini', 'unavailable'],
+  ])('refuses %s and leaves the card and its session alone', (_what, providerId, reason) => {
+    const h = make();
+    start(h);
+    expect(switchTo(h, providerId)).toEqual({ ok: false, reason });
+    expect(h.removed).toEqual([]);
+    expect(card(h)?.identity.providerId).toBe('generic');
+    expect(card(h)?.nativeSessionId).toBe('claude-1');
+  });
+
+  it('refuses a card it does not have', () => {
+    const h = make();
+    expect(h.call('sessions:switchAi', { cardId: 'nope', providerId: 'other' })).toEqual({
+      ok: false,
+      reason: 'no-card',
+    });
+  });
+
+  for (const [status, busy] of [
+    ['working', 'working'],
+    ['needs-permission', 'waiting'],
+    ['needs-input', 'waiting'],
+  ]) {
+    it(`asks first while the session is ${status} — and only a literal yes stops it`, () => {
+      const h = make({ status });
+      start(h);
+      expect(switchTo(h, 'other')).toEqual({ ok: false, reason: 'busy', busy });
+      expect(switchTo(h, 'other', { stopFirst: 'yes' })).toEqual({ ok: false, reason: 'busy', busy });
+      expect(h.removed).toEqual([]);
+      expect(card(h)?.identity.providerId).toBe('generic');
+      expect(switchTo(h, 'other', { stopFirst: true })).toEqual({ ok: true, changed: true });
+      expect(h.removed).toEqual(['live-1']);
+    });
+  }
+
+  it('the briefing hook is asked ONLY for the fresh first start after a switch', () => {
+    const asked: string[] = [];
+    const h = make({
+      aiSwitchBriefing: (req) => {
+        asked.push(`${req.mark.from.providerId}->${req.mark.to.providerId}:${req.fromConversation?.nativeSessionId}`);
+        return { text: 'BRIEFING', turnsSummarised: 3 };
+      },
+    });
+    start(h);
+    expect(asked).toEqual([]); // an ordinary start is never briefed
+    switchTo(h, 'other');
+    const codex = start(h);
+    expect(asked).toEqual(['generic->other:claude-1']);
+    expect(h.submitted).toEqual([{ id: codex.id, text: 'BRIEFING' }]);
+    const mark = card(h)?.aiSwitches?.[0];
+    expect(mark?.arrivedAt).toEqual(expect.any(String));
+    expect(mark).toMatchObject({ briefed: true, turnsSummarised: 3 });
+
+    // a relaunch on Codex is not a first start: not asked again
+    h.fireNativeId(codex.id, 'codex-1');
+    h.call('sessions:dropLive', 'card-1');
+    start(h);
+    expect(asked).toHaveLength(1);
+
+    // switching BACK is a resume: never briefed
+    switchTo(h, 'generic');
+    start(h);
+    expect(asked).toHaveLength(1);
+    expect(h.submitted).toHaveLength(1);
+  });
+
+  it('a card switched to an AI that is not here now does NOT start on the default — and keeps every conversation', () => {
+    // The AI switched to vanished (uninstalled, PATH changed) before the next
+    // start. The plan's fall-back to the default would start Claude on a card
+    // the user moved to Codex, and write a new Claude head over the parked one.
+    const h = make();
+    start(h);
+    switchTo(h, 'other');
+    const start2 = start(h);
+    h.fireNativeId(start2.id, 'codex-1');
+    const gone = harness(caps(), folder, {
+      prior: card(h),
+      registered: ['generic'],
+      providerName: (id) => names[id],
+      status: 'idle',
+    });
+    expect(gone.call('sessions:create', { cardId: 'card-1', folder, title: 't' })).toBeNull();
+    expect(gone.created).toHaveLength(0);
+    const kept = gone.cards.find((c) => c.id === 'card-1');
+    expect(kept?.identity.providerId).toBe('other');
+    expect(kept?.nativeSessionId).toBe('codex-1');
+    expect(kept?.conversations?.generic?.nativeSessionId).toBe('claude-1');
+    // …and the overlay's way back is offered, and says it resumes
+    const wire = (gone.call('sessions:cards') as Promise<Array<{ cardId: string; switchBack?: unknown; providerId?: string }>>);
+    return wire.then((cards) => {
+      const c = cards.find((x) => x.cardId === 'card-1');
+      expect(c?.providerId).toBe('other');
+      expect(c?.switchBack).toEqual({ providerId: 'generic', name: 'Claude Code', resumes: true });
+      // and the way back itself works: Claude is registered, its conversation un-parks
+      expect(gone.call('sessions:switchAi', { cardId: 'card-1', providerId: 'generic' })).toEqual({ ok: true, changed: true });
+      gone.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
+      expect(gone.created[0].resumeSessionId).toBe('claude-1');
+    });
+  });
+
+  it('a card that never switched still falls back to the default when its AI is gone, as before', () => {
+    const h = harness(caps(), folder, {
+      prior: priorCard({ folder, identity: { title: 't', folder, providerId: 'vanished' } }),
+      registered: ['generic'],
+    });
+    h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
+    expect(h.created[0].identity.providerId).toBe('generic');
+  });
+
+  it('a parked conversation is HELD — another card cannot be moved into it', () => {
+    const h = make({
+      otherCards: [
+        priorCard({
+          folder,
+          id: 'card-2',
+          identity: { title: 'x', folder, providerId: 'other' },
+          conversations: { generic: { nativeSessionId: 'parked-1', parkedAt: '' } },
+        }),
+      ],
+    });
+    expect(h.call('sessions:switchConversation', { cardId: 'card-1', conversationId: 'parked-1' })).toEqual({
+      ok: false,
+      reason: 'held',
+    });
+  });
+
+  describe('the divider (#1294, the data #1295 builds on)', () => {
+    const dividers = (feed: ClaudeFedFeed, id: string) =>
+      feed
+        .blocks(id)
+        .filter((b) => b.kind === 'ai-switch')
+        .map((b) => [b.aiSwitch?.from.name, b.aiSwitch?.to.name]);
+
+    it('a fresh conversation after a switch OPENS with it', () => {
+      const feed = new ClaudeFedFeed();
+      const h = make({ streamFeed: feed });
+      start(h);
+      switchTo(h, 'other');
+      const codex = start(h);
+      expect(dividers(feed, codex.id)).toEqual([['Claude Code', 'Codex']]);
+      expect(feed.blocks(codex.id)[0].kind).toBe('ai-switch');
+    });
+
+    it('a resume whose history the AI replays itself waits for that replay', () => {
+      const feed = new ClaudeFedFeed();
+      const h = make({ streamFeed: feed });
+      start(h);
+      switchTo(h, 'other');
+      const codex = start(h);
+      h.fireNativeId(codex.id, 'codex-1');
+      switchTo(h, 'generic');
+      const back = start(h);
+      // the ARRIVAL into Claude, placed once the AI has named its conversation
+      expect(feed.blocks(back.id)).toEqual([]);
+      feed.ingest(back.id, { type: 'conversation', id: 'claude-1' });
+      expect(dividers(feed, back.id)).toEqual([['Codex', 'Claude Code']]);
+    });
+
+    it('a card that never switched draws none', () => {
+      const feed = new ClaudeFedFeed();
+      const h = make({ streamFeed: feed });
+      const rec = start(h);
+      expect(feed.blocks(rec.id)).toEqual([]);
     });
   });
 });

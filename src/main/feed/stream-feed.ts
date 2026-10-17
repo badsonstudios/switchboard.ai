@@ -138,6 +138,8 @@ interface StreamedSession {
   sidechainBacklogBefore?: number;
   /** the one log line about the above has been written */
   backlogDropLogged?: boolean;
+  /** a divider waiting for the first `conversation` event (#1294, `placeMarker`) */
+  pendingMarker?: DerivedBlock;
 }
 
 export class StreamFeed {
@@ -219,12 +221,25 @@ export class StreamFeed {
       s.sidechainBacklogBefore = opts.sidechainBacklogBefore;
     }
     let n = 0;
+    // Markers (#1294) in time order, each placed before the first entry stamped
+    // after it. An entry with no readable stamp places nothing: it cannot be
+    // after anything.
+    const markers = [...(opts.markers ?? [])].sort((a, b) => a.at - b.at);
+    let nextMarker = 0;
+    const placeMarkersBefore = (at: number): void => {
+      while (nextMarker < markers.length && markers[nextMarker].at < at) {
+        s.buffer.push(markers[nextMarker++].block, { sidechain: false });
+        n++;
+      }
+    };
     // SILENTLY: the caller runs inside `sessions:create`, whose own response is
     // what tells the renderer this session's live id — so every push here would
     // be sent to a panel that cannot yet be subscribed to it, and dropped on
     // arrival. The panel reads the backlog when it mounts. See `FeedBuffer`.
     s.buffer.silently(() => {
       for (const e of entries) {
+        const stamped = typeof e.timestamp === 'string' ? Date.parse(e.timestamp) : NaN;
+        if (Number.isFinite(stamped)) placeMarkersBefore(stamped);
         // The SAME derivation the transcript watcher runs (`blocks.ts`), so a
         // replayed turn cannot look different from the one that streamed live.
         //
@@ -252,8 +267,36 @@ export class StreamFeed {
           n++;
         }
       }
+      // whatever happened after the last entry — a switch back with no turn
+      // since lands at the bottom, which is where it happened
+      placeMarkersBefore(Infinity);
     });
     return n;
+  }
+
+  /**
+   * Put one block in this session's Feed that no transcript or stream will
+   * send — the AI-switch divider (#1294).
+   *
+   * `now`: at once, SILENTLY, for the reason `hydrate` is silent — the caller is
+   * inside `sessions:create` and no panel can be subscribed to this session yet;
+   * it reads the backlog when it mounts. A fresh conversation's divider goes at
+   * the top, which is where it is placed this way.
+   *
+   * `after-conversation`: when the engine first names its conversation. An ACP
+   * agent replays a loaded conversation as `session/update`s BEFORE it answers
+   * `session/load`, and the answer is the `conversation` event — so this lands
+   * below the replayed history, where a switch BACK happened. Not silent: by
+   * then the panel is listening. Dropped if the session ends first.
+   */
+  placeMarker(sessionId: string, block: DerivedBlock, when: 'now' | 'after-conversation'): void {
+    const s = this.ensure(sessionId);
+    if (when === 'after-conversation' && s.conversationId === undefined) {
+      s.pendingMarker = block;
+      return;
+    }
+    if (when === 'now') s.buffer.silently(() => s.buffer.push(block, { sidechain: false }));
+    else s.buffer.push(block, { sidechain: false });
   }
 
   /**
@@ -539,6 +582,12 @@ export class StreamFeed {
     const s = this.ensure(sessionId);
     if (s.conversationId === undefined || s.conversationId === id) {
       s.conversationId = id;
+      // the divider that waited for the loaded history to land (#1294)
+      const pending = s.pendingMarker;
+      if (pending) {
+        s.pendingMarker = undefined;
+        s.buffer.push(pending, { sidechain: false });
+      }
       return;
     }
     // Recorded for the same reason the reset path records it: if a

@@ -96,6 +96,7 @@ import { DEFAULT_SOUND } from '../../shared/sounds';
 import { answered, took } from '../../shared/ipc/refusal';
 import { SettingsDialog } from './components/SettingsDialog';
 import type { SettingsSection } from './lib/settings-sections';
+import { registerSettingsOpener } from './lib/settings-port';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
 import {
   unavailableReport,
@@ -1261,6 +1262,10 @@ export function App(): React.JSX.Element {
     },
     [refreshQuiet, refreshPush]
   );
+  // "Manage AIs…" in a card's AI menu reaches Settings through this (#1294)
+  React.useEffect(() => {
+    return registerSettingsOpener(openSettings);
+  }, [openSettings]);
   /**
    * Store a new task label size (#877) and put it on screen at once.
    *
@@ -1465,6 +1470,8 @@ export function App(): React.JSX.Element {
             liveId: c.liveId,
             taskLabel: c.taskLabel,
             transport: c.transport,
+            providerId: c.providerId,
+            switchBack: c.switchBack,
           }))
         )
     )

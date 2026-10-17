@@ -870,6 +870,22 @@ export class SessionStore {
     return this.state.sessions.find((s) => s.id === cardId)?.badge;
   }
 
+  /** The AI a card is on (#1294) — a scalar, for `getCardAccent`'s reason. */
+  getCardProvider(cardId: string | undefined): string | undefined {
+    if (!cardId) return undefined;
+    return this.state.sessions.find((s) => s.id === cardId)?.providerId;
+  }
+
+  /**
+   * The way back after an AI switch (#1294). The STORED object, never a fresh
+   * one, so `useSyncExternalStore` settles: it only changes identity when
+   * `sessions:cards` is read again.
+   */
+  getCardSwitchBack(cardId: string | undefined): RailSession['switchBack'] {
+    if (!cardId) return undefined;
+    return this.state.sessions.find((s) => s.id === cardId)?.switchBack;
+  }
+
   /** Seed the map from the ui blob at boot. Does not persist — it just read it. */
   initPresentation(map: ReadonlyMap<string, CardPresentation>): void {
     this.set({ presentation: new Map(map) });

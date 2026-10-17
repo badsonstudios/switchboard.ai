@@ -8,10 +8,11 @@ switchboard.ai can run **Codex**, OpenAI's coding AI, as well as Claude Code. A
 Codex session uses the same Session view: its replies, the commands it runs,
 its approval questions, and a Stop button.
 
-⚠️ **Not everything is in yet.** You will NOT see an AI picker or a way to
-switch a card to Codex. Until that ships, there is no button that starts a
-Codex session, so a new session is still a Claude session. See
-[Starting a Codex session today](#starting-a-codex-session-today).
+⚠️ **Not everything is in yet.** A new session still starts on Claude Code.
+To put a card on Codex, switch it with the AI chip. See
+[Starting a Codex session](#starting-a-codex-session). When you switch a card
+to Codex for the first time, Codex is NOT yet handed a summary of the
+conversation so far. That comes next.
 
 ## What you need
 
@@ -26,12 +27,13 @@ Codex session, so a new session is still a Claude session. See
 If you are not signed in when a Codex session starts, Codex opens its own
 sign-in page in your browser. That is Codex's own sign-in, not ours.
 
-## Starting a Codex session today
+## Starting a Codex session
 
-There is no menu for it yet. The AI picker comes with the AI switch. Until
-then, a card runs on Codex only if its saved settings say so. If you want to
-try it before then, ask for the step-by-step instructions in the testing notes.
-They involve editing the app's saved workspace while the app is closed.
+Open a session, click the **AI chip** before the model chip, and pick
+**Codex**. The card's session closes and a Codex session starts in the same
+card. Pick **Claude Code** again to go back. Claude then carries on in the
+conversation it had, exactly where it stopped. See
+[Switching a session to another AI](25-switching-ais.md).
 
 ## What works
 
@@ -101,7 +103,8 @@ Codex to ask before it edits anything, use **plan**.
 ## Good to know
 
 - **Nothing changes for Claude.** With Codex not installed, the app behaves
-  exactly as before. A new session is still a Claude session either way.
+  exactly as before. A new session is still a Claude session either way, until
+  you switch it.
 - **Codex keeps its own history.** Its conversations are saved in Codex's own
   folder (`.codex` in your user folder), where the Codex CLI can see them too.
 

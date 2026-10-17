@@ -497,6 +497,11 @@ The preload exposes all of these as `switchboard.ais`.
    - each AI shows its login state and account;
    - one that is missing is dimmed, with "set it up…";
    - one sentence says what switching does.
+
+   *As built (#1294): see §6 "As built, item 11". The sentence is "Switching
+   hands this card to another AI. Coming back resumes where that AI left
+   off." The mockup's version promised a summary that #1295 delivers, so it
+   waits for that item.*
 3. **After a switch** *(items 04, 12)*:
    - the divider reads "Claude Code → Codex · time · handed a summary of N
      turns", with **see what it was told**;
@@ -536,6 +541,72 @@ AI's real SVG.
   never see a password, and the app stores no OpenAI credential.
 - **Fail-open.** An ACP agent that sends something we do not understand gets it
   logged and skipped; a broken provider never takes down a Claude session.
+
+**As built, item 11 (#1294, 2026-10-16): the switch, screen 2 and this
+section's first rule.**
+
+- **The card shape.** The AI a card is ON keeps its conversation where it
+  always did: `identity.providerId`, `nativeSessionId`, `nativeSessionLineage`
+  and `cededNativeIds`. Every resume path reads those unchanged. The AIs it is
+  NOT on are parked in `PersistedSession.conversations`:
+  `Record<providerId, {nativeSessionId, nativeSessionLineage?, cededNativeIds?,
+  usage?, model?, cliCost?, parkedAt}>`. The current AI is deliberately not
+  stored there too: two copies would drift, because `recordNativeId` updates
+  only the head. `aiSwitches: AiSwitchMark[]` (the last 20) is the divider data.
+  The pure re-pointing is `sessions/ai-switch.ts` `switchCardAi`.
+- **The migration.** `CURRENT_VERSION` goes 3 -> 4. `3:` is an identity on
+  purpose: a v3 card is a v4 card that never switched. What v4 buys is the
+  other direction. A v3 build opening a v4 file takes the existing newer-file
+  rule (read-only, never written back), so it cannot save over parked
+  conversations it does not know about. Its cards still show the AI they are on
+  and that AI's conversation. The load sanitizes both new fields, including
+  dropping a `conversations` entry under the card's own current AI.
+- **Held ids.** A parked conversation counts as held wherever "is this
+  conversation some card's?" is asked (`lineage.ts` `heldNativeIds`): orphan
+  adoption, a picked conversation, the history list's "open in a card", and
+  `switchConversation`. Not `untangle.ts`: a duplicate across one card's parked
+  half and another's head is not untied at load.
+- **The sequence.** `sessions:switchAi {cardId, providerId, stopFirst?}`, its
+  own channel, modelled on `sessions:switchConversation`.
+  1. Refuse `bad-request`, `no-card` or `unavailable` (not registered).
+     Switching to the current AI returns `changed:false`.
+  2. Refuse `busy` with `working`/`waiting`. The menu then asks "Switching
+     stops the current turn. Switch anyway?"; only `stopFirst === true`
+     proceeds.
+  3. Drop the live session, park, un-park, append the mark.
+  4. The renderer re-arms the lazy start, and the ordinary `sessions:create`
+     resumes the target's own conversation through its own `resume`, or starts
+     fresh.
+- **The briefing hook (#1295's).** `SessionIpcDeps.aiSwitchBriefing(req) ->
+  {text, turnsSummarised?, briefingRef?}`. `planSessionStart` takes it as
+  `openingContext` and keeps it ONLY for a fresh start, so a resume is never
+  briefed. It is asked only on the first start after a switch: a mark without
+  `arrivedAt` that names the AI being started. The text goes in as the first
+  prompt, by the dispatch path. Nothing provides the hook yet.
+- **The divider.** `shared/ai-switch.ts` `AiSwitchMark {kind:'ai-switch', id,
+  from:{providerId,name}, to:{providerId,name}, at, briefed, turnsSummarised?,
+  briefingRef?, arrivedAt?}`, drawn as Feed block kind `ai-switch`. Only the
+  latest arrival into the AI the card is on is drawn:
+  - inside replayed Claude transcript history, at its timestamp
+    (`HydrateOptions.markers`);
+  - at the top of a fresh conversation;
+  - after an ACP `session/load` replay (on the first `conversation` event).
+
+  A known limit: on a relaunch while the card is on an ACP AI, the divider lands
+  after the whole replay rather than before the post-switch turns, because ACP
+  replays carry no timestamps. The Feed shows only the current AI's
+  conversation. Screen 3's faded previous-AI turns above the divider are
+  #1295's.
+- **The chip and menu.** `components/AiSwitchChip.tsx`, from #1291's
+  `ais.list()`. A registered AI is always selectable: a probe that did not find
+  its program says "Not found on this computer — it may not start" and does not
+  veto it. Only an AI with no provider in this run is dimmed with "set it up…".
+  "Manage AIs…" opens Settings on `MANAGE_AIS_TAB` (`lib/ai-switch-view.ts`).
+- **Fail-open.** A card whose start fails after a switch shows **Try again**
+  and **Switch back to <AI>**. A provider that vanished between the switch and
+  the start falls back to the default as before, without consuming the switch.
+- **`SWITCHBOARD_FAKE_PROVIDER=both`** registers the Claude fake, then the fake
+  ACP agent (the same value #1296 adds).
 
 ---
 

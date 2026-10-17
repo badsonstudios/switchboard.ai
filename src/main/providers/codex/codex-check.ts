@@ -19,7 +19,17 @@
 //     started meanwhile is never touched;
 //   - every child goes through `StreamSession`'s stdin-EOF-then-tree-kill.
 //
+// THE AI SWITCH (E40 item 11, #1294), OPT-IN: `CHECK_CODEX_SWITCH=1` adds
+// Claude -> Codex -> Claude on ONE card, decided by the app's own
+// `switchCardAi` + `planSessionStart`: a Claude turn (haiku), a switch to Codex
+// (one fresh Codex turn), a switch back (one Claude turn, which must RESUME the
+// first Claude conversation and remember it). That is two Claude turns and one
+// Codex turn beyond the default run, which is why it is behind a flag. Its
+// Claude transcripts are written under this run's temp folder's slug in
+// `~/.claude/projects`, and that one directory is removed afterwards.
+//
 // Run with: npm run check:codex   (after npm run build)
+//      or: CHECK_CODEX_SWITCH=1 npm run check:codex
 import { errorText } from '../../../shared/error-text';
 import { execFile } from 'child_process';
 import fs from 'fs';
@@ -36,12 +46,23 @@ import { StreamService, launchSpec } from '../../transport/stream-service';
 import { codexInstalled, codexLoginState, codexVersion, npxPath } from './codex-detect';
 import { createLimitsReader } from './codex-limits';
 import { CODEX_PROVIDER_ID, codexAdapter } from './codex-provider';
+import { claudeAdapter } from '../claude';
+import { switchCardAi } from '../../sessions/ai-switch';
+import { planSessionStart } from '../../sessions/start-plan';
+import { slugForCwd } from '../../transcripts/paths';
+import type { PersistedSession } from '../../workspace/store';
 
 const TAG = '[codex-check]';
 const MODEL = 'gpt-6-luna';
 const EFFORT = 'low';
 const PROMPT_1 = 'Reply with the single word pong.';
 const PROMPT_2 = 'What single word did you reply with in your previous message? Reply with that word only.';
+const SWITCH = process.env.CHECK_CODEX_SWITCH === '1';
+const CLAUDE_MODEL = 'haiku';
+const SWITCH_PROMPT_1 = 'Reply with the single word ping.';
+const SWITCH_PROMPT_CODEX = 'Reply with the single word pong.';
+const SWITCH_PROMPT_2 =
+  'What single word did you reply with in your FIRST message of this conversation? Reply with that word only.';
 const OPEN_MS = 240_000; // a cold `npx -y` installs the adapter first
 const TURN_MS = 150_000;
 /**
@@ -154,6 +175,7 @@ async function main(): Promise<number> {
 
   const registry = new ContributionRegistry<MainContributions>();
   registry.register('provider-adapter', codexAdapter);
+  if (SWITCH) registry.register('provider-adapter', claudeAdapter);
   const streams = new StreamService({
     onDiagnostic: (d) => {
       if (d.kind !== 'stderr') say(`diag ${d.kind}: ${d.detail.slice(0, 200)}`);
@@ -287,6 +309,96 @@ async function main(): Promise<number> {
     m.remove(s2);
     check('session 2 closed', await until(() => exited.has(s2), 15_000, 'session 2 to exit'));
 
+    // ── the AI switch, Claude -> Codex -> Claude (#1294), opt-in ─────────────
+    if (SWITCH) {
+      const nameOf = (id: string): string => registry.resolve('provider-adapter', id)?.manifest.displayName ?? id;
+      const planFor = (c: PersistedSession) =>
+        planSessionStart(
+          {
+            capabilitiesOf: (id) => registry.resolve('provider-adapter', id)?.capabilities,
+            isRegistered: (id) => !!registry.resolve('provider-adapter', id),
+            defaultProviderId: () => 'claude-code',
+            folder: work,
+            prior: { providerId: c.identity.providerId, nativeSessionId: c.nativeSessionId, nativeSessionLineage: c.nativeSessionLineage },
+            claimedNativeIds: () => [],
+          },
+          { buildHookSettings: () => ({}), releaseHookSettings: () => {} }
+        );
+      const turn = async (sid: string, prompt: string, what: string): Promise<string> => {
+        turns += 1;
+        const ends = ofType(sid, 'turn-end').length;
+        const said = textsOf(of(sid), 'assistant').length;
+        check(`${what} sent`, m.submitPrompt(sid, prompt));
+        const done = await until(() => ofType(sid, 'turn-end').length > ends, TURN_MS, `${what} to end`);
+        const end = ofType(sid, 'turn-end')[ends];
+        check(`${what} ended, not failed`, done && end?.failed === false, end?.label ?? 'no turn end');
+        const reply = textsOf(of(sid), 'assistant').slice(said).join(' ');
+        say(`${what} reply: ${JSON.stringify(reply.slice(0, 200))}`);
+        say(`${what} usage: ${JSON.stringify(ofType(sid, 'usage').slice(-2))}`);
+        return reply;
+      };
+      const claudeParty = { providerId: 'claude-code', name: nameOf('claude-code') };
+      const codexParty = { providerId: CODEX_PROVIDER_ID, name: nameOf(CODEX_PROVIDER_ID) };
+      let c: PersistedSession = {
+        id: 'switch-card',
+        identity: { title: 'codex-check switch', folder: work, providerId: 'claude-code' },
+        layoutSlot: 0,
+        suspendedAt: '',
+      };
+      // 1. Claude, fresh
+      const p1 = planFor(c);
+      check('switch: the card starts on Claude, fresh', p1.providerId === 'claude-code' && !p1.resumeSessionId);
+      const a1 = m.create(c.identity, { autonomy: 'ask', transport: 'stream' }).id;
+      sessionIds.push(a1);
+      const cm1 = await m.setModel(a1, CLAUDE_MODEL);
+      check(`switch: Claude model set to ${CLAUDE_MODEL}`, cm1.ok, cm1.ok ? '' : JSON.stringify(cm1));
+      const r1 = await turn(a1, SWITCH_PROMPT_1, 'switch: Claude turn 1');
+      check('switch: Claude says ping', /ping/i.test(r1));
+      const claudeId = ofType(a1, 'conversation').at(-1)?.id;
+      check('switch: Claude named its conversation', !!claudeId, claudeId ?? 'none');
+      if (!claudeId) return 1;
+      c = { ...c, nativeSessionId: claudeId };
+      m.remove(a1);
+      await until(() => exited.has(a1), 15_000, 'Claude session 1 to exit');
+
+      // 2. to Codex: Claude's conversation parked, Codex fresh
+      c = switchCardAi(c, claudeParty, codexParty, new Date().toISOString(), 'switch-1');
+      check('switch: the Claude conversation is parked on the card', c.conversations?.['claude-code']?.nativeSessionId === claudeId);
+      const p2 = planFor(c);
+      check('switch: the first switch to Codex starts FRESH', p2.providerId === CODEX_PROVIDER_ID && !p2.resumeSessionId);
+      const x1 = m.create(c.identity, { autonomy: 'ask', mcpConfigFor }).id;
+      sessionIds.push(x1);
+      check('switch: the Codex session opened', await until(() => ofType(x1, 'conversation').length > 0, OPEN_MS, 'the switched Codex session to open'));
+      await m.setModel(x1, MODEL);
+      await m.setEffort(x1, EFFORT);
+      const rx = await turn(x1, SWITCH_PROMPT_CODEX, 'switch: Codex turn');
+      check('switch: Codex says pong', /pong/i.test(rx));
+      c = { ...c, nativeSessionId: ofType(x1, 'conversation').at(-1)?.id };
+      m.remove(x1);
+      await until(() => exited.has(x1), 15_000, 'the switched Codex session to exit');
+
+      // 3. back: Claude RESUMES its own conversation
+      c = switchCardAi(c, codexParty, claudeParty, new Date().toISOString(), 'switch-2');
+      const p3 = planFor(c);
+      check(
+        'switch: switching back RESUMES the original Claude conversation',
+        p3.providerId === 'claude-code' && p3.resumeSessionId === claudeId,
+        p3.resumeSessionId ?? 'fresh'
+      );
+      const a2 = m.create(c.identity, { autonomy: 'ask', transport: 'stream', resumeSessionId: p3.resumeSessionId }).id;
+      sessionIds.push(a2);
+      await m.setModel(a2, CLAUDE_MODEL);
+      const r2 = await turn(a2, SWITCH_PROMPT_2, 'switch: Claude turn 2');
+      check('switch: the resumed Claude remembers its first reply (ping)', /ping/i.test(r2));
+      check(
+        'switch: in the SAME conversation',
+        ofType(a2, 'conversation').at(-1)?.id === claudeId,
+        ofType(a2, 'conversation').at(-1)?.id
+      );
+      m.remove(a2);
+      await until(() => exited.has(a2), 15_000, 'Claude session 2 to exit');
+    }
+
     // ── the plan limits, from the app-server reader ──────────────────────────
     const limits = await createLimitsReader({ log: say })();
     say(`limits: ${JSON.stringify(limits)}`);
@@ -321,6 +433,16 @@ async function main(): Promise<number> {
     const after = rollouts().length;
     say(`codex sessions: before ${rolloutsBefore.size}, new ${fresh.length}, this run's ${ours}, deleted ${deleted}, after ${after}`);
     check('the sessions this run made were deleted', ours === deleted);
+    if (SWITCH) {
+      // this run's Claude transcripts: the temp folder's own slug, nothing else
+      const mine = path.join(os.homedir(), '.claude', 'projects', slugForCwd(work));
+      try {
+        fs.rmSync(mine, { recursive: true, force: true });
+        say(`removed this run's Claude transcripts: ${mine}`);
+      } catch (err) {
+        say(`Claude transcripts not removed (${mine}): ${errorText(err)}`);
+      }
+    }
     try {
       fs.rmSync(work, { recursive: true, force: true });
     } catch (err) {

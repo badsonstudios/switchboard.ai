@@ -3038,6 +3038,8 @@ app
       capabilitiesOf: (providerId) =>
         registry.resolve('provider-adapter', providerId)?.capabilities,
       isRegisteredProvider: (providerId) => !!registry.resolve('provider-adapter', providerId),
+      // what the AI-switch divider calls each AI (#1294)
+      providerName: (providerId) => registry.resolve('provider-adapter', providerId)?.manifest.displayName,
       defaultProviderId,
       repoRoot: (folder) => gitService.root(folder),
       // The user's own command FILES are the provider's to find (#1288,

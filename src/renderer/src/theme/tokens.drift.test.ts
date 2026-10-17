@@ -1306,6 +1306,8 @@ describe('--faint is the disabled and decorative ink, and every use of it is cou
     'components/QuestionPanel.tsx': [1, 'the dot for a question not answered yet'],
     'components/SessionGrid.tsx': [3, 'a disabled menu item, a disabled view tab, an accent fallback on an edge'],
     'components/SessionHistoryDialog.tsx': [2, 'an unarmed confirm button; a conversation another card holds'],
+    // #1294: the same unarmed confirm, in the AI switch menu
+    'components/AiSwitchChip.tsx': [1, 'an unarmed confirm button'],
     'components/SessionRow.tsx': [2, 'an accent fallback; the dash where a task label would be'],
     'components/SessionsStrip.tsx': [1, 'a scroll arrow with nothing to scroll to'],
     'components/StripPill.tsx': [2, 'an accent fallback; the dash where a task label would be'],

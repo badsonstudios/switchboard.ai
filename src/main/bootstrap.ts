@@ -27,6 +27,9 @@ export function registerBuiltinContributions(): void {
     // with the Claude fake beside it. Every other value is exactly as before.
     if (process.env.SWITCHBOARD_FAKE_PROVIDER === 'acp') registry.register('provider-adapter', fakeAcpAdapter);
     registry.register('provider-adapter', fakeStreamAdapter);
+    // `both` (#1294, #1296): the Claude fake FIRST, so a new card starts on
+    // it, with the fake ACP agent beside it — a card that can switch AI.
+    if (process.env.SWITCHBOARD_FAKE_PROVIDER === 'both') registry.register('provider-adapter', fakeAcpAdapter);
     return;
   }
   registry.register('provider-adapter', claudeAdapter);

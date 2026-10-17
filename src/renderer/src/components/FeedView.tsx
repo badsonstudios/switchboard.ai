@@ -86,6 +86,8 @@ import {
 } from '../lib/sibling-inbox';
 import { ModelQuickMenu } from './ModelQuickMenu';
 import { EffortChip } from './EffortChip';
+import { AiSwitchChip } from './AiSwitchChip';
+import type { SwitchAiNext } from '../lib/ai-switch-view';
 import { ContextMeter } from './ContextMeter';
 import {
   Attachment,
@@ -676,6 +678,10 @@ export function FeedView(props: {
   liveAutonomy?: string;
   model?: string;
   onCycleAutonomy?: () => void;
+  /** the provider this card is on (#1294) — what the AI chip shows */
+  providerId?: string;
+  /** switch this card to another AI (#1294); absent = no AI chip */
+  onSwitchAi?: (providerId: string, stopFirst: boolean) => Promise<SwitchAiNext>;
   /** held permission (E10-04) â€” the bar renders just above the composer */
   approval?: {
     requestId: string;
@@ -1995,6 +2001,8 @@ export function FeedView(props: {
         controlsLock={props.controlsLock}
         transport={props.transport}
         onCycleAutonomy={props.onCycleAutonomy}
+        providerId={props.providerId}
+        onSwitchAi={props.onSwitchAi}
         // Everything ELSE docked in this column, as one value (#716 review).
         // The composer's height cap is what the panel can spare, which is its
         // own height less the feed's floor less every sibling docked around the
@@ -2539,6 +2547,8 @@ function Composer({
   controlsLock,
   transport,
   onCycleAutonomy,
+  providerId,
+  onSwitchAi,
   dockedChrome,
   recall,
 }: {
@@ -2564,6 +2574,9 @@ function Composer({
   /** P2-E10-09: only a typed-message transport can carry a pasted image */
   transport?: TransportKind;
   onCycleAutonomy?: () => void;
+  /** #1294: the card's AI, and the switch to another */
+  providerId?: string;
+  onSwitchAi?: (providerId: string, stopFirst: boolean) => Promise<SwitchAiNext>;
   /**
    * An opaque stamp of what else is docked in this panel (#716 review).
    *
@@ -4619,6 +4632,18 @@ function Composer({
               before the answer is.
             • not switchable → the plain span it always was. See
               `canSwitchModel`. */}
+        {/* WHICH AI, and the switch to another (E40 item 11, #1294) — BEFORE the
+            model chip, where the mockup puts it (screen 2). On the card, not
+            the session: a card can be switched with no session running. */}
+        {providerId && onSwitchAi && (
+          <AiSwitchChip
+            key={`ai-${providerId}`}
+            providerId={providerId}
+            aiName={aiControls?.ai}
+            className={CHIP_CLASS}
+            onSwitch={onSwitchAi}
+          />
+        )}
         {canSwitchModel ? (
           withReason(
             noModels,

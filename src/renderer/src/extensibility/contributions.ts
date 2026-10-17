@@ -22,6 +22,7 @@ import type { Command } from '../lib/commands';
 import type { CommandDeps } from '../lib/command-set';
 import type { SessionControlLock } from '../lib/session-controls';
 import type { FeedBlockDto } from '../lib/feed';
+import type { SwitchAiNext } from '../lib/ai-switch-view';
 import type { ThemeDefinition, ThemeId } from '../theme/theme';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
@@ -236,6 +237,14 @@ export interface PanelContext {
   /** §5.16's middle rung (#974) — grant one file, and answer this call */
   onAllowFile?: (filePath: string) => void;
   onCycleAutonomy?: () => void;
+  /** the provider this card is on (#1294) */
+  providerId?: string;
+  /**
+   * Switch this card to another AI (E40 item 11, #1294). The card's, not the
+   * session's: it ends the session and starts one on the other AI, which only
+   * the card panel can re-arm.
+   */
+  onSwitchAi?: (providerId: string, stopFirst: boolean) => Promise<SwitchAiNext>;
   /** switch the card to another panel by id */
   setView: (id: PanelId) => void;
 }

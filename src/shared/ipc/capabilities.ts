@@ -500,6 +500,9 @@ export const CHANNEL_CAPABILITIES = {
   // `sessions.spawn` like `dropLive`: it ends the card's live session and
   // decides what the next one resumes, which is the power that tag names.
   'sessions:switchConversation': 'sessions.spawn',
+  // E40 item 11 (#1294): move a card to another AI — it ends the card's session
+  // and starts another, so it is the same capability as the pick above
+  'sessions:switchAi': 'sessions.spawn',
   'sessions:isDirectory': 'fs.probe',
   // What the app repaired about a card's conversation history this run (#539) —
   // adopted or ceded. `sessions.read`: it says which card is in which

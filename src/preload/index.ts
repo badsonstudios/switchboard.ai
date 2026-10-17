@@ -44,6 +44,7 @@ import type {
   SessionSummary,
   StatusChange,
 } from '../shared/sessions';
+import type { SwitchAiResult } from '../shared/ai-switch';
 import type {
   ReportDraft,
   ReportResult,
@@ -438,6 +439,22 @@ const api = {
       ipcRenderer.invoke('sessions:switchConversation', {
         cardId,
         conversationId,
+        ...(opts.stopFirst === true ? { stopFirst: true } : {}),
+      }),
+    /**
+     * Switch this card to another AI (E40 item 11, #1294). The conversation it
+     * leaves is parked, never dropped; switching back resumes it. Refused, with
+     * the reason, while the card is busy (ask, then send `stopFirst`) or when
+     * that AI is not here — and a refusal changes nothing.
+     */
+    switchAi: (
+      cardId: string,
+      providerId: string,
+      opts: { stopFirst?: boolean } = {}
+    ): Promise<SwitchAiResult> =>
+      ipcRenderer.invoke('sessions:switchAi', {
+        cardId,
+        providerId,
         ...(opts.stopFirst === true ? { stopFirst: true } : {}),
       }),
     setTaskLabel: (cardId: string, label: string): Promise<void> =>

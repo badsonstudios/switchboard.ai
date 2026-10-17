@@ -27,6 +27,7 @@ page at a time.
 | [Choosing a model](18-model.md) | Switching a session between Opus, Sonnet and Haiku mid-conversation — the one-click menu on the model name and the fuller `/model` picker, why the tick is sometimes missing, and the effort button that sets how hard the model thinks |
 | [Handing work to a fresh session](20-dispatch.md) | Dispatch: ⋯ → Dispatch… and the palette's per-role entries, why a reviewer deliberately does not get your conversation, the task line worth reading before you send it, getting the findings back, where a dispatched session sits in the list and when it closes itself |
 | [Using Codex](23-using-codex.md) | Running OpenAI's Codex in the same Session view: what you need, approvals and Stop, model and effort, what each mode means for Codex, resume, what is different from Claude, and what is not in yet |
+| [Switching a session to another AI](25-switching-ais.md) | The AI chip: moving a card from Claude Code to Codex and back, why switching back resumes, the question it asks while a turn is running, and what carries over |
 
 ## Looking at the work
 

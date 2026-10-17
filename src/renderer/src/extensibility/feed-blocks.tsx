@@ -44,6 +44,7 @@ import { useFeedSurface } from '../lib/feed-surface';
 import { FEED_THUMB_HEIGHT, FEED_THUMB_WIDTH, feedPictureUrl } from '../../../shared/feed-picture';
 import { Markdown } from '../lib/markdown';
 import { handleMarkdownLinkClick, openExternalBridge } from '../lib/markdown-links';
+import { dividerCopy } from '../lib/ai-switch-view';
 
 /**
  * Marks a subtree that owns its own clicks (#91). `ToolBox` walks up from the
@@ -686,6 +687,45 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
  * with the task id and the output-file path — which is also what keeps the
  * summary checkable rather than a claim.
  */
+/**
+ * Where this card was switched from one AI to another (#1294). A rule across the
+ * conversation with the two AIs and the time, in the "conversation cleared"
+ * marker's look — the other divider the Feed draws. Words only, so it reads
+ * without colour; #1295 adds "handed a summary of N turns" and "see what it was
+ * told", and `dividerCopy` claims a briefing only when the mark records one.
+ */
+function AiSwitchDivider({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
+  const { t, i18n } = useTranslation();
+  const mark = b.aiSwitch;
+  if (!mark) return null;
+  const copy = dividerCopy(mark, Date.now(), i18n.language);
+  const text = t(copy.key, copy.vars);
+  return (
+    <div
+      data-ai-switch-divider={mark.id}
+      data-from={mark.from.providerId}
+      data-to={mark.to.providerId}
+      role="separator"
+      aria-label={text}
+      title={new Date(mark.at).toLocaleString(i18n.language || undefined)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        marginBlock: 10,
+        marginInline: 10,
+        color: 'var(--muted)',
+        fontSize: 10.5,
+        fontFamily: 'var(--font-ui)',
+      }}
+    >
+      <span aria-hidden style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
+      <span aria-hidden>{text}</span>
+      <span aria-hidden style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
+    </div>
+  );
+}
+
 function NoticeBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
   const [expanded, setExpanded] = React.useState(false);
@@ -1603,6 +1643,12 @@ export const feedBlockRenderers: FeedBlockRendererContribution[] = [
     // mechanism: the kinds are disjoint, so nothing depends on it — but this
     // block used to BE a user pill, and a reader chasing that bug should meet
     // the two renderers next to each other (#704).
+    manifest: manifest('feed-block-ai-switch', 'AI switch divider'),
+    order: 54,
+    matches: (b) => b.kind === 'ai-switch',
+    render: (b) => <AiSwitchDivider b={b} />,
+  },
+  {
     manifest: manifest('feed-block-notice', 'Harness notification row'),
     order: 55,
     matches: (b) => b.kind === 'notice',

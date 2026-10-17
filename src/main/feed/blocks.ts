@@ -32,6 +32,7 @@ import { classifyInjected, describeInjectedTurn } from './injected';
 import { MAX_FEED_PICTURES_PER_BLOCK } from '../../shared/feed-picture';
 import { picturesIn, type PictureData } from './picture-data';
 import { mcpCall, webCall, type McpCall, type WebCall } from '../../shared/tool-fold';
+import type { AiSwitchMark } from '../../shared/ai-switch';
 
 /**
  * What rode along with a prompt (#491, P2-E10-09/10).
@@ -64,7 +65,8 @@ export interface FeedAttachments {
  */
 export interface FeedBlock {
   seq: number;
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice';
+  /** `ai-switch`: the divider an AI switch draws (#1294) — see `aiSwitch` */
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch';
   /** user/assistant/thinking prose */
   text?: string;
   tool?: {
@@ -136,6 +138,13 @@ export interface FeedBlock {
    * if…") stays: that sentence is the CLI talking to Claude, and putting it in
    * the one-line row would read as something the user was being told.
    */
+  /**
+   * `ai-switch`: this card was switched from one AI to another here (#1294).
+   * Not from any transcript — the card's own persisted mark, placed in the
+   * timeline by `StreamFeed`. The renderer draws a divider; #1295 adds the
+   * briefing it carried.
+   */
+  aiSwitch?: AiSwitchMark;
   notice?: {
     /** which injected wrapper this was — the renderer dispatches on this */
     source: 'task-notification';
@@ -404,6 +413,20 @@ export interface HydrateOptions {
    * `StreamFeed.absorbSidechain`.
    */
   sidechainBacklogBefore?: number;
+  /**
+   * Blocks that are not in the transcript but belong in its timeline — today
+   * the AI-switch divider (#1294). Each lands before the first replayed entry
+   * stamped AFTER its `at` (epoch ms), so a divider sits where the switch
+   * happened; any left over land after the last entry.
+   */
+  markers?: readonly FeedMarker[];
+}
+
+/** One block placed in replayed history by time (#1294). */
+export interface FeedMarker {
+  /** epoch ms */
+  at: number;
+  block: DerivedBlock;
 }
 
 /** A derived block: everything `deriveIntents` can know from one line alone. */

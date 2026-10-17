@@ -1260,3 +1260,76 @@ describe('a compaction on the stream (#1026)', () => {
     expect(feed.blocks(SID)).toEqual([]);
   });
 });
+
+// E40 item 11 (#1294): the AI-switch divider, placed in a timeline no
+// transcript writes it into.
+describe('the AI-switch divider (#1294)', () => {
+  const mark = (at: string) => ({
+    kind: 'ai-switch' as const,
+    aiSwitch: {
+      kind: 'ai-switch' as const,
+      id: `m-${at}`,
+      from: { providerId: 'codex', name: 'Codex' },
+      to: { providerId: 'claude-code', name: 'Claude Code' },
+      at,
+      briefed: false,
+    },
+  });
+  const said = (text: string, at: string): Record<string, unknown> => ({
+    type: 'user',
+    sessionId: CONV,
+    cwd: '/repo',
+    timestamp: at,
+    isSidechain: false,
+    isMeta: false,
+    message: { role: 'user', content: [{ type: 'text', text }] },
+  });
+  const shape = (): Array<string | undefined> =>
+    feed.blocks(SID).map((b) => (b.kind === 'ai-switch' ? `divider ${b.aiSwitch?.at}` : b.text));
+
+  it('lands in replayed history WHERE THE SWITCH HAPPENED, by time', () => {
+    const at = '2026-10-16T10:30:00.000Z';
+    feed.hydrate(
+      SID,
+      [said('before the switch', '2026-10-16T10:00:00.000Z'), said('after coming back', '2026-10-16T11:00:00.000Z')],
+      { markers: [{ at: Date.parse(at), block: mark(at) }] }
+    );
+    expect(shape()).toEqual(['before the switch', `divider ${at}`, 'after coming back']);
+  });
+
+  it('a switch after the last entry lands at the bottom — and with no history at all, alone', () => {
+    const at = '2026-10-16T12:00:00.000Z';
+    feed.hydrate(SID, [said('the last thing', '2026-10-16T10:00:00.000Z')], {
+      markers: [{ at: Date.parse(at), block: mark(at) }],
+    });
+    expect(shape()).toEqual(['the last thing', `divider ${at}`]);
+    const other = new ClaudeFedFeed();
+    other.hydrate('s2', [], { markers: [{ at: Date.parse(at), block: mark(at) }] });
+    expect(other.blocks('s2').map((b) => b.kind)).toEqual(['ai-switch']);
+  });
+
+  it('`now` puts it at the top of a fresh conversation, silently — the panel reads the backlog', () => {
+    feed.placeMarker(SID, mark('2026-10-16T10:00:00.000Z'), 'now');
+    expect(kinds()).toEqual(['ai-switch']);
+    expect(seen).toEqual([]);
+  });
+
+  it('`after-conversation` waits for the AI to name its conversation, so a load replay lands above it', () => {
+    feed.placeMarker(SID, mark('2026-10-16T10:00:00.000Z'), 'after-conversation');
+    expect(kinds()).toEqual([]);
+    // what an ACP `session/load` replays arrives first…
+    feed.offer(SID, {
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: 'replayed' }] },
+      session_id: CONV,
+      parent_tool_use_id: null,
+    });
+    expect(texts()).toEqual(['replayed']);
+    // …then the load's answer names the conversation
+    feed.ingest(SID, { type: 'conversation', id: CONV });
+    expect(feed.blocks(SID).at(-1)?.kind).toBe('ai-switch');
+    // and it is placed ONCE
+    feed.ingest(SID, { type: 'conversation', id: CONV });
+    expect(kinds().filter((k) => k === 'ai-switch')).toHaveLength(1);
+  });
+});
