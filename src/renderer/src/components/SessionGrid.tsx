@@ -141,6 +141,7 @@ import {
   sessionControlLock,
 } from '../lib/session-controls';
 import { controlUnavailable, useAiControls } from '../lib/ai-controls';
+import { afterSwitchAiAnswer, type SwitchAiNext } from '../lib/ai-switch-view';
 import { type TransportKind } from '../../../shared/transport';
 import type {
   AutonomyMode,
@@ -243,6 +244,8 @@ interface Live {
    * argument about suspended cards.)
    */
   nativeSessionId?: string;
+  /** the provider this session runs on (#1294) — what the AI chip shows */
+  providerId?: string;
 }
 
 /**
@@ -734,6 +737,44 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       .then((answer) => settle(answered(answer)))
       .catch(() => settle(null));
   };
+  /** what the overlay's "Switch back to …" was refused with, if it was (#1294) */
+  const [switchBackNotice, setSwitchBackNotice] = React.useState<string | null>(null);
+  /**
+   * Switch THIS card to another AI (E40 item 11, #1294) — `openHere`'s twin.
+   *
+   * Main decides and answers; this only does the renderer's half of the
+   * restart on `rearm`, exactly as a history pick does, and the start that
+   * follows resumes the target's own conversation or starts fresh on it.
+   * `ask` is handed back to the menu, which puts the question in place.
+   */
+  const switchAiHere = async (providerId: string, stopFirst: boolean): Promise<SwitchAiNext> => {
+    if (!cardId) return { kind: 'notice', key: 'aiSwitch.refusedFailed' };
+    // a switch or a pick already on the wire: this one is a no-op, not a failure
+    if (pickPending.current) return { kind: 'close' };
+    pickPending.current = true;
+    setSwitchBackNotice(null);
+    switchingFrom.current = live?.id ?? null;
+    let next: SwitchAiNext;
+    try {
+      next = afterSwitchAiAnswer(
+        answered(await window.switchboard.sessions.switchAi(cardId, providerId, stopFirst ? { stopFirst: true } : {})),
+        stopFirst
+      );
+    } catch {
+      next = { kind: 'notice', key: 'aiSwitch.refusedFailed' };
+    }
+    pickPending.current = false;
+    if (next.kind !== 'rearm') {
+      switchingFrom.current = null;
+      return next;
+    }
+    sessionStore.forgetCardLiveIds(cardId);
+    setEnded(null);
+    setLive(null);
+    spawning.current = false;
+    return next;
+  };
+
   const cardId = props.params?.cardId;
   // PRESENTATION STATE LIVES IN THE STORE (P2-E15-08, AR-P1-5), not here.
   //
@@ -768,6 +809,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   );
   const cardBadge = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardBadge(cardId)
+  );
+  // The AI this card is on, and the way back after a switch (#1294) — off the
+  // CARD, so both are there with no session running and after a relaunch.
+  const cardProvider = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardProvider(cardId)
+  );
+  const cardSwitchBack = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardSwitchBack(cardId)
   );
   const view = presentation.view;
   const poppedOut = presentation.poppedOut;
@@ -1315,6 +1364,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           // here: a session that has just spawned has not been told its
           // conversation id yet, and the fork control stays absent until it is.
           nativeSessionId: record.nativeSessionId,
+          providerId: record.identity.providerId,
         });
         // show the usage strip from the start (zeros until the first prompt),
         // so it's visibly present rather than appearing only after activity
@@ -1860,10 +1910,35 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         <button onClick={restartSelf} style={overlayBtn(true)}>
           {t(overlayCopy.action)}
         </button>
+        {/* THE WAY BACK (#1294): a card switched to an AI that would not run
+            here is one press from the AI it came from, in the conversation it
+            had there — never stranded on a Retry that keeps failing. */}
+        {cardSwitchBack && (
+          <button
+            data-testid="card-switch-back"
+            onClick={() =>
+              void switchAiHere(cardSwitchBack.providerId, true).then((next) => {
+                if (next.kind === 'notice') setSwitchBackNotice(t(next.key, { ai: cardSwitchBack.name }));
+              })
+            }
+            // "resumes" only when there IS a conversation to go back to (§5.5)
+            title={t(cardSwitchBack.resumes ? 'aiSwitch.switchBackHint' : 'aiSwitch.switchBackFreshHint', {
+              ai: cardSwitchBack.name,
+            })}
+            style={overlayBtn(false)}
+          >
+            {t('aiSwitch.switchBack', { ai: cardSwitchBack.name })}
+          </button>
+        )}
         <button onClick={closeSelf} style={overlayBtn(false)}>
           {t('grid.close')}
         </button>
       </div>
+      {switchBackNotice && (
+        <div role="status" style={{ color: 'var(--status-crashed-ink)', fontSize: 11, marginBlockStart: 8, maxInlineSize: 260 }}>
+          {switchBackNotice}
+        </div>
+      )}
     </div>
   ) : null;
   const suspendedOverlay = suspended ? (
@@ -1975,6 +2050,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     onDecide: decide,
     onAllowFile: approveFile,
     onCycleAutonomy: cycleCardAutonomy,
+    providerId: live?.providerId ?? cardProvider,
+    onSwitchAi: cardId ? switchAiHere : undefined,
     setView,
   };
   const panels = listPanels(rendererRegistry);

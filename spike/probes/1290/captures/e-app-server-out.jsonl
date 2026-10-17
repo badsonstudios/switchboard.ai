@@ -1,0 +1,20 @@
+{"t":1,"dir":"note","text":"spawn","extra":{"file":"cmd.exe","argv":["/c","C:\\Users\\dheinz\\AppData\\Roaming\\npm\\codex.cmd","app-server"],"cwd":"C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb-1290-probe-cwd-iYGzXu","envOverrides":{"CODEX_HOME":"C:\\Users\\dheinz\\AppData\\Local\\Temp\\codex-home-empty-1290-kqRhto"}}}
+{"t":13,"dir":"out","frame":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"switchboard-probe-1290","version":"0.0.0","title":null},"capabilities":{"experimentalApi":true}}}}
+{"t":96,"dir":"stderr","text":"WARNING: proceeding, even though we could not create PATH aliases: "}
+{"t":97,"dir":"stderr","text":"Refusing to create helper binaries under temporary dir \"C:\\\\Users\\\\dheinz\\\\AppData\\\\Local\\\\Temp\\\\\" (codex_home: AbsolutePathBuf(\"C:\\\\Users\\\\dheinz\\\\AppData\\\\Local\\\\Temp\\\\codex-home-empty-1290-kqRhto\"))\n"}
+{"t":254,"dir":"note","text":"first-stdout","extra":{"t":254,"bytes":"{\"id\":1,\"result\":{\"userAgent\":\"switchboard-probe-1290/0.163.0 (Windows 10.0.26300; x86_64) xterm-256color (switchboard-p"}}
+{"t":255,"dir":"in","frame":{"id":1,"result":{"userAgent":"switchboard-probe-1290/0.163.0 (Windows 10.0.26300; x86_64) xterm-256color (switchboard-probe-1290; 0.0.0)","codexHome":"C:\\Users\\dheinz\\AppData\\Local\\Temp\\codex-home-empty-1290-kqRhto","platformFamily":"windows","platformOs":"windows"}}}
+{"t":255,"dir":"note","text":"initialize ms","extra":{"ms":242}}
+{"t":256,"dir":"out","frame":{"jsonrpc":"2.0","method":"initialized"}}
+{"t":256,"dir":"out","frame":{"jsonrpc":"2.0","id":2,"method":"account/read","params":{"refreshToken":false}}}
+{"t":257,"dir":"in","frame":{"method":"remoteControl/status/changed","params":{"status":"disabled","serverName":"DHEINZPC","installationId":"75d72925-3f53-432b-b05b-bbc1636c7f38","environmentId":null},"emittedAtMs":1792181442788}}
+{"t":258,"dir":"in","frame":{"id":2,"result":{"account":null,"requiresOpenaiAuth":true,"workspaceRouting":null}}}
+{"t":259,"dir":"note","text":"account/read ms","extra":{"ms":3}}
+{"t":259,"dir":"out","frame":{"jsonrpc":"2.0","id":3,"method":"account/rateLimits/read"}}
+{"t":260,"dir":"in","frame":{"error":{"code":-32600,"message":"codex account authentication required to read rate limits"},"id":3}}
+{"t":260,"dir":"note","text":"account/rateLimits/read ms","extra":{"ms":1}}
+{"t":656,"dir":"note","text":"processes before close","extra":{"codex":["\"codex.exe\",\"40204\",\"Console\",\"1\",\"38,824 K\""]}}
+{"t":1314,"dir":"note","text":"exit","extra":{"code":0,"sig":null}}
+{"t":1314,"dir":"note","text":"exited on stdin EOF","extra":{"code":0,"sig":null}}
+{"t":1574,"dir":"note","text":"close ms","extra":{"ms":917}}
+{"t":1994,"dir":"note","text":"processes after close","extra":{"codex":[]}}

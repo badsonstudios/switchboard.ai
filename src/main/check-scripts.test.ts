@@ -40,6 +40,8 @@ const LOCAL_ONLY: Record<string, string> = {
     'a real `claude -p` turn, then parses the transcript the CLI wrote - real tokens',
   'check:mcp-attach':
     'a real logged-in `claude` session, driven over the control protocol to read mcp_status - no model turn and no tokens, but the login is the bar (#763)',
+  'check:codex':
+    "spends real tokens on the owner's ChatGPT plan - two real Codex turns (one, then a resume), and a runner has no Codex login (#1290)",
 };
 
 /** a `- run: npm run <name>` step, not merely a mention in a comment */
@@ -65,8 +67,9 @@ describe('check:* scripts are all accounted for (#182)', () => {
     // `check:mcp-attach` joined LOCAL_ONLY in #763 while this comment still said
     // three, which is how a floor stops being one; then #952 deleted `check:pty`
     // (a CI job) and `check:hooks` (local-only) with the PTY transport, taking it
-    // from 7 to 5. A floor that is never edited is not being checked.
-    expect(checks.length).toBeGreaterThanOrEqual(5);
+    // from 7 to 5. A floor that is never edited is not being checked. #1290's
+    // `check:codex` (local-only: real Codex tokens) took it to 6.
+    expect(checks.length).toBeGreaterThanOrEqual(6);
   });
 
   it.each(

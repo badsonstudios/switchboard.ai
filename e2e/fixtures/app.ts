@@ -1393,6 +1393,18 @@ export interface PersistedWorkspaceFile {
     nativeSessionId?: string;
     transport?: string;
     taskLabel?: string;
+    /** the AI the card is on, and the conversations it parked with others (#1294) */
+    identity?: { providerId?: string };
+    conversations?: Record<string, { nativeSessionId?: string }>;
+    aiSwitches?: Array<{
+      from?: { providerId?: string };
+      to?: { providerId?: string };
+      // #1295: what the arrival was
+      briefed?: boolean;
+      turnsSummarised?: number;
+      briefingRef?: string;
+      resumed?: boolean;
+    }>;
   }>;
 }
 

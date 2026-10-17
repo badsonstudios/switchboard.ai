@@ -104,6 +104,9 @@ export const sessionPanels: PanelContribution[] = [
         // #261's lesson again: the button is absent, not broken, without this
         onAllowFile={ctx.onAllowFile}
         onCycleAutonomy={ctx.onCycleAutonomy}
+        // #1294, and #261's lesson once more: without these the AI chip is absent
+        providerId={ctx.providerId}
+        onSwitchAi={ctx.onSwitchAi}
         // No `onJumpToTerminal`, and no bar to give it to since #952 — see
         // `setView('terminal')` would now resolve to the Session tab — a button
         // labelled "Open Terminal" that quietly does something else. The bar

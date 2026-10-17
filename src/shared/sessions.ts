@@ -329,6 +329,24 @@ export interface SessionCardWire {
    * that already agrees with main.
    */
   transport?: TransportKind;
+  /**
+   * The AI this card is on (#1294) — the card's own `identity.providerId`, so
+   * the AI chip can name it while no session is running.
+   */
+  providerId?: string;
+  /**
+   * The way back (#1294): present when the card's latest AI switch brought it to
+   * the AI it is on now. `resumes` says whether the card has a conversation
+   * parked with that AI — only then does going back RESUME anything (§5.5).
+   */
+  switchBack?: CardSwitchBack;
+}
+
+/** The AI a card was switched FROM, as its overlay offers to go back (#1294). */
+export interface CardSwitchBack {
+  providerId: string;
+  name: string;
+  resumes: boolean;
 }
 
 /**

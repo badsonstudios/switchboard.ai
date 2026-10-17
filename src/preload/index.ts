@@ -44,6 +44,7 @@ import type {
   SessionSummary,
   StatusChange,
 } from '../shared/sessions';
+import type { BriefingTextResult, SwitchAiResult } from '../shared/ai-switch';
 import type {
   ReportDraft,
   ReportResult,
@@ -440,6 +441,29 @@ const api = {
         conversationId,
         ...(opts.stopFirst === true ? { stopFirst: true } : {}),
       }),
+    /**
+     * Switch this card to another AI (E40 item 11, #1294). The conversation it
+     * leaves is parked, never dropped; switching back resumes it. Refused, with
+     * the reason, while the card is busy (ask, then send `stopFirst`) or when
+     * that AI is not here — and a refusal changes nothing.
+     */
+    switchAi: (
+      cardId: string,
+      providerId: string,
+      opts: { stopFirst?: boolean } = {}
+    ): Promise<SwitchAiResult> =>
+      ipcRenderer.invoke('sessions:switchAi', {
+        cardId,
+        providerId,
+        ...(opts.stopFirst === true ? { stopFirst: true } : {}),
+      }),
+    /**
+     * The exact text an AI was briefed with when a card switched to it (E40
+     * item 12, #1295) — "see what it was told". `ref` is the mark's
+     * `briefingRef`. Never rejects: a missing file answers `gone`.
+     */
+    briefingText: (ref: string): Promise<BriefingTextResult> =>
+      ipcRenderer.invoke('sessions:briefingText', ref),
     setTaskLabel: (cardId: string, label: string): Promise<void> =>
       ipcRenderer.invoke('sessions:setTaskLabel', cardId, label),
     setAutonomy: (cardId: string, autonomy: AutonomyMode): Promise<void> =>

@@ -635,6 +635,9 @@ async function scanOne(
   };
 
   const collect = (anchor: BlockAnchor, field: string, text: string): void => {
+    // an AI-switch divider is the card's own mark, never a transcript line
+    // (#1294), so it cannot anchor a hit — said for the type, not the data
+    if (anchor.kind === 'ai-switch') return;
     if (!text) return;
     re.lastIndex = 0;
     let m: RegExpExecArray | null;

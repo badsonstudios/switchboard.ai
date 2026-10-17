@@ -1,0 +1,48 @@
+{
+  "version": 3,
+  "sessions": [
+    {
+      "id": "card-claude",
+      "identity": {
+        "title": "acme-storefront",
+        "folder": "C:\\Projects\\acme-storefront",
+        "accentColor": "var(--accent-teal)",
+        "langBadge": "JS",
+        "providerId": "claude-code"
+      },
+      "layoutSlot": 0,
+      "nativeSessionId": "0cd72f42-49fe-4d33-bb8d-45006df6dd06",
+      "nativeSessionLineage": ["9a1b2c3d-0000-4000-8000-000000000001"],
+      "cededNativeIds": ["9a1b2c3d-0000-4000-8000-000000000009"],
+      "suspendedAt": "2026-10-15T21:04:11.000Z",
+      "usage": { "input": 1200, "output": 3400, "cacheRead": 90000, "cacheCreate": 4100, "thinking": 220 },
+      "model": "claude-opus-4-5",
+      "autonomy": "auto-edit",
+      "taskLabel": "Add a dark mode toggle",
+      "labelSource": "auto",
+      "acceptFromSiblings": true
+    },
+    {
+      "id": "card-fresh",
+      "identity": { "title": "notes", "folder": "C:\\Projects\\notes", "providerId": "claude-code" },
+      "layoutSlot": 1,
+      "suspendedAt": ""
+    }
+  ],
+  "groups": [],
+  "window": null,
+  "layout": null,
+  "ui": null,
+  "notifications": { "enabled": true, "osToasts": false, "sounds": false, "speak": false },
+  "rules": [],
+  "dispatchTemplates": [],
+  "autoTrust": true,
+  "autoLabels": true,
+  "aiLabels": true,
+  "experimentalFork": false,
+  "perfCapture": false,
+  "updates": { "autoCheck": true },
+  "health": { "poll": true },
+  "suppressed": [],
+  "historyRepairs": []
+}

@@ -801,3 +801,45 @@ describe('titles (P2-E7-06, §5.11)', () => {
     expect(p.ensureTrusted).toBeDefined();
   });
 });
+
+// E40 item 11 (#1294): the briefing a first switch to an AI is handed (#1295
+// writes it). The rule lives in the plan so it can be tested here: only a
+// FRESH start is briefed — switching back to an AI the card has used resumes.
+describe('the AI-switch briefing (openingContext, #1294)', () => {
+  it('a fresh start is handed the briefing', () => {
+    const ask = vi.fn(() => 'BRIEFING');
+    expect(plan({ openingContext: ask }).openingContext).toBe('BRIEFING');
+    expect(ask).toHaveBeenCalledTimes(1);
+  });
+
+  it('a RESUME is never briefed, and the briefing is not even built', () => {
+    const ask = vi.fn(() => 'BRIEFING');
+    const p = plan({
+      capabilitiesOf: () => fullCaps(),
+      prior: { providerId: 'p', nativeSessionId: 'mine' },
+      openingContext: ask,
+    });
+    expect(p.resumeSessionId).toBe('mine');
+    expect(p.openingContext).toBeUndefined();
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('an empty briefing sends nothing', () => {
+    expect(plan({ openingContext: () => '' }).openingContext).toBeUndefined();
+  });
+
+  it('a briefing that throws is reported and sends nothing — the session still starts', () => {
+    const { plan: p, reported } = planWithSink({
+      openingContext: () => {
+        throw new Error('boom');
+      },
+    });
+    expect(p.openingContext).toBeUndefined();
+    expect(p.providerId).toBe('p');
+    expect(reported).toEqual([expect.stringContaining('AI-switch briefing threw')]);
+  });
+
+  it('no briefing offered, none planned', () => {
+    expect(plan().openingContext).toBeUndefined();
+  });
+});

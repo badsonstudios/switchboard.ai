@@ -547,6 +547,12 @@ export interface ReplayResumedHistoryArgs {
   nativeSessionId: string;
   /** the clock, for a test that needs the replay to have happened "then" */
   now?: () => number;
+  /**
+   * Blocks to place in the replayed timeline by time — the AI-switch divider
+   * (#1294). Placed even when there is no transcript to replay, so the divider
+   * never depends on the history being readable.
+   */
+  markers?: HydrateOptions['markers'];
 }
 
 /**
@@ -573,7 +579,7 @@ export function replayResumedHistory(
         sessionId: args.sessionId,
         nativeSessionId: args.nativeSessionId,
       });
-      return 0;
+      return args.markers?.length ? feed.hydrate(args.sessionId, [], { markers: args.markers }) : 0;
     }
     // BEFORE the reads, not after: a line written while they run must count as
     // live rather than be mistaken for backlog and dropped. (Nothing writes
@@ -596,6 +602,7 @@ export function replayResumedHistory(
     const blocks = feed.hydrate(args.sessionId, merged.entries, {
       origins: merged.origins,
       sidechainBacklogBefore: replayedAt,
+      markers: args.markers,
     });
     log.info('replayed the resumed conversation into the Feed', {
       sessionId: args.sessionId,

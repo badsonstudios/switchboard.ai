@@ -438,6 +438,52 @@ We never see a password and store nothing.
 
 The preload exposes all of these as `switchboard.ais`.
 
+**As built, item 07 (#1290, 2026-10-16).** Codex is `src/main/providers/codex/`:
+
+- **`codex-provider.ts`** is `codexAdapter = createAcpProvider({id: 'codex',
+  displayName: 'Codex', command: <absolute npx>, args: ['-y',
+  '@agentclientprotocol/codex-acp@2.2.2'], modeMap, authMethodId: 'chat-gpt'})`.
+  The adapter is pinned, it runs its own bundled Codex, and `CODEX_PATH` is
+  unset.
+- **The mode map** (the owner's working assumption, reversible):
+
+  | Card mode | Codex mode |
+  |---|---|
+  | ask | `workspace-write` |
+  | plan | `read-only` |
+  | auto-edit | `workspace-write` |
+  | full-auto | `agent-full-access` |
+
+  **Codex's default `agent` ("Auto review") is in no slot.** In #1285 its
+  hidden guardian approved an action without asking and spent 7,262 tokens
+  that no count showed. Ask and auto-edit share a Codex mode, so
+  `AcpSession.modeEvent` now prefers the card's own choice when two host modes
+  map to one agent mode. Before this change the chip jumped to the first match.
+- **The limits reader** (`codex-limits.ts` over `codex-app-server.ts`) is a
+  one-question `codex app-server` exchange through `StreamSession`. It sends
+  `initialize`, then `initialized`, then `account/rateLimits/read`, and matches
+  replies by id, because these frames carry no `jsonrpc`. `primary`/`secondary`
+  become `PlanLimitWindow`s with ISO `resetsAt` (Codex sends epoch seconds).
+  There is a 10 s deadline, one read in flight at a time, a 60 s cache (a
+  failure is cached too), and every failure fails open to no windows. It is a
+  reader, not an engine: no thread, no turn, no tokens.
+- **Detection** (`codex-detect.ts`): `codexInstalled()`, `npxPath()`,
+  `codexVersion()` (from `codex --version`) and `codexLoginState()` (from
+  app-server `account/read`: `account: null` means logged out). Combined in
+  `detectCodex(signal)`, which is Codex's `detect` capability, replacing the
+  engine's default PATH scan. That scan would find `npx` and call Codex
+  installed on any machine with Node. "Installed" means the `codex` CLI.
+  Both probes honour the runner's 5 s signal, which kills the child and
+  answers `unknown`. "Log in" stays the engine's: a standalone
+  `authenticate` with `chat-gpt`.
+- **Registration** (`bootstrap.ts`): after Claude, so Claude stays the
+  default. It happens only on a real launch, never a fake-provider e2e run,
+  and only when `npx` is on PATH. That check is a PATH scan with no child
+  process. With no `npx`, the registry holds exactly what it held before.
+- **`check:codex`** (local-only, real tokens) runs one turn and one resume
+  through the real `SessionManager` + `StreamService` + `codexAdapter` in a
+  temp folder.
+
 ---
 
 ## 5. The screens (`mockups/multi-ai.html`)
@@ -451,10 +497,24 @@ The preload exposes all of these as `switchboard.ais`.
    - each AI shows its login state and account;
    - one that is missing is dimmed, with "set it up…";
    - one sentence says what switching does.
+
+   *As built (#1294): see §6 "As built, item 11". The sentence is "Switching
+   hands this card to another AI. Coming back resumes where that AI left
+   off." The mockup's version promised a summary that #1295 delivers, so it
+   waited for that item. #1295 made it the mockup's (screen 3's note).*
 3. **After a switch** *(items 04, 12)*:
    - the divider reads "Claude Code → Codex · time · handed a summary of N
      turns", with **see what it was told**;
    - controls one AI lacks grey out, with a reason.
+
+   *As built (#1295): see §6 "As built, item 12". The divider is drawn as in
+   the mockup. The faded previous-AI turns above it are NOT drawn, because they
+   are the other AI's conversation. One faint line takes their place: "N earlier
+   turns with Claude Code — switch back to see them". The briefing itself is
+   on screen as the new AI's first message, folded. The mockup does not show
+   it; hiding it would hide what the AI was told. The menu sentence is now the
+   mockup's: "Switching hands this card to another AI with a summary of this
+   conversation. Coming back resumes where that AI left off."*
 4. **Settings → AIs** *(item 09)*:
    - the default AI;
    - found / not found, with login state;
@@ -491,6 +551,152 @@ AI's real SVG.
 - **Fail-open.** An ACP agent that sends something we do not understand gets it
   logged and skipped; a broken provider never takes down a Claude session.
 
+**As built, item 11 (#1294, 2026-10-16): the switch, screen 2 and this
+section's first rule.**
+
+- **The card shape.** The AI a card is ON keeps its conversation where it
+  always did: `identity.providerId`, `nativeSessionId`, `nativeSessionLineage`
+  and `cededNativeIds`. Every resume path reads those unchanged. The AIs it is
+  NOT on are parked in `PersistedSession.conversations`:
+  `Record<providerId, {nativeSessionId, nativeSessionLineage?, cededNativeIds?,
+  usage?, model?, cliCost?, parkedAt}>`. The current AI is deliberately not
+  stored there too: two copies would drift, because `recordNativeId` updates
+  only the head. `aiSwitches: AiSwitchMark[]` (the last 20) is the divider data.
+  The pure re-pointing is `sessions/ai-switch.ts` `switchCardAi`.
+- **The migration.** `CURRENT_VERSION` goes 3 -> 4. `3:` is an identity on
+  purpose: a v3 card is a v4 card that never switched. What v4 buys is the
+  other direction. A v3 build opening a v4 file takes the existing newer-file
+  rule (read-only, never written back), so it cannot save over parked
+  conversations it does not know about. Its cards still show the AI they are on
+  and that AI's conversation. The load sanitizes both new fields, including
+  dropping a `conversations` entry under the card's own current AI.
+- **Held ids.** A parked conversation counts as held wherever "is this
+  conversation some card's?" is asked (`lineage.ts` `heldNativeIds`): orphan
+  adoption, a picked conversation, the history list's "open in a card", and
+  `switchConversation`. Not `untangle.ts`: a duplicate across one card's parked
+  half and another's head is not untied at load.
+- **The sequence.** `sessions:switchAi {cardId, providerId, stopFirst?}`, its
+  own channel, modelled on `sessions:switchConversation`.
+  1. Refuse `bad-request`, `no-card` or `unavailable` (not registered).
+     Switching to the current AI returns `changed:false`.
+  2. Refuse `busy` with `working`/`waiting`. The menu then asks "Switching
+     stops the current turn. Switch anyway?"; only `stopFirst === true`
+     proceeds.
+  3. Drop the live session, park, un-park, append the mark.
+  4. The renderer re-arms the lazy start, and the ordinary `sessions:create`
+     resumes the target's own conversation through its own `resume`, or starts
+     fresh.
+- **The briefing hook (#1295's).** `SessionIpcDeps.aiSwitchBriefing(req) ->
+  {text, turnsSummarised?, briefingRef?}`. `planSessionStart` takes it as
+  `openingContext` and keeps it ONLY for a fresh start, so a resume is never
+  briefed. It is asked only on the first start after a switch: a mark without
+  `arrivedAt` that names the AI being started. The text goes in as the first
+  prompt, by the dispatch path. #1295 provides it ("As built, item 12").
+- **The divider.** `shared/ai-switch.ts` `AiSwitchMark {kind:'ai-switch', id,
+  from:{providerId,name}, to:{providerId,name}, at, briefed, turnsSummarised?,
+  briefingRef?, arrivedAt?}`, drawn as Feed block kind `ai-switch`. Only the
+  latest arrival into the AI the card is on is drawn:
+  - inside replayed Claude transcript history, at its timestamp
+    (`HydrateOptions.markers`);
+  - at the top of a fresh conversation;
+  - after an ACP `session/load` replay (on the first `conversation` event).
+
+  A known limit: on a relaunch while the card is on an ACP AI, the divider lands
+  after the whole replay rather than before the post-switch turns, because ACP
+  replays carry no timestamps. The Feed shows only the current AI's
+  conversation. Screen 3's faded previous-AI turns above the divider are
+  #1295's.
+- **The chip and menu.** `components/AiSwitchChip.tsx`, from #1291's
+  `ais.list()`. A registered AI is always selectable: a probe that did not find
+  its program says "Not found on this computer — it may not start" and does not
+  veto it. Only an AI with no provider in this run is dimmed with "set it up…".
+  "Manage AIs…" opens Settings on `MANAGE_AIS_TAB` (`lib/ai-switch-view.ts`).
+- **Fail-open.** A card whose start fails after a switch shows **Try again**
+  and **Switch back to <AI>**. A provider that vanished between the switch and
+  the start falls back to the default as before, without consuming the switch.
+- **`SWITCHBOARD_FAKE_PROVIDER=both`** registers the Claude fake, then the fake
+  ACP agent (the same value #1296 adds).
+
+**As built, item 12 (#1295, 2026-10-16): the briefing, the divider, and what
+it was told.**
+
+- **The generator.** `sessions/ai-briefing.ts` is pure, deterministic and
+  model-free. It does not add a second summariser: `context-package.ts` was
+  split so that `buildPackageFrom` builds from one intermediate,
+  `PackageMaterial {blocks, files, compacted}`.
+  - `materialFromEntries` (a Claude JSONL) and `materialFromBlocks` (Feed
+    blocks) both produce that intermediate.
+  - The briefing renders it under a header that says "briefed continuation,
+    not a resume".
+  - It has the package's six sections, then **Next step** (the open todo, else
+    the user's last ask), then **What does not carry over**.
+  - That last section carries the instruction-file line, and says that MCP
+    servers, permissions, hooks and the other AI's memory stay behind.
+  - It closes with "reply in a sentence or two, then wait".
+  - In the recent activity, the AI being left speaks under its own name
+    (`renderBlockAs`), never as "Claude".
+  - The cap is `BRIEFING_CHAR_CAP` = 24,000 characters. When it is hit, the
+    body is cut, the cut is marked with `BRIEFING_TRIM_MARKER`, and the closing
+    sections always survive.
+  - `turnsSummarised` counts the user's turns the briefing covers. A
+    conversation with none is handed nothing.
+- **The source, per direction.** `sessions/ai-briefing-host.ts`:
+  - **Leaving an AI with `transcripts` (Claude):** its JSONL, through the
+    same two-window read as `sessionContext`. A transcript the app could not
+    look for, or could not read, throws.
+  - **Leaving an ACP agent:** `sessions:switchAi` snapshots the Feed's blocks
+    of the session it is about to tear down, as `departedFeeds`, keyed by card
+    and mark. The hook receives them as `fromBlocks`. Starting the agent to
+    `session/load` its conversation just to summarise it was rejected.
+- **`instructionFiles`.** A new optional `ProviderCapabilities.instructionFiles`:
+  - Claude and the Claude fake: `['CLAUDE.md']`;
+  - Codex: `['AGENTS.md']` (measured, #1285 Q7);
+  - the fake ACP agent: `['AGENTS.md']`;
+  - a custom ACP agent declares nothing, and the briefing says "not known".
+- **The exact text.** It is kept at `userData/briefings/<cardId>/<markId>.md`,
+  and `briefingRef` is `<cardId>/<markId>`.
+  - The ref is shape-checked before it becomes a path.
+  - It is read back by `sessions:briefingText` (`transcripts.read`).
+  - A kept file is never rebuilt, because a rebuild after the transcript grows
+    would be a different document.
+  - Files for marks the card has dropped are pruned on the next write. A closed
+    card's folder goes with it (`forgetBriefings`).
+  - A text that could not be kept is still sent, with no ref, so it gets no
+    "see what it was told".
+- **What each arrival was.** The mark gains `resumed` (a switch back) and
+  `briefingFailed`. `briefingFailed` is set when the hook threw, or when the
+  session would not take the prompt.
+  - The divider's words: "handed a summary of N turns" + **see what it was
+    told** / "picked up where it left off" / "started fresh, no summary" /
+    "could not brief <AI>; it started without context".
+  - Before the first start nothing is claimed.
+  - **Live:** `StreamFeed.updateMarker` re-draws the placed divider in place,
+    keeping its seq, from the stamped mark. This happens in the same
+    synchronous stretch as the placement, so it needs no relaunch.
+- **The viewer.** `components/BriefingDialog.tsx` has the drop dialog's
+  modal shape. There was no exact-text viewer to reuse. It shows a read-only
+  `<pre>` with Copy. Escape closes it and focus is restored. A missing file
+  shows "The briefing text is no longer available."
+- **A briefing is never read back as the user's words.** It lands on a
+  `user` line in the new AI's transcript and Feed.
+  - `promptText` skips any text that opens with `BRIEFING_HEADING + ' from '`,
+    the way it skips slash-command plumbing.
+  - The recent activity names it in one line instead of copying it.
+  - So a second switch summarises the conversation and not the summary, and a
+    context drop from a briefed session does not take the briefing as its
+    Goal.
+- **Every arrival records what it was.** The mark carries `resumed`,
+  `briefingFailed` or `startedFresh`, or else `briefed: true` once the send is
+  confirmed. A mark with none of these was written before #1295 and claims
+  nothing: it is drawn as the plain divider. `summaryPartial` is set when the
+  summary covered only the recent end of the conversation. The divider then
+  says "the last N turns", and the earlier-turns line drops its count.
+- **Fail-open.** A briefing failure never blocks the switch: the AI starts,
+  and the divider says it started without context. One case counts as a
+  failure rather than "nothing to hand over": an AI with no transcript whose
+  session was not open at the switch. The conversation exists; there was just
+  nothing to read it from.
+
 ---
 
 ## 7. Work breakdown and order
@@ -524,6 +730,18 @@ AI's real SVG.
 3. **07** when both 02 and 06 are in.
 4. **11 → 12** and **13** last. They are the owner-visible payoff, and need a
    real second AI.
+
+**As built, item 07 (#1290):** Codex is registered (see §4 "As built, item
+07"), but no card can be put on it from the UI until item 11's switch lands.
+Until then the only route is a card's persisted `providerId`. So item 11 is
+where "a new session on Codex" becomes a click. **The 5-hour and weekly
+windows are wired** (after the rebase onto #1288): `createAcpProvider` takes
+a `limits` reader, which the engine calls when the session is ready and
+after every turn. It sends the answer through its own loopback as a
+token-free `usage` event. `EventUsageLedger` adds 0 tokens and replaces
+the windows, and they show in the status-bar usage tooltip. Codex declares
+`usage.estimateCostUsd: () => undefined`. The per-turn event also carries
+`cacheWriteTokens`, `thinkingTokens` and `model`.
 
 **Epic exit:**
 

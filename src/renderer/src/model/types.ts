@@ -12,7 +12,7 @@
 // must not depend on the view" property above is untouched; what it buys is
 // that a row cannot describe a card more loosely than the channel that fills
 // it. Components re-export from here so existing imports keep working.
-import type { RailCardStatus } from '../../../shared/sessions';
+import type { CardSwitchBack, RailCardStatus } from '../../../shared/sessions';
 import type { TransportKind } from '../../../shared/transport';
 import type { DispatchResultDto } from '../../../shared/dispatch-result';
 
@@ -61,6 +61,9 @@ export interface RailSession {
    * chosen one is the answer its question wants.
    */
   transport?: TransportKind;
+  /** the AI this card is on, and the way back after a switch (#1294) */
+  providerId?: string;
+  switchBack?: CardSwitchBack;
 }
 
 /** A persistent group (E12). */

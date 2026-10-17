@@ -96,6 +96,31 @@ on the floor, and say so in your PR.
 
 ## 0.8.123 — unreleased
 
+### Added
+
+- Codex, OpenAI's coding AI, can run in the same Session view as Claude: its
+  replies, the commands it runs, its approval questions, Stop, its models and
+  effort, a mode chip that switches it live, and resuming a conversation. Its
+  usage shows its tokens and, in the status-bar usage tooltip, your ChatGPT
+  plan's 5-hour and weekly limits, with no dollar figure. Every Codex question
+  is put to you: the app never uses
+  Codex's "Auto review" mode, where a hidden model approves things for you.
+  There is no AI picker yet, so a new session is still a Claude session, and
+  nothing changes for anyone without Codex.
+- A session can switch to another AI: the AI chip before the model chip lists
+  each AI with its login state, and picking one moves the card to it, with a
+  line in the conversation marking the switch. Switching back resumes the
+  conversation the card had with that AI, exactly where it stopped. A switch
+  while a turn is running asks first.
+- The first time a card switches to an AI, that AI is handed a summary of the
+  conversation so far: the goal, what you asked for, the plan, the files
+  touched, where it left off and the next step. The summary also says which
+  instruction files each AI reads (`CLAUDE.md` or `AGENTS.md`) and that MCP
+  servers, permissions and hooks do not carry over. No AI writes it, so it
+  costs nothing extra. The switch line says "handed a summary of N turns", and
+  **see what it was told** opens the exact text. Switching back says "picked up
+  where it left off" and sends no summary.
+
 ### Changed
 
 - A session on a model switchboard has no price for no longer shows a made-up
