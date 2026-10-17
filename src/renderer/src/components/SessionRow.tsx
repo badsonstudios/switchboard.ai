@@ -19,7 +19,7 @@ import { attentionPaint, presentStatus } from '../lib/rail-view';
 import { approvalAttrs, approvalHint, NO_CARDS } from '../lib/approval-watch';
 import { useApprovalWatch } from '../lib/use-approval-watch';
 import { tint } from '../lib/tint';
-import { StatusMark } from './StatusMark';
+import { AiBadge } from './AiBadge';
 import { DEFAULT_TASK_LABEL_SIZE, LABEL_LINES } from '../../../shared/task-label-size';
 
 /**
@@ -593,11 +593,12 @@ export function SessionRow(props: {
                 {waiting}
               </span>
             )}
-            {/* The glyph and the ring are DECORATION: `aria-label` on a
-                role-less span is ignored by every screen reader anyway, and
-                the state it was trying to announce is now in the row button's
-                own name. `title` stays — that one is for the mouse. */}
-            <StatusMark status={s.status} needsYou={props.needsYou} />
+            {/* The AI's icon in its status ring (#1293), where the status
+                glyph was. The state is still in the row button's own name and
+                in the short word on line 1; the badge is an image named
+                "<AI>, <status>", which is the one fact the row did not say
+                before: which AI this session is on. */}
+            <AiBadge providerId={s.providerId} status={s.status} needsYou={props.needsYou} />
           </div>
         </>
       )}

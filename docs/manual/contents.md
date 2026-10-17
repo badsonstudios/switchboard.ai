@@ -26,6 +26,8 @@ page at a time.
 | [Direct mode](12-direct-mode.md) | How sessions talk to Claude: fixes the `.claude` double-prompt, costs you the terminal |
 | [Choosing a model](18-model.md) | Switching a session between Opus, Sonnet and Haiku mid-conversation — the one-click menu on the model name and the fuller `/model` picker, why the tick is sometimes missing, and the effort button that sets how hard the model thinks |
 | [Handing work to a fresh session](20-dispatch.md) | Dispatch: ⋯ → Dispatch… and the palette's per-role entries, why a reviewer deliberately does not get your conversation, the task line worth reading before you send it, getting the findings back, where a dispatched session sits in the list and when it closes itself |
+| [Using Codex](23-using-codex.md) | Running OpenAI's Codex in the same Session view: what you need, approvals and Stop, model and effort, what each mode means for Codex, resume, what is different from Claude, and what is not in yet |
+| [Switching a session to another AI](25-switching-ais.md) | The AI chip: moving a card from Claude Code to Codex and back, why switching back resumes, the question it asks while a turn is running, and what carries over |
 
 ## Looking at the work
 
@@ -45,6 +47,7 @@ page at a time.
 | [Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette |
 | [Notifications & events](09-notifications.md) | Sounds, the Events drawer, who needs you, when you get told what |
 | [Settings](10-settings.md) | The Settings window (`Ctrl+,`), the chips that stayed on the title bar, and why |
+| [Settings → AIs](24-ais.md) | Which AI new sessions start on, the AIs found on this computer and whether they are signed in, Log in, installing the ones not found, and adding another AI |
 | [MCP servers](17-mcp-servers.md) | `/mcp`: what tools a session is wired to, which scope each comes from, adding and removing them, and why one is waiting on you |
 
 ## When something is wrong

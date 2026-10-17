@@ -288,6 +288,8 @@ export const claudeAdapter: ProviderAdapter = {
   // wrong (§5.23's own test).
   capabilities: {
     transcripts: { projectsRoot: claudeProjectsRoot },
+    // E40 item 12 (#1295): Claude Code's own convention, for the switch briefing
+    instructionFiles: ['CLAUDE.md'],
     // E40 item 03 (#1286): stream-json -> the neutral session events the Feed,
     // status and health read. The only reader of Claude frames on that path.
     events: claudeEvents,

@@ -57,6 +57,8 @@ export const fakeStreamAdapter: ProviderAdapter = {
   // nothing about the seam.
   capabilities: {
     transcripts: { projectsRoot: claudeProjectsRoot },
+    // it stands in for Claude Code, so it declares Claude's convention (#1295)
+    instructionFiles: ['CLAUDE.md'],
     // The REAL translator (#1286): the fake replays Claude's own frames, so
     // every e2e on it drives them through the seam the real CLI uses.
     events: claudeEvents,
@@ -80,6 +82,13 @@ export const fakeStreamAdapter: ProviderAdapter = {
     // session is hosted, not what its price list, preflight, labeler, MCP list
     // or command files are — so the e2e suite keeps exercising that code.
     ...claudeSurfaces,
+    // E40 item 10 (#1293): the fake is always installed (it ships in `out/`),
+    // so detection answers for it the way the fake ACP agent's does — and
+    // never reads the real PATH, where a developer's own `claude` would make
+    // the status bar's list of AIs depend on the machine running the suite.
+    detect: {
+      detect: () => Promise.resolve({ installed: true, version: '0.0.0', login: 'logged-in' as const }),
+    },
   },
 
   // The FALLBACK list — what the composer offers before the CLI has spoken.

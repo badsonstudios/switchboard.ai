@@ -14,6 +14,7 @@
 // session, the other two find it, and `forget` (the session's end, from the
 // teardown and the exit path) lets it go.
 import type { AutonomyMode } from '../../../shared/sessions';
+import type { PlanLimitWindow } from '../../../shared/usage-report';
 import { BUS_SERVER_NAME } from '../../bus/bus-paths';
 import { errorText } from '../../../shared/error-text';
 import type { AiLoginResult } from '../../../shared/ais';
@@ -59,6 +60,19 @@ export interface AcpProviderOptions {
    * "Log in" runs the agent's own `authenticate` standalone (`acp-probe.ts`).
    */
   detect?: DetectCapability;
+  /**
+   * The account's plan-limit windows, when this AI has a way to read them
+   * outside ACP (Codex: `codex app-server`, #1290). Called at ready and after
+   * every turn, so it should cache; its answer goes out as a token-free
+   * `usage` event. Absent: no limits.
+   */
+  limits?: () => Promise<PlanLimitWindow[] | undefined>;
+  /**
+   * The `instructionFiles` capability (#1295): the project instruction files
+   * this agent reads by its own convention. ABSENT: not known — a custom ACP
+   * agent declares nothing, and the switch briefing says so.
+   */
+  instructionFiles?: readonly string[];
 }
 
 /** The default `detect` for an ACP agent: see `AcpProviderOptions.detect`. */
@@ -129,6 +143,7 @@ export function createAcpProvider(opts: AcpProviderOptions): ProviderAdapter & {
     clientVersion: opts.clientVersion ?? '0.0.0',
     ...(opts.modeMap ? { modeMap: opts.modeMap } : {}),
     ...(opts.authMethodId ? { authMethodId: opts.authMethodId } : {}),
+    ...(opts.limits ? { limits: opts.limits } : {}),
   };
 
   const adopt = (id: string): void => {
@@ -158,6 +173,7 @@ export function createAcpProvider(opts: AcpProviderOptions): ProviderAdapter & {
     },
 
     capabilities: {
+      ...(opts.instructionFiles ? { instructionFiles: opts.instructionFiles } : {}),
       events: {
         createTranslator(hooks: TranslatorHooks, session?: { id: string }): EngineTranslator {
           if (!session) return () => [];

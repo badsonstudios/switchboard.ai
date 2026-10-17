@@ -178,6 +178,18 @@ export interface ProviderCapabilities {
    * files.
    */
   detect?: DetectCapability;
+  /**
+   * The project instruction files this AI reads by its OWN convention (E40
+   * item 12, #1295) — `['CLAUDE.md']` for Claude (its documented memory
+   * file; every session in this repo runs on one), `['AGENTS.md']` for Codex
+   * (measured: it never reads
+   * `CLAUDE.md`, `spike/findings/e40-codex-acp.md` Q7). Plain data, read by
+   * the AI-switch briefing to state the mismatch to the AI it hands over to
+   * (§5.5's impedance rule).
+   *
+   * Absent: not known, and the briefing says "not known" — never a guess.
+   */
+  instructionFiles?: readonly string[];
   // ── Per-AI surfaces (E40 item 05, #1288) ─────────────────────────────────
   //
   // The app's chrome around a session (what it cost, whether the AI's service

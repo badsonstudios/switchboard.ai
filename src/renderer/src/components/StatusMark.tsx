@@ -1,5 +1,9 @@
 // A session's status mark (§5.8): the working ring, or the one-glyph tile.
 //
+// SINCE #1293 A SESSION'S ROW AND PILL DRAW `AiBadge` INSTEAD — the AI's icon
+// in a ring that carries this same status. What is left here is the strip's
+// GROUP entry, which is many sessions and so no one AI.
+//
 // Lifted out of `SessionRow` when the sessions strip (#1143) needed the same
 // mark on its pills. "The same live status looks as a row" is only true while
 // there is one of these, so there is one.

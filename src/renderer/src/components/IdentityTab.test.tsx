@@ -81,6 +81,16 @@ function publishIdentity(
   });
 }
 
+/** The lang badge's field — where a SESSION tab's accent lives since #1293. */
+function badgeField(): string {
+  return host.querySelector<HTMLElement>('[data-testid="identity-badge"]')?.style.background ?? '';
+}
+
+/** The AI badge (#1293), which stands where a session tab's dot was. */
+function aiBadge(): HTMLElement | null {
+  return host.querySelector<HTMLElement>('.ai-badge');
+}
+
 /** The chip's accent dot: the only `aria-hidden` span it renders. */
 function dotColor(): string {
   // The TYPE ARGUMENT, not an `as HTMLElement` on the result: `querySelector`
@@ -239,14 +249,42 @@ describe('the session tab paints the card identity (issue 312)', () => {
     sessionStore.setSessions([]);
   });
 
-  it('paints the accent dot in the card colour, not the grey placeholder', async () => {
-    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)' });
-    await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
-    // token strings, not hex: the repo's lint rule bans raw colours, and jsdom
-    // hands a `var(--…)` background back verbatim (it cannot resolve custom
-    // properties), which is exactly what makes it assertable here
-    expect(dotColor()).toBe('var(--accent-1)');
-    expect(dotColor()).not.toContain('--faint');
+  // #1293 (design record §1, the owner's call): on a SESSION's tab the AI's
+  // icon in its status ring REPLACES the accent dot. The accent still reaches
+  // the tab — the open tab's wash, and the lang badge's field, asserted below.
+  it('draws the AI badge where the dot was, and no dot (#1293)', async () => {
+    await act(async () => {
+      sessionStore.setSessions([
+        {
+          id: 'c1',
+          title: 'acme',
+          folder: 'C:\\a',
+          accent: 'var(--accent-1)',
+          providerId: 'claude-code',
+          status: 'working',
+        },
+      ]);
+    });
+    await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\a' });
+    const badge = aiBadge();
+    expect(badge).not.toBeNull();
+    expect(badge!.getAttribute('data-ai-badge')).toBe('claude-code');
+    // the ring follows the card's status, and STANDS STILL on a tab
+    expect(badge!.getAttribute('data-ring')).toBe('working');
+    expect(badge!.getAttribute('data-ring-spin')).toBe('false');
+    // decoration on the tab: dockview's role="tab" is named by its content,
+    // and that name stays the session's
+    expect(badge!.getAttribute('aria-hidden')).toBe('true');
+    expect(badge!.hasAttribute('role')).toBe(false);
+    expect(badge!.getAttribute('data-ai-name')).toBe('claude-code');
+    // no accent dot beside it: nothing on the tab is painted the accent but
+    // the badge field (absent here) and the wash
+    const painted = [...host.querySelectorAll<HTMLElement>('span')].filter(
+      (el) => el.style.background === 'var(--accent-1)'
+    );
+    expect(painted).toHaveLength(0);
+    // and the name is still exactly the name (the initial glyph is CSS, not text)
+    expect(tabText()).toBe('acme');
   });
 
   it('shows the language badge beside the name', async () => {
@@ -255,7 +293,7 @@ describe('the session tab paints the card identity (issue 312)', () => {
     expect(tabText()).toContain('TS');
   });
 
-  it('gives two cards two different dots — the point of the accent', async () => {
+  it('gives two cards two different badge fields — the point of the accent', async () => {
     // THE USER-VISIBLE CLAIM. One card at a time can pass while every tab still
     // shares one colour, so this asserts the tabs can be told APART.
     await act(async () => {
@@ -265,11 +303,11 @@ describe('the session tab paints the card identity (issue 312)', () => {
       ]);
     });
     await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\a' });
-    const first = dotColor();
+    const first = badgeField();
     await mount('beta', { cardId: 'c2', title: 'beta', folder: 'C:\\b' });
-    expect(dotColor()).not.toBe(first);
+    expect(badgeField()).not.toBe(first);
     expect(first).toBe('var(--accent-1)');
-    expect(dotColor()).toBe('var(--accent-2)');
+    expect(badgeField()).toBe('var(--accent-2)');
   });
 
   it('follows a re-assignment after the tab is already up', async () => {
@@ -277,20 +315,21 @@ describe('the session tab paints the card identity (issue 312)', () => {
     // changes here, exactly as in the rename regression above.
     await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)', badge: 'TS' });
     await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
-    expect(dotColor()).toBe('var(--accent-1)');
+    expect(badgeField()).toBe('var(--accent-1)');
 
     await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-2)', badge: 'PY' });
-    expect(dotColor()).toBe('var(--accent-2)');
+    expect(badgeField()).toBe('var(--accent-2)');
     expect(tabText()).toContain('PY');
     expect(tabText()).not.toContain('TS');
   });
 
-  it('keeps the grey dot for a session that genuinely has no accent', async () => {
-    // Not every card has one — a suspended card restored before its record was
-    // read has neither. The chip's own fallback must survive the wiring.
+  it('still draws the AI badge for a session with no accent and no provider yet', async () => {
+    // Not every card has either — a suspended card restored before its record
+    // was read. Fail-open: the neutral glyph and the ring, and no stray text.
     await publishIdentity('c1', { title: 'acme' });
     await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
-    expect(dotColor()).toBe('var(--faint)');
+    expect(aiBadge()).not.toBeNull();
+    expect(host.querySelector('[data-ai-icon="initial"]')).not.toBeNull();
     expect(tabText()).toBe('acme'); // and no badge
   });
 

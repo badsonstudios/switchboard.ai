@@ -193,16 +193,23 @@ describe('sessions rail rows (issue 197)', () => {
     expect(name(stops[1])).toBe(en.rail.closeSession);
   });
 
-  it('hides the decorative status glyph from screen readers', async () => {
+  // #1293: the status glyph became the AI's icon in a status ring. It is no
+  // longer pure decoration — it says one fact the row button's name does not,
+  // which AI the session is on — so it is an IMAGE with a name, and the
+  // pieces inside it (the ring, the icon) are what stay hidden.
+  it('names the AI badge as an image, and hides the ring and the icon inside it', async () => {
     const host = await mountRail();
-    // 'idle' renders the glyph, 'working' the spinner ring — both decoration
     const row = host.querySelectorAll<HTMLElement>('.rail-row')[2];
-    // the glyph is the one span carrying a mouse tooltip; the accent bar is
-    // aria-hidden too and would pass a looser query without proving anything
-    const glyph = row.querySelector<HTMLElement>('span[title]');
-    expect(glyph).not.toBeNull();
-    expect(glyph!.getAttribute('aria-hidden')).toBe('true');
-    expect(row.querySelector('span[aria-label]')).toBeNull();
+    const badge = row.querySelector<HTMLElement>('.ai-badge');
+    expect(badge).not.toBeNull();
+    expect(badge!.getAttribute('role')).toBe('img');
+    // "<AI>, <status>": both facts, in words
+    expect(badge!.getAttribute('aria-label')).toMatch(/, /);
+    for (const inner of badge!.querySelectorAll('*')) {
+      expect(inner.getAttribute('aria-hidden')).toBe('true');
+    }
+    // and it stays OUT of the row button, whose name is the session's own
+    expect(row.querySelector('.rail-row-open .ai-badge')).toBeNull();
   });
 
   it('makes the group header a disclosure that says which body it opens', async () => {

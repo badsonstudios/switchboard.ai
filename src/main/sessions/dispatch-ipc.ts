@@ -45,14 +45,17 @@
 import { randomUUID } from 'crypto';
 import { IpcBroker } from '../ipc/broker';
 import { LogFields, Logger } from '../log/logger';
+import { errorText } from '../../shared/error-text';
 import {
   allTemplates,
   isBuiltInTemplateId,
+  isProviderIdShape,
   templateById,
   templateRefusalKey,
   type RoleTemplate,
 } from '../../shared/dispatch';
 import type {
+  DispatchAiLogin,
   DispatchOptions,
   DispatchPrepared,
   DispatchTemplateDto,
@@ -98,8 +101,40 @@ export interface PendingDispatch {
   /** the author session, for the log and for #951's lineage to pick up later */
   from: string;
   folder: string;
+  /**
+   * The AI the dispatched session runs on — "Run it on" (#1296), already checked
+   * to be registered when this was prepared. `sessions:create` starts the
+   * brand-new card on it, and re-checks it, because a provider can go between
+   * the dialog and the spawn.
+   */
+  providerId: string;
   at: number;
 }
+
+/** One AI a dispatch can run on, as the registry knows it. */
+export interface DispatchProvider {
+  id: string;
+  name: string;
+}
+
+/**
+ * How long `dispatch:prepare` waits for a login answer before saying `unknown`.
+ *
+ * The shipped reader (the AI catalog's last detection, #1291) answers at once;
+ * the bound is for a reader that probes. The wait happens behind the dialog's
+ * own "Preparing…" state. An AI slower than this goes ahead (fail-open), and
+ * its own session says so if it really is logged out.
+ */
+export const LOGIN_WAIT_MS = 3_000;
+
+/**
+ * ...and how long `dispatch:options` waits: long enough for an answer that is
+ * already known (which resolves at once), not long enough for a probe. The
+ * dialog does not open until options arrive, and a menu click that does nothing
+ * for seconds reads as broken (review). An AI whose answer is not ready shows
+ * undimmed, and `prepare` still asks with the full wait before anything starts.
+ */
+export const OPTIONS_LOGIN_WAIT_MS = 150;
 
 export interface DispatchIpcDeps {
   broker: IpcBroker;
@@ -113,15 +148,21 @@ export interface DispatchIpcDeps {
   /** §5.5 L3 fork adoption is on — ONE reading of the setting, and it is main's */
   experimentalFork: () => boolean;
   /**
-   * The provider the dispatched session will run on.
+   * Every AI a dispatch could run on — the registered providers, in
+   * registration order (#1296, "Run it on").
    *
-   * v1 is `same-folder` with no provider choice in the gesture, so a dispatched
-   * card is a brand-new card and `planSessionStart` will give it the default.
-   * Named as a dep rather than hardcoded because `fork-adoption` REFUSES on a
-   * mismatch (§5.5: transcript formats are not interchangeable), and a refusal
-   * computed against a guess is worse than no refusal at all.
+   * This REPLACED a `targetProviderId: () => string` dep that was pinned to the
+   * default provider, from the days a dispatch had no AI choice. The target is
+   * now the user's pick, or the author's own AI, and it is checked against this
+   * list: a target not on it is refused, never swapped for the default.
    */
-  targetProviderId: () => string;
+  providers: () => DispatchProvider[];
+  /**
+   * Whether an AI is logged in. Optional, and absent means `unknown` for
+   * everyone (not dimmed, not refused). Must not reject; a rejection is read as
+   * `unknown`. `index.ts` wires it to the AI catalog's detection (#1291).
+   */
+  loginStateOf?: (providerId: string) => Promise<DispatchAiLogin>;
 }
 
 /**
@@ -220,10 +261,43 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
       builtIn: isBuiltInTemplateId(t.id),
       ...(refusalKey === undefined ? {} : { refusalKey }),
       ...(t.accentColor === undefined ? {} : { accentColor: t.accentColor }),
+      ...(t.preferredProviderId === undefined ? {} : { preferredProviderId: t.preferredProviderId }),
     };
   };
 
-  broker.handle('dispatch:options', (_e, sessionId: unknown): DispatchOptions => {
+  /** The registered providers, read once per call; a throwing list is no list. */
+  const providerList = (): DispatchProvider[] => {
+    try {
+      return deps.providers();
+    } catch (err) {
+      log.warn('the provider list could not be read', { error: errorText(err) });
+      return [];
+    }
+  };
+
+  /**
+   * One AI's login state, bounded by `LOGIN_WAIT_MS` and never rejecting.
+   * FAIL-OPEN: anything other than a definite answer is `unknown`.
+   */
+  const loginOf = async (providerId: string, waitMs = LOGIN_WAIT_MS): Promise<DispatchAiLogin> => {
+    const read = deps.loginStateOf;
+    if (!read) return 'unknown';
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        Promise.resolve()
+          .then(() => read(providerId))
+          .catch((): DispatchAiLogin => 'unknown'),
+        new Promise<DispatchAiLogin>((resolve) => {
+          timer = setTimeout(() => resolve('unknown'), waitMs);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
+
+  broker.handle('dispatch:options', async (_e, sessionId: unknown): Promise<DispatchOptions> => {
     // NEVER REFUSES, and that is deliberate: the list of templates does not
     // depend on the session, so a bad `sessionId` costs the caller its task
     // default and nothing else. Refusing would hide three built-ins behind a
@@ -236,8 +310,30 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
     // dialog shows is the folder the spawn uses. An unresolvable session costs
     // the line and nothing else; see the "never refuses" note above.
     const resolved = usable ? deps.contextDeps.queries.resolve(sessionId) : undefined;
+    const currentAi = resolved?.ok === true ? resolved.value.providerId : undefined;
+    // "RUN IT ON" (#1296): every registered AI, and its login state. The
+    // author's own AI is not asked about — it is running a session right now —
+    // and the others are asked in parallel, each bounded by
+    // `OPTIONS_LOGIN_WAIT_MS`: an answer already known, or `unknown`.
+    //
+    // ⚠️ ONLY FOR A SESSION THAT RESOLVES. The palette reads this channel at
+    // app mount with `''`, for the template names alone; asking about logins
+    // there would start a Codex check on every launch for a list nobody opened.
+    const providers = providerList();
+    const ais = await Promise.all(
+      providers.map(async (p) => ({
+        id: p.id,
+        name: p.name,
+        login:
+          currentAi === undefined || p.id === currentAi
+            ? ('unknown' as const)
+            : await loginOf(p.id, OPTIONS_LOGIN_WAIT_MS),
+      }))
+    );
     return {
       templates: offered().map(asDto),
+      ais,
+      ...(currentAi === undefined ? {} : { currentAi }),
       ...(task === undefined || task.trim() === '' ? {} : { taskStatement: task }),
       ...(resolved?.ok === true ? { folder: resolved.value.folder } : {}),
     };
@@ -251,6 +347,7 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
       templateId: string;
       taskStatement: string;
       acceptanceCriteria: string;
+      targetProviderId: string;
     }> | null;
     if (!r || typeof r !== 'object') return refuse('dispatch:prepare', 'a request object is required');
     if (typeof r.from !== 'string' || r.from === '') {
@@ -264,6 +361,9 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
       if (v !== undefined && typeof v !== 'string') {
         return refuse('dispatch:prepare', `${field} must be a string`, { from: r.from });
       }
+    }
+    if (r.targetProviderId !== undefined && !isProviderIdShape(r.targetProviderId)) {
+      return refuse('dispatch:prepare', 'targetProviderId must be a provider id', { from: r.from });
     }
 
     // ⚠️ RESOLVED FROM THE ID, WITH `templateById` — #946's contract, and the one
@@ -293,10 +393,44 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
       return { ok: false, reason: `template policy is not available: ${blocked}`, reasonKey: blocked };
     }
 
+    // ── WHICH AI IT RUNS ON ("Run it on", #1296) ──────────────────────────
+    //
+    // The user's pick, or the author's own AI when the request names none —
+    // which is what every pre-#1296 caller sends, and what a dispatch did
+    // before there was a choice to make (a dispatched card used to start on the
+    // DEFAULT provider; for a Claude author that is the same answer).
+    //
+    // ⚠️ REFUSED, NEVER SWAPPED. The dialog's list is a snapshot, and an AI can
+    // stop being registered (or be logged out) while it is open. Running the
+    // role on some other AI instead would hand the user "a second opinion"
+    // from the very AI they were trying to get away from, with nothing on
+    // screen to say so.
+    const author = deps.contextDeps.queries.resolve(r.from);
+    if (!author.ok) return refuse('dispatch:prepare', author.reason, { from: r.from });
+    const target = r.targetProviderId ?? author.value.providerId;
+    if (!providerList().some((p) => p.id === target)) {
+      log.warn('dispatch refused: the chosen AI is not set up', { from: r.from, target });
+      return {
+        ok: false,
+        reason: `the AI "${target}" is not set up on this computer`,
+        reasonKey: 'dispatch.refusal.aiMissing',
+      };
+    }
+    // Only a DEFINITE logged-out refuses; `unknown` goes ahead (fail-open), and
+    // the author's own AI is not asked — it is running a session right now.
+    if (target !== author.value.providerId && (await loginOf(target)) === 'logged-out') {
+      log.warn('dispatch refused: the chosen AI is not logged in', { from: r.from, target });
+      return {
+        ok: false,
+        reason: `the AI "${target}" is not logged in`,
+        reasonKey: 'dispatch.refusal.aiLoggedOut',
+      };
+    }
+
     const got = await buildDispatchContext(deps.contextDeps, {
       from: r.from,
       policy: template.contextPolicy,
-      targetProviderId: deps.targetProviderId(),
+      targetProviderId: target,
       // THE TASK OVERRIDE, and this is its only caller — which is why #947 did
       // not add the field. An untouched dialog sends nothing and the bundle reads
       // the transcript, byte for byte as it did before this item.
@@ -345,6 +479,7 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
       template,
       from: resolved.value.id,
       folder: resolved.value.folder,
+      providerId: target,
       at: Date.now(),
     });
     log.info('dispatch prepared', {
@@ -352,6 +487,7 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
       from: resolved.value.id,
       templateId: template.id,
       source: got.value.source,
+      target,
     });
     // NOTHING TO HAND OVER IS SAID IN THE LOG, not on the wire — see the note at
     // the bottom of `dispatch-wire.ts` for why the dialog does not show a size.

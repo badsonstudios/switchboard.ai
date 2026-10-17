@@ -3,7 +3,40 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🎛️ ORCHESTRATION RUN — E40 "MORE THAN ONE AI" (#1285–#1296) — STARTED 2026-10-16
+> # 🚂 2026-10-16 — E40 "MORE THAN ONE AI": BUILT IN ONE DAY; THE TRAIN (PR #1322) WAITS ON THE OWNER
+>
+> **The run is over. Twelve items, twelve PRs, zero blockers.** Six internal
+> PRs merged on green CI (#1285 probe, #1286 + #1287 the seam, #1288
+> surfaces, #1289 the ACP engine, #1291 the catalog). Six user-facing PRs
+> (#1307 Codex, #1309 Run it on, #1311 Settings → AIs, #1312 the AI icon,
+> #1314 the AI switch, #1315 the handoff briefing) stack on each other and are
+> assembled into **ONE train PR, #1322** (`train/2026-10-16`, from main
+> `c9abdb07`, with one integration commit; full local gate green: unit
+> 12,966, e2e 520/520, no flakes). **It is NOT merged. The owner merges it
+> with a MERGE COMMIT (not squash)** so each member PR flips to merged and
+> the six issues close; its body carries the 23 decisions he is asked to
+> confirm and the 14-step hand-test list. **Until he merges it, no other PR
+> should land on main** (strict up-to-date would force a re-run); this file's
+> close-out rides ON the train for that reason.
+>
+> **After he merges:** `git pull && npm run build`, hand-test from the train
+> PR body (steps 1–14), verify the six member PRs read merged and the six
+> issues closed, delete the six feature branches, and cut a release when he
+> says so (0.8.123 is open and carries all of E40). Follow-ups filed from the
+> handoffs: **#1301, #1303, #1316–#1320, #1323.** Decisions he has not yet
+> answered are the 23 in the train PR body (the big ones: Codex never runs
+> "Auto review"; ask → `workspace-write`; bundled Codex 0.160.1; the tab's
+> accent dot is gone; workspace file v4 on first save).
+>
+> **Not done by the run, deliberately:** no release; no merge of anything
+> user-facing; `check:codex` and `CHECK_CODEX_SWITCH=1` were run by workers
+> only where the item required it (four real runs in all, tiny prompts, every
+> Codex session deleted afterwards); the epic-exit item "a second ACP agent
+> added through Something else with no code change" is proven with the fake
+> ACP agent in e2e, and awaits his real Gemini CLI / OpenCode try.
+>
+> **The run's record follows (kept as written, for the resume mechanism and
+> the history).**
 >
 > **Mode:** `/orchestrate`. A Fable session dispatches Opus workers into the
 > worktree pool (`C:\Projects\sb-wt-1..3`) and is the **ONLY writer of this
@@ -21,17 +54,46 @@
 > merge on green CI as they finish. **User-facing PRs queue for the owner**
 > and are listed under "Owner's queue" below; the run never merges them.
 >
-> **Active workers (issue → worktree → branch):**
-> - **#1295 handoff on switch: the briefing, the divider, "see what it was told" (screen 3) → `sb-wt-1` → `feature/1295-handoff-briefing` — dispatched 2026-10-16 from #1314's head `68292651`. THE LAST ITEM.** User-facing → owner's queue. Wires `aiSwitchBriefing` (the hook #1294 left in `sessions/ipc.ts`) to a deterministic, model-free Level-2 briefing built on `context-package.ts`, with the §5.5 impedance section (`CLAUDE.md` vs `AGENTS.md`, measured for Codex) and the honesty rule.
-> - #1296's rebase of PR #1309 onto #1307's final head `c605ae93` → `sb-wt-3`; also swapping its temporary login reader for `ais:list()` where small.
-> - `sb-wt-2`: free (#1294 finished).
+> **ALL TWELVE ITEMS HAVE LANDED OR HAVE A GREEN PR. Active now: the TRAIN
+> CONDUCTOR** (an Opus worker in `sb-wt-2`, branch `train/2026-10-16` from
+> main `c9abdb07`): merges #1315's branch (which carries #1307 + #1314 +
+> #1295) → #1309 → #1312 → #1311 with `--no-ff`, resolves the known
+> collisions (the duplicate `SWITCHBOARD_FAKE_PROVIDER=both` in #1309/#1314,
+> `contributions.ts`, `index.ts`/`ipc.ts`, `en.json`, CHANGELOG, dogfood
+> tracker, DESIGN/design-record as-built sections), adds ONE train-only
+> commit adopting #1312's `AiIcon` in the AIs tab, the AI chip and the
+> divider and pointing "Manage AIs…" at the AIs tab, runs the full local gate
+> once under the lock, and opens ONE draft PR with six `Closes #N` lines.
+> **The run does NOT merge the train; the owner does, with a MERGE COMMIT
+> (not squash) so each member PR flips to merged.** `sb-wt-1` and `sb-wt-3`
+> are free.
 >
-> **When #1295's PR is green, the run builds the TRAIN** (`train/2026-10-16`
-> from fresh `origin/main`: #1307 → #1309 → #1311 → #1312 → #1314 → #1295's
-> PR; the `AiBadge` adoption in #1311/#1314 and the duplicate
-> `SWITCHBOARD_FAKE_PROVIDER=both` in #1309/#1314 are resolved on the train;
-> full local gate under the lock; one PR with one `Closes #N` line per member;
-> **NOT merged by the run — the owner authorises the train**).
+> **Owner's queue addition — #1315 — #1295 handoff on switch** (head
+> `eaec0ab6` on #1314's `68292651`). The first switch to an AI hands it a
+> deterministic, model-free Level-2 briefing as its first message (visible,
+> folded): goal, what was done, files touched, next step, then the §5.5
+> impedance section (Claude read `CLAUDE.md`; Codex reads `AGENTS.md`,
+> measured; other AIs "not known" via a new optional `instructionFiles` on
+> the adapter; MCP servers, permissions and hooks do not transfer) and an
+> instruction to reply briefly and wait. Two sources normalised into one
+> format: leaving Claude reads its transcript; leaving an ACP AI reads the
+> conversation view copied just before the switch closes the session; the
+> existing `context-package.ts` summariser was split into steps, its output
+> unchanged. The exact text is kept at `userData/briefings/<cardId>/<markId>.md`
+> and opened by "see what it was told" (`BriefingDialog`, new
+> `sessions:briefingText`). The divider updates live and has four states:
+> handed a summary of N turns / picked up where it left off / started fresh,
+> no summary / could not brief. A faint "N earlier turns with <AI> — switch
+> back to see them" line sits above it. Review fix: the summary was being
+> read back as the user's own words, so a second switch would have
+> summarised the summary. Unit 12,776; e2e 515 + the `session-history` flake
+> (passed alone). Manual: the switching page rewritten; CHANGELOG; dogfood
+> row; DESIGN §5.5 as-built. **For him:** the summary is visible as the first
+> message (hiding it would hide what the AI was told); it asks the new AI to
+> reply briefly and wait (one short reply's cost); the menu sentence is the
+> mockup's wording even though a switch back sends no summary.
+>
+> **Filed from the handoffs at the end of the run:** see "Filed mid-run".
 >
 > **In CI, awaiting merge:** nothing internal is left. The queued
 > user-facing PRs below each carry their own green CI run but go BEHIND
@@ -255,8 +317,18 @@
 >
 > **Filed mid-run:** **#1301** (`win-cmd.ts` `execSpec` cannot launch a `.cmd`
 > whose path has a space; the ACP engine must use the `launchSpec` shape
-> meanwhile) · **#1303** (transcript replay into the Feed still reads Claude's
-> format outside the provider; wanted by #1294).
+> meanwhile; now also notes the transport's `cmd /c` quoting and the VIPRE
+> laptop's cold-start vs the 5-second detection cut) · **#1303** (transcript
+> replay into the Feed still reads Claude's format outside the provider;
+> wanted by #1294) · **#1316** (Claude-named strings survive E40: the Stop
+> title, service-status wording, CLI-version label, raw sign-in method ids) ·
+> **#1317** (ACP sessions forget model and effort across an app restart) ·
+> **#1318** (a dispatched session whose AI was removed mid-run shows the
+> generic start-failure text) · **#1319** (owner decision: strip pills do not
+> name their AI to a screen reader; an inactive tab with no language badge
+> shows no session colour; manual screenshots still show the dot) · **#1320**
+> (Flakes & CI health: `session-history.spec.ts:53` flaked six times under
+> load, never alone, never in CI).
 >
 > **Blockers:** none. **Stop conditions:** a decision only the owner can
 > make that blocks a track, or red CI that is not a known flake. (#1285's

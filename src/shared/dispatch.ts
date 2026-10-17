@@ -169,7 +169,22 @@ export interface RoleTemplate {
    * session, which is the right answer for a user template nobody coloured.
    */
   accentColor?: string;
+  /**
+   * The AI this role would rather run on — a provider id (`codex`,
+   * `claude-code`), E40 item 13 (#1296). Optional, and the three built-ins have
+   * none: absent means "the same AI as the session it is dispatched from".
+   *
+   * A PREFERENCE, NOT A FALLBACK CHAIN. When the named AI is not set up or not
+   * logged in, the dispatch dialog says so and waits for the user to pick
+   * another AI; it never quietly runs the role somewhere else, because "a second
+   * opinion from a different AI" silently becoming "the same AI again" is the
+   * one outcome that defeats the point of asking for it.
+   */
+  preferredProviderId?: string;
 }
+
+/** A sanity bound on a stored provider id: an id is a word, not a document. */
+export const PROVIDER_ID_CHAR_CAP = 100;
 
 /**
  * The namespace prefix every built-in id carries.
@@ -365,7 +380,16 @@ export function isSaneRoleTemplate(t: unknown): t is RoleTemplate {
   // checked here rather than trusted there (§5.29). Six-digit hex, which is what
   // `ACCENTS` holds and what `tokens.css` declares.
   if (x.accentColor !== undefined && !isAccentHex(x.accentColor)) return false;
+  // A provider id, checked for shape only (#1296). Whether that AI is installed
+  // is a question about THIS machine, asked at dispatch time — a template naming
+  // an AI that is not set up here is still a template worth keeping.
+  if (x.preferredProviderId !== undefined && !isProviderIdShape(x.preferredProviderId)) return false;
   return true;
+}
+
+/** A non-empty, bounded, single-line word — what a provider id looks like. */
+export function isProviderIdShape(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && v.length <= PROVIDER_ID_CHAR_CAP && /^[A-Za-z0-9._:-]+$/.test(v);
 }
 
 /** A six-digit `#rrggbb`, the only accent spelling this app stores. */

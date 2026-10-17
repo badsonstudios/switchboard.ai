@@ -106,6 +106,7 @@ import { resolveMentionsWithHandoffs } from './sessions/mention-handoff';
 import { HandoffRequests } from './sessions/handoff-request';
 import { createMentionGitLookup, createMentionTreeLookup, MENTION_GIT_BUDGET_MS } from './sessions/mention-git';
 import { buildContextOffer } from './sessions/context-drop';
+import { createBriefingHost } from './sessions/ai-briefing-host';
 import { quoted, renderOutput } from './bus/bus-tools';
 import { SiblingDelivery } from './sessions/delivery';
 import { Blackboard } from './sessions/blackboard';
@@ -2900,11 +2901,19 @@ app
     //   * `conversationIdFor` reads the LIVE record, not the persisted card: a
     //     fork adopts the conversation this session is in right now, and the
     //     record is the only thing that knows the CLI's own id for it.
-    //   * `targetProviderId` is `defaultProviderId`, because a dispatched card is
-    //     always brand new and `planSessionStart` gives a card with no prior
-    //     exactly that. Named rather than assumed: `fork-adoption` REFUSES on a
-    //     provider mismatch (§5.5 — transcript formats are not interchangeable),
-    //     and a refusal computed against a guess is worse than no refusal at all.
+    //   * `providers` is the registry's own list (#1296, "Run it on"). This
+    //     replaced a `targetProviderId` pinned to `defaultProviderId`, which was
+    //     right while a dispatch had no AI choice: the target is now the user's
+    //     pick or the author's own AI, refused if it is not on this list, and
+    //     carried to `sessions:create` on the pending dispatch. `fork-adoption`
+    //     still refuses a provider mismatch (§5.5 — transcript formats are not
+    //     interchangeable), now against the real target rather than the default.
+    //   * `loginStateOf` reads the AI CATALOG's last detection (#1291) — the
+    //     same answer Settings → AIs shows, produced by each provider's own
+    //     `detect` at startup and after an in-app login. A read, not a probe: no
+    //     child process per dialog open. No detection yet (startup still
+    //     running, or an AI with no `detect`) is `unknown`: not dimmed, not
+    //     refused.
     const dispatches = registerDispatchIpc({
       broker,
       log: createLogger(sink, 'dispatch'),
@@ -2919,7 +2928,14 @@ app
         return answer.ok ? answer.value.text : undefined;
       },
       experimentalFork: () => workspace.getExperimentalFork(),
-      targetProviderId: defaultProviderId,
+      providers: () =>
+        registry
+          .list('provider-adapter')
+          .map((p) => ({ id: p.manifest.id, name: p.manifest.displayName })),
+      loginStateOf: (providerId) =>
+        Promise.resolve(
+          aiCatalog.list().find((i) => i.providerId === providerId)?.detection?.login ?? 'unknown'
+        ),
     });
     // ── THE ROUND-TRIP (P2-E13-05, §5.15) — Phase 2 exit criterion 5 ────────
     //
@@ -3038,6 +3054,24 @@ app
       capabilitiesOf: (providerId) =>
         registry.resolve('provider-adapter', providerId)?.capabilities,
       isRegisteredProvider: (providerId) => !!registry.resolve('provider-adapter', providerId),
+      // what the AI-switch divider calls each AI (#1294)
+      providerName: (providerId) => registry.resolve('provider-adapter', providerId)?.manifest.displayName,
+      // THE BRIEFING (#1295): the §5.5 Level-2 handoff, mechanical, built from
+      // the conversation the card left and kept byte-exact for "see what it was
+      // told". Through each provider's declared capabilities only.
+      ...(() => {
+        const briefings = createBriefingHost({
+          root: path.join(app.getPath('userData'), 'briefings'),
+          capabilitiesOf: (providerId) => registry.resolve('provider-adapter', providerId)?.capabilities,
+          cardTitle: (cardId) => workspace.listSessions().find((s) => s.id === cardId)?.identity.title,
+          log: createLogger(sink, 'briefing'),
+        });
+        return {
+          aiSwitchBriefing: (req: Parameters<typeof briefings.brief>[0]) => briefings.brief(req),
+          briefingText: (ref: unknown) => briefings.read(ref),
+          forgetBriefings: (cardId: string) => briefings.forgetCard(cardId),
+        };
+      })(),
       defaultProviderId,
       repoRoot: (folder) => gitService.root(folder),
       // The user's own command FILES are the provider's to find (#1288,

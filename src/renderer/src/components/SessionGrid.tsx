@@ -121,6 +121,7 @@ import { presentStatus } from '../lib/rail-view';
 import { tabStripAction } from '../lib/tabstrip-keys';
 import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
+import { AiBadge } from './AiBadge';
 import { CONTEXT_DND_TYPE } from '../../../shared/context-drop';
 import type { Ladder } from '../lib/presentation';
 import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../lib/popout-windows';
@@ -141,6 +142,7 @@ import {
   sessionControlLock,
 } from '../lib/session-controls';
 import { controlUnavailable, useAiControls } from '../lib/ai-controls';
+import { afterSwitchAiAnswer, type SwitchAiNext } from '../lib/ai-switch-view';
 import { type TransportKind } from '../../../shared/transport';
 import type {
   AutonomyMode,
@@ -222,6 +224,8 @@ interface Live {
   id: string;
   accent?: string;
   badge?: string;
+  /** which AI it is on (#1293) — the header's icon, and the AI chip (#1294) */
+  providerId?: string;
   autonomy?: AutonomyMode;
   /** the record's status at bind time — a card that ADOPTED a running session
    *  (reveal, P2-E15-08) must not claim 'starting': no further push is coming
@@ -495,6 +499,19 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
   const badge = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardBadge(cardId)
   );
+  // Which AI, and what it is doing (#1293): the AI's icon in a status ring
+  // stands where the accent dot was. Store reads, for the reason above, and
+  // the SAME three facts the rail row paints from — provider, status, and
+  // whether this card is one of the N that need you.
+  const providerId = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardProvider(cardId)
+  );
+  const cardStatus = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardStatus(cardId)
+  );
+  const needsYou = React.useSyncExternalStore(subscribeStore, () =>
+    cardId ? sessionStore.getNeedingCards().has(cardId) : false
+  );
   // WHAT THE ✕ ACTUALLY DOES, said in three strings rather than one (#543).
   //
   // Every tab in the app used to be titled "Close (ends the session)", which is
@@ -584,7 +601,26 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
       {/* undefined accent/badge are passed through as undefined on purpose: the
           chip's own fallbacks (grey dot, no badge) stay the behaviour for a
           derived tab and for a card the store has not answered for yet. */}
-      <IdentityChip title={title} accent={accent} badge={badge} compact />
+      <IdentityChip
+        title={title}
+        accent={accent}
+        badge={badge}
+        compact
+        // a session's tab only: a document or a diff has no AI and no status.
+        // Standing still (`spin={false}`): the tab's mark never moved before.
+        mark={
+          cardId ? (
+            <AiBadge
+              providerId={providerId}
+              status={cardStatus}
+              needsYou={needsYou}
+              spin={false}
+              // the tab's name stays the session's name (see the prop)
+              decorative
+            />
+          ) : undefined
+        }
+      />
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -734,6 +770,44 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       .then((answer) => settle(answered(answer)))
       .catch(() => settle(null));
   };
+  /** what the overlay's "Switch back to …" was refused with, if it was (#1294) */
+  const [switchBackNotice, setSwitchBackNotice] = React.useState<string | null>(null);
+  /**
+   * Switch THIS card to another AI (E40 item 11, #1294) — `openHere`'s twin.
+   *
+   * Main decides and answers; this only does the renderer's half of the
+   * restart on `rearm`, exactly as a history pick does, and the start that
+   * follows resumes the target's own conversation or starts fresh on it.
+   * `ask` is handed back to the menu, which puts the question in place.
+   */
+  const switchAiHere = async (providerId: string, stopFirst: boolean): Promise<SwitchAiNext> => {
+    if (!cardId) return { kind: 'notice', key: 'aiSwitch.refusedFailed' };
+    // a switch or a pick already on the wire: this one is a no-op, not a failure
+    if (pickPending.current) return { kind: 'close' };
+    pickPending.current = true;
+    setSwitchBackNotice(null);
+    switchingFrom.current = live?.id ?? null;
+    let next: SwitchAiNext;
+    try {
+      next = afterSwitchAiAnswer(
+        answered(await window.switchboard.sessions.switchAi(cardId, providerId, stopFirst ? { stopFirst: true } : {})),
+        stopFirst
+      );
+    } catch {
+      next = { kind: 'notice', key: 'aiSwitch.refusedFailed' };
+    }
+    pickPending.current = false;
+    if (next.kind !== 'rearm') {
+      switchingFrom.current = null;
+      return next;
+    }
+    sessionStore.forgetCardLiveIds(cardId);
+    setEnded(null);
+    setLive(null);
+    spawning.current = false;
+    return next;
+  };
+
   const cardId = props.params?.cardId;
   // PRESENTATION STATE LIVES IN THE STORE (P2-E15-08, AR-P1-5), not here.
   //
@@ -768,6 +842,20 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   );
   const cardBadge = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardBadge(cardId)
+  );
+  // ...and which AI it is on — the header's AI icon (#1293) and the AI chip
+  // (#1294), off the CARD so it is there with no session running and after a
+  // relaunch — plus the way back after a switch (#1294), and whether it is one
+  // of the N that need you (the icon's ring, painted by the rule the rail row
+  // and the tab use).
+  const cardProvider = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardProvider(cardId)
+  );
+  const cardSwitchBack = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardSwitchBack(cardId)
+  );
+  const cardNeedsYou = React.useSyncExternalStore(subscribeStore, () =>
+    cardId ? sessionStore.getNeedingCards().has(cardId) : false
   );
   const view = presentation.view;
   const poppedOut = presentation.poppedOut;
@@ -1308,6 +1396,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           id: record.id,
           accent: record.identity.accentColor,
           badge: record.identity.langBadge,
+          providerId: record.identity.providerId,
           autonomy: record.autonomy,
           status: record.status,
           transport: record.transport,
@@ -1860,10 +1949,35 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         <button onClick={restartSelf} style={overlayBtn(true)}>
           {t(overlayCopy.action)}
         </button>
+        {/* THE WAY BACK (#1294): a card switched to an AI that would not run
+            here is one press from the AI it came from, in the conversation it
+            had there — never stranded on a Retry that keeps failing. */}
+        {cardSwitchBack && (
+          <button
+            data-testid="card-switch-back"
+            onClick={() =>
+              void switchAiHere(cardSwitchBack.providerId, true).then((next) => {
+                if (next.kind === 'notice') setSwitchBackNotice(t(next.key, { ai: cardSwitchBack.name }));
+              })
+            }
+            // "resumes" only when there IS a conversation to go back to (§5.5)
+            title={t(cardSwitchBack.resumes ? 'aiSwitch.switchBackHint' : 'aiSwitch.switchBackFreshHint', {
+              ai: cardSwitchBack.name,
+            })}
+            style={overlayBtn(false)}
+          >
+            {t('aiSwitch.switchBack', { ai: cardSwitchBack.name })}
+          </button>
+        )}
         <button onClick={closeSelf} style={overlayBtn(false)}>
           {t('grid.close')}
         </button>
       </div>
+      {switchBackNotice && (
+        <div role="status" style={{ color: 'var(--status-crashed-ink)', fontSize: 11, marginBlockStart: 8, maxInlineSize: 260 }}>
+          {switchBackNotice}
+        </div>
+      )}
     </div>
   ) : null;
   const suspendedOverlay = suspended ? (
@@ -1920,6 +2034,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // the user.
   const headerAccent = live?.accent ?? cardAccent;
   const headerBadge = live?.badge ?? cardBadge;
+  const headerProvider = live?.providerId ?? cardProvider;
   // The Changes tab's badge. THE THIRD READER OF `git:status` (#785 review) —
   // `unreadable` arrives with `files: []`, so this quietly counts zero, which is
   // the same silence `GitContext` chooses on purpose and is therefore right by
@@ -1975,6 +2090,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     onDecide: decide,
     onAllowFile: approveFile,
     onCycleAutonomy: cycleCardAutonomy,
+    providerId: live?.providerId ?? cardProvider,
+    onSwitchAi: cardId ? switchAiHere : undefined,
     setView,
   };
   const panels = listPanels(rendererRegistry);
@@ -2110,6 +2227,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             onDoubleClick={maximizeOnDoubleClick}
             style={cheadStyle(headerAccent)}
           >
+            {/* WHICH AI, FIRST (#1293, the mockup's screen 1): the same icon and
+                ring the tab above draws, standing still — the pill at the end
+                of this row says the state in a word, as it always has. */}
+            <AiBadge providerId={headerProvider} status={status} needsYou={cardNeedsYou} spin={false} />
             {/* the SAME badge the tab above draws (#269) — §5.11's "renders
                 identically everywhere", and the accent is the field, never the
                 ink: as 9px text it measured 1.80-3.11:1 on daylight */}
@@ -2991,6 +3112,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             onDoubleClick={maximizeOnDoubleClick}
             style={cheadStyle(headerAccent)}
           >
+            <AiBadge providerId={headerProvider} status="suspended" needsYou={cardNeedsYou} spin={false} />
             {headerBadge && (
               <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
                 {headerBadge}
@@ -3040,6 +3162,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             onDoubleClick={maximizeOnDoubleClick}
             style={cheadStyle(headerAccent)}
           >
+            <AiBadge
+              providerId={headerProvider}
+              // the rail's twin of the pill's never-started word (#687)
+              status={ended?.kind === 'never-started' ? 'not-started' : pill?.status}
+              needsYou={cardNeedsYou}
+              spin={false}
+            />
             {headerBadge && (
               <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
                 {headerBadge}
@@ -7491,6 +7620,8 @@ export function SessionGrid(props: {
               ...(req.acceptanceCriteria === undefined || req.acceptanceCriteria.trim() === ''
                 ? {}
                 : { acceptanceCriteria: req.acceptanceCriteria.trim() }),
+              // "Run it on" (#1296): absent means the author's own AI.
+              ...(req.targetProviderId === undefined ? {} : { targetProviderId: req.targetProviderId }),
             });
             // LAUNDERED (#346/#440). A brokered refusal is a TRUTHY object with no
             // `ok`, so returning it unchecked would show the dialog's failure box

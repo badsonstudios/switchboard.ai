@@ -1,0 +1,19 @@
+{"t":1,"dir":"note","text":"spawn","extra":{"file":"cmd.exe","argv":["/c","C:\\Users\\dheinz\\AppData\\Roaming\\npm\\codex.cmd","app-server"],"cwd":"C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb-1290-probe-cwd-H5rgPv","envOverrides":{}}}
+{"t":4,"dir":"out","frame":{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"clientInfo":{"name":"switchboard-probe-1290","version":"0.0.0","title":null},"capabilities":{"experimentalApi":true}}}}
+{"t":158,"dir":"note","text":"first-stdout","extra":{"t":158,"bytes":"{\"id\":1,\"result\":{\"userAgent\":\"switchboard-probe-1290/0.163.0 (Windows 10.0.26300; x86_64) xterm-256color (switchboard-p"}}
+{"t":159,"dir":"in","frame":{"id":1,"result":{"userAgent":"switchboard-probe-1290/0.163.0 (Windows 10.0.26300; x86_64) xterm-256color (switchboard-probe-1290; 0.0.0)","codexHome":"C:\\Users\\dheinz\\.codex","platformFamily":"windows","platformOs":"windows"}}}
+{"t":159,"dir":"note","text":"initialize ms","extra":{"ms":155}}
+{"t":160,"dir":"out","frame":{"jsonrpc":"2.0","method":"initialized"}}
+{"t":160,"dir":"out","frame":{"jsonrpc":"2.0","id":2,"method":"account/read","params":{"refreshToken":false}}}
+{"t":160,"dir":"in","frame":{"method":"remoteControl/status/changed","params":{"status":"disabled","serverName":"DHEINZPC","installationId":"8a7aa374-e8a7-418c-ab5f-7889bcb2b700","environmentId":null},"emittedAtMs":1792181445192}}
+{"t":1574,"dir":"in","frame":{"method":"account/updated","params":{"authMode":"chatgpt","planType":"team"},"emittedAtMs":1792181446607}}
+{"t":1574,"dir":"in","frame":{"id":2,"result":{"account":{"type":"chatgpt","email":"<redacted-email>","planType":"team"},"requiresOpenaiAuth":true,"workspaceRouting":{"chatgptAccountId":"<redacted>","backendOrigin":"https://chatgpt.com","accountRoutingOverride":"NO_CONSTRAINT"}}}}
+{"t":1575,"dir":"note","text":"account/read ms","extra":{"ms":1415}}
+{"t":1575,"dir":"out","frame":{"jsonrpc":"2.0","id":3,"method":"account/rateLimits/read"}}
+{"t":2040,"dir":"in","frame":{"id":3,"result":{"ordinaryUsageAllowed":true,"rateLimits":{"limitId":"codex","limitName":null,"normalModelSlug":null,"primary":{"usedPercent":9,"windowDurationMins":300,"resetsAt":1792197849},"secondary":{"usedPercent":12,"windowDurationMins":10080,"resetsAt":1792765162},"credits":{"hasCredits":false,"unlimited":false,"balance":null},"individualLimit":null,"spendControlReached":false,"planType":"team","rateLimitReachedType":null},"rateLimitsByLimitId":{"codex":{"limitId":"codex","limitName":null,"normalModelSlug":null,"primary":{"usedPercent":9,"windowDurationMins":300,"resetsAt":1792197849},"secondary":{"usedPercent":12,"windowDurationMins":10080,"resetsAt":1792765162},"credits":{"hasCredits":false,"unlimited":false,"balance":null},"individualLimit":null,"spendControlReached":false,"planType":"team","rateLimitReachedType":null}},"rateLimitResetCredits":{"availableCount":1,"credits":[{"id":"RateLimitResetCredit_27bd8083f99c8191b773ae9479a72af6","resetType":"codexRateLimits","status":"available","grantedAt":1791417843,"expiresAt":1794009843,"title":"Full reset (Weekly + 5 hr)","description":"Thanks for using Codex! You've been granted one free rate limit reset."}]},"accountId":"<redacted>","rateLimitUpsell":null}}}
+{"t":2040,"dir":"note","text":"account/rateLimits/read ms","extra":{"ms":465}}
+{"t":2433,"dir":"note","text":"processes before close","extra":{"codex":["\"codex.exe\",\"26420\",\"Console\",\"1\",\"55,140 K\""]}}
+{"t":2457,"dir":"note","text":"exit","extra":{"code":0,"sig":null}}
+{"t":2457,"dir":"note","text":"exited on stdin EOF","extra":{"code":0,"sig":null}}
+{"t":2688,"dir":"note","text":"close ms","extra":{"ms":255}}
+{"t":3085,"dir":"note","text":"processes after close","extra":{"codex":[]}}

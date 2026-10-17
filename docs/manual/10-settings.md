@@ -22,12 +22,13 @@ button** — every control takes effect the moment you touch it, and you can wat
 the window behind change as you do. Close it with **Done**, **Escape**, or a
 click outside.
 
-It is organised in **six tabs** along the top:
+It is organised in **seven tabs** along the top:
 
 | Tab | Holds |
 |---|---|
 | **Appearance** | Theme, where the Sessions list goes, how a working session looks, the context meter, task label size |
 | **General** | Language, automatic update checks, Anthropic status checks |
+| **AIs** | Which AI new sessions start on, the AIs found on this computer and their sign-in, adding another AI — see [Settings → AIs](24-ais.md) |
 | **Notifications** | Quiet hours, phone push & webhooks |
 | **Sessions** | What happens to a finished dispatched session |
 | **Diagnostics** | Detailed performance capture, and the file it writes — see [When it feels slow](19-performance.md) |
@@ -209,10 +210,10 @@ you pick. Pick one and it applies at once; there is no Save button.
 |---|---|---|
 | 1 | **Breathing glow** | An outline in the session's colour that slowly glows and fades |
 | 2 | **Marquee sweep** | A light running round the edge, with a faint tint |
-| 3 | **Brighter, with a bigger spinner** *(what you get unless you change it)* | The row filled with the session's colour, the name in bold, a larger spinner, and "working" in blue. Nothing moves but the spinner |
+| 3 | **Brighter, with a bigger spinner** *(what you get unless you change it)* | The row filled with the session's colour, the name in bold, a larger spinning ring round the AI's icon, and "working" in blue. Nothing moves but the ring |
 | 4 | **Shimmer** | A band of light sweeping across |
 | 5 | **Progress strip** | A thin bar running along the bottom edge |
-| 6 | **Dancing bars** | Four bouncing bars instead of the spinner, and a steady outline |
+| 6 | **Dancing bars** | Four bouncing bars beside the AI's icon instead of the spinning ring, and a steady outline |
 
 Things that are true of all six:
 

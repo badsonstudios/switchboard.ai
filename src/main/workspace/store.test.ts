@@ -524,6 +524,16 @@ describe('dispatch role templates (P2-E13-01, §5.15)', () => {
     expect(b.listDispatchTemplates()).toHaveLength(1);
   });
 
+  it('a template’s preferred AI is persisted with it (#1296)', () => {
+    const a = makeStore(file);
+    a.load();
+    expect(a.upsertDispatchTemplate(tmpl('t1', { preferredProviderId: 'codex' }))).toBe(true);
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.listDispatchTemplates()[0].preferredProviderId).toBe('codex');
+  });
+
   it('the built-in three are never written to the file — the done-when’s other half', () => {
     // ⚠️ THE POINT. They are CODE (`shared/dispatch.ts`), so improving one
     // improves it for everybody on upgrade; copied into each install's
@@ -3278,5 +3288,129 @@ describe('saved colours are moved off the family reserved for "needs you" (#1165
     const second = makeStore(file);
     second.load();
     expect(second.listSessions()[0].identity.accentColor).toBe(moved);
+  });
+});
+
+// E40 item 11 (#1294): a card holds one conversation PER AI. v3 -> v4.
+describe('v3 -> v4: one conversation per AI (#1294)', () => {
+  const fixture = path.join(__dirname, 'fixtures', 'workspace-v3.json');
+  const write = (content: unknown): void => fs.writeFileSync(file, JSON.stringify(content));
+
+  it('a real v3 file loads with every card exactly as it was, and saves as v4', () => {
+    fs.copyFileSync(fixture, file);
+    const before = JSON.parse(fs.readFileSync(fixture, 'utf8')) as { sessions: PersistedSession[] };
+    const warns: Line[] = [];
+    const store = makeStore(file, fakeLogger(warns));
+    const state = store.load();
+    // a v3 card IS a v4 card that never switched: nothing to lift, nothing said
+    expect(warns).toEqual([]);
+    expect(store.isReadOnly()).toBe(false);
+    for (const want of before.sessions) {
+      const got = state.sessions.find((s) => s.id === want.id);
+      expect(got).toEqual(want);
+      expect(got?.conversations).toBeUndefined();
+      expect(got?.aiSwitches).toBeUndefined();
+    }
+    store.save();
+    const after = JSON.parse(fs.readFileSync(file, 'utf8')) as { version: number; sessions: PersistedSession[] };
+    expect(after.version).toBe(4);
+    expect(CURRENT_VERSION).toBe(4);
+    expect(after.sessions).toEqual(before.sessions);
+  });
+
+  it('a switched card round-trips: its parked conversations and its marks come back', () => {
+    const mark = {
+      kind: 'ai-switch',
+      id: 'm1',
+      from: { providerId: 'claude-code', name: 'Claude Code' },
+      to: { providerId: 'codex', name: 'Codex' },
+      at: '2026-10-16T10:00:00.000Z',
+      briefed: false,
+    };
+    const s1 = makeStore(file);
+    s1.load();
+    s1.upsertSession({
+      ...sess('a'),
+      identity: { ...sess('a').identity, providerId: 'codex' },
+      nativeSessionId: 'codex-1',
+      conversations: {
+        'claude-code': { nativeSessionId: 'claude-1', nativeSessionLineage: ['claude-0'], parkedAt: mark.at, model: 'opus' },
+      },
+      aiSwitches: [mark as never],
+    });
+    s1.save();
+    const back = makeStore(file).load().sessions[0];
+    expect(back.identity.providerId).toBe('codex');
+    expect(back.nativeSessionId).toBe('codex-1');
+    expect(back.conversations).toEqual({
+      'claude-code': { nativeSessionId: 'claude-1', nativeSessionLineage: ['claude-0'], parkedAt: mark.at, model: 'opus' },
+    });
+    expect(back.aiSwitches).toEqual([mark]);
+  });
+
+  it('a hand-edited per-AI half is repaired, not trusted', () => {
+    write({
+      version: 4,
+      sessions: [
+        {
+          ...sess('a'),
+          conversations: {
+            codex: { nativeSessionId: 'codex-1', nativeSessionLineage: ['', 7, 'codex-0', 'codex-0'] },
+            // the AI the card is ON keeps its conversation in the head; a copy
+            // here would be the one a switch away overwrote the head with
+            'claude-code': { nativeSessionId: 'stale' },
+            'bad id!': { nativeSessionId: 'x' },
+            gemini: { nativeSessionId: '' },
+            qwen: 'not an object',
+          },
+          aiSwitches: [
+            { kind: 'ai-switch', id: 'ok', from: { providerId: 'a', name: 'A' }, to: { providerId: 'b', name: 'B' }, at: '2026-10-16T10:00:00.000Z', briefed: false },
+            { kind: 'ai-switch', id: 'no-date', from: { providerId: 'a', name: 'A' }, to: { providerId: 'b', name: 'B' }, at: 'never', briefed: false },
+            { kind: 'something-else' },
+          ],
+        },
+      ],
+    });
+    const card = makeStore(file).load().sessions[0];
+    expect(card.nativeSessionId).toBe('native-a');
+    expect(card.conversations).toEqual({
+      codex: { nativeSessionId: 'codex-1', nativeSessionLineage: ['codex-0'], cededNativeIds: undefined, parkedAt: '' },
+    });
+    expect(card.aiSwitches?.map((m) => m.id)).toEqual(['ok']);
+  });
+
+  // THE OTHER DIRECTION: what an OLDER build does with this file. A v3 build
+  // reads a v4 file through the newer-file rule this file pins below for any
+  // `CURRENT_VERSION + 1` — the same code, unchanged since #873 (compare
+  // `git show 2de78924:src/main/workspace/store.ts`, `fileVersion >
+  // CURRENT_VERSION`). So the v3 build's run is this test, one version down:
+  it('an older build opens a newer file read-only — cards on the AI they are on, the parked half untouched', () => {
+    const newer = {
+      version: CURRENT_VERSION + 1,
+      sessions: [
+        {
+          ...sess('a'),
+          identity: { ...sess('a').identity, providerId: 'codex' },
+          nativeSessionId: 'codex-1',
+          conversations: { 'claude-code': { nativeSessionId: 'claude-1', parkedAt: 'x' } },
+          aiSwitches: [],
+          someFieldFromTheFuture: { anything: true },
+        },
+      ],
+    };
+    write(newer);
+    const warns: Line[] = [];
+    const store = makeStore(file, fakeLogger(warns));
+    const card = store.load().sessions[0];
+    expect(store.isReadOnly()).toBe(true);
+    expect(warns.map((w) => w.msg)).toEqual([expect.stringMatching(/newer version/i)]);
+    // it shows the user the AI this card is on, and that AI's conversation
+    expect(card.identity.providerId).toBe('codex');
+    expect(card.nativeSessionId).toBe('codex-1');
+    // and NOTHING it does this run can write the file — the parked Claude
+    // conversation it cannot see is still on disk afterwards
+    store.upsertSession({ ...card, nativeSessionId: 'something-else' });
+    store.save();
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(newer);
   });
 });

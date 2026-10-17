@@ -1,11 +1,15 @@
 // Feed view visibility rules (P2-E12-07, §5.10 verbosity presets). Pure —
 // the FeedView component applies these; tests pin the preset semantics.
 import type { SettledQuestion } from '../../../shared/ask-user-question';
+import type { AiSwitchMark } from '../../../shared/ai-switch';
 
 export interface FeedBlockDto {
   seq: number;
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice';
+  /** `ai-switch`: the divider an AI switch draws (#1294) — see `aiSwitch` */
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch';
   text?: string;
+  /** `ai-switch`: the card's persisted mark (#1294). Main's twin is `main/feed/blocks.ts`. */
+  aiSwitch?: AiSwitchMark;
   tool?: {
     name: string;
     /** presentation class stamped by the watcher — dispatch on THIS, never
@@ -125,7 +129,8 @@ export function upsertBlock(
  * so the column never jumps between a dotted block and an undotted one.
  */
 export function showsTimelineDot(kind: FeedBlockDto['kind']): boolean {
-  return kind !== 'assistant';
+  // a divider is a rule across the conversation, not a step in it (#1294)
+  return kind !== 'assistant' && kind !== 'ai-switch';
 }
 
 export type Verbosity = 'quiet' | 'normal' | 'firehose';
@@ -140,6 +145,9 @@ export type Verbosity = 'quiet' | 'normal' | 'firehose';
  */
 export function blockVisible(b: FeedBlockDto, v: Verbosity): boolean {
   if (v === 'firehose') return true;
+  // Shown at EVERY setting (#1294): which AI the conversation below it is with
+  // is part of the conversation, not an event about it.
+  if (b.kind === 'ai-switch') return true;
   if (b.kind === 'thinking') return false;
   if (v === 'quiet') return (b.kind === 'user' || b.kind === 'assistant') && !b.sidechain;
   return true; // normal (tools + todos + notices included)

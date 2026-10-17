@@ -96,6 +96,48 @@ on the floor, and say so in your PR.
 
 ## 0.8.123 — unreleased
 
+### Added
+
+- Codex, OpenAI's coding AI, can run in the same Session view as Claude: its
+  replies, the commands it runs, its approval questions, Stop, its models and
+  effort, a mode chip that switches it live, and resuming a conversation. Its
+  usage shows its tokens and, in the status-bar usage tooltip, your ChatGPT
+  plan's 5-hour and weekly limits, with no dollar figure. Every Codex question
+  is put to you: the app never uses
+  Codex's "Auto review" mode, where a hidden model approves things for you.
+  There is no AI picker yet, so a new session is still a Claude session, and
+  nothing changes for anyone without Codex.
+- **Settings → AIs.** A new tab that shows which AIs are on this computer, whether
+  each one is signed in and its version, and which AI new sessions start on (pick
+  another, or press **Make default** on its row). **Log in…** runs the AI's own
+  sign-in; Switchboard never sees a password. Known AIs that are not installed
+  show how to install them, and **Look again** searches again. **+ Add an AI…**
+  lists the AIs Switchboard knows about, with a "Runs local models" filter and a
+  **Check for new AIs** button (the only thing here that uses the internet, and
+  only when pressed), or lets you add any other AI that speaks the Agent Client
+  Protocol under **Something else**: give it a name, a command and arguments,
+  press **Test**, then **Add**.
+- A session can switch to another AI: the AI chip before the model chip lists
+  each AI with its login state, and picking one moves the card to it, with a
+  line in the conversation marking the switch. Switching back resumes the
+  conversation the card had with that AI, exactly where it stopped. A switch
+  while a turn is running asks first.
+- The first time a card switches to an AI, that AI is handed a summary of the
+  conversation so far: the goal, what you asked for, the plan, the files
+  touched, where it left off and the next step. The summary also says which
+  instruction files each AI reads (`CLAUDE.md` or `AGENTS.md`) and that MCP
+  servers, permissions and hooks do not carry over. No AI writes it, so it
+  costs nothing extra. The switch line says "handed a summary of N turns", and
+  **see what it was told** opens the exact text. Switching back says "picked up
+  where it left off" and sends no summary.
+- A second opinion from a different AI: the Dispatch box has a new **Run it
+  on** row, so a Code Reviewer sent from a Claude session can run on Codex,
+  and its findings come back to the Claude session just as a Claude review's
+  do. An AI that is not logged in is dimmed. A role of your own can name the
+  AI it prefers, and if that AI can't be used the box says why instead of
+  quietly running the role on another AI. With only one AI set up, the box is
+  unchanged.
+
 ### Changed
 
 - A session on a model switchboard has no price for no longer shows a made-up
@@ -103,6 +145,12 @@ on the floor, and say so in your PR.
   still counted. The status-bar total now reads `≥$X est` when some sessions
   could not be priced, and `no price` when none could. Hover over it to see how
   many were left out. Known Claude models are priced exactly as before.
+- You can now see which AI each session is on. The AI's icon takes the place of
+  the status dot on the session's tab, its row in the sessions list, and the
+  start of its card header. A ring around the icon shows the status, in the same
+  colours the dot used, and the status is still written in a word beside it.
+  The status bar now lists every AI found on this computer, each with its
+  version, instead of just the `claude` version.
 
 ### Internal
 

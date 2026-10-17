@@ -22,6 +22,7 @@ import { BUS_SERVER_NAME } from '../../bus/bus-paths';
 import { createAcpProvider } from './acp-provider';
 import { FakeAcpAgent, FAKE_ACP_MODE_MAP } from './fake-acp-agent';
 import { classify } from './acp-protocol';
+import { EventUsageLedger } from '../../usage/event-usage';
 
 type Obj = Record<string, unknown>;
 
@@ -268,6 +269,9 @@ describe('a full turn', () => {
       inputTokens: 1000,
       outputTokens: 100,
       cacheReadTokens: 100,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
+      model: 'fake-large',
     });
     // and the status went working -> idle
     expect(r.m.get(id)?.status).toBe('done');
@@ -568,6 +572,31 @@ describe('models, effort, mode, context', () => {
     expect(texts(r, 'assistant').at(-1)).toBe('MODE: read-only');
   });
 
+  it('two host modes on ONE agent mode: the chip keeps the card choice, not the first match (#1290)', async () => {
+    // Codex's shape: ask and auto-edit both mean `workspace-write`. Here
+    // ask and auto-edit both mean the fake's `default`.
+    const p = createAcpProvider({
+      id: 'test-acp',
+      displayName: 'Test ACP',
+      command: 'agent',
+      modeMap: { ask: 'default', plan: 'read-only', 'auto-edit': 'default', 'full-auto': 'yolo' },
+    });
+    const r = rig({ provider: p });
+    const rec = r.m.create(identity, { autonomy: 'auto-edit' });
+    await until(() => ofType(r, 'conversation').length > 0 && ofType(r, 'commands').length > 0, 'open');
+    // the fake opens in `default`, so the readback must say auto-edit, not ask
+    expect(ofType(r, 'mode').at(-1)).toEqual({ type: 'mode', mode: 'auto-edit' });
+    await expect(r.m.setMode(rec.id, 'plan')).resolves.toMatchObject({ ok: true });
+    expect(ofType(r, 'mode').at(-1)).toEqual({ type: 'mode', mode: 'plan' });
+    await expect(r.m.setMode(rec.id, 'ask')).resolves.toMatchObject({ ok: true });
+    expect(ofType(r, 'mode').at(-1)).toEqual({ type: 'mode', mode: 'ask' });
+    await expect(r.m.setMode(rec.id, 'auto-edit')).resolves.toMatchObject({ ok: true });
+    // the same agent mode as ask, and the chip follows the card, not the map order
+    expect(ofType(r, 'mode').at(-1)).toEqual({ type: 'mode', mode: 'auto-edit' });
+    await turn(r, rec.id, '!mode');
+    expect(texts(r, 'assistant').at(-1)).toBe('MODE: default');
+  });
+
   it('the context meter reads the last usage_update', async () => {
     const r = rig();
     const id = await open(r);
@@ -632,6 +661,63 @@ describe('session/load', () => {
     expect(ofType(r, 'conversation')[0].id).not.toBe('00000000-0000-4000-8000-000000000000');
     // and it is SAID: the card's history did not silently vanish
     expect(texts(r, 'assistant').join('\n')).toMatch(/could not reopen the previous conversation .*this is a new one/);
+  });
+});
+
+describe('plan limits beside the engine (#1290)', () => {
+  const WINDOWS = [
+    { id: 'primary', label: '5-hour', usedPercent: 9, windowMinutes: 300, resetsAt: '2026-10-17T00:44:09.000Z' },
+    { id: 'secondary', label: 'weekly', usedPercent: 12, windowMinutes: 10080 },
+  ];
+  const withLimits = (limits: () => Promise<typeof WINDOWS | undefined>) =>
+    createAcpProvider({ id: 'test-acp', displayName: 'Test ACP', command: 'agent', modeMap: FAKE_ACP_MODE_MAP, limits });
+
+  it('reads them at ready and after every turn, and sends them as a TOKEN-FREE usage event', async () => {
+    let calls = 0;
+    const r = rig({
+      provider: withLimits(() => {
+        calls += 1;
+        return Promise.resolve(WINDOWS);
+      }),
+    });
+    const id = await open(r);
+    await until(() => ofType(r, 'usage').length > 0, 'the ready read');
+    expect(ofType(r, 'usage')[0]).toEqual({ type: 'usage', limits: WINDOWS });
+    await turn(r, id, 'hi');
+    await until(() => ofType(r, 'usage').filter((u) => u.limits).length >= 2, 'the after-turn read');
+    expect(calls).toBe(2);
+    // the turn's own usage carries tokens and no limits; the read carries limits and no tokens
+    const kinds = ofType(r, 'usage').map((u) => (u.limits ? 'limits' : 'tokens'));
+    expect(kinds).toEqual(['limits', 'tokens', 'limits']);
+    // and the ledger keeps the tokens and takes the windows
+    const ledger = new EventUsageLedger();
+    let last;
+    for (const u of ofType(r, 'usage')) last = ledger.absorb(id, u);
+    expect(last).toMatchObject({ usage: { input: 1000, output: 100 }, limits: WINDOWS });
+  });
+
+  it('fail-open: a reader that rejects, throws or answers nothing sends nothing, and the turn is unaffected', async () => {
+    for (const reader of [
+      () => Promise.reject(new Error('down')),
+      () => {
+        throw new Error('sync');
+      },
+      () => Promise.resolve(undefined),
+    ]) {
+      const r = rig({ provider: withLimits(reader) });
+      const id = await open(r);
+      await turn(r, id, 'hi');
+      await new Promise((res) => setTimeout(res, 20));
+      expect(ofType(r, 'usage').filter((u) => u.limits)).toHaveLength(0);
+      expect(texts(r, 'assistant').at(-1)).toBe('ACP reply to: hi');
+    }
+  });
+
+  it('no reader, no limits (the fake and any "Something else" agent)', async () => {
+    const r = rig();
+    const id = await open(r);
+    await turn(r, id, 'hi');
+    expect(ofType(r, 'usage').filter((u) => u.limits)).toHaveLength(0);
   });
 });
 

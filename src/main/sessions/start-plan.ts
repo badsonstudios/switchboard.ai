@@ -115,6 +115,14 @@ export interface StartPlanInput {
    * provider that throws at spawn time became invisible.
    */
   onDegraded?: (reason: string) => void;
+  /**
+   * THE BRIEFING FOR A FIRST SWITCH TO THIS AI (E40 item 11, #1294; #1295
+   * writes it). A thunk, asked ONLY when this start is fresh — the rule that
+   * an AI the card has used before is RESUMED, never briefed (§5.5's honesty
+   * rule), lives here where it can be tested rather than at the call site.
+   * The caller passes it only on the first start after a switch.
+   */
+  openingContext?: () => string | undefined;
 }
 
 export interface StartPlan {
@@ -240,6 +248,12 @@ export interface StartPlan {
   /** what degraded during PLANNING. The lazy closures report through
    *  `onDegraded` instead — see the note there. */
   warnings: string[];
+  /**
+   * The text to send as this session's first prompt, because it is the first
+   * start after an AI switch and it starts FRESH (#1294 / #1295). Absent on a
+   * resume whatever the caller offered, and absent when nothing was offered.
+   */
+  openingContext?: string;
 }
 
 /**
@@ -542,10 +556,26 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
       }
     : undefined;
 
+  // A resume continues a conversation the AI already has; briefing it as well
+  // would hand it a summary of what it already knows, under a label that says
+  // it is new. Only a fresh start is asked.
+  // Not `safely`: its wording blames a provider capability, and the briefing is
+  // the host's own. Same sink, same fail-open: a briefing that throws is sent
+  // as nothing, and the session still starts.
+  let openingContext: string | undefined;
+  if (!resumeSessionId && input.openingContext) {
+    try {
+      openingContext = input.openingContext() || undefined;
+    } catch (err) {
+      degraded(`the AI-switch briefing threw: ${errorText(err)}`);
+    }
+  }
+
   return {
     providerId,
     resumeSessionId,
     resumedVia,
+    openingContext,
     requestedUnavailable,
     // §5.5 Level 3. All three are absent on every ordinary start, so nothing
     // downstream changes shape for a session that is not a fork.

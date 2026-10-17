@@ -48,6 +48,8 @@ export const fakeAcpAdapter = createAcpProvider({
   ...fakeLaunch,
   modeMap: FAKE_ACP_MODE_MAP,
   authMethodId: 'fake-login',
+  // it stands in for Codex in the e2e, so it declares Codex's convention (#1295)
+  instructionFiles: ['AGENTS.md'],
   // E40 item 08 (#1291): the fake is always installed (it ships in `out/`),
   // its version is the one its `initialize` reports, and it is "logged out"
   // exactly when `FAKE_ACP_REQUIRE_AUTH=1` makes it demand `authenticate`.

@@ -258,8 +258,8 @@ typed yourself are never hidden** — those are your words, not Claude's. Click
 the chip again and the auto labels come straight back; nothing was thrown away.
 - Each session also gets a color and a short badge automatically, so you can
   recognize it without reading. The color is the stripe down the left edge of
-  the card header, the dot in the sessions list, and the dot on the card's own
-  **tab**. When the tab is open, the tab and the card header under it are
+  the card header and the bar down the edge of its row in the sessions list.
+  When the card's **tab** is open, the tab and the card header under it are
   also shaded in that color. The badge is a two- or three-letter note of what the project is
   written in (`TS`, `Py`, `Rs`), and it sits next to the name in those same
   places — **filled in the session's own color, with dark lettering on top**, so
@@ -276,9 +276,30 @@ the chip again and the auto labels come straight back; nothing was thrown away.
   waiting to be read.
 
   With several cards docked side by side, the tabs are usually all you can see
-  of the ones you are not looking at — so the color and badge there are what let
-  you pick the right tab without reading every name. A session that has not been
-  given a color yet shows a plain grey dot.
+  of the ones you are not looking at — so the AI's icon and the badge there are
+  what let you pick the right tab without reading every name.
+
+## Which AI a session is on
+
+Every session shows **the icon of the AI it runs on** — Claude Code, Codex,
+Gemini and so on — in three places: its row in the sessions list, its tab, and
+the start of its card header. Sessions on different AIs can sit side by side,
+and the icon is how you tell them apart at a glance. Hover the icon and it says
+which AI it is, and what the session is doing.
+
+**The ring around the icon is the session's status.** It takes the place of the
+old status dot and uses the same colours: blue while it is working, yellow or
+orange when it needs you, green when it has finished, red if it crashed, grey
+when it is idle. In the sessions list, the ring spins while the session works,
+just as the dot did. On the tab and the header it stays still.
+
+**The colour is never the only sign.** The status is still written in a word
+next to it: on the row, on the strip, and in the pill at the right of the card
+header.
+
+An AI that has no icon of its own (one you added with "Something else", say)
+shows a plain tile with its first letter instead. If the list of AIs can't be
+read, the ring and the word still show; only the picture is missing.
 
 ## Status at a glance
 

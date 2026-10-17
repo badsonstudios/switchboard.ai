@@ -14,8 +14,18 @@ Two things answer that question, and they're independent.
 
 ![The bottom bar saying provider degraded, and the incident listed at the top of the Events drawer](img/provider-status.png)
 
-At the right-hand end of the bottom status bar there's a small dot. It reflects
-Anthropic's public status page, which switchboard checks every few minutes.
+At the right-hand end of the bottom status bar there's a list of **every AI on
+this computer, with its version**: Claude Code first, then any other AI
+switchboard found when it started (for example
+`Claude Code 2.1.288 ● Codex 0.48.0`). Each one has its icon in front of it. If the window
+is too narrow for them all, the list is cut short with **…**; hover it to see
+every AI.
+
+The small dot sits after **the AI new sessions start on**. It reflects that
+AI's public status page, which switchboard checks every few minutes. (For
+Claude that is Anthropic's.) The other AIs in the list have no dot, because
+switchboard only checks one status page. An AI that has no public status page
+gets a hollow dot, and hovering it says so.
 
 | What you see | What it means |
 |---|---|

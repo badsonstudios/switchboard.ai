@@ -45,11 +45,38 @@ export interface DispatchTemplateDto {
    */
   refusalKey?: string;
   accentColor?: string;
+  /** The AI this role would rather run on (`RoleTemplate.preferredProviderId`). */
+  preferredProviderId?: string;
+}
+
+/**
+ * Whether an AI is logged in, as far as this build can tell (#1296).
+ *
+ * `unknown` is the honest answer for an AI whose login nobody asked about (or
+ * whose answer was too slow), and it is NOT dimmed: an unknown login is not a
+ * reason to refuse. Only a definite `logged-out` dims a row.
+ */
+export type DispatchAiLogin = 'logged-in' | 'logged-out' | 'unknown';
+
+/** One AI a dispatch can run on — a registered provider (#1296, screen 6). */
+export interface DispatchAiDto {
+  id: string;
+  /** what the UI calls it — the provider's own display name */
+  name: string;
+  login: DispatchAiLogin;
 }
 
 /** What the dialog reads before it can offer anything. */
 export interface DispatchOptions {
   templates: DispatchTemplateDto[];
+  /**
+   * Every AI a dispatch from here could run on, in registration order (#1296).
+   * Absent from a wiring that has no provider list — the dialog then offers no
+   * choice and the dispatch runs on the author's own AI, as before.
+   */
+  ais?: DispatchAiDto[];
+  /** The author session's own AI — "Same as this session". Absent when it does not resolve. */
+  currentAi?: string;
   /**
    * The author session's opening prompt, as the task line's DEFAULT.
    *
@@ -111,6 +138,14 @@ export interface DispatchRequestWire {
   taskStatement?: string;
   /** What "done" looks like. Nothing in a transcript is labelled with these. */
   acceptanceCriteria?: string;
+  /**
+   * The AI the dispatched session runs on — "Run it on" (#1296).
+   *
+   * ABSENT MEANS THE AUTHOR'S OWN AI. A target that is not registered (or is
+   * known to be logged out) when the request arrives is REFUSED with a reason,
+   * never quietly swapped for another AI.
+   */
+  targetProviderId?: string;
 }
 
 /**

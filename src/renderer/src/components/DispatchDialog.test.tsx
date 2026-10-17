@@ -16,9 +16,10 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
-import { DispatchDialog } from './DispatchDialog';
+import { DispatchDialog, runOnTarget } from './DispatchDialog';
 import { initI18nForTests } from '../i18n/test-i18n';
 import type {
+  DispatchAiDto,
   DispatchOptions,
   DispatchPrepared,
   DispatchTemplateDto,
@@ -33,7 +34,12 @@ let host: HTMLDivElement;
 let root: Root;
 let cancelled: number;
 /** Exactly what the dialog sent — the OPTIONAL fields matter, not just their values. */
-let prepares: Array<{ templateId: string; taskStatement?: string; acceptanceCriteria?: string }>;
+let prepares: Array<{
+  templateId: string;
+  taskStatement?: string;
+  acceptanceCriteria?: string;
+  targetProviderId?: string;
+}>;
 let dispatched: Array<DispatchPrepared & { ok: true }>;
 /** what the next `prepare` answers; the default is a success */
 let answer: DispatchPrepared;
@@ -489,5 +495,156 @@ describe('committing nothing', () => {
     expect(row('mine-1').getAttribute('aria-checked')).toBe('true');
     // …and a real character carries it too, so it survives a screenshot.
     expect(row('mine-1').textContent).toContain(en.dispatch.currentMark);
+  });
+});
+
+// ── "RUN IT ON" (E40 item 13, #1296, screen 6) ───────────────────────────────
+describe('Run it on (#1296)', () => {
+  const claude: DispatchAiDto = { id: 'claude-code', name: 'Claude Code', login: 'unknown' };
+  const codex: DispatchAiDto = { id: 'codex', name: 'Codex', login: 'logged-in' };
+  const codexOut: DispatchAiDto = { ...codex, login: 'logged-out' };
+  const withAis = (ais: DispatchAiDto[], templates = [reviewer, mine]): DispatchOptions => ({
+    ...OPTIONS,
+    templates,
+    ais,
+    currentAi: 'claude-code',
+  });
+  const aiRow = (id: string): HTMLElement => host.querySelector(`[data-dispatch-ai="${id}"]`)!;
+  const aiRows = (): string[] =>
+    [...host.querySelectorAll('[data-dispatch-ai]')].map((e) => e.getAttribute('data-dispatch-ai')!);
+  const aiSelected = (): string | null =>
+    host.querySelector('[data-dispatch-ai][aria-checked="true"]')?.getAttribute('data-dispatch-ai') ?? null;
+  const prefersCodex: DispatchTemplateDto = { ...reviewer, id: 'mine-3', name: 'Second opinion', builtIn: false, preferredProviderId: 'codex' };
+
+  it('is absent with ONE AI — the dialog is exactly as before', async () => {
+    await mount(withAis([claude]));
+    expect(byTestId('dispatch-run-on')).toBeNull();
+    await click(go());
+    // …and the AI sent is the author's own — what main would choose anyway
+    expect(prepares[0]).toEqual({
+      templateId: 'builtin:code-reviewer',
+      taskStatement: 'do it.',
+      acceptanceCriteria: '',
+      targetProviderId: 'claude-code',
+    });
+  });
+
+  it('is absent when main sent no AI list at all (an older wiring)', async () => {
+    await mount(OPTIONS);
+    expect(byTestId('dispatch-run-on')).toBeNull();
+    await click(go());
+    expect(prepares[0]).not.toHaveProperty('targetProviderId');
+  });
+
+  it('offers the author’s own AI FIRST, named as such, and selects it by default', async () => {
+    await mount({ ...withAis([codex, claude]) });
+    expect(aiRows()).toEqual(['claude-code', 'codex']);
+    expect(aiRow('claude-code').textContent).toContain('Same as this session (Claude Code)');
+    expect(aiSelected()).toBe('claude-code');
+    await click(go());
+    expect(prepares[0].targetProviderId).toBe('claude-code');
+  });
+
+  it('sends the AI the user picked', async () => {
+    await mount(withAis([claude, codex]));
+    await click(aiRow('codex'));
+    expect(aiSelected()).toBe('codex');
+    await click(go());
+    expect(prepares[0].targetProviderId).toBe('codex');
+  });
+
+  it('⚠️ DIMS a logged-out AI, says so, and refuses at the button — but the row stays focusable', async () => {
+    await mount(withAis([claude, codexOut]));
+    const el = aiRow('codex');
+    expect(el.getAttribute('data-dispatch-ai-dimmed')).toBe('yes');
+    expect(el.textContent).toContain(en.dispatch.ai.notLoggedIn);
+    expect((el as HTMLButtonElement).disabled).toBe(false);
+    await click(el);
+    expect(go().disabled).toBe(true);
+    expect(byTestId('dispatch-ai-blocked').textContent).toBe('Codex is not logged in. Log in to it first, or pick another AI to run it on.');
+    await click(go());
+    expect(prepares).toEqual([]);
+  });
+
+  it('a role’s PREFERRED AI is preselected, and marked as its choice', async () => {
+    await mount(withAis([claude, codex], [prefersCodex, reviewer]));
+    expect(aiSelected()).toBe('codex');
+    expect(aiRow('codex').textContent).toContain(en.dispatch.ai.preferredMark);
+    await click(go());
+    expect(prepares[0].targetProviderId).toBe('codex');
+  });
+
+  it('⚠️ a preferred AI that is NOT LOGGED IN is said, and NOT silently replaced', async () => {
+    await mount(withAis([claude, codexOut], [prefersCodex]));
+    expect(aiSelected()).toBe('codex');
+    expect(go().disabled).toBe(true);
+    expect(byTestId('dispatch-ai-blocked').textContent).toBe(
+      'Second opinion prefers Codex, which is not logged in. Log in to it first, or pick another AI to run it on.'
+    );
+    // the user picks another explicitly — and then it goes
+    await click(aiRow('claude-code'));
+    expect(go().disabled).toBe(false);
+    await click(go());
+    expect(prepares[0].targetProviderId).toBe('claude-code');
+  });
+
+  it('⚠️ a preferred AI that is NOT SET UP shows the section even with one AI, and blocks', async () => {
+    await mount(withAis([claude], [prefersCodex]));
+    expect(byTestId('dispatch-run-on')).not.toBeNull();
+    expect(aiSelected()).toBeNull();
+    expect(go().disabled).toBe(true);
+    expect(go().getAttribute('title')).toBe(
+      'Second opinion prefers codex, which is not set up on this computer. Pick another AI to run it on.'
+    );
+    await click(aiRow('claude-code'));
+    await click(go());
+    expect(prepares[0].targetProviderId).toBe('claude-code');
+  });
+
+  it('switching roles re-applies the new role’s preference until the user picks', async () => {
+    await mount(withAis([claude, codex], [reviewer, prefersCodex]));
+    expect(aiSelected()).toBe('claude-code');
+    await click(row('mine-3'));
+    expect(aiSelected()).toBe('codex');
+    await click(row('builtin:code-reviewer'));
+    expect(aiSelected()).toBe('claude-code');
+  });
+
+  it('a fork onto ANOTHER AI is refused before the click', async () => {
+    const fork: DispatchTemplateDto = { ...refused, refusalKey: undefined };
+    delete (fork as { refusalKey?: string }).refusalKey;
+    await mount(withAis([claude, codex], [fork]));
+    await click(aiRow('codex'));
+    expect(go().disabled).toBe(true);
+    expect(go().getAttribute('title')).toBe(en.dispatch.refusal.crossProviderFork);
+  });
+});
+
+describe('runOnTarget — the table', () => {
+  const base: DispatchOptions = {
+    templates: [],
+    ais: [
+      { id: 'claude-code', name: 'Claude Code', login: 'unknown' },
+      { id: 'codex', name: 'Codex', login: 'unknown' },
+    ],
+    currentAi: 'claude-code',
+  };
+  it('an `unknown` login is not a refusal', () => {
+    expect(runOnTarget(base, reviewer, 'codex')).toMatchObject({ id: 'codex', send: 'codex' });
+    expect(runOnTarget(base, reviewer, 'codex').blocked).toBeUndefined();
+  });
+  it('the author’s own AI is never refused for its login', () => {
+    const out: DispatchOptions = {
+      ...base,
+      ais: [{ id: 'claude-code', name: 'Claude Code', login: 'logged-out' }, base.ais![1]],
+    };
+    expect(runOnTarget(out, reviewer, null).blocked).toBeUndefined();
+  });
+  it('the author’s own AI missing from the list is the generic refusal, not a "prefers" sentence', () => {
+    const odd: DispatchOptions = { ...base, currentAi: 'gone' };
+    expect(runOnTarget(odd, reviewer, null).blocked).toEqual({ key: 'dispatch.refusal.aiMissing' });
+  });
+  it('no list, no current AI: nothing to send and nothing to say', () => {
+    expect(runOnTarget({ templates: [] }, reviewer, null)).toMatchObject({ show: false, send: undefined });
   });
 });
