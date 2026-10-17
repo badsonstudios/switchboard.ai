@@ -3,7 +3,40 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🎛️ ORCHESTRATION RUN — E40 "MORE THAN ONE AI" (#1285–#1296) — STARTED 2026-10-16
+> # 🚂 2026-10-16 — E40 "MORE THAN ONE AI": BUILT IN ONE DAY; THE TRAIN (PR #1322) WAITS ON THE OWNER
+>
+> **The run is over. Twelve items, twelve PRs, zero blockers.** Six internal
+> PRs merged on green CI (#1285 probe, #1286 + #1287 the seam, #1288
+> surfaces, #1289 the ACP engine, #1291 the catalog). Six user-facing PRs
+> (#1307 Codex, #1309 Run it on, #1311 Settings → AIs, #1312 the AI icon,
+> #1314 the AI switch, #1315 the handoff briefing) stack on each other and are
+> assembled into **ONE train PR, #1322** (`train/2026-10-16`, from main
+> `c9abdb07`, with one integration commit; full local gate green: unit
+> 12,966, e2e 520/520, no flakes). **It is NOT merged. The owner merges it
+> with a MERGE COMMIT (not squash)** so each member PR flips to merged and
+> the six issues close; its body carries the 23 decisions he is asked to
+> confirm and the 14-step hand-test list. **Until he merges it, no other PR
+> should land on main** (strict up-to-date would force a re-run); this file's
+> close-out rides ON the train for that reason.
+>
+> **After he merges:** `git pull && npm run build`, hand-test from the train
+> PR body (steps 1–14), verify the six member PRs read merged and the six
+> issues closed, delete the six feature branches, and cut a release when he
+> says so (0.8.123 is open and carries all of E40). Follow-ups filed from the
+> handoffs: **#1301, #1303, #1316–#1320, #1323.** Decisions he has not yet
+> answered are the 23 in the train PR body (the big ones: Codex never runs
+> "Auto review"; ask → `workspace-write`; bundled Codex 0.160.1; the tab's
+> accent dot is gone; workspace file v4 on first save).
+>
+> **Not done by the run, deliberately:** no release; no merge of anything
+> user-facing; `check:codex` and `CHECK_CODEX_SWITCH=1` were run by workers
+> only where the item required it (four real runs in all, tiny prompts, every
+> Codex session deleted afterwards); the epic-exit item "a second ACP agent
+> added through Something else with no code change" is proven with the fake
+> ACP agent in e2e, and awaits his real Gemini CLI / OpenCode try.
+>
+> **The run's record follows (kept as written, for the resume mechanism and
+> the history).**
 >
 > **Mode:** `/orchestrate`. A Fable session dispatches Opus workers into the
 > worktree pool (`C:\Projects\sb-wt-1..3`) and is the **ONLY writer of this
