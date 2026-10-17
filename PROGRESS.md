@@ -22,9 +22,16 @@
 > and are listed under "Owner's queue" below; the run never merges them.
 >
 > **Active workers (issue → worktree → branch):**
-> - #1294 the AI switch chip + switching back resumes (screen 2) → `sb-wt-2` → `feature/1294-ai-switch` — dispatched 2026-10-16 from #1307's head `ed7e9805`; told to rebase onto #1307's FINAL head `c605ae93`. User-facing → owner's queue. **#1295 (handoff briefing + divider) is dispatched off its PR when it exists; it is the last item.**
-> - #1296's rebase of PR #1309 onto #1307's final head `c605ae93` → `sb-wt-3` (its first worktree went to #1294); also swapping its temporary login reader for `ais:list()` where small.
-> - `sb-wt-1`: free (#1293 finished).
+> - **#1295 handoff on switch: the briefing, the divider, "see what it was told" (screen 3) → `sb-wt-1` → `feature/1295-handoff-briefing` — dispatched 2026-10-16 from #1314's head `68292651`. THE LAST ITEM.** User-facing → owner's queue. Wires `aiSwitchBriefing` (the hook #1294 left in `sessions/ipc.ts`) to a deterministic, model-free Level-2 briefing built on `context-package.ts`, with the §5.5 impedance section (`CLAUDE.md` vs `AGENTS.md`, measured for Codex) and the honesty rule.
+> - #1296's rebase of PR #1309 onto #1307's final head `c605ae93` → `sb-wt-3`; also swapping its temporary login reader for `ais:list()` where small.
+> - `sb-wt-2`: free (#1294 finished).
+>
+> **When #1295's PR is green, the run builds the TRAIN** (`train/2026-10-16`
+> from fresh `origin/main`: #1307 → #1309 → #1311 → #1312 → #1314 → #1295's
+> PR; the `AiBadge` adoption in #1311/#1314 and the duplicate
+> `SWITCHBOARD_FAKE_PROVIDER=both` in #1309/#1314 are resolved on the train;
+> full local gate under the lock; one PR with one `Closes #N` line per member;
+> **NOT merged by the run — the owner authorises the train**).
 >
 > **In CI, awaiting merge:** nothing internal is left. The queued
 > user-facing PRs below each carry their own green CI run but go BEHIND
@@ -32,6 +39,32 @@
 > the end re-verifies them once.**
 >
 > **Owner's queue (user-facing, awaiting his review; the run never merges these):**
+> - **#1314 — #1294 the AI switch beside the model chip, and switching back
+>   resumes** (head `68292651` on #1307's `c605ae93`). The AI chip before the
+>   model chip; its menu lists each AI with login state, greys out ones this
+>   run cannot start ("set it up…"), has the one-sentence explanation and
+>   "Manage AIs…". Switching parks the current AI's conversation and un-parks
+>   the target's: **switching back resumes that AI's own conversation through
+>   its own resume**; a first switch starts fresh (the briefing is #1295's); a
+>   divider "Claude Code → Codex · time" is persisted with the card
+>   (`AiSwitchMark`, `src/shared/ai-switch.ts`, last 20 kept). Switching while
+>   a turn runs asks first; Cancel keeps the turn. Workspace file v3 → v4; an
+>   older build opens a v4 file read-only with each card on its AI; the
+>   migration moves nothing (only the AIs a card is NOT on are parked, so two
+>   copies cannot drift). Review fix: a switched card whose AI later
+>   disappeared used to fall back to Claude and lose its parked Claude
+>   conversation; it now refuses to start and offers "Switch back to …".
+>   `SWITCHBOARD_FAKE_PROVIDER=both` added here too (#1309 adds the same;
+>   one survives the train). **Real-token proof:** `CHECK_CODEX_SWITCH=1 npm
+>   run check:codex` passed once: 5 turns (3 Codex, 2 Claude on haiku), the
+>   second Claude turn resumed the original conversation and remembered
+>   "ping"; 2 Codex sessions deleted, the Claude transcript folder removed,
+>   no processes left. Unit green; e2e 1 known flake that passed alone.
+>   Manual + CHANGELOG + dogfood row. **For him:** every AI this run can start
+>   is selectable even if its program was not found ("may not start" rather
+>   than greyed); a switched card whose AI is gone refuses rather than moving
+>   to Claude silently; every workspace file becomes v4 on first save, so a
+>   downgrade opens it read-only.
 > - **#1312 — #1293 which AI a session is on, at a glance** (head `158aa440`
 >   on main `291d4fba`; CI green). `components/AiBadge.tsx`
 >   (`{providerId?, status, needsYou, spin?, decorative?}`), `AiIcon.tsx`,
