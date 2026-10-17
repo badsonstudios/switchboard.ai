@@ -114,7 +114,7 @@ import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc
 import { registerDispatchIpc } from './sessions/dispatch-ipc';
 import { DispatchResults } from './sessions/dispatch-results';
 import { runPreflight } from './preflight';
-import { slashCommandsFor } from './slash-commands-for';
+import { slashCommandsFor, slashHintsFor } from './slash-commands-for';
 import { startStaticServer, StaticServer } from './static-server';
 import { installCspHeaders } from './csp';
 import { parsePopoutFeatures } from './popout-bounds';
@@ -3083,6 +3083,12 @@ app
       // vanished" should not sit at info among routine chatter.
       slashCommands: (folder, providerId) =>
         slashCommandsFor(registry.resolve('provider-adapter', providerId), folder, (msg, meta) =>
+          log.app.warn(msg, meta)
+        ),
+      // why some skills are missing from that popup (#1328) — the provider's to
+      // say, through the same capability that scans them
+      slashHints: (folder, providerId) =>
+        slashHintsFor(registry.resolve('provider-adapter', providerId), folder, (msg, meta) =>
           log.app.warn(msg, meta)
         ),
       // NO `preferredTransport` (#952). `SWITCHBOARD_TRANSPORT` was the app-wide

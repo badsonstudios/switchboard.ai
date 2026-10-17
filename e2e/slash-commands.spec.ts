@@ -250,4 +250,29 @@ test.describe('composer slash commands (E10-07)', () => {
   // `stream-feed.spec.ts` → "Clear conversation on a Direct session" asserts the
   // same cleared marker and the same disappearance, plus the resumed-card case
   // that was #748's actual bug — which this test could never have caught.
+
+  // #1328: the owner typed `/alpaca` in a project whose skills were loose .md
+  // files. Claude Code ignores those, and the popup opened on nothing at all.
+  test('a / that matches nothing says so, and loose skill files are named (#1328)', async () => {
+    const folder = tempProjectFolder();
+    fs.mkdirSync(path.join(folder, '.claude', 'skills'), { recursive: true });
+    fs.writeFileSync(path.join(folder, '.claude', 'skills', 'alpaca-trading.md'), 'Trade carefully.');
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.pressSequentially('/alpaca');
+    const notice = w.locator('[data-slash-notice]');
+    await expect(notice).toContainText('No commands match “/alpaca”', { timeout: 15_000 });
+    await expect(notice.locator('[data-slash-misplaced="project"]')).toContainText(
+      'Claude Code ignores loose .md files in .claude/skills (1 here)'
+    );
+    // the file is NOT offered as a command: the CLI decides what a skill is
+    await expect(w.locator('[data-completion-list]')).toHaveCount(0);
+
+    await box.press('Escape');
+    await expect(notice).toHaveCount(0);
+  });
 });

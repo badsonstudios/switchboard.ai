@@ -2,7 +2,7 @@
 // src/shared/extensibility/registry.ts and are shared with the renderer; what
 // each process can contribute is its own business, and this file is main's
 // half of that. Contracts here may reference main-only concepts freely.
-import { SlashCommand } from '../../shared/slash-commands';
+import { MisplacedSkills, SlashCommand } from '../../shared/slash-commands';
 import { CapabilityManifest } from '../../shared/extensibility/registry';
 import type { AutonomyMode } from '../../shared/sessions';
 import type { BusLaunch } from '../bus/launch';
@@ -738,4 +738,10 @@ export interface CommandFilesCapability {
    * `folder`. NEVER REJECTS: a scan that fails answers what it gathered.
    */
   scan: (folder: string, log?: (msg: string) => void) => Promise<SlashCommand[]>;
+  /**
+   * Files that LOOK like skills but that the AI will not load (#1328), so the
+   * popup can say why they are missing. Optional: an AI without a notion of a
+   * near-miss leaves it out. NEVER REJECTS.
+   */
+  misplaced?: (folder: string, log?: (msg: string) => void) => Promise<MisplacedSkills[]>;
 }

@@ -59,6 +59,14 @@ import type {
  * - `rate_limit_event`, `transcript_mirror`, `active_goal`, `keep_alive`:
  *   measured (S-10, S-11), not lifecycle. S-11 saw 0 keep_alives in 8 hours,
  *   so nothing may be built on its cadence.
+ * - `command_lifecycle` (#1328, first seen 2026-10-17): a per-message progress
+ *   frame, `{ command_uuid, state }` with state one of queued / started /
+ *   completed / cancelled / discarded / refused, read out of the PATH CLI's own
+ *   zod schema. It only arrives for messages sent WITH a uuid, and the VS Code
+ *   extension reads it for one thing: a terminal state counts towards "idle".
+ *   Our status machine already gets that from `result` and the hooks, so it is
+ *   understood and adds nothing here. If a feature ever needs per-message
+ *   delivery (cancelled vs completed), this is the frame that carries it.
  */
 const UNDERSTOOD_SILENT = new Set([
   'control_response',
@@ -66,6 +74,7 @@ const UNDERSTOOD_SILENT = new Set([
   'transcript_mirror',
   'active_goal',
   'keep_alive',
+  'command_lifecycle',
 ]);
 
 /**

@@ -3,7 +3,7 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SlashCommand } from '../../shared/slash-commands';
-import { scanSlashCommands } from './claude-command-files';
+import { claudeCommandFiles, findMisplacedSkills, scanSlashCommands } from './claude-command-files';
 
 let root: string;
 const cwd = (): string => path.join(root, 'project');
@@ -127,5 +127,43 @@ describe('scanSlashCommands', () => {
       '---\nname: blocky\ndescription: >-\n  a folded multi-line\n  description\n---\n'
     );
     expect((await scanByName())['blocky']).toMatchObject({ name: 'blocky', description: undefined });
+  });
+});
+
+// #1328: the owner's Trading project kept its skills as loose .md files, which
+// Claude Code ignores. The popup showed none and said nothing.
+describe('findMisplacedSkills', () => {
+  it('finds loose .md files in the project AND the user skills folder, sorted', async () => {
+    write(path.join(cwd(), '.claude', 'skills', 'issue-tracker.md'), 'body');
+    write(path.join(cwd(), '.claude', 'skills', 'alpaca-trading.md'), 'body');
+    write(path.join(userDir(), 'skills', 'mine.md'), 'body');
+    expect(await findMisplacedSkills(roots())).toEqual([
+      { scope: 'project', shownDir: '.claude/skills', files: ['alpaca-trading.md', 'issue-tracker.md'] },
+      { scope: 'user', shownDir: '~/.claude/skills', files: ['mine.md'] },
+    ]);
+  });
+
+  it('the scan still does NOT load them as skills (the CLI decides)', async () => {
+    write(path.join(cwd(), '.claude', 'skills', 'alpaca-trading.md'), 'body');
+    expect(await scanByName()).toEqual({});
+  });
+
+  it('a proper skill folder, a folder with no SKILL.md, a README and other files are not reported', async () => {
+    write(path.join(cwd(), '.claude', 'skills', 'good', 'SKILL.md'), '---' + String.fromCharCode(10) + 'name: good' + String.fromCharCode(10) + '---');
+    // the owner's own ~/.claude/skills/synced is exactly this: a folder the CLI keeps
+    write(path.join(userDir(), 'skills', 'synced', 'abc_def', 'data.json'), '{}');
+    write(path.join(cwd(), '.claude', 'skills', 'README.md'), 'what lives here');
+    write(path.join(cwd(), '.claude', 'skills', 'notes.txt'), 'not markdown');
+    expect(await findMisplacedSkills(roots())).toEqual([]);
+  });
+
+  it('no skills folder anywhere: an empty answer and no log line', async () => {
+    const log = vi.fn();
+    expect(await findMisplacedSkills(roots(), log)).toEqual([]);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('Claude declares it through the commandFiles capability', () => {
+    expect(typeof claudeCommandFiles.misplaced).toBe('function');
   });
 });

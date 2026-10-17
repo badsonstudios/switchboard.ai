@@ -17,7 +17,7 @@ import type { FeedDerivation } from '../transcripts/watcher';
 import type { EngineEvent } from './engine-events';
 import { ClaudeFedFeed } from '../feed/fixtures/claude-fed-feed';
 import { Logger } from '../log/logger';
-import { SlashCommand } from '../../shared/slash-commands';
+import { MisplacedSkills, SlashCommand } from '../../shared/slash-commands';
 import { readAiTitle } from '../providers/claude';
 import type { TransportKind } from '../../shared/transport';
 import { DEFAULT_TASK_LABEL_SIZE, type TaskLabelSize } from '../../shared/task-label-size';
@@ -118,6 +118,8 @@ function harness(
     status?: string;
     /** what the `.claude/` scan + curated builtins return (P2-E18-09) */
     known?: SlashCommand[];
+    /** skills the provider will not load (#1328); absent = the dep is not wired */
+    slashHints?: MisplacedSkills[];
     /** the CLI's own list, off the stream (P2-E18-09) — the real class, so the
      *  test exercises the real wiring rather than a stand-in for it */
     streamCommands?: ClaudeFedCommands;
@@ -247,6 +249,7 @@ function harness(
   const warn = vi.fn();
   /** a start that should have worked and did not is an `error`, not a `warn` (#347) */
   const logError = vi.fn();
+  const logInfo = vi.fn();
   /** every live rename the IPC layer asked the manager for (#347) */
   const renamed: Array<{ id: string; title: string }> = [];
   const askedFor: string[] = [];
@@ -599,7 +602,7 @@ function harness(
         forgottenEvents.push(id);
       },
     },
-    log: { info: vi.fn(), warn, error: logError, debug: vi.fn() },
+    log: { info: logInfo, warn, error: logError, debug: vi.fn() },
     getWindow: () => null,
     broker,
     autoTrust: () => opts.autoTrust ?? false,
@@ -685,6 +688,7 @@ function harness(
     defaultProviderId: () => 'generic',
     repoRoot: async () => null,
     slashCommands: async () => opts.known ?? [],
+    slashHints: opts.slashHints ? async () => opts.slashHints ?? [] : undefined,
     streamCommands: opts.streamCommands,
     streamPermissions: opts.streamPermissions,
     streamFeed: opts.streamFeed,
@@ -798,6 +802,7 @@ function harness(
     releaseHookSettings,
     warn,
     logError,
+    logInfo,
     renamed,
     askedFor,
     allowedAll,
@@ -1920,6 +1925,37 @@ describe('registerSessionIpc — @ session summaries (P2-E11-07)', () => {
 //
 // Through the REAL handler and the REAL ClaudeFedCommands, because the whole item
 // is a wiring decision: which of two lists reaches the popup, and when.
+describe('registerSessionIpc — skills the AI will not load (#1328)', () => {
+  let dir: string;
+  tempDirEach('sb-hints-', (d) => (dir = d));
+  const loose: MisplacedSkills[] = [
+    { scope: 'project', shownDir: '.claude/skills', files: ['alpaca-trading.md', 'issue-tracker.md'] },
+  ];
+
+  it('answers what the provider found, and logs it ONCE per session at info', async () => {
+    const h = harness(undefined, dir, { liveIds: ['live-1'], slashHints: loose });
+    expect(await h.call('sessions:slashHints', 'live-1')).toEqual(loose);
+    expect(await h.call('sessions:slashHints', 'live-1')).toEqual(loose);
+    const lines = h.logInfo.mock.calls.filter(([msg]) => String(msg).startsWith('skills not loaded'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0][1]).toMatchObject({ sessionId: 'live-1', dir: '.claude/skills', count: 2 });
+  });
+
+  it('an unknown session, a bad id, or no wired dep answers nothing', async () => {
+    const wired = harness(undefined, dir, { liveIds: ['live-1'], slashHints: loose });
+    expect(await wired.call('sessions:slashHints', 'nope')).toEqual([]);
+    expect(await wired.call('sessions:slashHints', 42)).toEqual([]);
+    const bare = harness(undefined, dir, { liveIds: ['live-1'] });
+    expect(await bare.call('sessions:slashHints', 'live-1')).toEqual([]);
+  });
+
+  it('nothing found: no log line', async () => {
+    const h = harness(undefined, dir, { liveIds: ['live-1'], slashHints: [] });
+    expect(await h.call('sessions:slashHints', 'live-1')).toEqual([]);
+    expect(h.logInfo.mock.calls.some(([msg]) => String(msg).startsWith('skills not loaded'))).toBe(false);
+  });
+});
+
 describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
   let dir: string;
   tempDirEach('sb-slash-', (d) => (dir = d));

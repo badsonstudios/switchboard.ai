@@ -18,7 +18,12 @@ import { errorText } from '../../shared/error-text';
 import { promises as fsp } from 'fs';
 import os from 'os';
 import path from 'path';
-import { mergeCommands, SlashCommand, SlashCommandSource } from '../../shared/slash-commands';
+import {
+  mergeCommands,
+  MisplacedSkills,
+  SlashCommand,
+  SlashCommandSource,
+} from '../../shared/slash-commands';
 import type { CommandFilesCapability } from '../extensibility/contributions';
 
 const MAX_COMMAND_DEPTH = 3; // subdirs namespace commands: sub/cmd.md -> /sub:cmd
@@ -69,7 +74,49 @@ export async function scanSlashCommands(
 export const claudeCommandFiles: CommandFilesCapability = {
   scan: (folder, log) =>
     scanSlashCommands({ cwd: folder, userClaudeDir: path.join(os.homedir(), '.claude') }, [], log),
+  misplaced: (folder, log) =>
+    findMisplacedSkills({ cwd: folder, userClaudeDir: path.join(os.homedir(), '.claude') }, log),
 };
+
+/**
+ * Loose `.md` files directly inside `.claude/skills/`, project and user (#1328).
+ *
+ * The owner's Trading project keeps 13 skills as `skills/<name>.md`. Claude
+ * Code ignores every one of them — a skill is `skills/<name>/SKILL.md` — so
+ * the `/` popup showed none and nothing said why. This finds them so the popup
+ * can say so; it never turns them into commands (the CLI decides what a skill
+ * is). Folders without a `SKILL.md` are NOT reported: see `MisplacedSkills`.
+ *
+ * Same failure rules as the scan above: a missing folder is silence, any other
+ * read failure is one log line and an empty answer. Never rejects.
+ */
+export async function findMisplacedSkills(
+  roots: ScanRoots,
+  log?: (msg: string) => void
+): Promise<MisplacedSkills[]> {
+  const places: Array<Pick<MisplacedSkills, 'scope' | 'shownDir'> & { dir: string }> = [
+    { scope: 'project', shownDir: '.claude/skills', dir: path.join(roots.cwd, '.claude', 'skills') },
+    { scope: 'user', shownDir: '~/.claude/skills', dir: path.join(roots.userClaudeDir, 'skills') },
+  ];
+  const found = await Promise.all(
+    places.map(async ({ dir, ...where }): Promise<MisplacedSkills | null> => {
+      let entries;
+      try {
+        entries = await fsp.readdir(dir, { withFileTypes: true });
+      } catch (err) {
+        if (!isMissing(err)) log?.(`skill layout check failed for ${dir}: ${errorText(err)}`);
+        return null;
+      }
+      const files = entries
+        // a README is documentation for the folder, not a skill someone lost
+        .filter((e) => e.isFile() && /\.md$/i.test(e.name) && !/^readme\.md$/i.test(e.name))
+        .map((e) => e.name)
+        .sort((a, b) => a.localeCompare(b));
+      return files.length > 0 ? { ...where, files } : null;
+    })
+  );
+  return found.filter((m): m is MisplacedSkills => m !== null);
+}
 
 /** `<dir>/**\/*.md` -> one command per file; subdirectories namespace with ':'. */
 async function scanCommandsDir(

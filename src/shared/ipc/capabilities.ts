@@ -536,6 +536,8 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:siblingMessageAck': 'sessions.write',
   'sessions:setTaskLabel': 'sessions.write',
   'sessions:slashCommands': 'sessions.read',
+  // why some skills are missing from that popup (#1328): file names only
+  'sessions:slashHints': 'sessions.read',
   // The composer's `@` popup list (P2-E11-07): `summariesFrom`, the same source
   // the bus's `list_sessions` answers from, so the two cannot disagree.
   'sessions:summaries': 'sessions.read',

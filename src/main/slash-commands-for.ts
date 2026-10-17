@@ -6,7 +6,7 @@
 // NEVER REJECTS. A scan that throws falls open to the builtins and says so at
 // `warn` — the line you grep for after "my commands vanished".
 import { errorText } from '../shared/error-text';
-import { mergeCommands, type SlashCommand } from '../shared/slash-commands';
+import { mergeCommands, type MisplacedSkills, type SlashCommand } from '../shared/slash-commands';
 import type { ProviderAdapter } from './extensibility/contributions';
 
 export async function slashCommandsFor(
@@ -31,4 +31,24 @@ export async function slashCommandsFor(
     warn('slash-command scan threw', { error: errorText(err) });
   }
   return mergeCommands(builtins, scanned);
+}
+
+/**
+ * Why some of the user's skills are not in the popup (#1328): files the
+ * provider says it will not load. Empty for a provider with no `misplaced`.
+ * NEVER REJECTS — a hint that fails costs the hint, never the popup.
+ */
+export async function slashHintsFor(
+  adapter: Pick<ProviderAdapter, 'capabilities'> | undefined,
+  folder: string,
+  warn: (msg: string, meta?: Record<string, unknown>) => void
+): Promise<MisplacedSkills[]> {
+  const misplaced = adapter?.capabilities?.commandFiles?.misplaced;
+  if (!misplaced) return [];
+  try {
+    return await misplaced(folder, (msg) => warn(msg));
+  } catch (err) {
+    warn('skill layout check threw', { error: errorText(err) });
+    return [];
+  }
 }
