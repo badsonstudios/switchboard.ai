@@ -3,15 +3,25 @@
 // E9-05 built the ladder: what the four rungs mean and how a session moves
 // between them. This module is the standing ANSWER to one question the user
 // should not have to answer per prompt: when you submit a prompt, does the card
-// stay where it is, fold into the collapsed strip, or leave the workspace
-// altogether?
+// stay where it is, or fold away?
 //
 //   always-visible   nothing happens on submit; the card stays a card.
 //                    THE DEFAULT.
 //   auto-collapse    the card gives its dock slot back and becomes a row in the
 //                    collapsed strip.
-//   auto-hide        the card leaves the workspace entirely — rail, lamp and
-//                    events only, exactly like `session.hide`.
+//
+// THERE IS NO auto-hide, AND THERE MUST NOT BE ONE AGAIN (Dan, 2026-10-17,
+// #1276). It existed from E9-06 until then: on submit the card left the
+// workspace entirely. In practice it hid the very card the user had just typed
+// into, three milliseconds after Enter, first prompt or not, and it was reached
+// by two stray clicks on the cycling titlebar chip, so the owner ran on it for
+// days without having chosen it. Three dogfood reports (#1210, #1276 twice)
+// traced to it. His verdict: "We do not want it." A saved `auto-hide` from an
+// older build is no longer a policy, so `loadPolicyBook` reads it as the
+// default and a stale override drops out of its table — the same rule that
+// keeps any stale blob value from costing the user their workspace. Hiding a
+// session BY HAND (`session.hide`, the hidden rung) is untouched: that is the
+// user asking, which is the whole difference.
 //
 // WHY always-visible IS THE DEFAULT (Dan, 2026-08-04, amending §5.8): the first
 // draft shipped auto-collapse, as §5.8 originally specified, and dogfooding it
@@ -19,30 +29,26 @@
 // submitted from, which is the very first thing a new user does. The litmus
 // parenthetical §5.8 wrote ("a new user watching their session vanish on first
 // submit fails intuitive-first") was about auto-hide vs auto-collapse; applied
-// one rung higher it rules out minimizing UNASKED at all. Both minimizing
-// policies still hand the screen back to the sessions that need it, and both are
-// one click of the titlebar chip away for the many-sessions workflow they suit.
+// one rung higher it rules out minimizing UNASKED at all. The minimizing
+// policy still hands the screen back to the sessions that need it, and is one
+// click of the titlebar chip away for the many-sessions workflow it suits.
 //
 // THE RESTORE HALF IS NOT HERE, and that is the point of doing this after
 // E9-05: §5.8 says a minimized session "restores automatically on Stop (done)
 // or Notification (needs human)", which is exactly lib/ladder's `revealTargets`
 // — the same three kinds, the same slot-exact reveal, the same no-focus-steal
-// rule. Auto-hide therefore honours the reveal contract by construction rather
-// than by a second implementation of it.
+// rule. Auto-collapse therefore honours the reveal contract by construction
+// rather than by a second implementation of it.
 //
 // Pure by construction (no React, no dockview, no IPC): every rule below is a
 // unit test rather than an e2e guess. The impure edges are the store (which
 // holds the book) and lib/presentation-boot (which loads and saves it).
 import type { Ladder } from './presentation';
 
-export type PresentationPolicy = 'always-visible' | 'auto-collapse' | 'auto-hide';
+export type PresentationPolicy = 'always-visible' | 'auto-collapse';
 
 /** Most screen kept to least. The order the chip and the menus cycle in. */
-export const POLICY_ORDER: readonly PresentationPolicy[] = [
-  'always-visible',
-  'auto-collapse',
-  'auto-hide',
-];
+export const POLICY_ORDER: readonly PresentationPolicy[] = ['always-visible', 'auto-collapse'];
 
 /** The default, and the value an untouched workspace resolves to (§5.8 as
  *  amended 2026-08-04: nothing moves unless the user opted in). */
@@ -223,23 +229,24 @@ export function submitTarget(opts: {
   needsHuman: boolean;
   /** §5.8's pinning contract (E9-09) */
   pinned?: boolean;
-}): Ladder | null {
-  if (opts.policy === 'always-visible') return null;
+}): 'collapsed' | null {
+  if (opts.policy !== 'auto-collapse') return null;
   if (opts.ladder !== 'expanded') return null;
   if (opts.poppedOut) return null;
   if (opts.needsHuman) return null;
   if (opts.pinned) return null;
-  return opts.policy === 'auto-hide' ? 'hidden' : 'collapsed';
+  // the ONLY rung a submit may send a card to (#1276: never `hidden`)
+  return 'collapsed';
 }
 
-/** Next value for the global chip — three states, wrapping. */
+/** Next value for the global chip — two states, wrapping. */
 export function cycleGlobal(cur: PresentationPolicy): PresentationPolicy {
   const i = POLICY_ORDER.indexOf(cur);
   return POLICY_ORDER[(i + 1) % POLICY_ORDER.length];
 }
 
 /**
- * Next value for an OVERRIDE control — four states, because "follow the
+ * Next value for an OVERRIDE control — three states, because "follow the
  * default" is a real choice and has to be reachable by the same gesture that
  * left it. `undefined` is that state, and it is where the cycle starts and ends.
  */

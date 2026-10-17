@@ -96,6 +96,14 @@ on the floor, and say so in your PR.
 
 ## 0.8.124 — unreleased
 
+### Changed
+
+- **"Hide on submit" is gone.** It hid the session you had just typed into the
+  moment you pressed Enter, and it was easy to switch on by accident with one
+  stray click of the title-bar chip. The chip now has two settings, **Keep
+  visible** and **Collapse on submit**. If you had "Hide on submit" on, the app
+  now treats it as **Keep visible**. Hiding a session yourself still works.
+
 ## 0.8.123 — 2026-10-17
 
 ### Added

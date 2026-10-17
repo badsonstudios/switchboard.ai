@@ -9,8 +9,9 @@
 //   • opting in to `auto-collapse` folds the card into the collapsed strip on
 //     submit, and `Stop` — the CLI's done hook — brings it back into exactly the
 //     slot it left;
-//   • `auto-hide` takes the card out of the workspace entirely and still honours
-//     the reveal contract, which is the half that would be easy to get wrong;
+//   • there is NO `auto-hide` (#1276, removed 2026-10-17 at the owner's word):
+//     the chip has two states, and no setting takes the card you typed into
+//     off the screen;
 //   • a per-session override beats the global, and both survive a relaunch.
 //
 // The restore half is driven through the REAL hook listener, as ladder.spec and
@@ -161,7 +162,7 @@ test.describe('presentation policy (E9-06)', () => {
     await submitIn(w, second);
 
     // it gave its dock slot back and left a row saying where it went — the
-    // difference between auto-collapse and auto-hide
+    // proof it was collapsed and not closed
     await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
     await expect(stripRow(w, second)).toBeVisible();
     await expect(row(w, second)).toBeVisible(); // still in the rail
@@ -187,7 +188,7 @@ test.describe('presentation policy (E9-06)', () => {
     await expect(notice(w)).toHaveText('');
   });
 
-  test('the notice brings a hidden card back, and can turn the setting off (#1210)', async () => {
+  test('the notice brings a collapsed card back, and can turn the setting off (#1210)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -203,10 +204,10 @@ test.describe('presentation policy (E9-06)', () => {
         expect.stringContaining(third),
       ]);
 
-    await setPresentationPolicy(w, 'Hide on submit');
+    await setPresentationPolicy(w, 'Collapse on submit');
     await submitIn(w, second);
     await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
-    await expect(notice(w)).toContainText(`${second} was hidden because “Hide on submit” is on.`);
+    await expect(notice(w)).toContainText(`${second} was collapsed because “Collapse on submit” is on.`);
 
     // BRING IT BACK: the card returns to the slot it left, the session is
     // still running, and the setting is untouched
@@ -214,14 +215,14 @@ test.describe('presentation policy (E9-06)', () => {
     await expect(tabs(w)).toHaveCount(3, { timeout: 15_000 });
     await inOrder();
     await expect(notice(w)).toHaveText('');
-    await expect(policyChip(w)).toContainText('Hide on submit');
+    await expect(policyChip(w)).toContainText('Collapse on submit');
     expect(await liveCount(w)).toBe(3);
 
     // STOP DOING THIS: the card comes back AND the setting that sent it away
     // is off, at the level that decided (here, the global one)
     await submitIn(w, third);
     await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
-    await expect(notice(w)).toContainText(`${third} was hidden`);
+    await expect(notice(w)).toContainText(`${third} was collapsed`);
     await notice(w).getByRole('button', { name: 'Stop doing this' }).click();
     await expect(tabs(w)).toHaveCount(3, { timeout: 15_000 });
     await inOrder();
@@ -245,10 +246,10 @@ test.describe('presentation policy (E9-06)', () => {
     const third = await addSession(a);
     await expect(tabs(w)).toHaveCount(3);
 
-    await setPresentationPolicy(w, 'Hide on submit');
+    await setPresentationPolicy(w, 'Collapse on submit');
     await submitIn(w, second);
     await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
-    await expect(notice(w)).toContainText(`${second} was hidden`);
+    await expect(notice(w)).toContainText(`${second} was collapsed`);
 
     // BY KEYBOARD, because that is the case that can go wrong: the strip
     // unmounts under the focused button, and focus must land on a card and not
@@ -258,7 +259,7 @@ test.describe('presentation policy (E9-06)', () => {
     await expect(notice(w)).toHaveText('');
     expect(await w.evaluate(() => document.activeElement?.tagName)).not.toBe('BODY');
     // the setting is untouched and the card stays away
-    await expect(policyChip(w)).toContainText('Hide on submit');
+    await expect(policyChip(w)).toContainText('Collapse on submit');
     await expect(tabs(w)).toHaveCount(2);
 
     // ...and the next card that goes, goes quietly
@@ -267,24 +268,31 @@ test.describe('presentation policy (E9-06)', () => {
     await expect(notice(w)).toHaveText('');
   });
 
-  test('auto-hide removes the card and still honours the reveal contract', async () => {
+  test('the chip has two states, and a collapsed card comes back for a permission', async () => {
+    // #1276: auto-hide is gone. The chip used to cycle through three states,
+    // and two stray clicks left the owner on "Hide on submit" for days. It
+    // now goes Keep visible -> Collapse on submit -> Keep visible.
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     const first = path.basename(folder);
     await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
+    await expect(policyChip(w)).toContainText('Keep visible');
+    await policyChip(w).click();
+    await expect(policyChip(w)).toContainText('Collapse on submit');
+    await policyChip(w).click();
+    await expect(policyChip(w)).toContainText('Keep visible');
+
     const second = await addSession(a);
     const third = await addSession(a);
     await expect(tabs(w)).toHaveCount(3);
 
-    await setPresentationPolicy(w, 'Hide on submit');
+    await setPresentationPolicy(w, 'Collapse on submit');
     await submitIn(w, second);
 
-    // hidden means hidden: no card, and the rung says so by name. (The
-    // difference from collapsed used to be "no strip row"; the list marks
-    // both the same way now, so the rung is asked for.)
+    // collapsed, never hidden: no rung a submit can reach is `hidden` any more
     await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
-    await expect.poll(() => rungOf(w, second)).toBe('hidden');
+    await expect.poll(() => rungOf(w, second)).toBe('collapsed');
     await expect(row(w, second)).toBeVisible();
 
     // stand somewhere else, so a reveal that stole focus would be obvious
@@ -326,8 +334,8 @@ test.describe('presentation policy (E9-06)', () => {
     await expect(row(w, member)).toBeVisible({ timeout: 25_000 });
     await expect(tabs(w)).toHaveCount(2);
 
-    // globally: vanish on submit. For this group: don't.
-    await setPresentationPolicy(w, 'Hide on submit');
+    // globally: fold away on submit. For this group: don't.
+    await setPresentationPolicy(w, 'Collapse on submit');
     await w.locator('[data-group-policy]').click(); // undefined -> keep visible
     await expect(w.locator('[data-group-policy]')).toHaveAttribute(
       'title',
@@ -342,7 +350,7 @@ test.describe('presentation policy (E9-06)', () => {
     // ...and only for its members: the ungrouped session still follows the global
     await submitIn(w, loose);
     await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
-    await expect.poll(() => rungOf(w, loose)).toBe('hidden'); // hidden, as the global says
+    await expect.poll(() => rungOf(w, loose)).toBe('collapsed'); // as the global says
   });
 
   test('a per-session override beats the global, and both survive a relaunch', async () => {
@@ -359,7 +367,7 @@ test.describe('presentation policy (E9-06)', () => {
     // opt-ins, so both are real records in the blob — which is the half of this
     // test that a default-valued global would not exercise.
     await setPresentationPolicy(w, 'Collapse on submit');
-    await setSessionPolicy(w, second, 'auto-hide');
+    await setSessionPolicy(w, second, 'always-visible');
 
     // the neighbour follows the global
     await submitIn(w, third);
@@ -367,12 +375,17 @@ test.describe('presentation policy (E9-06)', () => {
     await expect(stripRow(w, third)).toBeVisible();
     await expect.poll(() => rungOf(w, third)).toBe('collapsed');
 
-    // the overridden one does not — it is HIDDEN, not collapsed
+    // the overridden one does not — it stays a card
     await submitIn(w, second);
-    await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
-    await expect.poll(() => rungOf(w, second)).toBe('hidden'); // auto-hide, not auto-collapse
-    await expect(row(w, second)).toBeVisible();
-    await expect(tabs(w)).toContainText(first); // the untouched one is still a card
+    await expectSubmitLanded(w);
+    await w.waitForTimeout(1000);
+    await expect(tabs(w)).toHaveCount(2);
+    expect(await rungOf(w, second)).toBe('expanded');
+    // the untouched one and the overridden one are both still cards
+    expect(await tabs(w).allInnerTexts()).toEqual([
+      expect.stringContaining(first),
+      expect.stringContaining(second),
+    ]);
 
     // every command still names it, because §5.8's invariant is that hiding
     // chrome never removes capability
@@ -398,15 +411,14 @@ test.describe('presentation policy (E9-06)', () => {
     // the setting is in the ui blob, which is where §5.25 says it lives
     const ui = persistedUi(readWorkspaceFile(home));
     expect(ui.presentationPolicy?.global).toBe('auto-collapse');
-    expect(ui.presentationPolicy?.cards?.[overridden]).toBe('auto-hide');
+    expect(ui.presentationPolicy?.cards?.[overridden]).toBe('always-visible');
 
     // ...and it comes back saying the same thing
     a = await launchApp({ home });
     await expect(policyChip(a.window)).toContainText('Collapse on submit', { timeout: 25_000 });
-    // its card was hidden when the app closed; going to it brings it back,
-    // and its own menu says what it was told
+    // going to its card, its own menu says what it was told
     await row(a.window, second).click();
     await expect(a.window.locator('.dv-active-tab')).toContainText(second, { timeout: 15_000 });
-    expect(await readOnFrontCard(a.window, 'card-policy')).toBe('auto-hide');
+    expect(await readOnFrontCard(a.window, 'card-policy')).toBe('always-visible');
   });
 });

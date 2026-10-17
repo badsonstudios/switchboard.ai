@@ -931,9 +931,9 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
     // one question — three separate walks of the precedence chain is how two of
     // them end up wrong
     store.setSessions([session('card-A', { groupId: 'g1' }), session('card-B')]);
-    store.setPolicies(withGroup(withGlobal(DEFAULT_BOOK, 'auto-hide'), 'g1', 'always-visible'));
+    store.setPolicies(withGroup(withGlobal(DEFAULT_BOOK, 'auto-collapse'), 'g1', 'always-visible'));
     expect(store.policyFor('card-A')).toBe('always-visible');
-    expect(store.policyFor('card-B')).toBe('auto-hide');
+    expect(store.policyFor('card-B')).toBe('auto-collapse');
   });
 
   it('a per-session override beats the group and the global (the done-when)', () => {
@@ -942,10 +942,10 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
       withCard(
         withGroup(withGlobal(DEFAULT_BOOK, 'always-visible'), 'g1', 'always-visible'),
         'card-A',
-        'auto-hide'
+        'auto-collapse'
       )
     );
-    expect(store.policyFor('card-A')).toBe('auto-hide');
+    expect(store.policyFor('card-A')).toBe('auto-collapse');
   });
 
   it('a change to the setting is LOGGED, with the surface that made it (#1210)', () => {
@@ -953,9 +953,9 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
     // turned that on, or when
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
-      store.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-hide'), 'title bar chip');
+      store.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'), 'title bar chip');
       expect(log).toHaveBeenCalledWith(
-        '[policy] on submit, global: always-visible → auto-hide (title bar chip)'
+        '[policy] on submit, global: always-visible → auto-collapse (title bar chip)'
       );
       // the same book again is not a change, and says nothing
       log.mockClear();
@@ -968,12 +968,12 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
 
   it('turnPolicyOffFor acts at the level that decided, through the group lookup', () => {
     store.setSessions([session('card-A', { groupId: 'g1' }), session('card-B')]);
-    store.setPolicies(withGroup(withGlobal(DEFAULT_BOOK, 'auto-hide'), 'g1', 'auto-collapse'));
+    store.setPolicies(withGroup(withGlobal(DEFAULT_BOOK, 'auto-collapse'), 'g1', 'auto-collapse'));
     expect(store.policyLevelFor('card-A')).toBe('group');
     expect(store.policyLevelFor('card-B')).toBe('global');
     store.turnPolicyOffFor('card-A', 'submit notice');
     expect(store.policyFor('card-A')).toBe('always-visible');
-    expect(store.policyFor('card-B')).toBe('auto-hide');
+    expect(store.policyFor('card-B')).toBe('auto-collapse');
   });
 
   it('an unknown card gets the global — never a throw', () => {
@@ -982,14 +982,14 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
   });
 
   it('init seeds the book without writing it back', () => {
-    store.initPolicies(withGlobal(DEFAULT_BOOK, 'auto-hide'));
-    expect(store.getPolicies().global).toBe('auto-hide');
+    store.initPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
+    expect(store.getPolicies().global).toBe('auto-collapse');
     expect(persisted).toEqual([]); // it just READ the blob
   });
 
   it('persists on change, and writes null once nothing differs from the default', () => {
-    store.setPolicies(withCard(DEFAULT_BOOK, 'card-A', 'auto-hide'));
-    expect(persisted.at(-1)).toEqual({ cards: { 'card-A': 'auto-hide' } });
+    store.setPolicies(withCard(DEFAULT_BOOK, 'card-A', 'auto-collapse'));
+    expect(persisted.at(-1)).toEqual({ cards: { 'card-A': 'auto-collapse' } });
     store.setPolicies(withCard(store.getPolicies(), 'card-A', undefined));
     // null means "forget the key" — an untouched workspace must not keep a
     // settings record it no longer needs
@@ -997,7 +997,7 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
   });
 
   it('the same book twice is not a write and not a re-render', () => {
-    const book = withGlobal(DEFAULT_BOOK, 'auto-hide');
+    const book = withGlobal(DEFAULT_BOOK, 'auto-collapse');
     store.setPolicies(book);
     let notifications = 0;
     store.subscribe(() => notifications++);
@@ -1008,7 +1008,7 @@ describe('SessionStore — presentation policy (P2-E9-06)', () => {
 
   it('prunes overrides for cards and groups that are gone', () => {
     store.setPolicies(
-      withGroup(withCard(DEFAULT_BOOK, 'card-A', 'auto-hide'), 'g1', 'always-visible')
+      withGroup(withCard(DEFAULT_BOOK, 'card-A', 'auto-collapse'), 'g1', 'always-visible')
     );
     store.prunePolicies(['card-B'], ['g2']);
     expect(store.getPolicies().cards).toEqual({});

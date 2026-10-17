@@ -3,6 +3,25 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🗑️ 2026-10-17 — "HIDE ON SUBMIT" REMOVED (#1276), branch `feature/1276-remove-auto-hide`
+>
+> The owner hit #1276 again on a brand-new Codex session: switch to Codex,
+> type, Enter, card gone (still in the list). The log had it to the
+> millisecond: `[ladder] … expanded → hidden (submit policy)`, 3 ms after
+> `prompt-sent`, and his `workspace.json` global policy was still
+> `auto-hide`. Asked what auto-hide was for and told, he said: *"Let's get
+> rid of that feature all together. We do not want it."* So the
+> presentation policy is now `always-visible | auto-collapse`. A stored
+> `auto-hide` loads as `always-visible` (not auto-collapse), no submit can
+> reach the `hidden` rung, and the chip has two states. Manual hide
+> (`session.hide`) is untouched. DESIGN §5.8 is amended, the manual (07, 10, 02)
+> and the CHANGELOG's 0.8.124 section say so, and the dogfood tracker has a
+> RE-TEST row. **Not released:** it ships with 0.8.124. **Note for #1277:**
+> on the same afternoon, three permission holds in a session the owner was
+> away from each timed out at 300 s and were denied. Those were this
+> session's own log reads. Unrelated to the hide, but logged on #1276 for
+> the #1277 work.
+>
 > # ✅ RELEASED: v0.8.123, 2026-10-17 (PR #1324) — ALL OF E40 IS IN IT
 >
 > The owner, after the run's report: *"If there's nothing else to work on,

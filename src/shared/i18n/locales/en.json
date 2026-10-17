@@ -1397,19 +1397,16 @@
     },
     "policy": {
       "always-visible": "On submit: keep every session visible",
-      "auto-collapse": "On submit: collapse the session",
-      "auto-hide": "On submit: hide the session"
+      "auto-collapse": "On submit: collapse the session"
     },
     "sessionPolicy": {
       "always-visible": "This session on submit: keep it visible",
       "auto-collapse": "This session on submit: collapse it",
-      "auto-hide": "This session on submit: hide it",
       "default": "This session on submit: follow the default"
     },
     "groupPolicy": {
       "always-visible": "This session's group on submit: keep cards visible",
       "auto-collapse": "This session's group on submit: collapse its cards",
-      "auto-hide": "This session's group on submit: hide cards",
       "default": "This session's group on submit: follow the default"
     },
     "checkForUpdates": "Check for updates…",
@@ -1479,7 +1476,6 @@
   "policy": {
     "always-visible": "Keep visible",
     "auto-collapse": "Collapse on submit",
-    "auto-hide": "Hide on submit",
     "chip": "⬍ {policy}",
     "chipHint": "What happens to a session card when you submit a prompt: {policy}. Click to change.",
     "groupDefault": "Follow the default"
@@ -1514,11 +1510,6 @@
       "global": "{name} was collapsed because “{setting}” is on. It is still running, and it is in the Sessions list.",
       "group": "{name} was collapsed because “{setting}” is on for its group. It is still running, and it is in the Sessions list.",
       "card": "{name} was collapsed because “{setting}” is on for this session. It is still running, and it is in the Sessions list."
-    },
-    "hidden": {
-      "global": "{name} was hidden because “{setting}” is on. It is still running, and it is in the Sessions list.",
-      "group": "{name} was hidden because “{setting}” is on for its group. It is still running, and it is in the Sessions list.",
-      "card": "{name} was hidden because “{setting}” is on for this session. It is still running, and it is in the Sessions list."
     },
     "restore": "Bring it back",
     "off": "Stop doing this",

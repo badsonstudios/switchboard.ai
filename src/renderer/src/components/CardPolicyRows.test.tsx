@@ -90,7 +90,6 @@ describe('"On submit", for this one session (issue 1168)', () => {
       'Follow the default (Keep visible)',
       'Keep visible',
       'Collapse on submit',
-      'Hide on submit',
     ]);
   });
 
@@ -102,10 +101,10 @@ describe('"On submit", for this one session (issue 1168)', () => {
 
   it('a choice is stored for THIS session, and shown as the choice in force', async () => {
     const host = await mount();
-    await choose(select(host, 'card-policy'), 'auto-hide');
-    expect(cardOverride(sessionStore.getPolicies(), 'a')).toBe('auto-hide');
+    await choose(select(host, 'card-policy'), 'auto-collapse');
+    expect(cardOverride(sessionStore.getPolicies(), 'a')).toBe('auto-collapse');
     expect(cardOverride(sessionStore.getPolicies(), 'b')).toBeUndefined();
-    expect(select(host, 'card-policy').value).toBe('auto-hide');
+    expect(select(host, 'card-policy').value).toBe('auto-collapse');
   });
 
   it('"follow the default" stores nothing, so a later change to the default is followed', async () => {
@@ -114,10 +113,10 @@ describe('"On submit", for this one session (issue 1168)', () => {
     await choose(select(host, 'card-policy'), 'default');
     expect(cardOverride(sessionStore.getPolicies(), 'a')).toBeUndefined();
     await act(async () => {
-      sessionStore.setPolicies(withGlobal(sessionStore.getPolicies(), 'auto-hide'));
+      sessionStore.setPolicies(withGlobal(sessionStore.getPolicies(), 'auto-collapse'));
     });
-    expect(resolvePolicy(sessionStore.getPolicies(), 'a', undefined)).toBe('auto-hide');
-    expect(optionsOf(select(host, 'card-policy'))[0]).toBe('Follow the default (Hide on submit)');
+    expect(resolvePolicy(sessionStore.getPolicies(), 'a', undefined)).toBe('auto-collapse');
+    expect(optionsOf(select(host, 'card-policy'))[0]).toBe('Follow the default (Collapse on submit)');
   });
 
   it('for a session in a group, the default it names is the GROUP’s when the group has one', async () => {

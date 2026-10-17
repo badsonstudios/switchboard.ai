@@ -483,7 +483,7 @@ A pinned session:
   than lifting it out of it. With no groups at all there's no caveat: it's on
   screen wherever you scroll to.
 - **is never minimized behind your back.** If you've turned on
-  [auto-collapse or auto-hide](07-workspace.md), a pinned session ignores it
+  [Collapse on submit](07-workspace.md), a pinned session ignores it
   and stays put when you send a prompt.
 - **survives Close all sessions.** See below.
 

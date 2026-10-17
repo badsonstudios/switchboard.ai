@@ -67,7 +67,7 @@ opening a window:
 |---|---|
 | **◧ left / ⬒ top** | Where your sessions are listed: down the left, or across the top. The same choice as **Appearance ▸ Sessions list**. See [Listing sessions across the top instead](07-workspace.md#listing-sessions-across-the-top-instead) |
 | **🛡 ask / plan / auto-edit / full-auto** | The autonomy mode *new* sessions start at — click to cycle |
-| **⬍ Keep visible / Collapse on submit / Hide on submit** | What happens to a session's card when you send it a prompt — click to cycle. See below |
+| **⬍ Keep visible / Collapse on submit** | What happens to a session's card when you send it a prompt — click to switch. See below |
 | **Five small pictures of split boxes** | Arrange the open sessions in that shape with one click, or make the current arrangement even. See [Arranging cards with one click](07-workspace.md#arranging-cards-with-one-click) |
 | **▦ Focus / Queue** | Only shown while one of those layouts is on (or a session is maximized), in place of the pictures. Click to step to the next layout |
 
@@ -115,10 +115,11 @@ individual colors.
 
 The **⬍** chip sets this for every session at once. The default, **Keep
 visible**, does nothing at all: the card stays put and you watch the turn come
-in. The other two are opt-in — **Collapse on submit** folds the card away
-the moment you send a prompt, **Hide on submit** takes it off the
-workspace entirely, and both bring it back when the session finishes or needs
-you, so the space goes to whatever you're actually looking at.
+in. The other, **Collapse on submit**, is opt-in: it folds the card away the
+moment you send a prompt and brings it back when the session finishes or needs
+you, so the space goes to whatever you're actually looking at. (A third
+setting, *Hide on submit*, was removed in 0.8.124; if you had it on, it now
+behaves as **Keep visible**.)
 
 Individual sessions and groups can disagree with the chip: open the **⋯** menu on
 a session's card, or use the **⬍** button on a group header. The full story,

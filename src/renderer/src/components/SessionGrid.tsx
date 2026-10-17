@@ -5330,7 +5330,7 @@ function showIfPaneIsBlank(panel: IDockviewPanel): void {
  *
  * Returns the rung the card was sent to, or null when it stayed.
  */
-export function applySubmitPolicy(api: DockviewApi | null, cardId: string): Ladder | null {
+export function applySubmitPolicy(api: DockviewApi | null, cardId: string): 'collapsed' | null {
   if (!api || !cardId || sessionStore.isTearingDown()) return null;
   const p = sessionStore.getPresentation(cardId);
   const rung = submitTarget({
@@ -6624,7 +6624,7 @@ export function SessionGrid(props: {
         // in left the screen with nothing to explain it; the setting had been
         // on for hours. The strip names the session and the setting, and
         // carries the two things he wanted: the card back, and this stopped.
-        if (rung === 'collapsed' || rung === 'hidden') {
+        if (rung === 'collapsed') {
           setSubmitNotice(submitNoticeMuted() ? null : { cardId, rung });
         }
       }, 0);

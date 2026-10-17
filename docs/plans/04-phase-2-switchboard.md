@@ -597,6 +597,8 @@ Work items:
   global; e2e.
   **Amended 2026-08-04 (Dan, reviewing PR #198): the shipped default is
   `always-visible`; auto-collapse and auto-hide are opt-in. See DESIGN §5.8.**
+  **Amended 2026-10-17 (Dan, #1276): auto-hide is removed. The setting is
+  `always-visible | auto-collapse`. See DESIGN §5.8.**
 - **P2-E9-07 · Layout modes grid · focus · queue + maximize toggle — M
   (§5.8).** ***(depends: P2-E15-08 / #105 — hard block.* Modes drive every card at
   once from the palette/queue; panel-local state can't be driven from outside

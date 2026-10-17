@@ -32,10 +32,11 @@ import { useTranslation } from 'react-i18next';
 import { hasPanel } from '../lib/ladder';
 import { sessionStore } from '../store/session-store';
 
-/** a card the submit policy just put away, and the rung it went to */
+/** a card the submit policy just put away, and the rung it went to — only
+ *  ever `collapsed` since auto-hide was removed (#1276) */
 export interface SubmitNotice {
   cardId: string;
-  rung: 'collapsed' | 'hidden';
+  rung: 'collapsed';
 }
 
 let muted = false;
@@ -122,7 +123,7 @@ export function SubmitPolicyNotice(props: {
         {shown
           ? t(`submitNotice.${notice.rung}.${level}`, {
               name: title,
-              setting: t(`policy.${notice.rung === 'hidden' ? 'auto-hide' : 'auto-collapse'}`),
+              setting: t('policy.auto-collapse'),
             })
           : ''}
       </span>
