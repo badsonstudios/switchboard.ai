@@ -22,16 +22,34 @@
 > and are listed under "Owner's queue" below; the run never merges them.
 >
 > **Active workers (issue → worktree → branch):**
-> - #1293 AI icon + status ring (screen 1) → `sb-wt-1` → `feature/1293-ai-icon` — dispatched 2026-10-16 from #1308's head `17579415`; told #1308 merged, rebases onto `291d4fba`. User-facing → owner's queue.
-> - #1294 the AI switch chip + switching back resumes (screen 2) → `sb-wt-2` → `feature/1294-ai-switch` — dispatched 2026-10-16 from #1307's head `ed7e9805`; will rebase onto #1307's next head. User-facing → owner's queue. **#1295 (handoff briefing + divider) is dispatched off its PR when it exists.**
-> - #1290 follow-up #2 (wire Codex's `detect` capability from #1291's handoff; rebase onto `291d4fba`) → **now in `sb-wt-3`** (its first worktree went to #1293) → `feature/1290-codex-provider` → amends PR #1307; #1294 and #1296 rebase onto the new head.
+> - #1294 the AI switch chip + switching back resumes (screen 2) → `sb-wt-2` → `feature/1294-ai-switch` — dispatched 2026-10-16 from #1307's head `ed7e9805`; told to rebase onto #1307's FINAL head `c605ae93`. User-facing → owner's queue. **#1295 (handoff briefing + divider) is dispatched off its PR when it exists; it is the last item.**
+> - #1296's rebase of PR #1309 onto #1307's final head `c605ae93` → `sb-wt-3` (its first worktree went to #1294); also swapping its temporary login reader for `ais:list()` where small.
+> - `sb-wt-1`: free (#1293 finished).
 >
-> **In CI, awaiting merge:** **#1310** (this file's run block; docs). The
-> queued user-facing PRs below each carry their own green CI run but go
-> BEHIND main at every merge; they are not bumped one by one — **the train
-> PR at the end re-verifies them once.**
+> **In CI, awaiting merge:** nothing internal is left. The queued
+> user-facing PRs below each carry their own green CI run but go BEHIND
+> main at every merge; they are not bumped one by one — **the train PR at
+> the end re-verifies them once.**
 >
 > **Owner's queue (user-facing, awaiting his review; the run never merges these):**
+> - **#1312 — #1293 which AI a session is on, at a glance** (head `158aa440`
+>   on main `291d4fba`; CI green). `components/AiBadge.tsx`
+>   (`{providerId?, status, needsYou, spin?, decorative?}`), `AiIcon.tsx`,
+>   `lib/ais-store.ts`. The AI's icon replaces the status mark on rail rows
+>   and strip pills and the accent dot on tabs, and a new mark starts each
+>   card-header variant; the ring is painted with the per-theme status ink,
+>   72 new drift cases check 3:1 in all four themes; the text status label
+>   stays. The status bar lists every AI found with its version. New
+>   `e2e/ai-badge.spec.ts` (fake Claude + fake ACP side by side). Specs
+>   changed with reasons: `working-look.spec` (ring at rest is 16 px, so the
+>   bigger ring is 20 not 17), `tabs.spec` (the #312 seven-dot-colour check
+>   became "all seven tabs carry an AI mark"). The fake Claude provider now
+>   reports itself installed (0.0.0). Unit 12,687; e2e 512 + the
+>   `session-history` flake + the `tabs` check it rightly changed. Manual
+>   pages updated (screenshots still show the dot); CHANGELOG `Changed`;
+>   dogfood row. **For him:** an inactive tab with no language badge now
+>   shows no session colour at all (the dot carried it); the strip pill does
+>   not name its AI to a screen reader.
 > - **#1311 — #1292 Settings → AIs tab + Add-an-AI dialog** (head `cb993a33`
 >   on `17579415`, bumped onto main). The AIs tab: default-AI picker, "Found on
 >   this computer" with version and login state and a **Log in** that runs the
@@ -61,7 +79,11 @@
 >   Unit 12,548; e2e 514/514. Manual `20-dispatch.md` "Run it on"; dogfood
 >   row. Behaviour change for him to confirm: dispatching FROM a Codex session
 >   now stays on Codex (it used to start on the default AI).
-> - **#1307 — #1290 Codex provider** (head `ed7e9805`, on main `2de78924`).
+> - **#1307 — #1290 Codex provider** (FINAL head `c605ae93` on main
+>   `291d4fba`; follow-up #2 wired Codex's own `detect`: installed means the
+>   `codex` CLI is on PATH, not merely `npx`; version + sign-in read
+>   together; honours the catalog's 5-second cut; regression test "not
+>   installed when only npx exists"; unit 12,641; e2e 513/513).
 >   Codex registered when `npx` is on PATH (PATH scan only; Claude stays the
 >   default); adapter `@agentclientprotocol/codex-acp@2.2.2` pinned, bundled
 >   Codex 0.160.1; `modeMap`: ask + auto-edit → `workspace-write`, plan →
