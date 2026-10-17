@@ -26,8 +26,8 @@ const book = (patch: Partial<PolicyBook> = {}): PolicyBook => ({ ...DEFAULT_BOOK
 describe('presentation policy (E9-06, §5.8)', () => {
   it('defaults to always-visible — nothing moves unless the user opted in', () => {
     // §5.8 as amended 2026-08-04: a new user must be able to watch their first
-    // turn stream in the card they submitted from. auto-collapse and auto-hide
-    // are one click of the chip away.
+    // turn stream in the card they submitted from. auto-collapse is one click
+    // of the chip away.
     expect(DEFAULT_POLICY).toBe('always-visible');
     expect(resolvePolicy(DEFAULT_BOOK, 'card-A')).toBe('always-visible');
     // ...and the default is a no-op at the one place it matters
@@ -46,24 +46,24 @@ describe('presentation policy (E9-06, §5.8)', () => {
 
   describe('precedence — session beats group beats global (the done-when)', () => {
     it('the global applies when nothing overrides it', () => {
-      expect(resolvePolicy(book({ global: 'auto-hide' }), 'card-A', 'g1')).toBe('auto-hide');
+      expect(resolvePolicy(book({ global: 'auto-collapse' }), 'card-A', 'g1')).toBe('auto-collapse');
     });
 
     it('a group override beats the global', () => {
-      const b = book({ global: 'auto-hide', groups: { g1: 'always-visible' } });
+      const b = book({ global: 'auto-collapse', groups: { g1: 'always-visible' } });
       expect(resolvePolicy(b, 'card-A', 'g1')).toBe('always-visible');
       // ...and only for that group's members
-      expect(resolvePolicy(b, 'card-B', 'g2')).toBe('auto-hide');
-      expect(resolvePolicy(b, 'card-C', null)).toBe('auto-hide');
+      expect(resolvePolicy(b, 'card-B', 'g2')).toBe('auto-collapse');
+      expect(resolvePolicy(b, 'card-C', null)).toBe('auto-collapse');
     });
 
     it('a session override beats BOTH', () => {
       const b = book({
         global: 'always-visible',
         groups: { g1: 'always-visible' },
-        cards: { 'card-A': 'auto-hide' },
+        cards: { 'card-A': 'auto-collapse' },
       });
-      expect(resolvePolicy(b, 'card-A', 'g1')).toBe('auto-hide');
+      expect(resolvePolicy(b, 'card-A', 'g1')).toBe('auto-collapse');
       expect(resolvePolicy(b, 'card-B', 'g1')).toBe('always-visible');
     });
 
@@ -88,9 +88,17 @@ describe('presentation policy (E9-06, §5.8)', () => {
     /** the card nothing is wrong with: expanded, docked, not blocked */
     const base = { ladder: 'expanded' as const, poppedOut: false, needsHuman: false };
 
-    it('auto-collapse collapses and auto-hide hides', () => {
+    it('auto-collapse collapses', () => {
       expect(at('auto-collapse')).toBe('collapsed');
-      expect(at('auto-hide')).toBe('hidden');
+    });
+
+    it('NOTHING sends a card to hidden on submit — auto-hide is gone (#1276)', () => {
+      // the owner: "We do not want it." Even a stale value smuggled in from an
+      // old blob must not resurrect it: anything that is not auto-collapse
+      // stays put.
+      expect(POLICY_ORDER).toEqual(['always-visible', 'auto-collapse']);
+      expect(at('auto-hide' as never)).toBeNull();
+      for (const policy of POLICY_ORDER) expect(at(policy)).not.toBe('hidden');
     });
 
     it('always-visible does nothing at all', () => {
@@ -102,7 +110,6 @@ describe('presentation policy (E9-06, §5.8)', () => {
       // to hidden would be a second demotion nobody asked for, and would remove
       // the one row that says where it went
       for (const rung of ['collapsed', 'tabbed', 'hidden'] as const) {
-        expect(at('auto-hide', rung)).toBeNull();
         expect(at('auto-collapse', rung)).toBeNull();
       }
     });
@@ -112,7 +119,6 @@ describe('presentation policy (E9-06, §5.8)', () => {
       // another monitor. Manual collapse still works; this rule is about what
       // happens UNASKED.
       expect(at('auto-collapse', 'expanded', true)).toBeNull();
-      expect(at('auto-hide', 'expanded', true)).toBeNull();
     });
 
     it('a session ALREADY waiting on a human is left alone', () => {
@@ -122,7 +128,6 @@ describe('presentation policy (E9-06, §5.8)', () => {
       // id, the hold already spent its own, and a CLI parked on a hold mints no
       // more. The one card that needs a human is the one card this must keep.
       expect(at('auto-collapse', 'expanded', false, true)).toBeNull();
-      expect(at('auto-hide', 'expanded', false, true)).toBeNull();
       // ...and it is the ONLY thing that changed: the same card, not blocked,
       // still folds away
       expect(at('auto-collapse', 'expanded', false, false)).toBe('collapsed');
@@ -133,7 +138,6 @@ describe('presentation policy (E9-06, §5.8)', () => {
       // This is the one thing in the app that moves a card down the ladder
       // without the user asking for THAT card to move.
       expect(submitTarget({ ...base, policy: 'auto-collapse', pinned: true })).toBeNull();
-      expect(submitTarget({ ...base, policy: 'auto-hide', pinned: true })).toBeNull();
       // ...and only that: the same card unpinned still folds away, and an
       // omitted flag means unpinned (every existing caller is unmoved)
       expect(submitTarget({ ...base, policy: 'auto-collapse', pinned: false })).toBe('collapsed');
@@ -142,7 +146,7 @@ describe('presentation policy (E9-06, §5.8)', () => {
   });
 
   describe('cycling', () => {
-    it('the global cycles through three states and wraps', () => {
+    it('the global cycles through two states and wraps', () => {
       let p = POLICY_ORDER[0];
       const seen = [p];
       for (let i = 0; i < POLICY_ORDER.length; i++) {
@@ -152,7 +156,7 @@ describe('presentation policy (E9-06, §5.8)', () => {
       expect(seen).toEqual([...POLICY_ORDER, POLICY_ORDER[0]]);
     });
 
-    it('an override cycles through FOUR states — "follow the default" is one of them', () => {
+    it('an override cycles through THREE states — "follow the default" is one of them', () => {
       // without it, the only way out of an override would be picking the value
       // the default happens to have today
       const walk: (string | undefined)[] = [undefined];
@@ -168,8 +172,8 @@ describe('presentation policy (E9-06, §5.8)', () => {
 
   describe('edits', () => {
     it('setting an override records it; clearing it REMOVES the record', () => {
-      const one = withCard(DEFAULT_BOOK, 'card-A', 'auto-hide');
-      expect(cardOverride(one, 'card-A')).toBe('auto-hide');
+      const one = withCard(DEFAULT_BOOK, 'card-A', 'auto-collapse');
+      expect(cardOverride(one, 'card-A')).toBe('auto-collapse');
       const cleared = withCard(one, 'card-A', undefined);
       expect(cardOverride(cleared, 'card-A')).toBeUndefined();
       // absence, not a fourth stored value — so a later change to the global
@@ -178,13 +182,13 @@ describe('presentation policy (E9-06, §5.8)', () => {
     });
 
     it('group overrides work the same way and do not touch the cards table', () => {
-      const b = withGroup(withCard(DEFAULT_BOOK, 'card-A', 'auto-hide'), 'g1', 'always-visible');
+      const b = withGroup(withCard(DEFAULT_BOOK, 'card-A', 'auto-collapse'), 'g1', 'always-visible');
       expect(groupOverride(b, 'g1')).toBe('always-visible');
-      expect(cardOverride(b, 'card-A')).toBe('auto-hide');
+      expect(cardOverride(b, 'card-A')).toBe('auto-collapse');
     });
 
     it('every edit returns a NEW book — identity is the store change signal', () => {
-      const b = withGlobal(DEFAULT_BOOK, 'auto-hide');
+      const b = withGlobal(DEFAULT_BOOK, 'auto-collapse');
       expect(b).not.toBe(DEFAULT_BOOK);
       expect(DEFAULT_BOOK.global).toBe('always-visible'); // the original is untouched
     });
@@ -193,8 +197,8 @@ describe('presentation policy (E9-06, §5.8)', () => {
   describe('pruning', () => {
     it('drops overrides for cards and groups that are gone', () => {
       const b = book({
-        cards: { 'card-A': 'auto-hide', 'card-B': 'always-visible' },
-        groups: { g1: 'auto-hide', g2: 'always-visible' },
+        cards: { 'card-A': 'auto-collapse', 'card-B': 'always-visible' },
+        groups: { g1: 'auto-collapse', g2: 'always-visible' },
       });
       const next = prunePolicies(b, ['card-A'], ['g2'])!;
       expect(Object.keys(next.cards)).toEqual(['card-A']);
@@ -203,16 +207,16 @@ describe('presentation policy (E9-06, §5.8)', () => {
     });
 
     it('returns null when there is nothing to drop — no write, no re-render', () => {
-      const b = book({ cards: { 'card-A': 'auto-hide' } });
+      const b = book({ cards: { 'card-A': 'auto-collapse' } });
       expect(prunePolicies(b, ['card-A'], [])).toBeNull();
     });
   });
 
   describe('who decided, and turning it off there (#1210)', () => {
     const b = book({
-      global: 'auto-hide',
+      global: 'auto-collapse',
       groups: { g1: 'auto-collapse' },
-      cards: { 'card-A': 'auto-hide' },
+      cards: { 'card-A': 'auto-collapse' },
     });
 
     it('policyLevel walks the same precedence resolvePolicy does', () => {
@@ -229,12 +233,12 @@ describe('presentation policy (E9-06, §5.8)', () => {
       const card = withPolicyOff(b, 'card-A', 'g1');
       expect(resolvePolicy(card, 'card-A', 'g1')).toBe('always-visible');
       expect(card.groups).toEqual(b.groups);
-      expect(card.global).toBe('auto-hide');
+      expect(card.global).toBe('auto-collapse');
 
       const group = withPolicyOff(b, 'card-B', 'g1');
       expect(resolvePolicy(group, 'card-B', 'g1')).toBe('always-visible');
       expect(group.cards).toEqual(b.cards);
-      expect(group.global).toBe('auto-hide');
+      expect(group.global).toBe('auto-collapse');
 
       const global = withPolicyOff(b, 'card-C', null);
       expect(global.global).toBe('always-visible');
@@ -256,14 +260,14 @@ describe('presentation policy (E9-06, §5.8)', () => {
     });
 
     it('describePolicyChange says what moved, from what, to what', () => {
-      expect(describePolicyChange(DEFAULT_BOOK, withGlobal(DEFAULT_BOOK, 'auto-hide'))).toEqual([
-        'global: always-visible → auto-hide',
+      expect(describePolicyChange(DEFAULT_BOOK, withGlobal(DEFAULT_BOOK, 'auto-collapse'))).toEqual([
+        'global: always-visible → auto-collapse',
       ]);
       expect(describePolicyChange(b, withCard(b, 'card-A', undefined))).toEqual([
-        'card card-A: auto-hide → follow the default',
+        'card card-A: auto-collapse → follow the default',
       ]);
-      expect(describePolicyChange(b, withGroup(b, 'g2', 'auto-hide'))).toEqual([
-        'group g2: follow the default → auto-hide',
+      expect(describePolicyChange(b, withGroup(b, 'g2', 'auto-collapse'))).toEqual([
+        'group g2: follow the default → auto-collapse',
       ]);
       expect(describePolicyChange(b, b)).toEqual([]);
     });
@@ -272,7 +276,7 @@ describe('presentation policy (E9-06, §5.8)', () => {
   describe('persistence', () => {
     it('round-trips through the blob', () => {
       const b = book({
-        global: 'auto-hide',
+        global: 'auto-collapse',
         groups: { g1: 'always-visible' },
         cards: { 'card-A': 'auto-collapse' },
       });
@@ -281,8 +285,8 @@ describe('presentation policy (E9-06, §5.8)', () => {
     });
 
     it('only writes what differs from the default', () => {
-      expect(persistablePolicies(withCard(DEFAULT_BOOK, 'card-A', 'auto-hide'))).toEqual({
-        cards: { 'card-A': 'auto-hide' },
+      expect(persistablePolicies(withCard(DEFAULT_BOOK, 'card-A', 'auto-collapse'))).toEqual({
+        cards: { 'card-A': 'auto-collapse' },
       });
     });
 
@@ -291,9 +295,27 @@ describe('presentation policy (E9-06, §5.8)', () => {
       expect(loadPolicyBook('nope')).toEqual(DEFAULT_BOOK);
       expect(loadPolicyBook({ cards: 'not-a-table', global: 7 })).toEqual(DEFAULT_BOOK);
       // and a half-valid table keeps the half that is valid
-      expect(loadPolicyBook({ cards: { a: 'auto-hide', b: 'garbage' } }).cards).toEqual({
-        a: 'auto-hide',
+      expect(loadPolicyBook({ cards: { a: 'auto-collapse', b: 'garbage' } }).cards).toEqual({
+        a: 'auto-collapse',
       });
+    });
+
+    it('a saved auto-hide from an older build loads as the default (#1276)', () => {
+      // the owner's workspace.json said `"global": "auto-hide"` when the
+      // option was removed. It must come back as always-visible — NOT as
+      // auto-collapse, which would still move his card on submit — and a
+      // per-session or per-group auto-hide drops out so it follows that default.
+      const old = loadPolicyBook({
+        global: 'auto-hide',
+        groups: { g1: 'auto-hide', g2: 'auto-collapse' },
+        cards: { 'card-A': 'auto-hide' },
+      });
+      expect(old.global).toBe('always-visible');
+      expect(old.groups).toEqual({ g2: 'auto-collapse' });
+      expect(old.cards).toEqual({});
+      expect(resolvePolicy(old, 'card-A', 'g1')).toBe('always-visible');
+      // and the next save writes the stale value away rather than keeping it
+      expect(persistablePolicies(old)).toEqual({ groups: { g2: 'auto-collapse' } });
     });
   });
 });

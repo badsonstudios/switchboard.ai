@@ -1018,7 +1018,7 @@ export async function sessionStatuses(a: LaunchedApp): Promise<Map<string, strin
  * differ by whether the Collapsed strip had a row for the session; that strip
  * is gone, and the Sessions list marks both the same way (a dashed edge:
  * "folded away"). A spec whose point is WHICH of the two a session went to —
- * auto-hide versus auto-collapse, say — asks the app, through the same ui blob
+ * a manual hide versus auto-collapse, say — asks the app, through the same ui blob
  * the relaunch tests read off disk. Poll it: the write is debounced.
  */
 export async function rungOf(w: Page, title: string): Promise<string> {
@@ -1184,7 +1184,7 @@ export async function openEventsDrawer(window: Page): Promise<void> {
  *
  * The DEFAULT is `always-visible` (decision 2026-08-04): submitting a prompt
  * moves nothing, so a spec that submits and then keeps looking at the card needs
- * no setup at all. Opting IN to auto-collapse / auto-hide is what needs a click,
+ * no setup at all. Opting IN to auto-collapse is what needs a click,
  * and `presentation-policy.spec.ts` is where those are asserted.
  */
 export async function setPresentationPolicy(window: Page, label: string): Promise<void> {

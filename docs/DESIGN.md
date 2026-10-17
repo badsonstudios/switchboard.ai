@@ -1403,6 +1403,20 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
   applied to auto-hide, one rung higher. **auto-collapse and auto-hide are
   opt-in**, one click of the titlebar chip away for the many-sessions workflow
   they suit.
+
+  > **auto-hide is REMOVED *(amended 2026-10-17, Dan, #1276)*.** The setting is
+  > now `always-visible | auto-collapse`. Asked what auto-hide was for, then
+  > told, his words were: *"Let's get rid of that feature all together. We do
+  > not want it."* Three dogfood reports traced to it (#1210, and #1276 twice,
+  > the last on a Codex session). Each time the card he had just typed into
+  > left the screen within milliseconds of Enter, and a first prompt was not
+  > exempt. He had never chosen it on purpose: the chip cycled through three
+  > states, so two stray clicks were enough. A stored `auto-hide` now reads as
+  > the default (`always-visible`, not `auto-collapse`, so nothing moves that
+  > he did not ask to move). **No submit can send a card to `hidden`.** The
+  > hidden RUNG is untouched: hiding a session by hand is the user asking,
+  > which is the whole difference. Do not reintroduce a policy that hides
+  > the card being typed into.
 - **Pinning is a protection contract** (research v2: VS Code + IntelliJ pinned-tab
   semantics): a pinned session sorts first in the rail, never scrolls out of view
   under overflow, and is exempt from EVERY bulk operation — bulk-close, idle

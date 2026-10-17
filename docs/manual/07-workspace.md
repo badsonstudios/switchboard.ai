@@ -513,8 +513,8 @@ same size or on the same side as before. Sessions that shared a pane and were
 all put away come back to one pane together, not one each. The pane you are
 working in stays the one in front.
 
-A session that is **already waiting on you** is never put away by *Hide on
-submit* or *Collapse on submit*, even if you send it another prompt.
+A session that is **already waiting on you** is never put away by *Collapse
+on submit*, even if you send it another prompt.
 
 It reappears *without stealing your place*. Whatever you were typing in stays
 focused — the returning card waits for you rather than grabbing the screen. Its
@@ -640,35 +640,36 @@ go look at something else. So switchboard can do that part for you, if you ask
 it to.
 
 **Out of the box it doesn't.** Send a prompt and the card stays exactly where it
-is, so you can watch the turn come in. Turn one of the other two settings on and
-sending a prompt gets that card out of your way by itself:
+is, so you can watch the turn come in. Turn the other setting on and sending a
+prompt gets that card out of your way by itself:
 
 | Setting | When you submit a prompt |
 |---|---|
 | **Keep visible** | nothing happens — the card stays exactly where it is *(default)* |
 | **Collapse on submit** | the card is folded away; its row or pill in the Sessions list gets a dashed edge |
-| **Hide on submit** | the card leaves the workspace entirely |
 
-With either of those on, the session keeps running and **its card comes straight
-back to the spot it left** when it finishes, asks a question, or asks permission
-— the same reappearance described under *Coming back* above.
+With **Collapse on submit** on, the session keeps running and **its card comes
+straight back to the spot it left** when it finishes, asks a question, or asks
+permission — the same reappearance described under *Coming back* above.
 
-**Collapse on submit** and **Hide on submit** both hand the space to the
-sessions you're still looking at. Either way the session leaves the workspace
-and lives only in the Sessions list, with a dashed edge, and in Events — until
-it needs you, at which point it comes back like everything else. The two look
-the same in the list; they differ only in which rung the session is on, so
-`Ctrl+Shift+↑` and `Ctrl+Shift+↓` step from a different place. It suits
-running six or seven agents at once.
+It hands the space to the sessions you're still looking at. The session leaves
+the workspace and lives only in the Sessions list, with a dashed edge, and in
+Events — until it needs you, at which point it comes back like everything else.
+It suits running six or seven agents at once.
 **Keep visible** is the default because watching your first prompt actually run
 matters more than the space it takes.
 
+> **There used to be a third setting, *Hide on submit*.** It was removed in
+> version 0.8.124 because it hid the card you had just typed into, the moment
+> you pressed Enter. If you had it on, switchboard now treats it as **Keep
+> visible**. Hiding a session yourself still works exactly as before.
+
 ### Changing it
 
-- **For everything:** the **⬍** chip in the title bar. Click it to cycle through
-  the three; the label always says which one you're on.
+- **For everything:** the **⬍** chip in the title bar. Click it to switch
+  between the two; the label always says which one you're on.
 - **For one session:** open the **⋯** menu at the top right of that session's
-  card. **On submit** is a drop-down there with all three, plus **Follow the
+  card. **On submit** is a drop-down there with both, plus **Follow the
   default** — which is how you go back to whatever the global setting is,
   including after you change it later. It shows the choice in force. (This
   used to be on the right-click menu of the session's row in the list on the
@@ -687,11 +688,11 @@ beats the global one. All of it is remembered across restarts.
 
 ### When it puts a card away, it tells you
 
-The moment a card is collapsed or hidden because you sent a prompt, a line
-appears above the cards:
+The moment a card is collapsed because you sent a prompt, a line appears above
+the cards:
 
-> *BrainHarbor was hidden because “Hide on submit” is on. It is still running,
-> and it is in the Sessions list.*
+> *BrainHarbor was collapsed because “Collapse on submit” is on. It is still
+> running, and it is in the Sessions list.*
 
 It says which session, which setting, and where the setting comes from (for
 everything, for its group, or for this session). It has three buttons:
@@ -704,10 +705,9 @@ everything, for its group, or for this session). It has three buttons:
 
 The line goes away by itself when the card comes back.
 
-If a card vanished when you pressed Enter and you never asked for that: the
-**⬍** chip in the title bar cycles through the three settings one click at a
-time, so it is easy to change without meaning to. **Stop doing this** puts it
-back.
+If a card folded away when you pressed Enter and you never asked for that: the
+**⬍** chip in the title bar switches the setting with one click, so it is easy
+to change without meaning to. **Stop doing this** puts it back.
 
 ### What it won't do
 
@@ -716,7 +716,9 @@ back.
   closing that window on every prompt would be obnoxious. Collapse it by hand if
   you want to.
 - **It won't push a session further down than it already is.** If a session is
-  already collapsed, submitting from it doesn't then hide it.
+  already collapsed, tabbed or hidden, submitting from it leaves it there.
+- **It never hides a session.** The furthest a prompt can send a card is
+  collapsed.
 - **It won't move a session that's waiting on you.** If a session is holding a
   permission or has asked you a question, its card stays where it is when you
   type at it — the one card that needs you is the one card this never takes

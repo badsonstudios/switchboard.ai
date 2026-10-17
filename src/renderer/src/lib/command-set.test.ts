@@ -556,10 +556,15 @@ describe('seed command set (E9-01)', () => {
     it('the global entries set the global, with no session needed', () => {
       const d = deps();
       const cmds = buildCommands(d);
-      byId(cmds, 'presentation.policy.auto-hide').run(ctxWith([], null));
-      expect(d.setGlobalPolicy).toHaveBeenCalledWith('auto-hide');
+      byId(cmds, 'presentation.policy.auto-collapse').run(ctxWith([], null));
+      expect(d.setGlobalPolicy).toHaveBeenCalledWith('auto-collapse');
       // a workspace-wide preference must not need a focused card
-      expect(byId(cmds, 'presentation.policy.auto-hide').enabled).toBeUndefined();
+      expect(byId(cmds, 'presentation.policy.auto-collapse').enabled).toBeUndefined();
+    });
+
+    it('offers no auto-hide anywhere — the option was removed (#1276)', () => {
+      const ids = buildCommands(deps()).map((c) => c.id);
+      expect(ids.filter((id) => id.includes('auto-hide'))).toEqual([]);
     });
 
     it('the session entries override the ACTIVE card, and "follow the default" clears it', () => {
@@ -574,7 +579,7 @@ describe('seed command set (E9-01)', () => {
 
     it('the session entries are disabled with nothing focused', () => {
       const cmds = buildCommands(deps());
-      for (const id of ['session.policy.auto-hide', 'session.policy.default']) {
+      for (const id of ['session.policy.auto-collapse', 'session.policy.default']) {
         expect(byId(cmds, id).enabled?.(ctxWith(['a'], null))).toBe(false);
         expect(byId(cmds, id).disabledReasonKey).toBeTruthy();
       }
@@ -585,8 +590,8 @@ describe('seed command set (E9-01)', () => {
       // override lives on the rail's group header, and the rail toggles.
       const d = deps();
       const cmds = buildCommands(d);
-      byId(cmds, 'group.policy.auto-hide').run(ctxWith(['a'], 'a', 0, 'g1'));
-      expect(d.setGroupPolicy).toHaveBeenCalledWith('g1', 'auto-hide');
+      byId(cmds, 'group.policy.auto-collapse').run(ctxWith(['a'], 'a', 0, 'g1'));
+      expect(d.setGroupPolicy).toHaveBeenCalledWith('g1', 'auto-collapse');
       byId(cmds, 'group.policy.default').run(ctxWith(['a'], 'a', 0, 'g1'));
       expect(d.setGroupPolicy).toHaveBeenLastCalledWith('g1', undefined);
     });

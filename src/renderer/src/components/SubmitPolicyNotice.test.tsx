@@ -84,11 +84,11 @@ describe('the submit notice (#1210)', () => {
     expect(strip().className).toBe('');
   });
 
-  it('names the session and the setting that hid it', async () => {
-    sessionStore.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-hide'));
-    await show({ cardId: 'a', rung: 'hidden' });
+  it('names the session and the setting that put it away', async () => {
+    sessionStore.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
+    await show({ cardId: 'a', rung: 'collapsed' });
     const said = strip().querySelector('[role="status"]')!.textContent;
-    expect(said).toContain('alpha was hidden because “Hide on submit” is on.');
+    expect(said).toContain('alpha was collapsed because “Collapse on submit” is on.');
     // the buttons are OUTSIDE the live region: it announces the sentence only
     expect(strip().querySelector('[role="status"] button')).toBeNull();
     expect(strip().querySelectorAll('button')).toHaveLength(3);
@@ -99,56 +99,56 @@ describe('the submit notice (#1210)', () => {
     await show({ cardId: 'b', rung: 'collapsed' });
     expect(strip().textContent).toContain('“Collapse on submit” is on for its group');
 
-    sessionStore.setPolicies(withCard(DEFAULT_BOOK, 'b', 'auto-hide'));
-    await show({ cardId: 'b', rung: 'hidden' });
-    expect(strip().textContent).toContain('“Hide on submit” is on for this session');
+    sessionStore.setPolicies(withCard(DEFAULT_BOOK, 'b', 'auto-collapse'));
+    await show({ cardId: 'b', rung: 'collapsed' });
+    expect(strip().textContent).toContain('“Collapse on submit” is on for this session');
   });
 
   it('Bring it back asks for the card and leaves the setting alone', async () => {
-    sessionStore.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-hide'));
-    await show({ cardId: 'a', rung: 'hidden' });
+    sessionStore.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
+    await show({ cardId: 'a', rung: 'collapsed' });
     await click('restore');
     expect(onRestore).toHaveBeenCalledWith('a');
-    expect(sessionStore.getPolicies().global).toBe('auto-hide');
+    expect(sessionStore.getPolicies().global).toBe('auto-collapse');
   });
 
   it('Stop doing this turns the setting off AT THE LEVEL THAT DECIDED, and brings the card back', async () => {
-    // the group says hide; the global says hide too. Clearing the global would
-    // leave this card hiding on the next prompt, and the button would look dead.
-    sessionStore.setPolicies(withGroup(withGlobal(DEFAULT_BOOK, 'auto-hide'), 'g1', 'auto-hide'));
-    await show({ cardId: 'b', rung: 'hidden' });
+    // the group says collapse; the global says collapse too. Clearing the global would
+    // leave this card collapsing on the next prompt, and the button would look dead.
+    sessionStore.setPolicies(withGroup(withGlobal(DEFAULT_BOOK, 'auto-collapse'), 'g1', 'auto-collapse'));
+    await show({ cardId: 'b', rung: 'collapsed' });
     await click('off');
     expect(sessionStore.policyFor('b')).toBe('always-visible');
     expect(sessionStore.getPolicies().groups.g1).toBe('always-visible');
     // ...and ONLY that level: the ungrouped card still follows the global
-    expect(sessionStore.policyFor('a')).toBe('auto-hide');
+    expect(sessionStore.policyFor('a')).toBe('auto-collapse');
     expect(onRestore).toHaveBeenCalledWith('b');
   });
 
   it('leaves by itself once the card is back on screen', async () => {
-    sessionStore.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-hide'));
+    sessionStore.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
     // the notice can arrive a beat BEFORE the store records the move: the old
     // rung at that instant must not read as "it came back"
-    await show({ cardId: 'a', rung: 'hidden' });
+    await show({ cardId: 'a', rung: 'collapsed' });
     expect(onDismiss).not.toHaveBeenCalled();
-    await act(async () => sessionStore.setPresentation('a', { ladder: 'hidden' }));
+    await act(async () => sessionStore.setPresentation('a', { ladder: 'collapsed' }));
     expect(onDismiss).not.toHaveBeenCalled();
     await act(async () => sessionStore.setPresentation('a', { ladder: 'expanded' }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it('a card brought back as a TAB is back too', async () => {
-    // it has a panel and is on screen; a strip still saying "was hidden" is stale
-    await act(async () => sessionStore.setPresentation('a', { ladder: 'hidden' }));
-    await show({ cardId: 'a', rung: 'hidden' });
+    // it has a panel and is on screen; a strip still saying "was collapsed" is stale
+    await act(async () => sessionStore.setPresentation('a', { ladder: 'collapsed' }));
+    await show({ cardId: 'a', rung: 'collapsed' });
     expect(onDismiss).not.toHaveBeenCalled();
     await act(async () => sessionStore.setPresentation('a', { ladder: 'tabbed' }));
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it('a second notice, about another card, starts its own watch', async () => {
-    await act(async () => sessionStore.setPresentation('a', { ladder: 'hidden' }));
-    await show({ cardId: 'a', rung: 'hidden' });
+    await act(async () => sessionStore.setPresentation('a', { ladder: 'collapsed' }));
+    await show({ cardId: 'a', rung: 'collapsed' });
     // b is put away while a's notice is up; a coming back is no longer the subject
     await act(async () => sessionStore.setPresentation('b', { ladder: 'collapsed' }));
     await show({ cardId: 'b', rung: 'collapsed' });
@@ -159,9 +159,9 @@ describe('the submit notice (#1210)', () => {
   });
 
   it('Stop doing this acts at the level the SENTENCE named, even if the book moved since', async () => {
-    sessionStore.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-hide'));
-    await show({ cardId: 'b', rung: 'hidden' });
-    expect(strip().textContent).toContain('“Hide on submit” is on.');
+    sessionStore.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
+    await show({ cardId: 'b', rung: 'collapsed' });
+    expect(strip().textContent).toContain('“Collapse on submit” is on.');
     // an override appears while the strip is up; the button still says "every session"
     await act(async () =>
       sessionStore.setPolicies(withCard(sessionStore.getPolicies(), 'b', 'auto-collapse'))
@@ -171,8 +171,8 @@ describe('the submit notice (#1210)', () => {
   });
 
   it('keeps the keyboard when the buttons go: focus rests on the strip, not the body', async () => {
-    await act(async () => sessionStore.setPresentation('a', { ladder: 'hidden' }));
-    await show({ cardId: 'a', rung: 'hidden' });
+    await act(async () => sessionStore.setPresentation('a', { ladder: 'collapsed' }));
+    await show({ cardId: 'a', rung: 'collapsed' });
     button('mute').focus();
     expect(document.activeElement).toBe(button('mute'));
     // the card comes back by itself while a button has focus
@@ -184,15 +184,15 @@ describe('the submit notice (#1210)', () => {
   it('...and leaves focus alone when the keyboard was somewhere else', async () => {
     const elsewhere = document.createElement('button');
     document.body.appendChild(elsewhere);
-    await act(async () => sessionStore.setPresentation('a', { ladder: 'hidden' }));
-    await show({ cardId: 'a', rung: 'hidden' });
+    await act(async () => sessionStore.setPresentation('a', { ladder: 'collapsed' }));
+    await show({ cardId: 'a', rung: 'collapsed' });
     elsewhere.focus();
     await act(async () => sessionStore.setPresentation('a', { ladder: 'expanded' }));
     expect(document.activeElement).toBe(elsewhere);
   });
 
   it('leaves when the session it is about is closed', async () => {
-    await show({ cardId: 'a', rung: 'hidden' });
+    await show({ cardId: 'a', rung: 'collapsed' });
     await act(async () =>
       sessionStore.setSessions([{ id: 'b', title: 'beta', status: 'working', groupId: 'g1' }])
     );
@@ -201,13 +201,13 @@ describe('the submit notice (#1210)', () => {
   });
 
   it('Stop telling me silences it for this run and changes no setting', async () => {
-    sessionStore.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-hide'));
-    await show({ cardId: 'a', rung: 'hidden' });
+    sessionStore.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
+    await show({ cardId: 'a', rung: 'collapsed' });
     expect(submitNoticeMuted()).toBe(false);
     await click('mute');
     expect(submitNoticeMuted()).toBe(true);
     expect(onDismiss).toHaveBeenCalled();
     expect(onRestore).not.toHaveBeenCalled();
-    expect(sessionStore.getPolicies().global).toBe('auto-hide');
+    expect(sessionStore.getPolicies().global).toBe('auto-collapse');
   });
 });

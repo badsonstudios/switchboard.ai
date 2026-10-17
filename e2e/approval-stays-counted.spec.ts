@@ -225,7 +225,7 @@ for (const kind of ['approval', 'question'] as const) {
       });
     });
 
-    test('a card that was hidden on submit comes back to its slot, and takes focus from nobody', async () => {
+    test('a card that was collapsed on submit comes back to its slot, and takes focus from nobody', async () => {
       test.setTimeout(150_000);
       const folder = tempProjectFolder();
       a = await launchApp({ seedFolder: folder });
@@ -236,14 +236,14 @@ for (const kind of ['approval', 'question'] as const) {
       const third = await addSession(a);
       await expect(tabs(w)).toHaveCount(3);
 
-      await setPresentationPolicy(w, 'Hide on submit');
+      await setPresentationPolicy(w, 'Collapse on submit');
       await row(w, second).click();
       await expect(w.locator('.dv-active-tab')).toContainText(second);
       await composer(w).click();
       await composer(w).fill('!hang');
       await w.keyboard.press('Enter');
       await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
-      await expect.poll(() => rungOf(w, second)).toBe('hidden');
+      await expect.poll(() => rungOf(w, second)).toBe('collapsed');
 
       // stand somewhere else, so a reveal that stole the screen would show
       await row(w, third).click();
@@ -277,7 +277,7 @@ for (const kind of ['approval', 'question'] as const) {
       const w = a.window;
       const { left, right } = made;
 
-      await setPresentationPolicy(w, 'Hide on submit');
+      await setPresentationPolicy(w, 'Collapse on submit');
       await row(w, left).click();
       await expect(composer(w).first()).toBeVisible();
       // its own composer: the one in the pane whose tab is this session
@@ -287,7 +287,7 @@ for (const kind of ['approval', 'question'] as const) {
       await w.keyboard.press('Enter');
       // alone in its pane, so the pane goes with it
       await expect(panes(w)).toHaveCount(1, { timeout: 15_000 });
-      await expect.poll(() => rungOf(w, left)).toBe('hidden');
+      await expect.poll(() => rungOf(w, left)).toBe('collapsed');
 
       // be in the middle of typing somewhere else
       const draft = paneOf(right).getByPlaceholder(/Prompt this session/);
@@ -328,12 +328,12 @@ for (const kind of ['approval', 'question'] as const) {
       const only = path.basename(folder);
       await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
 
-      await setPresentationPolicy(w, 'Hide on submit');
+      await setPresentationPolicy(w, 'Collapse on submit');
       await composer(w).click();
       await composer(w).fill('!hang');
       await w.keyboard.press('Enter');
       await expect(tabs(w)).toHaveCount(0, { timeout: 15_000 });
-      await expect.poll(() => rungOf(w, only)).toBe('hidden');
+      await expect.poll(() => rungOf(w, only)).toBe('collapsed');
 
       const hold = kind === 'approval' ? streamingPermissionHolder(a) : streamingQuestionHolder(a);
       await hold(only);
@@ -348,7 +348,7 @@ for (const kind of ['approval', 'question'] as const) {
       expect(await answerHeldPermissions(a, 'deny')).toBe(1);
     });
 
-    test('the prompt that hides the card is the one that asks: it is not left hidden', async () => {
+    test('the prompt that collapses the card is the one that asks: it is not left collapsed', async () => {
       test.setTimeout(120_000);
       const folder = tempProjectFolder();
       a = await launchApp({ seedFolder: folder });
@@ -358,7 +358,7 @@ for (const kind of ['approval', 'question'] as const) {
       await addSession(a);
       await expect(tabs(w)).toHaveCount(3);
 
-      await setPresentationPolicy(w, 'Hide on submit');
+      await setPresentationPolicy(w, 'Collapse on submit');
       await row(w, second).click();
       await expect(w.locator('.dv-active-tab')).toContainText(second);
       await composer(w).click();
@@ -515,11 +515,11 @@ test.describe('finished work is its own number, in both placements (#1258)', () 
     await expect(railFinished).toHaveCount(0, { timeout: 15_000 });
   });
 
-  // Found in review. A hidden session that FINISHES comes back in a pane of
+  // Found in review. A collapsed session that FINISHES comes back in a pane of
   // its own, and a new pane makes itself the one in front unless told not to:
   // the session nobody went to was then "the card in front", and its finished
   // count was cleared in the same frame, by the other road.
-  test('a hidden session that finishes comes back counted, and the pane you are in stays in front', async () => {
+  test('a collapsed session that finishes comes back counted, and the pane you are in stays in front', async () => {
     test.setTimeout(180_000);
     const made = await sideBySide();
     a = made.a;
@@ -529,7 +529,7 @@ test.describe('finished work is its own number, in both placements (#1258)', () 
     const paneOf = (title: string) => panes(w).filter({ has: w.locator('.dv-tab', { hasText: title }) });
     const post = await hookPoster(a, 2);
 
-    await setPresentationPolicy(w, 'Hide on submit');
+    await setPresentationPolicy(w, 'Collapse on submit');
     await paneOf(left).getByPlaceholder(/Prompt this session/).click();
     await paneOf(left).getByPlaceholder(/Prompt this session/).fill('!hang');
     await w.keyboard.press('Enter');
