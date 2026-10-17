@@ -317,6 +317,127 @@ frames shaped on the Codex captures, `configOptions` for model, effort and mode,
 `!mode`, `!state`, `!mcp`, `!fs`. `FAKE_ACP_REQUIRE_AUTH=1` requires
 `authenticate`.
 
+**As built, item 08 (#1291, 2026-10-16).** The model of "which AIs exist" is
+`src/main/ai-catalog/`, and the renderer reads it through `ais:*`. There is no
+screen yet: #1292 builds the AIs tab on it and #1293 the session icons.
+
+*The catalog* ships inside the app (`catalog.json`). It holds 15 entries:
+- **Claude Code**, on the native engine (`providerId: claude-code`).
+- **14 ACP registry entries we vouch for**, copied from the 2026-10-15
+  snapshot:
+  - Codex (`codex-acp`, `npx -y @agentclientprotocol/codex-acp@2.2.2`,
+    `providerId: codex` for #1290);
+  - Gemini CLI, GitHub Copilot, Qwen Code, Cline, Auggie and Factory Droid
+    (`npx -y <package> <args>`);
+  - Cursor (`cursor-agent acp`), OpenCode (`opencode acp`), goose (`goose acp`),
+    Mistral Vibe (`vibe-acp`), Kimi CLI (`kimi acp`) and Junie
+    (`junie --acp=true`), which are binary distributions;
+  - Kilo, which has both kinds and launches through npx.
+
+The registry's own Claude entry is skipped.
+
+Each entry carries the following. The registry provides the name, maker
+(`authors[0]`), description, license, website and launch. We add:
+- how to install it: a command to copy, or the maker's page;
+- which program on PATH means "installed";
+- `runsLocalModels`, which is true for OpenCode and goose only;
+- its icon.
+
+The icons were downloaded ONCE from each registry `icon` URL (the registry is
+Apache-2.0; each mark is its maker's). They live in
+`src/renderer/public/ai-icons/`, so the renderer draws them from its own
+origin. The CSP allows no `data:` and no remote image. `registry-snapshot.json`
+is all 42 registry agents, trimmed. "Check for new AIs" (`ais:checkRegistry`,
+on a press ONLY) fetches the live registry, diffs it against that snapshot
+(added / new version / removed), and caches only the diff in userData.
+
+*Detection* uses one new optional capability, `detect` (DESIGN §5.3):
+- `detect(signal)` answers `{installed: true|false|'unknown', version?,
+  login: 'logged-in'|'logged-out'|'unknown', account?, plan?, detail?}`. The
+  runner adds `probedAt` and `ms`.
+- **When it runs:** after the FIRST main window's `ready-to-show` → `show()`,
+  one turn later, so startup paint is unchanged by construction. "Look again"
+  runs it again. Every AI is probed concurrently, each under a hard 5 s
+  timeout.
+- **What happens when a probe is slow or broken:** at the deadline the probe's
+  signal is aborted, so it can kill its children, and the answer is `unknown`
+  with the reason. A throw is `unknown` too. A run already in flight is shared.
+- **What gets reported:** one `ais:changed` push, and the total time logged at
+  info as `AI detection finished`.
+
+How each AI is probed:
+- **Claude** asks the CLI itself. `--version` gives the version. `auth status
+  --json`, measured on 2.1.288, gives `{loggedIn, email, subscriptionType}`,
+  and it exits 1 when logged out. No credential file is read.
+- **An ACP provider** gets the engine's default: a PATH scan for its command.
+  The version and login stay `unknown`, because asking would mean starting the
+  agent, and for an npx agent that is a download.
+- **The fake ACP agent** answers installed, version `0.0.0`, and logged out
+  exactly when `FAKE_ACP_REQUIRE_AUTH=1`.
+- **A catalog AI with no provider** gets a PATH scan for its command, which
+  starts nothing. All of a run's scans share ONE asynchronous read of the PATH
+  directories (`transport/find-on-path.ts` `pathIndex`). Fifteen synchronous
+  `findOnPath` calls measured 133 ms of main-thread stats on the desktop, right
+  after first paint. In e2e that stall broke Playwright's main-process
+  `evaluate` (`file-menu.spec.ts`, 2 runs in 3) until it was made async.
+- **App quit** aborts a run in flight, and its probes kill what they started.
+- **Codex** gets its own probe from #1290.
+
+*Custom AIs* ("Something else") are stored in `userData/ais.json`, alongside
+the default:
+- **Shape:** `{id: 'custom:<slug>', name, command, args, env?, addedAt}`. The
+  slug comes from the name, with `-2`, `-3`, … on a collision.
+- **Saving:** atomic. A corrupt file is set aside as `ais.json.bad` and the app
+  starts with none.
+- **Registration:** at startup, and the moment one is added
+  (`bootstrap.ts` `registerCustomAi`, a `createAcpProvider` whose command is
+  resolved on PATH at each spawn). Removing one unregisters it, and clears the
+  default if the default was that AI.
+- **What is refused, and why:**
+  - Anything containing `( ) % ! ^ " < > &` or `|`, or any control character,
+    in the command, the arguments, or the resolved path. The stream transport's
+    `launchSpec` is for argv the app writes, not argv a person typed.
+  - An argument with whitespace in it. libuv quotes it, and `cmd /c` then drops
+    the outer quotes round a quoted `C:\Program Files\…\x.cmd`.
+  - A relative command path. It would resolve inside the user's project.
+- **A command that is not found** fails that session's spawn with a reason. It
+  is never launched by its bare name from the project folder (S-01).
+- **Test** (`providers/acp/acp-probe.ts`) spawns the command and sends
+  `initialize`. It answers `{ok, agentName?, agentVersion?, protocolVersion?,
+  authMethods?, error?, ms}`, then tree-kills the child and resolves only once
+  the kill is done. It does NOT open a session, so it cannot report models. The
+  mockup's "3 models found" would need a `session/new`, which is a real
+  conversation at the agent.
+
+*The default AI* is the user's choice when that AI is registered. Otherwise it
+is the first registered provider, which is Claude in production. "Never chosen"
+is stored as nothing, not as `claude-code`, so the e2e fakes' registration
+order still decides. A choice that is not registered falls back, is logged once
+per distinct choice, and the state says `fellBack: true`. `index.ts`'s
+`defaultProviderId` reads it.
+
+*Log in* (`ais:login`) runs the AI's OWN sign-in:
+- **ACP AIs** get a standalone `initialize` + `authenticate`. The method is the
+  one asked for, else the provider's `authMethodId`, else the only one offered.
+  When several are offered and none is named, the answer is `{methods}` so the
+  UI can ask.
+- **Claude** answers `{supported: false}`, because `claude auth login` belongs
+  in a terminal.
+
+We never see a password and store nothing.
+
+*The IPC surface:*
+- `ais:list` returns `[{kind: catalog|custom|provider, entry, providerId?,
+  registered, detection?}]`.
+- `ais:default` and `ais:setDefault(id)`.
+- `ais:lookAgain`.
+- `ais:checkRegistry` and `ais:lastRegistryCheck`.
+- `ais:customAdd`, `ais:customRemove` and `ais:customTest`.
+- `ais:login(providerId, methodId?)`.
+- The push `ais:changed`, which carries `{items, default, detecting}`.
+
+The preload exposes all of these as `switchboard.ais`.
+
 ---
 
 ## 5. The screens (`mockups/multi-ai.html`)

@@ -49,6 +49,18 @@ describe('ContributionRegistry', () => {
     expect(() => r.register('greeter', greeter('dup'))).toThrow(/duplicate/);
   });
 
+  it('unregister takes one back out, keeps the order of the rest, and frees the id (#1291)', () => {
+    const r = fresh();
+    r.register('greeter', greeter('a'));
+    r.register('greeter', greeter('b'));
+    r.register('greeter', greeter('c'));
+    expect(r.unregister('greeter', 'b')).toBe(true);
+    expect(r.unregister('greeter', 'b')).toBe(false);
+    expect(r.unregister('counter', 'a')).toBe(false);
+    expect(r.list('greeter').map((g) => g.manifest.id)).toEqual(['a', 'c']);
+    expect(() => r.register('greeter', greeter('b'))).not.toThrow();
+  });
+
   it('the same id at a DIFFERENT point is not a duplicate', () => {
     const r = fresh();
     r.register('greeter', greeter('same'));

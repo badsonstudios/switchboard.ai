@@ -109,6 +109,9 @@ interface Active {
   fsWaiting?: { id: number; onAnswer: (frame: Obj) => void };
 }
 
+/** What the fake's `initialize` reports as `agentInfo.version` (and its `detect`). */
+export const FAKE_ACP_VERSION = '0.0.0';
+
 export class FakeAcpAgent {
   private readonly conversations = new Map<string, Conversation>();
   private readonly active = new Map<string, Active>();
@@ -140,7 +143,7 @@ export class FakeAcpAgent {
       case 'initialize':
         return this.result(f.id, {
           protocolVersion: 1,
-          agentInfo: { name: 'fake-acp', title: 'Fake ACP', version: '0.0.0' },
+          agentInfo: { name: 'fake-acp', title: 'Fake ACP', version: FAKE_ACP_VERSION },
           agentCapabilities: {
             loadSession: true,
             promptCapabilities: { embeddedContext: false, image: true },

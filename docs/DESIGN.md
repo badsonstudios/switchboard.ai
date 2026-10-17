@@ -447,6 +447,24 @@ contract differs in three ways, each deliberate:
   and skipped. The mapping table, the fail-open rules and the fake agent are in
   `docs/plans/e40-multi-ai-design.md` §4 "As built, item 06"; the grep test
   keeps ACP's wire inside `providers/` exactly as it keeps Claude's.
+- **`detect` is a ninth capability** *(E40 item 08, #1291, 2026-10-16)*:
+  `detect(signal)` answers `{installed: true | false | 'unknown', version?,
+  login: 'logged-in' | 'logged-out' | 'unknown', account?, plan?, detail?}`,
+  and an optional `login(signal, methodId?)` runs the AI's OWN sign-in. It sits
+  right after `controls`. The catalog (`main/ai-catalog/`) asks every registered
+  provider after the first window is shown, on every startup and on "Look
+  again", under a hard 5 s per-AI timeout (a slow or throwing probe answers
+  `unknown`). Claude's is `providers/claude-detect.ts`: the CLI's own `--version`
+  and `auth status --json`, measured on 2.1.288. `createAcpProvider` gives every
+  ACP agent a default: a PATH scan for its command (version and login unknown,
+  because asking would mean starting the agent), plus a standalone
+  `initialize` + `authenticate` for "Log in" (`providers/acp/acp-probe.ts`). An
+  AI with no `detect` falls back to a PATH scan for the catalog's command.
+  User-defined "Something else" AIs are the one kind of provider registered at
+  runtime (`bootstrap.ts` `registerCustomAi`, ids `custom:<slug>`), and the
+  registry gained `unregister` for them. The default AI for new cards is a
+  setting; when unset, it is the first registered provider, so registration
+  order stays precedence. Design record §4 "As built, item 08".
 
 - **Six surface capabilities: `usage`, `statusPage`, `preflight`, `labels`,
   `mcpManager`, `commandFiles`** *(E40 item 05, #1288, 2026-10-16)* — the app's

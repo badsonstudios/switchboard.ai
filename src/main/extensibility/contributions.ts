@@ -19,6 +19,7 @@ import type {
   McpMutationResult,
   McpScope,
 } from '../../shared/mcp';
+import type { AiLoginResult, DetectionResult } from '../../shared/ais';
 
 /**
  * Provider adapter contract v0 (§5.3). The full interface grows in P1-E2-02;
@@ -166,6 +167,17 @@ export interface ProviderCapabilities {
    * No fallback to Claude's, for the reason `events` has none.
    */
   controls?: ControlCapability;
+  /**
+   * The AI can say whether it is installed here, which version, and whether
+   * it is signed in (E40 item 08, #1291; `ai-catalog/detection.ts`), and can
+   * run its OWN sign-in. Asked after first paint on every startup and on
+   * "Look again", under a hard timeout.
+   *
+   * Absent: the catalog falls back to a PATH scan for the AI's command and
+   * reports the login as unknown. Never a guess at another AI's credential
+   * files.
+   */
+  detect?: DetectCapability;
   // ── Per-AI surfaces (E40 item 05, #1288) ─────────────────────────────────
   //
   // The app's chrome around a session (what it cost, whether the AI's service
@@ -211,6 +223,20 @@ export interface ProviderCapabilities {
    * (§5.17). Absent: the composer lists the provider's builtins only.
    */
   commandFiles?: CommandFilesCapability;
+}
+
+export interface DetectCapability {
+  /**
+   * MUST honour `signal` (the runner aborts at its timeout and kills what the
+   * probe started) and SHOULD NOT reject; a rejection reads as "unknown".
+   */
+  detect(signal: AbortSignal): Promise<Omit<DetectionResult, 'probedAt' | 'ms'>>;
+  /**
+   * Run the AI's own sign-in, standalone (no session). Absent: "Log in" is
+   * not offered for this AI. We never see a password; the AI keeps its own
+   * credential.
+   */
+  login?(signal: AbortSignal, methodId?: string): Promise<AiLoginResult>;
 }
 
 export interface EventCapability {

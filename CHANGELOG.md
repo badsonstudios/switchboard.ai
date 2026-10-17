@@ -120,6 +120,12 @@ on the floor, and say so in your PR.
   adapter, and each AI says which of them it has. A control an AI lacks will
   grey out with "Not available with <AI>"; Claude has them all, so nothing
   looks or behaves differently today.
+- The model behind the coming Settings → AIs tab: a built-in list of 15 AIs,
+  each with its icon and how to install it; a check after every startup of
+  which ones are on this computer and signed in; "Something else" entries for
+  any other AI that speaks the protocol; and a default AI for new sessions,
+  which is Claude until you choose otherwise. There is no screen for it yet.
+  The check runs after the window appears, so startup is no slower.
 
 ## 0.8.122 — 2026-10-13
 
