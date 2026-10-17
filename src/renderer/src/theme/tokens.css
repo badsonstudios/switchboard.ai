@@ -2213,8 +2213,10 @@ mark[data-feed-match-current] {
  * rest (it has to clear the 12px icon), so 17px would be no change at all; it
  * grows to 20px instead. It is absolutely placed and centred on its 16px box,
  * so nothing around it moves. A strip GROUP still draws the plain 12px
- * spinner (`StatusMark`) and keeps the 17px above. */
-[data-working-look='fill'] :is(.rail-row, [data-strip-pill])[data-session-status='working']:not([data-needs-you='true']) .ai-badge .status-ring {
+ * spinner (`StatusMark`), so this never matches inside one and the group keeps
+ * the 17px above; it is named here anyway because every rule that paints a
+ * row or a pill names the group too (StripGroupEntry.working.test.tsx). */
+[data-working-look='fill'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) .ai-badge .status-ring {
   inline-size: 20px !important;
   block-size: 20px !important;
 }
