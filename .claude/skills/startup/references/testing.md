@@ -120,9 +120,23 @@ still how a new probe works; it is no longer how the project works.
      runs otherwise pop ~160 app windows onto the screen you are working on.
      **Monitor 1 is always the primary**; 2..N are the rest, in whatever order
      Electron reports them — so `=2` is always a screen that is not your main
-     one. **Unset, the fixture does not ask the app a question**; an index past
-     the end (a single-display machine, i.e. every CI runner) reads the display
-     list and then moves nothing. Windows a spec places itself go through
+     one. **Or name it by position: `=left` / `=right` / `=above` / `=below`**
+     (the nearest screen that way from the primary) — this survives a monitor
+     detaching, where a number quietly starts pointing at a different screen.
+     **Unset, the fixture does not ask the app a question**; an index past
+     the end, or a direction with no screen that way (a single-display machine,
+     i.e. every CI runner), reads the display list and then moves nothing —
+     the suite runs on the primary as before.
+     **Set it ONCE per machine in `~/.switchboard-e2e.env`** (one
+     `SWITCHBOARD_E2E_MONITOR=right` line; `#` comments allowed): the fixture
+     reads that file whenever the env var is absent, so every worktree and
+     every worker shell on the machine honours it without exporting anything
+     (added 2026-10-17 — Dan's three-monitor desktop, where workers' shells
+     never carried the var and the suite kept landing on his working screen).
+     The env var, when present, wins — an exported EMPTY value is the explicit
+     "off". To list your screens in the fixture's numbering, run a one-off
+     Electron script that prints `screen.getPrimaryDisplay()` first and then
+     `getAllDisplays()` minus it (`.claude/work_files/list-displays.js` was one). Windows a spec places itself go through
      `onTestDisplay()` from `e2e/fixtures/app.ts`, which is a no-op when the
      switch is off. **No spec is exempt** — the audit's one candidate,
      `reconnect.spec.ts`, was measured rather than assumed and is
