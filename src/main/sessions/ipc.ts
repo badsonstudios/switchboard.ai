@@ -2129,6 +2129,26 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
               return briefing?.text;
             }
           : undefined;
+      // ── A DISPATCH CHOSE ITS AI ("Run it on", E40 item 13, #1296) ─────────
+      //
+      // A brand-new dispatched card starts on the AI the dispatch was prepared
+      // for, which may not be the default. Only for a card with no `prior`: a
+      // dispatched card that already started keeps the provider it persisted,
+      // like every other card (`planSessionStart`'s first rule).
+      //
+      // ⚠️ RE-CHECKED AND REFUSED, NOT FALLEN BACK. `prepare` checked it, but an
+      // AI can stop being registered between the dialog and the spawn, and the
+      // plan's own answer to an unregistered provider is "use the default" —
+      // which is right for a card persisted under a removed adapter and wrong
+      // here: the user asked for a review by a DIFFERENT AI, and running it on
+      // the author's own instead would look like exactly what they asked for.
+      const dispatchedOn = dispatch && !prior ? dispatch.providerId : undefined;
+      if (dispatchedOn !== undefined && !deps.isRegisteredProvider(dispatchedOn)) {
+        return refuse('sessions:create', 'the AI this dispatch was prepared for is no longer set up', {
+          cardId: opts.cardId,
+          provider: dispatchedOn,
+        });
+      }
       // ASK the provider what this session start involves; do not assume Claude
       // (P2-E15-01, §5.3). Everything Claude-shaped that used to be inline —
       // the provider id, hook settings, the transcript root, resume
@@ -2137,7 +2157,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         {
           capabilitiesOf: deps.capabilitiesOf,
           isRegistered: deps.isRegisteredProvider,
-          defaultProviderId: deps.defaultProviderId,
+          // "the provider a card without one runs on" — for a dispatched card,
+          // the one the dispatch chose (checked registered just above).
+          defaultProviderId:
+            dispatchedOn !== undefined ? () => dispatchedOn : deps.defaultProviderId,
           folder: opts.folder,
           // Honoured only for a card with no conversation of its own — the plan
           // enforces that, not this call site, so the rule holds for every

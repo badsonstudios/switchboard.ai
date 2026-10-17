@@ -1920,7 +1920,19 @@
     "working": "Preparing…",
     "failed": "That dispatch could not be prepared: {reason}",
     "sessionTitle": "{role} of {session}",
+    "ai": {
+      "runOn": "Run it on",
+      "same": "Same as this session ({ai})",
+      "notLoggedIn": "not logged in",
+      "preferredMark": "this role’s choice",
+      "hint": "A different AI reviewing the work catches what the author’s own blind spots hide. Its findings come back to this session like any other review.",
+      "preferMissing": "{role} prefers {ai}, which is not set up on this computer. Pick another AI to run it on.",
+      "preferLoggedOut": "{role} prefers {ai}, which is not logged in. Log in to it first, or pick another AI to run it on.",
+      "loggedOut": "{ai} is not logged in. Log in to it first, or pick another AI to run it on."
+    },
     "refusal": {
+      "aiMissing": "The AI chosen to run this is no longer set up on this computer. Pick another AI under Run it on.",
+      "aiLoggedOut": "The AI chosen to run this is not logged in. Log in to it first, or pick another AI under Run it on.",
       "freshWorktree": "Dispatching into a fresh worktree is not available yet — separate checkouts arrive with the git work in a later release. Use the same folder, or make the checkout yourself and open a session on it.",
       "freshClone": "Dispatching into a fresh clone is not available yet. Use the same folder, or clone it yourself and open a session on it.",
       "fullContext": "Handing over the whole conversation needs session forking, which is switched off. Turn on “Fork sessions” in Settings → Advanced to use it, or use Briefed, which sends the goal, the decisions and the files touched.",

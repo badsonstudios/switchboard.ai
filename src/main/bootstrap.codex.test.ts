@@ -41,7 +41,7 @@ describe('registerBuiltinContributions', () => {
     fs.writeFileSync(path.join(dir, NPX), '');
     expect(await registeredIds({ PATH: dir, fake: '1' })).toEqual(['claude-code']);
     expect(await registeredIds({ PATH: dir, fake: 'acp' })).toEqual(['fake-acp', 'claude-code']);
-    // both (#1294): the Claude fake first, the default, then the ACP fake
+    // `both` (#1294, #1296): the Claude fake first, the default, then the ACP fake
     expect(await registeredIds({ PATH: dir, fake: 'both' })).toEqual(['claude-code', 'fake-acp']);
   });
 });

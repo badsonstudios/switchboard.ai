@@ -274,6 +274,23 @@ describe('reading a template out of an untrusted file', () => {
       expect(isSaneRoleTemplate(userTemplate({ accentColor: junk }))).toBe(false);
     }
   });
+
+  it('keeps a preferred AI that is a provider id, refuses one that is not (#1296)', () => {
+    // Shape only: an AI not installed HERE is still a template worth keeping —
+    // whether it can run is asked at dispatch time, and said in the dialog.
+    for (const id of ['codex', 'claude-code', 'gemini-cli', 'my.local:qwen'])
+      expect(isSaneRoleTemplate(userTemplate({ preferredProviderId: id })), id).toBe(true);
+    for (const junk of ['', 'has space', 'x'.repeat(101), 42, null]) {
+      expect(
+        isSaneRoleTemplate({ ...userTemplate(), preferredProviderId: junk }),
+        JSON.stringify(junk)
+      ).toBe(false);
+    }
+  });
+
+  it('the built-ins prefer no AI — they run on the author’s own', () => {
+    for (const t of BUILT_IN_TEMPLATES) expect(t).not.toHaveProperty('preferredProviderId');
+  });
 });
 
 describe('declared and refused, never silently degraded', () => {

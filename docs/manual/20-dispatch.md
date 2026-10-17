@@ -58,6 +58,66 @@ otherwise. A role can *ask* for its own checkout — the setting exists — and 
 one does, the box refuses it by name rather than dropping it into your folder
 without saying so.
 
+## Run it on: a review by a different AI
+
+If you have more than one AI set up — Claude Code and Codex, say — the box has a
+**Run it on** row under the roles. It picks which AI the new session runs on:
+
+- **Same as this session** comes first and is chosen to begin with. That is what
+  Dispatch has always done.
+- **Every other AI you have set up** follows, by name. Pick one, and the new
+  session starts on that AI instead.
+
+The point is a second opinion. A different AI reviewing the work is less likely
+to share the blind spots of the one that wrote it.
+
+**The findings come back the same way.** When the review is done, the row
+appears in **Events** on the card that sent it, and **Inject findings** puts the
+report in that card's message box. Which AI wrote the report makes no
+difference. The other AI is handed exactly what a same-AI review is handed:
+for Code Reviewer, the change, the task line and your criteria, and nothing
+else.
+
+**An AI that is not logged in is dimmed** and says *not logged in*. You can still
+click it to see the reason, but **Dispatch** stays off until you log in to it or
+pick another AI.
+
+The login state is what switchboard last found when it checked your AIs. It
+checks each one when the app starts, and again after you log in from inside the
+app. If you log in or out in a terminal instead, the box only catches up after
+you restart the app. An AI switchboard hasn't checked yet is shown as
+available. If it turns out not to be logged in, its own session says so when it
+starts.
+
+**A role can prefer an AI.** One of your own roles can name the AI it would
+rather run on, and the box then picks that AI for you. If that AI is not set up
+on this computer, or is not logged in, the box says so in a sentence such as
+*"Second opinion prefers Codex, which is not logged in"*. **It does not quietly
+run the role on a different AI instead.** You pick another AI yourself, or
+Dispatch stays off. A review you asked a different AI to do should never turn
+into one by the same AI without you knowing. The three built-in roles prefer no
+AI, so they always start on the same AI as the session that sent them. Like the
+rest of your own roles, the preference is written into your workspace file by
+hand for now (`"preferredProviderId": "codex"` on the role).
+
+A few things differ when the other AI is Codex:
+
+- **Code Reviewer still cannot change your files.** On Codex its **plan** setting
+  becomes Codex's own read-only mode.
+- **Handing over the whole conversation only works on the same AI.** Each AI
+  stores its conversation in its own format, so the role that forks your
+  conversation is refused when the AI is different, with the reason shown
+  before you press anything. Use a briefed role instead: it writes the handoff in
+  plain text that any AI can read.
+- **Every dispatch spends usage on the AI it runs on.** A Codex review uses your
+  Codex plan, not your Claude one.
+
+**This is the only place you can choose a second AI for now.** There is no
+button yet that starts an ordinary session on Codex, or switches a card from
+one AI to another. Those come with the AI switch in a later release. Until then,
+Dispatch's **Run it on** is the one way to put a session on another AI from the
+app itself.
+
 You can also do this from the command palette (`Ctrl+K`): type *dispatch* and
 you'll see one entry per role. They open the same box with that role already
 chosen. There's no keyboard shortcut for it on purpose — dispatching starts a
@@ -248,6 +308,12 @@ session-archive work in a later release.
   its own separate checkout of your code. That arrives with the git work in a
   later release. For now a dispatched session works in the same folder as the
   one that sent it, which is worth remembering if you ask it to run tests.
+- **"… prefers Codex, which is not set up on this computer"** or **"… which is
+  not logged in"**: the role names an AI you can't use right now. Pick another
+  AI under **Run it on**, or log in to that one first.
+- **"The AI chosen to run this is no longer set up"** or **"… is not logged
+  in"**: something changed while the box was open. Pick another AI, or log in,
+  and press Dispatch again.
 
 ## What doesn't happen yet
 

@@ -7568,6 +7568,8 @@ export function SessionGrid(props: {
               ...(req.acceptanceCriteria === undefined || req.acceptanceCriteria.trim() === ''
                 ? {}
                 : { acceptanceCriteria: req.acceptanceCriteria.trim() }),
+              // "Run it on" (#1296): absent means the author's own AI.
+              ...(req.targetProviderId === undefined ? {} : { targetProviderId: req.targetProviderId }),
             });
             // LAUNDERED (#346/#440). A brokered refusal is a TRUTHY object with no
             // `ok`, so returning it unchecked would show the dialog's failure box

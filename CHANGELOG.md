@@ -120,6 +120,13 @@ on the floor, and say so in your PR.
   costs nothing extra. The switch line says "handed a summary of N turns", and
   **see what it was told** opens the exact text. Switching back says "picked up
   where it left off" and sends no summary.
+- A second opinion from a different AI: the Dispatch box has a new **Run it
+  on** row, so a Code Reviewer sent from a Claude session can run on Codex,
+  and its findings come back to the Claude session just as a Claude review's
+  do. An AI that is not logged in is dimmed. A role of your own can name the
+  AI it prefers, and if that AI can't be used the box says why instead of
+  quietly running the role on another AI. With only one AI set up, the box is
+  unchanged.
 
 ### Changed
 

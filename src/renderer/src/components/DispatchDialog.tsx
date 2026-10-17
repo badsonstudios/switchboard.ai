@@ -42,7 +42,12 @@ import { errorText } from '../../../shared/error-text';
 import React from 'react';
 import { useModalLayer } from '../lib/modal-layer';
 import { useTranslation } from 'react-i18next';
-import type { DispatchOptions, DispatchPrepared } from '../../../shared/dispatch-wire';
+import type {
+  DispatchAiDto,
+  DispatchOptions,
+  DispatchPrepared,
+  DispatchTemplateDto,
+} from '../../../shared/dispatch-wire';
 
 export interface DispatchDialogProps {
   /** the AUTHOR session's name, for the header */
@@ -65,6 +70,8 @@ export interface DispatchDialogProps {
      */
     taskStatement?: string;
     acceptanceCriteria?: string;
+    /** "Run it on" (#1296). Absent means the author's own AI. */
+    targetProviderId?: string;
   }) => Promise<DispatchPrepared>;
   /**
    * It worked — spawn the card. The dialog is closed by the caller.
@@ -141,6 +148,13 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
   const [task, setTask] = React.useState(props.options.taskStatement ?? '');
   const [criteria, setCriteria] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  /**
+   * The AI the USER picked under "Run it on" (#1296), or `null` to follow the
+   * chosen template's preference (and, with none, the author's own AI). Kept
+   * apart from the derived target so switching roles re-applies the new role's
+   * preference until the user has made a choice of their own.
+   */
+  const [pickedAi, setPickedAi] = React.useState<string | null>(null);
   /** a refusal from `prepare`, shown in place. The dialog stays open. */
   const [failed, setFailed] = React.useState<DispatchPrepared & { ok: false } | null>(null);
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
@@ -160,11 +174,17 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
   };
 
   const chosen = templates.find((x) => x.id === chosenId);
+  const target = runOnTarget(props.options, chosen, pickedAi);
   // THE ROW'S OWN REASON, not a general "cannot dispatch": each refusal key names
   // a different fix, which is the whole reason #946 returns keys rather than a
-  // boolean.
-  const blockedKey = chosen?.refusalKey;
-  const canGo = !!chosen && blockedKey === undefined && !busy;
+  // boolean. The template's own refusal first; then the AI's (#1296).
+  const blockedText =
+    chosen?.refusalKey !== undefined
+      ? t(chosen.refusalKey)
+      : target.blocked
+        ? t(target.blocked.key, target.blocked.params)
+        : undefined;
+  const canGo = !!chosen && blockedText === undefined && !busy;
 
   const go = (): void => {
     if (!chosen || !canGo) return;
@@ -180,6 +200,7 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
       .onPrepare({
         templateId: chosen.id,
         ...(artifact ? { taskStatement: task, acceptanceCriteria: criteria } : {}),
+        ...(target.send === undefined ? {} : { targetProviderId: target.send }),
       })
       .then((answer) => {
         if (!answer.ok) {
@@ -480,6 +501,84 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
             </div>
           )}
 
+        {/* ── RUN IT ON (#1296, E40 screen 6) ───────────────────────────────
+            Which AI the dispatched session runs on: the author's own first, then
+            every other registered AI. Shown only when there is a choice to make
+            (more than one AI), or when the chosen role prefers an AI that cannot
+            be used — the one case where saying nothing would be a silent
+            fallback. A logged-out AI is dimmed but still focusable, the template
+            rows' rule: the row explains itself, the Dispatch button refuses. */}
+        {target.show && (
+          <div
+            data-testid="dispatch-run-on"
+            style={{ padding: '10px 14px', borderBlockEnd: '1px solid var(--border)' }}
+          >
+            <span style={labelStyle}>{t('dispatch.ai.runOn')}</span>
+            <div
+              role="radiogroup"
+              aria-label={t('dispatch.ai.runOn')}
+              style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}
+            >
+              {target.rows.map((ai) => {
+                const on = ai.id === target.id;
+                const out = ai.login === 'logged-out' && ai.id !== props.options.currentAi;
+                return (
+                  <button
+                    key={ai.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    data-dispatch-ai={ai.id}
+                    data-selected={on ? 'yes' : undefined}
+                    data-dispatch-ai-dimmed={out ? 'yes' : undefined}
+                    onClick={() => setPickedAi(ai.id)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'baseline',
+                      gap: 6,
+                      padding: '5px 10px',
+                      background: on ? 'var(--panel2)' : 'transparent',
+                      // an outlined control with no fill wears `--control-edge` (#1209)
+                      border: '1px solid var(--control-edge)',
+                      outline: on ? '1px solid var(--text)' : 'none',
+                      borderRadius: 6,
+                      // DIMMED BY GOING TO `--muted`, not by fading the box: a fade
+                      // is a contrast cut on words still meant to be read (#1211)
+                      color: out ? 'var(--muted)' : 'var(--text)',
+                      cursor: 'pointer',
+                      font: 'inherit',
+                      fontSize: 12,
+                    }}
+                  >
+                    <span aria-hidden style={{ inlineSize: 10 }}>
+                      {on ? t('dispatch.currentMark') : ''}
+                    </span>
+                    {/* A provider's display name is DATA (the registry's), like a
+                        template name — rendered, not translated. */}
+                    {ai.id === props.options.currentAi ? t('dispatch.ai.same', { ai: ai.name }) : ai.name}
+                    {out && (
+                      <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{t('dispatch.ai.notLoggedIn')}</span>
+                    )}
+                    {!out && ai.id === chosen?.preferredProviderId && ai.id !== props.options.currentAi && (
+                      <span style={{ fontSize: 10.5, color: 'var(--muted)' }}>{t('dispatch.ai.preferredMark')}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {target.blocked && chosen?.refusalKey === undefined ? (
+              <span
+                data-testid="dispatch-ai-blocked"
+                style={{ ...hintStyle, color: 'var(--status-crashed-ink)' }}
+              >
+                {t(target.blocked.key, target.blocked.params)}
+              </span>
+            ) : (
+              <span style={hintStyle}>{t('dispatch.ai.hint')}</span>
+            )}
+          </div>
+        )}
+
         {/* ── THE TASK AND THE CRITERIA, which are why this dialog exists ───
 
             ⚠️ SHOWN ONLY FOR THE POLICY THAT READS THEM, which is `clean-room`.
@@ -611,7 +710,7 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
             type="button"
             data-testid="dispatch-go"
             disabled={!canGo}
-            title={blockedKey ? t(blockedKey) : undefined}
+            title={blockedText}
             onClick={go}
             style={{
               background: 'var(--chip)',
@@ -631,6 +730,72 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
       </div>
     </div>
   );
+}
+
+/** What "Run it on" decided, for the dialog to render and send (#1296). */
+export interface RunOnTarget {
+  /** draw the section at all */
+  show: boolean;
+  /** the rows, the author's own AI first */
+  rows: DispatchAiDto[];
+  /** the AI the dispatch would run on, if it is one we know */
+  id: string | undefined;
+  /** what to put in `targetProviderId` — absent leaves it to main (the author's AI) */
+  send: string | undefined;
+  /** why it cannot run there, as an i18n key with its parameters */
+  blocked?: { key: string; params?: Record<string, string> };
+}
+
+/**
+ * Which AI a dispatch from this dialog would run on, and whether it can.
+ *
+ * PURE, and exported for the unit tests: every state the done-when names (a
+ * preferred AI that is missing, one that is logged out, a fork across AIs) is a
+ * row in a table rather than a click sequence.
+ *
+ * The rule, in order: the user's own pick; else the role's preferred AI; else
+ * the author's own AI. ⚠️ A PREFERRED AI THAT CANNOT BE USED IS NOT SKIPPED to
+ * the next rule — that would be the silent fallback the done-when forbids. It
+ * stays the target, and `blocked` says why, until the user picks another.
+ */
+export function runOnTarget(
+  options: DispatchOptions,
+  chosen: DispatchTemplateDto | undefined,
+  pickedAi: string | null
+): RunOnTarget {
+  const ais = options.ais ?? [];
+  const current = options.currentAi;
+  const rows = [
+    ...ais.filter((a) => a.id === current),
+    ...ais.filter((a) => a.id !== current),
+  ];
+  const preferred = chosen?.preferredProviderId;
+  const id = pickedAi ?? preferred ?? current;
+  const ai = ais.find((a) => a.id === id);
+  const fromPreference = pickedAi === null && preferred !== undefined;
+  const role = chosen?.name ?? '';
+  let blocked: RunOnTarget['blocked'];
+  if (ais.length > 0 && id !== undefined && !ai) {
+    // The role's preference names an AI not set up here — or (rare) the
+    // author's own AI is not in the list, which main would refuse anyway.
+    blocked = fromPreference
+      ? { key: 'dispatch.ai.preferMissing', params: { role, ai: id } }
+      : { key: 'dispatch.refusal.aiMissing' };
+  } else if (ai && ai.id !== current && ai.login === 'logged-out') {
+    blocked = fromPreference
+      ? { key: 'dispatch.ai.preferLoggedOut', params: { role, ai: ai.name } }
+      : { key: 'dispatch.ai.loggedOut', params: { ai: ai.name } };
+  } else if (chosen?.contextPolicy === 'full' && ai && current !== undefined && ai.id !== current) {
+    // main refuses this too (`dispatch-context.ts`); said before the click
+    blocked = { key: 'dispatch.refusal.crossProviderFork' };
+  }
+  return {
+    show: ais.length > 1 || (preferred !== undefined && blocked !== undefined),
+    rows,
+    id: ai?.id,
+    send: ai?.id,
+    ...(blocked === undefined ? {} : { blocked }),
+  };
 }
 
 /**
