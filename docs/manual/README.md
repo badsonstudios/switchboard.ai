@@ -62,6 +62,7 @@ anywhere else.
 | [21 — The Files tab](21-files.md) | Browsing the session's folder: git badges on files and folders, opening files from the tree, what the keyboard does, why the list doesn't update by itself, and the entries it deliberately leaves out | draft |
 | [22 — History](22-history.md) | The History tab: the commit graph and what its lines mean, what a row tells you, opening a commit to see its files and their diffs, branch and tag chips, detached HEAD, commits to pull and push, searching | draft |
 | [23 — Using Codex](23-using-codex.md) | Running OpenAI's Codex in the same Session view: what you need, approvals and Stop, model and effort, what each mode means for Codex (and the one it never uses), resume, what is different from Claude, the 5-hour and weekly limits, and what is not in yet | draft |
+| [24 — Settings → AIs](24-ais.md) | The AIs tab: which AI new sessions start on, what was found on this computer and whether it is signed in, Log in (the AI's own sign-in), installing the ones not found, Add an AI from the list or as Something else, Test, and what "unknown" means | draft |
 | [25 — Switching a session to another AI](25-switching-ais.md) | The AI chip before the model chip: moving a card from Claude Code to Codex and back, why switching back resumes the conversation it had there, the question it asks while a turn is running, and what does and does not carry over | draft |
 
 Backfilled 2026-07-24 from the shipped app (Phase 1 + Phase 2 epics E7, E8,

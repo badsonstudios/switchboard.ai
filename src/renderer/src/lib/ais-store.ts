@@ -1,16 +1,41 @@
-// Which AIs exist, as the renderer draws them (E40 item 10, #1293).
+// ONE copy of "which AIs exist" for the renderer (E40 items 09 and 10, #1292
+// and #1293).
 //
-// One small cache over the preload's `ais.list()` / `ais.onChanged`, so every
-// tab, rail card, header and the status bar read ONE answer instead of each
-// asking main. Started lazily by the first subscriber, and never stopped: the
-// list is a property of the app run, not of any one component.
+// Main owns the model (`src/main/ai-catalog/`, #1291) and pushes every change
+// as `ais:changed`. This module holds the last snapshot it was told about, so
+// the AIs tab, the Add-an-AI dialog, and every tab, rail card, header and the
+// status bar read the same object, and nothing asks main twice.
 //
-// FAIL-OPEN, all the way down (PHILOSOPHY §4): no bridge (a unit test, an old
-// preload), a refused call or a rejected promise all leave the snapshot at
-// "no list". Every reader treats that as "draw the neutral glyph and keep the
-// ring and the words", never as an error.
-import { AI_ICON_BASE, type AiListItem, type AisSnapshot } from '../../../shared/ais';
+// TWO VIEWS OF THE ONE SNAPSHOT (merged on the 2026-10-16 train: both PRs had
+// written this module independently):
+//   - `getAisView()` — the whole snapshot plus `failed` (#1292's Settings tab);
+//   - `getAisState()` — `{items, defaultId}`, derived from it (#1293's badge,
+//     icon and status bar). A stable object until the snapshot changes.
+//
+// Started by `startAis()` (the AIs tab) or lazily by the first `subscribeAis`
+// (any reader), and never stopped: the list is a property of the app run, not
+// of any one component.
+//
+// FAIL-OPEN (litmus #3). A call that fails, or a bridge that is not there (an
+// older preload, a unit test that did not stub one), leaves the last good
+// snapshot standing and records a notice. The tab then shows what it last knew
+// and says it could not refresh; a badge with no list draws the neutral glyph
+// and keeps the ring and the words. Nothing is blank because an IPC call failed.
+//
+// `globalThis`, not `window`, for `git-status-store.ts`'s reason: a pure test
+// of this module runs where a bare `window` is a ReferenceError.
 import { answered } from '../../../shared/ipc/refusal';
+import { AI_ICON_BASE, type AiListItem, type AisSnapshot, type DefaultAiState } from '../../../shared/ais';
+import type { SwitchboardApi } from '../../../preload';
+
+export type AisBridge = SwitchboardApi['ais'];
+
+export interface AisView {
+  /** the last snapshot main gave; `null` until the first answer */
+  snapshot: AisSnapshot | null;
+  /** the last call failed: the snapshot (if any) is what was known before */
+  failed: boolean;
+}
 
 /** What the renderer knows, or `items: null` before (or instead of) an answer. */
 export interface AisState {
@@ -29,81 +54,136 @@ export interface AiLook {
   initial: string;
 }
 
-const EMPTY: AisState = Object.freeze({ items: null, defaultId: null });
+const EMPTY_STATE: AisState = Object.freeze({ items: null, defaultId: null });
 
-let state: AisState = EMPTY;
-let started = false;
-/** a push has landed, so a slower first `list()` answer must not overwrite it */
-let pushed = false;
+let view: AisView = { snapshot: null, failed: false };
 const listeners = new Set<() => void>();
+let started = false;
+let unsubscribe: (() => void) | null = null;
+/** bumped by every push, so a slower first fetch never overwrites a newer push */
+let generation = 0;
+/** `getAisState`'s memo: the snapshot it was derived from, and the answer */
+let derived: { from: AisSnapshot | null; state: AisState } = { from: null, state: EMPTY_STATE };
 
-type AisBridge = {
-  list?: () => Promise<AiListItem[]>;
-  default?: () => Promise<{ id: string }>;
-  onChanged?: (cb: (snap: AisSnapshot) => void) => unknown;
-};
-
-function bridge(): AisBridge | undefined {
+export function aisBridge(): AisBridge | undefined {
   try {
-    return (globalThis as { switchboard?: { ais?: AisBridge } }).switchboard?.ais;
+    const b = (globalThis as { switchboard?: { ais?: AisBridge } }).switchboard?.ais;
+    return b && typeof b.list === 'function' ? b : undefined;
   } catch {
     return undefined;
   }
 }
 
-function set(next: AisState): void {
-  state = next;
-  for (const l of [...listeners]) {
+function set(next: AisView): void {
+  view = next;
+  for (const fn of [...listeners]) {
     try {
-      l();
+      fn();
     } catch {
-      // a reader's throw is its own problem; the rest still hear
+      /* a bad subscriber costs its own update, not everyone's */
     }
   }
 }
 
-function start(): void {
-  if (started) return;
-  started = true;
-  const ais = bridge();
-  if (!ais) return;
-  try {
-    ais.onChanged?.((snap) => {
-      if (!snap || !Array.isArray(snap.items)) return;
-      pushed = true;
-      set({ items: snap.items, defaultId: snap.default?.id ?? null });
-    });
-  } catch {
-    // no push channel: the one read below is all there is
-  }
-  void Promise.all([
-    Promise.resolve()
-      .then(() => ais.list?.())
-      .catch(() => undefined),
-    Promise.resolve()
-      .then(() => ais.default?.())
-      .catch(() => undefined),
-  ]).then(([list, def]) => {
-    if (pushed) return;
-    const items = answered(list);
-    if (!Array.isArray(items)) return;
-    const d = answered(def);
-    set({ items, defaultId: typeof d?.id === 'string' ? d.id : null });
-  });
+/** Record that a call failed, keeping what was known. */
+export function noteAisFailure(): void {
+  set({ snapshot: view.snapshot, failed: true });
 }
 
-/** `useSyncExternalStore`'s subscribe. The first subscriber starts the cache. */
-export function subscribeAis(cb: () => void): () => void {
-  listeners.add(cb);
-  start();
+/** Take a snapshot main handed back (a push, or Look again's answer). */
+export function acceptAisSnapshot(raw: unknown): void {
+  const s = answered(raw) as AisSnapshot | undefined;
+  if (!s || !Array.isArray(s.items) || !s.default) {
+    noteAisFailure();
+    return;
+  }
+  generation += 1;
+  set({ snapshot: s, failed: false });
+}
+
+/** Take a new default from `setDefault`'s answer, before the push arrives. */
+export function acceptAisDefault(d: DefaultAiState): void {
+  if (!view.snapshot) return;
+  set({ snapshot: { ...view.snapshot, default: d }, failed: false });
+}
+
+/**
+ * Start listening, and fetch the first snapshot. Idempotent: the first
+ * reader starts it, every later one shares it.
+ */
+export function startAis(): void {
+  if (started) return;
+  const bridge = aisBridge();
+  if (!bridge) {
+    noteAisFailure();
+    return;
+  }
+  started = true;
+  try {
+    unsubscribe = bridge.onChanged((s) => acceptAisSnapshot(s));
+  } catch {
+    unsubscribe = null;
+  }
+  void refreshAis();
+}
+
+/** Ask main for the list and the default again (no detection is run). */
+export async function refreshAis(): Promise<void> {
+  const bridge = aisBridge();
+  if (!bridge) {
+    noteAisFailure();
+    return;
+  }
+  const asked = generation;
+  try {
+    const [items, def] = await Promise.all([bridge.list(), bridge.default()]);
+    const list = answered(items);
+    const d = answered(def);
+    // A push that arrived while this was in flight is newer: keep it, and do
+    // not call it a failure either.
+    if (generation !== asked) return;
+    if (!Array.isArray(list) || !d) {
+      noteAisFailure();
+      return;
+    }
+    set({
+      // `list` + `default` do not say whether a run is in flight; the rows say
+      // "checking…" on their own while their detection is missing.
+      snapshot: { items: list, default: d, detecting: view.snapshot?.detecting ?? false },
+      failed: false,
+    });
+  } catch {
+    if (generation === asked) noteAisFailure();
+  }
+}
+
+/**
+ * `useSyncExternalStore`'s subscribe. The first subscriber with a bridge
+ * starts the cache (#1293's lazy start); with no bridge there is nothing to
+ * start, and a mere subscription records no failure.
+ */
+export function subscribeAis(fn: () => void): () => void {
+  listeners.add(fn);
+  if (!started && aisBridge()) startAis();
   return () => {
-    listeners.delete(cb);
+    listeners.delete(fn);
   };
 }
 
-/** The current snapshot; a stable object until something changes. */
+export function getAisView(): AisView {
+  return view;
+}
+
+/** `{items, defaultId}` off the current snapshot; a stable object until it changes. */
 export function getAisState(): AisState {
-  return state;
+  if (derived.from !== view.snapshot) {
+    const s = view.snapshot;
+    derived = {
+      from: s,
+      state: s ? Object.freeze({ items: s.items, defaultId: s.default?.id ?? null }) : EMPTY_STATE,
+    };
+  }
+  return derived.state;
 }
 
 /** The list item that hosts this provider id, if the list has one. */
@@ -144,10 +224,21 @@ export function aiLook(state: AisState, providerId: string | undefined, fallback
   };
 }
 
-/** Tests only: forget everything, so the next subscriber starts again. */
-export function resetAisStoreForTests(next: AisState = EMPTY): void {
-  state = next;
-  started = next !== EMPTY;
-  pushed = false;
+/**
+ * Tests only: a module outlives the test that used it. With `seed`, the
+ * derived `getAisState()` answers it (and the cache counts as started, so a
+ * subscriber fetches nothing) until a real snapshot replaces it.
+ */
+export function resetAisStoreForTests(seed?: AisState): void {
+  try {
+    unsubscribe?.();
+  } catch {
+    /* nothing to undo */
+  }
+  unsubscribe = null;
+  started = seed !== undefined;
+  generation = 0;
+  view = { snapshot: null, failed: false };
+  derived = { from: null, state: seed ?? EMPTY_STATE };
   listeners.clear();
 }

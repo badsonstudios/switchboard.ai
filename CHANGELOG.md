@@ -107,6 +107,16 @@ on the floor, and say so in your PR.
   Codex's "Auto review" mode, where a hidden model approves things for you.
   There is no AI picker yet, so a new session is still a Claude session, and
   nothing changes for anyone without Codex.
+- **Settings → AIs.** A new tab that shows which AIs are on this computer, whether
+  each one is signed in and its version, and which AI new sessions start on (pick
+  another, or press **Make default** on its row). **Log in…** runs the AI's own
+  sign-in; Switchboard never sees a password. Known AIs that are not installed
+  show how to install them, and **Look again** searches again. **+ Add an AI…**
+  lists the AIs Switchboard knows about, with a "Runs local models" filter and a
+  **Check for new AIs** button (the only thing here that uses the internet, and
+  only when pressed), or lets you add any other AI that speaks the Agent Client
+  Protocol under **Something else**: give it a name, a command and arguments,
+  press **Test**, then **Add**.
 - A session can switch to another AI: the AI chip before the model chip lists
   each AI with its login state, and picking one moves the card to it, with a
   line in the conversation marking the switch. Switching back resumes the

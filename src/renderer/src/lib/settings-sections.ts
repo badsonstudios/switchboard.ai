@@ -26,10 +26,15 @@
  * `diagnostics` and `advanced` are LAST on purpose (#923): the two nobody
  * should need. An off-by-default instrument beside the theme picker would
  * advertise it as ordinary.
+ *
+ * `ais` (E40 item 09, #1292) is THIRD, where `mockups/multi-ai.html` screen 4
+ * draws it: which AI new sessions start on is a set-it-once choice like the
+ * ones on General, and the owner named the tab "AIs".
  */
 export const SETTINGS_SECTIONS = [
   'appearance',
   'general',
+  'ais',
   'attention',
   'sessions',
   'diagnostics',

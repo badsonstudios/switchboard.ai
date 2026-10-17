@@ -60,6 +60,7 @@ import { AdvancedSection } from './settings/AdvancedSection';
 import { DispatchRetireSection } from './settings/DispatchRetireSection';
 import type { DispatchRetirePolicy } from '../lib/dispatch-ephemeral';
 import { DiagnosticsSection } from './settings/DiagnosticsSection';
+import { AisSection } from './settings/AisSection';
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -400,6 +401,11 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
             />
           </div>
         )}
+
+        {/* Which AI new sessions start on, and which AIs are here (E40 item
+            09, #1292). Self-contained: it reads `switchboard.ais` itself, so
+            nothing new is threaded through this dialog's props. */}
+        {heading('ais', <AisSection open={props.open} />)}
 
         {heading(
           'attention',

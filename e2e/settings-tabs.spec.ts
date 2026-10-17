@@ -36,6 +36,7 @@ test.describe('Settings is in tabs (#1199)', () => {
     await expect(d.getByRole('tab')).toHaveText([
       'Appearance',
       'General',
+      'AIs',
       'Notifications',
       'Sessions',
       'Diagnostics',
@@ -51,6 +52,7 @@ test.describe('Settings is in tabs (#1199)', () => {
     // EVERY setting is on some tab, and only the tab showing can be seen
     const homes: Array<[string, string[]]> = [
       ['general', ['language', 'updates', 'status-polling']],
+      ['ais', ['ais']],
       ['attention', []],
       ['sessions', []],
       ['diagnostics', []],

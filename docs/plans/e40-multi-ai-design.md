@@ -615,6 +615,49 @@ The preload exposes all of these as `switchboard.ais`.
      trip reads the reviewer's last turn, not a bus tool, so neither AI is told
      about the bus.
 
+*As built, item 09 (#1292), screens 4 and 5:*
+- **The tab** is `settings/AisSection.tsx`, the third tab (`settings-sections.ts`
+  `ais`, labelled "AIs"), where the mockup draws it. It reads only
+  `switchboard.ais`, through one renderer copy of the snapshot
+  (`lib/ais-store.ts`: the first `list()` + `default()`, then every
+  `ais:changed`; a failed call keeps the last snapshot with a notice). The
+  sorting and wording rules are pure, in `lib/ais-view.ts`.
+- **Found** = every registered AI, plus any other whose detection says
+  installed. A registered AI whose program is missing stays in Found and says
+  so. **Not found** = the rest. No detection yet reads "checking…", never "not
+  found"; `unknown` says it could not tell, with the probe's reason. An
+  installed catalog AI with no provider says sessions cannot start on it yet
+  (Codex, until #1307's provider is on main).
+- **The default** is a picker of registered AIs, plus **Make default** on each
+  registered row. Both call `ais.setDefault`. A fallback names the choice and
+  the AI actually used.
+- **Log in…** shows only for a registered AI whose login is `logged-out`. It
+  shows the AI's own answer: Claude's terminal instruction, a method list, or
+  done / failed. There is no credential field anywhere.
+- **Install** is shown, never run: a command in a code box with **Copy**, or
+  **How to install**, which goes through `files.openExternal` (it refuses any
+  scheme but http, https and mailto), never a raw anchor. Shared by the tab and the dialog
+  (`settings/AiInstallHint.tsx`).
+- **The dialog** is `settings/AddAiDialog.tsx`. It is portalled to `<body>`,
+  because Settings goes `inert` beneath it. Tab wraps inside it, and Escape
+  closes it without reaching Settings.
+  - **From the list** shows the whole catalog, as the mockup does: installed
+    ones are marked "✓ installed", the rest show their install hint. It has a
+    search and the "Runs local models" filter.
+  - **Check for new AIs** is the only network call, and only a press makes it.
+    It shows the total, the new / updated / gone counts and the new names.
+    `lastRegistryCheck()` gives the date.
+  - The mockup's "All ▾" select is not built, because its meaning was never
+    specified.
+- **Something else:** the Arguments box is split on whitespace (an argument
+  cannot hold a space anyway). **Add** is enabled only after a passing Test of
+  the same command + arguments. Renaming does not need another Test. The Test
+  line reads "<agentName> <agentVersion>, protocol <n>". **"3 models found" is
+  not available:** Test sends only `initialize`, and the screen says it cannot
+  list models.
+- **Icons:** `settings/AiRowIcon.tsx`, an `<img>` from `AI_ICON_BASE`, with the
+  name's initial on a tile when there is no mark.
+
 **Placeholders in the mockup, not facts:** model names, version numbers, plan
 names and the email address. The icons are stand-ins; the registry ships each
 AI's real SVG.

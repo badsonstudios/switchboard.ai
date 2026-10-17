@@ -47,6 +47,7 @@ page at a time.
 | [Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette |
 | [Notifications & events](09-notifications.md) | Sounds, the Events drawer, who needs you, when you get told what |
 | [Settings](10-settings.md) | The Settings window (`Ctrl+,`), the chips that stayed on the title bar, and why |
+| [Settings → AIs](24-ais.md) | Which AI new sessions start on, the AIs found on this computer and whether they are signed in, Log in, installing the ones not found, and adding another AI |
 | [MCP servers](17-mcp-servers.md) | `/mcp`: what tools a session is wired to, which scope each comes from, adding and removing them, and why one is waiting on you |
 
 ## When something is wrong
