@@ -13,10 +13,10 @@ import type { SettingsSection } from './settings-sections';
 import { AI_ICON_BASE } from '../../../shared/ais';
 
 /**
- * The Settings tab "Manage AIs…" opens. ONE constant so pointing it at the AIs
- * tab (#1292) is a one-line change.
+ * The Settings tab "Manage AIs…" opens: the AIs tab (#1292). ONE constant, so
+ * it is the one line that had to change when that tab landed.
  */
-export const MANAGE_AIS_TAB: SettingsSection = 'general';
+export const MANAGE_AIS_TAB: SettingsSection = 'ais';
 
 /** When a switch happened, at the precision that helps: a time today, else a date and time. */
 export function switchWhen(atMs: number, nowMs: number, locale?: string): string {

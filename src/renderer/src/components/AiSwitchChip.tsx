@@ -29,6 +29,7 @@ import { useAiList } from '../lib/ai-list';
 import { aiMenuRows, MANAGE_AIS_TAB, type AiMenuRow, type SwitchAiNext } from '../lib/ai-switch-view';
 import { openSettingsAt } from '../lib/settings-port';
 import { STOP_ARM_MS } from './SessionHistoryDialog';
+import { AiIcon } from './AiIcon';
 
 export interface AiSwitchChipProps {
   /** the provider this card is on now */
@@ -46,19 +47,17 @@ export interface AiSwitchChipProps {
   onSwitch: (providerId: string, stopFirst: boolean) => Promise<SwitchAiNext>;
 }
 
-/** An AI's icon, from the renderer's own origin; the name stands in when there is none. */
+/**
+ * An AI's icon: the shared `AiIcon` (#1293), so the chip and its menu draw an
+ * AI exactly as its tab, rail card and header do — the catalog's mark, or the
+ * neutral tile with the initial when there is none or it does not load.
+ */
 function AiGlyph({ row, size }: { row: Pick<AiMenuRow, 'icon' | 'name'> | undefined; size: number }): React.JSX.Element | null {
-  const [broken, setBroken] = React.useState(false);
-  if (!row?.icon || broken) return null;
+  if (!row) return null;
   return (
-    <img
-      src={row.icon}
-      alt=""
-      aria-hidden
-      width={size}
-      height={size}
-      onError={() => setBroken(true)}
-      style={{ inlineSize: size, blockSize: size, flexShrink: 0, objectFit: 'contain' }}
+    <AiIcon
+      look={{ name: row.name, iconUrl: row.icon, initial: (row.name.trim()[0] ?? '?').toUpperCase() }}
+      size={size}
     />
   );
 }
