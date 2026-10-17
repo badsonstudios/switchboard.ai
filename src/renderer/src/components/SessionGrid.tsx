@@ -121,6 +121,7 @@ import { presentStatus } from '../lib/rail-view';
 import { tabStripAction } from '../lib/tabstrip-keys';
 import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
+import { AiBadge } from './AiBadge';
 import { CONTEXT_DND_TYPE } from '../../../shared/context-drop';
 import type { Ladder } from '../lib/presentation';
 import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../lib/popout-windows';
@@ -222,6 +223,8 @@ interface Live {
   id: string;
   accent?: string;
   badge?: string;
+  /** which AI it is on (#1293) — the header's icon */
+  providerId?: string;
   autonomy?: AutonomyMode;
   /** the record's status at bind time — a card that ADOPTED a running session
    *  (reveal, P2-E15-08) must not claim 'starting': no further push is coming
@@ -495,6 +498,19 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
   const badge = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardBadge(cardId)
   );
+  // Which AI, and what it is doing (#1293): the AI's icon in a status ring
+  // stands where the accent dot was. Store reads, for the reason above, and
+  // the SAME three facts the rail row paints from — provider, status, and
+  // whether this card is one of the N that need you.
+  const providerId = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardProvider(cardId)
+  );
+  const cardStatus = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardStatus(cardId)
+  );
+  const needsYou = React.useSyncExternalStore(subscribeStore, () =>
+    cardId ? sessionStore.getNeedingCards().has(cardId) : false
+  );
   // WHAT THE ✕ ACTUALLY DOES, said in three strings rather than one (#543).
   //
   // Every tab in the app used to be titled "Close (ends the session)", which is
@@ -584,7 +600,26 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
       {/* undefined accent/badge are passed through as undefined on purpose: the
           chip's own fallbacks (grey dot, no badge) stay the behaviour for a
           derived tab and for a card the store has not answered for yet. */}
-      <IdentityChip title={title} accent={accent} badge={badge} compact />
+      <IdentityChip
+        title={title}
+        accent={accent}
+        badge={badge}
+        compact
+        // a session's tab only: a document or a diff has no AI and no status.
+        // Standing still (`spin={false}`): the tab's mark never moved before.
+        mark={
+          cardId ? (
+            <AiBadge
+              providerId={providerId}
+              status={cardStatus}
+              needsYou={needsYou}
+              spin={false}
+              // the tab's name stays the session's name (see the prop)
+              decorative
+            />
+          ) : undefined
+        }
+      />
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -768,6 +803,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   );
   const cardBadge = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardBadge(cardId)
+  );
+  // ...and which AI it is on, and whether it is one of the N that need you —
+  // the header's AI icon and its ring (#1293), painted by the rule the rail
+  // row and the tab use
+  const cardProvider = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardProvider(cardId)
+  );
+  const cardNeedsYou = React.useSyncExternalStore(subscribeStore, () =>
+    cardId ? sessionStore.getNeedingCards().has(cardId) : false
   );
   const view = presentation.view;
   const poppedOut = presentation.poppedOut;
@@ -1308,6 +1352,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           id: record.id,
           accent: record.identity.accentColor,
           badge: record.identity.langBadge,
+          providerId: record.identity.providerId,
           autonomy: record.autonomy,
           status: record.status,
           transport: record.transport,
@@ -1920,6 +1965,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // the user.
   const headerAccent = live?.accent ?? cardAccent;
   const headerBadge = live?.badge ?? cardBadge;
+  const headerProvider = live?.providerId ?? cardProvider;
   // The Changes tab's badge. THE THIRD READER OF `git:status` (#785 review) —
   // `unreadable` arrives with `files: []`, so this quietly counts zero, which is
   // the same silence `GitContext` chooses on purpose and is therefore right by
@@ -2110,6 +2156,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             onDoubleClick={maximizeOnDoubleClick}
             style={cheadStyle(headerAccent)}
           >
+            {/* WHICH AI, FIRST (#1293, the mockup's screen 1): the same icon and
+                ring the tab above draws, standing still — the pill at the end
+                of this row says the state in a word, as it always has. */}
+            <AiBadge providerId={headerProvider} status={status} needsYou={cardNeedsYou} spin={false} />
             {/* the SAME badge the tab above draws (#269) — §5.11's "renders
                 identically everywhere", and the accent is the field, never the
                 ink: as 9px text it measured 1.80-3.11:1 on daylight */}
@@ -2991,6 +3041,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             onDoubleClick={maximizeOnDoubleClick}
             style={cheadStyle(headerAccent)}
           >
+            <AiBadge providerId={headerProvider} status="suspended" needsYou={cardNeedsYou} spin={false} />
             {headerBadge && (
               <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
                 {headerBadge}
@@ -3040,6 +3091,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             onDoubleClick={maximizeOnDoubleClick}
             style={cheadStyle(headerAccent)}
           >
+            <AiBadge
+              providerId={headerProvider}
+              // the rail's twin of the pill's never-started word (#687)
+              status={ended?.kind === 'never-started' ? 'not-started' : pill?.status}
+              needsYou={cardNeedsYou}
+              spin={false}
+            />
             {headerBadge && (
               <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
                 {headerBadge}

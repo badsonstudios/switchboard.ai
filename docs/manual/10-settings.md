@@ -209,10 +209,10 @@ you pick. Pick one and it applies at once; there is no Save button.
 |---|---|---|
 | 1 | **Breathing glow** | An outline in the session's colour that slowly glows and fades |
 | 2 | **Marquee sweep** | A light running round the edge, with a faint tint |
-| 3 | **Brighter, with a bigger spinner** *(what you get unless you change it)* | The row filled with the session's colour, the name in bold, a larger spinner, and "working" in blue. Nothing moves but the spinner |
+| 3 | **Brighter, with a bigger spinner** *(what you get unless you change it)* | The row filled with the session's colour, the name in bold, a larger spinning ring round the AI's icon, and "working" in blue. Nothing moves but the ring |
 | 4 | **Shimmer** | A band of light sweeping across |
 | 5 | **Progress strip** | A thin bar running along the bottom edge |
-| 6 | **Dancing bars** | Four bouncing bars instead of the spinner, and a steady outline |
+| 6 | **Dancing bars** | Four bouncing bars beside the AI's icon instead of the spinning ring, and a steady outline |
 
 Things that are true of all six:
 

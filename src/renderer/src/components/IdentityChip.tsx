@@ -122,19 +122,28 @@ export function IdentityChip(props: {
   accent?: string;
   badge?: string;
   compact?: boolean;
+  /**
+   * What stands where the accent dot does (#1293): a session's tab passes the
+   * AI's icon in its status ring (`AiBadge`), which the owner chose to REPLACE
+   * the dot. A tab with no session (a document, a Changes tab) passes nothing
+   * and keeps the dot, since it has no AI and no status.
+   */
+  mark?: React.ReactNode;
 }): React.JSX.Element {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minInlineSize: 0 }}>
-      <span
-        aria-hidden
-        style={{
-          inlineSize: 8,
-          blockSize: 8,
-          borderRadius: '50%',
-          background: props.accent ?? 'var(--faint)',
-          flexShrink: 0,
-        }}
-      />
+      {props.mark ?? (
+        <span
+          aria-hidden
+          style={{
+            inlineSize: 8,
+            blockSize: 8,
+            borderRadius: '50%',
+            background: props.accent ?? 'var(--faint)',
+            flexShrink: 0,
+          }}
+        />
+      )}
       {/* colour and weight are INHERITED (#905): the tab strip says which tab
           is open — `--text` and bold for the focused group's, `--muted` for the
           rest — and a fixed ink here would overrule it. `data-title` feeds

@@ -1459,6 +1459,7 @@ export function App(): React.JSX.Element {
             folder: c.folder,
             accent: c.accent,
             badge: c.badge,
+            providerId: c.providerId,
             status: c.status,
             groupId: c.groupId,
             autoKey: c.autoKey,

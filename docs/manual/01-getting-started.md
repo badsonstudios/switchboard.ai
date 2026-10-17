@@ -57,13 +57,15 @@ same result, no dialog.
   quiet hours, phone push — is in the Settings window instead: press
   **`Ctrl+,`**. See [Settings](10-settings.md).
 - **Sessions** (left, or across the top if you prefer) — every session you have
-  open, each with a mark for what it is doing. Click one to jump to it.
+  open, each with the icon of the AI it runs on, ringed in the colour of what
+  it is doing. Click one to jump to it.
 - **The grid** (middle) — the session cards themselves. Each has its own tabs:
   Session, Changes, Files, History.
 - **Events** (right) — what needs you right now. Empty is good; it says
   "Nothing needs you right now".
 - **Status bar** (bottom) — how many sessions are open, total tokens and
-  estimated cost, the Claude Code version, and the current theme.
+  estimated cost, each AI on this computer with its version, and the current
+  theme.
 
 
 ## Good to know

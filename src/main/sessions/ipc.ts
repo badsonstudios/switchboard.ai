@@ -3001,6 +3001,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           folder: card.identity.folder,
           accent: card.identity.accentColor,
           badge: card.identity.langBadge,
+          // the AI the icon shows (#1293): what is running now, else what ran
+          // last; '' (a card never started) is "no answer", not an id
+          providerId: rec?.identity.providerId || card.identity.providerId || undefined,
           status: rec?.status ?? 'suspended',
           liveId,
           groupId: card.groupId,

@@ -23,6 +23,8 @@ export interface RailSession {
   folder?: string;
   accent?: string;
   badge?: string;
+  /** which AI the card is on (#1293), off `sessions:cards`; absent = not known */
+  providerId?: string;
   /**
    * The card's status, straight off `sessions:cards` — `SessionStatus` or the
    * card-only 'suspended' (#618) — plus the one value that does NOT come off

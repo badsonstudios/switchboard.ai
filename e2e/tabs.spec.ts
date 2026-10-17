@@ -89,13 +89,21 @@ test.describe('tab strip (#84)', () => {
     // path — main assigning an accent, `sessions:cards` carrying it, the store
     // holding it, the tab painting it. Distinctness rather than named colours,
     // so re-ordering the palette does not make this red.
-    const dotColors = await w.evaluate(() =>
+    //
+    // #1293 REPLACED THE DOT (design record E40 §1, the owner's call: "The
+    // AI's icon replaces the status dot on the tab; a ring around it carries
+    // the status"). So the seven-colours half of this no longer has a dot to
+    // read: the accent now reaches a tab through its lang badge's field and
+    // the open tab's wash, and these temp folders have no lang badge. What is
+    // left to assert here is that every one of the seven tabs carries its
+    // session's AI mark, which is the identity the tab now shows.
+    const marks = await w.evaluate(() =>
       [...document.querySelectorAll('.dv-tabs-container .dv-tab')].map(
-        (tab) => getComputedStyle(tab.querySelector('span[aria-hidden]')!).backgroundColor
+        (tab) => tab.querySelector('.ai-badge')?.getAttribute('data-ai-badge') ?? null
       )
     );
-    expect(dotColors).toHaveLength(7);
-    expect(new Set(dotColors).size, `tabs share a colour: ${dotColors.join(', ')}`).toBe(7);
+    expect(marks).toHaveLength(7);
+    expect(marks.every((m) => m === 'claude-code'), `tabs without an AI mark: ${marks.join(', ')}`).toBe(true);
   });
 
   test('turning wrapping off restores the single-row strip and its dropdown', async () => {

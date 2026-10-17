@@ -161,7 +161,7 @@ describe('the built-in renderer points', () => {
     ]);
     expect(listStatusBarItems(r, 'end').map((i) => i.manifest.id)).toEqual([
       'status-service-health',
-      'status-cli-version',
+      'status-ais',
       'status-theme',
     ]);
   });
@@ -266,7 +266,7 @@ describe('the done-when: extending needs no edit to the consumers', () => {
     expect(listStatusBarItems(r, 'end').map((i) => i.manifest.id)).toEqual([
       'status-clock',
       'status-service-health',
-      'status-cli-version',
+      'status-ais',
       'status-theme',
     ]);
   });

@@ -475,6 +475,10 @@
     "suspended": "suspended",
     "notStarted": "not started"
   },
+  "aiBadge": {
+    "label": "{ai}, {status}",
+    "unknownAi": "AI"
+  },
   "autonomy": {
     "plan": "🛡 plan",
     "ask": "🛡 ask",
@@ -1208,6 +1212,8 @@
     "limitResets": "{label}: {pct}% used, resets {time}",
     "attention": "{count, plural, =0 {none waiting} other {# waiting}}",
     "attentionTitle": "Sessions waiting on you — {binding} goes to the next one",
+    "aiVersion": "{name} {version}",
+    "aisTitle": "AIs on this computer: {list}",
     "theme": "theme: {theme}"
   },
   "usage": {

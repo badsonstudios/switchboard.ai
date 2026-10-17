@@ -870,6 +870,20 @@ export class SessionStore {
     return this.state.sessions.find((s) => s.id === cardId)?.badge;
   }
 
+  /** Which AI one card is on (#1293), or undefined. Scalar, for the reason
+   *  `getCardAccent` documents. */
+  getCardProvider(cardId: string | undefined): string | undefined {
+    if (!cardId) return undefined;
+    return this.state.sessions.find((s) => s.id === cardId)?.providerId;
+  }
+
+  /** One card's status as the rail sees it (#1293: the tab's ring), or
+   *  undefined. Scalar, like the three above. */
+  getCardStatus(cardId: string | undefined): string | undefined {
+    if (!cardId) return undefined;
+    return this.state.sessions.find((s) => s.id === cardId)?.status;
+  }
+
   /** Seed the map from the ui blob at boot. Does not persist — it just read it. */
   initPresentation(map: ReadonlyMap<string, CardPresentation>): void {
     this.set({ presentation: new Map(map) });
