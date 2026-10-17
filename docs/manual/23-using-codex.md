@@ -10,9 +10,7 @@ its approval questions, and a Stop button.
 
 ⚠️ **Not everything is in yet.** A new session still starts on Claude Code.
 To put a card on Codex, switch it with the AI chip. See
-[Starting a Codex session](#starting-a-codex-session). When you switch a card
-to Codex for the first time, Codex is NOT yet handed a summary of the
-conversation so far. That comes next.
+[Starting a Codex session](#starting-a-codex-session).
 
 ## What you need
 
@@ -31,9 +29,12 @@ sign-in page in your browser. That is Codex's own sign-in, not ours.
 
 Open a session, click the **AI chip** before the model chip, and pick
 **Codex**. The card's session closes and a Codex session starts in the same
-card. Pick **Claude Code** again to go back. Claude then carries on in the
-conversation it had, exactly where it stopped. See
-[Switching a session to another AI](25-switching-ais.md).
+card. The first time, Codex is handed a summary of the conversation so far,
+and the summary tells it that it reads `AGENTS.md`, not the `CLAUDE.md`
+Claude was working under. Click **see what it was told** on the switch line
+to read exactly what Codex was given. Pick **Claude Code** again to go back.
+Claude then carries on in the conversation it had, exactly where it stopped.
+See [Switching a session to another AI](25-switching-ais.md).
 
 ## What works
 

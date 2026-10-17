@@ -1187,6 +1187,24 @@ degrades to raw transcript export or plain copy-paste (fail-open, escape hatch);
 drives each CLI exactly as shipped (host check). See OQ #16 for what needs
 empirical validation.
 
+**As built (E40 item 12, #1295, 2026-10-16) — rung (a) of the ladder ships as the
+AI-switch briefing.** The trigger is the AI chip (E40 item 11), not a chip drop: the
+first time a card switches to an AI, that AI's opening prompt is the Level-2 package
+rendered for it (`sessions/ai-briefing.ts`). It is mechanical, deterministic and
+model-free, and its headings are the package's own. "Decisions so far" is still
+"What the user asked for along the way", for the reason the #766 note above gives.
+Two pieces were added: a **Next step** (the open todo, else the user's last ask) and
+**What does not carry over**. That section carries the instruction-file line, from
+each provider's new `instructionFiles` capability: Claude `CLAUDE.md`, Codex
+`AGENTS.md` (measured), anything else "not known". It also says that MCP servers,
+permissions, hooks and the other AI's memory stay behind. The honesty rule is stated
+twice: to the model ("a briefed continuation, not a resume") and on the divider
+("handed a summary of N turns"). The source differs by direction. Leaving Claude
+reads its JSONL. Leaving an ACP agent reads the Feed's own blocks, taken at the
+switch, because there is no transcript to read. Both are normalised into one
+intermediate before rendering. Rungs (b) and (c) are not built. Design record §6
+"As built, item 12".
+
 ### 5.6 Agent watcher windows
 
 When a Claude session spawns a subagent (Task tool), its activity is written to

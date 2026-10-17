@@ -42,10 +42,42 @@ export function dividerCopy(
   // #1295's half: claimed ONLY when the mark says a briefing was sent, and the
   // count only when it was recorded.
   if (mark.briefed && typeof mark.turnsSummarised === 'number') {
-    return { key: 'aiSwitch.dividerBriefedTurns', vars: { ...vars, turns: mark.turnsSummarised } };
+    // a long conversation is summarised from its recent end: "the last N"
+    const key = mark.summaryPartial ? 'aiSwitch.dividerBriefedLastTurns' : 'aiSwitch.dividerBriefedTurns';
+    return { key, vars: { ...vars, turns: mark.turnsSummarised } };
   }
   if (mark.briefed) return { key: 'aiSwitch.dividerBriefed', vars };
+  // A SWITCH BACK — the one arrival that picked up the AI's own conversation,
+  // so the one that may say so (§5.5's honesty rule)
+  if (mark.resumed) return { key: 'aiSwitch.dividerResumed', vars };
+  // a briefing was due and did not go: the AI has no context, and says so
+  if (mark.briefingFailed) return { key: 'aiSwitch.dividerBriefingFailed', vars };
+  // arrived, fresh, with nothing handed over — never a briefing it did not get
+  if (mark.startedFresh) return { key: 'aiSwitch.dividerFresh', vars };
+  // not started on yet, or a mark from before #1295 recorded what its arrival
+  // was: nothing is claimed either way
   return { key: 'aiSwitch.divider', vars };
+}
+
+/** "See what it was told" is offered only for a briefing that was sent AND kept. */
+export function briefingRefOf(mark: AiSwitchMark): string | undefined {
+  return mark.briefed && typeof mark.briefingRef === 'string' && mark.briefingRef !== ''
+    ? mark.briefingRef
+    : undefined;
+}
+
+/**
+ * The faint line above a briefed divider (screen 3's faded earlier turns, the
+ * honest and cheap version): the other AI's turns are not drawn here — they
+ * are that AI's conversation, and switching back shows them. Only for a
+ * briefing with a count, which is the only mark that sits at the top of a
+ * fresh conversation with something before it.
+ */
+export function earlierTurnsCopy(mark: AiSwitchMark): { key: string; vars: Record<string, string | number> } | undefined {
+  if (!mark.briefed || typeof mark.turnsSummarised !== 'number' || mark.turnsSummarised <= 0) return undefined;
+  // a partial summary's count is not all the turns there were: no number then
+  if (mark.summaryPartial) return { key: 'aiSwitch.earlierTurnsMany', vars: { from: mark.from.name } };
+  return { key: 'aiSwitch.earlierTurns', vars: { turns: mark.turnsSummarised, from: mark.from.name } };
 }
 
 /**

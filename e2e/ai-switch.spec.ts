@@ -72,7 +72,7 @@ test.describe('the AI switch (#1294)', () => {
     await chip.click();
     const menu = w.locator('[data-testid="ai-switch-menu"]');
     await expect(menu).toContainText(
-      'Switching hands this card to another AI. Coming back resumes where that AI left off.'
+      'Switching hands this card to another AI with a summary of this conversation. Coming back resumes where that AI left off.'
     );
     await expect(menu.locator('[data-ai-row="claude-code"]')).toHaveAttribute('aria-checked', 'true');
     await menu.locator('[data-ai-row="fake-acp"]').click();
@@ -83,7 +83,10 @@ test.describe('the AI switch (#1294)', () => {
     const toAcp = w.locator('[data-ai-switch-divider][data-to="fake-acp"]');
     await expect(toAcp).toBeVisible({ timeout: 25_000 });
     await expect(toAcp).toContainText('→ Fake ACP');
-    await expect(w.getByText('FAKE-REPLY: the first claude turn')).toHaveCount(0);
+    // Claude's turn is not drawn here. EXACT since #1295: the briefing (and the
+    // fake ACP's echo of it) now QUOTES that reply, inside a larger block — so
+    // only a block that IS the reply counts as the Claude turn being on screen.
+    await expect(w.getByText('FAKE-REPLY: the first claude turn', { exact: true })).toHaveCount(0);
     await send(w, 'hello acp');
     await expect(w.getByText('ACP reply to: hello acp')).toBeVisible({ timeout: 30_000 });
     // the Claude conversation is parked on the card, not dropped

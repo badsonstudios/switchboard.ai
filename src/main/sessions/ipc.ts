@@ -83,10 +83,12 @@ import { EventFeed } from '../events/feed';
 import { HistoryRepair } from './history-repair-log';
 import { planSessionStart } from './start-plan';
 import { heldNativeIds, recordNativeId, resumeCandidates } from './lineage';
-import { arrivalMark, markArrived, pendingArrival, switchCardAi } from './ai-switch';
+import { arrivalMark, markArrived, patchMark, pendingArrival, switchCardAi } from './ai-switch';
+import type { FeedBlock } from '../feed/blocks';
 import {
   isProviderIdShape,
   type AiSwitchMark,
+  type BriefingTextResult,
   type SwitchAiRefusal,
   type SwitchAiResult,
 } from '../../shared/ai-switch';
@@ -273,15 +275,28 @@ export interface SessionIpcDeps {
    * text is submitted as the session's own first prompt, the dispatch path.
    *
    * `fromConversation` is the conversation the card just left — parked under
-   * `from.providerId` — which is what a briefing summarises. Returning
-   * `undefined` sends nothing; a throw is logged and sends nothing.
+   * `from.providerId` — which is what a briefing summarises; `fromBlocks` is
+   * the Feed of the session the card left, taken just before the switch tore
+   * it down (#1295: the only record of an ACP agent's conversation we hold).
+   * `keepMarkIds` are the marks the card still has, so briefings for dropped
+   * ones can go. Returning `undefined` sends nothing — there was nothing to
+   * hand over; a THROW sends nothing and is recorded on the mark as
+   * `briefingFailed`, so the divider says the AI started without context.
+   *
+   * #1295 wires it (`ai-briefing-host.ts`).
    */
   aiSwitchBriefing?: (req: {
     cardId: string;
     folder: string;
     mark: AiSwitchMark;
     fromConversation?: { providerId: string; nativeSessionId: string };
-  }) => { text: string; turnsSummarised?: number; briefingRef?: string } | undefined;
+    fromBlocks?: readonly FeedBlock[];
+    keepMarkIds?: readonly string[];
+  }) => { text: string; turnsSummarised?: number; summaryPartial?: boolean; briefingRef?: string } | undefined;
+  /** The exact text behind a mark's `briefingRef` — "see what it was told" (#1295). */
+  briefingText?: (ref: unknown) => BriefingTextResult;
+  /** A closed card's kept briefings go with it (#1295). */
+  forgetBriefings?: (cardId: string) => void;
   /** git toplevel for a folder (null if not a repo) — auto-group key (E12-05) */
   repoRoot: (folder: string) => Promise<string | null>;
   /**
@@ -364,6 +379,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     deps;
   // a card is the durable unit; the live session under it is ephemeral
   const cardOfLive = new Map<string, string>(); // liveSessionId -> cardId
+  /**
+   * The Feed of the session a card was switched AWAY from, taken just before
+   * the switch tore it down (#1295) — what the briefing summarises when the AI
+   * left writes no transcript we can read (an ACP agent). Keyed by card, for
+   * the one pending switch; consumed by that switch's first start, replaced by
+   * the next switch, and dropped with the card.
+   */
+  const departedFeeds = new Map<string, { markId: string; blocks: readonly FeedBlock[] }>();
 
   // when a session's native id is learned, persist it so the card can
   // --resume that conversation after an app restart
@@ -2074,18 +2097,35 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // fresh, so switching BACK to an AI resumes it and briefs nothing.
       const arrival = pendingArrival(prior);
       let briefing: ReturnType<NonNullable<SessionIpcDeps['aiSwitchBriefing']>>;
+      // a briefing was due and could not be built (#1295) — said on the divider
+      let briefingFailed = false;
       const parkedFrom = arrival ? prior?.conversations?.[arrival.from.providerId] : undefined;
+      // the Feed the switch took of the session it left — only for THIS switch
+      const departed = arrival ? departedFeeds.get(opts.cardId) : undefined;
       const openingContext =
         arrival && deps.aiSwitchBriefing
           ? (): string | undefined => {
-              briefing = deps.aiSwitchBriefing!({
-                cardId: opts.cardId,
-                folder: opts.folder,
-                mark: arrival,
-                fromConversation: parkedFrom
-                  ? { providerId: arrival.from.providerId, nativeSessionId: parkedFrom.nativeSessionId }
-                  : undefined,
-              });
+              try {
+                briefing = deps.aiSwitchBriefing!({
+                  cardId: opts.cardId,
+                  folder: opts.folder,
+                  mark: arrival,
+                  fromConversation: parkedFrom
+                    ? { providerId: arrival.from.providerId, nativeSessionId: parkedFrom.nativeSessionId }
+                    : undefined,
+                  fromBlocks: departed?.markId === arrival.id ? departed.blocks : undefined,
+                  keepMarkIds: (prior?.aiSwitches ?? []).map((m) => m.id),
+                });
+              } catch (err) {
+                // FAIL-OPEN: the AI starts anyway, without context, and the
+                // divider says so (§5.5; P6)
+                briefingFailed = true;
+                log.warn('could not brief the AI a card switched to; it starts without context', {
+                  cardId: opts.cardId,
+                  error: errorText(err),
+                });
+                return undefined;
+              }
               return briefing?.text;
             }
           : undefined;
@@ -2612,7 +2652,26 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         groupId: prior?.groupId ?? (typeof opts.groupId === 'string' ? opts.groupId : undefined),
         // the switch this start was waiting for has now arrived (#1294) — so a
         // later start, a relaunch included, is not briefed again
-        ...(arrived ? { aiSwitches: markArrived(prior?.aiSwitches, arrived.id, arrivedAt) } : {}),
+        // …and what that arrival WAS (#1295): a switch back resumed the AI's own
+        // conversation; a briefing that could not be built is recorded so the
+        // divider says the AI started without context
+        ...(arrived
+          ? {
+              aiSwitches: patchMark(
+                markArrived(prior?.aiSwitches, arrived.id, arrivedAt),
+                arrived.id,
+                // EVERY arrival records what it was, so a mark with none of these is
+                // one written before #1295 and claims nothing (review finding)
+                plan.resumeSessionId
+                  ? { resumed: true }
+                  : briefingFailed
+                    ? { briefingFailed: true }
+                    : plan.openingContext
+                      ? {} // being briefed: `markArrived` below records it, or the failure
+                      : { startedFresh: true }
+              ),
+            }
+          : {}),
       });
       // THE CARD HAD A CONVERSATION AND THIS START IS NOT IN IT (#886).
       //
@@ -2708,28 +2767,52 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // The dispatch path's rules, below, word for word: last, still inside the
       // synchronous stretch, isolated so a failed write cannot cost the card its
       // start. Present only when the plan kept it — a fresh first start after a
-      // switch, with a briefing wired. Nothing wires one in E40 item 11.
+      // switch, with a briefing built (`main/index.ts` wires the hook).
       if (arrived && plan.openingContext) {
+        let sent = false;
         try {
-          if (manager.submitPrompt(record.id, plan.openingContext)) {
-            const now = deps.persist.list().find((s) => s.id === opts.cardId);
-            if (now) {
-              deps.persist.upsert({
-                ...now,
-                aiSwitches: markArrived(now.aiSwitches, arrived.id, arrivedAt, {
-                  turnsSummarised: briefing?.turnsSummarised,
-                  briefingRef: briefing?.briefingRef,
-                }),
-              });
-            }
-          } else {
-            log.error('a switched-to session would not take its briefing', { cardId: opts.cardId });
-          }
+          sent = manager.submitPrompt(record.id, plan.openingContext);
+          if (!sent) log.error('a switched-to session would not take its briefing', { cardId: opts.cardId });
         } catch (err) {
           log.error('briefing a switched-to session threw; the session is live anyway', {
             cardId: opts.cardId,
             error: errorText(err),
           });
+        }
+        try {
+          const now = deps.persist.list().find((s) => s.id === opts.cardId);
+          if (now) {
+            deps.persist.upsert({
+              ...now,
+              aiSwitches: sent
+                ? markArrived(now.aiSwitches, arrived.id, arrivedAt, {
+                    turnsSummarised: briefing?.turnsSummarised,
+                    briefingRef: briefing?.briefingRef,
+                    ...(briefing?.summaryPartial ? { summaryPartial: true } : {}),
+                  })
+                : // built and then not taken: the AI has no context, say so
+                  patchMark(now.aiSwitches, arrived.id, { briefingFailed: true }),
+            });
+          }
+        } catch (err) {
+          log.error('could not record the briefing on the card', { cardId: opts.cardId, error: errorText(err) });
+        }
+      }
+      if (arrived) departedFeeds.delete(opts.cardId);
+      // THE DIVIDER, LIVE (#1295). It was placed above from the mark as it stood
+      // before this start, so it does not yet know what the arrival turned out
+      // to be — briefed, resumed, or started without context. Re-drawn from the
+      // stamped mark now, in the same synchronous stretch, so the panel's first
+      // backlog read already has it (and any listener gets the update).
+      if (arrived && record.transport === 'stream' && deps.streamFeed) {
+        try {
+          const stamped = deps.persist
+            .list()
+            .find((s) => s.id === opts.cardId)
+            ?.aiSwitches?.find((m) => m.id === arrived.id);
+          if (stamped) deps.streamFeed.updateMarker(record.id, { kind: 'ai-switch', aiSwitch: stamped });
+        } catch (err) {
+          log.warn('could not update the AI-switch divider', { cardId: opts.cardId, error: errorText(err) });
         }
       }
       // ── THE DISPATCHED SESSION'S OWN FIRST PROMPT (P2-E13-03, §5.15) ─────
@@ -2884,6 +2967,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // such session" and "that session has nothing to hand over" are different
   // facts, and only the second one is an offer. The composer refuses out loud
   // rather than opening a dialog with nothing in it.
+  // "See what it was told" (#1295): the exact text an AI was briefed with when
+  // a card switched to it. The ref is the renderer's and untrusted (§5.29);
+  // the host checks its shape before it becomes a path. Never rejects.
+  broker.handle('sessions:briefingText', (_e, ref: unknown): BriefingTextResult => {
+    if (!deps.briefingText) return { ok: false, reason: 'gone' };
+    try {
+      return deps.briefingText(ref);
+    } catch (err) {
+      log.warn('sessions:briefingText failed', { error: errorText(err) });
+      return { ok: false, reason: 'gone' };
+    }
+  });
+
   broker.handle('sessions:contextOffer', (_e, ref: unknown) => {
     if (typeof ref !== 'string' || ref.trim() === '') {
       return refuse('sessions:contextOffer', 'a session reference is required');
@@ -3193,6 +3289,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   broker.handle('sessions:closeCard', (_e, cardId: string) => {
     dropLiveForCard(cardId);
     deps.persist.remove(cardId);
+    // …and what its AI switches kept (#1295): the Feed taken for a pending
+    // briefing, and the briefings it was told. Card ids are reused (below).
+    departedFeeds.delete(cardId);
+    try {
+      deps.forgetBriefings?.(cardId);
+    } catch (err) {
+      log.warn('could not forget a closed card\'s briefings', { cardId, error: errorText(err) });
+    }
     // #758's throttle memory dies with the card. Card ids are reused by the
     // renderer, so leaving it would hand a brand-new card the closed one's
     // `lastRunAt` and silently suppress its first label for up to ten minutes.
@@ -3423,6 +3527,24 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         return id;
       }
     };
+    // The Feed of the session being left, BEFORE it is torn down (#1295): for
+    // an AI with no transcript, it is the only record of the conversation the
+    // briefing can summarise. A copy of the list, not the live buffer.
+    const markId = globalThis.crypto.randomUUID();
+    departedFeeds.delete(cardId);
+    try {
+      for (const [liveId, cid] of cardOfLive) {
+        if (cid !== cardId) continue;
+        // kept even when EMPTY: a live session with nothing in its Feed is a
+        // conversation with nothing to hand over, which is not the same as one
+        // that was not open and could not be read (the host's distinction)
+        if (!deps.streamFeed) break;
+        departedFeeds.set(cardId, { markId, blocks: [...deps.streamFeed.blocks(liveId)] });
+        break;
+      }
+    } catch (err) {
+      log.warn('could not keep the Feed of the session being left', { error: errorText(err) });
+    }
     // Point of no return. The live session goes first, so nothing is still
     // writing the old AI's conversation id onto the card while it moves.
     dropLiveForCard(cardId);
@@ -3435,7 +3557,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           { providerId: fresh.identity.providerId, name: nameOf(fresh.identity.providerId) },
           { providerId, name: nameOf(providerId) },
           at,
-          globalThis.crypto.randomUUID()
+          markId
         )
       );
       cardsChanged();

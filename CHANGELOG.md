@@ -111,8 +111,15 @@ on the floor, and say so in your PR.
   each AI with its login state, and picking one moves the card to it, with a
   line in the conversation marking the switch. Switching back resumes the
   conversation the card had with that AI, exactly where it stopped. A switch
-  while a turn is running asks first. The first switch to an AI starts it
-  fresh for now; handing it a summary of the conversation comes next.
+  while a turn is running asks first.
+- The first time a card switches to an AI, that AI is handed a summary of the
+  conversation so far: the goal, what you asked for, the plan, the files
+  touched, where it left off and the next step. The summary also says which
+  instruction files each AI reads (`CLAUDE.md` or `AGENTS.md`) and that MCP
+  servers, permissions and hooks do not carry over. No AI writes it, so it
+  costs nothing extra. The switch line says "handed a summary of N turns", and
+  **see what it was told** opens the exact text. Switching back says "picked up
+  where it left off" and sends no summary.
 
 ### Changed
 

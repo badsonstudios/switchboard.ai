@@ -557,6 +557,9 @@ export const CHANNEL_CAPABILITIES = {
   // files it touched, what it last said. A caller allowed only to LIST sessions
   // must not be able to read what they did.
   'sessions:contextOffer': 'transcripts.read',
+  // E40 item 12 (#1295): the briefing an AI was handed on a switch — a summary
+  // of a conversation, so the same tag as the handoff above
+  'sessions:briefingText': 'transcripts.read',
   'settings:getAutoLabels': 'settings.read',
   'settings:setAutoLabels': 'settings.write',
   // AI-written task labels (#758). An ordinary preference pair: the switch

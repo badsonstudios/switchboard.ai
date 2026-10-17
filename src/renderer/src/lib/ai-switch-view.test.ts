@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { afterSwitchAiAnswer, aiMenuRows, dividerCopy, type AiItemLike } from './ai-switch-view';
+import { afterSwitchAiAnswer, aiMenuRows, briefingRefOf, dividerCopy, earlierTurnsCopy, type AiItemLike } from './ai-switch-view';
 import enJson from '../../../shared/i18n/locales/en.json';
 
 const claude: AiItemLike = {
@@ -90,14 +90,62 @@ describe('the divider (§5.5 honesty rule)', () => {
 
   it('no switch string calls a first switch a resume', () => {
     const strings = (enJson as unknown as { aiSwitch: Record<string, string> }).aiSwitch;
-    // "resumes" is said once, and only of coming BACK to an AI
+    // "resumes" is said once, and only of coming BACK to an AI — and since
+    // #1295 the sentence says what a first switch DOES hand over (the mockup's)
     expect(strings.explain).toBe(
-      'Switching hands this card to another AI. Coming back resumes where that AI left off.'
+      'Switching hands this card to another AI with a summary of this conversation. Coming back resumes where that AI left off.'
     );
     for (const [k, v] of Object.entries(strings)) {
       if (k === 'explain') continue;
       expect(v.toLowerCase(), k).not.toMatch(/resum/);
     }
+  });
+
+  // ── #1295: what the arrival WAS, said only as the mark records it ─────────
+  const arrived = { ...mark, arrivedAt: '2026-10-16T14:41:05.000Z' };
+
+  it('the three arrived states — briefed, picked up again, fresh — and the failure', () => {
+    expect(dividerCopy({ ...arrived, briefed: true, turnsSummarised: 3 }, now).key).toBe(
+      'aiSwitch.dividerBriefedTurns'
+    );
+    expect(dividerCopy({ ...arrived, resumed: true }, now).key).toBe('aiSwitch.dividerResumed');
+    expect(dividerCopy({ ...arrived, startedFresh: true }, now).key).toBe('aiSwitch.dividerFresh');
+    // a mark from before #1295 recorded no outcome: it claims nothing (review finding)
+    expect(dividerCopy(arrived, now).key).toBe('aiSwitch.divider');
+    expect(dividerCopy({ ...arrived, briefed: true, turnsSummarised: 9, summaryPartial: true }, now).key).toBe(
+      'aiSwitch.dividerBriefedLastTurns'
+    );
+    expect(dividerCopy({ ...arrived, briefingFailed: true }, now).key).toBe('aiSwitch.dividerBriefingFailed');
+    // not started on yet: nothing is claimed either way
+    expect(dividerCopy({ ...mark, resumed: undefined }, now).key).toBe('aiSwitch.divider');
+  });
+
+  it('the strings say exactly that', () => {
+    const s = (enJson as unknown as { aiSwitch: Record<string, string> }).aiSwitch;
+    expect(s.dividerFresh).toBe('{from} → {to} · {time} · started fresh, no summary');
+    expect(s.dividerBriefingFailed).toBe('{from} → {to} · {time} · could not brief {to}; it started without context');
+    expect(s.seeBriefing).toBe('see what it was told');
+  });
+
+  it('"see what it was told" only for a briefing that was sent AND kept', () => {
+    expect(briefingRefOf({ ...arrived, briefed: true, briefingRef: 'c/m' })).toBe('c/m');
+    expect(briefingRefOf({ ...arrived, briefed: true })).toBeUndefined();
+    // a ref on a mark that does not record a briefing is never offered
+    expect(briefingRefOf({ ...arrived, briefed: false, briefingRef: 'c/m' })).toBeUndefined();
+  });
+
+  it('the faint earlier-turns line: only above a briefing with turns, naming the other AI', () => {
+    expect(earlierTurnsCopy({ ...arrived, briefed: true, turnsSummarised: 4 })).toEqual({
+      key: 'aiSwitch.earlierTurns',
+      vars: { turns: 4, from: 'Claude Code' },
+    });
+    expect(earlierTurnsCopy({ ...arrived, briefed: true, turnsSummarised: 0 })).toBeUndefined();
+    // a partial summary does not count what it did not read
+    expect(earlierTurnsCopy({ ...arrived, briefed: true, turnsSummarised: 4, summaryPartial: true })).toEqual({
+      key: 'aiSwitch.earlierTurnsMany',
+      vars: { from: 'Claude Code' },
+    });
+    expect(earlierTurnsCopy({ ...arrived, resumed: true, turnsSummarised: 4 })).toBeUndefined();
   });
 });
 

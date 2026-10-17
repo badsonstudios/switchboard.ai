@@ -303,7 +303,7 @@ export const PACKAGE_HEAD_BYTES = 128 * 1024;
  * session that has not been asked anything, and one the package renders as its
  * own sentence rather than as a blank heading.
  */
-function firstPrompt(file: string): string | undefined {
+export function firstPrompt(file: string): string | undefined {
   const head = readTranscriptHead(file, PACKAGE_HEAD_BYTES);
   // ⚠️ COMPACTION SUMMARIES ARE DROPPED BEFORE DERIVATION (#947). The CLI writes
   // one as an ordinary non-meta, non-sidechain `type: 'user'` line, so every

@@ -501,11 +501,20 @@ The preload exposes all of these as `switchboard.ais`.
    *As built (#1294): see §6 "As built, item 11". The sentence is "Switching
    hands this card to another AI. Coming back resumes where that AI left
    off." The mockup's version promised a summary that #1295 delivers, so it
-   waits for that item.*
+   waited for that item. #1295 made it the mockup's (screen 3's note).*
 3. **After a switch** *(items 04, 12)*:
    - the divider reads "Claude Code → Codex · time · handed a summary of N
      turns", with **see what it was told**;
    - controls one AI lacks grey out, with a reason.
+
+   *As built (#1295): see §6 "As built, item 12". The divider is drawn as in
+   the mockup. The faded previous-AI turns above it are NOT drawn, because they
+   are the other AI's conversation. One faint line takes their place: "N earlier
+   turns with Claude Code — switch back to see them". The briefing itself is
+   on screen as the new AI's first message, folded. The mockup does not show
+   it; hiding it would hide what the AI was told. The menu sentence is now the
+   mockup's: "Switching hands this card to another AI with a summary of this
+   conversation. Coming back resumes where that AI left off."*
 4. **Settings → AIs** *(item 09)*:
    - the default AI;
    - found / not found, with login state;
@@ -582,7 +591,7 @@ section's first rule.**
   `openingContext` and keeps it ONLY for a fresh start, so a resume is never
   briefed. It is asked only on the first start after a switch: a mark without
   `arrivedAt` that names the AI being started. The text goes in as the first
-  prompt, by the dispatch path. Nothing provides the hook yet.
+  prompt, by the dispatch path. #1295 provides it ("As built, item 12").
 - **The divider.** `shared/ai-switch.ts` `AiSwitchMark {kind:'ai-switch', id,
   from:{providerId,name}, to:{providerId,name}, at, briefed, turnsSummarised?,
   briefingRef?, arrivedAt?}`, drawn as Feed block kind `ai-switch`. Only the
@@ -607,6 +616,86 @@ section's first rule.**
   the start falls back to the default as before, without consuming the switch.
 - **`SWITCHBOARD_FAKE_PROVIDER=both`** registers the Claude fake, then the fake
   ACP agent (the same value #1296 adds).
+
+**As built, item 12 (#1295, 2026-10-16): the briefing, the divider, and what
+it was told.**
+
+- **The generator.** `sessions/ai-briefing.ts` is pure, deterministic and
+  model-free. It does not add a second summariser: `context-package.ts` was
+  split so that `buildPackageFrom` builds from one intermediate,
+  `PackageMaterial {blocks, files, compacted}`.
+  - `materialFromEntries` (a Claude JSONL) and `materialFromBlocks` (Feed
+    blocks) both produce that intermediate.
+  - The briefing renders it under a header that says "briefed continuation,
+    not a resume".
+  - It has the package's six sections, then **Next step** (the open todo, else
+    the user's last ask), then **What does not carry over**.
+  - That last section carries the instruction-file line, and says that MCP
+    servers, permissions, hooks and the other AI's memory stay behind.
+  - It closes with "reply in a sentence or two, then wait".
+  - In the recent activity, the AI being left speaks under its own name
+    (`renderBlockAs`), never as "Claude".
+  - The cap is `BRIEFING_CHAR_CAP` = 24,000 characters. When it is hit, the
+    body is cut, the cut is marked with `BRIEFING_TRIM_MARKER`, and the closing
+    sections always survive.
+  - `turnsSummarised` counts the user's turns the briefing covers. A
+    conversation with none is handed nothing.
+- **The source, per direction.** `sessions/ai-briefing-host.ts`:
+  - **Leaving an AI with `transcripts` (Claude):** its JSONL, through the
+    same two-window read as `sessionContext`. A transcript the app could not
+    look for, or could not read, throws.
+  - **Leaving an ACP agent:** `sessions:switchAi` snapshots the Feed's blocks
+    of the session it is about to tear down, as `departedFeeds`, keyed by card
+    and mark. The hook receives them as `fromBlocks`. Starting the agent to
+    `session/load` its conversation just to summarise it was rejected.
+- **`instructionFiles`.** A new optional `ProviderCapabilities.instructionFiles`:
+  - Claude and the Claude fake: `['CLAUDE.md']`;
+  - Codex: `['AGENTS.md']` (measured, #1285 Q7);
+  - the fake ACP agent: `['AGENTS.md']`;
+  - a custom ACP agent declares nothing, and the briefing says "not known".
+- **The exact text.** It is kept at `userData/briefings/<cardId>/<markId>.md`,
+  and `briefingRef` is `<cardId>/<markId>`.
+  - The ref is shape-checked before it becomes a path.
+  - It is read back by `sessions:briefingText` (`transcripts.read`).
+  - A kept file is never rebuilt, because a rebuild after the transcript grows
+    would be a different document.
+  - Files for marks the card has dropped are pruned on the next write. A closed
+    card's folder goes with it (`forgetBriefings`).
+  - A text that could not be kept is still sent, with no ref, so it gets no
+    "see what it was told".
+- **What each arrival was.** The mark gains `resumed` (a switch back) and
+  `briefingFailed`. `briefingFailed` is set when the hook threw, or when the
+  session would not take the prompt.
+  - The divider's words: "handed a summary of N turns" + **see what it was
+    told** / "picked up where it left off" / "started fresh, no summary" /
+    "could not brief <AI>; it started without context".
+  - Before the first start nothing is claimed.
+  - **Live:** `StreamFeed.updateMarker` re-draws the placed divider in place,
+    keeping its seq, from the stamped mark. This happens in the same
+    synchronous stretch as the placement, so it needs no relaunch.
+- **The viewer.** `components/BriefingDialog.tsx` has the drop dialog's
+  modal shape. There was no exact-text viewer to reuse. It shows a read-only
+  `<pre>` with Copy. Escape closes it and focus is restored. A missing file
+  shows "The briefing text is no longer available."
+- **A briefing is never read back as the user's words.** It lands on a
+  `user` line in the new AI's transcript and Feed.
+  - `promptText` skips any text that opens with `BRIEFING_HEADING + ' from '`,
+    the way it skips slash-command plumbing.
+  - The recent activity names it in one line instead of copying it.
+  - So a second switch summarises the conversation and not the summary, and a
+    context drop from a briefed session does not take the briefing as its
+    Goal.
+- **Every arrival records what it was.** The mark carries `resumed`,
+  `briefingFailed` or `startedFresh`, or else `briefed: true` once the send is
+  confirmed. A mark with none of these was written before #1295 and claims
+  nothing: it is drawn as the plain divider. `summaryPartial` is set when the
+  summary covered only the recent end of the conversation. The divider then
+  says "the last N turns", and the earlier-turns line drops its count.
+- **Fail-open.** A briefing failure never blocks the switch: the AI starts,
+  and the divider says it started without context. One case counts as a
+  failure rather than "nothing to hand over": an AI with no transcript whose
+  session was not open at the switch. The conversation exists; there was just
+  nothing to read it from.
 
 ---
 

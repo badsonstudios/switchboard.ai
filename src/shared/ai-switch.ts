@@ -25,9 +25,10 @@ export interface AiSwitchParty {
  * One switch, persisted with the card so the divider survives a relaunch. The
  * Feed draws it as a divider in the conversation of the AI switched TO.
  *
- * `briefed`, `turnsSummarised` and `briefingRef` are #1295's: this item writes
- * `briefed: false` and leaves the other two absent. The renderer must not
- * claim a briefing that `briefed` does not record.
+ * `briefed`, `turnsSummarised`, `briefingRef`, `resumed` and `briefingFailed`
+ * are #1295's, stamped when the first start after the switch happens
+ * (`arrivedAt`). The renderer must not claim a briefing that `briefed` does not
+ * record, nor a resume that `resumed` does not.
  */
 export interface AiSwitchMark {
   kind: 'ai-switch';
@@ -44,12 +45,44 @@ export interface AiSwitchMark {
   /** where "see what it was told" opens (#1295) */
   briefingRef?: string;
   /**
+   * The first start after this switch RESUMED a conversation the card already
+   * had with that AI — a switch back (#1295). The only arrival that may be
+   * called picking up where it left off (§5.5's honesty rule).
+   */
+  resumed?: boolean;
+  /**
+   * A briefing was due and could not be built or sent (#1295): the AI started
+   * without context, and the divider says so rather than reading as an
+   * ordinary fresh start.
+   */
+  briefingFailed?: boolean;
+  /**
+   * The first start was fresh and there was nothing to hand over (#1295).
+   * Recorded rather than inferred: a mark written before #1295 has `arrivedAt`
+   * and none of these, and must not be read as any of them.
+   */
+  startedFresh?: boolean;
+  /**
+   * The briefing covered only the recent end of a long conversation, so
+   * `turnsSummarised` is the last N turns, not all of them (#1295).
+   */
+  summaryPartial?: boolean;
+  /**
    * When the AI switched to first STARTED after this switch. Absent while the
    * switch is pending: the briefing hook is asked only on that first start, so
    * a Retry after a failed start is still the first, and a relaunch is not.
    */
   arrivedAt?: string;
 }
+
+/**
+ * What `sessions:briefingText` answers (#1295): the exact text an AI was
+ * briefed with, or why it cannot be shown — a ref that is not one of ours, or a
+ * file that is no longer there.
+ */
+export type BriefingTextResult =
+  | { readonly ok: true; readonly text: string }
+  | { readonly ok: false; readonly reason: 'bad-ref' | 'gone' };
 
 /** How many marks a card keeps; the oldest are dropped. */
 export const MAX_AI_SWITCHES = 20;

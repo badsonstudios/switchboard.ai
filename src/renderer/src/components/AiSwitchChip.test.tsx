@@ -112,7 +112,7 @@ describe('AiSwitchChip (#1294)', () => {
     expect(row('fake-acp').getAttribute('aria-checked')).toBe('false');
     expect(row('catalog:gemini').dataset.missing).toBe('yes');
     expect(row('catalog:gemini').textContent).toContain('Not installed — set it up…');
-    expect(text).toContain('Switching hands this card to another AI. Coming back resumes where that AI left off.');
+    expect(text).toContain('Switching hands this card to another AI with a summary of this conversation. Coming back resumes where that AI left off.');
     expect(text).toContain('Manage AIs…');
   });
 

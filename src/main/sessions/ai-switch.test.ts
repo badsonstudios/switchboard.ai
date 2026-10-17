@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { arrivalMark, markArrived, pendingArrival, switchCardAi } from './ai-switch';
+import { arrivalMark, markArrived, patchMark, pendingArrival, switchCardAi } from './ai-switch';
 import { heldNativeIds } from './lineage';
 import { MAX_AI_SWITCHES } from '../../shared/ai-switch';
 import type { PersistedSession } from '../workspace/store';
@@ -144,5 +144,13 @@ describe('the divider and the first start (#1294)', () => {
     const briefed = markArrived(back.aiSwitches, 'm2', 'now', { turnsSummarised: 4 });
     expect(briefed?.[1]).toMatchObject({ briefed: true, turnsSummarised: 4 });
     expect(briefed?.[0]).toEqual(back.aiSwitches?.[0]);
+  });
+
+  it('patchMark records what an arrival WAS on that mark only, and never a briefing (#1295)', () => {
+    const resumed = patchMark(back.aiSwitches, 'm2', { resumed: true });
+    expect(resumed?.[1]).toMatchObject({ resumed: true, briefed: false });
+    expect(resumed?.[0]).toEqual(back.aiSwitches?.[0]);
+    expect(patchMark(back.aiSwitches, 'm2', { briefingFailed: true })?.[1].briefed).toBe(false);
+    expect(patchMark(undefined, 'm2', { resumed: true })).toBeUndefined();
   });
 });

@@ -106,6 +106,7 @@ import { resolveMentionsWithHandoffs } from './sessions/mention-handoff';
 import { HandoffRequests } from './sessions/handoff-request';
 import { createMentionGitLookup, createMentionTreeLookup, MENTION_GIT_BUDGET_MS } from './sessions/mention-git';
 import { buildContextOffer } from './sessions/context-drop';
+import { createBriefingHost } from './sessions/ai-briefing-host';
 import { quoted, renderOutput } from './bus/bus-tools';
 import { SiblingDelivery } from './sessions/delivery';
 import { Blackboard } from './sessions/blackboard';
@@ -3040,6 +3041,22 @@ app
       isRegisteredProvider: (providerId) => !!registry.resolve('provider-adapter', providerId),
       // what the AI-switch divider calls each AI (#1294)
       providerName: (providerId) => registry.resolve('provider-adapter', providerId)?.manifest.displayName,
+      // THE BRIEFING (#1295): the §5.5 Level-2 handoff, mechanical, built from
+      // the conversation the card left and kept byte-exact for "see what it was
+      // told". Through each provider's declared capabilities only.
+      ...(() => {
+        const briefings = createBriefingHost({
+          root: path.join(app.getPath('userData'), 'briefings'),
+          capabilitiesOf: (providerId) => registry.resolve('provider-adapter', providerId)?.capabilities,
+          cardTitle: (cardId) => workspace.listSessions().find((s) => s.id === cardId)?.identity.title,
+          log: createLogger(sink, 'briefing'),
+        });
+        return {
+          aiSwitchBriefing: (req: Parameters<typeof briefings.brief>[0]) => briefings.brief(req),
+          briefingText: (ref: unknown) => briefings.read(ref),
+          forgetBriefings: (cardId: string) => briefings.forgetCard(cardId),
+        };
+      })(),
       defaultProviderId,
       repoRoot: (folder) => gitService.root(folder),
       // The user's own command FILES are the provider's to find (#1288,

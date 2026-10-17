@@ -44,7 +44,8 @@ import { useFeedSurface } from '../lib/feed-surface';
 import { FEED_THUMB_HEIGHT, FEED_THUMB_WIDTH, feedPictureUrl } from '../../../shared/feed-picture';
 import { Markdown } from '../lib/markdown';
 import { handleMarkdownLinkClick, openExternalBridge } from '../lib/markdown-links';
-import { dividerCopy } from '../lib/ai-switch-view';
+import { briefingRefOf, dividerCopy, earlierTurnsCopy } from '../lib/ai-switch-view';
+import { BriefingDialog } from '../components/BriefingDialog';
 
 /**
  * Marks a subtree that owns its own clicks (#91). `ToolBox` walks up from the
@@ -696,32 +697,75 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
  */
 function AiSwitchDivider({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
   const { t, i18n } = useTranslation();
+  const [viewing, setViewing] = React.useState(false);
   const mark = b.aiSwitch;
   if (!mark) return null;
   const copy = dividerCopy(mark, Date.now(), i18n.language);
   const text = t(copy.key, copy.vars);
+  // #1295: the briefing's exact text, offered only when one was sent AND kept
+  const ref = briefingRefOf(mark);
+  // …and the faint line for the turns that happened with the other AI. Not
+  // drawn: they are that AI's conversation, and switching back shows them.
+  const earlier = earlierTurnsCopy(mark);
   return (
-    <div
-      data-ai-switch-divider={mark.id}
-      data-from={mark.from.providerId}
-      data-to={mark.to.providerId}
-      role="separator"
-      aria-label={text}
-      title={new Date(mark.at).toLocaleString(i18n.language || undefined)}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        marginBlock: 10,
-        marginInline: 10,
-        color: 'var(--muted)',
-        fontSize: 10.5,
-        fontFamily: 'var(--font-ui)',
-      }}
-    >
-      <span aria-hidden style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
-      <span aria-hidden>{text}</span>
-      <span aria-hidden style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
+    <div data-ai-switch-divider={mark.id} data-from={mark.from.providerId} data-to={mark.to.providerId}>
+      {earlier && (
+        <div
+          data-ai-switch-earlier
+          style={{
+            textAlign: 'center',
+            marginBlockStart: 8,
+            color: 'var(--muted)',
+            fontSize: 10,
+            fontFamily: 'var(--font-ui)',
+          }}
+        >
+          {t(earlier.key, earlier.vars)}
+        </div>
+      )}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBlock: 10,
+          marginInline: 10,
+          color: 'var(--muted)',
+          fontSize: 10.5,
+          fontFamily: 'var(--font-ui)',
+        }}
+      >
+        <span aria-hidden style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
+        <span
+          role="separator"
+          aria-label={text}
+          title={new Date(mark.at).toLocaleString(i18n.language || undefined)}
+          data-ai-switch-label
+        >
+          <span aria-hidden>{text}</span>
+        </span>
+        {ref && (
+          <button
+            type="button"
+            data-ai-switch-see-briefing
+            title={t('aiSwitch.seeBriefingHint', { to: mark.to.name })}
+            onClick={() => setViewing(true)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              color: 'var(--text)',
+              textDecoration: 'underline',
+              cursor: 'pointer',
+              font: 'inherit',
+            }}
+          >
+            {t('aiSwitch.seeBriefing')}
+          </button>
+        )}
+        <span aria-hidden style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
+      </div>
+      {viewing && ref && <BriefingDialog mark={mark} briefingRef={ref} onClose={() => setViewing(false)} />}
     </div>
   );
 }

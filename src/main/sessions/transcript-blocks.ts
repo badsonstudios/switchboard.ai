@@ -52,6 +52,17 @@ export function sliceTail(text: string, limit: number): string {
 
 /** Prose blocks read as themselves; a tool row reads as one labelled line. */
 export function renderBlock(block: FeedBlock): string {
+  return renderBlockAs(block, 'Claude');
+}
+
+/**
+ * `renderBlock`, with the AI's prose under its own NAME (#1295). The AI-switch
+ * briefing hands one AI's conversation to another, and a Codex reply labelled
+ * `Claude:` would be the misattribution the `[subagent]` tag below exists to
+ * prevent. `renderBlock` keeps `Claude` for its callers, which read Claude
+ * sessions; `assistant` is a display name, flattened by the caller.
+ */
+export function renderBlockAs(block: FeedBlock, assistant: string): string {
   // A subagent's turn is NOT the main conversation, and handing it to another
   // agent unmarked is a misattribution it cannot detect. Labelled rather than
   // dropped: a sibling's subagent work is often the most interesting thing in
@@ -91,7 +102,7 @@ export function renderBlock(block: FeedBlock): string {
   }
   const text = block.text ?? '';
   if (!text) return '';
-  const label = block.kind === 'user' ? 'User' : block.kind === 'thinking' ? 'Thinking' : 'Claude';
+  const label = block.kind === 'user' ? 'User' : block.kind === 'thinking' ? 'Thinking' : assistant;
   return `${tag}${label}: ${text}`;
 }
 

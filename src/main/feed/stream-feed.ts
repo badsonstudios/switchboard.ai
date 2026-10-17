@@ -300,6 +300,27 @@ export class StreamFeed {
   }
 
   /**
+   * Re-draw a divider `placeMarker` (or `hydrate`) already placed, from a newer
+   * copy of its mark (#1295): the first start after a switch decides what the
+   * arrival WAS — briefed, resumed, started without context — only after the
+   * divider is down. Found by the mark's id; replaced in place, so it keeps its
+   * seq and its position, and emitted so a listening panel updates. A divider
+   * still waiting for its conversation is updated where it waits. One that is
+   * nowhere (the session ended, a reset wiped it) is left alone.
+   */
+  updateMarker(sessionId: string, block: DerivedBlock): void {
+    const id = block.aiSwitch?.id;
+    const s = this.sessions.get(sessionId);
+    if (!id || !s) return;
+    if (s.pendingMarker?.aiSwitch?.id === id) {
+      s.pendingMarker = block;
+      return;
+    }
+    const placed = s.buffer.list().find((b) => b.kind === 'ai-switch' && b.aiSwitch?.id === id);
+    if (placed) s.buffer.replace(placed, block);
+  }
+
+  /**
    * Take ONE subagent line from the transcript watcher (#977).
    *
    * ⚠️ THIS EXISTS SO THERE IS STILL ONE BUFFER PER SESSION, which is the whole

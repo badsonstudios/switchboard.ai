@@ -67,6 +67,12 @@ export interface AcpProviderOptions {
    * `usage` event. Absent: no limits.
    */
   limits?: () => Promise<PlanLimitWindow[] | undefined>;
+  /**
+   * The `instructionFiles` capability (#1295): the project instruction files
+   * this agent reads by its own convention. ABSENT: not known — a custom ACP
+   * agent declares nothing, and the switch briefing says so.
+   */
+  instructionFiles?: readonly string[];
 }
 
 /** The default `detect` for an ACP agent: see `AcpProviderOptions.detect`. */
@@ -167,6 +173,7 @@ export function createAcpProvider(opts: AcpProviderOptions): ProviderAdapter & {
     },
 
     capabilities: {
+      ...(opts.instructionFiles ? { instructionFiles: opts.instructionFiles } : {}),
       events: {
         createTranslator(hooks: TranslatorHooks, session?: { id: string }): EngineTranslator {
           if (!session) return () => [];

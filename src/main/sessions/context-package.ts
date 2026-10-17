@@ -66,7 +66,7 @@ import { DerivationCaps, FeedBlock, TEXT_CAP, touchedPath } from '../feed/blocks
 import { isCommandPlumbing } from '../../shared/command-invocation';
 import { cleanSenderName } from '../../shared/sibling-message';
 import { mentionLabel } from '../../shared/mention-prompt';
-import { blocksFrom, renderBlock, sliceTail } from './transcript-blocks';
+import { blocksFrom, renderBlock, renderBlockAs, sliceTail } from './transcript-blocks';
 // TYPE-ONLY, and it has to stay that way: `queries.ts` imports this module for
 // `sessionContext`, so a VALUE import here would close a runtime cycle between
 // them. A type import is erased.
@@ -281,7 +281,7 @@ function verbFor(tool: string): string {
  */
 const VERB_ORDER = ['wrote', 'edited', 'read', 'looked at'] as const;
 
-interface FileTouch {
+export interface FileTouch {
   verbs: Set<string>;
   calls: number;
   /**
@@ -478,6 +478,13 @@ export function promptText(block: FeedBlock): string | undefined {
   // reads `commandInvocation` instead — same module, so the two answers cannot
   // drift.
   if (text && isCommandPlumbing(text)) return undefined;
+  // AN AI-SWITCH BRIEFING IS NOT PROSE EITHER (#1295). It goes in as the new
+  // AI's first prompt, so it lands on a `user` line in that AI's transcript and
+  // Feed — but the app wrote it, from another conversation. Read as the
+  // person's words it would become the next package's GOAL and its "last
+  // request", and a second switch would brief a summary of a summary: #947's
+  // compaction mistake (generated text attributed to the user) by a new door.
+  if (text && isBriefingText(text)) return undefined;
   if (text) return text;
   const a = block.attachments;
   if (!a) return undefined;
@@ -485,6 +492,22 @@ export function promptText(block: FeedBlock): string | undefined {
   if (a.images) parts.push(`${a.images} image${a.images === 1 ? '' : 's'}`);
   if (a.documents) parts.push(`${a.documents} document${a.documents === 1 ? '' : 's'}`);
   return parts.length ? `[the user sent ${parts.join(' and ')} with no text]` : undefined;
+}
+
+/**
+ * The first line of every AI-switch briefing (#1295), up to the names. Here,
+ * not in `ai-briefing.ts`, because `promptText` needs it and that module
+ * imports this one.
+ */
+export const BRIEFING_HEADING = '# Briefed continuation';
+
+/** What the recent activity says where a briefing was sent, instead of the briefing itself. */
+export const BRIEFING_IN_ACTIVITY =
+  '[switchboard briefed this AI here with a summary of an earlier conversation — not repeated]';
+
+/** Is this prompt an AI-switch briefing the app sent, rather than the user's words? */
+export function isBriefingText(text: string): boolean {
+  return text.startsWith(BRIEFING_HEADING + ' from ');
 }
 
 /**
@@ -541,6 +564,34 @@ function section(
  * planning-only session is a real session.
  */
 export function buildContextPackage(src: PackageSource): ContextPackage {
+  return buildPackageFrom({
+    session: src.session,
+    material: materialFromEntries(src.entries),
+    goalFromHead: src.goalFromHead,
+    cut: src.cut,
+    unreadable: src.unreadable,
+  });
+}
+
+/**
+ * What every source is NORMALISED INTO before a package is built (#1295).
+ *
+ * The package was written against one source, a Claude JSONL, and almost all
+ * of it already worked on derived Feed blocks — only "files touched" read the
+ * raw entries. The AI-switch briefing has a second source with no JSONL at all
+ * (an ACP agent's conversation, which exists only as the Feed's own blocks), so
+ * the two meet here: blocks, the files they touched, and whether a compaction
+ * was dropped. Everything after this point is tested once, for both.
+ */
+export interface PackageMaterial {
+  blocks: readonly FeedBlock[];
+  files: Map<string, FileTouch>;
+  /** a compaction summary was dropped — evidence of older history (see below) */
+  compacted: boolean;
+}
+
+/** A Claude-shaped transcript's entries, normalised. */
+export function materialFromEntries(all: readonly Record<string, unknown>[]): PackageMaterial {
   // ⚠️ COMPACTION SUMMARIES ARE DROPPED AT THE ENTRY BOUNDARY (#947), and this
   // is the SECOND half of that fix — the first filtered only `firstPrompt`,
   // which `sessionContext` calls **only when the tail window was cut**. On an
@@ -557,7 +608,7 @@ export function buildContextPackage(src: PackageSource): ContextPackage {
   // the way" it was the model's summary printed as the user's instruction,
   // which is the misattribution `promptText`'s docstring refuses for subagent
   // briefs. `coverage` already tells the reader the window may be partial.
-  const entries = src.entries.filter((e) => !isCompactSummaryEntry(e));
+  const entries = all.filter((e) => !isCompactSummaryEntry(e));
   // ⚠️ AND A COMPACTION IS ITSELF EVIDENCE THE CONVERSATION RUNS BACK FURTHER.
   // Dropping the summary without saying so produced a document headed "Covers:
   // the whole conversation" over a Goal section reading "this session has not
@@ -568,8 +619,64 @@ export function buildContextPackage(src: PackageSource): ContextPackage {
   //
   // Positive evidence, not an inference from emptiness, so it is right in every
   // compacted case rather than only the one where the goal came out blank.
-  const compacted = entries.length !== src.entries.length;
-  const blocks = blocksFrom(entries, PACKAGE_CAPS);
+  const compacted = entries.length !== all.length;
+  // ── Files touched ─────────────────────────────────────────────────────────
+  // `entries`, not `all` — the filtered list, for `filesTouched`'s own stated
+  // rule: it skips `isMeta` so that the files list never names a line the
+  // document's prose sections cannot mention. A compaction summary carries no
+  // tool calls today, so this changes nothing; it is written this way so that a
+  // list built from lines the rest of the document has dropped stays impossible
+  // rather than merely unlikely.
+  return { blocks: blocksFrom(entries, PACKAGE_CAPS), files: filesTouched(entries), compacted };
+}
+
+/**
+ * Feed blocks, normalised — the source for an AI that writes no transcript we
+ * can read (an ACP agent, #1295). The blocks are the Feed's own, derived under
+ * the Feed's caps rather than `PACKAGE_CAPS`; the sections' own caps still
+ * bound the document.
+ *
+ * FILES come from `tool.filePath`, the one field a block carries for a file
+ * (an ACP edit's diff sets it; so does a Claude `file_path`). A known Claude
+ * tool name keeps its verb; any other tool that names a file through an edit
+ * path is an edit, and the rest were looked at — never more than the block
+ * says.
+ */
+export function materialFromBlocks(blocks: readonly FeedBlock[]): PackageMaterial {
+  const files = new Map<string, FileTouch>();
+  let seen = 0;
+  for (const b of blocks) {
+    // a subagent's calls count, as they do in `filesTouched`: it worked in the same
+    // folder, and the two sources must not disagree about which files were touched
+    const tool = b.kind === 'tool' ? b.tool : undefined;
+    const path = tool?.filePath;
+    if (!tool || !path) continue;
+    const named = verbFor(tool.name);
+    const verb = named === 'looked at' && tool.editPath ? 'edited' : named;
+    const existing = files.get(path);
+    const touch = existing ?? { verbs: new Set<string>(), calls: 0, lastSeen: 0 };
+    touch.verbs.add(verb);
+    touch.calls += 1;
+    touch.lastSeen = seen++;
+    if (!existing) files.set(path, touch);
+  }
+  return { blocks, files, compacted: false };
+}
+
+/** Everything `buildPackageFrom` needs: the normalised material and the read's reach. */
+export interface MaterialSource {
+  session: SessionSummary;
+  material: PackageMaterial;
+  goalFromHead?: string;
+  cut: boolean;
+  unreadable?: boolean;
+  /** whose prose the recent activity names; absent = `Claude`, as before (#1295) */
+  assistantLabel?: string;
+}
+
+/** Build a package from normalised material. Pure: same input, same output. */
+export function buildPackageFrom(src: MaterialSource): ContextPackage {
+  const { blocks, files, compacted } = src.material;
   const prompts = userTexts(blocks);
 
   // ── Goal ────────────────────────────────────────────────────────────────
@@ -665,14 +772,7 @@ export function buildContextPackage(src: PackageSource): ContextPackage {
       planCapped.truncated || planItems.some((i) => i.truncated) || todos.length >= PACKAGE_CAPS.todos,
   };
 
-  // ── Files touched ───────────────────────────────────────────────────────
-  // `entries`, not `src.entries` — the filtered list, for `filesTouched`'s own
-  // stated rule: it skips `isMeta` so that the files list never names a line the
-  // document's prose sections cannot mention. A compaction summary carries no
-  // tool calls today, so this changes nothing; it is written this way so that a
-  // list built from lines the rest of the document has dropped stays impossible
-  // rather than merely unlikely.
-  const files = filesTouched(entries);
+  // ── Files touched (from the material — see `materialFromEntries`) ────────
   // ── SELECT BY LAST TOUCH, RENDER BY FIRST ────────────────────────────────
   //
   // Two different orders, and conflating them has now been wrong in both
@@ -713,7 +813,15 @@ export function buildContextPackage(src: PackageSource): ContextPackage {
   // ── Recent activity ─────────────────────────────────────────────────────
   const tail = blocks.slice(-SNIPPET_BLOCKS);
   const rendered = tail
-    .map(renderBlock)
+    .map((b) =>
+      // A BRIEFING IN THE WINDOW is named, not copied (#1295): copying it would
+      // hand the next reader a summary of a summary, under "User:".
+      b.kind === 'user' && !b.sidechain && isBriefingText((b.text ?? '').trim())
+        ? BRIEFING_IN_ACTIVITY
+        : src.assistantLabel === undefined
+          ? renderBlock(b)
+          : renderBlockAs(b, src.assistantLabel)
+    )
     .filter((s) => s !== '')
     .join('\n\n');
   // CUT FROM THE FRONT, keeping the newest — `sessionOutput`'s lesson, for the

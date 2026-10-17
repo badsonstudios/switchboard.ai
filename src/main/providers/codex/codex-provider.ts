@@ -95,6 +95,8 @@ const engine = createAcpProvider({
   // the 5-hour and weekly windows, from `codex app-server` (one zero-token
   // call, cached 60 s, fail-open): what ACP carries only as `/status` text
   limits: createLimitsReader(),
+  // MEASURED (#1285 Q7): Codex reads `AGENTS.md`, and never `CLAUDE.md`
+  instructionFiles: ['AGENTS.md'],
 });
 
 /**

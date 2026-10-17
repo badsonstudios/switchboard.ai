@@ -1332,4 +1332,39 @@ describe('the AI-switch divider (#1294)', () => {
     feed.ingest(SID, { type: 'conversation', id: CONV });
     expect(kinds().filter((k) => k === 'ai-switch')).toHaveLength(1);
   });
+
+  // #1295: what the arrival turned out to be is known only after it is placed
+  const briefed = (at: string) => ({
+    kind: 'ai-switch' as const,
+    aiSwitch: { ...mark(at).aiSwitch, briefed: true, turnsSummarised: 3, briefingRef: 'c/m' },
+  });
+
+  it('updateMarker re-draws a placed divider IN PLACE — same seq, same position — and says so', () => {
+    const at = '2026-10-16T10:00:00.000Z';
+    feed.placeMarker(SID, mark(at), 'now');
+    feed.ingest(SID, { type: 'conversation', id: CONV });
+    feed.offer(SID, {
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: 'after' }] },
+      session_id: CONV,
+      parent_tool_use_id: null,
+    });
+    const seq = feed.blocks(SID)[0].seq;
+    seen.length = 0;
+    feed.updateMarker(SID, briefed(at));
+    expect(feed.blocks(SID)[0]).toMatchObject({ seq, kind: 'ai-switch', aiSwitch: { briefed: true, turnsSummarised: 3 } });
+    expect(texts()).toEqual([undefined, 'after']);
+    expect(seen.map((b) => b.aiSwitch?.briefed)).toEqual([true]);
+  });
+
+  it('updateMarker reaches a divider still waiting for its conversation, and ignores one that is nowhere', () => {
+    const at = '2026-10-16T10:00:00.000Z';
+    feed.placeMarker(SID, mark(at), 'after-conversation');
+    feed.updateMarker(SID, briefed(at));
+    feed.ingest(SID, { type: 'conversation', id: CONV });
+    expect(feed.blocks(SID).at(-1)?.aiSwitch?.briefed).toBe(true);
+    feed.updateMarker('no-such-session', briefed(at));
+    feed.updateMarker(SID, briefed('2026-10-16T11:00:00.000Z')); // a different mark: nothing placed for it
+    expect(kinds().filter((k) => k === 'ai-switch')).toHaveLength(1);
+  });
 });

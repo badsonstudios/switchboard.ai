@@ -115,12 +115,27 @@ export function pendingArrival(card: PersistedSession | undefined): AiSwitchMark
   return last;
 }
 
+/**
+ * The marks with `id` given what its first start turned out to be (#1295) —
+ * resumed, or a briefing that could not be built or sent. Only these two
+ * outcome fields: a briefing is recorded by `markArrived`, the one place that
+ * may say `briefed: true`.
+ */
+export function patchMark(
+  marks: readonly AiSwitchMark[] | undefined,
+  id: string,
+  patch: { resumed?: true; briefingFailed?: true; startedFresh?: true }
+): AiSwitchMark[] | undefined {
+  if (!marks) return undefined;
+  return marks.map((m) => (m.id === id ? { ...m, ...patch } : m));
+}
+
 /** The marks with `id` stamped as arrived — the first start on it has happened. */
 export function markArrived(
   marks: readonly AiSwitchMark[] | undefined,
   id: string,
   at: string,
-  briefing?: { turnsSummarised?: number; briefingRef?: string }
+  briefing?: { turnsSummarised?: number; briefingRef?: string; summaryPartial?: true }
 ): AiSwitchMark[] | undefined {
   if (!marks) return undefined;
   return marks.map((m) =>

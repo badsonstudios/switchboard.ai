@@ -194,6 +194,9 @@ function harness(
     /** #1294: what each AI is called, and the briefing hook #1295 fills */
     providerName?: SessionIpcDeps['providerName'];
     aiSwitchBriefing?: SessionIpcDeps['aiSwitchBriefing'];
+    /** #1295: "see what it was told", and a closed card's briefings */
+    briefingText?: SessionIpcDeps['briefingText'];
+    forgetBriefings?: SessionIpcDeps['forgetBriefings'];
   } = {}
 ) {
   const created: Array<{
@@ -715,6 +718,8 @@ function harness(
     contextOffer: opts.contextOffer,
     providerName: opts.providerName,
     aiSwitchBriefing: opts.aiSwitchBriefing,
+    briefingText: opts.briefingText,
+    forgetBriefings: opts.forgetBriefings,
   } as unknown as SessionIpcDeps;
 
   const ipc = registerSessionIpc(deps);
@@ -6244,6 +6249,141 @@ describe('sessions:switchAi — one card, one conversation per AI (#1294)', () =
       expect(feed.blocks(back.id)).toEqual([]);
       feed.ingest(back.id, { type: 'conversation', id: 'claude-1' });
       expect(dividers(feed, back.id)).toEqual([['Codex', 'Claude Code']]);
+    });
+
+    // ── #1295: the briefing, the live divider, what each arrival WAS ─────────
+    const markOf = (feed: ClaudeFedFeed, id: string) => feed.blocks(id).find((b) => b.kind === 'ai-switch')?.aiSwitch;
+
+    it('the Feed of the session being left is handed to the briefing — and the divider updates LIVE', () => {
+      const feed = new ClaudeFedFeed();
+      let req: Parameters<NonNullable<SessionIpcDeps['aiSwitchBriefing']>>[0] | undefined;
+      const h = make({
+        streamFeed: feed,
+        aiSwitchBriefing: (r) => {
+          req = r;
+          return { text: 'BRIEFING', turnsSummarised: 2, briefingRef: 'card-1/m' };
+        },
+      });
+      const claude = start(h);
+      feed.placeMarker(claude.id, { kind: 'user', text: 'fix the login redirect' }, 'now');
+      switchTo(h, 'other');
+      const codex = start(h);
+      // what the Claude session's Feed held, taken BEFORE it was torn down
+      expect(req?.fromBlocks?.map((b) => b.text)).toEqual(['fix the login redirect']);
+      expect(req?.keepMarkIds).toEqual([req?.mark.id]);
+      // the divider placed at the top now says what was sent — no relaunch
+      expect(markOf(feed, codex.id)).toMatchObject({
+        briefed: true,
+        turnsSummarised: 2,
+        briefingRef: 'card-1/m',
+      });
+      expect(markOf(feed, codex.id)?.arrivedAt).toEqual(expect.any(String));
+      expect(markOf(feed, codex.id)?.resumed).toBeUndefined();
+      expect(markOf(feed, codex.id)?.startedFresh).toBeUndefined();
+    });
+
+    it('a briefing that THROWS: the AI still starts, nothing is sent, and the mark and divider say so', () => {
+      const feed = new ClaudeFedFeed();
+      const h = make({
+        streamFeed: feed,
+        aiSwitchBriefing: () => {
+          throw new Error('transcript locked');
+        },
+      });
+      start(h);
+      switchTo(h, 'other');
+      const codex = start(h);
+      expect(h.created).toHaveLength(2);
+      expect(h.submitted).toEqual([]);
+      expect(card(h)?.aiSwitches?.[0]).toMatchObject({ briefed: false, briefingFailed: true });
+      expect(markOf(feed, codex.id)).toMatchObject({ briefed: false, briefingFailed: true });
+    });
+
+    it('a briefing the session will not TAKE is recorded as failed, never as sent', () => {
+      const feed = new ClaudeFedFeed();
+      const h = make({
+        streamFeed: feed,
+        submitAccepts: false,
+        aiSwitchBriefing: () => ({ text: 'BRIEFING', turnsSummarised: 2, briefingRef: 'card-1/m' }),
+      });
+      start(h);
+      switchTo(h, 'other');
+      const codex = start(h);
+      expect(card(h)?.aiSwitches?.[0]).toMatchObject({ briefed: false, briefingFailed: true });
+      expect(card(h)?.aiSwitches?.[0].briefingRef).toBeUndefined();
+      expect(markOf(feed, codex.id)?.briefed).toBe(false);
+    });
+
+    it('nothing to hand over: fresh, neither briefed nor failed', () => {
+      const feed = new ClaudeFedFeed();
+      const h = make({ streamFeed: feed, aiSwitchBriefing: () => undefined });
+      start(h);
+      switchTo(h, 'other');
+      const codex = start(h);
+      const m = markOf(feed, codex.id);
+      expect(m).toMatchObject({ briefed: false });
+      expect(m?.arrivedAt).toEqual(expect.any(String));
+      expect(m?.briefingFailed).toBeUndefined();
+      expect(m?.resumed).toBeUndefined();
+      expect(m?.startedFresh).toBe(true);
+    });
+
+    it('a switch BACK is recorded as a resume, and briefs nothing', () => {
+      const feed = new ClaudeFedFeed();
+      let asked = 0;
+      const h = make({
+        streamFeed: feed,
+        aiSwitchBriefing: () => {
+          asked++;
+          return { text: 'BRIEFING', turnsSummarised: 1 };
+        },
+      });
+      start(h);
+      switchTo(h, 'other');
+      const codex = start(h);
+      h.fireNativeId(codex.id, 'codex-1');
+      switchTo(h, 'generic');
+      const back = start(h);
+      feed.ingest(back.id, { type: 'conversation', id: 'claude-1' });
+      expect(asked).toBe(1);
+      expect(card(h)?.aiSwitches?.[1]).toMatchObject({ resumed: true, briefed: false });
+      expect(markOf(feed, back.id)).toMatchObject({ resumed: true });
+    });
+
+    it('the Feed kept for one switch is never handed to a later one, and a closed card forgets its briefings', () => {
+      const feed = new ClaudeFedFeed();
+      const blocksSeen: number[] = [];
+      const forgot: string[] = [];
+      const h = make({
+        streamFeed: feed,
+        aiSwitchBriefing: (r) => {
+          blocksSeen.push(r.fromBlocks?.length ?? 0);
+          return undefined;
+        },
+        forgetBriefings: (id) => forgot.push(id),
+      });
+      const claude = start(h);
+      feed.placeMarker(claude.id, { kind: 'user', text: 'one' }, 'now');
+      switchTo(h, 'other');
+      start(h);
+      expect(blocksSeen).toEqual([1]);
+      h.call('sessions:closeCard', 'card-1');
+      expect(forgot).toEqual(['card-1']);
+    });
+
+    it('sessions:briefingText answers from the wiring, and never rejects', () => {
+      const h = make({
+        briefingText: (ref) => (ref === 'card-1/m' ? { ok: true, text: 'EXACT' } : { ok: false, reason: 'gone' }),
+      });
+      expect(h.call('sessions:briefingText', 'card-1/m')).toEqual({ ok: true, text: 'EXACT' });
+      expect(h.call('sessions:briefingText', 'x/y')).toEqual({ ok: false, reason: 'gone' });
+      const throws = make({
+        briefingText: () => {
+          throw new Error('disk gone');
+        },
+      });
+      expect(throws.call('sessions:briefingText', 'card-1/m')).toEqual({ ok: false, reason: 'gone' });
+      expect(make().call('sessions:briefingText', 'card-1/m')).toEqual({ ok: false, reason: 'gone' });
     });
 
     it('a card that never switched draws none', () => {

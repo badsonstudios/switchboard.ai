@@ -57,6 +57,8 @@ export const fakeStreamAdapter: ProviderAdapter = {
   // nothing about the seam.
   capabilities: {
     transcripts: { projectsRoot: claudeProjectsRoot },
+    // it stands in for Claude Code, so it declares Claude's convention (#1295)
+    instructionFiles: ['CLAUDE.md'],
     // The REAL translator (#1286): the fake replays Claude's own frames, so
     // every e2e on it drives them through the seam the real CLI uses.
     events: claudeEvents,
