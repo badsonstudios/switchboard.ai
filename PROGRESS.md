@@ -22,12 +22,62 @@
 > and are listed under "Owner's queue" below; the run never merges them.
 >
 > **Active workers (issue → worktree → branch):**
-> - #1296 cross-AI dispatch ("Run it on") → `sb-wt-2` → `feature/1296-cross-ai-dispatch` — dispatched 2026-10-16 from #1307's head `c30db9bf`; will rebase onto #1307's amended head. User-facing → owner's queue.
-> - #1290 Codex provider → `sb-wt-1` → `feature/1290-codex-provider` → **PR #1307 (user-facing, owner's queue), now doing its follow-up:** rebase onto main (#1305 + #1306 landed), wire the plan-limit windows into the per-turn usage event, declare no price, and add Codex's `detect` capability (from #1291's handoff) once #1308 lands. First pass: `check:codex` passed for real (2 turns on `gpt-6-luna` low, "pong" twice, 20,660 + 1,611 input tokens, limits read 37 % 5-hour / 17 % weekly, one Codex session created and deleted, no processes left).
-> - #1291 AI catalog + detection + custom AIs + default AI → `sb-wt-3` → `feature/1291-ai-catalog` → **PR #1308 (internal), done 2026-10-16, now REBASING** onto `2de78924` (`gh pr update-branch` hit conflicts with #1305 in `contributions.ts` and the adapters). Unit 12,501; e2e 513/513 after fixing a real regression it caused and found (15 blocking PATH scans on the main thread after first paint broke `file-menu.spec.ts`; now one async read). Startup measured alternating builds: window-shown 808/833/816 ms base vs 747/782/797 ms branch. Catalog: Claude + 14 vouched ACP entries with local icons under `src/renderer/public/ai-icons/` (the CSP allows no `data:`/remote images); 42-entry trimmed registry snapshot for the user-pressed diff. Claude detection from `claude --version` + `auth status --json` (measured on 2.1.288). Default AI: first registered provider when unset.
+> - #1293 AI icon + status ring (screen 1) → `sb-wt-1` → `feature/1293-ai-icon` — dispatched 2026-10-16 from #1308's head `17579415`; told #1308 merged, rebases onto `291d4fba`. User-facing → owner's queue.
+> - #1294 the AI switch chip + switching back resumes (screen 2) → `sb-wt-2` → `feature/1294-ai-switch` — dispatched 2026-10-16 from #1307's head `ed7e9805`; will rebase onto #1307's next head. User-facing → owner's queue. **#1295 (handoff briefing + divider) is dispatched off its PR when it exists.**
+> - #1290 follow-up #2 (wire Codex's `detect` capability from #1291's handoff; rebase onto `291d4fba`) → **now in `sb-wt-3`** (its first worktree went to #1293) → `feature/1290-codex-provider` → amends PR #1307; #1294 and #1296 rebase onto the new head.
 >
-> **In CI, awaiting merge:** **#1299** (this file's run block; docs). **#1308**
-> after its rebase.
+> **In CI, awaiting merge:** **#1310** (this file's run block; docs). The
+> queued user-facing PRs below each carry their own green CI run but go
+> BEHIND main at every merge; they are not bumped one by one — **the train
+> PR at the end re-verifies them once.**
+>
+> **Owner's queue (user-facing, awaiting his review; the run never merges these):**
+> - **#1311 — #1292 Settings → AIs tab + Add-an-AI dialog** (head `cb993a33`
+>   on `17579415`, bumped onto main). The AIs tab: default-AI picker, "Found on
+>   this computer" with version and login state and a **Log in** that runs the
+>   AI's own sign-in, known AIs not found with the install command (Copy) or
+>   link, **Look again**, **+ Add an AI** (From the list with the "Runs local
+>   models" filter and a user-pressed **Check for new AIs**; Something else:
+>   name / command / arguments / Test / Add, Add enabled only after a passing
+>   Test). Test cannot list models (it runs `initialize` only), so the mockup's
+>   "3 models found" is "<agent> <version>, protocol N" instead. e2e: a custom
+>   AI pointed at the fake ACP agent is Tested, Added, made default, and a new
+>   session answers on it. Unit 12,653; e2e 515/515. Manual
+>   `docs/manual/24-ais.md`; dogfood row. Review fixed a keyboard-focus loss
+>   after every action (Escape stopped closing the window). For him to
+>   confirm: the tab sits third as in the mockup; "From the list" shows the
+>   whole catalog with installed ones marked; Details / Hide / "All ▾" not
+>   built.
+> - **#1309 — #1296 cross-AI dispatch, "Run it on"** (head `3c883f1c` on
+>   #1307's `ed7e9805`; CI green). The Dispatch box lists every registered AI,
+>   the session's own first; not-logged-in ones dimmed; `targetProviderId`
+>   travels on the request and main REFUSES an unusable target rather than
+>   falling back; roles carry `preferredProviderId` and a role whose AI is
+>   unusable says why and waits. New launch value
+>   `SWITCHBOARD_FAKE_PROVIDER=both` (Claude fake first, fake ACP beside it)
+>   drives `e2e/dispatch-cross-ai.spec.ts`: the fake ACP reviewer's reply
+>   round-trips into the Claude card. Login dimming is a temporary reader
+>   (`providers/login-states.ts`, Codex only) to be replaced by `ais:list()`.
+>   Unit 12,548; e2e 514/514. Manual `20-dispatch.md` "Run it on"; dogfood
+>   row. Behaviour change for him to confirm: dispatching FROM a Codex session
+>   now stays on Codex (it used to start on the default AI).
+> - **#1307 — #1290 Codex provider** (head `ed7e9805`, on main `2de78924`).
+>   Codex registered when `npx` is on PATH (PATH scan only; Claude stays the
+>   default); adapter `@agentclientprotocol/codex-acp@2.2.2` pinned, bundled
+>   Codex 0.160.1; `modeMap`: ask + auto-edit → `workspace-write`, plan →
+>   `read-only`, full-auto → `agent-full-access`; **Codex's hidden-reviewer
+>   `agent` mode is never used**; `authMethodId: 'chat-gpt'`; plan-limit
+>   windows read via `codex app-server account/rateLimits/read` (60-second
+>   cache) and shown in the status-bar usage tooltip; no dollar figure;
+>   `check:codex` (local-only, real tokens) passed twice for real, the second
+>   run showing the windows end to end (5-hour 67 %, weekly 21 %); manual
+>   `docs/manual/23-using-codex.md`; dogfood row. **Until the AI switch
+>   (#1294) lands, no button starts a Codex session** — the dogfood row says
+>   how to point a card at Codex by editing `workspace.json` with the app
+>   closed. Decisions for him to confirm or reverse: never "Auto review";
+>   ask → `workspace-write` (edits without asking; `read-only` would ask but
+>   Codex once declined instead of asking in that mode); bundled Codex over
+>   the installed CLI; registering whenever `npx` is present.
 >
 > **#1288 is classified INTERNAL for this run, deliberately.** The skill's
 > rule would call it user-facing (it wrote a manual paragraph and a dogfood
@@ -49,6 +99,25 @@
 > ends with a train PR for him.
 >
 > **Merged this run:**
+> - **#1291 AI catalog + detection + custom AIs + default AI → PR #1308
+>   (`291d4fba`), 2026-10-16.** `src/main/ai-catalog/`: Claude + 14 vouched
+>   ACP registry entries (Codex, Gemini CLI, Copilot, Cursor, OpenCode, goose,
+>   Qwen Code, Mistral Vibe, Cline, Auggie, Kimi, Kilo, Junie, Factory Droid)
+>   with local SVG icons in `src/renderer/public/ai-icons/` (the CSP allows no
+>   `data:`/remote images) and a 42-entry trimmed registry snapshot for the
+>   user-pressed "Check for new AIs" diff; `ProviderCapabilities.detect`
+>   right after `controls` (Claude: `claude --version` + `auth status --json`,
+>   measured on 2.1.288; ACP default: a PATH scan; the fake: constant); the
+>   runner starts 2–3 ms after `window shown`, 5-second timeout per AI →
+>   `unknown`, never blocks startup (alternating-build measurement:
+>   window-shown 808/833/816 ms base vs 747/782/797 ms branch); custom AIs in
+>   `userData/ais.json` as `custom:<slug>` with refused shell-dangerous input
+>   and a Test that runs `initialize` and is pid-checked for no leftover
+>   process; default AI = the user's choice else the first registered
+>   provider; the `ais:*` IPC surface. It found and fixed a regression of its
+>   own (15 blocking PATH scans after first paint broke `file-menu.spec.ts`).
+>   Unit 12,590; e2e 513/513. Rebased over #1305 by its worker (both sides
+>   kept in `contributions.ts`, `claude.ts`, `index.ts`).
 > - **#1288 per-AI surfaces → PR #1305 (`2de78924`), 2026-10-16.** Six
 >   capabilities at the end of `ProviderCapabilities` (`usage`, `statusPage`,
 >   `preflight`, `labels`, `mcpManager`, `commandFiles`), Claude's in
@@ -117,9 +186,8 @@
 >   amended (verdict is the default). 9 model turns on the cheapest model.
 >   No codex processes left; 3 probe sessions deleted from his history.
 >
-> **Owner's queue (user-facing, awaiting his review):** empty.
->
-> **Decisions queued for the owner (not blocking; needed by #1290):**
+> **Decisions queued for the owner (not blocking; #1290 shipped on the
+> working assumptions below, see the owner's queue above):**
 > 1. Codex's default mode `agent` ("Auto review") lets a **hidden reviewer
 >    model approve tool calls without asking** (measured: an MCP call was
 >    auto-approved, 7,262 uncounted tokens). `workspace-write` or `read-only`
