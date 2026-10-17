@@ -44,10 +44,13 @@ vi.mock('child_process', async (importOriginal) => {
 import {
   blurApp,
   E2E_MONITOR_ENV,
+  E2E_SETTINGS_FILE,
   killTree,
   launchApp,
+  monitorSetting,
   onTestDisplay,
   pickTestDisplay,
+  readSettingsKey,
   translateToDisplay,
   type DisplayInfo,
   type LaunchedApp,
@@ -161,6 +164,10 @@ beforeEach(() => {
   // Made BEFORE the spy, or `tempDir` would resolve its parent through it.
   scratch = tempDir('sb-fixture-');
   vi.spyOn(os, 'tmpdir').mockReturnValue(scratch);
+  // The per-machine monitor file lives in `~`. Pointed at the scratch dir so
+  // the developer this feature exists for — whose home HAS the file — gets the
+  // same unit suite as CI, whose home does not.
+  vi.spyOn(os, 'homedir').mockReturnValue(scratch);
   kill = vi.spyOn(process, 'kill').mockImplementation(() => true);
   h.launch.mockReset();
   h.execFileSync.mockReset();
@@ -425,6 +432,95 @@ describe('pickTestDisplay — monitor 1 is the primary, 2..N are the rest (#479)
     // put every absolute box in the suite somewhere arbitrary.
     expect(pickTestDisplay([RIGHT, LEFT], PRIMARY.id, '2')).toBeNull();
   });
+
+  describe('by direction — left / right / above / below the primary', () => {
+    const ABOVE: DisplayInfo = { id: 4, workArea: { x: 0, y: -1440, width: 2560, height: 1400 } };
+    const FAR_RIGHT: DisplayInfo = {
+      id: 5,
+      workArea: { x: 5120, y: 0, width: 1920, height: 1040 },
+    };
+
+    it('names the screen by where it sits, whatever order the list arrives in', () => {
+      expect(pickTestDisplay(three, PRIMARY.id, 'left')?.target).toEqual(LEFT);
+      expect(pickTestDisplay(three, PRIMARY.id, 'right')?.target).toEqual(RIGHT);
+      expect(pickTestDisplay([LEFT, ABOVE, PRIMARY, RIGHT], PRIMARY.id, 'above')?.target).toEqual(
+        ABOVE
+      );
+      expect(pickTestDisplay(three, PRIMARY.id, ' Right ')?.target).toEqual(RIGHT); // forgiving
+    });
+
+    it('survives a monitor detaching, which an index does not', () => {
+      // The reason the words exist. With three screens `3` means LEFT; the day
+      // the right one powers down, `3` is past the end and `2` quietly names
+      // LEFT instead — the setting now points at a different screen than it
+      // did. `left` means the same screen both days.
+      expect(pickTestDisplay(three, PRIMARY.id, '3')?.target).toEqual(LEFT);
+      expect(pickTestDisplay([PRIMARY, LEFT], PRIMARY.id, '3')).toBeNull();
+      expect(pickTestDisplay([PRIMARY, LEFT], PRIMARY.id, '2')?.target).toEqual(LEFT);
+      expect(pickTestDisplay([PRIMARY, LEFT], PRIMARY.id, 'left')?.target).toEqual(LEFT);
+    });
+
+    it('falls back to the primary (does nothing) when there is no screen that way', () => {
+      expect(pickTestDisplay([PRIMARY, RIGHT], PRIMARY.id, 'left')).toBeNull();
+      expect(pickTestDisplay(three, PRIMARY.id, 'below')).toBeNull();
+      expect(pickTestDisplay([PRIMARY], PRIMARY.id, 'right')).toBeNull();
+    });
+
+    it('picks the NEAREST when two screens are in the same direction', () => {
+      expect(pickTestDisplay([FAR_RIGHT, PRIMARY, RIGHT], PRIMARY.id, 'right')?.target).toEqual(
+        RIGHT
+      );
+    });
+  });
+});
+
+describe('monitorSetting — the env var, else the per-machine file', () => {
+  // `os.homedir()` is the scratch dir for every test in this file (beforeEach).
+  const settingsFile = () => path.join(os.homedir(), E2E_SETTINGS_FILE);
+
+  it('reads the key out of ~/.switchboard-e2e.env when the var is absent', () => {
+    vi.stubEnv(E2E_MONITOR_ENV, undefined);
+    fs.writeFileSync(settingsFile(), `# e2e windows go here\n${E2E_MONITOR_ENV}=right\n`);
+    expect(monitorSetting()).toBe('right');
+  });
+
+  it('lets the env var win when it is present — INCLUDING when it is empty', () => {
+    // An empty var is a shell (or this unit suite) saying "off, whatever the
+    // file says". It must not fall through to the file, or the developer whose
+    // home has the file could never run the suite on the primary again.
+    fs.writeFileSync(settingsFile(), `${E2E_MONITOR_ENV}=right\n`);
+    vi.stubEnv(E2E_MONITOR_ENV, '3');
+    expect(monitorSetting()).toBe('3');
+    vi.stubEnv(E2E_MONITOR_ENV, '');
+    expect(monitorSetting()).toBe('');
+  });
+
+  it('is nothing at all with neither — the CI path', () => {
+    vi.stubEnv(E2E_MONITOR_ENV, undefined);
+    expect(fs.existsSync(settingsFile())).toBe(false);
+    expect(monitorSetting()).toBeUndefined();
+  });
+
+  it('fails open on a file it cannot read', () => {
+    vi.stubEnv(E2E_MONITOR_ENV, undefined);
+    fs.mkdirSync(settingsFile()); // a directory where a file should be: EISDIR on read
+    expect(monitorSetting()).toBeUndefined();
+  });
+
+  it.each([
+    ['a bare value', 'SWITCHBOARD_E2E_MONITOR=right', 'right'],
+    ['spaces around', '  SWITCHBOARD_E2E_MONITOR = 2  ', '2'],
+    ['double quotes', 'SWITCHBOARD_E2E_MONITOR="left"', 'left'],
+    ['single quotes', "SWITCHBOARD_E2E_MONITOR='left'", 'left'],
+    ['CRLF and a comment', '# which screen\r\nSWITCHBOARD_E2E_MONITOR=3\r\n', '3'],
+    ['the last of two', 'SWITCHBOARD_E2E_MONITOR=2\nSWITCHBOARD_E2E_MONITOR=3', '3'],
+    ['another key only', 'SOMETHING_ELSE=right', undefined],
+    ['a commented-out line', '#SWITCHBOARD_E2E_MONITOR=right', undefined],
+    ['a prefix of the key', 'SWITCHBOARD_E2E_MONITORS=right', undefined],
+    ['an empty file', '', undefined],
+  ])('readSettingsKey handles %s', (_what, contents, want) => {
+    expect(readSettingsKey(contents, E2E_MONITOR_ENV)).toBe(want);
+  });
 });
 
 describe('translateToDisplay — shift, do not re-centre (#479)', () => {
@@ -542,6 +638,24 @@ describe('launchApp — the display move (#479)', () => {
     ]);
     // the DELTA between the work areas, not where the window ended up — that is
     // what `onTestDisplay` adds to a spec's absolute box
+    expect(launched.displayOffset).toEqual({ x: 2560, y: 0 });
+    await launched.cleanup();
+  });
+
+  it('moves the window on the per-machine file alone, with no env var exported', async () => {
+    // The whole point of the file: a worker's shell in a sibling worktree has
+    // nothing exported, and the suite should still land on the quiet screen.
+    vi.stubEnv(E2E_MONITOR_ENV, undefined);
+    fs.writeFileSync(path.join(os.homedir(), E2E_SETTINGS_FILE), `${E2E_MONITOR_ENV}=right\n`);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const displays = fakeDisplays([LEFT, PRIMARY, RIGHT], PRIMARY.id);
+    launchable(displays.evaluate);
+
+    const launched = await launchApp();
+
+    expect(displays.applied).toEqual([
+      { id: 7, box: { x: 2660, y: 50, width: 1280, height: 800 } },
+    ]);
     expect(launched.displayOffset).toEqual({ x: 2560, y: 0 });
     await launched.cleanup();
   });
