@@ -254,6 +254,7 @@ describe('the sections', () => {
       expect(tabs.map((b) => b.textContent)).toEqual([
         'Appearance',
         'General',
+        'AIs',
         'Notifications',
         'Sessions',
         'Diagnostics',

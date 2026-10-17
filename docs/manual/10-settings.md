@@ -22,12 +22,13 @@ button** — every control takes effect the moment you touch it, and you can wat
 the window behind change as you do. Close it with **Done**, **Escape**, or a
 click outside.
 
-It is organised in **six tabs** along the top:
+It is organised in **seven tabs** along the top:
 
 | Tab | Holds |
 |---|---|
 | **Appearance** | Theme, where the Sessions list goes, how a working session looks, the context meter, task label size |
 | **General** | Language, automatic update checks, Anthropic status checks |
+| **AIs** | Which AI new sessions start on, the AIs found on this computer and their sign-in, adding another AI — see [Settings → AIs](24-ais.md) |
 | **Notifications** | Quiet hours, phone push & webhooks |
 | **Sessions** | What happens to a finished dispatched session |
 | **Diagnostics** | Detailed performance capture, and the file it writes — see [When it feels slow](19-performance.md) |

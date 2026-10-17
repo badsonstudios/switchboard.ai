@@ -61,6 +61,7 @@ anywhere else.
 | [20 — Handing work to a fresh session](20-dispatch.md) | Dispatch: ⋯ → Dispatch… and the palette's per-role entries, why a reviewer deliberately does not get your conversation, the task line worth reading before you send it, getting the findings back, where a dispatched session sits in the list and when it closes itself | draft |
 | [21 — The Files tab](21-files.md) | Browsing the session's folder: git badges on files and folders, opening files from the tree, what the keyboard does, why the list doesn't update by itself, and the entries it deliberately leaves out | draft |
 | [22 — History](22-history.md) | The History tab: the commit graph and what its lines mean, what a row tells you, opening a commit to see its files and their diffs, branch and tag chips, detached HEAD, commits to pull and push, searching | draft |
+| [24 — Settings → AIs](24-ais.md) | The AIs tab: which AI new sessions start on, what was found on this computer and whether it is signed in, Log in (the AI's own sign-in), installing the ones not found, Add an AI from the list or as Something else, Test, and what "unknown" means | draft |
 
 Backfilled 2026-07-24 from the shipped app (Phase 1 + Phase 2 epics E7, E8,
 E10, E12) — written against the actual UI strings and behavior, not from

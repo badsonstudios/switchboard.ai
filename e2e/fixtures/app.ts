@@ -1262,8 +1262,8 @@ export async function setTheme(window: Page, name: string): Promise<void> {
 }
 
 /**
- * Open Settings on one of its tabs (#1199): 'appearance', 'general',
- * 'attention' (labelled Notifications), 'sessions', 'diagnostics', 'advanced'.
+ * Open Settings on one of its tabs (#1199): 'appearance', 'general', 'ais'
+ * (#1292), 'attention' (labelled Notifications), 'sessions', 'diagnostics', 'advanced'.
  *
  * By the tab's id and not its words, so it still works in the pseudo locale
  * where every label is mangled.
