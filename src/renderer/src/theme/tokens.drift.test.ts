@@ -1051,6 +1051,51 @@ describe('the washed tabs are written in --text', () => {
   });
 });
 
+// --- The AI badge's ring, in EVERY shipped theme (#1293) -------------------
+//
+// The AI's icon REPLACED the status dot (design record §1), and the ring round
+// it is now what carries the status a glance reads. A ring is a meaningful
+// non-text object, so it owes 1.4.11's 3:1 against every surface the badge
+// sits on: the rail card, the panel (the tab strip, the status bar's
+// neighbours) and panel2 (the strip, the card header's field). In all four
+// themes — not just the two that make a contrast claim — because a status
+// nobody can see is not a subtler status, it is a missing one.
+//
+// The raw `--status-*` hues measure about 2:1 on the light surfaces, which is
+// why the ring is painted in the per-theme INK. The second case reads that
+// out of the component, so swapping the ring back to the raw hue fails here
+// rather than passing on tokens nobody paints with any more.
+const RING_SURFACES = ['--rail-card', '--panel', '--panel2'] as const;
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  "%s: the AI badge's status ring",
+  (id, theme) => {
+    const tokens = resolved(theme);
+    const cases = STATUS_TOKENS.flatMap((token) =>
+      RING_SURFACES.map((surface) => [token, surface] as const)
+    );
+
+    it.each(cases)('the %s ring clears 3:1 on %s', (token, surface) => {
+      const ink = `--status-${token}-ink`;
+      for (const t of [ink, surface]) {
+        expect(tokens[t], `${id} ${t} must be #rrggbb to be measured`).toMatch(/^#[0-9a-f]{6}$/i);
+      }
+      expect(
+        ratio(tokens[ink], tokens[surface]),
+        `${id}: ${ink} on ${surface} (${tokens[ink]} on ${tokens[surface]})`
+      ).toBeGreaterThanOrEqual(3);
+    });
+  }
+);
+
+it("paints the badge's ring in the status ink this measures (AiBadge.tsx)", () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'components', 'AiBadge.tsx'), 'utf8');
+  // the one colour both ring shapes are drawn in
+  expect(src).toContain('const ink = `var(--status-${paint.token}-ink)`;');
+  // and no raw hue anywhere in it
+  expect(src).not.toContain('var(--status-${paint.token})');
+});
+
 // --- No raw status hue is ever a TEXT colour, anywhere (#246) ---------------
 //
 // The floor above says the INK is readable. This says the ink is what gets

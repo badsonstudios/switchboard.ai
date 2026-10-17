@@ -135,6 +135,12 @@ on the floor, and say so in your PR.
   still counted. The status-bar total now reads `≥$X est` when some sessions
   could not be priced, and `no price` when none could. Hover over it to see how
   many were left out. Known Claude models are priced exactly as before.
+- You can now see which AI each session is on. The AI's icon takes the place of
+  the status dot on the session's tab, its row in the sessions list, and the
+  start of its card header. A ring around the icon shows the status, in the same
+  colours the dot used, and the status is still written in a word beside it.
+  The status bar now lists every AI found on this computer, each with its
+  version, instead of just the `claude` version.
 
 ### Internal
 

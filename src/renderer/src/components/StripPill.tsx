@@ -5,7 +5,8 @@
 // underneath, the status mark at the end, the session's colour as a bar down
 // the start edge. It carries the same live status looks as a row in every
 // state, because it is built from the row's own pieces: `attentionPaint` for
-// who is lit, `presentStatus` for the word, `StatusMark` for the mark, and
+// who is lit, `presentStatus` for the word, `AiBadge` for the mark (the AI's
+// icon in the status ring, #1293 — `StatusMark` until then), and
 // `sessionSpokenName` for what it is called out loud.
 //
 // THE EDGE SAYS WHETHER IT IS ON SCREEN. Solid: its card is in the workspace.
@@ -20,7 +21,7 @@ import { approvalAttrs, approvalHint, NO_CARDS } from '../lib/approval-watch';
 import { useApprovalWatch } from '../lib/use-approval-watch';
 import { tint } from '../lib/tint';
 import { sessionSpokenName } from './SessionRow';
-import { StatusMark } from './StatusMark';
+import { AiBadge } from './AiBadge';
 
 export function StripPill(props: {
   session: RailSession;
@@ -256,7 +257,7 @@ export function StripPill(props: {
           {props.waiting}
         </span>
       )}
-      <StatusMark status={s.status} needsYou={props.needsYou} />
+      <AiBadge providerId={s.providerId} status={s.status} needsYou={props.needsYou} />
     </button>
   );
 }

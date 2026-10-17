@@ -23,6 +23,8 @@ export interface RailSession {
   folder?: string;
   accent?: string;
   badge?: string;
+  /** which AI the card is on (#1293), off `sessions:cards`; absent = not known */
+  providerId?: string;
   /**
    * The card's status, straight off `sessions:cards` — `SessionStatus` or the
    * card-only 'suspended' (#618) — plus the one value that does NOT come off
@@ -61,8 +63,7 @@ export interface RailSession {
    * chosen one is the answer its question wants.
    */
   transport?: TransportKind;
-  /** the AI this card is on, and the way back after a switch (#1294) */
-  providerId?: string;
+  /** the way back after an AI switch (#1294); the AI itself is `providerId` above */
   switchBack?: CardSwitchBack;
 }
 

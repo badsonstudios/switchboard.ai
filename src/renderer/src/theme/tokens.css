@@ -1058,6 +1058,12 @@ mark[data-feed-match-current] {
 @keyframes sb-spin {
   to { transform: rotate(360deg); }
 }
+/* An AI with no icon, or one that did not load (#1293, `AiIcon.tsx`): its
+ * initial, drawn here rather than as a text node so the tab's and the row's
+ * `textContent` stay the session's name and nothing else. */
+.ai-icon[data-initial]::before {
+  content: attr(data-initial);
+}
 .rail-row {
   transition: background 0.11s;
   cursor: pointer;
@@ -2202,6 +2208,17 @@ mark[data-feed-match-current] {
   inline-size: 17px !important;
   block-size: 17px !important;
   border-width: 2.4px !important;
+}
+/* The same "bigger spinner" round an AI's icon (#1293). That ring is 16px at
+ * rest (it has to clear the 12px icon), so 17px would be no change at all; it
+ * grows to 20px instead. It is absolutely placed and centred on its 16px box,
+ * so nothing around it moves. A strip GROUP still draws the plain 12px
+ * spinner (`StatusMark`), so this never matches inside one and the group keeps
+ * the 17px above; it is named here anyway because every rule that paints a
+ * row or a pill names the group too (StripGroupEntry.working.test.tsx). */
+[data-working-look='fill'] :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) .ai-badge .status-ring {
+  inline-size: 20px !important;
+  block-size: 20px !important;
 }
 :is([data-working-look='fill'], [data-working-look='strip']) :is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status='working']:not([data-needs-you='true']) :is([data-rail-state], [data-strip-pill-state], [data-strip-group-summary]) {
   color: var(--status-working-ink) !important;

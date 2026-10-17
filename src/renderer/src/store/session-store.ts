@@ -870,7 +870,8 @@ export class SessionStore {
     return this.state.sessions.find((s) => s.id === cardId)?.badge;
   }
 
-  /** The AI a card is on (#1294) — a scalar, for `getCardAccent`'s reason. */
+  /** Which AI one card is on (#1293; the AI chip's too, #1294), or undefined.
+   *  Scalar, for the reason `getCardAccent` documents. */
   getCardProvider(cardId: string | undefined): string | undefined {
     if (!cardId) return undefined;
     return this.state.sessions.find((s) => s.id === cardId)?.providerId;
@@ -884,6 +885,13 @@ export class SessionStore {
   getCardSwitchBack(cardId: string | undefined): RailSession['switchBack'] {
     if (!cardId) return undefined;
     return this.state.sessions.find((s) => s.id === cardId)?.switchBack;
+  }
+
+  /** One card's status as the rail sees it (#1293: the tab's ring), or
+   *  undefined. Scalar, like the accent, badge and provider above. */
+  getCardStatus(cardId: string | undefined): string | undefined {
+    if (!cardId) return undefined;
+    return this.state.sessions.find((s) => s.id === cardId)?.status;
   }
 
   /** Seed the map from the ui blob at boot. Does not persist — it just read it. */

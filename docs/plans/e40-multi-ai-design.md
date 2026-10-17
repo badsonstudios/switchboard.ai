@@ -492,6 +492,55 @@ The preload exposes all of these as `switchboard.ais`.
    - the AI icon on every card, tab and header;
    - on tabs, the icon replaces the dot and a ring keeps the status;
    - the status bar shows each AI's version and health.
+
+   **As built, item 10 (#1293, 2026-10-16).** One shared component,
+   `components/AiBadge.tsx`, draws all of it.
+
+   - **The badge.** It is the AI's icon (`AiIcon.tsx`) in a 16px ring. The
+     icon is looked up by provider id → `ais.list()` → the catalog `icon`, and
+     `lib/ais-store.ts` caches it, listening to `ais:changed`.
+     - An AI with no icon, or an icon that fails to load, gets a neutral tile
+       with its initial. The letter is drawn by CSS from `data-initial`, so a
+       tab's `textContent` stays the session's name.
+     - The badge is `role="img"`, named "<AI>, <status>". The exception is
+       the tab, where it is decoration (`decorative`): dockview's
+       `role="tab"` takes its name from its content, and that name stays the
+       session's.
+   - **Where it replaced the old mark.**
+     - On the rail row and the strip pill it replaced `StatusMark`, which was
+       the status glyph or spinner.
+     - On the tab it replaced `IdentityChip`'s accent dot. The new `mark` prop
+       is what makes the swap.
+     - It is new at the start of all three card-header arms.
+     - The strip's group entry keeps `StatusMark`, because a group has no
+       single AI.
+   - **The ring.** Its colour is `attentionPaint(status, needsYou).token`,
+     the same rule the old mark used.
+     - It is painted in `--status-<token>-ink`, not the raw hue, which
+       measures about 2:1 on light surfaces.
+     - `tokens.drift.test.ts` holds every ink at 3:1 against `--rail-card`,
+       `--panel` and `--panel2` in all four themes, and checks that the
+       component paints the ink.
+     - It spins (`.status-ring`, so #718's six looks still apply) only on
+       the row and the pill, where the old mark spun. On the tab and the
+       header it stands still: no new animation.
+     - Look 3's "bigger spinner" grows the ring from 16px to 20px; the old
+       mark went from 12px to 17px. `working-look.spec.ts` asserts 20px.
+   - **The wire.** `SessionCardWire` gained `providerId` (the live
+     session's, else the card's).
+   - **The status bar.** `status-cli-version` became `status-ais`.
+     - It shows Claude first, when it is detected as installed or preflight
+       read a version. Then come the others with `installed === true`.
+     - The health dot follows the default AI, because main polls only that
+       AI's page (#1288). When that AI is not listed, the dot falls back to
+       its own slot.
+     - It never wraps, clips with an ellipsis, and its `title` lists every AI.
+     - With no list, it shows the old `claude <version>` line.
+   - **Testing.** The fake stream gained a hermetic `detect` (installed,
+     `0.0.0`), so the bar does not read the developer's PATH under test.
+   - **Not done.** A tab no longer shows the session's accent as a dot. The
+     colour is still the open tab's wash and the lang badge's field: that is
+     the owner's §1 answer applied to the only dot the tab had.
 2. **The switch menu** *(item 11)*:
    - the chip sits before the model chip;
    - each AI shows its login state and account;

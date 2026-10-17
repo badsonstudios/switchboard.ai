@@ -8,8 +8,9 @@
 
 If several sessions are misbehaving at once — slow, refusing, erroring — check
 the small dot at the right-hand end of the bottom status bar before you start
-debugging your own prompt. It reflects Anthropic's public status page, and
-hovering it tells you what that page says.
+debugging your own prompt. It sits after the AI new sessions start on and
+reflects that AI's public status page (Anthropic's, for Claude); hovering it
+tells you what that page says.
 
 Full details, including the "several sessions just hit errors" strip and how to
 turn the check off: [Is it me or is it them?](14-provider-status.md).

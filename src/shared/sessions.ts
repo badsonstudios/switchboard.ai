@@ -293,6 +293,15 @@ export interface SessionCardWire {
   /** project-type lang badge (§5.11) — `SessionIdentity.langBadge` renamed on
    *  the way out, which is why this shape is not the identity */
   badge?: string;
+  /**
+   * Which AI this card is on (E40 item 10, #1293): the live session's
+   * provider, else the one the card was last started on. What the tab, the
+   * rail card and the header draw the AI's icon from. Optional: a card main
+   * has never started has no provider of its own yet, and the renderer then
+   * draws the neutral glyph rather than guessing one. The AI chip (#1294)
+   * reads the same field, so it can name the AI while no session is running.
+   */
+  providerId?: string;
   /** the live session's status, or 'suspended' when the card has no session */
   status: CardStatus;
   /** the live session under this card, if any */
@@ -329,11 +338,6 @@ export interface SessionCardWire {
    * that already agrees with main.
    */
   transport?: TransportKind;
-  /**
-   * The AI this card is on (#1294) — the card's own `identity.providerId`, so
-   * the AI chip can name it while no session is running.
-   */
-  providerId?: string;
   /**
    * The way back (#1294): present when the card's latest AI switch brought it to
    * the AI it is on now. `resumes` says whether the card has a conversation

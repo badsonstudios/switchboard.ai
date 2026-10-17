@@ -1464,13 +1464,13 @@ export function App(): React.JSX.Element {
             folder: c.folder,
             accent: c.accent,
             badge: c.badge,
+            providerId: c.providerId,
             status: c.status,
             groupId: c.groupId,
             autoKey: c.autoKey,
             liveId: c.liveId,
             taskLabel: c.taskLabel,
             transport: c.transport,
-            providerId: c.providerId,
             switchBack: c.switchBack,
           }))
         )

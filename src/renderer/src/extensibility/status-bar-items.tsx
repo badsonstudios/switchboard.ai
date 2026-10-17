@@ -14,6 +14,8 @@ import { healthTone, healthTooltip } from '../lib/service-health';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
 import type { PlanLimitWindow } from '../../../shared/usage-report';
+import { AiIcon } from '../components/AiIcon';
+import { aiLook, getAisState, subscribeAis, type AiLook, type AisState } from '../lib/ais-store';
 
 const MONO: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10 };
 
@@ -170,6 +172,114 @@ function AttentionCount({
   );
 }
 
+/** One AI on the status bar. */
+export interface StatusBarAi {
+  providerId: string;
+  look: AiLook;
+  version?: string;
+}
+
+/** Claude's catalog id: first on the bar, as the design record's screen 1 has it. */
+const CLAUDE_ID = 'claude-code';
+
+/**
+ * WHICH AIs THE BAR LISTS, and in what order (#1293) — a pure function so the
+ * rule is tested without a bar:
+ *
+ *   - Claude first, when detection found it installed OR preflight read its
+ *     version (the line this replaced, so a Claude the bar showed before is
+ *     never dropped by a detection that has not finished);
+ *   - then every other AI whose detection says `installed === true`, in the
+ *     list's own order. `'unknown'` is not installed: a slow probe is not a
+ *     claim worth printing.
+ *
+ * Empty when there is no list: the caller then shows the old line.
+ */
+export function statusBarAis(state: AisState, cliVersion: string | null | undefined, unknownName: string): StatusBarAi[] {
+  if (!state.items) return [];
+  const out: StatusBarAi[] = [];
+  const claude = state.items.find((i) => i.entry.id === CLAUDE_ID);
+  if (claude && (claude.detection?.installed === true || cliVersion)) {
+    const id = claude.providerId ?? CLAUDE_ID;
+    out.push({ providerId: id, look: aiLook(state, id, unknownName), version: claude.detection?.version ?? cliVersion ?? undefined });
+  }
+  for (const item of state.items) {
+    if (item.entry.id === CLAUDE_ID || item.detection?.installed !== true) continue;
+    const id = item.providerId ?? item.entry.id;
+    out.push({ providerId: id, look: aiLook(state, id, unknownName), version: item.detection.version });
+  }
+  return out;
+}
+
+/** Whether the AIs readout is drawing the health dot itself. */
+function healthIsInline(state: AisState, cliVersion: string | null | undefined): boolean {
+  if (!state.defaultId) return false;
+  return statusBarAis(state, cliVersion, '').some((a) => a.providerId === state.defaultId);
+}
+
+function StandaloneHealth({ ctx }: { ctx: StatusBarContext }): React.JSX.Element | null {
+  const state = React.useSyncExternalStore(subscribeAis, getAisState);
+  if (!ctx.serviceHealth || healthIsInline(state, ctx.cliVersion)) return null;
+  return <ServiceHealth status={ctx.serviceHealth} />;
+}
+
+/**
+ * "<icon> Claude Code 2.1.288 ● · <icon> Codex 0.48" — the mockup's screen 1.
+ *
+ * THE HEALTH DOT goes after the AI it describes: main polls ONE status page,
+ * the default AI's (#1288), so that is the entry it follows. Every other AI
+ * has no health readout at all, because nothing is asking about it.
+ *
+ * NEVER WRAPS (the bar is one nowrap row, and a taller bar costs the
+ * conversation its pixels — the `Chip` note in chrome.tsx). The readout may
+ * shrink: past its share it clips with an ellipsis, and its `title` lists
+ * every AI, so nothing is lost to a narrow window.
+ */
+function AisReadout({ ctx }: { ctx: StatusBarContext }): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const state = React.useSyncExternalStore(subscribeAis, getAisState);
+  const ais = statusBarAis(state, ctx.cliVersion, t('aiBadge.unknownAi'));
+  if (ais.length === 0) return ctx.cliVersion ? <CliVersion version={ctx.cliVersion} /> : null;
+  const words = (a: StatusBarAi): string =>
+    a.version ? t('statusbar.aiVersion', { name: a.look.name, version: a.version }) : a.look.name;
+  return (
+    <span
+      data-testid="status-ais"
+      title={t('statusbar.aisTitle', { list: ais.map(words).join(', ') })}
+      style={{
+        ...MONO,
+        // a BLOCK box, not a flex one: `text-overflow` only clips the inline
+        // content of a block container, so this is what makes the ellipsis
+        // real. Each AI is an atomic inline inside it.
+        display: 'inline-block',
+        minInlineSize: 0,
+        maxInlineSize: 420,
+        overflow: 'hidden',
+        whiteSpace: 'nowrap',
+        textOverflow: 'ellipsis',
+      }}
+    >
+      {ais.map((a, i) => (
+        <span
+          key={a.providerId}
+          data-status-ai={a.providerId}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            verticalAlign: 'middle',
+            marginInlineStart: i === 0 ? 0 : 10,
+          }}
+        >
+          <AiIcon look={a.look} size={11} />
+          <span>{words(a)}</span>
+          {ctx.serviceHealth && a.providerId === state.defaultId && <ServiceHealth status={ctx.serviceHealth} />}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 const manifest = (id: string, displayName: string) => manifestFor(id, displayName, 'statusbar.item');
 
 /** The items on one side of the bar, in order — the ONE definition of that rule. */
@@ -236,13 +346,22 @@ export const statusBarItems: StatusBarItemContribution[] = [
     order: 6,
     // null until main has said anything: a window that has never heard from the
     // poller shows no dot rather than a grey one it cannot explain.
-    render: (ctx) => (ctx.serviceHealth ? <ServiceHealth status={ctx.serviceHealth} /> : null),
+    //
+    // Since #1293 the dot normally sits INSIDE the AIs readout, after the AI
+    // it is about; this slot draws it only when that readout cannot (no list
+    // of AIs yet, or the AI it describes is not on it). Fail-open: the dot is
+    // never lost because the list of AIs was.
+    render: (ctx) => (ctx.serviceHealth ? <StandaloneHealth ctx={ctx} /> : null),
   },
   {
-    manifest: manifest('status-cli-version', 'CLI version'),
+    // E40 item 10 (#1293): each AI on this computer, with its version — Claude
+    // first, then every other AI detection found installed. It replaced the one
+    // `claude <version>` line, which is still what it says when no list of
+    // AIs has arrived (`CliVersion`, below).
+    manifest: manifest('status-ais', 'AIs and their versions'),
     align: 'end',
     order: 10,
-    render: (ctx) => (ctx.cliVersion ? <CliVersion version={ctx.cliVersion} /> : null),
+    render: (ctx) => <AisReadout ctx={ctx} />,
   },
   {
     manifest: manifest('status-theme', 'Active theme'),

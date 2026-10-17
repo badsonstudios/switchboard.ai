@@ -83,7 +83,9 @@ test.describe('how a working session looks (#718)', () => {
     // filled in: not the background it had while idle
     expect(working.background).not.toBe(idle.background);
     expect(working.titleWeight).toBe('700');
-    expect(working.ringSize).toBe('17px');
+    // 20px since #1293: the ring now goes round the AI's 12px icon and is 16px
+    // at rest, so look 3's bigger ring is 20px (it was 12px, then 17px)
+    expect(working.ringSize).toBe('20px');
     // and nothing moves but the spinner: no moving layer on the row
     expect(working.afterContent).toBe('none');
     // it is the session that is open (the only one there is), and it still
@@ -117,7 +119,7 @@ test.describe('how a working session looks (#718)', () => {
     expect(seen.marquee.afterAnimation).toBe('sb-work-orbit');
     // 3: no moving layer; bigger ring; bold
     expect(seen.fill.afterContent).toBe('none');
-    expect(seen.fill.ringSize).toBe('17px');
+    expect(seen.fill.ringSize).toBe('20px'); // round the AI's icon (#1293)
     // 4: a band sweeping across
     expect(seen.shimmer.afterAnimation).toBe('sb-work-sweep');
     // 5: a bar along the bottom

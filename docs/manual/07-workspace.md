@@ -169,7 +169,7 @@ group is one box:
 
 **Click a group** and a list of its sessions drops down. They are the same
 rows as in the list on the left: name, a word for what the session is doing,
-what it is working on, the status mark and **✕** to close it, plus the
+what it is working on, the AI's icon in its status ring and **✕** to close it, plus the
 shortcut number. When a group says **2 need you**, exactly two rows in its
 list are highlighted. Click a row to go to that session; the list closes.
 Click the group again, click anywhere else, or press `Esc` to close the list
@@ -179,7 +179,8 @@ in the list on the left: the first click already goes to the session. Use
 
 After the groups come the sessions that are **not in a group**, each as a
 two-line pill: its name and a word for what it is doing, what it is working
-on underneath, the status mark at the end, and its colour as a bar down the
+on underneath, the AI's icon in its status ring at the end (see
+[Which AI a session is on](02-sessions.md#which-ai-a-session-is-on)), and its colour as a bar down the
 left edge. A pill looks the way that session's row does in the list on the
 left, in every state: a session that needs you is filled in and bold. Click a
 pill to go to that session.
