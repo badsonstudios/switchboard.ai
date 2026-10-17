@@ -3,7 +3,28 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚂 2026-10-16 — E40 "MORE THAN ONE AI": BUILT IN ONE DAY; THE TRAIN (PR #1322) WAITS ON THE OWNER
+> # ✅ RELEASED: v0.8.123, 2026-10-17 (PR #1324) — ALL OF E40 IS IN IT
+>
+> The owner, after the run's report: *"If there's nothing else to work on,
+> cut a release."* Asked which release, he chose **merge the train, then
+> release**; asked which number, **0.8.123, the next patch**. So: the train
+> PR #1322 was merged with a MERGE COMMIT (`431cac24`; the six member PRs
+> #1307 #1309 #1311 #1312 #1314 #1315 flipped to merged and #1290, #1292–#1296
+> closed), the release PR #1324 landed (`238bf131`: version, lock and notes
+> together; `0.8.124 — unreleased` is open; the Codex entry no longer says
+> there is no AI picker), and tag `v0.8.123` was pushed. The release workflow
+> built and published it (run 39047182488). **E40 is CLOSED: twelve of twelve
+> issues.** The seven feature/train branches are deleted.
+>
+> **Nothing is in flight. Next is the owner's call.** None of E40 is
+> hand-tested: the dogfood tracker's six ⭐ rows at the top of Untested (and
+> the #1288 price row) read "IN v0.8.123, installable now", and the train PR
+> #1322's body carries the combined 14-step hand-test list and the 23
+> decisions the workers made for him. Tanner's app will offer this update
+> too. Open follow-ups from the run: #1301, #1303, #1316–#1320, #1323.
+> **DO NOT CUT ANOTHER** unless he asks.
+>
+> # 🚂 2026-10-16 — E40 "MORE THAN ONE AI": BUILT IN ONE DAY; THE TRAIN (PR #1322) WAS MERGED 2026-10-17 (see above)
 >
 > **The run is over. Twelve items, twelve PRs, zero blockers.** Six internal
 > PRs merged on green CI (#1285 probe, #1286 + #1287 the seam, #1288
