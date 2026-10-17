@@ -22,16 +22,67 @@
 > and are listed under "Owner's queue" below; the run never merges them.
 >
 > **Active workers (issue → worktree → branch):**
-> - #1293 AI icon + status ring (screen 1) → `sb-wt-1` → `feature/1293-ai-icon` — dispatched 2026-10-16 from #1308's head `17579415`; told #1308 merged, rebases onto `291d4fba`. User-facing → owner's queue.
-> - #1294 the AI switch chip + switching back resumes (screen 2) → `sb-wt-2` → `feature/1294-ai-switch` — dispatched 2026-10-16 from #1307's head `ed7e9805`; will rebase onto #1307's next head. User-facing → owner's queue. **#1295 (handoff briefing + divider) is dispatched off its PR when it exists.**
-> - #1290 follow-up #2 (wire Codex's `detect` capability from #1291's handoff; rebase onto `291d4fba`) → **now in `sb-wt-3`** (its first worktree went to #1293) → `feature/1290-codex-provider` → amends PR #1307; #1294 and #1296 rebase onto the new head.
+> - **#1295 handoff on switch: the briefing, the divider, "see what it was told" (screen 3) → `sb-wt-1` → `feature/1295-handoff-briefing` — dispatched 2026-10-16 from #1314's head `68292651`. THE LAST ITEM.** User-facing → owner's queue. Wires `aiSwitchBriefing` (the hook #1294 left in `sessions/ipc.ts`) to a deterministic, model-free Level-2 briefing built on `context-package.ts`, with the §5.5 impedance section (`CLAUDE.md` vs `AGENTS.md`, measured for Codex) and the honesty rule.
+> - #1296's rebase of PR #1309 onto #1307's final head `c605ae93` → `sb-wt-3`; also swapping its temporary login reader for `ais:list()` where small.
+> - `sb-wt-2`: free (#1294 finished).
 >
-> **In CI, awaiting merge:** **#1310** (this file's run block; docs). The
-> queued user-facing PRs below each carry their own green CI run but go
-> BEHIND main at every merge; they are not bumped one by one — **the train
-> PR at the end re-verifies them once.**
+> **When #1295's PR is green, the run builds the TRAIN** (`train/2026-10-16`
+> from fresh `origin/main`: #1307 → #1309 → #1311 → #1312 → #1314 → #1295's
+> PR; the `AiBadge` adoption in #1311/#1314 and the duplicate
+> `SWITCHBOARD_FAKE_PROVIDER=both` in #1309/#1314 are resolved on the train;
+> full local gate under the lock; one PR with one `Closes #N` line per member;
+> **NOT merged by the run — the owner authorises the train**).
+>
+> **In CI, awaiting merge:** nothing internal is left. The queued
+> user-facing PRs below each carry their own green CI run but go BEHIND
+> main at every merge; they are not bumped one by one — **the train PR at
+> the end re-verifies them once.**
 >
 > **Owner's queue (user-facing, awaiting his review; the run never merges these):**
+> - **#1314 — #1294 the AI switch beside the model chip, and switching back
+>   resumes** (head `68292651` on #1307's `c605ae93`). The AI chip before the
+>   model chip; its menu lists each AI with login state, greys out ones this
+>   run cannot start ("set it up…"), has the one-sentence explanation and
+>   "Manage AIs…". Switching parks the current AI's conversation and un-parks
+>   the target's: **switching back resumes that AI's own conversation through
+>   its own resume**; a first switch starts fresh (the briefing is #1295's); a
+>   divider "Claude Code → Codex · time" is persisted with the card
+>   (`AiSwitchMark`, `src/shared/ai-switch.ts`, last 20 kept). Switching while
+>   a turn runs asks first; Cancel keeps the turn. Workspace file v3 → v4; an
+>   older build opens a v4 file read-only with each card on its AI; the
+>   migration moves nothing (only the AIs a card is NOT on are parked, so two
+>   copies cannot drift). Review fix: a switched card whose AI later
+>   disappeared used to fall back to Claude and lose its parked Claude
+>   conversation; it now refuses to start and offers "Switch back to …".
+>   `SWITCHBOARD_FAKE_PROVIDER=both` added here too (#1309 adds the same;
+>   one survives the train). **Real-token proof:** `CHECK_CODEX_SWITCH=1 npm
+>   run check:codex` passed once: 5 turns (3 Codex, 2 Claude on haiku), the
+>   second Claude turn resumed the original conversation and remembered
+>   "ping"; 2 Codex sessions deleted, the Claude transcript folder removed,
+>   no processes left. Unit green; e2e 1 known flake that passed alone.
+>   Manual + CHANGELOG + dogfood row. **For him:** every AI this run can start
+>   is selectable even if its program was not found ("may not start" rather
+>   than greyed); a switched card whose AI is gone refuses rather than moving
+>   to Claude silently; every workspace file becomes v4 on first save, so a
+>   downgrade opens it read-only.
+> - **#1312 — #1293 which AI a session is on, at a glance** (head `158aa440`
+>   on main `291d4fba`; CI green). `components/AiBadge.tsx`
+>   (`{providerId?, status, needsYou, spin?, decorative?}`), `AiIcon.tsx`,
+>   `lib/ais-store.ts`. The AI's icon replaces the status mark on rail rows
+>   and strip pills and the accent dot on tabs, and a new mark starts each
+>   card-header variant; the ring is painted with the per-theme status ink,
+>   72 new drift cases check 3:1 in all four themes; the text status label
+>   stays. The status bar lists every AI found with its version. New
+>   `e2e/ai-badge.spec.ts` (fake Claude + fake ACP side by side). Specs
+>   changed with reasons: `working-look.spec` (ring at rest is 16 px, so the
+>   bigger ring is 20 not 17), `tabs.spec` (the #312 seven-dot-colour check
+>   became "all seven tabs carry an AI mark"). The fake Claude provider now
+>   reports itself installed (0.0.0). Unit 12,687; e2e 512 + the
+>   `session-history` flake + the `tabs` check it rightly changed. Manual
+>   pages updated (screenshots still show the dot); CHANGELOG `Changed`;
+>   dogfood row. **For him:** an inactive tab with no language badge now
+>   shows no session colour at all (the dot carried it); the strip pill does
+>   not name its AI to a screen reader.
 > - **#1311 — #1292 Settings → AIs tab + Add-an-AI dialog** (head `cb993a33`
 >   on `17579415`, bumped onto main). The AIs tab: default-AI picker, "Found on
 >   this computer" with version and login state and a **Log in** that runs the
@@ -61,7 +112,11 @@
 >   Unit 12,548; e2e 514/514. Manual `20-dispatch.md` "Run it on"; dogfood
 >   row. Behaviour change for him to confirm: dispatching FROM a Codex session
 >   now stays on Codex (it used to start on the default AI).
-> - **#1307 — #1290 Codex provider** (head `ed7e9805`, on main `2de78924`).
+> - **#1307 — #1290 Codex provider** (FINAL head `c605ae93` on main
+>   `291d4fba`; follow-up #2 wired Codex's own `detect`: installed means the
+>   `codex` CLI is on PATH, not merely `npx`; version + sign-in read
+>   together; honours the catalog's 5-second cut; regression test "not
+>   installed when only npx exists"; unit 12,641; e2e 513/513).
 >   Codex registered when `npx` is on PATH (PATH scan only; Claude stays the
 >   default); adapter `@agentclientprotocol/codex-acp@2.2.2` pinned, bundled
 >   Codex 0.160.1; `modeMap`: ask + auto-edit → `workspace-write`, plan →
