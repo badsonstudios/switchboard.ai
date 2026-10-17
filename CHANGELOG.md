@@ -94,7 +94,9 @@ on the floor, and say so in your PR.
 
 ---
 
-## 0.8.123 — unreleased
+## 0.8.124 — unreleased
+
+## 0.8.123 — 2026-10-17
 
 ### Added
 
@@ -105,8 +107,8 @@ on the floor, and say so in your PR.
   plan's 5-hour and weekly limits, with no dollar figure. Every Codex question
   is put to you: the app never uses
   Codex's "Auto review" mode, where a hidden model approves things for you.
-  There is no AI picker yet, so a new session is still a Claude session, and
-  nothing changes for anyone without Codex.
+  New sessions still start on Claude unless you change the default in
+  Settings → AIs, and nothing changes for anyone without Codex.
 - **Settings → AIs.** A new tab that shows which AIs are on this computer, whether
   each one is signed in and its version, and which AI new sessions start on (pick
   another, or press **Make default** on its row). **Log in…** runs the AI's own
