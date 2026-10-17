@@ -126,7 +126,7 @@ import { PersistedSession } from '../workspace/store';
 import type { DispatchRegistry, PendingDispatch } from './dispatch-ipc';
 import type { DispatchResults } from './dispatch-results';
 import { buildDispatchPrompt } from './dispatch-prompt';
-import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
+import { commandsFromCli, MisplacedSkills, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
 import { isPromptTooLong, sanitizePromptAttachments } from '../../shared/prompt-attachments';
 
@@ -310,6 +310,9 @@ export interface SessionIpcDeps {
   /** slash-command discovery for the composer popup (E10-07, §5.17) — async:
    *  the scan must never stall the main process on a slow disk */
   slashCommands: (folder: string, providerId: string) => Promise<SlashCommand[]>;
+  /** why some skills are missing from that popup (#1328). Optional: a host
+   *  that leaves it out simply never shows the hint */
+  slashHints?: (folder: string, providerId: string) => Promise<MisplacedSkills[]>;
   // `preferredTransport` went with `SWITCHBOARD_TRANSPORT` (#952). It was the
   // env-level override of which transport a session asked its adapter for,
   // sitting below the card's own setting and above the default — the only way to
@@ -3181,6 +3184,38 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // empty list means something went wrong upstream far more often than it
     // means this session genuinely has no commands.
     return cli?.length ? commandsFromCli(cli, known) : known;
+  });
+
+  // Why some of the user's skills are not in that popup (#1328). A separate
+  // channel rather than a second field on the list above: the list is a bare
+  // array that every caller and test already reads, and the hint is
+  // decoration — a failure here must cost the hint, never the commands.
+  //
+  // LOGGED ONCE PER SESSION at info, so the next "my skills are gone" is one
+  // grep: the folder and the count, not on every `/`.
+  const slashHintsLogged = new Set<string>();
+  broker.handle('sessions:slashHints', async (_e, liveId: string) => {
+    if (typeof liveId !== 'string' || !deps.slashHints) return [];
+    const rec = manager.get(liveId);
+    if (!rec) return [];
+    const hints = await deps
+      .slashHints(rec.identity.folder, rec.identity.providerId)
+      .catch((err) => {
+        log.warn('skill layout check failed', { sessionId: liveId, error: errorText(err) });
+        return [] as MisplacedSkills[];
+      });
+    if (hints.length > 0 && !slashHintsLogged.has(liveId)) {
+      slashHintsLogged.add(liveId);
+      for (const h of hints) {
+        log.info('skills not loaded: loose .md files in a skills folder', {
+          sessionId: liveId,
+          folder: h.scope === 'project' ? rec.identity.folder : '~',
+          dir: h.shownDir,
+          count: h.files.length,
+        });
+      }
+    }
+    return hints;
   });
 
   // repo/folder auto-group keys (E12-05): same key -> same emergent group.

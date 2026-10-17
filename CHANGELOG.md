@@ -96,6 +96,13 @@ on the floor, and say so in your PR.
 
 ## 0.8.124 — unreleased
 
+### Added
+
+- **The `/` list says why it is empty.** Typing a `/` that matches nothing now
+  shows "No commands match" instead of nothing at all. If a skills folder holds
+  loose `.md` files, which Claude Code ignores, the list says so and names the
+  layout Claude Code needs: `.claude/skills/<name>/SKILL.md`.
+
 ### Changed
 
 - **"Hide on submit" is gone.** It hid the session you had just typed into the

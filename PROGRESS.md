@@ -3,6 +3,20 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 💬 2026-10-17 — #1328: THE `/` LIST SAYS WHY IT IS EMPTY, branch `feature/1328-slash-menu-skills-hint`
+>
+> The owner asked for #1328 straight after #1276 merged (PR #1327). Three
+> parts: a `/` that matches nothing now shows "No commands match" (it opened
+> on nothing before); loose `.md` files in `.claude/skills` or
+> `~/.claude/skills` are named with the layout Claude Code needs, over a new
+> `sessions:slashHints` channel, logged once per session at info; and the
+> CLI's `command_lifecycle` frame is understood-and-silent (schema read from
+> the PATH CLI: `{command_uuid, state}`). **One deliberate narrowing:** folders
+> WITHOUT a SKILL.md are not reported, because the owner's own
+> `~/.claude/skills/synced` is one. The Trading project itself is not
+> changed; the manual's Slash commands page says how to fix it. Ships in
+> 0.8.124.
+>
 > # 🗑️ 2026-10-17 — "HIDE ON SUBMIT" REMOVED (#1276), branch `feature/1276-remove-auto-hide`
 >
 > The owner hit #1276 again on a brand-new Codex session: switch to Codex,

@@ -1178,7 +1178,10 @@
       "commandListLabel": "Slash commands",
       "sessionListLabel": "Sessions you can mention",
       "commandListOpen": "Slash commands, {count} available",
-      "sessionListOpen": "Sessions you can mention, {count} available"
+      "sessionListOpen": "Sessions you can mention, {count} available",
+      "noMatch": "No commands match “/{token}”",
+      "misplacedSkills": "Claude Code ignores loose .md files in {dir} ({count} here). A skill must be {dir}/<name>/SKILL.md.",
+      "misplacedSkillsFiles": "Not loaded: {files}"
     },
     "mention": {
       "refused": "Not sent, and nothing has been cleared. {reasons}",

@@ -128,6 +128,7 @@ import {
   filterCommands,
   insertCommand,
   isCompleteCommand,
+  MisplacedSkills,
   SlashCommand,
   slashToken,
 } from '../../../shared/slash-commands';
@@ -3290,6 +3291,8 @@ function Composer({
   // from (`summariesFrom`, the bus's own list, over `sessions:summaries`).
   const [caret, setCaret] = React.useState(0);
   const [commands, setCommands] = React.useState<SlashCommand[] | null>(null);
+  /** skills the AI will not load, and so are not in `commands` (#1328) */
+  const [slashHints, setSlashHints] = React.useState<MisplacedSkills[]>([]);
   const [summaries, setSummaries] = React.useState<SessionSummary[] | null>(null);
   const [selected, setSelected] = React.useState(0);
   const [dismissed, setDismissed] = React.useState(false);
@@ -3380,6 +3383,21 @@ function Composer({
           }))
         : [];
   const popupOpen = popup.length > 0;
+  /**
+   * The line under (or instead of) the command list (#1328). The owner typed
+   * `/alpaca` in a project whose skills Claude Code ignores, and the popup did
+   * not open at all — no list, no word — so the app looked broken. Now a `/`
+   * that matches nothing says so, and skills in the wrong layout are named.
+   * Not part of the listbox: these are not options, and keyboard handling
+   * still keys on `popupOpen` alone.
+   */
+  const slashNotice =
+    slash !== null && commands !== null && (popup.length === 0 || slashHints.length > 0)
+      ? {
+          noMatch: popup.length === 0,
+          hints: slashHints,
+        }
+      : null;
   const syncCaret = (): void => setCaret(box.current?.selectionStart ?? 0);
   const popupWanted = slash !== null;
   const mentionWanted = mention !== null;
@@ -3390,9 +3408,19 @@ function Composer({
     // command file shows up without restarting anything
     if (!popupWanted) {
       setCommands(null);
+      setSlashHints([]);
       return;
     }
     let cancelled = false;
+    // The hint is decoration (#1328): a refused or failed read is "no hint",
+    // never a reason to hold the list back, so it is fetched on its own.
+    void Promise.resolve(window.switchboard.sessions.slashHints?.(sessionId))
+      .then((hints) => {
+        if (!cancelled) setSlashHints(answered(hints) ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setSlashHints([]);
+      });
     void window.switchboard.sessions.slashCommands(sessionId).then((list) => {
       // #650: the brand in `commands` is `.filter`ed by the popup on the next
       // keystroke. `[]` and not `null`: both draw an empty popup, but they are
@@ -4124,6 +4152,26 @@ function Composer({
             )
           : ''}
       </div>
+      {(popupOpen || slashNotice !== null) && (
+        // The floating box. It holds the listbox and, under it, the slash
+        // notice (#1328) — two siblings rather than a notice inside the list,
+        // because a listbox may only contain options.
+        <div
+          data-completion-popup=""
+          style={{
+            position: 'absolute',
+            insetBlockEnd: '100%',
+            insetInlineStart: 8,
+            insetInlineEnd: 8,
+            marginBlockEnd: 4,
+            zIndex: 20,
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
+            borderRadius: 8,
+            boxShadow: 'var(--tab-lift)',
+            padding: 3,
+          }}
+        >
       {popupOpen && (
         <div
           // `data-completion-list` is the TEST HOOK, and it is a `data-*` for
@@ -4142,19 +4190,8 @@ function Composer({
               : 'feedView.completion.commandListLabel'
           )}
           style={{
-            position: 'absolute',
-            insetBlockEnd: '100%',
-            insetInlineStart: 8,
-            insetInlineEnd: 8,
-            marginBlockEnd: 4,
-            zIndex: 20,
-            background: 'var(--panel)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            boxShadow: 'var(--tab-lift)',
             maxBlockSize: 200,
             overflowY: 'auto',
-            padding: 3,
           }}
         >
           {popup.map((row, i) => {
@@ -4234,6 +4271,37 @@ function Composer({
             </div>
             );
           })}
+        </div>
+      )}
+      {slashNotice !== null && (
+        <div
+          data-slash-notice=""
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 3,
+            padding: '4px 8px',
+            fontSize: 10.5,
+            color: 'var(--muted)',
+            borderBlockStart: popupOpen ? '1px solid var(--border)' : undefined,
+            marginBlockStart: popupOpen ? 3 : undefined,
+          }}
+        >
+          {slashNotice.noMatch && (
+            <span data-slash-no-match="">{t('feedView.completion.noMatch', { token: slash ?? '' })}</span>
+          )}
+          {slashNotice.hints.map((h) => (
+            <span
+              key={h.scope}
+              data-slash-misplaced={h.scope}
+              // the file names, for the person who wants to know WHICH files
+              title={t('feedView.completion.misplacedSkillsFiles', { files: h.files.join(', ') })}
+            >
+              {t('feedView.completion.misplacedSkills', { dir: h.shownDir, count: h.files.length })}
+            </span>
+          ))}
+        </div>
+      )}
         </div>
       )}
       {/* attachments (E10-09) sit INSIDE the composer's own root, above the
@@ -4453,6 +4521,14 @@ function Composer({
               else setDismissed(true);
               return;
             }
+          }
+          // The slash notice alone (#1328: nothing matched) closes on Escape
+          // like the list does. Enter is NOT taken: `/whatever` still goes to
+          // the CLI, which decides what it means.
+          if (slashNotice !== null && e.key === 'Escape') {
+            e.preventDefault();
+            setDismissed(true);
+            return;
           }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();

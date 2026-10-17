@@ -329,6 +329,16 @@ describe('unknown frames — logged once, skipped, never fatal', () => {
     }
   });
 
+  it('command_lifecycle is understood and silent, not reported as unknown (#1328)', () => {
+    // the shape the PATH CLI's schema declares; the owner's log showed it as
+    // "stream frame type not understood" on the first prompt of a session
+    const frame = { type: 'command_lifecycle', command_uuid: 'u-1', state: 'completed' };
+    expect(translateClaudeFrame(frame)).toEqual([]);
+    const seen: string[] = [];
+    claudeEvents.createTranslator({ onUnknown: (x) => seen.push(x) })(frame);
+    expect(seen).toEqual([]);
+  });
+
   it('an unknown type is null from the pure function', () => {
     expect(translateClaudeFrame({ type: 'something_new' })).toBeNull();
     expect(translateClaudeFrame({})).toBeNull();

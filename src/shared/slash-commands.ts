@@ -19,6 +19,28 @@ export interface SlashCommand {
 }
 
 /**
+ * Files in a skills folder that the AI will NOT load as skills (#1328).
+ *
+ * Claude Code loads a skill only as `skills/<name>/SKILL.md`. A loose
+ * `skills/<name>.md` is silently ignored by the CLI, so the `/` popup showed
+ * nothing and the owner took the app for broken. We never load these
+ * (host-don't-reimplement: the CLI decides what a skill is); we only SAY why
+ * they are missing.
+ *
+ * Only loose `.md` files count. A folder with no `SKILL.md` is deliberately
+ * NOT reported: the owner's own `~/.claude/skills/synced` is exactly that, a
+ * folder the CLI keeps for itself, and flagging it would be a false alarm on
+ * every `/`.
+ */
+export interface MisplacedSkills {
+  scope: 'project' | 'user';
+  /** the folder as the user should read it: `.claude/skills` or `~/.claude/skills` */
+  shownDir: string;
+  /** the loose `.md` file names, sorted */
+  files: string[];
+}
+
+/**
  * The token the popup should complete, or null when no popup belongs on
  * screen. CLI semantics: a slash command is LINE-INITIAL — the draft's first
  * character must be '/' and the caret must still be inside that first token

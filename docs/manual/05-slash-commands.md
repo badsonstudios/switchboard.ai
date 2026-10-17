@@ -62,6 +62,42 @@ If Claude Code's commands change while a session is running — you install a
 plugin, say — the next time you open the list it's up to date. (A list that's
 already open on screen doesn't change under you.)
 
+## When the list is empty, or a skill is missing
+
+If nothing matches what you've typed, the list says so: *No commands match
+“/alpaca”*. Press **Esc** to close it. Pressing **Enter** still sends what you
+typed to Claude Code, which decides what it means.
+
+**A skill that isn't in the list is usually in the wrong shape.** Claude Code
+only loads a skill that is a *folder* with a file called `SKILL.md` inside it:
+
+```
+.claude/skills/alpaca-trading/SKILL.md
+```
+
+A loose file such as `.claude/skills/alpaca-trading.md` is ignored. That's
+Claude Code's rule, so it wouldn't work in a plain terminal either. When
+switchboard finds loose `.md` files in a skills folder, the list shows a line
+like this under the commands:
+
+> *Claude Code ignores loose .md files in .claude/skills (13 here). A skill must
+> be .claude/skills/<name>/SKILL.md.*
+
+Hover over that line to see which files it means. To fix it, move each file
+into a folder of its own named after the skill, rename the file `SKILL.md`, and
+give it a short header at the top:
+
+```
+---
+name: alpaca-trading
+description: What the skill is for, in one sentence. Claude reads this to decide when to use it.
+---
+```
+
+The same check covers your personal skills folder, `~/.claude/skills`. A
+`README.md` in a skills folder is left alone, and so is a folder without a
+`SKILL.md`, because Claude Code keeps folders of its own there.
+
 ## Clearing and compacting
 
 There are two shortcuts for this, and they do exactly the same thing:

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ContextMenuLabels } from '../shared/context-menu';
-import type { SlashCommand } from '../shared/slash-commands';
+import type { MisplacedSkills, SlashCommand } from '../shared/slash-commands';
 import type { MentionPrompt } from '../shared/mention-prompt';
 import type { ContextOffer } from '../shared/context-drop';
 import type {
@@ -374,6 +374,9 @@ const api = {
     /** composer autocomplete data (E10-07): builtins + project/user commands */
     slashCommands: (liveId: string): Promise<SlashCommand[]> =>
       ipcRenderer.invoke('sessions:slashCommands', liveId),
+    /** why some skills are not in that list (#1328): loose files the AI ignores */
+    slashHints: (liveId: string): Promise<MisplacedSkills[]> =>
+      ipcRenderer.invoke('sessions:slashHints', liveId),
     /** the composer's `@` popup list (P2-E11-07) — the bus's own `summariesFrom` */
     summaries: (): Promise<SessionSummary[]> => ipcRenderer.invoke('sessions:summaries'),
     /**
