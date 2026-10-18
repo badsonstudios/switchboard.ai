@@ -25,6 +25,7 @@ import {
   onTestDisplay,
   readWorkspaceFile,
   registerTempDir,
+  retryLostReply,
   tempProjectFolder,
 } from './fixtures/app';
 
@@ -146,9 +147,11 @@ test.describe('document viewer (P2-E16-02)', () => {
    * suite that drags the window back onto the developer's working monitor.
    */
   async function setBounds(width: number, height: number): Promise<void> {
-    await a.app.evaluate(
-      ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
-      onTestDisplay(a, { x: 20, y: 20, width, height })
+    // idempotent, so safe to re-issue when the reply is lost (#1332)
+    const app = a.app;
+    const box = onTestDisplay(a, { x: 20, y: 20, width, height });
+    await retryLostReply(() =>
+      app.evaluate(({ BrowserWindow }, b) => BrowserWindow.getAllWindows()[0]?.setBounds(b), box)
     );
   }
 

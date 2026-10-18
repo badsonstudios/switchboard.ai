@@ -23,7 +23,13 @@
 // popout child down with the app.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import { LaunchedApp, launchApp, skipPopoutOnLinux, tempProjectFolder } from './fixtures/app';
+import {
+  bringToFront,
+  LaunchedApp,
+  launchApp,
+  skipPopoutOnLinux,
+  tempProjectFolder,
+} from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -146,11 +152,19 @@ test.describe('new session from a popped-out window (#531)', () => {
     // run this test at all — that is an environment fact, not a regression, so
     // it SKIPS rather than going red. (The release right above this one in the
     // CHANGELOG was a Windows-CI e2e flake; this is that lesson applied.)
-    await popout.bringToFront();
-    let focused = false;
-    for (let i = 0; i < 20 && !focused; i++) {
-      focused = await popout.evaluate(() => document.hasFocus());
-      if (!focused) await popout.waitForTimeout(250);
+    //
+    // THROUGH `bringToFront` (#1332), which asks the OS (`isFocused()`), not the
+    // page: `document.hasFocus()` — what this used to poll — is pinned true by
+    // Playwright's focus emulation and could never have said no. This is one of
+    // the two specs that activate a window on purpose; see the helper.
+    // Only "the window manager refused" skips; anything else (no popout at all,
+    // a broken helper) is a failure and is rethrown.
+    let focused = true;
+    try {
+      await bringToFront(a, 'popout', 5_000);
+    } catch (err) {
+      if (!/never came to the front/.test(String(err))) throw err;
+      focused = false;
     }
     test.skip(!focused, 'window manager would not focus the popout; the keyboard route needs real OS focus');
 

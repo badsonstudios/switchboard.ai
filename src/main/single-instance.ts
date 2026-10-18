@@ -6,6 +6,8 @@
 // can be tested: `index.ts` calls `app.enableSandbox()` at module scope and
 // cannot be imported under vitest at all.
 
+import { type ActivatableWindow, raiseWindow } from './window-activation';
+
 export interface AcquireOptions {
   /** one attempt at `app.requestSingleInstanceLock()` */
   tryLock: () => boolean;
@@ -80,13 +82,7 @@ export function sleepSync(ms: number): void {
  * satisfies it without a cast, and nothing here can quietly start depending on
  * the rest of the class.
  */
-export interface RaisableWindow {
-  isDestroyed(): boolean;
-  isMinimized(): boolean;
-  restore(): void;
-  show(): void;
-  focus(): void;
-}
+export type RaisableWindow = ActivatableWindow;
 
 /**
  * Bring the running app's window to the user — the whole visible behaviour of
@@ -110,8 +106,8 @@ export interface RaisableWindow {
  */
 export function focusRunningWindow(win: RaisableWindow | null | undefined): boolean {
   if (!win || win.isDestroyed()) return false;
-  if (win.isMinimized()) win.restore();
-  win.show();
-  win.focus();
+  // restore, show, focus — done by `raiseWindow`, the one activation seam
+  // (#1332), which in the e2e quiet mode only shows without activating
+  raiseWindow(win);
   return true;
 }

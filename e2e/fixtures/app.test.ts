@@ -43,14 +43,18 @@ vi.mock('child_process', async (importOriginal) => {
 
 import {
   blurApp,
+  bringToFront,
   E2E_MONITOR_ENV,
+  E2E_NO_ACTIVATE_ENV,
   E2E_SETTINGS_FILE,
   killTree,
   launchApp,
   monitorSetting,
+  noActivateSetting,
   onTestDisplay,
   pickTestDisplay,
   readSettingsKey,
+  retryLostReply,
   translateToDisplay,
   type DisplayInfo,
   type LaunchedApp,
@@ -556,6 +560,90 @@ describe('monitorSetting — the env var, else the per-machine file', () => {
   });
 });
 
+describe('the quiet-launch key (#1332) — same precedence as the monitor key', () => {
+  const settingsFile = () => path.join(os.homedir(), E2E_SETTINGS_FILE);
+
+  it('reads the per-machine file when the var is absent, beside the monitor key', () => {
+    vi.stubEnv(E2E_NO_ACTIVATE_ENV, undefined);
+    vi.stubEnv(E2E_MONITOR_ENV, undefined);
+    fs.writeFileSync(settingsFile(), `${E2E_MONITOR_ENV}=right\n${E2E_NO_ACTIVATE_ENV}=1\n`);
+    expect(noActivateSetting()).toBe(true);
+    // adding the second key did not disturb the first
+    expect(monitorSetting()).toBe('right');
+  });
+
+  it('lets a present env var win — an EMPTY one is the explicit off', () => {
+    fs.writeFileSync(settingsFile(), `${E2E_NO_ACTIVATE_ENV}=1\n`);
+    vi.stubEnv(E2E_NO_ACTIVATE_ENV, '');
+    expect(noActivateSetting()).toBe(false);
+    vi.stubEnv(E2E_NO_ACTIVATE_ENV, '0');
+    expect(noActivateSetting()).toBe(false);
+    fs.writeFileSync(settingsFile(), `${E2E_NO_ACTIVATE_ENV}=0\n`);
+    vi.stubEnv(E2E_NO_ACTIVATE_ENV, 'On');
+    expect(noActivateSetting()).toBe(true);
+  });
+
+  it.each([
+    ['1', true],
+    ['true', true],
+    [' YES ', true],
+    ['on', true],
+    ['0', false],
+    ['off', false],
+    ['right', false],
+    ['', false],
+  ])('the file value %j is %s', (value, want) => {
+    vi.stubEnv(E2E_NO_ACTIVATE_ENV, undefined);
+    fs.writeFileSync(settingsFile(), `${E2E_NO_ACTIVATE_ENV}=${value}\n`);
+    expect(noActivateSetting()).toBe(want);
+  });
+
+  it('is off with neither — the CI path', () => {
+    vi.stubEnv(E2E_NO_ACTIVATE_ENV, undefined);
+    expect(fs.existsSync(settingsFile())).toBe(false);
+    expect(noActivateSetting()).toBe(false);
+  });
+});
+
+describe('launchApp — the quiet-launch variable in the child env (#1332)', () => {
+  function launchable() {
+    const f = fakeApp(999_133);
+    f.handle.firstWindow.mockResolvedValue(fakeWindow());
+    h.launch.mockResolvedValue(f.handle);
+    return f;
+  }
+  const childEnv = (): Record<string, string> =>
+    (h.launch.mock.calls[0][0] as { env: Record<string, string> }).env;
+
+  it('passes exactly "1" when on — whatever spelling turned it on', async () => {
+    vi.stubEnv(E2E_MONITOR_ENV, '');
+    vi.stubEnv(E2E_NO_ACTIVATE_ENV, 'yes');
+    launchable();
+    const launched = await launchApp();
+    expect(childEnv()[E2E_NO_ACTIVATE_ENV]).toBe('1');
+    await launched.cleanup();
+  });
+
+  it('leaves the variable OUT entirely when off, even if the shell exported a junk value', async () => {
+    // absent, not empty: the CI path's environment is the one it always was
+    vi.stubEnv(E2E_MONITOR_ENV, '');
+    vi.stubEnv(E2E_NO_ACTIVATE_ENV, 'nope');
+    launchable();
+    const launched = await launchApp();
+    expect(E2E_NO_ACTIVATE_ENV in childEnv()).toBe(false);
+    await launched.cleanup();
+  });
+
+  it('lets a spec turn it off for itself through opts.env', async () => {
+    vi.stubEnv(E2E_MONITOR_ENV, '');
+    vi.stubEnv(E2E_NO_ACTIVATE_ENV, '1');
+    launchable();
+    const launched = await launchApp({ env: { [E2E_NO_ACTIVATE_ENV]: '' } });
+    expect(childEnv()[E2E_NO_ACTIVATE_ENV]).toBe('');
+    await launched.cleanup();
+  });
+});
+
 describe('translateToDisplay — shift, do not re-centre (#479)', () => {
   it('preserves the position WITHIN the display, so relative geometry survives', () => {
     expect(translateToDisplay(FAKE_BOUNDS, PRIMARY.workArea, RIGHT.workArea)).toEqual({
@@ -847,5 +935,111 @@ describe('blurApp — a dropped blur is retried, not waited out (#538)', () => {
     const stuck = fakeWin({ ignoreBlurs: Number.MAX_SAFE_INTEGER });
     await expect(blurApp(appWith([stuck]), 300)).rejects.toThrow(/never went away/);
     expect(stuck.blurs).toBeGreaterThan(1);
+  });
+});
+
+describe('bringToFront — a dropped activation is retried (#1332)', () => {
+  const fakeWin = (id: number, opts: { focused?: boolean; ignoreFocus?: number } = {}) => {
+    let focused = opts.focused ?? false;
+    let left = opts.ignoreFocus ?? 0;
+    return {
+      id,
+      focuses: 0,
+      webContents: { getURL: () => (id >= 9 ? 'http://127.0.0.1/popout.html' : 'http://127.0.0.1/') },
+      focusable: id < 9,
+      isFocusable(): boolean {
+        return this.focusable;
+      },
+      setFocusable(v: boolean): void {
+        this.focusable = v;
+      },
+      isDestroyed: () => false,
+      isFocused: () => focused,
+      focus(): void {
+        this.focuses++;
+        if (!this.focusable) return; // WS_EX_NOACTIVATE: nobody can activate it
+        if (left > 0) {
+          left--;
+          return; // the foreground lock refused it
+        }
+        focused = true;
+      },
+    };
+  };
+  const appWith = (wins: ReturnType<typeof fakeWin>[]): LaunchedApp =>
+    ({
+      app: {
+        evaluate: (fn: (m: { BrowserWindow: unknown }, arg: unknown) => unknown, arg: unknown) =>
+          Promise.resolve(fn({ BrowserWindow: { getAllWindows: () => [...wins] } }, arg)),
+      },
+    }) as unknown as LaunchedApp;
+
+  it('activates the newest POPOUT when asked for one', async () => {
+    const main = fakeWin(1);
+    const older = fakeWin(9);
+    const newer = fakeWin(12);
+    await bringToFront(appWith([newer, main, older]), 'popout');
+    expect(newer.isFocused()).toBe(true);
+    // a quiet popout is created unfocusable; the helper made it focusable first
+    expect(newer.isFocusable()).toBe(true);
+    expect(main.focuses + older.focuses).toBe(0);
+  });
+
+  it('activates the MAIN window — the lowest id, not getAllWindows()[0]', async () => {
+    const popout = fakeWin(9);
+    const main = fakeWin(3);
+    await bringToFront(appWith([popout, main]));
+    expect(main.isFocused()).toBe(true);
+    expect(popout.focuses).toBe(0);
+  });
+
+  it('asks nothing of a window that is already in front', async () => {
+    const main = fakeWin(1, { focused: true });
+    await bringToFront(appWith([main]));
+    expect(main.focuses).toBe(0);
+  });
+
+  it('re-issues a dropped focus(), and throws when it never lands', async () => {
+    const flaky = fakeWin(1, { ignoreFocus: 2 });
+    await bringToFront(appWith([flaky]));
+    expect(flaky.focuses).toBe(3);
+    const stuck = fakeWin(1, { ignoreFocus: Number.MAX_SAFE_INTEGER });
+    await expect(bringToFront(appWith([stuck]), 'main', 300)).rejects.toThrow(/never came to the front/);
+  });
+});
+
+describe('retryLostReply — a lost main-process reply is re-asked, nothing else is (#1332)', () => {
+  const lost = () => new Error('electronApplication.evaluate: Execution context was destroyed, most likely because of a navigation.');
+
+  it('re-issues the call after a lost reply and returns the answer', async () => {
+    let n = 0;
+    const v = await retryLostReply(() => {
+      if (++n < 3) throw lost();
+      return Promise.resolve(42);
+    });
+    expect(v).toBe(42);
+    expect(n).toBe(3);
+  });
+
+  it('rethrows any OTHER error at once — a real failure is not retried into a pass', async () => {
+    let n = 0;
+    await expect(
+      retryLostReply(() => {
+        n++;
+        throw new Error('ReferenceError: nope is not defined');
+      })
+    ).rejects.toThrow(/nope/);
+    expect(n).toBe(1);
+  });
+
+  it('gives up after the last attempt with the lost reply itself', async () => {
+    let n = 0;
+    await expect(
+      retryLostReply(() => {
+        n++;
+        throw lost();
+      }, 3)
+    ).rejects.toThrow(/Execution context was destroyed/);
+    expect(n).toBe(3);
   });
 });

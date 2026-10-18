@@ -80,6 +80,7 @@ function fakeWindow(state: { destroyed?: boolean; minimized?: boolean } = {}) {
       state.minimized = false;
     },
     show: () => calls.push('show'),
+    showInactive: () => calls.push('showInactive'),
     focus: () => calls.push('focus'),
   };
   return win;

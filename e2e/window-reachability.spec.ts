@@ -53,12 +53,19 @@ function logContaining(home: string, needle: string): Promise<string> {
   );
 }
 
-/** hide or show the MAIN window (not a popout) */
+/**
+ * hide or show the MAIN window (not a popout).
+ *
+ * Shown the way the app itself would show it: inactive in a quiet launch
+ * (`SWITCHBOARD_E2E_NO_ACTIVATE`, #1332), because a bare `show()` activates and
+ * this spec is about whether the window is VISIBLE, not whether it is in front.
+ */
 async function setMainShown(a: LaunchedApp, shown: boolean): Promise<void> {
   await a.app.evaluate(({ BrowserWindow }, on) => {
     const win = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes('/index.html'));
-    if (on) win?.show();
-    else win?.hide();
+    if (!on) win?.hide();
+    else if (process.env.SWITCHBOARD_E2E_NO_ACTIVATE === '1') win?.showInactive();
+    else win?.show();
   }, shown);
 }
 

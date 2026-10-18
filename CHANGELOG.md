@@ -140,6 +140,13 @@ on the floor, and say so in your PR.
   hide, show and move is recorded with its position and monitor, so "my window
   disappeared" can be traced.
 
+### Internal
+
+- **The test suite can run without taking your keyboard.** With
+  `SWITCHBOARD_E2E_NO_ACTIVATE=1` in `~/.switchboard-e2e.env`, the app's test
+  windows open in the background instead of jumping in front of whatever you
+  are typing in. Nothing changes for the shipped app.
+
 ## 0.8.123 — 2026-10-17
 
 ### Added
