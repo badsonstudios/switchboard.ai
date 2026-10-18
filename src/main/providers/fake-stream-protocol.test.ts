@@ -1574,3 +1574,69 @@ describe('!permstream and !askstream: a request, and output after it (#1258)', (
     expect(out.filter((m) => m.type === 'assistant')).toHaveLength(1);
   });
 });
+// #1268 — an interrupt with a request still held. MEASURED on the PATH CLI
+// (2.1.288, `spike/findings/1268-held-request-on-interrupt.md`): the CLI takes
+// the held request back with a `control_cancel_request` 2 ms after the
+// interrupt, BEFORE it acknowledges the interrupt and before the `result`, for
+// an approval and a question alike, and it ignores a late answer to it. The fake
+// used to clear the request silently, so nothing downstream ever saw the cancel.
+describe('an interrupt takes back what is held, in the measured order (#1268)', () => {
+  const interrupt = { type: 'control_request', request_id: 'int-1', request: { subtype: 'interrupt' } };
+  const types = (): string[] => out.map((m) => String(m.type));
+
+  for (const [verb, tool] of [
+    ['!perm .claude/x.sh', 'Write'],
+    ['!askstream', 'AskUserQuestion'],
+  ] as const) {
+    it(`${tool}: cancel, then the interrupt's ack, then the result`, () => {
+      proto.handle(userMsg(verb));
+      const req = out.find((m) => m.type === 'control_request') as {
+        request_id: string;
+        request: { tool_name: string };
+      };
+      expect(req.request.tool_name).toBe(tool);
+      out.length = 0;
+
+      proto.handle(interrupt);
+
+      const cancel = types().indexOf('control_cancel_request');
+      const ack = types().indexOf('control_response');
+      const result = types().indexOf('result');
+      expect(cancel).toBe(0);
+      expect(out[cancel]).toEqual({ type: 'control_cancel_request', request_id: req.request_id });
+      expect(ack).toBeGreaterThan(cancel);
+      expect(result).toBeGreaterThan(ack);
+      expect(out[result]).toMatchObject({ subtype: 'error_during_execution', is_error: true });
+    });
+  }
+
+  it('two held: both are taken back, in the order they were asked', () => {
+    proto.handle(userMsg('!perm a.sh b.sh'));
+    const asked = out.filter((m) => m.type === 'control_request').map((m) => m.request_id);
+    expect(asked).toHaveLength(2);
+    out.length = 0;
+    proto.handle(interrupt);
+    expect(out.filter((m) => m.type === 'control_cancel_request').map((m) => m.request_id)).toEqual(asked);
+  });
+
+  it('nothing held: no cancel, just the ack and the result', () => {
+    proto.handle(userMsg('!hang'));
+    out.length = 0;
+    proto.handle(interrupt);
+    expect(types()).not.toContain('control_cancel_request');
+    expect(types()).toContain('control_response');
+    expect(types()).toContain('result');
+  });
+
+  it('a late answer to a request it took back is ignored, as the real CLI ignores it', () => {
+    proto.handle(userMsg('!perm .claude/x.sh'));
+    const req = out.find((m) => m.type === 'control_request') as { request_id: string };
+    proto.handle(interrupt);
+    out.length = 0;
+    proto.handle({
+      type: 'control_response',
+      response: { subtype: 'success', request_id: req.request_id, response: { behavior: 'allow' } },
+    });
+    expect(out).toEqual([]);
+  });
+});

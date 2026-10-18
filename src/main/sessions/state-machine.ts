@@ -146,13 +146,14 @@ export function transition(
   // out of time, or is cancelled by the CLI, and the router that held it says
   // so each time (`permission-resolved`, applied after it has let go).
   //
-  // ONE CASE IT DOES NOT SAY SO, known and left: a turn that ends (an
-  // interrupt, say) with a request still in the router and no cancel from the
-  // CLI. `result` ends the wait here, but the request stays held until its
-  // deadline (a question has none), with its bar still on the card. A LATER
-  // request on that session is then pinned behind it until that turn's own
-  // `result`. The router cannot drop it at `result` without knowing that
-  // nothing in the background is still waiting on the answer. Tracked as #1268.
+  // AN INTERRUPT IS ONE OF THOSE "CANCELLED BY THE CLI" CASES, measured (#1268,
+  // 2.1.288): the CLI sends `control_cancel_request` for every request still
+  // held, ahead of its `result`, so the router lets go and says so before the
+  // turn ends. The router deliberately does NOT let go at `result` itself: the
+  // same probe watched a background subagent ask 137 ms AFTER its parent turn's
+  // `result`, and that request was genuinely waiting. `result` ends the WAIT
+  // here (see `endsHeldWait`); only an answer, a deadline, a lost window, a
+  // teardown or the CLI's cancel ends the REQUEST.
   //
   // Without this the session's status was right for one frame. MEASURED, in
   // the owner's log: 51 of 305 held requests were walked back to `working`

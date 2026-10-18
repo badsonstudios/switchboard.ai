@@ -2360,4 +2360,30 @@ describe('a request the CLI withdraws (#1258)', () => {
     expect(applied).toEqual([]);
     expect(perms.holdsRequestFor('s1')).toBe(true);
   });
+
+  // #1268, MEASURED: the CLI's cancel is what ends a hold, and a turn ending is
+  // not. A background subagent asked AFTER its parent turn's `result` and was
+  // genuinely waiting; a router that let go at turn end would have denied it.
+  it('a turn ending lets go of nothing, a question included: only the cancel does', () => {
+    perms.offer('s1', canUseTool('req-1'));
+    perms.offer('s1', {
+      type: 'control_request',
+      request_id: 'q-1',
+      request: { subtype: 'can_use_tool', tool_name: 'AskUserQuestion', input: { questions: [] } },
+    });
+    sent.length = 0;
+
+    perms.offer('s1', { type: 'result', subtype: 'success' });
+    perms.offer('s1', { type: 'result', subtype: 'error_during_execution', is_error: true });
+
+    expect(sent).toEqual([]);
+    expect(applied).toEqual([]);
+    expect(perms.pendingRequests().map((r) => r.requestId)).toEqual(['stream:s1:req-1', 'stream:s1:q-1']);
+
+    perms.offer('s1', cancel('req-1'));
+    perms.offer('s1', cancel('q-1'));
+    expect(perms.holdsRequestFor('s1')).toBe(false);
+    expect(resolved).toEqual(['stream:s1:req-1', 'stream:s1:q-1']);
+    expect(sent).toEqual([]);
+  });
 });

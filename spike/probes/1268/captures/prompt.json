@@ -1,0 +1,1409 @@
+{
+  "mode": "prompt",
+  "cli": "C:\\Users\\dheinz\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe",
+  "cliVersion": "2.1.288",
+  "model": "claude-haiku-4-5-20251001",
+  "startedAt": "2026-10-18T03:50:08.000Z",
+  "lines": [
+    {
+      "dir": "OUT",
+      "atMs": 1528,
+      "phase": "asked",
+      "msg": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the Write tool right now to create a file named probe.txt in the current directory containing the single word hello. Do nothing else first."
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "session_id": ""
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 1652,
+      "phase": "asked",
+      "msg": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb1268-XKrisV",
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "tools": [
+          "Task",
+          "AskUserQuestion",
+          "Bash",
+          "CronCreate",
+          "CronDelete",
+          "CronList",
+          "DesignSync",
+          "Edit",
+          "EnterPlanMode",
+          "EnterWorktree",
+          "ExitPlanMode",
+          "ExitWorktree",
+          "Glob",
+          "Grep",
+          "ListAgents",
+          "Monitor",
+          "NotebookEdit",
+          "PowerShell",
+          "PushNotification",
+          "Read",
+          "RemoteTrigger",
+          "ReportFindings",
+          "ScheduleWakeup",
+          "SendMessage",
+          "Skill",
+          "TaskCreate",
+          "TaskGet",
+          "TaskList",
+          "TaskStop",
+          "TaskUpdate",
+          "ToolSearch",
+          "WebFetch",
+          "WebSearch",
+          "Workflow",
+          "Write",
+          "mcp__claude_ai_Claude_Docs__batch",
+          "mcp__claude_ai_Claude_Docs__create",
+          "mcp__claude_ai_Claude_Docs__delete",
+          "mcp__claude_ai_Claude_Docs__export",
+          "mcp__claude_ai_Claude_Docs__guide",
+          "mcp__claude_ai_Claude_Docs__query",
+          "mcp__claude_ai_Claude_Docs__read",
+          "mcp__claude_ai_Claude_Docs__update"
+        ],
+        "mcp_servers": [
+          {
+            "name": "claude.ai Claude Docs",
+            "status": "connected",
+            "source": "claudeai"
+          }
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "permissionMode": "default",
+        "slash_commands": [
+          "check-code",
+          "android-architecture-specialist",
+          "android-build-specialist",
+          "android-code-review-specialist",
+          "android-compose-ui-specialist",
+          "android-database-specialist",
+          "android-dev-specialist",
+          "android-project-planning",
+          "android-testing-specialist",
+          "general-code-analysis-expert",
+          "general-deep-web-research",
+          "startup",
+          "deep-research",
+          "design",
+          "design-sync",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "schedule",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring",
+          "advisor",
+          "agents",
+          "auto-mode-setup",
+          "autocompact",
+          "clear",
+          "color",
+          "compact",
+          "config",
+          "output-style",
+          "context",
+          "effort",
+          "fast",
+          "focus",
+          "heapdump",
+          "init",
+          "mcp",
+          "import",
+          "model",
+          "__remote-workflow",
+          "workflow-launch-exec",
+          "reload-plugins",
+          "reload-skills",
+          "rename",
+          "ultrareview",
+          "security-review",
+          "usage-credits",
+          "extra-usage",
+          "usage",
+          "insights",
+          "recap",
+          "skill-doctor",
+          "goal",
+          "design-consent",
+          "design-revoke",
+          "list-agents",
+          "team-onboarding",
+          "anthropic-skills:built-in-browser",
+          "anthropic-skills:chrome-browser",
+          "anthropic-skills:computer-use",
+          "anthropic-skills:deep-research",
+          "anthropic-skills:docs",
+          "anthropic-skills:docx",
+          "anthropic-skills:google-workspace",
+          "anthropic-skills:import-memory",
+          "anthropic-skills:morning",
+          "anthropic-skills:pdf",
+          "anthropic-skills:pptx",
+          "anthropic-skills:skill-creator",
+          "anthropic-skills:xlsx"
+        ],
+        "terminal_slash_commands": [
+          "doctor",
+          "color",
+          "focus",
+          "reload-plugins"
+        ],
+        "apiKeySource": "none",
+        "claude_code_version": "2.1.288",
+        "output_style": "default",
+        "agents": [
+          "android-app-tester",
+          "android-dev-expert",
+          "claude",
+          "code-debugger-analyzer",
+          "deep-research-specialist",
+          "Explore",
+          "general-purpose",
+          "Plan",
+          "statusline-setup",
+          "web-research-specialist"
+        ],
+        "skills": [
+          "check-code",
+          "deep-research",
+          "design",
+          "design-sync",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "schedule",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring",
+          "anthropic-skills:built-in-browser",
+          "anthropic-skills:chrome-browser",
+          "anthropic-skills:computer-use",
+          "anthropic-skills:deep-research",
+          "anthropic-skills:docs",
+          "anthropic-skills:docx",
+          "anthropic-skills:google-workspace",
+          "anthropic-skills:import-memory",
+          "anthropic-skills:morning",
+          "anthropic-skills:pdf",
+          "anthropic-skills:pptx",
+          "anthropic-skills:skill-creator",
+          "anthropic-skills:xlsx"
+        ],
+        "plugins": [
+          {
+            "name": "cc-plugin-agents-md",
+            "path": "builtin",
+            "source": "cc-plugin-agents-md@builtin"
+          },
+          {
+            "name": "cc-plugin-telemetry",
+            "path": "builtin",
+            "source": "cc-plugin-telemetry@builtin"
+          },
+          {
+            "name": "cc-plugin-plugin-authoring",
+            "path": "builtin",
+            "source": "cc-plugin-plugin-authoring@builtin"
+          }
+        ],
+        "capabilities": [
+          "interrupt_receipt_v1",
+          "interrupt_cancel_queued_v1",
+          "interrupt_send_now_v1",
+          "msg_lifecycle_v1",
+          "sdk_mcp_tools_list_changed",
+          "sdk_mcp_manifests",
+          "mcp_read_resource_v1",
+          "mcp_tool_ui_meta_v1",
+          "ui_surface_v1"
+        ],
+        "analytics_disabled": false,
+        "product_feedback_disabled": false,
+        "uuid": "23c9d926-0928-482a-b524-0b8819567e71",
+        "memory_paths": {
+          "auto": "C:\\Users\\dheinz\\.claude\\projects\\C--Users-dheinz-AppData-Local-Temp-sb1268-XKrisV\\memory\\"
+        },
+        "messaging_socket_path": "\\\\.\\pipe\\LOCAL\\cc-msg-00906282183514a4c3c3a0e23aa34635",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "per_turn_effort_active": false,
+        "view_mode": "default",
+        "powershell_path": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 1655,
+      "phase": "asked",
+      "msg": {
+        "type": "system",
+        "subtype": "status",
+        "status": "requesting",
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "9384eb9d-0bdc-41ef-b683-bd296ac0fd8e"
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 2562,
+      "phase": "asked",
+      "msg": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Use the Write tool right now to create a file named probe.txt in the current directory containing the single word hello. Do nothing else first."
+            }
+          ]
+        },
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "parent_tool_use_id": null,
+        "uuid": "9c087873-7afe-4ece-a471-c898101fb82c",
+        "timestamp": "2026-10-18T03:50:09.560Z",
+        "isReplay": true
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 2935,
+      "phase": "asked",
+      "msg": {
+        "type": "system",
+        "subtype": "thinking_tokens",
+        "estimated_tokens": 50,
+        "estimated_tokens_delta": 50,
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "258951b4-8531-4a1e-b436-6b241dcedd73"
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 3914,
+      "phase": "asked",
+      "msg": {
+        "type": "system",
+        "subtype": "thinking_tokens",
+        "estimated_tokens": 204,
+        "estimated_tokens_delta": 154,
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "5d789f76-046c-4040-87cc-f16a27a11e1c"
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 3916,
+      "phase": "asked",
+      "msg": {
+        "type": "assistant",
+        "message": {
+          "model": "claude-haiku-4-5-20251001",
+          "id": "msg_011Cg92BkaP1oS9LrcsmcHyH",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "",
+              "signature": "EqoGCtABCBIYAipAuLr0stjcRE39PO/jxHfBTztgH0LthI51CyYWDVkC8mTISIHUDSXoGe6uNcM58WNTneW38ayE8uIF2k/S6SDh5zIZY2xhdWRlLWhhaWt1LTQtNS0yMDI1MTAwMTgAQgh0aGlua2luZ1okMzk4YzYxMjgtZjI2OS00N2ZkLWE3ZTAtNzYwNjJkOWFjOTA5chAo0wTj8ajqJErKgIl6mlzXiAEBmgEbChljbGF1ZGUtaGFpa3UtNC01LTIwMjUxMDAxqAH0g9HWBrABAhIMsM0QHAVo9qW+xCBFGgzLeysm0N4+ylNZfjEiMGVO5Nmw5L7P27yaiwaNhRjG7TJFwk1Y/Utq+HRpzBt0Pkzy+6EqRuAShzkUvAnthyqGBPFZdfwOJ8whkfJ9ge1sIgIP1LxNB21FFutH1cIPWIJZGKmKYkKUJVu4j8DYyc7PbRmQaeSRhNDujnPm9/jqyCOGFMMsh7rn8oec6/tgUZzWxdcg86he0yMZSf8EJVd99OdlT7N8TmjpeA5oXF6IPTyq3FEWX2LokK2PZSYyVCqwnklivTtoMvXjJyDvieVfGJNOxphc7UCnAzJjVGd4DudzI0NN21mE0ccp2iQllLjjNEUvZUOG/shur/4Qp2c5t62Owi+7cvQuHxziGTBtA/hbMEb7JV8PJnoYZUSzca3WPaFDnsN8t+wYbif8C5fHIv+eurn1uqLK29E+Y2rNOTdH1RIhExWST1jN5Ej/Vlua7dhXnyd/fpgFPS6eeaOkah1SLaQ++wm2TxzHAlxww2jMc+yXskLIWIDKJobGyQNNb9gBVPZu37lNVhfsadT/6/bIRuEDd06yeBKDGpHASUyKGu+8yVLd2j4YL3219jRHhrygNnl9BLFaHCL9lr59u7r549bh4IIf791xiPVMuf6j593S8qyHhM5CNVCSu1S0RP9zL0gUXroKTrrTa1CZumTHsPL0dBjU/qcrvRdk++v9KsxdEEORmM5VVS1qfvjBA9NLWaxEd5QsFxjw9Dcycc/NFBQWrfVbkRmARukXIsQi+xj3AEZw3vvtHJh/65ZY5XLQtRkSGAE="
+            }
+          ],
+          "container": null,
+          "stop_reason": null,
+          "stop_sequence": null,
+          "stop_details": null,
+          "usage": {
+            "input_tokens": 10,
+            "cache_creation_input_tokens": 11533,
+            "cache_read_input_tokens": 18958,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 11533
+            },
+            "output_tokens": 6,
+            "service_tier": "standard",
+            "inference_geo": "not_available",
+            "speed": "standard"
+          },
+          "input_transformations": [],
+          "diagnostics": null,
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "4eec1072-e371-4852-85dd-fe9df2e26dcf",
+        "timestamp": "2026-10-18T03:50:11.915Z",
+        "request_id": "req_011Cg92BkMUuQcTdbEzsXmhR",
+        "thinking_duration_ms": 1352
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 4273,
+      "phase": "asked",
+      "msg": {
+        "type": "assistant",
+        "message": {
+          "model": "claude-haiku-4-5-20251001",
+          "id": "msg_011Cg92BkaP1oS9LrcsmcHyH",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool_use",
+              "id": "toolu_01VK6pzLXVuopo42mJpJ2K4t",
+              "name": "Write",
+              "input": {
+                "file_path": "C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb1268-XKrisV\\probe.txt",
+                "content": "hello"
+              },
+              "caller": {
+                "type": "direct"
+              }
+            }
+          ],
+          "container": null,
+          "stop_reason": null,
+          "stop_sequence": null,
+          "stop_details": null,
+          "usage": {
+            "input_tokens": 10,
+            "cache_creation_input_tokens": 11533,
+            "cache_read_input_tokens": 18958,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 11533
+            },
+            "output_tokens": 6,
+            "service_tier": "standard",
+            "inference_geo": "not_available",
+            "speed": "standard"
+          },
+          "input_transformations": [],
+          "diagnostics": null,
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "6715c73a-b383-4491-a2cd-4ccc7dbb70d1",
+        "timestamp": "2026-10-18T03:50:12.272Z",
+        "request_id": "req_011Cg92BkMUuQcTdbEzsXmhR",
+        "wire_tool_inputs": {
+          "toolu_01VK6pzLXVuopo42mJpJ2K4t": {
+            "file_path": "C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb1268-XKrisV\\probe.txt",
+            "content": "hello"
+          }
+        }
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 4288,
+      "phase": "asked",
+      "msg": {
+        "type": "control_request",
+        "request_id": "39b5d56b-511d-4cbc-9a96-3e074af9ad73",
+        "request": {
+          "subtype": "can_use_tool",
+          "tool_name": "Write",
+          "display_name": "Write",
+          "input": {
+            "file_path": "C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb1268-XKrisV\\probe.txt",
+            "content": "hello"
+          },
+          "description": "probe.txt",
+          "permission_suggestions": [
+            {
+              "type": "setMode",
+              "mode": "acceptEdits",
+              "destination": "session"
+            }
+          ],
+          "tool_use_id": "toolu_01VK6pzLXVuopo42mJpJ2K4t"
+        }
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 4294,
+      "phase": "holding",
+      "msg": {
+        "type": "rate_limit_event",
+        "rate_limit_info": {
+          "status": "allowed",
+          "resetsAt": 1792303800,
+          "rateLimitType": "five_hour",
+          "overageStatus": "rejected",
+          "overageDisabledReason": "org_level_disabled",
+          "isUsingOverage": false,
+          "unifiedWindows": {
+            "five_hour": {
+              "utilization": 0.09,
+              "resetsAt": 1792303800
+            },
+            "seven_day": {
+              "utilization": 0.45,
+              "resetsAt": 1792544400
+            }
+          }
+        },
+        "uuid": "253d79f4-c647-4a5b-91b6-229c87fb5d9e",
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d"
+      }
+    },
+    {
+      "dir": "OUT",
+      "atMs": 7297,
+      "phase": "second-prompt",
+      "msg": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Also: reply with the word BANANA."
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "session_id": ""
+      }
+    },
+    {
+      "dir": "OUT",
+      "atMs": 15302,
+      "phase": "late-answer",
+      "msg": {
+        "type": "control_response",
+        "response": {
+          "subtype": "success",
+          "request_id": "39b5d56b-511d-4cbc-9a96-3e074af9ad73",
+          "response": {
+            "behavior": "deny",
+            "message": "Probe: denied late."
+          }
+        }
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 15303,
+      "phase": "late-answer",
+      "msg": {
+        "type": "control_response",
+        "response": {
+          "subtype": "success",
+          "request_id": "39b5d56b-511d-4cbc-9a96-3e074af9ad73",
+          "response": {
+            "behavior": "deny",
+            "message": "Probe: denied late."
+          }
+        }
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 15306,
+      "phase": "late-answer",
+      "msg": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "tool_result",
+              "content": "Probe: denied late.",
+              "is_error": true,
+              "tool_use_id": "toolu_01VK6pzLXVuopo42mJpJ2K4t"
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "f97e8922-c2cb-4b49-8baf-60cbd7fbd636",
+        "timestamp": "2026-10-18T03:50:23.304Z",
+        "tool_use_result": "Error: Probe: denied late.",
+        "tool_result_meta": [
+          {
+            "id": "toolu_01VK6pzLXVuopo42mJpJ2K4t",
+            "non_execution_kind": "permission-rule"
+          }
+        ]
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 15389,
+      "phase": "late-answer",
+      "msg": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Also: reply with the word BANANA."
+            }
+          ]
+        },
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "parent_tool_use_id": null,
+        "uuid": "e8ce1c83-25c4-441b-b8fc-811bd9dd88ec",
+        "timestamp": "2026-10-18T03:50:15.298Z",
+        "isReplay": true
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 15390,
+      "phase": "late-answer",
+      "msg": {
+        "type": "system",
+        "subtype": "status",
+        "status": "requesting",
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "ac64f7d6-38b7-4e7d-bfdc-08c0c4922f8b"
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 16698,
+      "phase": "late-answer",
+      "msg": {
+        "type": "system",
+        "subtype": "thinking_tokens",
+        "estimated_tokens": 50,
+        "estimated_tokens_delta": 50,
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "8e9d7184-fd22-440d-a6ef-67a64b33e659"
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 16857,
+      "phase": "late-answer",
+      "msg": {
+        "type": "system",
+        "subtype": "thinking_tokens",
+        "estimated_tokens": 147,
+        "estimated_tokens_delta": 97,
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "2a83e4ab-7024-4a1c-824e-dfb1ac306764"
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 16857,
+      "phase": "late-answer",
+      "msg": {
+        "type": "assistant",
+        "message": {
+          "model": "claude-haiku-4-5-20251001",
+          "id": "msg_011Cg92CmEMZKAozHmi9pfDD",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "",
+              "signature": "EsIECtABCBIYAipAVpET/5qmjbQlgXuL7fNKUD2JuHruCq5jV/+NojrYSsY0fcksLhPeh0ZEX0bgXvTRAug84B63h0Oz3wd2pDZH+zIZY2xhdWRlLWhhaWt1LTQtNS0yMDI1MTAwMTgAQgh0aGlua2luZ1okMzk4YzYxMjgtZjI2OS00N2ZkLWE3ZTAtNzYwNjJkOWFjOTA5chAo0wTj8ajqJErKgIl6mlzXiAEBmgEbChljbGF1ZGUtaGFpa3UtNC01LTIwMjUxMDAxqAGBhNHWBrABAhIMFznIQaLU8drzP8meGgwUGi6a2/pRBZB6TeciMCxjS3iipv1ApfKHtDAmTXTb8Q54g0XKF/upMje5hwJJQA+YtLQW+R2AOnjB/FVceyqeAj550AmIu2GGJIJs3/HBqAWkkRNge0ayU3EKaQR7y+8mDVEgxXvV0b49HouI3/BIgzzCuwXI+MBWDbe909UFSwMUYiMwmo7KSQhnWPJ/1Q0ZKmxxbXi5yhCG13uYApfYsWf0brtVKjkcOD8GzQ6QK3G4Gz84BuuYfU26b0YHeNShrJJwFacXPYrNW+HzP//nyxw53V7LBw4Hbp2N7KNgsRVAJMaVNp2O6gULrTLVY+yZnVl/De8v2zJc0ZRdNl43xqLeBvUAfPsY6/xb97XY9OZEO/OY1mLCCO0N9ECwbOM7zAJd3AMv58m2jJPKQxgcTnIpUYq2jEVgn3+tUZyUJdpe+2yto9gvCN5PBA72g1Beld47Ga7pzXqRTE7jZyUYAQ=="
+            }
+          ],
+          "container": null,
+          "stop_reason": null,
+          "stop_sequence": null,
+          "stop_details": null,
+          "usage": {
+            "input_tokens": 8,
+            "cache_creation_input_tokens": 470,
+            "cache_read_input_tokens": 30491,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 470
+            },
+            "output_tokens": 1,
+            "service_tier": "standard",
+            "inference_geo": "not_available",
+            "speed": "standard"
+          },
+          "input_transformations": [],
+          "diagnostics": null,
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "7f1641cb-d071-4b86-b52a-fe2bdef76ea5",
+        "timestamp": "2026-10-18T03:50:24.857Z",
+        "request_id": "req_011Cg92CktWjT3uwkrPaAqFa",
+        "thinking_duration_ms": 621
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 16858,
+      "phase": "late-answer",
+      "msg": {
+        "type": "assistant",
+        "message": {
+          "model": "claude-haiku-4-5-20251001",
+          "id": "msg_011Cg92CmEMZKAozHmi9pfDD",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "BANANA"
+            }
+          ],
+          "container": null,
+          "stop_reason": null,
+          "stop_sequence": null,
+          "stop_details": null,
+          "usage": {
+            "input_tokens": 8,
+            "cache_creation_input_tokens": 470,
+            "cache_read_input_tokens": 30491,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 470
+            },
+            "output_tokens": 1,
+            "service_tier": "standard",
+            "inference_geo": "not_available",
+            "speed": "standard"
+          },
+          "input_transformations": [],
+          "diagnostics": null,
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "0ed624f0-0538-42e5-9853-189a6b830bbd",
+        "timestamp": "2026-10-18T03:50:24.858Z",
+        "request_id": "req_011Cg92CktWjT3uwkrPaAqFa"
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 16876,
+      "phase": "late-answer",
+      "msg": {
+        "duration_api_ms": 4095,
+        "stop_reason": "end_turn",
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "total_cost_usd": 0.0305839,
+        "usage": {
+          "input_tokens": 18,
+          "cache_creation_input_tokens": 12003,
+          "cache_read_input_tokens": 49449,
+          "output_tokens": 323,
+          "output_tokens_details": {
+            "thinking_tokens": 215
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 12003,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 8,
+              "output_tokens": 79,
+              "cache_read_input_tokens": 30491,
+              "cache_creation_input_tokens": 470,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 470
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "modelUsage": {
+          "claude-haiku-4-5-20251001": {
+            "inputTokens": 18,
+            "outputTokens": 323,
+            "cacheReadInputTokens": 49449,
+            "cacheCreationInputTokens": 12003,
+            "webSearchRequests": 0,
+            "costUSD": 0.0305839,
+            "contextWindow": 200000,
+            "maxOutputTokens": 32000,
+            "thinkingTokens": 215,
+            "canonicalModel": "claude-haiku-4-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "permission_denials": [
+          {
+            "tool_name": "Write",
+            "tool_use_id": "toolu_01VK6pzLXVuopo42mJpJ2K4t",
+            "tool_input": {
+              "file_path": "C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb1268-XKrisV\\probe.txt",
+              "content": "hello"
+            }
+          }
+        ],
+        "terminal_reason": "completed",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "subagent_stats": {
+          "spawned": 0,
+          "requested": {
+            "background": 0,
+            "foreground": 0,
+            "unset": 0
+          },
+          "started_in_background": 0,
+          "max_depth": 0,
+          "spawned_by_subagents": 0,
+          "completed": 0,
+          "failed": 0,
+          "killed": {
+            "parent": 0,
+            "user": 0,
+            "system": 0
+          },
+          "refused": {
+            "depth_limit": 0,
+            "concurrency_limit": 0,
+            "budget": 0
+          },
+          "by_type": {}
+        },
+        "is_error": false,
+        "num_turns": 2,
+        "subtype": "success",
+        "api_error_status": null,
+        "result": "BANANA",
+        "ttft_ms": 2380,
+        "type": "result",
+        "duration_ms": 15339,
+        "uuid": "07d14d66-c870-49af-84ea-7b48f6101a8c",
+        "ttft_stream_ms": 1026,
+        "time_to_request_ms": 143,
+        "first_content_frame_ms": 1027,
+        "queued_turn_count": 0,
+        "result_index": 0
+      }
+    },
+    {
+      "dir": "OUT",
+      "atMs": 21314,
+      "phase": "health",
+      "msg": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reply with just the word OK and use no tools."
+            }
+          ]
+        },
+        "parent_tool_use_id": null,
+        "session_id": ""
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 21398,
+      "phase": "health",
+      "msg": {
+        "type": "system",
+        "subtype": "init",
+        "cwd": "C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb1268-XKrisV",
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "tools": [
+          "Task",
+          "AskUserQuestion",
+          "Bash",
+          "CronCreate",
+          "CronDelete",
+          "CronList",
+          "DesignSync",
+          "Edit",
+          "EnterPlanMode",
+          "EnterWorktree",
+          "ExitPlanMode",
+          "ExitWorktree",
+          "Glob",
+          "Grep",
+          "ListAgents",
+          "Monitor",
+          "NotebookEdit",
+          "PowerShell",
+          "PushNotification",
+          "Read",
+          "RemoteTrigger",
+          "ReportFindings",
+          "ScheduleWakeup",
+          "SendMessage",
+          "Skill",
+          "TaskCreate",
+          "TaskGet",
+          "TaskList",
+          "TaskStop",
+          "TaskUpdate",
+          "ToolSearch",
+          "WebFetch",
+          "WebSearch",
+          "Workflow",
+          "Write",
+          "mcp__claude_ai_Claude_Docs__batch",
+          "mcp__claude_ai_Claude_Docs__create",
+          "mcp__claude_ai_Claude_Docs__delete",
+          "mcp__claude_ai_Claude_Docs__export",
+          "mcp__claude_ai_Claude_Docs__guide",
+          "mcp__claude_ai_Claude_Docs__query",
+          "mcp__claude_ai_Claude_Docs__read",
+          "mcp__claude_ai_Claude_Docs__update"
+        ],
+        "mcp_servers": [
+          {
+            "name": "claude.ai Claude Docs",
+            "status": "connected",
+            "source": "claudeai"
+          }
+        ],
+        "model": "claude-haiku-4-5-20251001",
+        "permissionMode": "default",
+        "slash_commands": [
+          "check-code",
+          "android-architecture-specialist",
+          "android-build-specialist",
+          "android-code-review-specialist",
+          "android-compose-ui-specialist",
+          "android-database-specialist",
+          "android-dev-specialist",
+          "android-project-planning",
+          "android-testing-specialist",
+          "general-code-analysis-expert",
+          "general-deep-web-research",
+          "startup",
+          "deep-research",
+          "design",
+          "design-sync",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "schedule",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring",
+          "advisor",
+          "agents",
+          "auto-mode-setup",
+          "autocompact",
+          "clear",
+          "color",
+          "compact",
+          "config",
+          "output-style",
+          "context",
+          "effort",
+          "fast",
+          "focus",
+          "heapdump",
+          "init",
+          "mcp",
+          "import",
+          "model",
+          "__remote-workflow",
+          "workflow-launch-exec",
+          "reload-plugins",
+          "reload-skills",
+          "rename",
+          "ultrareview",
+          "security-review",
+          "usage-credits",
+          "extra-usage",
+          "usage",
+          "insights",
+          "recap",
+          "skill-doctor",
+          "goal",
+          "design-consent",
+          "design-revoke",
+          "list-agents",
+          "team-onboarding",
+          "anthropic-skills:built-in-browser",
+          "anthropic-skills:chrome-browser",
+          "anthropic-skills:computer-use",
+          "anthropic-skills:deep-research",
+          "anthropic-skills:docs",
+          "anthropic-skills:docx",
+          "anthropic-skills:google-workspace",
+          "anthropic-skills:import-memory",
+          "anthropic-skills:morning",
+          "anthropic-skills:pdf",
+          "anthropic-skills:pptx",
+          "anthropic-skills:skill-creator",
+          "anthropic-skills:xlsx"
+        ],
+        "terminal_slash_commands": [
+          "doctor",
+          "color",
+          "focus",
+          "reload-plugins"
+        ],
+        "apiKeySource": "none",
+        "claude_code_version": "2.1.288",
+        "output_style": "default",
+        "agents": [
+          "android-app-tester",
+          "android-dev-expert",
+          "claude",
+          "code-debugger-analyzer",
+          "deep-research-specialist",
+          "Explore",
+          "general-purpose",
+          "Plan",
+          "statusline-setup",
+          "web-research-specialist"
+        ],
+        "skills": [
+          "check-code",
+          "deep-research",
+          "design",
+          "design-sync",
+          "dataviz",
+          "update-config",
+          "verify",
+          "debug",
+          "code-review",
+          "simplify",
+          "batch",
+          "fewer-permission-prompts",
+          "doctor",
+          "loop",
+          "schedule",
+          "claude-api",
+          "workflow-authoring",
+          "run",
+          "run-skill-generator",
+          "plugin-authoring",
+          "anthropic-skills:built-in-browser",
+          "anthropic-skills:chrome-browser",
+          "anthropic-skills:computer-use",
+          "anthropic-skills:deep-research",
+          "anthropic-skills:docs",
+          "anthropic-skills:docx",
+          "anthropic-skills:google-workspace",
+          "anthropic-skills:import-memory",
+          "anthropic-skills:morning",
+          "anthropic-skills:pdf",
+          "anthropic-skills:pptx",
+          "anthropic-skills:skill-creator",
+          "anthropic-skills:xlsx"
+        ],
+        "plugins": [
+          {
+            "name": "cc-plugin-agents-md",
+            "path": "builtin",
+            "source": "cc-plugin-agents-md@builtin"
+          },
+          {
+            "name": "cc-plugin-telemetry",
+            "path": "builtin",
+            "source": "cc-plugin-telemetry@builtin"
+          },
+          {
+            "name": "cc-plugin-plugin-authoring",
+            "path": "builtin",
+            "source": "cc-plugin-plugin-authoring@builtin"
+          }
+        ],
+        "capabilities": [
+          "interrupt_receipt_v1",
+          "interrupt_cancel_queued_v1",
+          "interrupt_send_now_v1",
+          "msg_lifecycle_v1",
+          "sdk_mcp_tools_list_changed",
+          "sdk_mcp_manifests",
+          "mcp_read_resource_v1",
+          "mcp_tool_ui_meta_v1",
+          "ui_surface_v1"
+        ],
+        "analytics_disabled": false,
+        "product_feedback_disabled": false,
+        "uuid": "bb36dc5f-7dba-4bdc-b3a2-519a05be955d",
+        "memory_paths": {
+          "auto": "C:\\Users\\dheinz\\.claude\\projects\\C--Users-dheinz-AppData-Local-Temp-sb1268-XKrisV\\memory\\"
+        },
+        "messaging_socket_path": "\\\\.\\pipe\\LOCAL\\cc-msg-00906282183514a4c3c3a0e23aa34635",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "per_turn_effort_active": false,
+        "view_mode": "default",
+        "powershell_path": "C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 21398,
+      "phase": "health",
+      "msg": {
+        "type": "system",
+        "subtype": "status",
+        "status": "requesting",
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "4f3c7355-a49a-4197-8900-ff872036b397"
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 22172,
+      "phase": "health",
+      "msg": {
+        "type": "user",
+        "message": {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reply with just the word OK and use no tools."
+            }
+          ]
+        },
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "parent_tool_use_id": null,
+        "uuid": "0b42e3c6-a6c4-4622-87a9-7abe6daca999",
+        "timestamp": "2026-10-18T03:50:29.321Z",
+        "isReplay": true
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 22423,
+      "phase": "health",
+      "msg": {
+        "type": "assistant",
+        "message": {
+          "model": "claude-haiku-4-5-20251001",
+          "id": "msg_011Cg92DCoVZmFPfw1YSxBqr",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "thinking",
+              "thinking": "",
+              "signature": "EskDCtABCBIYAipA4atx/33Ebk0rP5fNmu58eGb1JLv/RaYgtHos9CcwUq25LGOybo4Lre+ftljKQT8mMEOclkY+0Pbjntmeq7sJCDIZY2xhdWRlLWhhaWt1LTQtNS0yMDI1MTAwMTgAQgh0aGlua2luZ1okMzk4YzYxMjgtZjI2OS00N2ZkLWE3ZTAtNzYwNjJkOWFjOTA5chAo0wTj8ajqJErKgIl6mlzXiAEBmgEbChljbGF1ZGUtaGFpa3UtNC01LTIwMjUxMDAxqAGHhNHWBrABAhIMih0LejOEY9St2xFqGgy2gYmbucy0F8+VdCsiME7dmzh6D/80u6ioUIV/K5a45DJ14k0z6j7bLodsHzEgtc7mrFDuphRtMHrQbj4DXiqlAR5iUpYpBFtQ7bH6WvTmPLcqVS9Hf2EQ4wZUGyqQRZRPJS6lFWPY8ld69AYl7E94jyDGvSyJUeGjyguFiZ7HRJj55NurLK9HfyoCIS5w5uynVf8NdgZHHxwmaC7DOTLaF8bg3ujh4NhX4W8/wCfHhhXuFiWUvLZzOAXYjollP4hNFlmY8JtgtTHJHW4NUIJJuYX5A/e3WvjWpNf0f84tF6nQEsjj5RgB"
+            }
+          ],
+          "container": null,
+          "stop_reason": null,
+          "stop_sequence": null,
+          "stop_details": null,
+          "usage": {
+            "input_tokens": 10,
+            "cache_creation_input_tokens": 209,
+            "cache_read_input_tokens": 30961,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 209
+            },
+            "output_tokens": 6,
+            "service_tier": "standard",
+            "inference_geo": "not_available",
+            "speed": "standard"
+          },
+          "input_transformations": [],
+          "diagnostics": null,
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "a75b82ed-ecbb-47f6-a76b-3f7358f5841a",
+        "timestamp": "2026-10-18T03:50:30.422Z",
+        "request_id": "req_011Cg92DCbqQmA4SaMSjFe2v",
+        "thinking_duration_ms": 250
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 22423,
+      "phase": "health",
+      "msg": {
+        "type": "assistant",
+        "message": {
+          "model": "claude-haiku-4-5-20251001",
+          "id": "msg_011Cg92DCoVZmFPfw1YSxBqr",
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "OK"
+            }
+          ],
+          "container": null,
+          "stop_reason": null,
+          "stop_sequence": null,
+          "stop_details": null,
+          "usage": {
+            "input_tokens": 10,
+            "cache_creation_input_tokens": 209,
+            "cache_read_input_tokens": 30961,
+            "cache_creation": {
+              "ephemeral_5m_input_tokens": 0,
+              "ephemeral_1h_input_tokens": 209
+            },
+            "output_tokens": 6,
+            "service_tier": "standard",
+            "inference_geo": "not_available",
+            "speed": "standard"
+          },
+          "input_transformations": [],
+          "diagnostics": null,
+          "context_management": null
+        },
+        "parent_tool_use_id": null,
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "uuid": "fa398e08-df3e-4c64-bda2-93f508d94698",
+        "timestamp": "2026-10-18T03:50:30.423Z",
+        "request_id": "req_011Cg92DCbqQmA4SaMSjFe2v"
+      }
+    },
+    {
+      "dir": "IN",
+      "atMs": 22438,
+      "phase": "health",
+      "msg": {
+        "duration_api_ms": 5126,
+        "stop_reason": "end_turn",
+        "session_id": "9515c1d9-676f-45a1-bf5f-00e242bc1d4d",
+        "total_cost_usd": 0.034333,
+        "usage": {
+          "input_tokens": 10,
+          "cache_creation_input_tokens": 209,
+          "cache_read_input_tokens": 30961,
+          "output_tokens": 45,
+          "output_tokens_details": {
+            "thinking_tokens": 38
+          },
+          "server_tool_use": {
+            "web_search_requests": 0,
+            "web_fetch_requests": 0
+          },
+          "service_tier": "standard",
+          "cache_creation": {
+            "ephemeral_1h_input_tokens": 209,
+            "ephemeral_5m_input_tokens": 0
+          },
+          "inference_geo": "not_available",
+          "iterations": [
+            {
+              "input_tokens": 10,
+              "output_tokens": 45,
+              "cache_read_input_tokens": 30961,
+              "cache_creation_input_tokens": 209,
+              "cache_creation": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 209
+              },
+              "type": "message"
+            }
+          ],
+          "speed": "standard",
+          "fallback_credit": null
+        },
+        "modelUsage": {
+          "claude-haiku-4-5-20251001": {
+            "inputTokens": 28,
+            "outputTokens": 368,
+            "cacheReadInputTokens": 80410,
+            "cacheCreationInputTokens": 12212,
+            "webSearchRequests": 0,
+            "costUSD": 0.034333,
+            "contextWindow": 200000,
+            "maxOutputTokens": 32000,
+            "thinkingTokens": 253,
+            "canonicalModel": "claude-haiku-4-5",
+            "provider": "firstParty",
+            "costBasis": "list"
+          }
+        },
+        "permission_denials": [],
+        "terminal_reason": "completed",
+        "fast_mode_state": "off",
+        "fast_mode_disabled_reason": "sdk_opt_in_required",
+        "subagent_stats": {
+          "spawned": 0,
+          "requested": {
+            "background": 0,
+            "foreground": 0,
+            "unset": 0
+          },
+          "started_in_background": 0,
+          "max_depth": 0,
+          "spawned_by_subagents": 0,
+          "completed": 0,
+          "failed": 0,
+          "killed": {
+            "parent": 0,
+            "user": 0,
+            "system": 0
+          },
+          "refused": {
+            "depth_limit": 0,
+            "concurrency_limit": 0,
+            "budget": 0
+          },
+          "by_type": {}
+        },
+        "is_error": false,
+        "num_turns": 1,
+        "subtype": "success",
+        "api_error_status": null,
+        "result": "OK",
+        "ttft_ms": 1105,
+        "type": "result",
+        "duration_ms": 1120,
+        "uuid": "a833f9b8-0414-47fa-bcb5-236462458b20",
+        "ttft_stream_ms": 855,
+        "time_to_request_ms": 88,
+        "first_content_frame_ms": 855,
+        "queued_turn_count": 0,
+        "result_index": 1
+      }
+    }
+  ],
+  "streamEventsByPhase": {
+    "asked": 16,
+    "holding": 2,
+    "late-answer": 11,
+    "health": 10
+  },
+  "phases": [
+    {
+      "phase": "asked",
+      "atMs": 13
+    },
+    {
+      "phase": "holding",
+      "atMs": 4289
+    },
+    {
+      "phase": "second-prompt",
+      "atMs": 7297
+    },
+    {
+      "phase": "late-answer",
+      "atMs": 15302
+    },
+    {
+      "phase": "health",
+      "atMs": 21314
+    },
+    {
+      "phase": "end",
+      "atMs": 23948
+    }
+  ],
+  "heldRequest": {
+    "request_id": "39b5d56b-511d-4cbc-9a96-3e074af9ad73",
+    "tool": "Write",
+    "atMs": 4289,
+    "request": {
+      "subtype": "can_use_tool",
+      "tool_name": "Write",
+      "display_name": "Write",
+      "input": {
+        "file_path": "C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb1268-XKrisV\\probe.txt",
+        "content": "hello"
+      },
+      "description": "probe.txt",
+      "permission_suggestions": [
+        {
+          "type": "setMode",
+          "mode": "acceptEdits",
+          "destination": "session"
+        }
+      ],
+      "tool_use_id": "toolu_01VK6pzLXVuopo42mJpJ2K4t"
+    }
+  },
+  "interruptRequestId": null,
+  "lateAnswer": {
+    "atMs": 15302,
+    "response": {
+      "behavior": "deny",
+      "message": "Probe: denied late."
+    }
+  },
+  "fileAfterLateAnswer": false,
+  "stderr": [],
+  "healthResult": {
+    "subtype": "success",
+    "is_error": false,
+    "result": "OK"
+  },
+  "resultsSeen": 2,
+  "fileAtEnd": false,
+  "endedAt": "2026-10-18T03:50:31.948Z",
+  "exit": {
+    "code": 0,
+    "signal": null,
+    "atMs": 24243
+  },
+  "cleanup": {
+    "transcriptsRemoved": 1
+  }
+}
