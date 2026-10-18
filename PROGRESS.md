@@ -3,6 +3,25 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ RELEASED: v0.8.124, 2026-10-18 (PR #1349) — THE WHOLE 2026-10-17 RUN IS IN IT
+>
+> The owner, after the run's final report: *"Let's get everything merged, and
+> let's kick off a release."* Everything was already merged; the release PR
+> #1349 (`b4416147`: version, lock and notes together, on top of the run's
+> final PROGRESS close-out; `0.8.125 — unreleased` is open) merged on green
+> CI, tag `v0.8.124` was pushed, and the release workflow (run 39122766655)
+> built and published `switchboard-Setup-0.8.124.exe` + sha256. The number is
+> the next patch, as 0.8.123 was for a batch of the same size.
+>
+> **In it:** #1277, #1268, #1267, #1326, #1282 (Dan's five), #1331 (the
+> test-screen picker in Settings), #1328 and #1276 (from before the run), and
+> the dev-only #1330/#1332. **None of it is hand-tested:** the dogfood tracker
+> has a row per item, each PR body has the numbered list, and the run-complete
+> block below has the four owner decisions awaiting a word. Tanner's app will
+> offer this update too. Open follow-ups: #1335, #1338, #1340, #1343 (the
+> desktop startup flake — recommended next worker). **Nothing is in flight.
+> DO NOT CUT ANOTHER unless he asks.**
+
 > # 🎛️ ORCHESTRATION RUN — started 2026-10-17 (serial, five issues, Dan's order)
 >
 > **Single-writer rule:** this file is written ONLY by the orchestrator session.
