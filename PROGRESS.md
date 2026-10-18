@@ -3,6 +3,45 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🎛️ ORCHESTRATION RUN — started 2026-10-18 ~10:30 (ten issues, Dan's order; #1343 first and alone, then two at a time)
+>
+> **Single-writer rule:** this file is written ONLY by the orchestrator session.
+> Workers never touch it; their inputs are the handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md` (git-ignored, main checkout).
+> Resume from this block if the orchestrator session dies.
+>
+> **Dan's instruction:** work these ten with the normal loop per issue (plan →
+> implement → test → review → PR → **merge on green CI** → PROGRESS + dogfood
+> tracker → report with the plain-English summary and the numbered hand-test
+> list). The orchestrator merges every PR itself; nothing is queued for Dan.
+> **#1343 FIRST AND ALONE** — nothing else starts until it merges. Then up to
+> **two workers at a time**, respecting: #1351 → #1281 serial (both touch
+> IdentityTab/SessionGrid); #1316 → #1317 serial (ACP engine/strings, same
+> worker is fine); **#756 last** (touches the window-focus code #1277/#1332
+> just rewrote). Bench if a worker frees up: #1318, #1301. Rules learned
+> 2026-10-17: NEVER arm ScheduleWakeup while a worker runs (it interrupts
+> the turn and kills them) — completion notifications and background
+> `gh run watch` only; workers WIP-commit whenever something compiles and run
+> their reviewer in-turn; known flakes a worker may re-run alone: #1002,
+> #1320, #1343 until fixed; auto-merge is disabled, watch the run id and
+> merge by hand; close-outs via docs/ PRs from `sb-docs`, never a push to main.
+>
+> | Order | Issue | Worktree / branch | State |
+> |---|---|---|---|
+> | 1 | #1343 "Execution context was destroyed" on the first `app.evaluate` after launch (desktop; A/B the no-activate key and the monitor key; fix the fixture or the app) | `sb-wt-1` / `feature/1343-first-evaluate-flake` | **IN FLIGHT** — dispatched ~10:30 |
+> | 2 | #1278 HTML mock-ups show as source, not a picture (reproduce first: what did Claude actually write?) | — | queued |
+> | 3 | #1340 Stop while a bar is up (**Dan: YES, show Stop while an approval or question is held**) + the stuck-at-"working" corner | — | queued |
+> | 4 | #1351 waiting states, treatment A (absorbs #1279, #1196); mockup `.claude/work_files/mockups/waiting-states.html` | — | queued; before #1281 |
+> | 5 | #1281 right-click a session tab: Rename, Duplicate session, the rest | — | queued; after #1351 |
+> | 6 | #1316 Claude-named strings for every AI (Stop title, status wording, CLI-version label) | — | queued; before #1317 |
+> | 7 | #1317 ACP sessions forget model and effort across a restart | — | queued; after #1316 |
+> | 8 | #756 Settings: focus-stealing policy (smart/urgent/focus/none, global + per-session) | — | queued; LAST |
+> | 9 | #1259 compaction divider (`compact_boundary`) on both transports | — | queued |
+> | 10 | #1335 + #1338 as ONE item: Testing-section checkbox for the no-focus key; mute OS toasts in quiet e2e runs | — | queued |
+> | bench | #1318, #1301 | — | only if a worker frees up and nothing above is blocked |
+>
+> **Merge log:** (none yet)
+
 > # ✅ RELEASED: v0.8.124, 2026-10-18 (PR #1349) — THE WHOLE 2026-10-17 RUN IS IN IT
 >
 > The owner, after the run's final report: *"Let's get everything merged, and
