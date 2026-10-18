@@ -68,9 +68,9 @@ test.describe('naming a new session (#1282)', () => {
     const w = a.window;
     const plus = w.getByRole('button', { name: '+ session' });
     await expect(plus).toBeVisible({ timeout: 25_000 });
-    // AFTER the window is up, not straight after launch: the first main-process
-    // call made the moment `launchApp` returns can meet a context that is still
-    // being replaced (#1343).
+    // AFTER the window is up. That once dodged a lost reply on the first
+    // main-process call after launch (#1343). `launchApp` now recovers a lost
+    // reply for every call (`keepRepliesAlive`), so the order no longer matters.
     await a.app.evaluate(({ dialog: d }, f) => {
       d.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [f] });
     }, folder);

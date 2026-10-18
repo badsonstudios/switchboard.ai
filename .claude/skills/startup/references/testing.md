@@ -173,14 +173,22 @@ still how a new probe works; it is no longer how the project works.
      you are actively typing elsewhere — one whole quiet run saw none at all.
      Side effect: because the app is "away", its WHEN_AWAY rules fire —
      **silent OS toasts** appear on the primary screen during a quiet run.
-   - **A lost reply from the main process: `retryLostReply(() =>
-     a.app.evaluate(...))` (#1332).** An `app.evaluate` within about a second of
-     the window's geometry changing (the monitor move, a spec's `setBounds`)
-     can come back as CDP "Promise was collected", which Playwright reports as
-     "Execution context was destroyed, most likely because of a navigation" —
-     the main process never navigates. Measured in both modes; the quiet
-     launch makes the first resize hit it more often. Only for idempotent calls
-     (reads, `setBounds`): a lost reply does not mean the call did not run.
+   - **A lost reply from the main process is handled by the fixture (#1343).**
+     An `app.evaluate` can come back as CDP "Promise was collected", which
+     Playwright reports as "Execution context was destroyed, most likely
+     because of a navigation". The main process never navigates. #1332 blamed
+     geometry changes. #1343 measured something else: every lost reply lines
+     up with a burst of main-process GCs right when `launchApp` returns. A
+     dense probe saw it in all four combinations of quiet launch and monitor
+     move; the quiet launch plus the monitor move just lines a spec's first
+     call up with the burst. In every case logged, the function had run and
+     only its answer was lost. So `launchApp` wraps `a.app.evaluate`
+     (`keepRepliesAlive` in `e2e/fixtures/app.ts`): a function passed to it
+     runs exactly once, the main process keeps its answer for a moment, and a
+     lost reply is recovered by reading that answer back. Nothing to do in a
+     spec. Not covered: `evaluateHandle` and string expressions.
+     `retryLostReply` still exists, and it still only belongs on idempotent
+     calls.
    - **Going AWAY in a spec: `blurApp(a)`, never a bare `blur()` (#538).**
      Every `WHEN_AWAY` rule (toast, voice, push) is gated on no window of ours
      being focused, and `BrowserWindow.blur()` is a fire-and-forget command the
