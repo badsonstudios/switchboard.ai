@@ -28,7 +28,7 @@
 // fetches while we work (same reason `document-render.ts` gives at length).
 import { DOC_DECORATION, FEED_DECORATION, stripDecorationNamespace } from './decoration-guard';
 import { decorateFeedCodeFences, type FeedCodeLabels } from './feed-code';
-import { decorateFeedImages, type FeedImageLabels } from './feed-images';
+import { decorateFeedImages, type FeedImageLabels, type WrittenPage } from './feed-images';
 
 /**
  * Sanitized HTML in, decorated HTML out — the feed's surface pass.
@@ -78,8 +78,8 @@ export function decorateFeedMarkdown(
   }: {
     doc?: Document;
     streaming?: boolean;
-    /** the words for pictures, and the folder a relative path is relative to */
-    images?: { labels: FeedImageLabels; folder?: string };
+    /** the words for pictures, the folder a relative path is relative to, the pages the conversation wrote, and where this reply is in it */
+    images?: { labels: FeedImageLabels; folder?: string; pages?: readonly WrittenPage[]; at?: number };
   } = {}
 ): string {
   const template = doc.createElement('template');
@@ -88,6 +88,6 @@ export function decorateFeedMarkdown(
   stripDecorationNamespace(template.content, FEED_DECORATION);
   stripDecorationNamespace(template.content, DOC_DECORATION);
   if (!streaming) decorateFeedCodeFences(template.content, labels);
-  if (images) decorateFeedImages(template.content, images.labels, { folder: images.folder, streaming });
+  if (images) decorateFeedImages(template.content, images.labels, { folder: images.folder, streaming, pages: images.pages, at: images.at });
   return template.innerHTML;
 }

@@ -108,6 +108,14 @@ on the floor, and say so in your PR.
   helper Claude started in the background can ask for permission after the
   main reply has finished. Stopping it used to leave the session saying
   "working" for good, with nothing running. It now goes back to finished.
+- **An HTML mock-up is shown as a picture of the page, the way Claude really
+  hands one over.** Asked for a mock-up, Claude writes the page to a file and
+  then names the file in its reply, usually in code type (for example
+  `login.html`), not as a link. The picture of the page was only drawn under a
+  link, so you saw the file-writing step's code and no picture. Now the
+  answer to a request that wrote or edited a page draws the picture under the
+  sentence that names it. A page that is only mentioned, or that was written
+  in an earlier request, is not drawn.
 
 ## 0.8.124 — 2026-10-18
 

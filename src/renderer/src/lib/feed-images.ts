@@ -33,11 +33,23 @@
 // a PNG. The picture is a button that opens the real page, and a line under
 // it says what it is: a picture, of the page as it is now.
 //
+// A PAGE THE SESSION WROTE, NAMED IN CODE TYPE (#1278), is drawn the same
+// way. #1239 drew a page only under a link or a picture reference to it, and
+// that is not how Claude hands one over: asked for "an HTML mock-up of a login
+// screen", it writes the file with the Write tool and ends with "The file is
+// saved at `C:\work\login.html`", or names it bare (`multi-ai.html`) beside
+// the folder it is in. No link, so no picture, and what was on screen was the
+// Write step's box: the page's source. So a code span that names a page THIS
+// CONVERSATION WROTE OR EDITED (`writtenPages`) is drawn under the words it is
+// in. Only those: a reply that mentions `index.html` in passing, in a project
+// with one, is not asking for a picture of it.
+//
 // WHILE A REPLY IS STILL ARRIVING, every picture is a chip. The tail of a
 // streaming reply is re-rendered on each chunk, and main serves pictures
 // `no-store`: an `<img>` there would be re-fetched per chunk.
 import { PAGE_SHOT_HEIGHT, PAGE_SHOT_WIDTH, docImagePath, docImageUrl, isPageFile } from '../../../shared/doc-image';
-import { classifyHref } from './document-link';
+import { classifyHref, isAbsolutePath, resolveRelativePath } from './document-link';
+import type { FeedBlockDto } from './feed';
 import { decorateImages, imageChip, type DecorationLabels } from './document-render';
 
 /** The attribute that says "a click here opens this local file". Ours: the
@@ -110,11 +122,20 @@ function insideFolder(folder: string): string {
  * `folder` is the session's working folder: what a relative path in a reply is
  * relative to. Without one (a caller that was not told, or `streaming`), every
  * picture is a chip — the safe reading of "I do not know where this is".
+ *
+ * `pages` is the pages this conversation wrote or edited (`writtenPages`), and
+ * `at` the place of this reply in it: the only pages a code span may have
+ * drawn are ones written in this reply's own turn, before it (#1278).
  */
 export function decorateFeedImages(
   root: ParentNode,
   labels: FeedImageLabels,
-  { folder, streaming = false }: { folder?: string; streaming?: boolean }
+  {
+    folder,
+    streaming = false,
+    pages,
+    at,
+  }: { folder?: string; streaming?: boolean; pages?: readonly WrittenPage[]; at?: number }
 ): void {
   const from = folder && !streaming ? insideFolder(folder) : undefined;
   const classify = from ? (href: string | null) => localTarget(href, from) : undefined;
@@ -152,7 +173,18 @@ export function decorateFeedImages(
     return true;
   };
   // ONE pass, in the order the reply reads, so "the first few" means that.
-  for (const el of [...root.querySelectorAll('.doc-image-chip, a[href]')]) {
+  for (const el of [...root.querySelectorAll('.doc-image-chip, a[href], code')]) {
+    if (el.nodeName === 'CODE') {
+      // inline code only: a fence's `<pre><code>` is code someone is reading,
+      // and code inside a link is the link's, which this pass reads already
+      if (el.parentElement?.nodeName === 'PRE' || el.closest('a')) continue;
+      const target = pageNamedInCode(el.textContent ?? '', from, pages, at);
+      if (!target || !draw(target)) continue;
+      // a picture that fails just goes, as under a link: the words that named
+      // the page are still there
+      placeUnder(el, pageShot(el.ownerDocument, target, '', labels, true));
+      continue;
+    }
     if (el.nodeName !== 'A') {
       const target = localHtml(el.getAttribute('title'), from);
       if (!target) continue;
@@ -169,15 +201,145 @@ export function decorateFeedImages(
     el.setAttribute(FEED_OPEN_PATH_ATTR, target);
     el.setAttribute('title', `${labels.openPage}: ${target}`);
     if (!draw(target)) continue;
-    // UNDER the words the link is in, not in the middle of them. After a
-    // paragraph or a heading; at the end of anything else that holds text (a
-    // list item, a table cell), where a sibling would not be valid.
-    const shot = pageShot(el.ownerDocument, target, '', labels, true);
-    const block = el.closest('p, li, td, th, dd, dt, blockquote, h1, h2, h3, h4, h5, h6');
-    if (!block) el.after(shot);
-    else if (/^(P|H[1-6])$/.test(block.nodeName)) block.after(shot);
-    else block.append(shot);
+    placeUnder(el, pageShot(el.ownerDocument, target, '', labels, true));
   }
+}
+
+/**
+ * Put a page's picture UNDER the words `el` is in, not in the middle of them.
+ * After a paragraph or a heading; at the end of anything else that holds text
+ * (a list item, a table cell), where a sibling would not be valid.
+ */
+function placeUnder(el: Element, shot: HTMLElement): void {
+  const block = el.closest('p, li, td, th, dd, dt, blockquote, h1, h2, h3, h4, h5, h6');
+  if (!block) el.after(shot);
+  else if (/^(P|H[1-6])$/.test(block.nodeName)) block.after(shot);
+  else block.append(shot);
+}
+
+/** Longer than this, a code span is not a path somebody typed into a sentence. */
+const MAX_CODE_PATH = 1024;
+
+/**
+ * One page the conversation wrote or edited, in one turn (#1278): its path as
+ * the tool step spelled it, the `seq` of the LAST step in that turn that wrote
+ * it, and the `seq` of the prompt that ended the turn (`Infinity` while it is
+ * the turn in progress). A reply at `at` may have it drawn when
+ * `seq < at < until`: after it was written, and before you spoke again.
+ */
+export interface WrittenPage {
+  readonly path: string;
+  readonly seq: number;
+  readonly until: number;
+}
+
+/** Is this a Windows path, where `Login.html` and `login.html` are one file? */
+function windowsPath(p: string): boolean {
+  return /^[a-zA-Z]:/.test(p) || p.includes(String.fromCharCode(92));
+}
+
+/** a path, for comparing: forward slashes, no `./` in front */
+function slashed(p: string): string {
+  return p.split(String.fromCharCode(92)).join('/').replace(/^(\.\/)+/, '');
+}
+
+/**
+ * The page this conversation wrote that a code span names, or null (#1278).
+ *
+ * THE SPAN IS NOT TRUSTED TO BE A PATH: it is matched against `pages`, which
+ * come from the session's own Write and Edit steps, and only a match is drawn.
+ * An absolute path must be one of them exactly. A relative one may be spelled
+ * from the session's folder, or be the END of one of them, whole segments
+ * only: `multi-ai.html` names `C:\p\mockups\multi-ai.html`, and `ai.html` does
+ * not. Main still decides whether the file may be read; this only decides
+ * whether to ask.
+ *
+ * ONLY IN THE TURN THAT WROTE IT, and only after the write (`WrittenPage`).
+ * "I'll put the mock-up in `login.html`" said BEFORE the Write is not drawn,
+ * and neither is every later reply that happens to name the page: in a web
+ * project that is `index.html` under half the conversation. Two pages that
+ * end the same way: the one written most recently. Case is ignored for a
+ * Windows path only, where the agent may spell one either way.
+ */
+export function pageNamedInCode(
+  text: string,
+  from: string,
+  pages: readonly WrittenPage[] | undefined,
+  at: number | undefined
+): string | null {
+  if (!pages || pages.length === 0 || at === undefined) return null;
+  const named = text.trim();
+  if (named.length === 0 || named.length > MAX_CODE_PATH || /[\r\n]/.test(named) || !isPageFile(named)) return null;
+  const exact = slashed(resolveRelativePath(from, named));
+  const tail = isAbsolutePath(named) ? null : `/${slashed(named)}`;
+  let best: WrittenPage | null = null;
+  for (const page of pages) {
+    if (!(page.seq < at && at < page.until) || (best && best.seq > page.seq)) continue;
+    const fold = windowsPath(page.path) ? (s: string) => s.toLowerCase() : (s: string) => s;
+    const key = fold(slashed(page.path));
+    if (key === fold(exact) || (tail !== null && key.endsWith(fold(tail)))) best = page;
+  }
+  return best?.path ?? null;
+}
+
+/**
+ * The pages this conversation wrote or edited, one entry per page per turn
+ * (#1278): the files of its finished, successful Write and Edit steps that are
+ * web pages by name. What `pageNamedInCode` may draw. A turn ends at the next
+ * prompt of the main conversation (a subagent's prompt does not end yours).
+ * A prompt you send while the session is still working ends it too, on
+ * purpose: what comes after it answers you, and is not that answer.
+ *
+ * A NETWORK PATH (`\\host\share\x.html`) is left out: the conversation never
+ * asks main for one (`localTarget`), so neither does this.
+ */
+export function writtenPages(blocks: readonly FeedBlockDto[]): WrittenPage[] {
+  const out: Array<{ path: string; seq: number; until: number }> = [];
+  let open = new Map<string, { path: string; seq: number; until: number }>();
+  for (const b of blocks) {
+    if (b.kind === 'user' && !b.sidechain) {
+      for (const page of open.values()) page.until = b.seq;
+      open = new Map();
+      continue;
+    }
+    const tool = b.tool;
+    if (b.kind !== 'tool' || !tool || tool.category !== 'edit' || tool.failed === true || tool.out === undefined) continue;
+    const file = tool.editPath ?? tool.filePath;
+    if (!file || !isAbsolutePath(file) || /^[\\/]{2}/.test(file) || /[\r\n]/.test(file) || file.includes(FIELD) || file.includes(PAGE) || !isPageFile(file)) continue;
+    const key = windowsPath(file) ? slashed(file).toLowerCase() : slashed(file);
+    const same = open.get(key);
+    if (same) {
+      same.seq = b.seq;
+      same.path = file;
+      continue;
+    }
+    const page = { path: file, seq: b.seq, until: Infinity };
+    open.set(key, page);
+    out.push(page);
+  }
+  return out;
+}
+
+// What no path holds: NUL between the fields, SOH between the pages.
+const FIELD = String.fromCharCode(0);
+const PAGE = String.fromCharCode(1);
+
+/**
+ * `writtenPages` as ONE string, and back (#1278). The conversation keys what
+ * every reply is told on this, so the reply is told again when a page is
+ * written or a turn ends, and not on every chunk of a streaming reply, which
+ * hands the conversation a new list of blocks each time.
+ */
+export function writtenPagesKey(pages: readonly WrittenPage[]): string {
+  return pages.map((p) => [p.seq, p.until === Infinity ? '' : p.until, p.path].join(FIELD)).join(PAGE);
+}
+
+export function writtenPagesFromKey(key: string): WrittenPage[] {
+  if (key === '') return [];
+  return key.split(PAGE).map((entry) => {
+    const [seq, until, ...rest] = entry.split(FIELD);
+    return { seq: Number(seq), until: until === '' ? Infinity : Number(until), path: rest.join(FIELD) };
+  });
 }
 
 /** the "Open in browser" on a chip for a local page */

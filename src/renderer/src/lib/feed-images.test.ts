@@ -14,8 +14,15 @@ import {
   FEED_IMAGE_MAX_HEIGHT,
   FEED_OPEN_PATH_ATTR,
   MAX_PAGE_SHOTS_PER_REPLY,
+  pageNamedInCode,
+  writtenPages,
+  writtenPagesFromKey,
+  writtenPagesKey,
   type FeedImageLabels,
+  type WrittenPage,
 } from './feed-images';
+import type { FeedBlockDto } from './feed';
+import { renderMarkdown } from './markdown';
 import { FEED_STOP_SELECTOR } from './feed-keys';
 import { forgetImageSizes, rememberImageSize } from './document-render';
 import { docImagePath } from '../../../shared/doc-image';
@@ -312,6 +319,220 @@ describe('an HTML mock-up (#1235)', () => {
   it('without a folder nothing is openable', () => {
     const host = pass('<a href="mock.html">m</a><img src="mock.html">', {});
     expect(host.querySelector(`[${FEED_OPEN_PATH_ATTR}]`)).toBeNull();
+  });
+});
+
+// THE REAL REPLIES (#1278). #1239 was built for a link to the page, and no
+// reply that was actually written had one. These are what `claude` wrote when
+// asked "Make me an HTML mock-up of a login screen." (2026-10-18, haiku and
+// sonnet, after a Write of `<folder>\login.html`), and what an Opus session of
+// the owner's wrote on 2026-10-15 after a Write of a page in a sub-folder. The
+// markdown is put through the real renderer, as production does.
+describe('a page the session wrote, named in code type (#1278)', () => {
+  const LOGIN = 'C:\\work\\app\\login.html';
+  const MOCKUP = 'C:\\work\\app\\.claude\\work_files\\mockups\\multi-ai.html';
+  // written at seq 10, and the turn is still going: a reply at 20 may draw it
+  const wrote = (...paths: string[]): WrittenPage[] => paths.map((p, i) => ({ path: p, seq: 10 + i, until: Infinity }));
+  const REPLY_AT = 20;
+
+  function reply(
+    markdown: string,
+    pages: readonly WrittenPage[] | undefined,
+    { at = REPLY_AT, folder = FOLDER }: { at?: number; folder?: string } = {}
+  ): HTMLElement {
+    const out = decorateFeedMarkdown(renderMarkdown(markdown), CODE, {
+      images: { labels: LABELS, folder, pages, at },
+    });
+    const host = document.createElement('div');
+    host.innerHTML = out;
+    return host;
+  }
+  const drawnPages = (host: HTMLElement): string[] =>
+    [...host.querySelectorAll<HTMLImageElement>('.feed-page-shot img')].map((img) => docImagePath(img.getAttribute('src')) ?? '');
+
+  it('haiku: "The file is saved at `<absolute path>`" draws the page under that sentence', () => {
+    const host = reply(
+      "Done! I've created a modern login screen with email/password fields. The file is saved at `C:\\work\\app\\login.html` — open it in a browser to see the full design.",
+      wrote(LOGIN)
+    );
+    expect(drawnPages(host)).toEqual([LOGIN]);
+    const [said, shot] = [...host.children];
+    expect(said.nodeName).toBe('P');
+    expect(said.querySelector('code')!.textContent).toBe(LOGIN);
+    expect(shot.className).toBe('feed-page-shot feed-page-shot-linked');
+    expect(shot.querySelector('.feed-page-note')!.textContent).toBe('A picture of the page.');
+    // the picture is the button that opens the real page, and an arrow-key stop
+    const open = shot.querySelector<HTMLButtonElement>('button.feed-image-open')!;
+    expect(open.getAttribute(FEED_OPEN_PATH_ATTR)).toBe(LOGIN);
+    expect(open.matches(FEED_STOP_SELECTOR)).toBe(true);
+  });
+
+  it('sonnet: "- File: `<absolute path>` (self-contained)" in a list draws it inside the item', () => {
+    const host = reply(
+      'Summary: I made a login screen mock-up as a single web page.\n\nTechnical detail:\n- File: `C:\\work\\app\\login.html` (self-contained, no dependencies)\n- Layout: centered card on an indigo gradient',
+      wrote(LOGIN)
+    );
+    expect(drawnPages(host)).toEqual([LOGIN]);
+    const [file, layout] = [...host.querySelectorAll('li')];
+    expect(file.lastElementChild!.className).toContain('feed-page-shot');
+    expect(layout.querySelector('.feed-page-shot')).toBeNull();
+  });
+
+  it('opus: a BARE name, with its folder said separately, is the page the session wrote', () => {
+    const host = reply(
+      '**The six screens** (in `.claude/work_files/mockups/`; `multi-ai.html` is open in your browser, and `s1`–`s6.png` are pictures of it).',
+      wrote(LOGIN, MOCKUP)
+    );
+    expect(drawnPages(host)).toEqual([MOCKUP]);
+  });
+
+  it('the spelling may differ: slashes, `./`, a folder-relative path, and on Windows capitals', () => {
+    for (const named of ['C:/work/app/login.html', './login.html', 'login.html', 'c:\\WORK\\app\\Login.HTML']) {
+      expect(drawnPages(reply(`It is \`${named}\`.`, wrote(LOGIN)))).toEqual([LOGIN]);
+    }
+    expect(drawnPages(reply('See `mockups/multi-ai.html`.', wrote(MOCKUP)))).toEqual([MOCKUP]);
+  });
+
+  it('a POSIX folder: absolute, bare, and `..` that comes back in; capitals are another file there', () => {
+    const page = '/home/u/app/login.html';
+    const posix = (named: string): string[] => drawnPages(reply(`It is \`${named}\`.`, wrote(page), { folder: '/home/u/app' }));
+    expect(posix('/home/u/app/login.html')).toEqual([page]);
+    expect(posix('login.html')).toEqual([page]);
+    expect(posix('../app/login.html')).toEqual([page]);
+    expect(posix('Login.html')).toEqual([]);
+    expect(posix('/home/u/app/LOGIN.html')).toEqual([]);
+  });
+
+  it('⚠️ a page the session did NOT write is not drawn: a mention in passing is not a request', () => {
+    expect(drawnPages(reply('The entry point is `index.html`.', wrote(LOGIN)))).toEqual([]);
+    expect(drawnPages(reply('The entry point is `C:\\work\\app\\index.html`.', wrote(LOGIN)))).toEqual([]);
+    // the end of a name is not the end of a path: whole segments only
+    expect(drawnPages(reply('See `ai.html`.', wrote(MOCKUP)))).toEqual([]);
+    // an absolute path elsewhere is not "a page with that name"
+    expect(drawnPages(reply('See `D:\\other\\login.html`.', wrote(LOGIN)))).toEqual([]);
+    // `..` that leaves the folder the page is in names some other file
+    expect(drawnPages(reply('See `../x/login.html`.', wrote('C:\\work\\app\\x\\login.html')))).toEqual([]);
+    // and with no pages known, no code span is ever drawn
+    expect(drawnPages(reply('It is `C:\\work\\app\\login.html`.', undefined))).toEqual([]);
+    expect(drawnPages(reply('It is `C:\\work\\app\\login.html`.', []))).toEqual([]);
+  });
+
+  it('⚠️ only in the turn that wrote it, after the write: not before it, and not in a later turn', () => {
+    const page: WrittenPage = { path: LOGIN, seq: 10, until: 30 };
+    // "I'll put it in `login.html`", said before the Write
+    expect(drawnPages(reply('I will put it in `login.html`.', [page], { at: 5 }))).toEqual([]);
+    expect(drawnPages(reply('Saved `login.html`.', [page], { at: 20 }))).toEqual([LOGIN]);
+    // you spoke at 30: a reply after that names it in passing
+    expect(drawnPages(reply('As before, `login.html`.', [page], { at: 40 }))).toEqual([]);
+    // ...unless that turn wrote it again
+    const again: WrittenPage = { path: LOGIN, seq: 41, until: Infinity };
+    expect(drawnPages(reply('Updated `login.html`.', [page, again], { at: 42 }))).toEqual([LOGIN]);
+    // with no place in the conversation, nothing
+    expect(pageNamedInCode('login.html', 'C:\\work\\app\\reply', [page], undefined)).toBeNull();
+  });
+
+  it('code in a FENCE is code someone is reading, never a picture', () => {
+    const fence = String.fromCharCode(96).repeat(3);
+    expect(drawnPages(reply(`${fence}\nC:\\work\\app\\login.html\n${fence}`, wrote(LOGIN)))).toEqual([]);
+  });
+
+  it('two pages that end the same way: the one written most recently', () => {
+    const older = 'C:\\work\\app\\v1\\login.html';
+    expect(drawnPages(reply('It is `login.html`.', wrote(older, LOGIN)))).toEqual([LOGIN]);
+    expect(drawnPages(reply('It is `login.html`.', wrote(LOGIN, older)))).toEqual([older]);
+  });
+
+  it('shares the reply’s cap and is drawn once, however it is named (code, then a link)', () => {
+    const host = reply('Saved `C:\\work\\app\\login.html`; open [the page](login.html).', wrote(LOGIN));
+    expect(drawnPages(host)).toEqual([LOGIN]);
+    // the link still opens the page
+    expect(host.querySelector(`a[${FEED_OPEN_PATH_ATTR}]`)!.getAttribute(FEED_OPEN_PATH_ATTR)).toBe(LOGIN);
+  });
+
+  it('while the reply is still arriving, and with no folder, nothing is drawn', () => {
+    const streaming = decorateFeedMarkdown(renderMarkdown('Saved `C:\\work\\app\\login.html`.'), CODE, {
+      streaming: true,
+      images: { labels: LABELS, folder: FOLDER, pages: wrote(LOGIN), at: REPLY_AT },
+    });
+    expect(streaming).not.toContain('feed-page-shot');
+    const noFolder = decorateFeedMarkdown(renderMarkdown('Saved `C:\\work\\app\\login.html`.'), CODE, {
+      images: { labels: LABELS, pages: wrote(LOGIN), at: REPLY_AT },
+    });
+    expect(noFolder).not.toContain('feed-page-shot');
+  });
+
+  it('a picture main could not draw just goes; the sentence that named the page stays', () => {
+    const host = reply('Saved `C:\\work\\app\\login.html`.', wrote(LOGIN));
+    document.body.appendChild(host);
+    expect(chipForFailedFeedImage(host.querySelector('.feed-page-shot img'), LABELS)).toBe(true);
+    expect(host.querySelector('.feed-page-shot')).toBeNull();
+    expect(chips(host)).toHaveLength(0);
+    expect(host.textContent).toContain(LOGIN);
+    host.remove();
+  });
+});
+
+describe('the pages a conversation wrote (#1278)', () => {
+  let seq = 0;
+  const tool = (over: Partial<NonNullable<FeedBlockDto['tool']>>): FeedBlockDto => ({
+    seq: ++seq,
+    kind: 'tool',
+    sidechain: false,
+    tool: { name: 'Write', category: 'edit', summary: '', out: 'File created successfully', ...over },
+  });
+  const prompt = (sidechain = false): FeedBlockDto => ({ seq: ++seq, kind: 'user', text: 'go', sidechain });
+
+  it('finished, successful Write and Edit steps of local web pages; one entry per page per turn', () => {
+    seq = 0;
+    const pages = writtenPages([
+      tool({ filePath: 'C:\\p\\a.html', editPath: 'C:\\p\\a.html' }), // 1
+      tool({ name: 'Edit', filePath: 'C:\\p\\b.htm' }), // 2
+      tool({ filePath: 'C:\\p\\c.css' }),
+      tool({ filePath: 'C:\\p\\still-running.html', out: undefined }),
+      tool({ filePath: 'C:\\p\\refused.html', failed: true }),
+      tool({ name: 'Read', category: 'read', filePath: 'C:\\p\\read.html' }),
+      tool({ filePath: 'relative.html' }),
+      tool({ filePath: '\\\\host\\share\\far.html' }),
+      tool({ filePath: 'C:/p/A.html' }), // 9: a.html again, spelled another way, same turn
+      prompt(true), // 10: a subagent's prompt does not end the turn
+      prompt(), // 11: yours does
+      tool({ name: 'Edit', filePath: 'C:\\p\\a.html' }), // 12
+    ]);
+    expect(pages).toEqual([
+      { path: 'C:/p/A.html', seq: 9, until: 11 },
+      { path: 'C:\\p\\b.htm', seq: 2, until: 11 },
+      { path: 'C:\\p\\a.html', seq: 12, until: Infinity },
+    ]);
+  });
+
+  it('on POSIX, two spellings in two cases are two files', () => {
+    seq = 0;
+    expect(writtenPages([tool({ filePath: '/p/a.html' }), tool({ filePath: '/p/A.html' })]).map((p) => p.path)).toEqual([
+      '/p/a.html',
+      '/p/A.html',
+    ]);
+  });
+
+  it('nothing written is nothing', () => {
+    expect(writtenPages([])).toEqual([]);
+    expect(writtenPages([{ seq: 1, kind: 'assistant', text: '`a.html`', sidechain: false }])).toEqual([]);
+  });
+
+  it('survives the trip through one string, the turn in progress included', () => {
+    const pages: WrittenPage[] = [
+      { path: 'C:\\p\\a.html', seq: 3, until: 7 },
+      { path: '/home/u/b c.html', seq: 9, until: Infinity },
+    ];
+    expect(writtenPagesFromKey(writtenPagesKey(pages))).toEqual(pages);
+    expect(writtenPagesFromKey(writtenPagesKey([]))).toEqual([]);
+  });
+
+  it('pageNamedInCode refuses what cannot be a path a sentence named', () => {
+    const at = [{ path: 'C:\\p\\a.html', seq: 1, until: Infinity }];
+    expect(pageNamedInCode('a.html\nb.html', 'C:\\p\\reply', at, 2)).toBeNull();
+    expect(pageNamedInCode('a.css', 'C:\\p\\reply', at, 2)).toBeNull();
+    expect(pageNamedInCode(`${'x/'.repeat(600)}a.html`, 'C:\\p\\reply', at, 2)).toBeNull();
+    expect(pageNamedInCode('  a.html  ', 'C:\\p\\reply', at, 2)).toBe('C:\\p\\a.html');
   });
 });
 

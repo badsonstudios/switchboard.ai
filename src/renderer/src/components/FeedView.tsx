@@ -12,6 +12,7 @@ import { GutterMark } from './ToolIcon';
 import { promptsOf, recallInto } from '../lib/prompt-history';
 import { registerPromptPort } from '../lib/prompt-port';
 import { FeedSurfaceContext } from '../lib/feed-surface';
+import { writtenPages, writtenPagesFromKey, writtenPagesKey } from '../lib/feed-images';
 import { gutterIconFor } from '../../../shared/tool-icon';
 import { groupBySeq } from '../lib/feed-skipping';
 import { FEED_GROUP_ATTR, FEED_GROUP_OPEN_ATTR, useFeedSkipping } from '../lib/use-feed-skipping';
@@ -1520,8 +1521,14 @@ export function FeedView(props: {
   /** the conversation's first block never gets a turn rule above it */
   const firstVisible = visibleBlocks[0];
   // what a block may need to know about its session (#1235): one object per
-  // folder, so a streamed chunk does not re-render every picture-bearing block
-  const surface = React.useMemo(() => ({ folder: props.folder }), [props.folder]);
+  // folder, so a streamed chunk does not re-render every picture-bearing block.
+  // The pages the conversation wrote (#1278) are keyed as ONE string for the
+  // same reason: the object changes when a page is written, not per chunk.
+  const pagesKey = React.useMemo(() => writtenPagesKey(writtenPages(blocks)), [blocks]);
+  const surface = React.useMemo(
+    () => ({ folder: props.folder, pages: pagesKey === '' ? undefined : writtenPagesFromKey(pagesKey) }),
+    [props.folder, pagesKey]
+  );
   return (
     <FeedSurfaceContext.Provider value={surface}>
     {(
