@@ -112,6 +112,38 @@ export const ACTION_SOUND = 'sound';
 export const ACTION_SPEAK = 'speak';
 
 /**
+ * The "this needs you" cue (#1267): ONE fixed sound, `NEEDS_YOU_SOUND`, for a
+ * held approval or an open question on a session the user is not in.
+ *
+ * Its own action type rather than `sound` with a cue name in the payload,
+ * because `sound` means "this CARD's cue" and resolves it from the card when
+ * it fires (see above). This one deliberately does not depend on the card: it
+ * says "something is waiting on you", whichever card it is.
+ */
+export const ACTION_NEEDS_YOU_SOUND = 'needs-you-sound';
+
+/**
+ * Actions that make THE noise for an event — the ones the notifier's plain
+ * beep steps aside for when one of them ran (`Notifier.handle`). One event,
+ * one sound (§5.9, P2-E14-05a's decision (a)).
+ */
+export const BEEP_REPLACING: ReadonlySet<string> = new Set([ACTION_SOUND, ACTION_NEEDS_YOU_SOUND]);
+
+/**
+ * Within one event, an action that makes a sibling redundant: key supersedes
+ * every value. Applied by `plannedActions` after matching.
+ *
+ * The needs-you cue beats the per-session cue for the same event: both come
+ * out of the same speaker in the same instant, and two cues at once are one
+ * smeared noise rather than two signals. The per-session cue says WHICH
+ * session; the needs-you cue says "this one may time out", and that is the
+ * more urgent half — the Sessions list's lit row already says which.
+ */
+const SUPERSEDES: Readonly<Record<string, readonly string[]>> = {
+  [ACTION_NEEDS_YOU_SOUND]: [ACTION_SOUND],
+};
+
+/**
  * Who an action is aimed at (P2-E14-05b) — the one fact quiet hours turn on.
  *
  * - `person` — it reaches a human through their senses: a popup on the screen,
@@ -138,6 +170,7 @@ export const ACTION_AUDIENCE: Readonly<Record<string, ActionAudience>> = {
   [ACTION_OS_TOAST]: 'person',
   [ACTION_SOUND]: 'person',
   [ACTION_SPEAK]: 'person',
+  [ACTION_NEEDS_YOU_SOUND]: 'person',
   [ACTION_PUSH]: 'person',
   [ACTION_WEBHOOK]: 'machine',
 };
@@ -165,6 +198,15 @@ export interface Rule {
   session?: string;
   /** visibility states the rule may fire in; absent or empty = any */
   visibility?: WindowVisibility[];
+  /**
+   * `true` = does not fire for the session the user is IN (#1267): the card in
+   * front in the window they are using. Absent = no such condition.
+   *
+   * A condition the user's own sentence needs ("tell me when a session I am
+   * not looking at needs me"), and one `visibility` cannot say: visibility is
+   * about the APP, this is about one card inside it.
+   */
+  unlessInFront?: boolean;
   actions: RuleAction[];
   /** absent = enabled. An explicit `false` keeps the rule but silences it. */
   enabled?: boolean;
@@ -198,6 +240,13 @@ export interface RuleTrigger {
   /** the CARD the event belongs to; null when it could not be resolved */
   cardId: string | null;
   visibility: WindowVisibility;
+  /**
+   * Is the event's card the one in front of the user (#1267)? The window
+   * reports which card that is (`notifications:setFrontCard`); absent or
+   * `false` means "no", which is the side that plays a sound rather than
+   * swallowing one (P6).
+   */
+  inFront?: boolean;
   /**
    * The local wall-clock at the moment of the event (P2-E14-05b).
    *
@@ -282,6 +331,8 @@ export function defaultRules(prefs: {
   sounds?: boolean;
   /** spoken announcements (P2-E14-05a) */
   speak?: boolean;
+  /** the "this needs you" cue (#1267) — ON unless explicitly `false` */
+  needsYouSound?: boolean;
 }): Rule[] {
   const rule = (
     channel: string,
@@ -336,6 +387,31 @@ export function defaultRules(prefs: {
   if (prefs.webhook)
     for (const kind of ['needs-input', 'needs-permission', 'crashed', 'done'] as const)
       out.push(rule('webhook:', ACTION_WEBHOOK, kind, ALL_VISIBILITIES));
+  // The "this needs you" cue (#1267). The one built-in that is ON unless
+  // switched off — the owner's decision, after a day in which 8 of 10
+  // approvals ran out unanswered while the app was on screen.
+  //
+  // FOCUSED ONLY, and not for the card in front. It is the complement of the
+  // away-rules: while you are in another app the taskbar flash, the pop-up,
+  // the phone and the voice are the channels for this; while you are IN
+  // switchboard, typing in one session, it is the only thing that reaches you
+  // about another one. The session you are already looking at shows its own
+  // approval bar, so ringing for it would be telling you what is in front of
+  // you.
+  //
+  // QUIET HOURS DO NOT HOLD IT (`quietHours: 'ignore'`) — the one built-in
+  // that says so, and the decision #1267 left open. Quiet hours are a fact
+  // about a person who is asleep; this rule only ever fires while that person
+  // is at the keyboard in switchboard, so the premise does not hold — and an
+  // approval timing out unheard is the very thing this cue exists to stop.
+  // To make it obey quiet hours instead, delete the one line below.
+  if (prefs.needsYouSound !== false)
+    for (const kind of ['needs-permission', 'needs-input'] as const)
+      out.push({
+        ...rule('needs-you:', ACTION_NEEDS_YOU_SOUND, kind, ['focused']),
+        unlessInFront: true,
+        quietHours: 'ignore',
+      });
   return out;
 }
 
@@ -350,6 +426,7 @@ export function ruleMatches(rule: Rule, trigger: RuleTrigger): boolean {
   if (rule.session !== undefined && rule.session !== trigger.cardId) return false;
   const vis = rule.visibility;
   if (vis && vis.length > 0 && !vis.includes(trigger.visibility)) return false;
+  if (rule.unlessInFront === true && trigger.inFront === true) return false;
   return rule.actions.length > 0;
 }
 
@@ -400,7 +477,11 @@ export function plannedActions(rules: readonly Rule[], trigger: RuleTrigger): Ma
       out.push({ rule, action });
     }
   }
-  return out;
+  // One noise per event (#1267): drop whatever a planned action supersedes.
+  const present = new Set(out.map((m) => m.action.type));
+  const beaten = new Set<string>();
+  for (const type of present) for (const s of SUPERSEDES[type] ?? []) beaten.add(s);
+  return beaten.size === 0 ? out : out.filter((m) => !beaten.has(m.action.type));
 }
 
 /**
@@ -551,6 +632,9 @@ export function isSaneRule(r: unknown): r is Rule {
   // than silently defaulted (P2-E14-05b).
   if (x.quietHours !== undefined && !QUIET_HOURS_MODES.includes(x.quietHours))
     return false;
+  // Same argument (#1267): a condition this build cannot read is the difference
+  // between "rang for the card you are typing in" and "did not".
+  if (x.unlessInFront !== undefined && typeof x.unlessInFront !== 'boolean') return false;
   if (!Array.isArray(x.actions)) return false;
   // An action with no `type` can never be dispatched, so a rule carrying one is
   // dropped rather than kept as a half-working rule. An EMPTY action list is

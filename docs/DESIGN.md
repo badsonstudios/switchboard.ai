@@ -1521,6 +1521,31 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   channel. `SWITCHBOARD_MUTE_AUDIO=1` (non-packaged builds only) makes the sink
   log instead of sound, so the e2e suite proves the whole chain on the machine
   its owner is working at without making a sound.)*
+  *(The **needs-you cue** shipped #1267, the second built-in that fires while
+  the app is FOCUSED. Owner decisions, 2026-10-17: it plays only for a session
+  the user is **not in**; it is a **distinct** sound; an approval repeats it
+  **once, a minute before its deadline**, never a question (no deadline, #570),
+  never once answered or withdrawn; it is a **new default rule, ON**, switchable
+  off in Settings ▸ Notifications. Implementation decisions: **(a)** a new rule
+  CONDITION, `unlessInFront`, because "not the card I am in" is about one card
+  and `visibility` is about the app — the renderer reports the card in front
+  (`notifications:setFrontCard`); no report yet reads as "not in front" (an
+  extra sound), and a report lost after an earlier one leaves the previous card
+  in place (that card gets the plain beep instead of the cue) — the wrong
+  sound in the worst case, never silence; **(b)** its own
+  action type `needs-you-sound` and its own cue (`NEEDS_YOU_SOUND`, outside the
+  bank so no card can be pinned to it), because `sound` means "this card's
+  cue"; **(c)** one event, one sound still holds: it supersedes the per-session
+  cue for the same event, and the notifier's beep now runs AFTER the rules and
+  steps aside when a beep-replacing action ran; **(d)** the repeat decides only
+  WHEN and re-asks the rule at that moment for that action alone, so a user who
+  has since gone to that session, left the app or switched the cue off hears
+  nothing; **(e)** **quiet hours do not hold it** (`quietHours: 'ignore'` on the
+  built-in, one line to flip): it only fires while the user is at the keyboard
+  in the app, so quiet hours' premise — a person asleep — does not hold, and an
+  approval timing out unheard is the failure it exists for. The pref
+  `needsYouSound` is read `!== false`, so a workspace file from before it gets
+  the new default with nothing rewritten.)*
 - **Actionable toasts**: permission toasts carry Allow / Deny buttons that send the
   verdict on that session's input route — approve without switching windows.
   *(Shipped P2-E14-04. Three decisions worth recording. **One decision path:**

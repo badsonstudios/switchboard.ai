@@ -751,11 +751,31 @@ describe('notification prefs merge-patch (review P1 #13)', () => {
       // P2-E14-05a's two switches survive the same patch, for the same reason
       sounds: false,
       speak: false,
+      // #1267's, ON by default, survives it too
+      needsYouSound: true,
       quietStart: '22:00',
       quietEnd: '07:00',
     });
     st.setNotificationPrefs({ osToasts: false });
     expect(st.getNotificationPrefs()).toMatchObject({ enabled: false, osToasts: false });
+  });
+
+  // #1267: the needs-you cue is the one notification pref that defaults ON,
+  // INCLUDING for a workspace file written before the field existed — that is
+  // how an existing user gets the new default without anything being rewritten.
+  it('reads an absent needs-you switch as ON, and keeps an explicit OFF', () => {
+    const fresh = makeStore(file);
+    fresh.load();
+    expect(fresh.getNotificationPrefs().needsYouSound).toBe(true);
+
+    fs.writeFileSync(file, JSON.stringify({ notifications: { enabled: true, sounds: true } }));
+    const old = makeStore(file);
+    old.load();
+    expect(old.getNotificationPrefs()).toMatchObject({ sounds: true, needsYouSound: true });
+
+    old.setNotificationPrefs({ needsYouSound: false });
+    old.setNotificationPrefs({ enabled: true });
+    expect(old.getNotificationPrefs().needsYouSound).toBe(false);
   });
 
   // P2-E14-05b. The window is the ONE pref where "stored but unreadable" and

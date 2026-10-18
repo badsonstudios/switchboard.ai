@@ -908,12 +908,19 @@
     "whatHappens": "What quiet hours stop",
     "personFacing": "Stopped: pop-up notifications, session sounds, spoken announcements, and phone push. Anything aimed at you.",
     "machineFacing": "Not stopped: webhooks. They go to a program, and a program is not asleep — that is usually the reason you set one up. A rule can be told to obey quiet hours anyway.",
+    "needsYouFacing": "Not stopped either: the needs-you sound. It only plays while you are using switchboard, so you are plainly awake, and an approval that runs out unheard is the thing it is there to prevent.",
     "status": {
       "unknown": "Cannot tell right now.",
       "off": "Quiet hours are off.",
       "active": "Quiet hours are on right now · {count, plural, =0 {nothing held yet} one {# notification held so far} other {# notifications held so far}}",
       "idle": "Not quiet at the moment · {count, plural, =0 {nothing held yet} one {# notification held so far} other {# notifications held so far}}"
     }
+  },
+  "needsYou": {
+    "title": "When another session needs you",
+    "blurb": "While you are working in switchboard, a session you are not in that asks for an approval or asks you a question plays a sound of its own, and an approval plays it once more when it has a minute left before it runs out. The session you are in stays quiet: its approval bar is already in front of you.",
+    "enable": "Play the needs-you sound",
+    "preview": "Play it"
   },
   "push": {
     "title": "Phone push & webhooks",

@@ -29,7 +29,10 @@
  * What the user has said about notifications (§5.9).
  *
  * Every channel beyond the in-app one is OPT-IN and defaults OFF — E14's exit
- * criterion, and what makes each of them cost an existing user nothing.
+ * criterion, and what makes each of them cost an existing user nothing. ONE
+ * exception, by the owner's decision: `needsYouSound` (#1267) defaults ON, and
+ * it replaces the beep for the events it rings for rather than adding a noise;
+ * its only new noise is the one repeat for an approval about to run out.
  */
 export interface NotificationPrefs {
   enabled: boolean;
@@ -45,6 +48,17 @@ export interface NotificationPrefs {
   /** Spoken announcements (P2-E14-05a). Opt-in, default OFF, and of the two
    *  this is the one nobody should ever meet without asking for it. */
   speak?: boolean;
+  /**
+   * The "this needs you" cue (#1267): a distinct sound when a session you are
+   * NOT in asks for an approval or asks a question while switchboard is the
+   * window you are using, and once more with a minute left on an approval.
+   *
+   * The one channel here that defaults ON — the owner's decision, 2026-10-17,
+   * after 8 of 10 approvals in one day's log ran out unanswered with nothing
+   * to hear. Absent reads as ON (`store.ts`, `sanitizeNotifications`), which is
+   * how a workspace file written before this field existed gets it.
+   */
+  needsYouSound?: boolean;
   /** quiet-hours window, `"HH:MM"` 24h local wall clock — `shared/quiet-hours.ts`
    *  owns what a usable pair is, and every writer refuses one it cannot read */
   quietStart?: string;

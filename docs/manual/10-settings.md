@@ -29,7 +29,7 @@ It is organised in **seven tabs** along the top:
 | **Appearance** | Theme, where the Sessions list goes, how a working session looks, the context meter, task label size |
 | **General** | Language, automatic update checks, Anthropic status checks |
 | **AIs** | Which AI new sessions start on, the AIs found on this computer and their sign-in, adding another AI — see [Settings → AIs](24-ais.md) |
-| **Notifications** | Quiet hours, phone push & webhooks |
+| **Notifications** | The needs-you sound, quiet hours, phone push & webhooks |
 | **Sessions** | What happens to a finished dispatched session |
 | **Diagnostics** | Detailed performance capture, and the file it writes — see [When it feels slow](19-performance.md) |
 | **Advanced** | Fork sessions (experimental), and which screen switchboard's own automated tests use — see [Testing](#testing-which-screen-the-automated-tests-use) |
@@ -275,6 +275,14 @@ setting** (on unless you turn it off), **task label size**, autonomy default, wh
 submit (global, per group and per session), what a session may do when it needs
 you (global and per session), layout, groups, sessions, per-session detail
 level, and window position all persist across restarts, stored on your machine.
+
+## When another session needs you
+
+**Settings ▸ Notifications.** On unless you turn it off. While you're working in
+switchboard, a session you're not in that asks for permission or asks you a
+question plays a sound of its own, and an approval plays it once more with a
+minute left. **Play it** lets you hear it. Full walk-through in
+[Notifications](09-notifications.md#when-another-session-needs-you).
 
 ## Quiet hours
 

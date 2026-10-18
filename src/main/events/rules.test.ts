@@ -6,12 +6,14 @@
 // for the `it()` that happened to cover the combination it breaks.
 import { describe, it, expect } from 'vitest';
 import {
+  ACTION_NEEDS_YOU_SOUND,
   ACTION_OS_TOAST,
   ACTION_PUSH,
   ACTION_SOUND,
   ACTION_SPEAK,
   ACTION_WEBHOOK,
   ALL_VISIBILITIES,
+  BEEP_REPLACING,
   NOTIFY_WHEN_DONE,
   Rule,
   RuleTrigger,
@@ -23,6 +25,7 @@ import {
   notifyWhenDoneRule,
   plannedActions,
   ruleMatches,
+  splitQuiet,
   visibilityAcross,
   visibilityOf,
 } from './rules';
@@ -168,15 +171,28 @@ describe('plannedActions', () => {
 });
 
 describe('defaultRules — the built-ins, and what they encode', () => {
+  // Every channel below is tested with the needs-you cue (#1267) switched OFF,
+  // so each test still describes the one channel it names. The cue is ON by
+  // default and has its own block further down.
+  const builtIns = (prefs: Parameters<typeof defaultRules>[0]) =>
+    defaultRules({ needsYouSound: false, ...prefs });
+
   it('are empty while OS toasts are off (the default posture, §5.9)', () => {
-    expect(defaultRules({})).toEqual([]);
-    expect(defaultRules({ osToasts: false })).toEqual([]);
+    expect(builtIns({})).toEqual([]);
+    expect(builtIns({ osToasts: false })).toEqual([]);
+  });
+
+  it('with NOTHING switched on, the only built-ins are the needs-you cue (#1267)', () => {
+    expect(defaultRules({}).map((r) => r.id)).toEqual([
+      'default:needs-you:needs-permission',
+      'default:needs-you:needs-input',
+    ]);
   });
 
   const on = { osToasts: true };
 
   it('never toast `done` — that is the per-session checkbox now', () => {
-    const fired = defaultRules(on).filter((r) =>
+    const fired = builtIns(on).filter((r) =>
       ruleMatches(r, trigger('done', CARD, 'hidden'))
     );
     expect(fired).toEqual([]);
@@ -185,8 +201,8 @@ describe('defaultRules — the built-ins, and what they encode', () => {
   it.each(['needs-input', 'needs-permission'] as FeedKind[])(
     '%s toasts while away and stays quiet while focused',
     (kind) => {
-      const away = plannedActions(defaultRules(on), trigger(kind, CARD, 'hidden'));
-      const focused = plannedActions(defaultRules(on), trigger(kind, CARD, 'focused'));
+      const away = plannedActions(builtIns(on), trigger(kind, CARD, 'hidden'));
+      const focused = plannedActions(builtIns(on), trigger(kind, CARD, 'focused'));
       expect(away.map((a) => a.action.type)).toEqual([ACTION_OS_TOAST]);
       expect(focused).toEqual([]);
     }
@@ -194,26 +210,26 @@ describe('defaultRules — the built-ins, and what they encode', () => {
 
   it('a crash toasts even while the window is focused', () => {
     for (const v of ALL_VISIBILITIES) {
-      expect(plannedActions(defaultRules(on), trigger('crashed', CARD, v))).toHaveLength(1);
+      expect(plannedActions(builtIns(on), trigger('crashed', CARD, v))).toHaveLength(1);
     }
   });
 
   it('`ready` is not an attention event and toasts nothing', () => {
     for (const v of ALL_VISIBILITIES) {
-      expect(plannedActions(defaultRules(on), trigger('ready', CARD, v))).toEqual([]);
+      expect(plannedActions(builtIns(on), trigger('ready', CARD, v))).toEqual([]);
     }
   });
 
   // ── the two channels that leave the machine (P2-E14-06) ──────────────────
   describe('push and webhook', () => {
     const types = (prefs: Parameters<typeof defaultRules>[0], kind: FeedKind, v: WindowVisibility) =>
-      plannedActions(defaultRules(prefs), trigger(kind, CARD, v)).map((a) => a.action.type);
+      plannedActions(builtIns(prefs), trigger(kind, CARD, v)).map((a) => a.action.type);
 
     it('contribute nothing until their own switch is on', () => {
-      expect(defaultRules({ osToasts: true }).some((r) => r.actions[0].type !== ACTION_OS_TOAST)).toBe(
+      expect(builtIns({ osToasts: true }).some((r) => r.actions[0].type !== ACTION_OS_TOAST)).toBe(
         false
       );
-      expect(defaultRules({})).toEqual([]);
+      expect(builtIns({})).toEqual([]);
     });
 
     // The decision the per-session checkbox already established (§5.9): a
@@ -247,7 +263,7 @@ describe('defaultRules — the built-ins, and what they encode', () => {
     );
 
     it('carries NO destination in the action payload — that would be a secret in the file', () => {
-      for (const r of defaultRules({ push: true, webhook: true }))
+      for (const r of builtIns({ push: true, webhook: true }))
         for (const a of r.actions) expect(Object.keys(a)).toEqual(['type']);
     });
 
@@ -258,7 +274,7 @@ describe('defaultRules — the built-ins, and what they encode', () => {
     });
 
     it('leaves the shipped toast rule ids untouched', () => {
-      expect(defaultRules({ osToasts: true }).map((r) => r.id)).toEqual([
+      expect(builtIns({ osToasts: true }).map((r) => r.id)).toEqual([
         'default:needs-input',
         'default:needs-permission',
         'default:crashed',
@@ -274,7 +290,7 @@ describe('defaultRules — the built-ins, and what they encode', () => {
   // ── the two channels that stay in the room (P2-E14-05a) ──────────────────
   describe('sound and speak', () => {
     const types = (prefs: Parameters<typeof defaultRules>[0], kind: FeedKind, v: WindowVisibility) =>
-      plannedActions(defaultRules(prefs), trigger(kind, CARD, v)).map((a) => a.action.type);
+      plannedActions(builtIns(prefs), trigger(kind, CARD, v)).map((a) => a.action.type);
 
     it('contribute nothing until their own switch is on', () => {
       expect(types({ osToasts: true }, 'needs-input', 'hidden')).toEqual([ACTION_OS_TOAST]);
@@ -308,7 +324,7 @@ describe('defaultRules — the built-ins, and what they encode', () => {
     );
 
     it('carries NO cue name in the payload — the CARD owns that, not the rule', () => {
-      for (const r of defaultRules({ sounds: true, speak: true }))
+      for (const r of builtIns({ sounds: true, speak: true }))
         for (const a of r.actions) expect(Object.keys(a)).toEqual(['type']);
     });
 
@@ -318,7 +334,7 @@ describe('defaultRules — the built-ins, and what they encode', () => {
       // is ever put back into it
       const extra = { id: 'user', event: 'done' as const, actions: [{ type: ACTION_SOUND }] };
       expect(
-        plannedActions([...defaultRules({ sounds: true }), extra], trigger('done', CARD, 'hidden'))
+        plannedActions([...builtIns({ sounds: true }), extra], trigger('done', CARD, 'hidden'))
       ).toHaveLength(1);
     });
 
@@ -338,7 +354,7 @@ describe('defaultRules — the built-ins, and what they encode', () => {
     });
 
     it('leaves the shipped toast rule ids untouched', () => {
-      expect(defaultRules({ osToasts: true, sounds: true }).map((r) => r.id)).toEqual([
+      expect(builtIns({ osToasts: true, sounds: true }).map((r) => r.id)).toEqual([
         'default:needs-input',
         'default:needs-permission',
         'default:crashed',
@@ -476,5 +492,83 @@ describe('isSaneRule — what survives a hand-edited workspace file', () => {
     // the rule on the way IN would silently delete it the next time this older
     // build saved the file.
     expect(isSaneRule({ id: 'r', event: 'done', actions: [{ type: 'hologram' }] })).toBe(true);
+  });
+});
+
+// The needs-you cue (#1267): a held approval or an open question on a session
+// the user is NOT in, while switchboard is the window they are using.
+describe('the needs-you cue (#1267)', () => {
+  const t = (
+    kind: FeedKind,
+    visibility: WindowVisibility,
+    inFront: boolean
+  ): RuleTrigger => ({ kind, cardId: CARD, visibility, inFront });
+  const types = (prefs: Parameters<typeof defaultRules>[0], trig: RuleTrigger) =>
+    plannedActions(defaultRules(prefs), trig).map((a) => a.action.type);
+
+  it('is ON with no setting at all, and off only when switched off', () => {
+    expect(types({}, t('needs-permission', 'focused', false))).toEqual([ACTION_NEEDS_YOU_SOUND]);
+    expect(types({ needsYouSound: true }, t('needs-permission', 'focused', false))).toEqual([
+      ACTION_NEEDS_YOU_SOUND,
+    ]);
+    expect(types({ needsYouSound: false }, t('needs-permission', 'focused', false))).toEqual([]);
+  });
+
+  it('rings for exactly one corner of the matrix: a demand, app focused, card not in front', () => {
+    const fired: string[] = [];
+    for (const kind of KINDS)
+      for (const v of ALL_VISIBILITIES)
+        for (const inFront of [true, false])
+          if (types({}, t(kind, v, inFront)).length > 0) fired.push(`${kind}/${v}/${inFront}`);
+    expect(fired.sort()).toEqual(['needs-input/focused/false', 'needs-permission/focused/false']);
+  });
+
+  it('an unresolved card is never "in front", so it rings (P6: an extra sound, not a missing one)', () => {
+    expect(
+      types({}, { kind: 'needs-permission', cardId: null, visibility: 'focused' })
+    ).toEqual([ACTION_NEEDS_YOU_SOUND]);
+  });
+
+  it('carries no cue name — the cue is fixed, not the card`s', () => {
+    for (const r of defaultRules({})) for (const a of r.actions) expect(Object.keys(a)).toEqual(['type']);
+  });
+
+  it('REPLACES the per-session cue for the same event: one event, one sound', () => {
+    expect(types({ sounds: true }, t('needs-permission', 'focused', false))).toEqual([
+      ACTION_NEEDS_YOU_SOUND,
+    ]);
+    // the session in front: the per-session cue rings as it always did
+    expect(types({ sounds: true }, t('needs-permission', 'focused', true))).toEqual([ACTION_SOUND]);
+    // away: the per-session cue rings, the needs-you cue is a focused-only rule
+    expect(types({ sounds: true }, t('needs-permission', 'hidden', false))).toEqual([ACTION_SOUND]);
+  });
+
+  it('leaves every other channel alone', () => {
+    expect(
+      types({ webhook: true, speak: true }, t('needs-permission', 'focused', false))
+    ).toEqual([ACTION_WEBHOOK, ACTION_NEEDS_YOU_SOUND]);
+  });
+
+  it('quiet hours do NOT hold it — it only rings while you are at the keyboard (the #1267 call)', () => {
+    const quiet: RuleTrigger = {
+      ...t('needs-permission', 'focused', false),
+      now: new Date(2026, 0, 1, 3, 0),
+      quiet: { start: '22:00', end: '07:00' },
+    };
+    const { run, held } = splitQuiet(plannedActions(defaultRules({ speak: true }), quiet), quiet);
+    expect(run.map((m) => m.action.type)).toEqual([ACTION_NEEDS_YOU_SOUND]);
+    expect(held).toEqual([]);
+  });
+
+  it('a rule whose in-front condition this build cannot read is dropped, not guessed', () => {
+    const base = { id: 'r', event: 'any', actions: [{ type: ACTION_NEEDS_YOU_SOUND }] };
+    expect(isSaneRule({ ...base, unlessInFront: true })).toBe(true);
+    expect(isSaneRule({ ...base, unlessInFront: 'yes' })).toBe(false);
+  });
+
+  it('BEEP_REPLACING names both noises the notifier steps aside for', () => {
+    expect(BEEP_REPLACING.has(ACTION_SOUND)).toBe(true);
+    expect(BEEP_REPLACING.has(ACTION_NEEDS_YOU_SOUND)).toBe(true);
+    expect(BEEP_REPLACING.has(ACTION_SPEAK)).toBe(false);
   });
 });

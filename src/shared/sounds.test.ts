@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_SOUND,
+  NEEDS_YOU_SOUND,
   SOUND_BANK,
   SOUND_IDS,
   isSoundId,
@@ -121,6 +122,27 @@ describe('assigning a cue to a card', () => {
     expect(soundById('not-a-sound')).toBe(DEFAULT_SOUND);
     expect(soundById(null)).toBe(DEFAULT_SOUND);
     expect(soundById('bell').id).toBe('bell');
+  });
+
+  it('the needs-you cue (#1267) resolves by name but can never be a card cue', () => {
+    expect(soundById(NEEDS_YOU_SOUND.id)).toBe(NEEDS_YOU_SOUND);
+    expect(isSoundId(NEEDS_YOU_SOUND.id)).toBe(false);
+    expect(SOUND_IDS).not.toContain(NEEDS_YOU_SOUND.id);
+  });
+
+  it('the needs-you cue is a different NOISE from all eight, and still a notification', () => {
+    const shape = (s: typeof NEEDS_YOU_SOUND) =>
+      `${s.wave}|${s.tones.map((t) => `${t.hz}@${t.ms}`).join(',')}`;
+    for (const s of SOUND_BANK) expect(shape(NEEDS_YOU_SOUND)).not.toBe(shape(s));
+    // the only cue that ALTERNATES: it goes down and back up again
+    const hz = NEEDS_YOU_SOUND.tones.map((t) => t.hz);
+    const turns = hz.slice(1).filter((h, i) => (h > hz[i]) !== (hz[1] > hz[0])).length;
+    expect(turns).toBeGreaterThan(0);
+    expect(soundDurationMs(NEEDS_YOU_SOUND)).toBeLessThanOrEqual(600);
+    for (const t of NEEDS_YOU_SOUND.tones) {
+      expect(t.hz).toBeGreaterThanOrEqual(200);
+      expect(t.hz).toBeLessThanOrEqual(4000);
+    }
   });
 
   it('only names the bank knows are sound ids', () => {

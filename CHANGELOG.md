@@ -98,6 +98,16 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **A session you are not in makes a sound when it needs you.** While you are
+  working in switchboard, a session that asks for an approval or asks you a
+  question now plays a short sound of its own, unlike the plain beep and unlike
+  the per-session sounds, so you hear it without looking away from what you are
+  doing. An approval plays it once more when it has a minute left before it
+  runs out. The session you are already in stays quiet, since its approval bar
+  is in front of you. It is on by default, quiet hours do not silence it (it
+  only plays while you are using the app), and **Settings ▸ Notifications ▸
+  When another session needs you** turns it off and lets you hear it first.
+
 - **The `/` list says why it is empty.** Typing a `/` that matches nothing now
   shows "No commands match" instead of nothing at all. If a skills folder holds
   loose `.md` files, which Claude Code ignores, the list says so and names the
