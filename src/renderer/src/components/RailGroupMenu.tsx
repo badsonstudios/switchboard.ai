@@ -66,13 +66,17 @@ export function RailGroupMenu(props: {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') onClose(true);
     };
-    window.addEventListener('pointerdown', close);
-    window.addEventListener('resize', close);
-    window.addEventListener('keydown', onKey);
+    // THE WINDOW THE MENU IS DRAWN IN (#1281). A tab's menu opens inside a
+    // popped-out window when the tab is out there, and a click or a key in
+    // that window never reaches the main one's `window`.
+    const win = ref.current?.ownerDocument.defaultView ?? window;
+    win.addEventListener('pointerdown', close);
+    win.addEventListener('resize', close);
+    win.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('pointerdown', close);
-      window.removeEventListener('resize', close);
-      window.removeEventListener('keydown', onKey);
+      win.removeEventListener('pointerdown', close);
+      win.removeEventListener('resize', close);
+      win.removeEventListener('keydown', onKey);
     };
   }, [onClose]);
 

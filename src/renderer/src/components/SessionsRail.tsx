@@ -103,7 +103,8 @@ import { DND_TYPE, GROUP_DND_TYPE } from '../lib/rail-dnd';
 import { isLit, UrgencyMarks } from '../lib/urgency';
 import { MenuPlacement, placeMenu } from '../lib/menu-placement';
 import { dropGroup, stepGroup } from '../lib/group-order';
-import { RailGroupMenu } from './RailGroupMenu';
+import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
+import { sessionMenuItems } from '../lib/session-menu';
 import { SessionRow } from './SessionRow';
 import { FolderGlyph } from './FolderGlyph';
 import { directionOf } from '../lib/writing-direction';
@@ -2076,194 +2077,150 @@ export function SessionsRail(props: {
             fontSize: 11,
           }}
         >
-          {/* [label, what it does, does it owe focus back?]. Only Rename and
-              Close move focus themselves — Rename autofocuses its field, and
-              Close is about to remove the row. "Open changes" just switches the
-              card's view, so without the restore a keyboard user who picked it
-              would be left standing at the top of the document.
+          {/* THE ITEMS ARE `sessionMenuItems`' (#1281), the one builder the
+              strip and the tab use too, so the three cannot drift. What is
+              said here is only what running each one means in THIS list —
+              chiefly where the keyboard goes afterwards (#197):
 
-              §5.8's PIN (E9-09) is one of these rather than a checkbox item,
-              and sits between Rename and Close: its LABEL says which way it
-              will go, which is the same rule the palette follows ("an entry has
-              to say what it will DO"), and it is what VS Code's own pinned-tab
-              menu does. A `menuitemcheckbox` with a tick column would be the
-              only item in this list carrying one, indenting its label away from
-              the other three for a state the label already spells out.
-
-              It restores focus to the row whose pin you just changed — but NOT
-              synchronously, and #295 is why: the row is re-parented into (or out
-              of) the sticky pinned block, which unmounts and remounts it, so the
-              node this menu was opened from is detached by then. The errand is
-              handed to `pendingPin` and finished by the effect that watches
-              `props.pinned`, exactly as a cross-group move is. */}
-          {(
-            [
-              ['rail.menuDiff', () => props.onDiff(menu.session), true, true],
-              [
-                'rail.menuRename',
-                () => {
+              * Open changes and Mark as seen hand focus back to the row: they
+                change something elsewhere, and without the restore a keyboard
+                user would be left standing at the top of the document.
+              * Rename and Close move focus themselves — Rename autofocuses its
+                field, and Close is about to remove the row.
+              * PIN restores focus to the row whose pin you just changed — but
+                NOT synchronously, and #295 is why: the row is re-parented into
+                (or out of) the sticky pinned block, which unmounts and
+                remounts it, so the node this menu was opened from is detached
+                by then. The errand is handed to `pendingPin` and finished by
+                the effect that watches `props.pinned`, as a cross-group move
+                is.
+              * MOVE TO GROUP (#253) is the keyboard's way to do what only a
+                drag could do — RADIOS, not a submenu, so they join the arrow
+                ring for free. It calls `onMoveToGroup`, the prop the drop
+                handler calls, and repeats the drop's guard that a move to
+                where you already are is a no-op. Membership is read LIVE (the
+                menu's session is a snapshot from when it opened, and a card
+                dragged in another window meanwhile would leave the tick on a
+                group it has already left). */}
+          {(() => {
+            const live = props.sessions.find((s) => s.id === menu.session.id);
+            const session = {
+              ...menu.session,
+              groupId: live ? live.groupId : menu.session.groupId,
+              // #687's gating stays the SNAPSHOT's (see `notStartedRow`)
+              status: notStartedRow ? 'not-started' : menu.session.status,
+            };
+            const items = sessionMenuItems(
+              {
+                session,
+                groups: props.groups,
+                pinned: props.pinned.has(menu.session.id),
+                finished: props.finished?.has(menu.session.id) ?? false,
+              },
+              {
+                diff: () => {
+                  closeMenu(true);
+                  props.onDiff(menu.session);
+                },
+                rename: () => {
+                  closeMenu(false);
                   setEditing(menu.session.id);
                   setDraft(menu.session.title);
                 },
-                false,
-                // #687: renaming a card main has never heard of reaches
-                // `sessions:renameCard`, whose body is `if (prior) upsert(...)`
-                // — it writes nothing, answers nothing, and the next
-                // `sessions:cards` refresh paints the old name back. An offer
-                // that silently does nothing is worse than no offer.
-                !notStartedRow,
-              ],
-              [
-                props.pinned.has(menu.session.id) ? 'rail.menuUnpin' : 'rail.menuPin',
-                () => {
+                pin: () => {
+                  closeMenu(false);
                   pendingPin.current = {
                     cardId: menu.session.id,
                     want: !props.pinned.has(menu.session.id),
                   };
                   props.onTogglePin(menu.session.id);
                 },
-                false,
-                // ...and pinning a not-started card DOES work, which is why it
-                // is not in the clause above: the pin set is renderer state,
-                // persisted in the ui blob and keyed by card id. Same for
-                // Close.
-                true,
-              ],
-              ['rail.menuClose', () => props.onClose(menu.session.id), false, true],
-            ] as const
-          ).map(([key, run, restoreFocus, can]) => (
-            <button
-              key={key}
-              type="button"
-              role="menuitem"
-              // `aria-disabled` and not `disabled`: the arrow walk focuses
-              // `[role^="menuitem"]`
-              // and `focus()` on a disabled button does nothing, so a hard
-              // disable would break the ring at this item.
-              aria-disabled={!can}
-              className="rail-menu-item"
-              onClick={() => {
-                if (!can) return; // aria-disabled is a claim; this is the fact
-                closeMenu(restoreFocus);
-                run();
-              }}
-              // dimmed, and still in the ring: see `aria-disabled` above
-              style={{ ...menuItemStyle, opacity: can ? 1 : 0.45 }}
-            >
-              {t(key)}
-            </button>
-          ))}
-          {/* #1219: only while there is something to mark. An item that would
-              do nothing is not offered. */}
-          {props.finished?.has(menu.session.id) && (
-            <button
-              type="button"
-              role="menuitem"
-              className="rail-menu-item"
-              data-rail-menu-seen
-              onClick={() => {
-                const id = menu.session.id;
-                closeMenu(true);
-                markSeen(id);
-              }}
-              style={menuItemStyle}
-            >
-              {t('rail.menuSeen')}
-            </button>
-          )}
-          {/* #253 — the keyboard's way to do what only a drag could do.
-              A session's group was reachable by dragging its row onto a group
-              card and no other way, so the whole interaction failed WCAG 2.1.1
-              — the one gap #197's sweep left, because it needed an interaction,
-              not a label.
-
-              RADIOS, not a "Move to group ▸" submenu: membership is exactly one
-              choice out of a known set, which is what `menuitemradio` means. It also costs
-              no new keyboard mode — the arrow walk on the menu selects
-              `[role^="menuitem"]`, so these join the ring for free, where a
-              submenu would have meant a second focus context to get right, and
-              a menu you can open but not leave is the trap this sweep exists
-              to avoid.
-
-              This is NOT a parallel mechanism: it calls `onMoveToGroup`, the
-              same prop the drop handler calls, and repeats the drop's guard
-              that a move to where you already are is a no-op rather than a
-              round trip through IPC and a grid reshuffle.
-
-              AUTO-GROUPS are deliberately absent. Their membership is computed
-              from the session's folder, so an entry for one would be a command
-              that does nothing — and refusing to advertise that is exactly why
-              the drop handler declines them. A session sitting in an auto-group
-              shows as "Ungrouped" here, which is the truth this list is about:
-              it is in no group you made.
-
-              AND ABSENT ENTIRELY FOR A NOT-STARTED ROW (#687), by that same
-              rule rather than a new one. Membership is main's to write —
-              `groups:setSessionGroup` ends in `store.setSessionGroup`, whose
-              first line is `if (!s) return` for a card with no persisted
-              record — so every entry in this set would be a command that does
-              nothing, which is word for word why auto-groups are not here
-              either. A WHOLE SET that can do nothing goes; a single item that
-              is merely unavailable right now stays and dims, which is why
-              Rename above is `aria-disabled` instead. */}
-          {props.groups.length > 0 && !notStartedRow && (
-            <div role="group" aria-label={t('rail.menuMove')}>
-              <div aria-hidden style={menuSectionStyle}>
-                {t('rail.menuMove')}
-              </div>
-              {[
-                ...props.groups.map((g) => [g.id, g.name] as const),
-                // the trailing bucket, last for the same reason it is last in
-                // the rail itself: it is an absence, not a thing
-                [null, t('strip.menuNoGroup')] as const,
-              ].map(([gid, label]) => {
-                // read membership LIVE, exactly as the drop handler does: the
-                // menu's session is a snapshot from when it opened, and a card
-                // dragged in another window while it stands open would leave
-                // the tick pointing at a group the session has already left
-                const from = props.sessions.find((s) => s.id === menu.session.id)?.groupId ?? null;
-                const here = from === gid;
-                return (
-                  <button
-                    key={gid ?? 'ungrouped'}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={here}
-                    data-move-item={gid ?? 'ungrouped'}
-                    className="rail-menu-item"
-                    onClick={() => {
-                      if (here) {
-                        // already there: close, and give the row its focus back
-                        closeMenu(true);
-                        return;
-                      }
-                      pendingMove.current = {
-                        cardId: menu.session.id,
-                        to: gid,
-                        destKey: gid ?? 'ungrouped',
-                        said: gid
-                          ? t('rail.movedTo', { title: menu.session.title, group: label })
-                          : t('rail.movedOut', { title: menu.session.title }),
-                      };
-                      // Restore focus NOW as well as when it lands: this puts
-                      // the keyboard on the row it is about to move rather than
-                      // on <body> for the length of the round trip — and if the
-                      // move never lands, that is still where it should be.
-                      closeMenu(true);
-                      props.onMoveToGroup(menu.session.id, gid);
-                    }}
-                    style={{ ...menuItemStyle, fontWeight: here ? 700 : 400 }}
-                  >
-                    {/* the tick keeps its column whether or not it is drawn */}
+                close: () => {
+                  closeMenu(false);
+                  props.onClose(menu.session.id);
+                },
+                seen: () => {
+                  const id = menu.session.id;
+                  closeMenu(true);
+                  markSeen(id);
+                },
+                move: (gid, here) => {
+                  if (here) {
+                    // already there: close, and give the row its focus back
+                    closeMenu(true);
+                    return;
+                  }
+                  const label = gid ? (props.groups.find((g) => g.id === gid)?.name ?? '') : '';
+                  pendingMove.current = {
+                    cardId: menu.session.id,
+                    to: gid,
+                    destKey: gid ?? 'ungrouped',
+                    said: gid
+                      ? t('rail.movedTo', { title: menu.session.title, group: label })
+                      : t('rail.movedOut', { title: menu.session.title }),
+                  };
+                  // Restore focus NOW as well as when it lands: this puts the
+                  // keyboard on the row it is about to move rather than on
+                  // <body> for the length of the round trip — and if the move
+                  // never lands, that is still where it should be.
+                  closeMenu(true);
+                  props.onMoveToGroup(menu.session.id, gid);
+                },
+              },
+              t
+            );
+            const button = (item: RailGroupMenuItem): React.JSX.Element => {
+              const moveTo = item.id.startsWith('move:') ? item.id.slice('move:'.length) : null;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+                  aria-checked={item.checked}
+                  // `aria-disabled` and not `disabled`: the arrow walk focuses
+                  // `[role^="menuitem"]` and `focus()` on a disabled button does
+                  // nothing, so a hard disable would break the ring at this item.
+                  aria-disabled={!item.can}
+                  className="rail-menu-item"
+                  data-rail-menu-item={item.id}
+                  {...(item.id === 'seen' ? { 'data-rail-menu-seen': true } : {})}
+                  {...(moveTo !== null ? { 'data-move-item': moveTo === 'none' ? 'ungrouped' : moveTo } : {})}
+                  onClick={() => {
+                    if (!item.can) return; // aria-disabled is a claim; this is the fact
+                    item.run();
+                  }}
+                  // dimmed, and still in the ring: see `aria-disabled` above
+                  style={{
+                    ...menuItemStyle,
+                    opacity: item.can ? 1 : 0.45,
+                    ...(item.checked === undefined ? {} : { fontWeight: item.checked ? 700 : 400 }),
+                  }}
+                >
+                  {item.checked !== undefined && (
+                    // the tick keeps its column whether or not it is drawn
                     <span aria-hidden style={{ display: 'inline-block', inlineSize: 12 }}>
-                      {here ? '✓' : ''}
+                      {item.checked ? '✓' : ''}
                     </span>
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+                  )}
+                  {item.label}
+                </button>
+              );
+            };
+            const moves = items.filter((i) => i.id.startsWith('move:'));
+            return (
+              <>
+                {items.filter((i) => !i.id.startsWith('move:')).map(button)}
+                {moves.length > 0 && (
+                  <div role="group" aria-label={t('rail.menuMove')}>
+                    <div aria-hidden style={menuSectionStyle}>
+                      {moves[0].heading}
+                    </div>
+                    {moves.map(button)}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
     </nav>

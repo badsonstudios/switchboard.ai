@@ -55,6 +55,7 @@ import { groupOverride, PolicyBook } from '../lib/presentation-policy';
 import type { SessionsPlacement } from '../lib/sessions-placement';
 import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
 import { StripRenameBox } from './StripRenameBox';
+import { sessionMenuItems } from '../lib/session-menu';
 import { SessionRow } from './SessionRow';
 import { LAST_CHORD, StripGroupEntry } from './StripGroupEntry';
 import { StripPill } from './StripPill';
@@ -973,102 +974,48 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
       // both are writes main declines for a card it has no record of. Dimmed
       // here for the reason the rail dims them: an item must never be offered
       // and then do nothing.
-      const started = s.status !== 'not-started';
-      const isPinned = props.pinned.has(s.id);
-      const items: RailGroupMenuItem[] = [
+      // ONE builder for the rail, the strip and the tab (#1281): the items,
+      // their words, their dimming and their ticks are decided there; what
+      // is said here is only what running each one means on the strip.
+      const items = sessionMenuItems(
         {
-          id: 'diff',
-          label: t('rail.menuDiff'),
-          can: true,
-          run: () => {
+          session: s,
+          groups: props.groups,
+          pinned: props.pinned.has(s.id),
+          finished: props.finished?.has(s.id) ?? false,
+        },
+        {
+          diff: () => {
             ran('session', s.id);
             props.onDiff(s);
           },
-        },
-        {
-          id: 'rename',
-          label: t('rail.menuRename'),
-          can: started,
-          run: () => {
+          rename: () => {
             // a row can only be edited in a list that is still open: it may
             // have closed under this menu (a jump, a scroll) with no click
             if (menu.from === 'row' && !openEntry?.members.some((m) => m.id === s.id)) return;
             setDraft(s.title);
             setRenaming({ where: menu.from, id: s.id });
           },
-        },
-        {
-          id: 'pin',
-          label: t(isPinned ? 'rail.menuUnpin' : 'rail.menuPin'),
-          can: true,
-          run: () => {
+          pin: () => {
             ran('session', s.id);
             props.onTogglePin(s.id);
           },
-        },
-        {
-          id: 'close',
-          label: t('rail.menuClose'),
-          can: true,
-          run: () => {
+          close: () => {
             // if you answer "no" to the question, you are back where you were
             ran('session', s.id);
             props.onClose(s.id);
           },
+          seen: () => {
+            ran('session', s.id);
+            markSeen(s.id);
+          },
+          move: (gid, here) => {
+            ran('session', s.id);
+            if (!here) props.onMoveToGroup(s.id, gid);
+          },
         },
-        // only while there is something to mark: an item that would do
-        // nothing is not offered (#1219). After Close, where the list on the
-        // left has it: the two are one menu.
-        ...(props.finished?.has(s.id)
-          ? [
-              {
-                id: 'seen',
-                label: t('rail.menuSeen'),
-                can: true,
-                run: () => {
-                  ran('session', s.id);
-                  markSeen(s.id);
-                },
-              },
-            ]
-          : []),
-        // MOVE TO GROUP: one choice out of a known set — each of your groups,
-        // and none. The current one is checked, and choosing it does nothing.
-        //
-        // THE WHOLE SET IS ABSENT when it could do nothing, which is the left
-        // list's rule and (#1168) now this menu's too, so the two are the same
-        // menu: with no groups there is nowhere to move to, and a session that
-        // never started cannot be regrouped at all (main declines the write).
-        // One item that is unavailable right now dims; a set that can do
-        // nothing goes.
-        ...(props.groups.length > 0 && started
-          ? [
-              ...props.groups.map(
-                (g, i): RailGroupMenuItem => ({
-                  id: `move:${g.id}`,
-                  label: g.name,
-                  can: true,
-                  checked: s.groupId === g.id,
-                  ...(i === 0 ? { heading: t('rail.menuMove') } : {}),
-                  run: () => {
-                    ran('session', s.id);
-                    if (s.groupId !== g.id) props.onMoveToGroup(s.id, g.id);
-                  },
-                })
-              ),
-              {
-                id: 'move:none',
-                label: t('strip.menuNoGroup'),
-                can: true,
-                checked: !s.groupId,
-                run: () => {
-                  ran('session', s.id);
-                  if (s.groupId) props.onMoveToGroup(s.id, null);
-                },
-              },
-            ]
-          : []),
-      ];
+        t
+      );
       return { label: t('rail.menuLabel', { title: s.title }), items };
     }
     if (menu.kind === 'group') {

@@ -6,7 +6,7 @@
 // This file mounts both lists over the same sessions and groups and holds them
 // to the same answer, so the next item added to one has to be added to the
 // other, or this goes red.
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import i18next from 'i18next';
@@ -18,6 +18,10 @@ import { uiDelete } from '../lib/ui-state';
 import { NO_ORDER } from '../lib/rail-order';
 import { railOrder } from '../lib/groups';
 import { RailGroup, RailSession } from '../model/types';
+import { IdentityTab, type CardParams } from './SessionGrid';
+import { sessionStore } from '../store/session-store';
+import { SessionMenuActionsContext } from '../lib/session-menu';
+import type { IDockviewPanelProps } from 'dockview-react';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -177,6 +181,53 @@ async function both(groups: RailGroup[], id: string): Promise<{ left: Entry[]; t
   return { left, top };
 }
 
+/**
+ * The same session's menu on its TAB in the workspace (#1281). The tab reads
+ * the session, the groups and the pins from the store, as it does in the app,
+ * so they are published there first.
+ */
+async function tabMenu(groups: RailGroup[], id: string): Promise<Entry[]> {
+  sessionStore.setSessions(SESSIONS.map((s) => (groups.length ? s : { ...s, groupId: undefined })));
+  sessionStore.setGroups(groups);
+  const finished = vi
+    .spyOn(sessionStore, 'getFinishedCards')
+    .mockReturnValue(new Set<string>(finishedIds));
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  roots.push(root);
+  const props = {
+    api: {
+      id: `session-${id}`,
+      title: id,
+      close: noop,
+      group: { panels: [] },
+      location: { type: 'grid' },
+    },
+    containerApi: {},
+    params: { cardId: id, folder: `C:\\Projects\\${id}`, title: id },
+  } as unknown as IDockviewPanelProps<CardParams>;
+  await act(async () => {
+    root.render(
+      <SessionMenuActionsContext.Provider
+        value={{ rename: noop, diff: noop, moveToGroup: noop, togglePin: noop }}
+      >
+        <IdentityTab {...props} />
+      </SessionMenuActionsContext.Provider>
+    );
+  });
+  await rightClick(host.querySelector<HTMLElement>('.identity-tab')!);
+  const got = entries();
+  await closeMenu();
+  finished.mockRestore();
+  return got;
+}
+
+/** the list's items, found in the tab's menu: same words, dimming and ticks */
+function sharedWith(list: Entry[], tab: Entry[]): Entry[] {
+  return list.map((l) => tab.find((e) => e.label === l.label) ?? { ...l, label: `MISSING ${l.label}` });
+}
+
 beforeAll(async () => {
   await initI18nForTests();
 });
@@ -264,5 +315,45 @@ describe('right-clicking a session, in the left list and on the strip (issue 116
     ]) {
       expect(words).not.toContain(gone);
     }
+  });
+});
+
+describe('and on the session\'s tab in the workspace (issue 1281)', () => {
+  const cases: [string, RailGroup[], string, string[]][] = [
+    ['a loose session, with groups', [BACK, DOCS], 'scratch', []],
+    ['a session in a group', [BACK, DOCS], 'api', []],
+    ['no groups at all', [], 'scratch', []],
+    ['a session that never started', [BACK, DOCS], 'dud', []],
+    ['a finished session', [BACK, DOCS], 'scratch', ['scratch']],
+  ];
+  for (const [name, groups, id, done] of cases) {
+    it(`carries every item the lists do, unchanged: ${name}`, async () => {
+      finishedIds = done;
+      try {
+        const { left } = await both(groups, id);
+        document.body.innerHTML = '';
+        const tab = await tabMenu(groups, id);
+        expect(sharedWith(left, tab)).toEqual(left);
+        // and the move set keeps its order: your groups, then none
+        const moves = (es: Entry[]): string[] =>
+          es.filter((e) => e.checked !== null).map((e) => e.label);
+        expect(moves(tab)).toEqual(moves(left));
+      } finally {
+        finishedIds = [];
+      }
+    });
+  }
+
+  it('is the tab\'s order: rename and duplicate first, close last', async () => {
+    const tab = await tabMenu([BACK, DOCS], 'scratch');
+    const labels = tab.map((e) => e.label);
+    expect(labels[0]).toBe(i18next.t('rail.menuRename'));
+    expect(labels[1]).toBe(i18next.t('tabMenu.duplicate'));
+    expect(labels.at(-1)).toBe(i18next.t('rail.menuClose'));
+    expect(labels.at(-2)).toBe(i18next.t('tabMenu.closeOthers'));
+    // alone in its group: there are no others to close, so it is dimmed
+    expect(tab.at(-2)!.dimmed).toBe(true);
+    expect(labels).toContain(i18next.t('tabMenu.popOut'));
+    expect(labels).toContain(i18next.t('tabMenu.copyPath'));
   });
 });

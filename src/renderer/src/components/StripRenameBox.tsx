@@ -21,21 +21,31 @@ export function StripRenameBox(props: {
   onEnd: () => void;
   /** the e2e handle: the id of the session or group being renamed */
   target: string;
+  /**
+   * Drawn INSIDE a workspace tab (#1281) rather than in place of a pill: no
+   * frame and no minimum height of its own, so the tab stays exactly as tall
+   * as it was — real-app specs are calibrated against the tab bar's height.
+   */
+  compact?: boolean;
 }): React.JSX.Element {
   const [draft, setDraft] = React.useState(props.initial);
   return (
     <span
       data-strip-rename={props.target}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        flexShrink: 0,
-        minBlockSize: 43,
-        paddingInline: 8,
-        borderRadius: 7,
-        border: '1px solid var(--status-working-ink)',
-        background: 'var(--rail-card)',
-      }}
+      style={
+        props.compact
+          ? { display: 'flex', alignItems: 'center', flexShrink: 0 }
+          : {
+              display: 'flex',
+              alignItems: 'center',
+              flexShrink: 0,
+              minBlockSize: 43,
+              paddingInline: 8,
+              borderRadius: 7,
+              border: '1px solid var(--status-working-ink)',
+              background: 'var(--rail-card)',
+            }
+      }
     >
       <input
         autoFocus

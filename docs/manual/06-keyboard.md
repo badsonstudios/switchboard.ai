@@ -384,6 +384,11 @@ from. That menu is where **Open changes**, **Rename…**, **Pin session** and
 double-click. It is the same menu whether your sessions are listed on the left
 or across the top.
 
+A tab across the top of the workspace has one too: move to the tab and press
+**`Shift+F10`**. It is the same session menu with a few things about the tab
+added (Duplicate, Pop out, Close other tabs); see
+[Right-click a tab](07-workspace.md#right-click-a-tab).
+
 Two things that used to be on it have moved. **Move up** and **Move down** are
 the `Ctrl+Alt+↑` / `Ctrl+Alt+↓` shortcuts above. The two settings for one
 session, **On submit** and **When it needs you**, are on that session's own
