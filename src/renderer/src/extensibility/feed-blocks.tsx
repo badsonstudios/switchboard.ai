@@ -1556,11 +1556,16 @@ function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // PICTURES (#1235): a path in a reply is relative to the session's folder,
   // which this block is not told and reads from the surface it is in.
   const imageLabels = useImageLabels();
-  const { folder } = useFeedSurface();
+  const { folder, pages } = useFeedSurface();
+  // only a reply that could name a page is told which pages there are
+  // (#1278): a page written re-decorates the replies that mention one, not
+  // the whole conversation
+  const named = b.kind === 'assistant' && /[.]htm/i.test(b.text ?? '') ? pages : undefined;
+  const at = named ? b.seq : undefined;
   const decorate = React.useCallback(
     (html: string) =>
-      decorateFeedMarkdown(html, labels, { streaming, images: { labels: imageLabels, folder } }),
-    [labels, streaming, imageLabels, folder]
+      decorateFeedMarkdown(html, labels, { streaming, images: { labels: imageLabels, folder, pages: named, at } }),
+    [labels, streaming, imageLabels, folder, named, at]
   );
   const onClick = React.useCallback(
     (e: React.MouseEvent<HTMLDivElement>): void => {

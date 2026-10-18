@@ -364,9 +364,19 @@ reply.
 #### A mock-up written as a web page
 
 Ask for a mock-up and Claude often writes an `.html` file. When its reply
-links to that file, switchboard shows **a picture of the page** under the
-sentence the link is in, so you can see the mock-up without leaving the
-session.
+names that file, switchboard shows **a picture of the page** under the
+sentence that names it, so you can see the mock-up without leaving the
+session. Claude can name it either way:
+
+- **As a link** to the file. Any local page a reply links to is drawn.
+- **In code type**, the way it usually does: "The file is saved at
+  `C:\Projects\app\login.html`", or just `login.html`. A page named like
+  this is drawn only in **the answer to the request that wrote or edited
+  it**, so a reply that mentions your project's `index.html` in passing, or
+  names a page it made an hour ago, does not get a picture of it.
+
+The step where Claude wrote the file still shows the file's code, as every
+file-writing step does. The picture is under the reply.
 
 It is a picture, not the page itself:
 
@@ -386,10 +396,13 @@ It is a picture, not the page itself:
 where scripts run and everything loads. A line under the picture says all of
 this in one sentence, so you are never left guessing why it looks different.
 
-If the page cannot be drawn, you get the link on its own, or a small chip with
-**Open in browser**. A reply that names many pages has the first two drawn;
-the rest stay links. For a mock-up that looks exactly right in the session,
+If the page cannot be drawn, you get the link (or the name in code type) on
+its own, or a small chip with **Open in browser**. A reply that names many
+pages has the first two drawn; the rest stay links (or code type). For a mock-up that looks exactly right in the session,
 ask for one self-contained file: "one HTML file, styles inside it, no scripts".
+
+HTML written straight into the reply as a block of code, with no file behind
+it, is shown as code. Ask for a file if you want the picture.
 
 A link to a file on your machine has a small **▣** after it, so you can tell
 it from a link to the web: it opens that file, whatever the link's words say.

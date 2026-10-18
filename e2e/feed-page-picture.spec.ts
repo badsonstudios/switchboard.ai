@@ -147,4 +147,80 @@ test.describe('a picture of an HTML mock-up (#1239)', () => {
     expect(hits).toEqual([]);
     expect(connections).toBe(0);
   });
+
+  // THE SHAPE THAT FAILED (#1278). Asked for "an HTML mock-up of a login
+  // screen", the real `claude` (2026-10-18, haiku and sonnet alike) WRITES the
+  // file and names it in code type, with no link. #1239 drew nothing for that,
+  // and what was on screen was the Write step's box: the page's source. The
+  // words below are haiku's reply, verbatim but for the path.
+  test('a page the session WROTE and named in code type, with no link, is drawn under the reply (#1278)', async () => {
+    test.setTimeout(120_000);
+    const folder = tempProjectFolder();
+    const page = path.join(folder, 'login.html');
+    const html =
+      '<!doctype html><html><head><title>Login</title></head>' +
+      '<body style="margin:0;background:#00ff00"><div style="width:300px;height:300px;background:#000000"></div></body></html>';
+    // the fake runs no tools; the file is what the real Write would have left
+    fs.writeFileSync(page, html);
+    const prompt = 'Make me an HTML mock-up of a login screen.';
+    const scriptFile = path.join(folder, 'fake-script.json');
+    fs.writeFileSync(
+      scriptFile,
+      JSON.stringify({
+        [prompt]: {
+          tools: [
+            {
+              id: 'toolu_mockup_write',
+              name: 'Write',
+              input: { file_path: page, content: html },
+              result: `File created successfully at: ${page}`,
+            },
+          ],
+          then:
+            "Done! I've created a modern login screen with email/password fields, a \"forgot password\" link, social login buttons, and a sign-up link. " +
+            `The file is saved at \`${page}\` — open it in a browser to see the full design.`,
+        },
+      }),
+      'utf8'
+    );
+
+    a = await launchApp({ seedFolder: folder, env: { ...DIRECT, SWITCHBOARD_FAKE_SCRIPT: scriptFile } });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    await composer(w).click();
+    await composer(w).fill(prompt);
+    await composer(w).press('Enter');
+    const reply = w.locator('[data-feed-block="assistant"]').filter({ hasText: 'The file is saved at' });
+    await expect(reply).toBeVisible({ timeout: 60_000 });
+
+    // the Write step is still there, as it was
+    await expect(w.locator('[data-feed-block="tool"]').filter({ hasText: 'login.html' }).first()).toBeVisible();
+
+    // and the reply now has the PICTURE, drawn by main, at the promised size
+    const picture = reply.locator('img.feed-page-image');
+    await expect(picture).toHaveCount(1, { timeout: 30_000 });
+    await expect
+      .poll(() => picture.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth), { timeout: 30_000 })
+      .toBe(1280);
+    await expect(picture).toHaveAttribute('alt', 'A picture of the page login.html');
+    const open = reply.locator('.feed-page-shot button.feed-image-open');
+    expect(await open.getAttribute('data-feed-open-path')).toBe(page);
+    await expect(reply.locator('.feed-page-note')).toContainText('Scripts did not run');
+    // the sentence that named it is untouched
+    await expect(reply.locator('code', { hasText: 'login.html' })).toHaveText(page);
+
+    // what is IN it is the page: the black box on green
+    const pixels = await a.app.evaluate(async ({ net, nativeImage }, url) => {
+      const image = nativeImage.createFromBuffer(Buffer.from(await (await net.fetch(url)).arrayBuffer()));
+      const { width } = image.getSize();
+      const bitmap = image.toBitmap();
+      const at = (x: number, y: number): number[] => {
+        const i = (y * width + x) * 4;
+        return [bitmap[i], bitmap[i + 1], bitmap[i + 2]];
+      };
+      return { box: at(150, 150), page: at(640, 600) };
+    }, (await picture.getAttribute('src'))!);
+    expect(pixels.box).toEqual([0, 0, 0]);
+    expect(pixels.page).toEqual([0, 255, 0]);
+  });
 });
