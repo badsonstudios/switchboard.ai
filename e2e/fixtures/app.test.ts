@@ -47,6 +47,8 @@ import {
   E2E_MONITOR_ENV,
   E2E_NO_ACTIVATE_ENV,
   E2E_SETTINGS_FILE,
+  functionExpression,
+  keepRepliesAlive,
   killTree,
   launchApp,
   monitorSetting,
@@ -77,6 +79,8 @@ function fakeApp(pid: number | undefined) {
     },
     firstWindow: vi.fn(),
     close: vi.fn(async () => {}),
+    // `launchApp` wraps this on every launch (#1343), so it has to exist
+    evaluate: vi.fn(() => Promise.resolve(undefined)),
   };
   return { handle, detach: () => (attached = false) };
 }
@@ -1041,5 +1045,150 @@ describe('retryLostReply — a lost main-process reply is re-asked, nothing else
       }, 3)
     ).rejects.toThrow(/Execution context was destroyed/);
     expect(n).toBe(3);
+  });
+});
+
+const lostReply = () =>
+  new Error('electronApplication.evaluate: Execution context was destroyed, most likely because of a navigation.');
+
+describe('keepRepliesAlive — every main-process call runs exactly once (#1343)', () => {
+  /**
+   * A stand-in for Playwright's evaluate: it runs what it is handed against a
+   * fake electron module, the way the main process would. The spec function
+   * below is sent as TEXT and `eval`ed, as it is for real, so it cannot close
+   * over anything in this file. It reports through the module object instead.
+   *
+   * `lose` is how many of the first calls lose their reply, the way #1343
+   * measured it: the function RUNS, then the reply is replaced by Playwright's
+   * navigation message. `skip` loses a reply WITHOUT running the function.
+   */
+  function appWithEvaluate(lose = 0, skip = false) {
+    const electron = { calls: [] as unknown[] };
+    const evaluate = vi.fn((fn: (e: unknown, arg: unknown) => unknown, arg?: unknown) => {
+      if (lose > 0) {
+        lose--;
+        if (!skip) void Promise.resolve(fn(electron, arg)).catch(() => {});
+        return Promise.reject(lostReply());
+      }
+      return Promise.resolve(fn(electron, arg));
+    });
+    const app = { evaluate } as unknown as Parameters<typeof keepRepliesAlive>[0];
+    keepRepliesAlive(app);
+    return { app, evaluate, electron };
+  }
+
+  it('runs the function ONCE, with its argument, and returns its answer', async () => {
+    const { app, electron } = appWithEvaluate();
+    const v = await app.evaluate((e: unknown, n: number) => {
+      (e as { calls: unknown[] }).calls.push(n);
+      return n * 2;
+    }, 21);
+    expect(v).toBe(42);
+    expect(electron.calls).toEqual([21]);
+  });
+
+  it('answers with a PROMISE even for a synchronous function (narrows the window)', () => {
+    const { app, evaluate } = appWithEvaluate();
+    void app.evaluate(() => 1);
+    // what reaches Playwright is the wrapper, and the wrapper's own answer
+    const [sent, arg] = evaluate.mock.calls[0];
+    expect(sent).not.toBe(evaluate);
+    const answer = sent({}, arg);
+    expect(answer).toBeInstanceOf(Promise);
+  });
+
+  it('passes a thrown error through, without running the function again', async () => {
+    const { app, electron } = appWithEvaluate();
+    await expect(
+      app.evaluate((e: unknown) => {
+        (e as { calls: unknown[] }).calls.push('ran');
+        throw new Error('the spec function failed');
+      })
+    ).rejects.toThrow(/the spec function failed/);
+    expect(electron.calls).toEqual(['ran']);
+  });
+
+  it('leaves a string expression alone: Playwright does not call it', async () => {
+    const { app, evaluate } = appWithEvaluate();
+    // the stand-in calls whatever it is given, so hand it something callable
+    // through the string overload's type and check it arrived untouched
+    const expr = 'process.platform';
+    evaluate.mockImplementationOnce(() => Promise.resolve('as-sent'));
+    await app.evaluate(expr);
+    expect(evaluate.mock.calls[0][0]).toBe(expr);
+  });
+
+  it('a LOST reply comes back as the answer, and the function does not run twice', async () => {
+    const { app, electron, evaluate } = appWithEvaluate(1);
+    const v = await app.evaluate((e: unknown) => {
+      (e as { calls: unknown[] }).calls.push('ran');
+      return 'the answer';
+    });
+    expect(v).toBe('the answer');
+    expect(electron.calls).toEqual(['ran']);
+    // the call, then ONE read of its stored answer
+    expect(evaluate).toHaveBeenCalledTimes(2);
+  });
+
+  it('a lost reply from a function that THREW comes back as that error', async () => {
+    const { app, electron } = appWithEvaluate(1);
+    await expect(
+      app.evaluate((e: unknown) => {
+        (e as { calls: unknown[] }).calls.push('ran');
+        throw new Error('the spec function failed');
+      })
+    ).rejects.toThrow(/the spec function failed/);
+    expect(electron.calls).toEqual(['ran']);
+  });
+
+  it('a lost reply with NO stored answer is rethrown, not re-run', async () => {
+    const { app, electron } = appWithEvaluate(1, true);
+    await expect(
+      app.evaluate((e: unknown) => {
+        (e as { calls: unknown[] }).calls.push('ran');
+      })
+    ).rejects.toThrow(/Execution context was destroyed/);
+    expect(electron.calls).toEqual([]);
+  });
+
+  it('any other error is rethrown at once, with no read of a stored answer', async () => {
+    const { app, evaluate } = appWithEvaluate();
+    evaluate.mockImplementationOnce(() => Promise.reject(new Error('Target page, context or browser has been closed')));
+    await expect(app.evaluate(() => 1)).rejects.toThrow(/has been closed/);
+    expect(evaluate).toHaveBeenCalledTimes(1);
+  });
+
+  it('is installed by launchApp, after the display move', async () => {
+    vi.stubEnv(E2E_MONITOR_ENV, '');
+    const f = fakeApp(999_343);
+    f.handle.firstWindow.mockResolvedValue(fakeWindow());
+    const original = f.handle.evaluate;
+    h.launch.mockResolvedValue(f.handle);
+    const launched = await launchApp();
+    // compared by identity, never called unbound
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    expect(launched.app.evaluate).not.toBe(original);
+    await launched.app.evaluate(() => 1);
+    expect(original).toHaveBeenCalledTimes(1);
+    // the wrapper went out, carrying the spec function as text
+    const sent = original.mock.calls[0] as unknown as [unknown, { src: string }];
+    expect(sent[1].src).toBe('(() => 1)');
+    await launched.cleanup();
+  });
+});
+
+describe('functionExpression — the same text Playwright would send (#1343)', () => {
+  it('wraps an arrow or a function as it is', () => {
+    expect(functionExpression('(a) => a')).toBe('((a) => a)');
+    expect(functionExpression('  function f() { return 1; }  ')).toBe('(function f() { return 1; })');
+  });
+
+  it('turns method shorthand into a function expression, as Playwright does', () => {
+    expect(functionExpression('foo(a) { return a; }')).toBe('(function foo(a) { return a; })');
+    expect(functionExpression('async foo() { return 1; }')).toBe('(async function foo() { return 1; })');
+  });
+
+  it('refuses text that is not a function in any form', () => {
+    expect(() => functionExpression('{{')).toThrow(/not well-serializable/);
   });
 });

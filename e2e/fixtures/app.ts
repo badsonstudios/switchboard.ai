@@ -447,6 +447,12 @@ export function translateToDisplay(bounds: Box, from: Box, to: Box): Box {
  * Only for calls that are safe to run twice — a read, a `setBounds` — because
  * a lost reply does not mean the function did not run. Anything else is
  * rethrown untouched, and so is the last lost reply.
+ *
+ * #1343 found the cause, and it is not the geometry change: it is garbage
+ * collection. See `keepRepliesAlive` below, which every launch now goes
+ * through, so this retry should no longer fire. It stays for the call sites
+ * that already use it: it costs nothing, and it is a second line of defence
+ * if a future Playwright or Electron finds another way to drop a reply.
  */
 export async function retryLostReply<T>(call: () => Promise<T>, attempts = 8): Promise<T> {
   for (let i = 1; ; i++) {
@@ -457,6 +463,164 @@ export async function retryLostReply<T>(call: () => Promise<T>, attempts = 8): P
       await new Promise((r) => setTimeout(r, 100));
     }
   }
+}
+
+/* ---- a main-process reply that cannot be collected (#1343) ------------------
+ *
+ * THE SYMPTOM. `electronApplication.evaluate: Execution context was destroyed,
+ * most likely because of a navigation`, on a spec's first main-process call
+ * after `launchApp`. The main process never navigates. The real reply, in the
+ * protocol log (`DEBUG=pw:protocol`), is `Runtime.callFunctionOn` →
+ * `{"error":{"message":"Promise was collected"}}`, and Playwright rewrites
+ * every protocol error from that channel into the navigation message
+ * (`rewriteError` in playwright-core's `crExecutionContext`).
+ *
+ * THE CAUSE, MEASURED (#1343, this desktop, 2026-10-18):
+ *   • Playwright always asks for `awaitPromise: true`, and "Promise was
+ *     collected" is V8's inspector saying that the promise it was waiting on
+ *     for that reply was garbage-collected first. THE FUNCTION ALREADY RAN;
+ *     only its answer was lost. (Which promise, exactly, was not pinned down:
+ *     keeping the function's own answer in a global did not prevent it.)
+ *   • The main process runs a burst of minor GCs at about 500–590 ms of its
+ *     life, which is exactly when `launchApp` returns. A `perf_hooks` GC
+ *     observer put every lost call inside that burst. A dense probe (a call
+ *     every ~5 ms for 1.5 s, at least 94 calls per launch, 10 launches in
+ *     each of the four combinations of quiet launch on/off and monitor move
+ *     on/off) lost at most ONE reply per launch, always within 66 ms of
+ *     `launchApp` returning, and none after that.
+ *   • That dense probe lost replies in all four combinations. What the quiet
+ *     launch plus the cross-screen move (#1332, #479) does is line a spec's
+ *     FIRST call up with the burst: 6 of 20 first calls were lost, in each of
+ *     two runs, against 0 of 20 in each of the other three combinations.
+ *   • Answering with a PROMISE narrows the gap but does not close it. In one
+ *     dense run, plain `() => 1` lost a reply in 6 of 12 launches and
+ *     `() => Promise.resolve(1)` in 0 of 12. But with every spec call wrapped
+ *     to answer with a promise, the first-call repro still lost 2 of 20 in one
+ *     run (0 of 20 in the next). So a reply can still be lost, and the fix has
+ *     to RECOVER from that, not only make it rarer.
+ *
+ * WHY NOT A RETRY. A retry would run the function TWICE. A spec's main-process
+ * call is often not safe to repeat: it stubs a dialog, or fires a menu item.
+ *
+ * THE FIX: every `app.evaluate` on a launched app runs EXACTLY ONCE.
+ * `RUN_ONCE` runs the spec's function in the main process and keeps its answer
+ * there, under a call id, for a short while. When the reply is lost, the
+ * fixture asks for that stored answer by id (`FETCH_ANSWER`). That is a read,
+ * so it is safe to repeat under `retryLostReply`. The function still runs once,
+ * in the same global scope Playwright would have used, with the same argument,
+ * and its result or its error comes back as before.
+ */
+
+/**
+ * The text Playwright would send for `fn`, as an expression that can be
+ * `eval`ed. This mirrors `normalizeEvaluationExpression` in playwright-core
+ * 1.61.1, so a method-shorthand function such as `foo() {}` is turned into an
+ * expression the same way here as it is there.
+ */
+export function functionExpression(src: string): string {
+  const parses = (s: string): boolean => {
+    try {
+      // a parse check only, the one Playwright makes: the result is never called
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+      new Function(`(${s})`);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  let s = src.trim();
+  if (!parses(s)) {
+    s = s.startsWith('async ') ? `async function ${s.slice('async '.length)}` : `function ${s}`;
+    if (!parses(s)) throw new Error('Passed function is not well-serializable!');
+  }
+  return `(${s})`;
+}
+
+/** One spec call, as `RUN_ONCE` receives it. */
+interface OnceCall {
+  id: string;
+  src: string;
+  arg: unknown;
+}
+
+/**
+ * Runs IN THE MAIN PROCESS: `eval` the spec's function, call it ONCE, and keep
+ * the answer (a promise, settled or not) under `call.id` for 30 s, which is
+ * far longer than any recovery takes. Holding it does NOT stop the reply from
+ * being lost: the protocol log showed lost replies from this very function.
+ * The stored answer is there to be read back.
+ *
+ * It must stay self-contained, because Playwright sends this function's source
+ * text, not a closure. The `eval` is indirect, so it runs in the global scope,
+ * where Playwright's own `global.eval` would have run it.
+ */
+const RUN_ONCE = async (electron: unknown, call: OnceCall): Promise<unknown> => {
+  const g = globalThis as unknown as { __sbE2eAnswers?: Map<string, Promise<unknown>> };
+  const answers = (g.__sbE2eAnswers ??= new Map<string, Promise<unknown>>());
+  const fn = (0, eval)(call.src) as (electronModule: unknown, arg: unknown) => unknown;
+  // The executor runs synchronously, so the function runs NOW, and a throw
+  // becomes a rejection instead of escaping before the answer is stored.
+  const answer = new Promise<unknown>((resolve) => resolve(fn(electron, call.arg)));
+  answers.set(call.id, answer);
+  const forget = (): void => {
+    setTimeout(() => answers.delete(call.id), 30_000).unref();
+  };
+  answer.then(forget, forget);
+  return await answer;
+};
+
+/**
+ * Runs IN THE MAIN PROCESS: the stored answer of an earlier `RUN_ONCE`, or
+ * `found: false` if there is none. It never runs the spec's function. A
+ * rejected answer rejects here too, so the spec sees the same error.
+ */
+const FETCH_ANSWER = (_electron: unknown, id: string): Promise<{ found: boolean; value?: unknown }> => {
+  const g = globalThis as unknown as { __sbE2eAnswers?: Map<string, Promise<unknown>> };
+  const answer = g.__sbE2eAnswers?.get(id);
+  return answer
+    ? answer.then((value) => ({ found: true, value }))
+    : Promise.resolve({ found: false });
+};
+
+/** Ids only have to be unique within one main process. */
+let onceSeq = 0;
+
+/**
+ * Route this app's `evaluate` through `RUN_ONCE` (#1343). Only a function is
+ * wrapped. Anything else, such as a string expression, goes through untouched,
+ * because Playwright does not CALL a string's value, so there is nothing to
+ * wrap.
+ *
+ * Installed on the instance, so it covers every caller of `a.app.evaluate`,
+ * including the fixture's own helpers (`bringToFront`, `blurApp`, ...), without
+ * one edit to the ~170 spec call sites. NOT covered: `evaluateHandle` (no spec
+ * calls it today) and string expressions.
+ *
+ * The real method is called through a property named `evaluate` on purpose.
+ * Playwright names a failing call after the frame it was entered from. Called
+ * through a variable, an error read `electronApplication.original: ...`.
+ */
+export function keepRepliesAlive(app: ElectronApplication): void {
+  const real = { evaluate: app.evaluate.bind(app) as (fn: unknown, arg?: unknown) => Promise<unknown> };
+  const wrapped = async (fn: unknown, arg?: unknown): Promise<unknown> => {
+    if (typeof fn !== 'function') return real.evaluate(fn, arg);
+    const call: OnceCall = { id: String(++onceSeq), src: functionExpression(String(fn)), arg };
+    try {
+      return await real.evaluate(RUN_ONCE, call);
+    } catch (err) {
+      if (!/Execution context was destroyed/.test(String(err))) throw err;
+      // The function RAN, and only its answer was lost. Ask for the answer.
+      const stored = (await retryLostReply(() => real.evaluate(FETCH_ANSWER, call.id))) as
+        | { found: boolean; value?: unknown }
+        | undefined;
+      // `?.`: an answer Playwright cannot serialize comes back as `undefined`,
+      // wrapper and all, where plain Playwright would have returned `undefined`
+      if (stored?.found) return stored.value;
+      // Nothing was stored, so this is not the lost reply this recovers from.
+      throw err;
+    }
+  };
+  app.evaluate = wrapped as ElectronApplication['evaluate'];
 }
 
 /** Say which display we landed on ONCE per worker, not once per launch. */
@@ -495,11 +659,14 @@ async function moveToTestDisplay(app: ElectronApplication): Promise<Point> {
   if (!monitor?.trim()) return NO_OFFSET;
   try {
     // Both calls are idempotent and both have been seen to lose their reply
-    // (`retryLostReply`) — the second one, mid-move, most of all.
+    // (`retryLostReply`) — the second one, mid-move, most of all. They run
+    // BEFORE `keepRepliesAlive` is installed, so `retryLostReply` is what
+    // recovers them, which is safe only because both are idempotent. Both also
+    // answer with a promise, which makes a lost reply rarer (#1343).
     const info = await retryLostReply(() => app.evaluate(({ BrowserWindow, screen }) => {
       const win = BrowserWindow.getAllWindows()[0];
       const bounds = win?.getBounds() ?? null;
-      return {
+      return Promise.resolve({
         displays: screen.getAllDisplays().map((d) => ({ id: d.id, workArea: d.workArea })),
         primaryId: screen.getPrimaryDisplay().id,
         // the only window in existence this early, but identify it by id rather
@@ -508,7 +675,7 @@ async function moveToTestDisplay(app: ElectronApplication): Promise<Point> {
         bounds,
         // WHERE IT ALREADY IS — see the idempotence note below
         onId: bounds ? screen.getDisplayMatching(bounds).id : null,
-      };
+      });
     }));
     const picked = pickTestDisplay(info.displays, info.primaryId, monitor);
     if (!picked) {
@@ -548,7 +715,7 @@ async function moveToTestDisplay(app: ElectronApplication): Promise<Point> {
       const box = translateToDisplay(info.bounds, from, picked.target.workArea);
       await retryLostReply(() =>
         app.evaluate(
-          ({ BrowserWindow }, arg) => BrowserWindow.fromId(arg.id)?.setBounds(arg.box),
+          ({ BrowserWindow }, arg) => Promise.resolve(BrowserWindow.fromId(arg.id)?.setBounds(arg.box)),
           { id: info.winId, box }
         )
       );
@@ -937,6 +1104,9 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // own failures), so it must not be able to route a launch into the reaping
   // path either.
   const displayOffset = await moveToTestDisplay(app);
+  // AFTER the move, so the move's two calls reach the stubs in `app.test.ts`
+  // as they are written. They are covered by `retryLostReply` instead.
+  keepRepliesAlive(app);
 
   liveApps++;
   let counted = true; // close() is called twice by any spec that also cleans up
