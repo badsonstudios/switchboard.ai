@@ -28,9 +28,9 @@
 >
 > | Order | Issue | Worktree / branch | State |
 > |---|---|---|---|
-> | 1 | #1343 "Execution context was destroyed" on the first `app.evaluate` after launch (desktop; A/B the no-activate key and the monitor key; fix the fixture or the app) | `sb-wt-1` / `feature/1343-first-evaluate-flake` | **IN FLIGHT** — dispatched ~10:30 |
-> | 2 | #1278 HTML mock-ups show as source, not a picture (reproduce first: what did Claude actually write?) | — | queued |
-> | 3 | #1340 Stop while a bar is up (**Dan: YES, show Stop while an approval or question is held**) + the stuck-at-"working" corner | — | queued |
+> | 1 | #1343 "Execution context was destroyed" on the first `app.evaluate` after launch (desktop; A/B the no-activate key and the monitor key; fix the fixture or the app) | `sb-wt-1` / `feature/1343-first-evaluate-flake` | **DONE — PR #1354 merged `9cfe46b4` (squash) 2026-10-18 ~17:50, issue closed.** Test tooling only, the app was never at fault. Root cause: the first `app.evaluate` after launch loses its REPLY (CDP answers `Promise was collected`; Playwright rewrites it into the navigation message) during a burst of main-process GCs right as `launchApp` returns; the function had already run. Neither key causes it alone — a dense probe lost replies in all four cells (5/3/3/4 of 10) — but quiet launch + monitor move puts a spec's first call on top of the burst (6/20 lost in on+right, 0/20 elsewhere). #1332's geometry theory is dead: after the window settles, `setBounds` and the next call lost 0/20. Fix: `keepRepliesAlive` in `e2e/fixtures/app.ts` wraps `app.evaluate` on every launch — the function runs ONCE in the main process, its answer is stored under a call id, and a lost reply is answered from the store (a plain retry would re-run side-effecting calls; a promise-only attempt still lost 2/20). After: 0/20 ×3 in the bad cell; feed-restore-position 9/9, history-tab 15/15, session-name 6/6, manual-shots 21/21 (was 4-of-7 lost). Gate: unit 14,265 (+12), e2e 531 + 1 × #1320 (3/3 alone), CI 4/4 on attempt 2 (attempt 1: one #1002). `session-name.spec.ts`'s wait-first workaround is now redundant (left in, comment corrected). Follow-up filed: **#1355** (drop the now-redundant spec-level `retryLostReply` wrappers; `evaluateHandle`/string evaluates uncovered). Nothing to hand-test |
+> | 2 | #1278 HTML mock-ups show as source, not a picture (reproduce first: what did Claude actually write?) | `sb-wt-1` / `feature/1278-html-mockup-picture` | **IN FLIGHT** — dispatched ~17:55, beside #1340 (both may touch `FeedView.tsx`; told to keep edits local, rebase sorts it) |
+> | 3 | #1340 Stop while a bar is up (**Dan: YES, show Stop while an approval or question is held**) + the stuck-at-"working" corner | `sb-wt-2` / `feature/1340-stop-while-held` | **IN FLIGHT** — dispatched ~17:55, beside #1278 |
 > | 4 | #1351 waiting states, treatment A (absorbs #1279, #1196); mockup `.claude/work_files/mockups/waiting-states.html` | — | queued; before #1281 |
 > | 5 | #1281 right-click a session tab: Rename, Duplicate session, the rest | — | queued; after #1351 |
 > | 6 | #1316 Claude-named strings for every AI (Stop title, status wording, CLI-version label) | — | queued; before #1317 |
@@ -40,7 +40,7 @@
 > | 10 | #1335 + #1338 as ONE item: Testing-section checkbox for the no-focus key; mute OS toasts in quiet e2e runs | — | queued |
 > | bench | #1318, #1301 | — | only if a worker frees up and nothing above is blocked |
 >
-> **Merge log:** (none yet)
+> **Merge log:** #1354 (#1343) `9cfe46b4` ~17:50 · docs #1352 `63753383`.
 
 > # ✅ RELEASED: v0.8.124, 2026-10-18 (PR #1349) — THE WHOLE 2026-10-17 RUN IS IN IT
 >
