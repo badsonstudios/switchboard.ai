@@ -33,6 +33,7 @@ import { registerBuiltinContributions, registerCustomAi, unregisterCustomAi } fr
 import { AisStore } from './ai-catalog/ais-store';
 import { AiCatalogService } from './ai-catalog/service';
 import { registerAisIpc } from './ai-catalog/ipc';
+import { readTestDisplayState, snapshotScreens, writeTestDisplay } from './test-display';
 import { checkRegistry, lastRegistryCheck } from './ai-catalog/registry-refresh';
 import { testAcpCommand } from './providers/acp/custom-acp';
 import { registry } from './extensibility';
@@ -1264,10 +1265,25 @@ app
         // diagnostics must never be why a display handler throws
       }
     };
+    // Settings → Advanced → Testing lists the attached screens (#1331); any
+    // hotplug or rearrangement re-reads them so an unplugged one disappears.
+    // Its own push, not `app:displaysChanged`: that one deliberately fires on
+    // `display-added` only (the reconnect offer, below), and this needs all three.
+    const tellTestDisplayChanged = (): void => {
+      const win = currentWindow;
+      if (!win || win.isDestroyed()) return;
+      try {
+        pushToRenderer?.(win, 'testDisplay:changed', readTestDisplayState(snapshotScreens(screen)));
+      } catch (err) {
+        // a developer setting must never be why a hotplug handler throws
+        log.app.warn('test display push failed', { error: errorText(err) });
+      }
+    };
     screen.on('display-added', (_e, d) => {
       logDisplayEvent('added', d);
       tellRendererDisplaysChanged();
       scheduleMainWindowRestore();
+      tellTestDisplayChanged();
     });
     // A display LEAVING had no handler at all before #864, which is half of why
     // the main window forgot where it lived: the shove that follows was being
@@ -1277,6 +1293,7 @@ app
     screen.on('display-removed', (_e, d) => {
       logDisplayEvent('removed', d);
       scheduleMainWindowRestore();
+      tellTestDisplayChanged();
     });
     // A resolution or scale change is the same class of event as a hotplug — a
     // monitor waking at a different resolution looks exactly like this — and it
@@ -1299,6 +1316,9 @@ app
     screen.on('display-metrics-changed', (_e, d, changed) => {
       const moves = metricsChangeRestores(changed);
       logDisplayEvent('metrics changed', d, { changed, restores: moves });
+      // the Testing picker follows every real change, a work-area one included
+      // (its resolver reads work areas); the boot-time empty ones are skipped
+      if (Array.isArray(changed) && changed.length > 0) tellTestDisplayChanged();
       if (!moves) return;
       scheduleMainWindowRestore();
     });
@@ -2046,6 +2066,14 @@ app
       shell.showItemInFolder(perfCapture.path());
       return true;
     });
+    // ── Settings → Advanced → Testing (#1331) ─────────────────────────────
+    // Which screen this project's own e2e windows open on. Main owns the file;
+    // the renderer names a screen. The push half is `testDisplay:changed`,
+    // sent from the display listeners above.
+    broker.handle('testDisplay:get', () => readTestDisplayState(snapshotScreens(screen)));
+    broker.handle('testDisplay:set', (_e, screenId: unknown) =>
+      writeTestDisplay(snapshotScreens(screen), screenId)
+    );
     broker.handle('update:check', (_e, opts: { manual?: boolean } = {}) =>
       // `push: false` — this caller gets the answer as the return value, and
       // pushing as well would open the dialog twice.

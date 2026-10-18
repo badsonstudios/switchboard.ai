@@ -102,6 +102,12 @@ on the floor, and say so in your PR.
   shows "No commands match" instead of nothing at all. If a skills folder holds
   loose `.md` files, which Claude Code ignores, the list says so and names the
   layout Claude Code needs: `.claude/skills/<name>/SKILL.md`.
+- **Pick the screen switchboard's own automated tests run on.** For people
+  who work on switchboard itself: **Settings ▸ Advanced** now lists every
+  attached screen, and the one you pick is where the test suite opens its
+  windows, from every copy of the project on the computer. A screen that is
+  unplugged says so, and the tests use the primary until it is back. Nobody
+  else needs this setting.
 
 ### Changed
 

@@ -32,7 +32,7 @@ It is organised in **seven tabs** along the top:
 | **Notifications** | Quiet hours, phone push & webhooks |
 | **Sessions** | What happens to a finished dispatched session |
 | **Diagnostics** | Detailed performance capture, and the file it writes — see [When it feels slow](19-performance.md) |
-| **Advanced** | Fork sessions (experimental) |
+| **Advanced** | Fork sessions (experimental), and which screen switchboard's own automated tests use — see [Testing](#testing-which-screen-the-automated-tests-use) |
 
 Click a tab, or put the keyboard on the tabs and use **`←`** and **`→`**
 (**`Home`** and **`End`** jump to the ends). The window stays the same size
@@ -324,6 +324,43 @@ window under "Advanced"; each is now on the tab it belongs to.
 
 Those last two are the **only** two things switchboard sends over the network
 without being asked, which is why they sit together.
+
+## Testing: which screen the automated tests use
+
+At the very bottom of **Settings ▸ Advanced**. **You only need this if you work
+on switchboard itself.** Its automated tests open a lot of real windows, about
+160 in a full run. This setting decides which screen they open on, so they stay
+off the one you are working on.
+
+It lists every screen attached right now, so you can tell them apart: its
+number, its name, its size, and where it sits compared with your main screen
+(for example *Screen 2 — 3840×2160, to the right*). The first choice, **Primary
+screen (default)**, is your main screen, which is where the tests go if you
+never touch this. Pick a screen and that is the whole job. Every copy of the
+project on this computer uses it the next time the tests run.
+
+- **Unplug the screen you picked** and the tests go to the primary screen
+  until it is back. Settings keeps your choice and says *Not attached — tests
+  run on the primary until it is back.* Plug it in again and it is used again.
+  Unplugging a **different** screen does not change which one you picked.
+  Plugging in a **new** screen, moving a screen to another cable or port, or
+  changing which screen is your main one can change it. If that happens,
+  Settings ticks the screen the tests will now use, so check it there and pick
+  again.
+- **The screen numbers are names for this list only.** Settings calls your main
+  screen *Screen 1* and numbers the rest from left to right. If you set the
+  variable by hand to a number, the tests
+  count screens differently, so *Screen 3* here may not be `3` there. Pick the
+  screen here instead.
+- **Where it is saved:** in a small file in your home folder called
+  `.switchboard-e2e.env`, which the tests read. Settings changes only its own
+  line in that file and leaves any other lines alone. Settings shows the full
+  path under the list.
+- **If the file cannot be saved** (or read), Settings says so under the list,
+  and nothing else changes.
+- **A `SWITCHBOARD_E2E_MONITOR` variable set in the shell that runs the tests
+  wins over this.** Settings cannot see a variable like that, so if the tests
+  ignore your choice, check for one.
 
 ## Good to know
 

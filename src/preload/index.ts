@@ -53,6 +53,7 @@ import type {
 } from '../shared/diagnostics';
 import type { FeatureRequestDraft, FeedbackResult } from '../shared/feedback';
 import type { PerfBatch, PerfLoopDelay } from '../shared/perf';
+import type { TestDisplaySetResult, TestDisplayState } from '../shared/test-display';
 import type { ControlVerdict } from '../shared/control';
 import type { SessionControlsWire } from '../shared/engine-controls';
 import type { NotificationPrefs } from '../shared/notifications';
@@ -1513,6 +1514,21 @@ const api = {
     hasCapture: (): Promise<boolean> => ipcRenderer.invoke('perf:hasCapture'),
     /** show the capture file in the OS file manager, so it can be attached */
     reveal: (): Promise<boolean> => ipcRenderer.invoke('perf:reveal'),
+  },
+  /**
+   * Settings → Advanced → Testing (#1331): which screen this project's own
+   * automated tests open their windows on. `set` takes a SCREEN id (or `null`
+   * for the primary) — never a path or a value; main owns the file.
+   */
+  testDisplay: {
+    get: (): Promise<TestDisplayState> => ipcRenderer.invoke('testDisplay:get'),
+    set: (screenId: number | null): Promise<TestDisplaySetResult> =>
+      ipcRenderer.invoke('testDisplay:set', screenId),
+    onChanged: (cb: (state: TestDisplayState) => void): (() => void) => {
+      const h = (_e: unknown, state: TestDisplayState) => cb(state);
+      ipcRenderer.on('testDisplay:changed', h);
+      return () => ipcRenderer.removeListener('testDisplay:changed', h);
+    },
   },
   diagnostics: {
     reportStatus: (): Promise<ReportStatus> => ipcRenderer.invoke('diag:reportStatus'),

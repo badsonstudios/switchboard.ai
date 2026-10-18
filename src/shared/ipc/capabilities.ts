@@ -212,6 +212,13 @@ export const CHANNEL_CAPABILITIES = {
   'perf:mainStats': 'diagnostics.perf',
   'perf:hasCapture': 'diagnostics.perf',
   'perf:reveal': 'shell.openPath',
+  // Settings → Advanced → Testing (#1331): which screen this project's own e2e
+  // windows open on, kept in `~/.switchboard-e2e.env`. Reading it (and the
+  // display list it is labelled against) is `settings.read`; choosing a screen
+  // writes that one file and is `settings.write`. The renderer names a SCREEN,
+  // never a path or a value — main decides what the line says.
+  'testDisplay:get': 'settings.read',
+  'testDisplay:set': 'settings.write',
   'diag:reportStatus': 'diagnostics.credential',
   'diag:submit': 'diagnostics.report',
   'diag:setGitHubToken': 'diagnostics.credential',
@@ -657,6 +664,9 @@ export const CHANNEL_CAPABILITIES = {
   // the AIs list, the default or a detection answer changed (#1291) — the
   // same facts `ais:list` / `ais:default` read
   'ais:changed': 'settings.read',
+  // a screen was plugged in, unplugged or rearranged (#1331) — the same facts
+  // `testDisplay:get` reads, so the Testing picker never lists a dead screen
+  'testDisplay:changed': 'settings.read',
   // a card gained or lost its live session — re-read `sessions:cards` (#170)
   'sessions:cardsChanged': 'sessions.read',
   'sessions:exited': 'sessions.read',
