@@ -132,9 +132,10 @@ export class Notifier {
     private readonly opts: {
       getWindow: () => BrowserWindow | null;
       getPrefs: () => NotificationPrefs;
-      /** the rules engine — every conditional channel (toast today; sound,
-       *  TTS, push, webhook as E14 lands them) goes through it */
-      rules?: { handle: (e: FeedEvent) => void };
+      /** the rules engine — every conditional channel (toast, sound, TTS,
+       *  push, webhook, the needs-you cue) goes through it. `replacesBeep` is
+       *  its answer to "did one of you already make THE noise?" (#1267) */
+      rules?: { fire: (e: FeedEvent) => { replacesBeep: boolean } };
       /** the app's ONE clock (P2-E14-05b) — the same function the engine gets,
        *  so the beep and the rules can never disagree about what time it is */
       now?: () => Date;
@@ -145,17 +146,23 @@ export class Notifier {
     const prefs = this.opts.getPrefs();
     if (!shouldConsultRules(prefs, e)) return;
     const now = (this.opts.now ?? (() => new Date()))();
-    // The local signal, under quiet hours. The rules run either way, below.
-    if (shouldNotify(prefs, e, now)) this.localSignal(prefs);
-    // The rules LAST, and outside the try above: the unconditional signal is
-    // cheap and local, the rules reach registered handlers that will one day
-    // hit an audio device, a phone and a webhook, and neither half should be
-    // able to cost the other. `RulesEngine.handle` swallows its own failures
-    // for the same reason (P6).
-    this.opts.rules?.handle(e);
+    // The rules FIRST since #1267, so the beep can know whether one of them
+    // already made the event's noise: the needs-you cue REPLACES the beep, the
+    // way the per-session cue does, rather than ringing on top of it. Wrapped,
+    // so a broken engine costs the rules and never the beep below it — an
+    // engine that threw made no noise, so the beep runs. `RulesEngine.fire`
+    // swallows its own failures too (P6).
+    let replacesBeep = false;
+    try {
+      replacesBeep = this.opts.rules?.fire(e).replacesBeep === true;
+    } catch {
+      replacesBeep = false;
+    }
+    // The local signal, under quiet hours.
+    if (shouldNotify(prefs, e, now)) this.localSignal(prefs, replacesBeep);
   }
 
-  private localSignal(prefs: NotificationPrefs): void {
+  private localSignal(prefs: NotificationPrefs, replacesBeep = false): void {
     try {
       // The signal model (Dan 2026-07-22): SOUND always + the Events panel;
       // taskbar flash when backgrounded. Everything else is a rule.
@@ -166,7 +173,10 @@ export class Notifier {
       // cannot be handed to a renderer, `SoundActions` beeps instead, so the
       // "an attention event always makes a noise" promise survives an audio
       // channel that is broken or a window that is gone.
-      if (!prefs.sounds) shell.beep();
+      //
+      // #1267: the same for the needs-you cue, decided per EVENT rather than
+      // per pref, because that rule only matches some of them.
+      if (!prefs.sounds && !replacesBeep) shell.beep();
       const win = this.opts.getWindow();
       if (win && !win.isDestroyed() && !win.isFocused() && !this.flashPending) {
         this.flashPending = true;

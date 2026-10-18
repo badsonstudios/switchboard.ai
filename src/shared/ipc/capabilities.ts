@@ -414,6 +414,12 @@ export const CHANNEL_CAPABILITIES = {
   'notifications:listSuppressed': 'settings.read',
   'notifications:clearSuppressed': 'settings.write',
   'notifications:setPrefs': 'settings.write',
+  // Which card is in front of the user (#1267) — the window reporting its own
+  // state, so the needs-you cue does not ring for the session being looked at.
+  // `app.window` rather than `settings.write`: it changes no stored setting
+  // and grants nothing, and the worst a lying caller can do is make one cue
+  // ring or not ring.
+  'notifications:setFrontCard': 'app.window',
   'preflight:check': 'environment.probe',
   // ── THE AIs (E40 item 08, #1291; `main/ai-catalog/ipc.ts`) ─────────────
   // No new capability: each channel exercises a power already named. Reading

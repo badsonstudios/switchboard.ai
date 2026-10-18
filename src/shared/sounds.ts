@@ -126,8 +126,40 @@ export const SOUND_IDS: readonly string[] = SOUND_BANK.map((s) => s.id);
  *  workspace to take one from (a card the store cannot find). */
 export const DEFAULT_SOUND = SOUND_BANK[0];
 
-/** Look a cue up by name; unknown names fall back rather than going silent. */
+/**
+ * The "this needs you" cue (#1267) — a held approval or an open question on a
+ * session you are not in, while you are using switchboard.
+ *
+ * OUTSIDE the bank on purpose. The bank is eight identities, one per card, and
+ * a card can be assigned or pinned to any of them; this one says "something is
+ * waiting on you and may time out", whichever card it is. If a card could ring
+ * it, the two meanings would be one sound.
+ *
+ * Built to be told apart from all eight: it is the only cue that ALTERNATES —
+ * high, low, high, low, two quick pairs — where every bank cue moves once in
+ * one direction or repeats a single pitch. A triangle wave, so it is brighter
+ * than the sines without the buzz of `blip`'s square.
+ */
+export const NEEDS_YOU_SOUND: SoundDef = {
+  id: 'needs-you',
+  wave: 'triangle',
+  tones: [
+    { hz: 988, ms: 85, gapMs: 15 },
+    { hz: 740, ms: 85, gapMs: 90 },
+    { hz: 988, ms: 85, gapMs: 15 },
+    { hz: 740, ms: 120 },
+  ],
+};
+
+/**
+ * Look a cue up by name; unknown names fall back rather than going silent.
+ *
+ * Knows `NEEDS_YOU_SOUND` as well as the bank — this is what the renderer
+ * plays from — while `isSoundId` below does NOT, so it can never be pinned to
+ * a card.
+ */
 export function soundById(id: string | null | undefined): SoundDef {
+  if (id === NEEDS_YOU_SOUND.id) return NEEDS_YOU_SOUND;
   return SOUND_BANK.find((s) => s.id === id) ?? DEFAULT_SOUND;
 }
 

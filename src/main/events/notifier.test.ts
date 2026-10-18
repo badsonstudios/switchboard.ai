@@ -62,7 +62,12 @@ describe('Notifier -> rules engine', () => {
     const n = new Notifier({
       getWindow: () => null,
       getPrefs: () => prefs,
-      rules: { handle: (e) => void handled.push(e) },
+      rules: {
+        fire: (e) => {
+          handled.push(e);
+          return { replacesBeep: false };
+        },
+      },
       now: () => now,
     });
     return { n, handled };
@@ -115,7 +120,12 @@ describe('the beep steps aside for per-session cues', () => {
     const n = new Notifier({
       getWindow: () => null,
       getPrefs: () => prefs,
-      rules: { handle: (e) => void handled.push(e) },
+      rules: {
+        fire: (e) => {
+          handled.push(e);
+          return { replacesBeep: false };
+        },
+      },
     });
     return { n, handled };
   }
@@ -141,6 +151,40 @@ describe('the beep steps aside for per-session cues', () => {
     beeps.count = 0;
     const { n } = notifier({ enabled: true, sounds: false });
     n.handle(ev('crashed'));
+    expect(beeps.count).toBe(1);
+  });
+});
+
+// #1267: the needs-you cue REPLACES the beep for the event it rang for, the
+// same "one event, one sound" as the per-session cue — but decided per event,
+// because that rule only matches some of them. The engine says so in its
+// answer; the beep listens.
+describe('the beep steps aside for an action that made the noise (#1267)', () => {
+  function notifier(answer: () => { replacesBeep: boolean }) {
+    return new Notifier({
+      getWindow: () => null,
+      getPrefs: () => ({ enabled: true }),
+      rules: { fire: () => answer() },
+    });
+  }
+
+  it('beeps when no rule made a noise', () => {
+    beeps.count = 0;
+    notifier(() => ({ replacesBeep: false })).handle(ev('needs-permission'));
+    expect(beeps.count).toBe(1);
+  });
+
+  it('does NOT beep when a rule already did', () => {
+    beeps.count = 0;
+    notifier(() => ({ replacesBeep: true })).handle(ev('needs-permission'));
+    expect(beeps.count).toBe(0);
+  });
+
+  it('a rules engine that throws costs the rules, never the beep', () => {
+    beeps.count = 0;
+    notifier(() => {
+      throw new Error('boom');
+    }).handle(ev('needs-permission'));
     expect(beeps.count).toBe(1);
   });
 });

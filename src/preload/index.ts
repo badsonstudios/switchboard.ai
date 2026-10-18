@@ -1367,6 +1367,13 @@ const api = {
      */
     quietState: (): Promise<QuietState> => ipcRenderer.invoke('notifications:quietState'),
     /**
+     * Tell main which card is in front of the user, or null (#1267). The
+     * needs-you cue does not ring for that one. Sent on change, by
+     * `lib/front-card.ts`.
+     */
+    setFrontCard: (cardId: string | null): Promise<boolean> =>
+      ipcRenderer.invoke('notifications:setFrontCard', cardId),
+    /**
      * The missed-events digest's list (P2-E14-05c) — what quiet hours held.
      *
      * The rows `quietState` only counts. Read at mount, because a digest's whole

@@ -130,6 +130,7 @@ import type {
 import { revealTargets } from './lib/ladder';
 import { useUrgencyBeat } from './lib/use-urgency-beat';
 import { installSeenWatch, noteBroughtForward } from './lib/seen';
+import { installFrontCardReport } from './lib/front-card';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
 import { interpretPushAnswer } from './lib/push-answer';
@@ -447,6 +448,11 @@ export function App(): React.JSX.Element {
   // looking at a finished session is what clears it (lib/seen)
   useEffect(() => {
     return installSeenWatch();
+  }, []);
+  // which session the user is in, told to main so the needs-you cue does not
+  // ring for it (#1267)
+  useEffect(() => {
+    return installFrontCardReport(window.switchboard?.notifications);
   }, []);
   // The urgency strip (E9-04). It renders from RAIL ORDER, not the raw session
   // list, so the Nth lamp is the Nth Ctrl+1..9 target — the derived value has a

@@ -75,6 +75,7 @@ import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
 import { Notifier, quietWindowOf } from './events/notifier';
 import {
+  ACTION_NEEDS_YOU_SOUND,
   ACTION_OS_TOAST,
   ACTION_PUSH,
   ACTION_SOUND,
@@ -87,6 +88,7 @@ import {
 import type { QuietState } from '../shared/quiet-hours';
 import type { NotificationPrefs } from '../shared/notifications';
 import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
+import { NeedsYouReminder } from './events/needs-you-reminder';
 import {
   answerableFromToast,
   DECIDE_BUTTONS,
@@ -2509,6 +2511,23 @@ app
     });
     ruleActions.register(ACTION_SOUND, soundActions.soundHandler);
     ruleActions.register(ACTION_SPEAK, soundActions.speakHandler);
+    ruleActions.register(ACTION_NEEDS_YOU_SOUND, soundActions.needsYouHandler);
+    // WHICH CARD IS IN FRONT (#1267), as the window last reported it: the
+    // needs-you rule does not ring for the session the user is in. Only the
+    // renderer knows which card that is (the active card in the main window,
+    // or the open tab of a focused pop-out). Null until the first report, and
+    // null is "no card is in front" — the side that rings rather than the side
+    // that stays silent (P6). A report lost after an earlier one leaves the
+    // card before in place, which costs that card the cue (it gets the plain
+    // beep), never the sound; a reloaded window reports again as it mounts.
+    let frontCard: string | null = null;
+    broker.handle('notifications:setFrontCard', (_e, cardId: unknown) => {
+      frontCard = typeof cardId === 'string' && cardId ? cardId.slice(0, 200) : null;
+      // debug, not info: it moves on every tab change. The e2e turns the
+      // `rules` subsystem on and waits for this line instead of a sleep.
+      rulesLog.debug('front card reported', { cardId: frontCard ?? '' });
+      return true;
+    });
     // Assigned the moment `registerSessionIpc` returns, a few dozen lines
     // below; until then no session exists, so no event can ask.
     let cardIdForLive: (liveId: string) => string | null = () => null;
@@ -2570,6 +2589,7 @@ app
       // Every window, not just the main one: a popped-out card (E8) is a
       // window the user can be looking at while the main one is minimized.
       getVisibility: () => visibilityAcross([currentWindow, ...popoutWindows.map((p) => p.win)]),
+      isInFront: (cardId) => cardId !== null && cardId === frontCard,
       titleFor: (e) =>
         labelForLive(e.sessionId) ??
         manager.get(e.sessionId)?.identity.title ??
@@ -2630,6 +2650,31 @@ app
     feed.onEvent((e) => {
       if (e) notifier.handle(e); // null = pure removal, nothing to announce
     });
+    // The needs-you cue's one repeat, a minute before a held approval's
+    // deadline (#1267). This decides WHEN only: at that moment the rule is
+    // asked again, for its own action and nothing else, so a session the user
+    // has since gone to, an app they have since left, or a cue they have since
+    // switched off all stay silent. The master switch is checked here because
+    // it sits above the engine (`Notifier`), and this path does not go through
+    // the notifier.
+    //
+    // The lead is a test seam in non-packaged builds only, the rule
+    // `SWITCHBOARD_BIND_GIVEUP_MS` follows: the real hold is five minutes,
+    // which no e2e should sit through.
+    const needsYouReminder = new NeedsYouReminder({
+      leadMs: app.isPackaged ? undefined : positiveMs(process.env.SWITCHBOARD_NEEDS_YOU_LEAD_MS),
+      remind: (sessionId) => {
+        if (!workspace.getNotificationPrefs().enabled) return;
+        rules.fire(
+          { id: 0, sessionId, kind: 'needs-permission', at: new Date().toISOString() },
+          { only: [ACTION_NEEDS_YOU_SOUND], reason: 'reminder' }
+        );
+      },
+      log: rulesLog,
+    });
+    streamPermissions.onPermissionRequest((r) => needsYouReminder.requested(r));
+    streamPermissions.onPermissionResolved((requestId) => needsYouReminder.resolved(requestId));
+    app.once('will-quit', () => needsYouReminder.dispose());
     // Every registered AI checks itself (#1288); the answer the banner and the
     // status-bar version read is the DEFAULT provider's, so with Claude alone
     // registered this is exactly the check it always was.

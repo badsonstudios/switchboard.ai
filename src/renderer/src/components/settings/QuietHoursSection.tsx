@@ -208,6 +208,7 @@ export function QuietHoursSection(props: QuietHoursSectionProps): React.JSX.Elem
         <div style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('quiet.personFacing')}</span>
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('quiet.machineFacing')}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('quiet.needsYouFacing')}</span>
           {/* A feature whose whole job is to do nothing is one the user cannot
               tell is working. This line is the proof it is. */}
           <span data-quiet-status style={{ fontSize: 11, color: 'var(--muted)' }}>

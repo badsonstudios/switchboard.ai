@@ -29,7 +29,7 @@
 //      audio device would be silent while every log line said "taken".
 import { errorText } from '../../shared/error-text';
 import type { Logger } from '../log/logger';
-import { AudioChannelName } from '../../shared/sounds';
+import { AudioChannelName, NEEDS_YOU_SOUND } from '../../shared/sounds';
 import { announcementFor, spokenWho } from './notification-text';
 import type { RuleActionContext, RuleActionHandler } from './rules-engine';
 import type { Translate } from '../../shared/i18n';
@@ -112,6 +112,33 @@ export class SoundActions {
         kind: ctx.event.kind,
         cardId: ctx.cardId ?? '',
         ruleId: ctx.rule.id,
+      });
+      this.reportFailure('sound', taken, ctx);
+    };
+  }
+
+  /**
+   * The `needs-you-sound` action (#1267), ready for `registry.register`.
+   *
+   * The `sound` handler's twin with the card taken out of it: ONE fixed cue,
+   * `NEEDS_YOU_SOUND`, whichever session is asking. Same sink, same beep
+   * fallback, same once-per-change warning — the beep in `notifier.ts` has
+   * stepped aside for this action, so a cue that reached nobody must still
+   * make the plain beep rather than nothing.
+   */
+  get needsYouHandler(): RuleActionHandler {
+    return (_action, ctx) => {
+      const taken = this.safe(() => this.deps.sink.play(NEEDS_YOU_SOUND.id), false);
+      if (!taken) this.safe(() => this.deps.fallback?.(), undefined);
+      // The e2e proof, read the way `sound rule fired` is. `reason` tells the
+      // first cue from the one-minute repeat.
+      this.deps.log?.info('needs-you sound fired', {
+        sound: NEEDS_YOU_SOUND.id,
+        taken,
+        kind: ctx.event.kind,
+        cardId: ctx.cardId ?? '',
+        ruleId: ctx.rule.id,
+        reason: ctx.reason ?? 'event',
       });
       this.reportFailure('sound', taken, ctx);
     };

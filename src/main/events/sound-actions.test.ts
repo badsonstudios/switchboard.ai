@@ -390,3 +390,47 @@ describe('the voice names the session (#1206)', () => {
     expect(said).toEqual(['Add markdown preview needs your input']);
   });
 });
+
+// #1267: the needs-you cue. One fixed sound whichever card asks, with the
+// same fail-open shape as the per-card cue.
+describe('the needs-you action (#1267)', () => {
+  it('plays the needs-you cue, not the card cue', () => {
+    const h = harness();
+    void h.actions.needsYouHandler({ type: 'needs-you-sound' }, ctx({ cardId: 'card-2' }));
+    expect(h.played).toEqual(['needs-you']);
+    expect(h.beeps.count).toBe(0);
+  });
+
+  it('logs the line the e2e reads, with the reason it ran', () => {
+    const h = harness();
+    void h.actions.needsYouHandler({ type: 'needs-you-sound' }, ctx());
+    void h.actions.needsYouHandler({ type: 'needs-you-sound' }, ctx({ reason: 'reminder' }));
+    expect(h.line('needs-you sound fired').map((l) => l.fields.reason)).toEqual([
+      'event',
+      'reminder',
+    ]);
+    expect(h.line('needs-you sound fired')[0].fields).toMatchObject({
+      sound: 'needs-you',
+      taken: true,
+      cardId: 'card-1',
+    });
+  });
+
+  it('beeps when nobody could take the cue, never silence', () => {
+    const h = harness({ sink: { play: () => false } });
+    void h.actions.needsYouHandler({ type: 'needs-you-sound' }, ctx());
+    expect(h.beeps.count).toBe(1);
+  });
+
+  it('a sink that throws costs the cue and still beeps', () => {
+    const h = harness({
+      sink: {
+        play: () => {
+          throw new Error('device gone');
+        },
+      },
+    });
+    expect(() => h.actions.needsYouHandler({ type: 'needs-you-sound' }, ctx())).not.toThrow();
+    expect(h.beeps.count).toBe(1);
+  });
+});

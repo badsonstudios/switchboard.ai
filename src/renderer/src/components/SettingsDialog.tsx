@@ -55,6 +55,7 @@ import type { WorkingLook } from '../lib/working-look';
 import { ContextMeterSection } from './settings/ContextMeterSection';
 import type { ContextMeterForm } from '../lib/context-meter';
 import { QuietHoursSection } from './settings/QuietHoursSection';
+import { NeedsYouSoundSection } from './settings/NeedsYouSoundSection';
 import { PushSection } from './settings/PushSection';
 import { AdvancedSection } from './settings/AdvancedSection';
 import { DispatchRetireSection } from './settings/DispatchRetireSection';
@@ -411,6 +412,7 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
         {heading(
           'attention',
           <>
+            <NeedsYouSoundSection open={props.open} />
             <QuietHoursSection
               open={props.open}
               state={props.quiet}

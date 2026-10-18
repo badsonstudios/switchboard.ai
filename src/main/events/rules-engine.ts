@@ -23,6 +23,7 @@ import type { Logger } from '../log/logger';
 import type { FeedEvent } from './feed';
 import type { SuppressedEvent } from '../../shared/suppressed';
 import {
+  BEEP_REPLACING,
   MatchedAction,
   QuietWindow,
   Rule,
@@ -46,6 +47,9 @@ export interface RuleActionContext {
   /** human strings, resolved once per event so every channel says the same thing */
   title: string;
   body: string;
+  /** why this run happened, when it is not the event itself — `'reminder'`
+   *  for the needs-you repeat (#1267); absent for an ordinary event */
+  reason?: string;
 }
 
 /**
@@ -121,6 +125,12 @@ export interface RulesEngineDeps {
   /** live session id -> durable card id; null when the binding is unknown */
   cardIdFor: (liveSessionId: string) => string | null;
   getVisibility: () => WindowVisibility;
+  /**
+   * Is this card the one in front of the user (#1267)? Read per event, like
+   * visibility. Absent, or a probe that throws, answers "no" — the side that
+   * plays a sound rather than swallowing one (P6).
+   */
+  isInFront?: (cardId: string | null) => boolean;
   titleFor: (event: FeedEvent, cardId: string | null) => string;
   bodyFor: (event: FeedEvent) => string;
   registry: RuleActionRegistry;
@@ -146,6 +156,30 @@ export interface RulesEngineDeps {
    */
   onSuppressed?: (record: SuppressedEvent) => void;
   log?: Logger;
+}
+
+/** What `fire` did. */
+export interface RuleRunResult {
+  /** how many actions were dispatched */
+  ran: number;
+  /**
+   * Did an action that makes THE noise for this event run (`BEEP_REPLACING`)?
+   * The notifier's plain beep steps aside when it did (#1267): one event, one
+   * sound.
+   */
+  replacesBeep: boolean;
+}
+
+/** Narrow a run to some action types (`fire`'s second argument). */
+export interface FireOptions {
+  /**
+   * Only these action types run, and only these are recorded as held. For the
+   * needs-you reminder (#1267): re-asking the whole rule set a minute before an
+   * approval's deadline would toast, push and webhook the same event twice.
+   */
+  only?: readonly string[];
+  /** a breadcrumb for the log line — `'reminder'` for the one-minute repeat */
+  reason?: string;
 }
 
 /** What a plan came to: what runs, what quiet hours held, and whether it is quiet. */
@@ -181,25 +215,51 @@ export class RulesEngine {
    * `actions` alone will show an empty plan at 3am and be telling the truth
    * about tonight while looking like a broken rule — render both.
    */
-  plan(event: FeedEvent): RulePlan {
+  plan(event: FeedEvent, opts: FireOptions = {}): RulePlan {
+    const cardId = this.deps.cardIdFor(event.sessionId);
     const trigger: RuleTrigger = {
       kind: event.kind,
-      cardId: this.deps.cardIdFor(event.sessionId),
+      cardId,
       visibility: this.deps.getVisibility(),
+      inFront: this.inFront(cardId),
       now: (this.deps.now ?? (() => new Date()))(),
       quiet: this.deps.getQuietWindow?.() ?? null,
     };
     const rules = [...this.deps.getDefaultRules(), ...this.deps.getRules()];
-    const { run, held } = splitQuiet(plannedActions(rules, trigger), trigger);
+    let matched = plannedActions(rules, trigger);
+    if (opts.only) matched = matched.filter((m) => opts.only!.includes(m.action.type));
+    const { run, held } = splitQuiet(matched, trigger);
     return { trigger, actions: run, held, quiet: triggerIsQuiet(trigger) };
+  }
+
+  /** `isInFront`, never throwing, and "no" when there is no card to ask about. */
+  private inFront(cardId: string | null): boolean {
+    if (!cardId || !this.deps.isInFront) return false;
+    try {
+      return this.deps.isInFront(cardId) === true;
+    } catch (err) {
+      this.deps.log?.warn('the in-front probe threw; treating the card as not in front', {
+        error: errorText(err),
+      });
+      return false;
+    }
   }
 
   /** Match and run. Returns how many actions actually ran (tests, logging). */
   handle(event: FeedEvent): number {
+    return this.fire(event).ran;
+  }
+
+  /**
+   * Match and run, and say whether THE noise for the event was made (#1267).
+   * `handle` is this with the answer narrowed to a count.
+   */
+  fire(event: FeedEvent, opts: FireOptions = {}): RuleRunResult {
     let ran = 0;
+    let replacesBeep = false;
     try {
-      const { trigger, actions, held, quiet } = this.plan(event);
-      if (actions.length === 0 && held.length === 0) return 0;
+      const { trigger, actions, held, quiet } = this.plan(event, opts);
+      if (actions.length === 0 && held.length === 0) return { ran: 0, replacesBeep: false };
       const title = this.deps.titleFor(event, trigger.cardId);
       const body = this.deps.bodyFor(event);
       for (const { rule, action } of actions) {
@@ -210,8 +270,12 @@ export class RulesEngine {
           rule,
           title,
           body,
+          ...(opts.reason ? { reason: opts.reason } : {}),
         };
-        if (this.deps.registry.run(action, ctx)) ran++;
+        if (this.deps.registry.run(action, ctx)) {
+          ran++;
+          if (BEEP_REPLACING.has(action.type)) replacesBeep = true;
+        }
       }
       // Held actions are written down BEFORE the log line, so a digest entry
       // and the line that explains it cannot disagree about what happened.
@@ -220,6 +284,8 @@ export class RulesEngine {
         kind: event.kind,
         cardId: trigger.cardId ?? '',
         visibility: trigger.visibility,
+        inFront: trigger.inFront === true,
+        ...(opts.reason ? { reason: opts.reason } : {}),
         ran,
         rules: actions.map((a) => a.rule.id).join(','),
         // The two facts P2-E14-05b adds, and the pair the e2e reads: was the
@@ -233,7 +299,7 @@ export class RulesEngine {
       // notifying is best-effort; never let it break the session flow
       this.deps.log?.warn('the notification rules engine threw', { error: errorText(err) });
     }
-    return ran;
+    return { ran, replacesBeep };
   }
 
   /**

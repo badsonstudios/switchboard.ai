@@ -265,6 +265,11 @@ By default, when a session needs permission, needs input, finishes, or crashes:
 **Desktop pop-up notifications are off by default.** The sound plus the Events
 panel is the calm default; pop-ups are opt-in.
 
+One sound is different on purpose: when a session **you are not in** asks for
+permission or asks you a question while you are working in switchboard, you
+hear the **needs-you sound** instead of the plain beep. See
+[When another session needs you](#when-another-session-needs-you).
+
 Turn the whole lot off with the **🔔 / 🔕** chip in the title bar. That switch is
 above everything on this page: with it off, nothing pops up, nothing beeps,
 nothing is spoken, and no rule fires — including **Notify when done**, below.
@@ -339,6 +344,44 @@ is downloaded.
 
 If your computer has no voice installed (some Linux setups), nothing is said and
 nothing breaks — the sound and the Events entry still happen.
+
+## When another session needs you
+
+You're typing in one session, and another one stops to ask for permission or to
+ask you a question. Its row lights up and the **"N need you"** count goes up,
+but you're looking at your own work, not at the list. And an approval doesn't
+wait forever: after five minutes with no answer, switchboard declines it for
+you and the session carries on without it.
+
+So that moment has a **sound of its own**: a quick high-low-high-low, unlike
+the plain beep and unlike any of the eight session sounds. It means *a session
+is waiting on you, and it may run out of time*.
+
+- **It plays while you're working in switchboard**, for a session other than
+  the one you're in. That's the case nothing else covers: while you're in
+  another app, the taskbar flash (and pop-ups, phone and voice if you've turned
+  them on) are what reach you.
+- **The session you're in stays quiet.** Its approval bar or question is already
+  in front of you. "The session you're in" is the one you're working in: the
+  selected one in the main window, or the one in a pop-out window if that's
+  where you're typing.
+- **An approval plays it once more when it has a minute left**, so one you
+  missed the first time doesn't run out unheard. If you answer it first, or the
+  session stops and takes the request back, there's no second sound.
+- **A question plays it once.** Questions don't run out, so there's nothing to
+  remind you about.
+- **It replaces the beep for that moment rather than adding to it.** One event,
+  one sound. If you use per-session sounds, this one plays instead of the
+  session's own sound when it applies.
+- **Quiet hours don't silence it.** It only ever plays while you're using
+  switchboard, so you're clearly awake, and an approval running out while you
+  sit at the desk is exactly what it's there to prevent.
+- **If it can't be played** (no audio device), you get the plain beep instead.
+
+**It's on by default.** To turn it off, or to hear it before deciding, open
+**Settings ▸ Notifications** (`Ctrl+,`) and find **When another session needs
+you**: untick **Play the needs-you sound**, or press **Play it**. The 🔔 switch
+in the title bar turns it off along with everything else.
 
 ## Notify me when *this* session is done
 
@@ -625,11 +668,13 @@ That's the whole setting.
 | Spoken announcements | held |
 | **Phone push** | held — a phone buzzing on a nightstand is the *most* person-facing channel here, not the least |
 
-**Doesn't stop — the one thing aimed at a machine:**
+**Doesn't stop — the one thing aimed at a machine, and the one sound that
+only plays while you're at the keyboard:**
 
 | | |
 |---|---|
 | **Webhooks** | still sent |
+| **The needs-you sound** | still plays — it only ever plays while you're working in switchboard (see [When another session needs you](#when-another-session-needs-you)) |
 
 That last row is a deliberate decision, not an oversight. A webhook goes to a
 program you pointed at this app precisely so that something would be watching

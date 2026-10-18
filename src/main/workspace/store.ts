@@ -582,7 +582,7 @@ const EMPTY: WorkspaceState = {
   // Every boolean pref spelled out, not left absent: `sanitizeNotifications`
   // fills each one in on load, so an EMPTY that omitted them would fail the
   // "quit -> relaunch reproduces exactly" round-trip on the first launch.
-  notifications: { enabled: true, osToasts: false, sounds: false, speak: false },
+  notifications: { enabled: true, osToasts: false, sounds: false, speak: false, needsYouSound: true },
   rules: [],
   // Empty is the correct FIRST LAUNCH state, not a missing default: the three
   // §5.15 built-ins are code, so a fresh install already has them (#946).
@@ -2281,6 +2281,9 @@ function sanitizeNotifications(n: unknown): Repaired<NotificationPrefs> {
       osToasts: x.osToasts === true, // default OFF
       sounds: x.sounds === true, // default OFF (P2-E14-05a)
       speak: x.speak === true, // default OFF
+      // default ON (#1267): absent is a file from before the field, and the
+      // owner chose ON for everyone, existing workspaces included
+      needsYouSound: x.needsYouSound !== false,
       // The window is all-or-nothing (P2-E14-05b), and the test is the SAME one
       // the dialog and the evaluator use: both ends present, both parseable,
       // and not equal. Half a window is not a window — a `quietEnd` sitting
@@ -2296,6 +2299,7 @@ function sanitizeNotifications(n: unknown): Repaired<NotificationPrefs> {
         ['osToasts', 'boolean'],
         ['sounds', 'boolean'],
         ['speak', 'boolean'],
+        ['needsYouSound', 'boolean'],
         ['quietStart', 'string'],
         ['quietEnd', 'string'],
       ]),
