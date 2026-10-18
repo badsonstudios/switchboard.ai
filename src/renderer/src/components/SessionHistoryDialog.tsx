@@ -31,8 +31,9 @@
 // above) and **Prompts**, the prompts you sent in the conversation that is
 // open (`PromptList`, `lib/prompt-history`). The prompt list first shipped
 // behind a small button of its own in the conversation's toolbar, and the
-// owner could not find it. The `+ session` picker has no session yet, so it
-// has no tabs and is exactly what it was.
+// owner could not find it. Opened without a session it has no tabs: that was
+// the `+ session` picker, which #1282 removed (a new session always starts
+// fresh now), and the shape stays for any caller with no session to name.
 //
 // The conversations panel stays MOUNTED while the other tab shows: its scan,
 // its search and its highlight are where they were when you come back. The
@@ -100,19 +101,13 @@ export function SessionHistoryDialog(props: {
   folder: string;
   /**
    * The session whose prompts the second tab lists (#1237). Given by a card;
-   * absent for the `+ session` picker, which then has no tabs at all. An id
+   * absent (no session yet), and then there are no tabs at all. An id
    * with no conversation view behind it still gets the tab, and the tab says
    * why it is empty.
    */
   promptSession?: string;
   onClose: () => void;
   onPick: (pick: HistoryPick) => void;
-  /**
-   * Offered as a row when the picker is standing between the user and a new
-   * session (the `+ session` flow), so "actually, a fresh one" is never a
-   * dead end they have to Escape out of and start again.
-   */
-  onNewConversation?: () => void;
   /**
    * Why the last pick did not happen (#1090). A pick made from a card opens
    * the conversation IN that card, which main can refuse — and the dialog is
@@ -734,29 +729,6 @@ export function SessionHistoryDialog(props: {
           )}
         </div>
 
-        {props.onNewConversation && (
-          <button
-            data-history-new
-            onClick={() => {
-              setQuery('');
-              setScope('folder');
-              props.onNewConversation?.();
-            }}
-            style={{
-              background: 'transparent',
-              color: 'var(--muted)',
-              border: 'none',
-              borderBlockStart: '1px solid var(--border)',
-              padding: '9px 14px',
-              cursor: 'pointer',
-              fontSize: 12,
-              fontFamily: 'var(--font-ui)',
-              textAlign: 'start',
-            }}
-          >
-            {t('sessionHistory.newConversation')}
-          </button>
-        )}
         </div>
         {hasTabs && tab === 'prompts' && (
           <div

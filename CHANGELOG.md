@@ -121,6 +121,15 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **A new session asks for its name, and always starts fresh.** After you pick
+  a folder, a small box asks what to call the session, already filled in with
+  the name it would have got anyway (the folder's name, or the folder's name
+  with a number on the end if that is taken), so **Enter** keeps it. Type over
+  it to choose your own; if that name is taken too, the box says what it will
+  be called instead. **Esc** starts nothing. The list of earlier conversations
+  no longer appears when you start a session: a new session is always a new
+  conversation, and an earlier one is still one click away on the card's
+  history button.
 - **"Hide on submit" is gone.** It hid the session you had just typed into the
   moment you pressed Enter, and it was easy to switch on by accident with one
   stray click of the title-bar chip. The chip now has two settings, **Keep

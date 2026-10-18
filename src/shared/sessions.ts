@@ -108,6 +108,21 @@ export type SessionStatus =
   | 'done'
   | 'crashed';
 
+/**
+ * The longest name a session record carries (#1282 moved it here so the naming
+ * dialog's field and main's cut are one number). The RULE for what a new
+ * session is called stays in main — `main/sessions/session-title.ts`.
+ */
+export const MAX_SESSION_TITLE = 120;
+
+/** `sessions:suggestTitle`'s answer (#1282). */
+export interface SuggestedTitle {
+  /** the name `sessions:create` would give a session asking for the one checked */
+  title: string;
+  /** false only under the test-harness escape hatch: start without asking */
+  ask: boolean;
+}
+
 /** Who a session is, as the rail and the title bar need to show it. */
 export interface SessionIdentity {
   title: string;

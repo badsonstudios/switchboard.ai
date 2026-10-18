@@ -1307,6 +1307,64 @@ describe('session history (P2-E20-01, §5.33)', () => {
   });
 });
 
+describe('registerSessionIpc — the name a new session gets (#1282)', () => {
+  let folder: string;
+  tempDirEach('sb-ipc-title-', (d) => (folder = d));
+  const saved = (title: string, id: string): PersistedSession =>
+    ({ ...priorCard({ folder, id }), identity: { title, folder, providerId: 'generic' } });
+  const savedEnv = process.env.SWITCHBOARD_NO_NAME_PROMPT;
+  afterEach(() => {
+    if (savedEnv === undefined) delete process.env.SWITCHBOARD_NO_NAME_PROMPT;
+    else process.env.SWITCHBOARD_NO_NAME_PROMPT = savedEnv;
+  });
+
+  it('suggests the name as asked when nobody has it', () => {
+    delete process.env.SWITCHBOARD_NO_NAME_PROMPT;
+    const h = harness(undefined, folder, { otherCards: [saved('other', 'card-9')] });
+    expect(h.call('sessions:suggestTitle', 'app')).toEqual({ title: 'app', ask: true });
+  });
+
+  it('a taken name — in any case — is suggested with the first free -N', () => {
+    const h = harness(undefined, folder, {
+      otherCards: [saved('APP', 'card-8'), saved('app-2', 'card-9')],
+    });
+    expect(h.call('sessions:suggestTitle', 'app')).toMatchObject({ title: 'app-3' });
+    // trimmed on the way in: the dialog's own trim is not the only guard
+    expect(h.call('sessions:suggestTitle', '  app  ')).toMatchObject({ title: 'app-3' });
+  });
+
+  it('the suggestion is EXACTLY what sessions:create then gives, and accepting it changes nothing', () => {
+    const h = harness(undefined, folder, { otherCards: [saved('app', 'card-9')] });
+    const { title } = h.call('sessions:suggestTitle', 'app') as { title: string };
+    expect(title).toBe('app-2');
+    const rec = h.call('sessions:create', { cardId: 'card-1', folder, title }) as {
+      identity: { title: string };
+    };
+    expect(rec.identity.title).toBe('app-2');
+  });
+
+  it('sessions:create still de-dups a typed name that clashes', () => {
+    const h = harness(undefined, folder, { otherCards: [saved('mine', 'card-9')] });
+    const rec = h.call('sessions:create', { cardId: 'card-1', folder, title: 'Mine' }) as {
+      identity: { title: string };
+    };
+    expect(rec.identity.title).toBe('Mine-2');
+  });
+
+  it('refuses a blank or non-string name rather than suggesting one', () => {
+    const h = harness(undefined, folder);
+    expect(h.call('sessions:suggestTitle', '   ')).toBeNull();
+    expect(h.call('sessions:suggestTitle', 42)).toBeNull();
+    expect(h.call('sessions:suggestTitle')).toBeNull();
+  });
+
+  it('says not to ask only under the test-harness escape hatch', () => {
+    process.env.SWITCHBOARD_NO_NAME_PROMPT = '1';
+    const h = harness(undefined, folder);
+    expect(h.call('sessions:suggestTitle', 'app')).toEqual({ title: 'app', ask: false });
+  });
+});
+
 describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
   let folder: string;
   tempDirEach('sb-ipc-', (d) => (folder = d));

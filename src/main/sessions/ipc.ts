@@ -82,6 +82,8 @@ import type { MentionPrompt } from '../../shared/mention-prompt';
 import { EventFeed } from '../events/feed';
 import { HistoryRepair } from './history-repair-log';
 import { planSessionStart } from './start-plan';
+import { MAX_SESSION_TITLE, uniqueSessionTitle } from './session-title';
+import type { SuggestedTitle } from '../../shared/sessions';
 import { heldNativeIds, recordNativeId, resumeCandidates } from './lineage';
 import { arrivalMark, markArrived, patchMark, pendingArrival, switchCardAi } from './ai-switch';
 import type { FeedBlock } from '../feed/blocks';
@@ -1748,6 +1750,36 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     return r.canceled || r.filePaths.length === 0 ? null : r.filePaths[0];
   });
 
+  /** Every saved session's name — what "taken" means for a new one (#1282). */
+  const takenSessionTitles = (): string[] => deps.persist.list().map((s) => s.identity.title);
+
+  /**
+   * The name a new session asking for `wanted` would get, and whether to ask
+   * the user at all (#1282).
+   *
+   * `sessions:create`'s own rule, run in advance: the naming dialog pre-fills
+   * with this, and re-asks as the user types so it can say "that name is taken,
+   * so it will be called X" BEFORE OK rather than after. Nothing is reserved —
+   * this is a read, and `sessions:create` applies the rule again at start, so
+   * a name taken by another start in between still comes out unique.
+   *
+   * `ask: false` only under `SWITCHBOARD_NO_NAME_PROMPT`, a test-harness
+   * escape hatch with `SWITCHBOARD_NO_QUIT_CONFIRM`'s argument (#185): the e2e
+   * suite starts sessions through `+ session` in dozens of specs, and a dialog
+   * in front of every one would turn each into a test of this feature. The
+   * fixtures set it on every launch; `session-name.spec.ts` turns it back off.
+   * A real install never has it set.
+   */
+  broker.handle('sessions:suggestTitle', (_e, wanted: unknown): SuggestedTitle | null => {
+    if (typeof wanted !== 'string' || !wanted.trim()) {
+      return refuse('sessions:suggestTitle', 'a name to check is required');
+    }
+    return {
+      title: uniqueSessionTitle(wanted.trim(), takenSessionTitles()),
+      ask: !process.env.SWITCHBOARD_NO_NAME_PROMPT,
+    };
+  });
+
   // Spawn (or --resume) the live session for a card. cardId is the durable
   // key; identity (accent/title/badge) and the resumable conversation are
   // reused from the persisted record so they survive restarts.
@@ -2062,18 +2094,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           taskLabel: prior && visibleTaskLabel(prior, deps.autoLabels()),
         };
       }
-      let title = (prior?.identity.title ?? (typeof opts.title === 'string' ? opts.title : opts.folder)).slice(0, 120);
+      let title = (prior?.identity.title ?? (typeof opts.title === 'string' ? opts.title : opts.folder)).slice(
+        0,
+        MAX_SESSION_TITLE
+      );
       // a second session in the same folder would read IDENTICALLY in the
       // rail/grid (Dan round 4) — suffix new cards with the first free -N.
-      // Renames stay free-form; existing cards keep their titles.
-      if (!prior) {
-        const taken = new Set(deps.persist.list().map((s) => s.identity.title.toLowerCase()));
-        if (taken.has(title.toLowerCase())) {
-          let n = 2;
-          while (taken.has(`${title}-${n}`.toLowerCase())) n++;
-          title = `${title}-${n}`.slice(0, 120);
-        }
-      }
+      // Renames stay free-form; existing cards keep their titles. The rule is
+      // `uniqueSessionTitle`, shared with `sessions:suggestTitle` (#1282) so the
+      // naming dialog shows the name this line will actually give.
+      if (!prior) title = uniqueSessionTitle(title, takenSessionTitles());
       // A CARD THAT WAS SWITCHED TO AN AI THAT IS NOT HERE NOW (#1294) is not
       // started on the default instead. The plan's fall-back to the default is
       // right for a card that never chose its AI; for one the USER moved, it

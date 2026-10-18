@@ -184,6 +184,48 @@ test.describe('new session from a popped-out window (#531)', () => {
     expect(await popout.evaluate(() => document.hasFocus())).toBe(true);
   });
 
+  // #1282: with the naming dialog ON (every other test here runs with the
+  // fixtures' SWITCHBOARD_NO_NAME_PROMPT=1). The question is asked in the window
+  // the card is bound for, and the main window is not dragged in front to ask it.
+  test('the name is asked IN the popped-out window, by the ＋ and by Mod+N (#1282)', async () => {
+    skipPopoutOnLinux();
+    const folderA = tempProjectFolder();
+    const folderB = tempProjectFolder();
+    const nameA = path.basename(folderA);
+    a = await launchApp({ seedFolder: folderA, env: { SWITCHBOARD_NO_NAME_PROMPT: '' } });
+    const { w, popout } = await poppedOut(a, nameA);
+
+    // ── the card header's ＋ ──
+    await answerFolderDialog(a, folderB);
+    await popout.getByTestId('card-new-session').click();
+    const asked = popout.getByTestId('name-session-dialog');
+    await expect(asked).toBeVisible({ timeout: 15_000 });
+    await expect(w.getByTestId('name-session-dialog')).toHaveCount(0);
+    await popout.locator('[data-name-session-input]').fill('from the plus');
+    await popout.locator('[data-name-session-input]').press('Enter');
+    await expect(tabs(popout).filter({ hasText: 'from the plus' })).toHaveCount(1, { timeout: 25_000 });
+    await expect(tabs(w).filter({ hasText: 'from the plus' })).toHaveCount(0);
+
+    // ── Mod+N, which is inferred from OS focus (see the test above) ──
+    let focused = true;
+    try {
+      await bringToFront(a, 'popout', 5_000);
+    } catch (err) {
+      if (!/never came to the front/.test(String(err))) throw err;
+      focused = false;
+    }
+    test.skip(!focused, 'window manager would not focus the popout; the keyboard route needs real OS focus');
+    await answerFolderDialog(a, folderB);
+    await popout.keyboard.press(`${MOD}+N`);
+    await expect(asked).toBeVisible({ timeout: 15_000 });
+    await expect(w.getByTestId('name-session-dialog')).toHaveCount(0);
+    await popout.locator('[data-name-session-input]').fill('from the keys');
+    await popout.locator('[data-name-session-ok]').click();
+    await expect(tabs(popout).filter({ hasText: 'from the keys' })).toHaveCount(1, { timeout: 25_000 });
+    await expect(tabs(w).filter({ hasText: 'from the keys' })).toHaveCount(0);
+    expect(await popout.evaluate(() => document.hasFocus())).toBe(true);
+  });
+
   test('a session created in a popout docks back into the grid like any other', async () => {
     skipPopoutOnLinux();
     const folderA = tempProjectFolder();

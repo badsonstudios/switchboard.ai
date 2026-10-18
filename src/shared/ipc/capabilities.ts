@@ -479,6 +479,9 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:cards': 'sessions.read',
   'sessions:closeCard': 'sessions.spawn',
   'sessions:create': 'sessions.spawn',
+  // Pure app-side state (#1282): the name `sessions:create` WOULD give a new
+  // session, read from the saved records. Reserves nothing, starts nothing.
+  'sessions:suggestTitle': 'sessions.read',
   'sessions:decidePermission': 'sessions.write',
   'sessions:submitPrompt': 'sessions.write',
   'sessions:interrupt': 'sessions.write',

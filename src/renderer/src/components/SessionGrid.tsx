@@ -41,6 +41,8 @@ import {
 } from './StandingGrants';
 import { DocumentViewer, documentReopened } from './DocumentViewer';
 import { SessionHistoryDialog } from './SessionHistoryDialog';
+import { NameSessionDialog } from './NameSessionDialog';
+import { createPortal } from 'react-dom';
 import { DispatchDialog, dispatchedTitle } from './DispatchDialog';
 import type { DispatchOptions } from '../../../shared/dispatch-wire';
 import { baseName } from '../lib/document-kind';
@@ -147,6 +149,7 @@ import { type TransportKind } from '../../../shared/transport';
 import type {
   AutonomyMode,
   SessionStatus,
+  SuggestedTitle,
   SwitchBusyState,
   SwitchConversationRefusal,
   SwitchConversationResult,
@@ -1125,6 +1128,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
    * the window that asked.
    */
   const [cardError, setCardError] = React.useState<string | null>(null);
+  /**
+   * A session asked for from THIS card's ＋, waiting for its name (#1282).
+   *
+   * Local for `cardError`'s reason: the ＋ exists only while this card is in a
+   * popout, so the dialog has to be drawn in THAT window, and a card's own
+   * subtree is the one thing of ours dockview puts there.
+   */
+  const [cardNaming, setCardNaming] = React.useState<NamingAsk | null>(null);
   // ── this card's notification cue (P2-E14-05a, §5.9 + §5.11) ───────────────
   //
   // Same defensive bridge read as `rulesApi` above and for the same reason: a
@@ -2510,7 +2521,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   data-testid="card-new-session"
                   onClick={() => {
                     setCardError(null); // a retry starts clean
-                    void newSessionIn(props.containerApi, props.api.group, setCardError);
+                    void newSessionIn(props.containerApi, props.api.group, setCardError, (folder, into) =>
+                      beginNaming(props.containerApi, folder, { into }, setCardNaming)
+                    );
                   }}
                   title={t('grid.newSessionHere')}
                   aria-label={t('grid.newSessionHere')}
@@ -2518,6 +2531,24 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 >
                   {t('grid.newSessionHereIcon')}
                 </button>
+                {/* In THIS window's body, not inside the header: the header's
+                    tooltip and dockview's view transforms are no place for a
+                    modal (`inWindowOf`, the grid path's own answer). */}
+                {cardNaming &&
+                  inWindowOf(
+                    props.api.group,
+                    <NameSessionDialog
+                      key={`${cardNaming.folder}|${cardNaming.initial}`}
+                      folder={cardNaming.folder}
+                      initial={cardNaming.initial}
+                      check={checkNewSessionTitle}
+                      onCancel={() => setCardNaming(null)}
+                      onConfirm={(name) => {
+                        setCardNaming(null);
+                        addNamedSessionCard(props.containerApi, cardNaming, name, setCardError);
+                      }}
+                    />
+                  )}
               </>
             )}
             <button onClick={popOutToggle} title={poppedOut ? t('grid.dockIn') : t('grid.popOut')} style={cheadBtn}>
@@ -3755,6 +3786,105 @@ function focusedPopoutGroup(api: DockviewApi): DockviewApi['groups'][number] | n
   return newSessionHostGroup(shapes)?.group ?? null;
 }
 
+/** A card's default name: the folder's own name, without the path. */
+function folderTitle(folder: string): string {
+  return folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || folder;
+}
+
+/**
+ * A new session waiting to be named (#1282): where it will run, what the field
+ * starts with, and where its card goes once it has a name.
+ */
+interface NamingAsk {
+  folder: string;
+  /** main's suggestion — the name it would get with no edits */
+  initial: string;
+  into: DockviewApi['groups'][number] | null;
+  groupId?: string;
+}
+
+/**
+ * The name main would give a session asking for `wanted` — or null when it
+ * cannot say. FAIL-OPEN: a bridge without the channel (a unit harness), a
+ * refusal or a rejection all answer null, and the caller carries on with the
+ * folder's name; `sessions:create` de-duplicates at start whatever happens here.
+ */
+async function suggestNewSessionTitle(wanted: string): Promise<SuggestedTitle | null> {
+  try {
+    // #440: a refusal resolves a truthy object — laundered before it is read
+    return answered(await window.switchboard.sessions.suggestTitle?.(wanted)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** What the dialog asks as the user types: just the name, or null. */
+const checkNewSessionTitle = async (name: string): Promise<string | null> =>
+  (await suggestNewSessionTitle(name))?.title ?? null;
+
+/**
+ * The naming step of every human "new session" gesture (#1282): ask main what
+ * the folder's session would be called, then put the dialog up with that.
+ *
+ * `show` is the caller's own dialog state — the grid's, or a popped-out card's
+ * (whose dialog has to be drawn in ITS window). Under the test-harness escape
+ * hatch (`ask: false`) nothing is shown and the card is added exactly as it was
+ * before naming existed: no title passed, so it is the folder's name and main
+ * de-dups it, byte for byte the old start.
+ */
+async function beginNaming(
+  api: DockviewApi | null,
+  folder: string,
+  place: { into: DockviewApi['groups'][number] | null; groupId?: string },
+  show: (ask: NamingAsk) => void
+): Promise<void> {
+  const base = folderTitle(folder);
+  const suggested = await suggestNewSessionTitle(base);
+  if (suggested && !suggested.ask) {
+    await addSessionCardTo(api, folder, { into: place.into, groupId: place.groupId });
+    return;
+  }
+  show({
+    folder,
+    initial: suggested?.title ?? base,
+    into: place.into,
+    ...(place.groupId === undefined ? {} : { groupId: place.groupId }),
+  });
+}
+
+/**
+ * Draw `dialog` in the window a new card is bound for (#1282).
+ *
+ * Mod+N pressed in a popped-out session asks for a card IN that popout (#531),
+ * and the question has to be asked there too: drawn in the main window, it
+ * would sit behind the window the user is looking at, and raising the main
+ * window to show it would bury the popout the card then lands in - the very
+ * thing `newSessionTargetsPopout` exists to prevent. A popout is a second
+ * DOCUMENT with the theme copied onto its root (`copyThemeOverlay`), so its
+ * body is a place a dialog of ours renders correctly; React portals carry the
+ * events across, as they do for every card dockview puts there.
+ */
+function inWindowOf(
+  into: DockviewApi['groups'][number] | null,
+  dialog: React.JSX.Element
+): React.ReactNode {
+  const doc = into?.element?.ownerDocument;
+  return doc && doc !== document && doc.body ? createPortal(dialog, doc.body) : dialog;
+}
+
+/** The card a NAMED new session gets — the name exactly as the user OK'd it. */
+function addNamedSessionCard(
+  api: DockviewApi | null,
+  ask: NamingAsk,
+  name: string,
+  onError: (message: string) => void
+): void {
+  addSessionCardTo(api, ask.folder, { into: ask.into, groupId: ask.groupId, title: name }).catch((e) =>
+    // fail-open, and visible: a card that could not be added says why
+    onError(errorText(e))
+  );
+}
+
 /**
  * Create a session in `folder` and add its card.
  *
@@ -3797,7 +3927,7 @@ async function addSessionCardTo(
 ): Promise<string | null> {
   if (!api) return null;
   const { groupId, into, resumeConversationId, forkFrom, dispatchId } = opts;
-  const title = opts.title ?? (folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder);
+  const title = opts.title ?? folderTitle(folder);
   const cardId = crypto.randomUUID();
   // A persistent-group member clusters with its siblings (E12-02): reuse the
   // dockview group already holding another member, when one is in the grid.
@@ -3829,7 +3959,7 @@ async function addSessionCardTo(
   // the `find(...) ?? addGroup()` it replaces was) a sibling win would leave
   // that brand new group behind in the grid, empty, for ever.
   // A NAMED destination still has to be ALIVE. `newSessionIn` checks this before
-  // it calls us, but the history picker (§5.33) can sit open for as long as the
+  // it calls us, but the naming dialog (#1282) can sit open for as long as the
   // user reads it, and a command or a layout mode driven from the main window
   // can dock the card back and dispose the group underneath it meanwhile. The
   // check belongs here, where every caller inherits it, rather than in the one
@@ -3940,20 +4070,20 @@ async function newSessionIn(
   into: DockviewApi['groups'][number] | null,
   onError: (message: string) => void,
   /**
-   * §5.33's second entry point: once the folder is known, offer that folder's
-   * past conversations before minting a fresh one.
+   * The naming step (#1282): once the folder is known, ask what to call the
+   * session. It takes over — it puts the dialog up, and the dialog adds the
+   * card. The folder dialog is a NATIVE modal, so this is the only seam in this
+   * flow where a surface of ours can exist at all.
    *
-   * Returns true when it took over — the picker is up and will add the card
-   * itself. The folder dialog is a NATIVE modal, so this is the only seam in
-   * this flow where a surface of ours can exist at all.
+   * It is the slot §5.33's history picker used to occupy. That offer is gone
+   * (Dan, 2026-10-15): a new session always starts a fresh conversation, and
+   * an earlier one is reached from the card's own history button.
    *
-   * Absent (the card header's ＋, and every test that predates E20) means the
-   * old behaviour exactly: pick a folder, add a card.
+   * REQUIRED: every caller of this function is a person's gesture, and a
+   * person's new session is always named. The starts nobody is at the keyboard
+   * for call `addSessionCardTo` directly.
    */
-  offerHistory?: (
-    folder: string,
-    into: DockviewApi['groups'][number] | null
-  ) => Promise<boolean>
+  askName: (folder: string, into: DockviewApi['groups'][number] | null) => Promise<void>
 ): Promise<void> {
   if (!api) return;
   try {
@@ -3971,12 +4101,7 @@ async function newSessionIn(
     // is not a destination — fall through to the grid's own placement rules
     // rather than handing `addPanel` a corpse.
     const stillOpen = into && api.groups.includes(into) ? into : null;
-    // The picker only interrupts when it has something to offer — see
-    // `offerHistory`'s own implementation, which answers false for a folder with
-    // no past conversations. A brand-new folder therefore behaves exactly as it
-    // did before E20 rather than gaining a dialog that says "nothing here".
-    if (offerHistory && (await offerHistory(folder, stillOpen))) return;
-    await addSessionCardTo(api, folder, { into: stillOpen });
+    await askName(folder, stillOpen);
   } catch (e) {
     // our breakage must be visible, not mute (fail-open)
     onError(errorText(e));
@@ -6031,6 +6156,13 @@ export interface GridController {
    *  groupId places it clustered with its persistent group (E12) */
   addSessionCard: (folder: string, groupId?: string) => Promise<void>;
   /**
+   * A PERSON starting a session in a folder that is already known - one dropped
+   * on the window, or picked from a group's header (#1282). The same card as
+   * `addSessionCard`, after the naming dialog. `addSessionCard` stays the
+   * no-questions start for the seams with nobody at the keyboard.
+   */
+  newSessionInFolder: (folder: string, groupId?: string) => Promise<void>;
+  /**
    * The whole ⊕ gesture — pick a folder, then add the card (E3-02/E3-04).
    *
    * Lands in the popped-out window the user is IN, when there is one, and in
@@ -6292,19 +6424,14 @@ export function SessionGrid(props: {
   // pressed inside a popped-out session, which App's key bridge dispatches
   // here, and the ＋ on a popped-out card's header — which does not ask this
   // question at all, because it already knows its own group.
-  // §5.33's `+ session` half. The picker is offered only when the chosen folder
-  // HAS past conversations: asking first costs one bounded scan (whose per-file
-  // descriptions the dialog's own fetch then re-uses from main's cache), and it
-  // is what keeps "new session in a fresh folder" a two-click gesture instead of
-  // a three-click one with a dialog that has nothing in it.
-  const [picker, setPicker] = React.useState<{
-    folder: string;
-    into: DockviewApi['groups'][number] | null;
-  } | null>(null);
+  // The new session waiting for its name (#1282). It replaced §5.33's
+  // `+ session` history picker in this exact slot, for that picker's reason:
+  // MOUNTED AT THE GRID, because the card it creates does not exist yet.
+  const [naming, setNaming] = React.useState<NamingAsk | null>(null);
   /**
    * §5.15's dispatch gesture, mid-flight (P2-E13-03).
    *
-   * MOUNTED AT THE GRID, like the `+ session` picker above and for the same
+   * MOUNTED AT THE GRID, like the naming dialog above and for the same
    * reason: the card it will create does not exist yet, so there is nothing else
    * for the dialog to hang off. It also means both entry points — the ⋯ menu and
    * the palette — open one dialog instance rather than one per card.
@@ -6381,17 +6508,21 @@ export function SessionGrid(props: {
     },
     []
   );
-  const offerHistory = useCallback(
-    async (folder: string, into: DockviewApi['groups'][number] | null): Promise<boolean> => {
-      // #440: a refusal resolves TRUTHY, so this must be laundered before it is
-      // read as a listing. Any non-answer means "just make the card" — the
-      // picker is an offer, and our failure to produce it never blocks a start.
-      const a = answered(await window.switchboard.transcripts.history({ scope: 'folder', folder }));
-      if (!a || a.status !== 'ok' || a.rows.length === 0) return false;
-      setPicker({ folder, into });
-      return true;
-    },
+  /**
+   * The naming step every human "new session" gesture in this window shares
+   * (#1282) - see `beginNaming`. The dialog is drawn in the window the card is
+   * bound for (see where `naming` is rendered), so nothing needs raising.
+   */
+  const askName = useCallback(
+    (
+      folder: string,
+      place: { into: DockviewApi['groups'][number] | null; groupId?: string }
+    ): Promise<void> => beginNaming(apiRef.current, folder, place, setNaming),
     []
+  );
+  const askNameInto = useCallback(
+    (folder: string, into: DockviewApi['groups'][number] | null) => askName(folder, { into }),
+    [askName]
   );
   const newSession = useCallback(async () => {
     const api = apiRef.current;
@@ -6400,8 +6531,8 @@ export function SessionGrid(props: {
     // exists only while there is something to say, so it has to stop saying it.
     // Clearing first also means the same failure twice is announced twice.
     setError(null);
-    await newSessionIn(api, api ? focusedPopoutGroup(api) : null, setError, offerHistory);
-  }, [offerHistory]);
+    await newSessionIn(api, api ? focusedPopoutGroup(api) : null, setError, askNameInto);
+  }, [askNameInto]);
   // The main window's own chrome does not INFER a destination — it knows one.
   // `newSession` above has to ask which window has focus because a keystroke
   // carries no such information; a click on a button that only exists in this
@@ -6410,8 +6541,22 @@ export function SessionGrid(props: {
   // argument the card ＋ makes by naming its own group (lib/new-session-target).
   const newSessionInGrid = useCallback(() => {
     setError(null); // a retry starts clean, as above
-    return newSessionIn(apiRef.current, null, setError, offerHistory);
-  }, [offerHistory]);
+    return newSessionIn(apiRef.current, null, setError, askNameInto);
+  }, [askNameInto]);
+  // A folder that is ALREADY known - dropped on the window, or picked from a
+  // group's (+) - still gets its name asked (#1282): both are a person starting
+  // a session. The seed seam and every non-human start use `addSessionCard`.
+  const newSessionInFolder = useCallback(
+    async (folder: string, groupId?: string): Promise<void> => {
+      setError(null); // a retry starts clean, as above
+      try {
+        await askName(folder, { into: null, groupId });
+      } catch (e) {
+        setError(errorText(e)); // fail-open, and visible
+      }
+    },
+    [askName]
+  );
   // the empty workspace's button: the same gesture as "+ session" in the list
   const emptyWorkspaceActions = React.useMemo(
     () => ({ onNewSession: () => void newSessionInGrid() }),
@@ -6661,6 +6806,7 @@ export function SessionGrid(props: {
     if (!props.controller) return;
     props.controller.current = {
       addSessionCard,
+      newSessionInFolder,
       newSession,
       newSessionHere: newSessionInGrid,
       // Reads `apiRef` at call time rather than closing over an api, so it
@@ -7040,7 +7186,7 @@ export function SessionGrid(props: {
         openAllChangesPanel(apiRef.current, cardId, folder, props.colorScheme, title),
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
-  }, [props.controller, addSessionCard, newSession, newSessionInGrid, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
+  }, [props.controller, addSessionCard, newSessionInFolder, newSession, newSessionInGrid, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
 
   // Dockview learns the light/dark verdict in onReady, which runs ONCE — so a
   // theme switch after mount left it on the scheme the app booted with. Every
@@ -7558,29 +7704,26 @@ export function SessionGrid(props: {
         />
         </EmptyWorkspaceActions.Provider>
       </div>
-      {/* §5.33's `+ session` picker. Mounted at the GRID rather than inside a
+      {/* The naming dialog (#1282). Mounted at the GRID rather than inside a
           card: the folder has been chosen but no card exists yet, so there is
-          nothing else for it to hang off. */}
-      {picker && (
-        <SessionHistoryDialog
-          open
-          folder={picker.folder}
-          onClose={() => setPicker(null)}
-          onPick={(pick) => {
-            setPicker(null);
-            void addSessionCardTo(apiRef.current, pick.folder, {
-              into: picker.into,
-              resumeConversationId: pick.nativeId,
-            });
-          }}
-          // The escape hatch that keeps this an OFFER: the user came here to
-          // start a session, and the picker must never be the only way out.
-          onNewConversation={() => {
-            setPicker(null);
-            void addSessionCardTo(apiRef.current, picker.folder, { into: picker.into });
-          }}
-        />
-      )}
+          nothing else for it to hang off. (A popped-out card's own header +
+          draws its own, in its own window.) */}
+      {naming &&
+        inWindowOf(
+          naming.into,
+          <NameSessionDialog
+            // a fresh field per ask: `useState` initialisers do not re-run
+            key={`${naming.folder}|${naming.initial}`}
+            folder={naming.folder}
+            initial={naming.initial}
+            check={checkNewSessionTitle}
+            onCancel={() => setNaming(null)}
+            onConfirm={(name) => {
+              setNaming(null);
+              addNamedSessionCard(apiRef.current, naming, name, setError);
+            }}
+          />
+        )}
       {/* §5.15's dispatch gesture (P2-E13-03). Mounted at the GRID for the
           picker's reason above — the card it creates does not exist yet — and so
           that the ⋯ menu and the palette open ONE dialog rather than one per card. */}

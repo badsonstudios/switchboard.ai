@@ -1429,7 +1429,8 @@ export function App(): React.JSX.Element {
       // resolves an object, and an object is a yes — so a dropped FILE would
       // open a session card on a path that is not a folder.
       void window.switchboard.sessions.isDirectory(p).then((isDir) => {
-        if (took(isDir)) void grid.current?.addSessionCard(p);
+        // a person starting a session: it asks for the name (#1282)
+        if (took(isDir)) void grid.current?.newSessionInFolder(p);
       });
     };
     window.addEventListener('dragover', onDragOver);
@@ -2473,7 +2474,8 @@ export function App(): React.JSX.Element {
   const openInGroup = (gid: string): void => {
     void bridge.sessions?.pickFolder?.().then((picked) => {
       const folder = answered(picked); // #440: a refusal is truthy
-      if (folder) void grid.current?.addSessionCard(folder, gid);
+      // a person starting a session: it asks for the name (#1282)
+      if (folder) void grid.current?.newSessionInFolder(folder, gid);
     });
   };
   // #1143. The strip is what is on screen: the sessions are listed across the
