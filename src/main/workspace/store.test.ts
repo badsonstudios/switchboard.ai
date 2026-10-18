@@ -243,6 +243,77 @@ describe('per-arrangement window memory (#864: monitor sleep)', () => {
     expect(st.restoreWindow([primary, left]).bounds).toEqual(moved);
   });
 
+  // #1277: the owner's workspace file held a note for his primary monitor ALONE
+  // at `x: -2296` — on a monitor that arrangement does not have. A save fired
+  // after the fingerprint changed but before the window moved, and that note was
+  // later restored to.
+  it('refuses to file a note under an arrangement the window is not on (#1277)', () => {
+    const st = makeStore(file);
+    st.load();
+    atTheDesk(st);
+    // the left monitor has gone, the window has NOT moved yet, and a save fires
+    st.setWindow({ bounds: onLeft, isMaximized: false, displayFingerprint: oneMonitor() });
+
+    expect(st.rememberedArrangements()[oneMonitor()]).toBeUndefined();
+    // the real note is untouched
+    expect(st.rememberedArrangements()[twoMonitors()].bounds).toEqual(onLeft);
+  });
+
+  // Review: a window parked half off an edge is a position people choose. It is
+  // recorded; the READ side slides it back within reach if it ever must.
+  it('a visible note with an awkward title bar is still recorded (#1277)', () => {
+    const st = makeStore(file);
+    st.load();
+    const halfOff = { x: -400, y: 100, width: 800, height: 600 };
+    st.setWindow({ bounds: halfOff, isMaximized: false, displayFingerprint: oneMonitor() });
+    expect(st.rememberedArrangements()[oneMonitor()].bounds).toEqual(halfOff);
+  });
+
+  // The `640,296 1280x800` in the owner's log: a boot rescue, saved as the note
+  // for his desk and then restored to on every wake.
+  it('the boot rescue default is never recorded as a note (#1277)', () => {
+    const st = makeStore(file);
+    st.load();
+    atTheDesk(st);
+    const rescue = { x: 320, y: 120, width: 1280, height: 800 }; // centred on 1920x1040
+    st.setWindow({ bounds: rescue, isMaximized: true, displayFingerprint: twoMonitors() });
+    expect(st.rememberedArrangements()[twoMonitors()].bounds).toEqual(onLeft);
+  });
+
+  it('a fingerprint it cannot read keeps the old behaviour (#1277)', () => {
+    const st = makeStore(file);
+    st.load();
+    st.setWindow({ bounds: onLeft, isMaximized: false, displayFingerprint: 'fp' });
+    expect(st.rememberedArrangements().fp.bounds).toEqual(onLeft);
+  });
+
+  it('boot refuses a last save that is not on the displays it was saved on (#1277)', () => {
+    const a = makeStore(file);
+    a.load();
+    // the poisoned shape: filed under one monitor, positioned off it
+    a.setWindow({ bounds: onLeft, isMaximized: true, displayFingerprint: oneMonitor() });
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    // same arrangement as the save, which used to skip every check
+    const w = b.restoreWindow([primary]);
+    expect(w.bounds).toBeNull(); // rescued: Electron centres it on the primary
+    expect(w.isMaximized).toBe(true);
+  });
+
+  it('boot SLIDES a note whose title bar is out of reach back onto its monitor (#1277)', () => {
+    const a = makeStore(file);
+    a.load();
+    atTheDesk(a);
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    // the left monitor came back 200 px lower: the note's title bar is above it
+    const lowerLeft = { x: -1920, y: 200, width: 1920, height: 1040 };
+    // same place, same size, moved down just far enough to be grabbed
+    expect(b.restoreWindow([primary, lowerLeft]).bounds).toEqual({ ...onLeft, y: 200 });
+  });
+
   it('a rescued window (no bounds) records nothing', () => {
     const st = makeStore(file);
     st.load();

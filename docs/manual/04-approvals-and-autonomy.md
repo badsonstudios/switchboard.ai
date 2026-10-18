@@ -93,6 +93,23 @@ A request for permission does not wait for ever. If nobody answers within
 nobody answered. The session carries on without having done that thing, so a
 missed approval is work that did not happen.
 
+**If nobody can see the window, it doesn't wait at all.** When the switchboard
+window is open but you couldn't see it if you looked — it is hidden, or on a
+monitor that has been turned off or unplugged so that Windows no longer lists
+it, or it has slipped off the edge of every screen — a new request is declined
+straight away rather than waiting five minutes for an answer nobody can give.
+(Some monitors stay listed while they sleep; the window then counts as visible,
+and requests wait as usual.) A **minimized** window still counts as one you can
+reach: its taskbar button flashes, and if you have notifications turned on the
+notification's **Allow** and **Deny** buttons work, so those requests wait for
+you as normal. So does everything while any popped-out window of yours is on a
+monitor you can see, even if the main window has wandered off.
+
+When a request is declined because nobody answered, Claude is told to say what
+it was trying to do and then **stop and wait for you**, rather than asking the
+same thing again every few minutes. When you come back you'll find the session
+waiting for a reply. Tell it to go ahead and it will ask again.
+
 So a session that is waiting on an approval is the loudest thing in the list
 of sessions:
 
@@ -502,8 +519,9 @@ decides to ask; it does not keep a list of its own.
   and on nothing else, so leaving the question unanswered would leave the
   session stuck for ever. Switchboard **declines** it instead, and tells Claude
   plainly that nobody was available rather than that it was blocked — so it
-  stops and asks again rather than hunting for a way round. You'll see it come
-  back as a normal request the next time you're there. If you want a session to
+  stops and waits for you rather than hunting for a way round, or asking again
+  into an empty room. When you're back, tell it to carry on and the request
+  comes back as a normal one. If you want a session to
   keep going while you're away, turn on **Allow all (this session)** before you
   leave.
 - **A question can't outlive the session that asked it.** If a session dies

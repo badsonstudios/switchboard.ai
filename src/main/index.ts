@@ -15,7 +15,17 @@ import {
 } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { ArrangementMemories, planDisplayRestore, windowOptionsFrom, WindowState } from './window-state';
+import {
+  ArrangementMemories,
+  isOnAnyDisplay,
+  metricsChangeRestores,
+  planDisplayRestore,
+  rescueOffscreen,
+  windowOptionsFrom,
+  WindowState,
+} from './window-state';
+import { MINIMIZED_IS_REACHABLE, gateUnreachable, unreachableReason } from './window-reach';
+import { rectText, watchMainWindowPlacement } from './window-placement-log';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
 import os from 'os';
 import { LogSink, createLogger } from './log/logger';
@@ -333,8 +343,20 @@ let restoringLayout = false;
 let displaySettling = false;
 /** a restore deferred because the window was minimized or fullscreen (#864) */
 let retryWhenVisible = false;
+/**
+ * Has the current main window been shown yet? (#1277) It is created with
+ * `show: false` and shown on `ready-to-show`, so for the first beat of every
+ * launch it is legitimately invisible — and the reachability gate must not read
+ * "not shown yet" as "nobody can see it".
+ */
+let mainWindowShown = false;
 /** set once the display handlers exist; runs a deferred restore (#864) */
 let onWindowBecameVisible: (() => void) | null = null;
+/**
+ * Re-judge whether the current main window is on an attached display (#1277),
+ * from a DISPLAY event rather than a window one — see `PlacementWatch.recheck`.
+ */
+let recheckMainPlacement: (() => void) | null = null;
 let busySessions: () => string[] = () => [];
 let quitConfirmed = false;
 
@@ -599,6 +621,7 @@ function createWindow(): BrowserWindow {
   // the session, the busy-sessions prompt skipped, and a boot snapshot that no
   // longer describes what's on disk.
   quitConfirmed = false;
+  mainWindowShown = false;
   snapshotPopoutBoxes();
   const state: WindowState = workspace.restoreWindow(workAreas());
   const win = new BrowserWindow({
@@ -666,6 +689,23 @@ function createWindow(): BrowserWindow {
     acceleratorReadyFor = null;
   });
   trackWindowGeometry(win);
+  // Every minimize / restore / hide / show / move of this window, with its
+  // bounds and display, in `ui` (#1277). Before this, a window that wandered off
+  // left no trace at all, and every report of one was a guess.
+  const placement = watchMainWindowPlacement(win, {
+    log: log.ui,
+    workAreas,
+    displayIdOf: (b) => {
+      try {
+        return screen.getDisplayMatching(b).id;
+      } catch {
+        return null;
+      }
+    },
+  });
+  recheckMainPlacement = () => {
+    if (win === currentWindow) placement.recheck();
+  };
   win.on('close', (e) => {
     if (!confirmCloseWithBusySessions(win)) {
       e.preventDefault();
@@ -734,6 +774,7 @@ function createWindow(): BrowserWindow {
   });
   win.once('ready-to-show', () => {
     win.show();
+    if (win === currentWindow) mainWindowShown = true;
     log.ui.info('window shown', { restored: !!state.bounds, maximized: state.isMaximized });
     const afterPaint = onFirstWindowShown;
     onFirstWindowShown = null;
@@ -1079,27 +1120,93 @@ app
         return;
       }
       const areas = workAreas();
+      const fingerprint = displayFingerprint(areas);
       const plan = planDisplayRestore({
         memories,
-        fingerprint: displayFingerprint(areas),
+        fingerprint,
         currentBounds: win.getNormalBounds(),
         workAreas: areas,
         isMaximized: win.isMaximized(),
+        // THE CLAMP SAYS SO (#1277): a note nobody could reach is refused, and
+        // the refusal is the line a future report needs to find.
+        onRefused: (why, bounds) =>
+          log.ui.warn('main window NOT returned to the remembered position', {
+            why,
+            remembered: rectText(bounds),
+            arrangement: fingerprint,
+          }),
+        onClamped: (from, to) =>
+          log.ui.info('remembered position slid back within reach', {
+            remembered: rectText(from),
+            placed: rectText(to),
+            arrangement: fingerprint,
+          }),
       });
       // Saving reopens BEFORE the verbs below, deliberately: the move and
       // resize they raise are the ordinary path recording where the window
       // ended up, which is exactly what we want written.
       displaySettling = false;
-      if (!plan) return;
+      if (!plan) {
+        // NO NOTE TO RETURN TO, AND NOWHERE ANYONE CAN SEE (#1277). #864 only
+        // ever moved the window to a note, so a window the OS left off every
+        // display stayed there for good — and the permission gate then denies
+        // everything, because nobody can see it. Bring it back the way the boot
+        // rescue does: same size where it fits, centred on the primary.
+        let primary: Electron.Rectangle | null = null;
+        try {
+          primary = screen.getPrimaryDisplay().workArea;
+        } catch {
+          // diagnostics-grade lookup; without it there is nowhere to rescue to
+        }
+        // A MAXIMIZED window that fills an attached display is reachable whatever
+        // its normal bounds say; unmaximizing it to "rescue" those would be the
+        // app moving a window nobody lost.
+        if (win.isMaximized() && isOnAnyDisplay(win.getBounds(), areas)) return;
+        const rescue = primary ? rescueOffscreen(win.getNormalBounds(), areas, primary) : null;
+        if (!rescue) return;
+        if (win.isMaximized()) win.unmaximize();
+        win.setBounds(rescue.bounds);
+        log.ui.warn(
+          rescue.how === 'centred'
+            ? 'main window was off every attached display — brought back to the primary'
+            : 'main window title bar was out of reach — slid back within reach',
+          { bounds: rectText(rescue.bounds), arrangement: fingerprint }
+        );
+        return;
+      }
       if (plan.unmaximizeFirst) win.unmaximize();
       win.setBounds(plan.bounds);
       if (plan.maximizeAfter) win.maximize();
+      let displayId: number | null = null;
+      try {
+        displayId = screen.getDisplayMatching(plan.bounds).id;
+      } catch {
+        // diagnostics only
+      }
       log.ui.info('main window returned to its remembered display', {
-        bounds: `${plan.bounds.x},${plan.bounds.y} ${plan.bounds.width}x${plan.bounds.height}`,
+        bounds: rectText(plan.bounds),
+        maximized: plan.maximizeAfter,
+        displayId,
+        arrangement: fingerprint,
       });
     };
-    /** how long to let the OS finish shuffling before we place the window */
-    const displaySettleMs = positiveMs(process.env.SWITCHBOARD_DISPLAY_SETTLE_MS) ?? 600;
+    /**
+     * How long to let the OS finish shuffling before we place the window.
+     *
+     * 2.5 s, up from #864's 600 ms, and the owner's log is why (#1277). A
+     * monitor waking is not one burst but two, about a second apart: the
+     * display arrives, and THEN its taskbar does, which shrinks the work area
+     * and changes the fingerprint (his workspace file holds both, `…2560,1440…`
+     * and `…2560,1392…`, for the same monitors). With 600 ms the first restore
+     * had already run when the second burst arrived, so every wake placed the
+     * window TWICE, from two different notes — `-2296,-21 1996x674`, then
+     * `640,296 1280x800` a second later — and for hours the two notes
+     * ping-ponged, growing the window one pixel per round. That was the "second
+     * writer": the same restore, run again on the second half of one wake. A
+     * settle that outlasts the gap makes it one restore, at the arrangement the
+     * displays actually settle on. The env var still overrides.
+     */
+    const displaySettleMs = positiveMs(process.env.SWITCHBOARD_DISPLAY_SETTLE_MS) ?? 2500;
     let displaySettleTimer: NodeJS.Timeout | undefined;
     let pendingMemories: ArrangementMemories | null = null;
     const scheduleMainWindowRestore = (): void => {
@@ -1137,7 +1244,28 @@ app
     // raise "restore your popouts?" with nothing having reconnected — and would
     // re-raise it after the user dismissed it, because the stash is only
     // cleared when the offer is accepted. The popout flow stays as it was.
-    screen.on('display-added', () => {
+    // Every display event is logged, with the arrangement it leaves behind
+    // (#1277): a window that moved with no display event beside it is a
+    // different bug from one the OS shuffled, and the log has to be able to
+    // tell them apart.
+    const logDisplayEvent = (what: string, d: Electron.Display, extra: Record<string, unknown> = {}): void => {
+      try {
+        log.ui.info(`display ${what}`, {
+          displayId: d.id,
+          bounds: rectText(d.bounds),
+          workArea: rectText(d.workArea),
+          scaleFactor: d.scaleFactor,
+          ...extra,
+          arrangement: displayFingerprint(workAreas()),
+        });
+        // a detach can strand the window without the window raising anything
+        recheckMainPlacement?.();
+      } catch {
+        // diagnostics must never be why a display handler throws
+      }
+    };
+    screen.on('display-added', (_e, d) => {
+      logDisplayEvent('added', d);
       tellRendererDisplaysChanged();
       scheduleMainWindowRestore();
     });
@@ -1146,13 +1274,32 @@ app
     // recorded as the user's own choice. Suspending saves is most of the value
     // here; placing the window matters too, for the arrangement you drop INTO
     // when you unplug at the desk.
-    screen.on('display-removed', () => {
+    screen.on('display-removed', (_e, d) => {
+      logDisplayEvent('removed', d);
       scheduleMainWindowRestore();
     });
-    // A resolution or work-area change is the same class of event as a hotplug
-    // — a monitor waking at a different resolution looks exactly like this —
-    // and it changes the fingerprint, so the same decision applies.
-    screen.on('display-metrics-changed', () => {
+    // A resolution or scale change is the same class of event as a hotplug — a
+    // monitor waking at a different resolution looks exactly like this — and it
+    // changes the fingerprint, so the same decision applies.
+    //
+    // ⚠️ A WORK-AREA-ONLY CHANGE IS NOT (#1277). That is a taskbar appearing,
+    // moving, resizing or auto-hiding, and a taskbar never moves a window from
+    // one monitor to another — but it does mint a new fingerprint, so treating
+    // it as a hotplug restored the window to whatever note that fingerprint held.
+    // It was the second half of every wake (the taskbar lands a beat after its
+    // monitor), and on its own it meant a taskbar toggle could yank the window
+    // across the desk.
+    //
+    // AN EMPTY LIST IS NOT EITHER. Measured on the owner's desktop while
+    // writing this (three monitors at 150%): Electron raises this event at
+    // EVERY BOOT, once per display, with `changed: []`. Nothing changed, so
+    // there is nothing to restore, and treating it as a hotplug suspended
+    // geometry saving and held the reachability gate open for the first
+    // seconds of every launch.
+    screen.on('display-metrics-changed', (_e, d, changed) => {
+      const moves = metricsChangeRestores(changed);
+      logDisplayEvent('metrics changed', d, { changed, restores: moves });
+      if (!moves) return;
       scheduleMainWindowRestore();
     });
     // move a popout window to a restored display (E8-06 accept). Done here:
@@ -1430,6 +1577,29 @@ app
       const w = currentWindow;
       return !!w && !w.isDestroyed() && !w.webContents.isCrashed();
     };
+    // …and could a PERSON get to it? (#1277) `hasLiveWindow` answers "does a
+    // window exist", which an off-screen window passes. `window-reach.ts` says
+    // what counts, and `gateUnreachable` why a window that is not shown yet, or
+    // one mid-hotplug, still counts as reachable.
+    //
+    // ANY visible popout counts, for every session: popouts share the main
+    // window's renderer, and this is the side that fails toward HOLDING.
+    const windowUnreachable = (): string | null => {
+      const w = currentWindow;
+      return gateUnreachable(
+        { exists: !!w && !w.isDestroyed(), shown: mainWindowShown, settling: displaySettling },
+        () =>
+          unreachableReason(
+            w!,
+            popoutWindows.map((p) => p.win).filter((p) => !p.isDestroyed()),
+            workAreas(),
+            {
+              minimizedIsReachable: MINIMIZED_IS_REACHABLE,
+              appHiddenByUser: process.platform === 'darwin' && app.isHidden(),
+            }
+          )
+      );
+    };
     // A permission request -> the approval bar (P2-E18-07). Answers go back
     // through the session's provider (its `approvals` control, #1287), which
     // only the manager can reach.
@@ -1444,6 +1614,7 @@ app
       // and nothing to release what was already held.
       {
         hasLiveWindow,
+        windowUnreachable,
         // A per-file grant has to resolve a relative path against the session's
         // own directory, and the router only ever sees a session id (#974).
         // Null for a session the manager has forgotten, which

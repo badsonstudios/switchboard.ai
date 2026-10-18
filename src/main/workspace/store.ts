@@ -44,9 +44,12 @@ import {
   ArrangementMemories,
   MAX_REMEMBERED_ARRANGEMENTS,
   WindowState,
+  clampIntoArrangement,
   isOnAnyDisplay,
+  looksLikeBootRescue,
   mergeState,
   rememberArrangement,
+  workAreasOfFingerprint,
 } from '../window-state';
 import type { CliCost } from '../../shared/transcripts';
 import { UpdatePrefs } from '../../shared/update';
@@ -1408,7 +1411,29 @@ export class WorkspaceStore {
     // No bounds (a rescued window centred by Electron) records nothing: there
     // is no position worth remembering, and writing one would teach the map a
     // rectangle the user never chose.
-    const arrangements = w.bounds
+    //
+    // ⚠️ AND NOR DOES A RECTANGLE THAT IS NOT ON THE ARRANGEMENT IT IS FILED
+    // UNDER (#1277). The paragraph above claimed every save "carries the
+    // fingerprint of the arrangement it is actually on", and the owner's own
+    // workspace file disproved it: the note for his primary monitor ALONE held
+    // `x: -2296`, a position on a monitor that arrangement does not have. A
+    // save fires on whatever event comes next — a resize, a maximize, the
+    // forced save at close — and the fingerprint is computed fresh while the
+    // window is still where the old arrangement left it. That note was then
+    // restored to. The fingerprint IS the list of work areas, so the check is
+    // exact; one we cannot read (an old or hand-edited file) is left to the old
+    // behaviour, since we have no opinion about it.
+    //
+    // VISIBLE is the bar, not "title bar reachable": a window parked half off an
+    // edge is a position people choose, and the read side clamps it back into
+    // reach if it ever needs to. And not the boot rescue's default, which is a
+    // position nobody chose (`looksLikeBootRescue`) — the owner's desk note was
+    // exactly that.
+    const areas = w.bounds ? workAreasOfFingerprint(w.displayFingerprint) : null;
+    const belongs =
+      !!w.bounds &&
+      (areas === null || (isOnAnyDisplay(w.bounds, areas) && !looksLikeBootRescue(w.bounds, areas)));
+    const arrangements = belongs && w.bounds
       ? rememberArrangement(this.state.window?.arrangements ?? {}, w.displayFingerprint, {
           bounds: w.bounds,
           isMaximized: w.isMaximized,
@@ -1734,12 +1759,20 @@ export class WorkspaceStore {
     // Only consulted when the arrangement differs — if it matches, the last
     // save was made on these very displays and is the better answer.
     const remembered = w.arrangements?.[fingerprint];
-    if (!sameArrangement && remembered && isOnAnyDisplay(remembered.bounds, currentWorkAreas)) {
-      return { bounds: { ...remembered.bounds }, isMaximized: remembered.isMaximized };
-    }
-    if (w.bounds && (sameArrangement || isOnAnyDisplay(w.bounds, currentWorkAreas))) {
-      return { bounds: w.bounds, isMaximized: w.isMaximized };
-    }
+    // THE CLAMP (#1277), the same one the runtime restore applies: a rectangle
+    // is only restored to if it is visible on a display that is attached now,
+    // and one whose title bar is out of reach is slid back into it, size kept.
+    // The same-arrangement branch used to skip the check altogether, on the
+    // theory that a save made on these very displays must fit them — the write
+    // path above shows how that theory fails. A note that is only the boot
+    // rescue's default is not a place anybody chose (`looksLikeBootRescue`).
+    const note =
+      !sameArrangement && remembered && !looksLikeBootRescue(remembered.bounds, currentWorkAreas)
+        ? clampIntoArrangement(remembered.bounds, currentWorkAreas)
+        : null;
+    if (note && remembered) return { bounds: note, isMaximized: remembered.isMaximized };
+    const last = w.bounds ? clampIntoArrangement(w.bounds, currentWorkAreas) : null;
+    if (last) return { bounds: last, isMaximized: w.isMaximized };
     return { bounds: null, isMaximized: w.isMaximized }; // rescue, keep maximized
   }
 

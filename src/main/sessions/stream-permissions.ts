@@ -121,7 +121,7 @@ const NO_DEADLINE = null;
  *
  * The difference decides one thing here and it is not cosmetic: an allow-all
  * session must not answer it (see `offer`). Everything else about the request —
- * the hold, the deadline, the fail-open deny — is identical, because the CLI is
+ * the hold, the deadline, the nobody-answered deny — is identical, because the CLI is
  * blocked on us in exactly the same way.
  */
 function isQuestion(tool: string): boolean {
@@ -184,7 +184,7 @@ function answersLookRight(answers: unknown): boolean {
  * session that is, and the PROVIDER knows its wire (#1287; for Claude a
  * `control_response` to the `can_use_tool`). `requestId` is the engine's own id,
  * as the `permission-request` event carried it. False = it could not be
- * written, which every fail-open path below already reads as "the session is
+ * written, which every nobody-answered deny below already reads as "the session is
  * gone".
  */
 export type SendToSession = (
@@ -262,18 +262,34 @@ export type ApplyStatus = (sessionId: string, ev: SessionEvent) => void;
 export type AnswerSurfaceProbe = (sessionId: string) => boolean;
 
 /**
- * The fail-open half (#319). Optional, and both default to the hook path's
- * behaviour, so a call site that knows nothing about either is no worse off
- * than it was — but the app wires both, and there is only one app.
+ * The nobody-can-answer half (#319, #1277). Optional, and each defaults to
+ * "someone is there" (or the hook path's 300 s), so a call site that knows
+ * nothing about them is no worse off than it was — but the app wires them all,
+ * and there is only one app.
  */
 export interface StreamPermissionsOptions {
   /**
-   * Is there a renderer that could answer a hold? Same provider the hook path
-   * takes (`HookListener.hasLiveWindow`), and it must be the same expression:
-   * two liveness checks that could disagree would mean one channel failing open
-   * while the other parks.
+   * Is there a renderer that could answer a hold? Once shared with the hook
+   * path's hold, so the two channels could not disagree; #952 removed that
+   * path, and this is now the only consumer. EXISTENCE only — whether anybody
+   * can see the window is `windowUnreachable`'s question (#1277).
    */
   hasLiveWindow?: () => boolean;
+  /**
+   * The window is ALIVE — but could anybody see it? (#1277)
+   *
+   * Null means yes; a string is why not, for the log ("off every attached
+   * display", "hidden"). Asked only once `hasLiveWindow` has said the renderer
+   * is there, so it never has to repeat that half.
+   *
+   * `hasLiveWindow` tests EXISTENCE, and the owner's log shows why that is not
+   * enough: the window sat somewhere no display showed it, every heartbeat
+   * still counted `windows: 1`, and each permission request waited its full
+   * 300 s for a person who could not see the bar, then was denied. A window
+   * nobody can reach takes the same branch as no window. See
+   * `main/window-reach.ts` for what counts.
+   */
+  windowUnreachable?: () => string | null;
   /** How long a question may go unanswered. Defaults to the hook path's 300s. */
   holdTimeoutMs?: number;
   /**
@@ -301,7 +317,7 @@ interface Pending {
   /** the CLI's own request id — what the control_response must echo back */
   nativeRequestId: string;
   request: PermissionRequest;
-  /** the fail-open deadline (#319), or null for a question (#570) — cleared by
+  /** the nobody-answered deadline (#319), or null for a question (#570) — cleared by
    *  every exit from `pending` */
   timer: NodeJS.Timeout | null;
 }
@@ -403,6 +419,28 @@ export class StreamPermissions {
   }
 
   /**
+   * Why nobody can SEE the live window, or null if somebody can (#1277).
+   *
+   * A probe that throws counts as REACHABLE, which is the opposite of
+   * `windowLive` above and the same direction as `answerable` below, for
+   * `answerable`'s reason: the window is known to exist, so holding costs at
+   * most the 300 s deadline (a QUESTION has none, #570: it waits for a person,
+   * as it did before this gate existed), while denying on "I can't tell" throws away a
+   * question the user may be looking straight at. A bounded wrong wait beats an
+   * unbounded wrong verdict.
+   */
+  private unreachable(): string | null {
+    try {
+      return this.opts.windowUnreachable?.() ?? null;
+    } catch (err) {
+      this.log.warn('window reachability check threw — holding the request anyway', {
+        error: errorText(err),
+      });
+      return null;
+    }
+  }
+
+  /**
    * Teach this router which live sessions have a surface that can show a
    * question (#333). See `AnswerSurfaceProbe` for what the question means.
    *
@@ -490,7 +528,9 @@ export class StreamPermissions {
    * added by #333:
    *
    * 1. **allow-all** — answered here, no hold, no push, no beep;
-   * 2. **no live window** — answered here as a DENY, because nobody can;
+   * 2. **no live window, or one nobody can see** — answered here as a DENY,
+   *    because nobody can (the second half is #1277: off every display, or
+   *    hidden — see `windowUnreachable`);
    * 3. **no card owns this session** — answered here as a DENY too, with a
    *    DIFFERENT reason, because the window is fine and this one session's
    *    question has nowhere to appear;
@@ -584,10 +624,10 @@ export class StreamPermissions {
     //    cannot write and cannot say so. One tool, one measured reason.
     if (this.dispatchedSessions.has(sessionId) && request.tool === EXIT_PLAN_MODE_TOOL) {
       // ⚠️ NOT `unavailable()`, AND THE REASON IS ITS LAST SENTENCE. That helper
-      // ends with "Say so and ask again; it will be reviewed then", which is true
-      // for its four callers — a closed window, a missed deadline, an undelivered
-      // answer, an unowned session — and FALSE here: asking again gets this same
-      // refusal, for ever, because nobody is coming. #948's probe measured the
+      // used to end every denial with "Say so and ask again; it will be reviewed
+      // then" (#1277 split it into a stop and a retry closing), and even its
+      // 'stop' closing promises that someone will be back — FALSE here: asking
+      // again gets this same refusal, for ever, because nobody is coming. #948's probe measured the
       // model retrying `ExitPlanMode` 5 s after a denial, so the wrong closing
       // sentence would be actively encouraging a loop.
       //
@@ -725,26 +765,60 @@ export class StreamPermissions {
     //    EVER: nothing else answers a `control_request`, and unlike a held
     //    PreToolUse there is no TUI prompt waiting behind it to take over.
     //
-    //    So this channel's fail-open is a DENY, for the reason `forgetSession`
-    //    gives below: a `can_use_tool` has no "no opinion" answer — the
-    //    transport IS the decision — and a refused tool call is recoverable
-    //    where a wedged session is not. The user can always ask again.
-    if (!this.windowLive()) {
-      // Loud the first time per session, quiet after: a closed window with a
+    //    So when nobody can answer, this channel DENIES, for the reason
+    //    `forgetSession` gives below: a `can_use_tool` has no "no opinion"
+    //    answer — the transport IS the decision — and a refused tool call is
+    //    recoverable where a wedged session is not. (#319 called this "failing
+    //    open", meaning "never park"; #1277 retired the phrase, because a log
+    //    line reading "failed open (denied)" told its reader the opposite.)
+    //
+    //    AND A WINDOW NOBODY CAN SEE IS NO WINDOW (#1277). Existence alone let
+    //    an off-screen window through: the request was pushed to a bar nobody
+    //    could see, held its 300 s, and was denied anyway — five minutes of
+    //    a blocked session for the same verdict this branch gives at once.
+    const gone = !this.windowLive();
+    const unseen = gone ? null : this.unreachable();
+    if (gone || unseen !== null) {
+      // Loud the first time per outage, quiet after: a closed window with a
       // busy session produces one of these per gated call, and a log that
       // repeats one line for ever is a log nobody reads (the hook path's rule).
+      // ONE flag for both kinds of outage — they are the same outage from the
+      // session's side, and a window that goes from off-screen to closed has not
+      // started a new one.
       const first = !this.noWindowWarned.has(sessionId);
       this.noWindowWarned.add(sessionId);
-      const where = { sessionId, requestId, tool: request.tool };
-      const message = this.unavailable('No switchboard window was open to review this request');
+      const message = this.unavailable(
+        gone
+          ? 'No switchboard window was open to review this request'
+          : 'The switchboard window was open but not where anyone could see it',
+        'stop'
+      );
       this.send(sessionId, nativeRequestId, { behavior: 'deny', message });
       // Unlike `forgetSession`, this session is ALIVE and carries on: the
       // `permission-held` that `streamStatusEvent` already applied one message
       // ago has to end, or the card the user eventually reopens shows a
       // question that was answered while they were away.
-      this.applyStatus(sessionId, { kind: 'permission-resolved' });
-      if (first) this.log.warn('no live window to ask — denying to keep the session moving', where);
-      else this.log.debug('no live window to ask — denying to keep the session moving', where);
+      //
+      // ...UNLESS SOMETHING ELSE IS STILL HELD FOR IT (review, #1277). Before
+      // #1277 this branch and a held request barely overlapped — a closed window
+      // releases everything it held — but an UNSEEN window deliberately keeps
+      // its earlier holds on their deadline, so a parallel call can be held while
+      // this one is declined. Walking the session to `working` would hide the
+      // held one: #1202 again, the guard `decide` and `denyUnanswered` carry.
+      if (!this.holdsAnotherFor(sessionId, requestId)) {
+        this.applyStatus(sessionId, { kind: 'permission-resolved' });
+      }
+      const line = gone
+        ? 'no live window to ask — denying to keep the session moving'
+        : 'the window is open but nobody can see it — denying at once rather than parking it';
+      const where = {
+        sessionId,
+        requestId,
+        tool: request.tool,
+        ...(unseen !== null ? { why: unseen } : {}),
+      };
+      if (first) this.log.warn(line, where);
+      else this.log.debug(line, where);
       return;
     }
     // A window is back. Re-arm the warning so the NEXT outage is loud again
@@ -776,7 +850,10 @@ export class StreamPermissions {
       const where = { sessionId, requestId, tool: request.tool };
       const message = this.unavailable(
         'Switchboard lost track of which of its cards this session belongs to and had nowhere ' +
-          'on screen to show this request'
+          'on screen to show this request',
+        // a retry meets the same lost binding and is declined the same way,
+        // whether or not the user is sitting right there
+        'stuck'
       );
       const delivered = this.send(
         sessionId,
@@ -787,7 +864,7 @@ export class StreamPermissions {
       // ALIVE carries on, so the `permission-held` applied one message ago has
       // to end. A no-op for the straggler below — `SessionManager.apply` drops
       // events for sessions it no longer knows — which is exactly why this is
-      // safe to call unconditionally.
+      // safe to call, guarded only by `holdsAnotherFor` like every other exit.
       //
       // NOT suppressed at the pump the way allow-all is, and that was weighed
       // (#333 review). `setPermissionHoldSuppressor` could be widened to cover
@@ -799,7 +876,9 @@ export class StreamPermissions {
       // something is wrong, in a case whose whole history is that it was silent
       // for five minutes. Suppressing it would make the invariant violation
       // quieter, not the app calmer.
-      this.applyStatus(sessionId, { kind: 'permission-resolved' });
+      if (!this.holdsAnotherFor(sessionId, requestId)) {
+        this.applyStatus(sessionId, { kind: 'permission-resolved' });
+      }
       // HOW LOUD depends on whether anybody was still listening, and `send` is
       // the only thing that knows (#333 review).
       //
@@ -856,7 +935,11 @@ export class StreamPermissions {
       timeout === null
         ? null
         : setTimeout(() => {
-            this.failOpen(requestId, 'permission hold timed out');
+            this.denyUnanswered(
+              requestId,
+              'permission hold timed out',
+              'Nobody in switchboard answered this request in time'
+            );
           }, timeout);
     timer?.unref?.();
     // WHEN THE HOLD RUNS OUT, told to the window (#1202). The owner: "our
@@ -939,7 +1022,9 @@ export class StreamPermissions {
     const payload: PermissionDecision = undeliverable
       ? {
           behavior: 'deny',
-          message: this.unavailable('Your answer to this question could not be delivered'),
+          // the one unavailable-denial where asking again CAN work: the user
+          // was right there and answered, so the next ask will find them
+          message: this.unavailable('Your answer to this question could not be delivered', 'retry'),
         }
       : decision === 'allow'
         ? { behavior: 'allow', updatedInput: answered ?? p.request.input }
@@ -1231,7 +1316,8 @@ export class StreamPermissions {
   }
 
   /**
-   * Fail every parked request open at once, across every session (#319).
+   * Deny every parked request at once, across every session (#319) — nobody is
+   * left who could answer them.
    *
    * The renderer is gone — window closed, or its process died — and the
    * sessions are still running in main. The `hasLiveWindow` gate in `offer`
@@ -1261,7 +1347,12 @@ export class StreamPermissions {
       reason,
       count: ids.length,
     });
-    for (const id of ids) this.failOpen(id, reason);
+    // Told as what it was: the window went away. It used to reuse the deadline's
+    // "nobody answered in time", which blamed a person who was never given the
+    // time (#1277).
+    for (const id of ids) {
+      this.denyUnanswered(id, reason, 'The switchboard window went away before anyone answered this request');
+    }
   }
 
   /**
@@ -1288,37 +1379,71 @@ export class StreamPermissions {
    * from "switchboard lost track of this session", which is the difference
    * between something the user did and a bug worth reporting. Every caller
    * passes a clause nothing else passes, and none of them blames the same thing
-   * twice: only the #319 window case says "window".
+   * twice: only the window cases (#319's, and #1277's unseen window) say
+   * "window".
+   *
+   * `next` is the CLOSING, and #1277 is why there are two. Every one of these
+   * used to end "Say so and ask again; it will be reviewed then" — and in the
+   * owner's log an agent did exactly that, six times, five minutes apart, for
+   * half an hour: each retry met the same empty room and the same denial. For
+   * every cause where nobody is there (`'stop'`), asking again cannot help, so
+   * the model is told to say what it needed and stop until the user replies —
+   * which is what actually gets the request seen. Only an answered question
+   * that failed to arrive (`'retry'`) had a person present, and there asking
+   * again is the way through. A lost card (`'stuck'`) gets the stop without
+   * the promise that somebody will be back: the user may be right there, and
+   * the fault is ours.
    */
-  private unavailable(what: string): string {
-    return (
+  private unavailable(what: string, next: 'stop' | 'retry' | 'stuck'): string {
+    const head =
       `${what}, so switchboard declined it rather than leave you blocked for ever. ` +
       'This is NOT a sandbox restriction, a misconfiguration, or a decision anyone made ' +
       'about this request — there was simply nobody available to review it. Do not work ' +
-      'around it with another tool. Say so and ask again; it will be reviewed then.'
+      'around it with another tool.';
+    if (next === 'retry') return `${head} Say so and ask again; it will be reviewed then.`;
+    if (next === 'stuck') {
+      return (
+        `${head} Do not repeat the request on your own either: it will be declined the same ` +
+        'way. Say what you were trying to do and why it needs approval, then stop and wait ' +
+        'for the user to reply.'
+      );
+    }
+    return (
+      `${head} Do not repeat the request on your own either: until someone is back it will ` +
+      'be declined the same way. Say what you were trying to do and why it needs approval, ' +
+      'then stop and wait for the user to reply.'
     );
   }
 
   /**
-   * Answer one held request the user never got to — deadline or lost renderer.
+   * Answer one held request nobody answered — its deadline ran out, or the
+   * window went away with it parked. ALWAYS A DENY (#319, #1277).
+   *
+   * Called `failOpen` until #1277, and the name was the bug report: its log
+   * line read "stream permission failed open (denied)", which a reader takes
+   * to mean the call was ALLOWED. It never was. #319 chose deny on purpose — a
+   * `can_use_tool` has no "no opinion" answer, and a refused tool call is
+   * recoverable where an unattended allow is not — and the name now says what
+   * the function does.
    *
    * Deny, apply, notify: the same three steps `decide` takes, minus the user.
    */
-  private failOpen(requestId: string, why: string): void {
+  private denyUnanswered(requestId: string, why: string, what: string): void {
     const p = this.pending.get(requestId);
     if (!p) return;
     this.pending.delete(requestId);
     if (p.timer) clearTimeout(p.timer);
-    const message = this.unavailable('Nobody in switchboard answered this request in time');
+    const message = this.unavailable(what, 'stop');
     this.send(p.sessionId, p.nativeRequestId, { behavior: 'deny', message });
     // the same guard as `decide`: one of two holds timing out must not walk
     // the session to `working` over the one that is still waiting (#1202)
     if (!this.holdsAnotherFor(p.sessionId, requestId)) {
       this.applyStatus(p.sessionId, { kind: 'permission-resolved' });
     }
-    this.log.warn('stream permission failed open (denied)', {
+    this.log.warn('stream permission denied — nobody answered', {
       requestId,
       sessionId: p.sessionId,
+      tool: p.request.tool,
       why,
     });
     this.notifyResolved(requestId);
@@ -1343,7 +1468,7 @@ export class StreamPermissions {
    * keep the card waiting, with a bar that answers nothing, until its
    * deadline; a question has no deadline at all.
    *
-   * Let go, apply, notify: `failOpen` without the denial.
+   * Let go, apply, notify: `denyUnanswered` without the denial.
    */
   private withdrawn(sessionId: string, nativeRequestId: string): void {
     if (!nativeRequestId) return;

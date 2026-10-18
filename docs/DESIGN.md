@@ -2896,6 +2896,23 @@ approval UI entirely rather than decorating it.
 > Refined 2026-07-23 (owner's phantom-beep find): allow-all is answered in
 > the MAIN process — a granted session's gated calls never hold, never
 > emit needs-permission, never beep; the grant dies with the live session.
+> **Nobody to ask means REACHABILITY, not existence (2026-10-17, #1277).** The
+> no-window gate asked only whether a window existed, so an off-screen window
+> held every request its full 300 s and then denied it. A window nobody can
+> reach (hidden, off every attached display, no display attached), with no
+> visible popout, now takes the same deny-at-once branch as no window, with
+> its own wording. **Minimized counts as reachable**: its taskbar button and
+> §5.9's actionable toast both reach it (`MINIMIZED_IS_REACHABLE`, one
+> constant; flagged to the owner). Not-yet-shown and displays-settling count
+> as reachable too. The verdict stays **deny** (#319: a `can_use_tool` has no
+> "no opinion" answer); `failOpen` was renamed `denyUnanswered` so the name and
+> log line say so. Every nobody-answered denial tells the model to **stop and
+> wait for the user** rather than "ask again". Only an undeliverable answer,
+> where a person was present, still says retry. Any visible popout counts for
+> every session (it fails toward holding). **Open:** §5.9's actionable toast
+> can answer while the window is off-screen too, but the gate declines before
+> any toast is raised; toasts are off by default, and whether they should keep
+> an unseen window "reachable" is the owner's call, alongside the minimized one.
 
 **Mechanism.** `PreToolUse` hook on `Edit|Write|MultiEdit` fires BEFORE execution
 with the full proposed change (file path, old/new content) and can RETURN the
@@ -5382,6 +5399,19 @@ context transfer, and the attention queue work across monitors.
   already lived moves it. Popouts keep the consent gate; they are a layout, and a
   layout landing on an unexpected display is a mess to undo, while one window
   going back where it was is what every other app on the machine does.
+  *Amended 2026-10-17 (#1277), after the owner's log showed every wake placing
+  the window twice from two different notes:* a wake is two bursts (the display,
+  then its taskbar a beat later), so the restore settles for **2.5 s** and runs
+  once; a **work-area-only** (or empty) `display-metrics-changed` never restores,
+  because a taskbar change never moves a window between monitors. A note is
+  restored to, at boot or at runtime, only if it is visible on an attached
+  display, and in addition one whose **title bar** is out of reach is **slid
+  back** onto the work area it mostly covers, size kept. The store refuses to
+  file a note under an arrangement the rectangle is not visible on, and never
+  files the boot rescue's default (1280x800 centred), which nobody chose (it
+  was the owner's "went to the main monitor" note). A window left off every
+  display after a display event is brought back to the primary. Every
+  main-window placement transition and display event is logged in `ui`.
 - **Topology-aware layouts**: named layouts can bind to a display-topology
   fingerprint; on startup the matching layout applies automatically ("3-monitor
   desk" vs "laptop only" — the docking-station commute solved).
