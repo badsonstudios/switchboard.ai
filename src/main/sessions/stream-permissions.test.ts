@@ -603,7 +603,7 @@ describe('a decision resolves the status, without waiting for the CLI (#310)', (
 // there is no such fallback here, so "no opinion" is not one of the things this
 // channel can say. A refused tool call is recoverable — ask again — and a wedged
 // session is not.
-describe('failing open when nobody can answer (#319)', () => {
+describe('denying at once when nobody can answer (#319)', () => {
   /** the router under test, built with the two knobs the app now wires */
   function router(opts: {
     hasLiveWindow?: () => boolean;
@@ -818,6 +818,267 @@ describe('failing open when nobody can answer (#319)', () => {
   });
 });
 
+// #1277 — a window that EXISTS is not a window anybody can SEE.
+//
+// The owner's log: every heartbeat said `windows: 1` while the window sat where
+// no display showed it, and every permission request in that stretch waited its
+// full 300 s for a person who could not see the bar — six in a row, five minutes
+// apart, each followed by the model being told to "ask again". An alive but
+// unreachable window takes the no-window branch now, with its own words.
+describe('a window nobody can see is treated as no window (#1277)', () => {
+  /** captures every log line, by level, so the reason can be asserted */
+  function router(opts: {
+    hasLiveWindow?: () => boolean;
+    windowUnreachable?: () => string | null;
+    holdTimeoutMs?: number;
+  }): { p: ClaudeFedPermissions; lines: Array<{ level: string; msg: string; fields?: LogFields }> } {
+    const lines: Array<{ level: string; msg: string; fields?: LogFields }> = [];
+    const realLog = createLogger(new LogSink({ dir }), 'perm');
+    const capture =
+      (level: 'debug' | 'info' | 'warn' | 'error') =>
+      (msg: string, fields?: LogFields): void => {
+        lines.push({ level, msg, fields });
+        realLog[level](msg, fields);
+      };
+    const log = {
+      ...realLog,
+      debug: capture('debug'),
+      info: capture('info'),
+      warn: capture('warn'),
+      error: capture('error'),
+    } satisfies Logger;
+    const p = new ClaudeFedPermissions(
+      (sessionId, msg) => {
+        sent.push({ sessionId, msg: msg as Record<string, unknown> });
+        return true;
+      },
+      (sessionId, ev) => applied.push({ sessionId, ev }),
+      log,
+      opts
+    );
+    p.onPermissionRequest((r) => requests.push(r));
+    p.onPermissionResolved((id) => resolved.push(id));
+    return { p, lines };
+  }
+
+  function messageAt(i = 0): string {
+    return String(denialSent(i).message);
+  }
+
+  it('denies AT ONCE instead of holding 300 s for nobody', () => {
+    const { p } = router({ hasLiveWindow: () => true, windowUnreachable: () => 'off every attached display' });
+
+    p.offer('s1', canUseTool());
+
+    expect(p.pendingRequests()).toEqual([]); // nothing parked, so no deadline
+    expect(requests).toEqual([]); // and no bar pushed at a window nobody sees
+    expect(sent).toHaveLength(1);
+    expect(denialSent().behavior).toBe('deny');
+    // the badge comes down: the session is alive and carries on
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+  });
+
+  it('tells the model what happened, and to STOP rather than retry', () => {
+    const { p } = router({ hasLiveWindow: () => true, windowUnreachable: () => 'hidden' });
+
+    p.offer('s1', canUseTool());
+
+    const m = messageAt();
+    expect(m).toMatch(/window was open but not where anyone could see it/i);
+    expect(m).toMatch(/not a sandbox restriction/i);
+    expect(m).toMatch(/do not repeat the request/i);
+    expect(m).toMatch(/stop and wait for the user/i);
+    // the closing that produced a half-hour retry loop in the owner's log
+    expect(m).not.toMatch(/ask again/i);
+    // and nobody decided anything
+    expect(m).not.toMatch(/in time/i);
+  });
+
+  it('says something distinct from a closed window', () => {
+    const closed = router({ hasLiveWindow: () => false });
+    closed.p.offer('s1', canUseTool());
+    const closedMessage = messageAt(0);
+
+    const unseen = router({ hasLiveWindow: () => true, windowUnreachable: () => 'hidden' });
+    unseen.p.offer('s2', canUseTool());
+    const unseenMessage = messageAt(1);
+
+    expect(closedMessage).toMatch(/No switchboard window was open/i);
+    expect(unseenMessage).not.toBe(closedMessage);
+    expect(unseenMessage).not.toMatch(/No switchboard window was open/i);
+  });
+
+  it('logs WHY nobody could see it, once per outage', () => {
+    let why: string | null = 'off every attached display';
+    const { p, lines } = router({ hasLiveWindow: () => true, windowUnreachable: () => why, holdTimeoutMs: 5000 });
+    const gate = (): typeof lines =>
+      lines.filter((l) => l.msg.startsWith('the window is open but nobody can see it'));
+
+    p.offer('s1', canUseTool('req-1'));
+    expect(gate().map((l) => l.level)).toEqual(['warn']);
+    expect(gate()[0].fields).toMatchObject({ sessionId: 's1', why: 'off every attached display' });
+
+    p.offer('s1', canUseTool('req-2'));
+    expect(gate().map((l) => l.level)).toEqual(['warn', 'debug']); // still out: quiet
+
+    why = null; // back on screen: this one holds, and re-arms the warning
+    p.offer('s1', canUseTool('req-3'));
+    expect(p.pendingRequests()).toHaveLength(1);
+
+    why = 'hidden';
+    p.offer('s1', canUseTool('req-4'));
+    expect(gate().map((l) => l.level)).toEqual(['warn', 'debug', 'warn']); // loud again
+
+    p.forgetSession('s1', 'test over');
+  });
+
+  // Review: an UNSEEN window keeps its earlier holds on their deadline, so a
+  // parallel call can be declined while another is still held. Walking the
+  // session to `working` then would hide the held one (#1202's bug class).
+  it('declining one at once does not hide another that is still held', () => {
+    let why: string | null = null;
+    const { p } = router({ hasLiveWindow: () => true, windowUnreachable: () => why, holdTimeoutMs: 5000 });
+    p.offer('s1', canUseTool('held'));
+    expect(p.pendingRequests()).toHaveLength(1);
+
+    why = 'off every attached display';
+    p.offer('s1', canUseTool('declined'));
+
+    expect(denialSent().behavior).toBe('deny'); // the second was answered at once
+    expect(applied).toEqual([]); // ...and the session is still needs-permission
+    expect(p.pendingRequests().map((r) => r.requestId)).toEqual(['stream:s1:held']);
+    p.forgetSession('s1', 'test over');
+  });
+
+  it('a reachable window holds exactly as before', () => {
+    const { p } = router({ hasLiveWindow: () => true, windowUnreachable: () => null, holdTimeoutMs: 5000 });
+
+    p.offer('s1', canUseTool());
+
+    expect(p.pendingRequests()).toHaveLength(1);
+    expect(requests).toHaveLength(1);
+    expect(sent).toEqual([]);
+    p.forgetSession('s1', 'test over');
+  });
+
+  // The asymmetry with `windowLive`: the window is known to EXIST, so "I can't
+  // tell whether anyone sees it" holds — bounded by the deadline — rather than
+  // throwing away a question the user may be looking straight at.
+  it('a reachability probe that THROWS holds the request, and says so', () => {
+    const { p, lines } = router({
+      hasLiveWindow: () => true,
+      windowUnreachable: () => {
+        throw new Error('getBounds exploded');
+      },
+      holdTimeoutMs: 5000,
+    });
+
+    expect(() => p.offer('s1', canUseTool())).not.toThrow();
+    expect(p.pendingRequests()).toHaveLength(1);
+    expect(sent).toEqual([]);
+    expect(lines.some((l) => l.level === 'warn' && l.msg.startsWith('window reachability check threw'))).toBe(true);
+    p.forgetSession('s1', 'test over');
+  });
+
+  it('a CLOSED window is reported as closed, and reachability is not even asked', () => {
+    let asked = 0;
+    const { p } = router({
+      hasLiveWindow: () => false,
+      windowUnreachable: () => {
+        asked++;
+        return 'hidden';
+      },
+    });
+
+    p.offer('s1', canUseTool());
+
+    expect(asked).toBe(0);
+    expect(messageAt()).toMatch(/No switchboard window was open/i);
+  });
+
+  it('allow-all still answers at the server, seen or not', () => {
+    const { p } = router({ hasLiveWindow: () => true, windowUnreachable: () => 'hidden' });
+    p.setAllowAll('s1');
+
+    p.offer('s1', canUseTool());
+
+    expect(denialSent().behavior).toBe('allow');
+    expect(applied).toEqual([]);
+  });
+});
+
+// #1277 — `failOpen` did not fail open, and its log line said it did.
+//
+// "stream permission failed open (denied)" reads to anyone grepping a log as
+// "the call was allowed". It never was: #319 chose deny on purpose, because a
+// `can_use_tool` has no "no opinion" answer. The behaviour stays; the name, the
+// log line and the model's message now agree with it.
+describe('an unanswered hold is DENIED, and every surface says so (#1277)', () => {
+  function router(holdTimeoutMs: number): {
+    p: ClaudeFedPermissions;
+    lines: Array<{ level: string; msg: string; fields?: LogFields }>;
+  } {
+    const lines: Array<{ level: string; msg: string; fields?: LogFields }> = [];
+    const realLog = createLogger(new LogSink({ dir }), 'perm');
+    const log = {
+      ...realLog,
+      warn: (msg: string, fields?: LogFields): void => {
+        lines.push({ level: 'warn', msg, fields });
+        realLog.warn(msg, fields);
+      },
+    } satisfies Logger;
+    const p = new ClaudeFedPermissions(
+      (sessionId, msg) => {
+        sent.push({ sessionId, msg: msg as Record<string, unknown> });
+        return true;
+      },
+      (sessionId, ev) => applied.push({ sessionId, ev }),
+      log,
+      { holdTimeoutMs }
+    );
+    return { p, lines };
+  }
+
+  it('a timed-out hold logs a DENIAL, never "failed open"', async () => {
+    const { p, lines } = router(20);
+    p.offer('s1', canUseTool());
+
+    await new Promise((r) => setTimeout(r, 60));
+
+    expect(denialSent().behavior).toBe('deny');
+    const line = lines.find((l) => l.msg.startsWith('stream permission denied'));
+    expect(line?.msg).toBe('stream permission denied — nobody answered');
+    expect(line?.fields).toMatchObject({ sessionId: 's1', tool: 'Write', why: 'permission hold timed out' });
+    expect(lines.some((l) => /failed open/i.test(l.msg))).toBe(false);
+  });
+
+  it('…and tells the model to stop and wait, not to ask again', async () => {
+    const { p } = router(20);
+    p.offer('s1', canUseTool());
+
+    await new Promise((r) => setTimeout(r, 60));
+
+    const m = String(denialSent().message);
+    expect(m).toMatch(/answered this request in time/i);
+    expect(m).toMatch(/stop and wait for the user/i);
+    expect(m).not.toMatch(/ask again/i);
+  });
+
+  it('a window that went away with a question parked says THAT, not "in time"', () => {
+    const { p, lines } = router(5000);
+    p.offer('s1', canUseTool());
+
+    p.releaseHeld('main window closed');
+
+    const m = String(denialSent().message);
+    expect(m).toMatch(/window went away before anyone answered/i);
+    expect(m).not.toMatch(/in time/i);
+    expect(lines.find((l) => l.msg === 'stream permission denied — nobody answered')?.fields).toMatchObject({
+      why: 'main window closed',
+    });
+  });
+});
+
 // #334 — the same defect the hook path had, fixed in the same place for the
 // same reason: `noWindowWarned` means "already warned about the outage we are
 // IN". It was only cleared in `forgetSession`, so within one session the
@@ -951,7 +1212,10 @@ describe('a session with no card to show it is declined at once (#333)', () => {
     // …while still carrying the three things every unavailable-denial owes the
     // model, or it gets routed around with a second tool (`unavailable`).
     expect(noCardMessage).toMatch(/not a sandbox restriction/i);
-    expect(noCardMessage).toMatch(/ask again/i);
+    // …and since #1277 it tells the model to STOP, not to retry: a retry meets
+    // the same lost binding and the same denial.
+    expect(noCardMessage).toMatch(/stop and wait for the user/i);
+    expect(noCardMessage).not.toMatch(/ask again/i);
     expect(noCardMessage).not.toMatch(/in time/i); // nobody was asked, so nobody was slow
   });
 
@@ -1378,6 +1642,9 @@ describe('a rejected answer is denied, never silently allowed (#563 review)', ()
     const r = responseAt(0);
     expect(r.behavior).toBe('deny');
     expect(String(r.message)).toContain('could not be delivered');
+    // the ONE unavailable-denial where retrying works — the user was right
+    // there and answered — so it keeps "ask again" where the others stop (#1277)
+    expect(String(r.message)).toMatch(/ask again; it will be reviewed then/i);
     // and never an allow that would read as "the user did not answer"
     expect(r.updatedInput).toBeUndefined();
   });
@@ -1564,8 +1831,9 @@ describe('a dispatched session and ExitPlanMode (#948, §5.15)', () => {
   });
 
   it('⚠️ DOES NOT TELL THE MODEL TO ASK AGAIN — the probe measured it retrying', () => {
-    // `unavailable()` ends with "Say so and ask again; it will be reviewed then",
-    // which is true for its four callers and false here: nobody is coming. R1
+    // `unavailable()` used to end every denial with "Say so and ask again; it
+    // will be reviewed then" (#1277 kept that for one caller), and even its
+    // 'stop' closing promises somebody will be back: false here. R1
     // measured a second `ExitPlanMode` 5 s after the first was refused, so the
     // wrong closing sentence would be encouraging a loop.
     perms.setDispatched('s1');

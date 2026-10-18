@@ -149,21 +149,35 @@ the app to be sent to, so switchboard never shows a bar pointing at one.
 Because nobody could be asked. In Direct mode there is no second prompt behind
 switchboard — Claude Code is waiting on this app and on nothing else — so a
 question that can't be put in front of you is declined rather than left hanging,
-which would wedge the session for good. Three things cause it: the window was
-closed or its display crashed while the session kept running, or the question
-went five minutes unanswered.
+which would wedge the session for good. Four things cause it:
 
-There is a fourth cause, and it is a bug in switchboard rather than anything you
+1. the window was closed while the session kept running;
+2. the window's display crashed;
+3. the window was open but nowhere you could see it: hidden, on a monitor that
+   was turned off or unplugged so that Windows no longer listed it, or off the
+   edge of every screen;
+4. the question went five minutes unanswered.
+
+A window that is merely **minimized** is not one of them: requests wait for you
+as usual, and if you have notifications turned on, the notification can answer
+them.
+
+If it happens while you're sitting in front of the computer, the app log says
+where the window was. Look for lines starting `main window` — every minimize,
+restore, hide and move is there, with the window's position and which monitor
+it was on, and a warning when it lands off every monitor.
+
+There is one more cause, and it is a bug in switchboard rather than anything you
 did: the running session had lost track of the card it belongs to, so its
 question had no card to appear on. That one is declined immediately instead of
 after five minutes, and Claude is told that "switchboard lost track of which of
 its cards this session belongs to" — deliberately different wording from the
-other three, so you can tell them apart. You should not see it; if you do, the
+others, so you can tell them apart. You should not see it; if you do, the
 app log has a matching line and it is worth reporting.
 
 The message Claude gets says it was nobody being available, not a restriction,
-so it stops and asks again rather than looking for another route. Just tell it
-to carry on. To keep a session moving while you're away, turn on **Allow all
+and tells it to stop and wait for you rather than look for another route or ask
+the same thing again. Just tell it to carry on. To keep a session moving while you're away, turn on **Allow all
 (this session)** before you go — that answers at the source and needs no window
 at all.
 

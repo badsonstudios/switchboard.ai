@@ -111,6 +111,29 @@ on the floor, and say so in your PR.
   visible** and **Collapse on submit**. If you had "Hide on submit" on, the app
   now treats it as **Keep visible**. Hiding a session yourself still works.
 
+### Fixed
+
+- **Approvals no longer wait five minutes for a window nobody can see.** If the
+  switchboard window is open but hidden, on a monitor that was turned off or
+  unplugged so that Windows no longer lists it, or off the edge of every screen,
+  a permission request is now declined straight away instead of sitting for
+  five minutes and then being declined anyway. A minimized window, or any
+  popped-out window on a monitor you can see, still waits for you as before.
+- **A declined request no longer starts a retry loop.** When nobody answered,
+  Claude used to be told to "ask again", and it did, every five minutes, into
+  the same empty room. It is now told to say what it needed and wait for you.
+- **The main window comes back from monitor sleep once, to somewhere you can
+  reach it.** Waking the monitors could move the window twice in a second, and
+  sometimes to a position with its title bar off the screen, or to the middle
+  of the main monitor. It now waits for the monitors and their taskbars to
+  settle and moves once. A remembered spot whose title bar would be off the
+  screen is nudged back within reach, and a window left where no screen shows
+  it is brought back to the main monitor. A taskbar change on its own no longer
+  moves it to another monitor.
+- **The log now says where the main window went.** Every minimize, restore,
+  hide, show and move is recorded with its position and monitor, so "my window
+  disappeared" can be traced.
+
 ## 0.8.123 — 2026-10-17
 
 ### Added

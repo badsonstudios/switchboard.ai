@@ -14,6 +14,13 @@ import {
   decideDisplayRestore,
   planDisplayRestore,
   MAX_REMEMBERED_ARRANGEMENTS,
+  TITLE_BAR_SLACK_PX,
+  clampIntoArrangement,
+  looksLikeBootRescue,
+  metricsChangeRestores,
+  rescueOffscreen,
+  titleBarReachable,
+  workAreasOfFingerprint,
   ArrangementMemories,
 } from './window-state';
 
@@ -255,5 +262,177 @@ describe('planDisplayRestore (#864: the maximize dance, decided on CI)', () => {
   it('passes the refusals straight through — an unknown arrangement plans nothing', () => {
     expect(plan({ fingerprint: 'a-projector' })).toBeNull();
     expect(plan({ workAreas: [primary] })).toBeNull(); // remembered display really gone
+  });
+});
+
+// #1277 — the clamp. `isOnAnyDisplay` asks "is a usable chunk visible?", and
+// the owner's log had a restore to `-2296,-21` that passed it: most of the
+// window was on a monitor, the title bar was not. A remembered rectangle is now
+// SLID back within reach (size kept) when its title bar is not on a work area.
+describe('titleBarReachable / clampIntoArrangement (#1277: the clamp)', () => {
+  const primary = { x: 0, y: 0, width: 2560, height: 1392 };
+  const left = { x: -2560, y: 0, width: 2560, height: 1392 };
+
+  it('accepts a window flush to an edge, invisible frame and all', () => {
+    expect(titleBarReachable({ x: -7, y: 0, width: 1200, height: 800 }, [primary])).toBe(true);
+    expect(titleBarReachable({ x: 100, y: -TITLE_BAR_SLACK_PX, width: 1200, height: 800 }, [primary])).toBe(true);
+  });
+
+  it('refuses a title bar hanging off the top of the screen', () => {
+    const owner = { x: -2296, y: -21, width: 1996, height: 674 };
+    expect(isOnAnyDisplay(owner, [primary, left])).toBe(true); // what used to let it through
+    expect(titleBarReachable(owner, [primary, left])).toBe(false);
+  });
+
+  it('...and SLIDES it back within reach, keeping its size', () => {
+    const owner = { x: -2296, y: -21, width: 1996, height: 674 };
+    expect(clampIntoArrangement(owner, [primary, left])).toEqual({ x: -2296, y: 0, width: 1996, height: 674 });
+  });
+
+  // review: the corner is the wrong test for both of these
+  it('a window pushed half off the left edge keeps its place', () => {
+    const halfOff = { x: -600, y: 100, width: 1200, height: 800 };
+    expect(clampIntoArrangement(halfOff, [primary])).toEqual(halfOff);
+  });
+
+  it('a window spanning offset monitors keeps its place when its title bar is on the taller one', () => {
+    const lowLeft = { x: -1920, y: 360, width: 1920, height: 1040 };
+    const spanning = { x: -500, y: 100, width: 1400, height: 700 };
+    expect(clampIntoArrangement(spanning, [primary, lowLeft])).toEqual(spanning);
+  });
+
+  it('a rectangle not on any attached display has nowhere to go', () => {
+    expect(clampIntoArrangement({ x: -2296, y: 0, width: 1996, height: 684 }, [primary])).toBeNull();
+  });
+
+  it('a window bigger than the monitor it lands on is shrunk to fit', () => {
+    const huge = { x: 100, y: -200, width: 3000, height: 2000 };
+    expect(clampIntoArrangement(huge, [primary])).toEqual({ x: 0, y: 0, width: 2560, height: 1392 });
+  });
+});
+
+describe('looksLikeBootRescue (#1277: the 640,296 1280x800 note)', () => {
+  const primary = { x: 0, y: 0, width: 2560, height: 1392 };
+  it('recognises exactly the default size centred on a work area', () => {
+    expect(looksLikeBootRescue({ x: 640, y: 296, width: 1280, height: 800 }, [primary])).toBe(true);
+  });
+  it('anything the user moved or resized is theirs', () => {
+    expect(looksLikeBootRescue({ x: 650, y: 296, width: 1280, height: 800 }, [primary])).toBe(false);
+    expect(looksLikeBootRescue({ x: 640, y: 296, width: 1281, height: 800 }, [primary])).toBe(false);
+  });
+});
+
+describe('workAreasOfFingerprint (#1277: a note can be checked against its own key)', () => {
+  it('reads back exactly what displayFingerprint wrote', () => {
+    expect(workAreasOfFingerprint('-2560,0,2560,1392|0,0,2560,1392')).toEqual([
+      { x: -2560, y: 0, width: 2560, height: 1392 },
+      { x: 0, y: 0, width: 2560, height: 1392 },
+    ]);
+  });
+
+  it('has no opinion about anything else', () => {
+    for (const junk of ['', 'fp', 'desk-two-monitors', '1,2,3', '1,2,3,x', '0,0,1,1|nope']) {
+      expect(workAreasOfFingerprint(junk)).toBeNull();
+    }
+  });
+});
+
+describe('metricsChangeRestores (#1277: the second writer)', () => {
+  it('a taskbar change alone never restores; it was the second half of every wake', () => {
+    expect(metricsChangeRestores(['workArea'])).toBe(false);
+  });
+  it('the empty list Electron sends at every boot restores nothing', () => {
+    expect(metricsChangeRestores([])).toBe(false);
+    expect(metricsChangeRestores(undefined)).toBe(false);
+  });
+  it('a resolution, scale or rotation change still does', () => {
+    expect(metricsChangeRestores(['bounds', 'workArea'])).toBe(true);
+    expect(metricsChangeRestores(['scaleFactor'])).toBe(true);
+    expect(metricsChangeRestores(['rotation'])).toBe(true);
+  });
+});
+
+describe('rescueOffscreen (#1277: no note, and nowhere anyone can see)', () => {
+  const primary = { x: 0, y: 0, width: 2560, height: 1392 };
+  it('brings an off-screen window to the primary, centred, size kept', () => {
+    expect(rescueOffscreen({ x: -2296, y: 0, width: 1996, height: 684 }, [primary], primary)).toEqual({
+      bounds: { x: 282, y: 354, width: 1996, height: 684 },
+      how: 'centred',
+    });
+  });
+  it('leaves a visible window alone', () => {
+    expect(rescueOffscreen({ x: 100, y: 100, width: 800, height: 600 }, [primary], primary)).toBeNull();
+  });
+  it('slides a visible window whose title bar is out of reach back where it is, not to the centre', () => {
+    // mostly on screen, title bar 200 px above the top of the work area
+    expect(rescueOffscreen({ x: 300, y: -200, width: 1000, height: 700 }, [primary], primary)).toEqual({
+      bounds: { x: 300, y: 0, width: 1000, height: 700 },
+      how: 'clamped',
+    });
+  });
+  it('does nothing with no display attached at all', () => {
+    expect(rescueOffscreen({ x: -9000, y: 0, width: 800, height: 600 }, [], primary)).toBeNull();
+  });
+});
+
+describe('the runtime restore clamps or refuses, and says which (#1277)', () => {
+  const primary = { x: 0, y: 0, width: 2560, height: 1392 };
+  const left = { x: -2560, y: 0, width: 2560, height: 1392 };
+  const fp = 'desk';
+
+  it('a note whose title bar is off the screen is slid back within reach', () => {
+    const clamped: string[] = [];
+    const p = planDisplayRestore({
+      memories: { [fp]: { bounds: { x: -2296, y: -21, width: 1996, height: 674 }, isMaximized: false } },
+      fingerprint: fp,
+      currentBounds: { x: 640, y: 296, width: 1280, height: 800 },
+      workAreas: [primary, left],
+      isMaximized: false,
+      onClamped: (_from, to) => clamped.push(`${to.x},${to.y}`),
+    });
+    expect(p?.bounds).toEqual({ x: -2296, y: 0, width: 1996, height: 674 });
+    expect(clamped).toEqual(['-2296,0']);
+  });
+
+  it('a note on a monitor that is gone is refused with its reason', () => {
+    const refused: string[] = [];
+    decideDisplayRestore({
+      memories: { [fp]: { bounds: { x: -2296, y: 0, width: 1996, height: 684 }, isMaximized: true } },
+      fingerprint: fp,
+      currentBounds: { x: 0, y: 0, width: 1200, height: 800 },
+      workAreas: [primary],
+      onRefused: (why) => refused.push(why),
+    });
+    expect(refused).toEqual(['not visible on any attached display']);
+  });
+
+  it("the boot rescue default is never restored to (the owner's second restore)", () => {
+    const refused: string[] = [];
+    const p = decideDisplayRestore({
+      memories: { [fp]: { bounds: { x: 640, y: 296, width: 1280, height: 800 }, isMaximized: true } },
+      fingerprint: fp,
+      currentBounds: { x: -2296, y: 0, width: 1996, height: 684 },
+      workAreas: [primary, left],
+      onRefused: (why) => refused.push(why),
+    });
+    expect(p).toBeNull();
+    expect(refused).toEqual(['it is the boot-time default position, not one anybody chose']);
+  });
+
+  it('no note, or already there, is ordinary and reports nothing', () => {
+    const onRefused = vi.fn();
+    const onClamped = vi.fn();
+    const here = { x: 100, y: 100, width: 1200, height: 800 };
+    decideDisplayRestore({ memories: {}, fingerprint: fp, currentBounds: here, workAreas: [primary], onRefused, onClamped });
+    decideDisplayRestore({
+      memories: { [fp]: { bounds: here, isMaximized: false } },
+      fingerprint: fp,
+      currentBounds: here,
+      workAreas: [primary],
+      onRefused,
+      onClamped,
+    });
+    expect(onRefused).not.toHaveBeenCalled();
+    expect(onClamped).not.toHaveBeenCalled();
   });
 });

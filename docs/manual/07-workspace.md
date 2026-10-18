@@ -431,6 +431,14 @@ you use, so moving between a desk and a laptop on its own keeps both. It only
 ever goes back to a monitor it has already been on — plug in a projector and
 the window stays where it is.
 
+It waits a couple of seconds after your monitors wake before it moves, so that
+it moves once, after everything has come back, rather than jumping twice as each
+monitor and its taskbar appears. If a remembered position would leave its title
+bar off the screen, it slides down or across just far enough for you to grab it,
+keeping its size. If a monitor goes away and the window is left somewhere no
+screen shows, it is brought back to the middle of your main monitor. Moving,
+resizing or auto-hiding the taskbar doesn't move the window to another monitor.
+
 If you use a screen reader, you don't have to keep checking Events for that
 offer: a monitor coming back is something the app notices, not you, so the
 offer reads itself out as soon as it appears. It waits for a pause rather than
