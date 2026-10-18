@@ -109,7 +109,25 @@ export type AutonomyScope = 'workspace' | 'session' | 'badge';
  * the gap it records for sighted keyboard-only users — unchanged here, because
  * a new tooltip mechanism on three controls is not this item's business).
  */
-export function autonomyTooltip(t: TFunction, mode: string | undefined, scope: AutonomyScope): string {
+export function autonomyTooltip(
+  t: TFunction,
+  mode: string | undefined,
+  scope: AutonomyScope,
+  /**
+   * Whether the control's AI is Claude (#1316). The mode's own sentence is
+   * AI-neutral; what Claude Code does with it (its `acceptEdits`, its
+   * `bypassPermissions`, no switching mid-flight) is a claim about one CLI,
+   * so it is added only when that is the CLI. Absent: not known, so not said.
+   */
+  claude = false
+): string {
   const m = isAutonomy(mode) ? mode : DEFAULT_AUTONOMY;
-  return `${t(`autonomy.desc.${m}`)}\n\n${t(`autonomy.scope.${scope}`)}`;
+  const what = t(`autonomy.desc.${m}`);
+  const whatClaude = claude && CLAUDE_NOTES.has(m) ? ` ${t(`autonomy.claude.${m}`)}` : '';
+  const how = t(`autonomy.scope.${scope}`);
+  const howClaude = claude && scope === 'session' ? ` ${t('autonomy.claude.session')}` : '';
+  return `${what}${whatClaude}\n\n${how}${howClaude}`;
 }
+
+/** The modes whose Claude Code behaviour has its own sentence (`ask` needs none). */
+const CLAUDE_NOTES: ReadonlySet<Autonomy> = new Set<Autonomy>(['plan', 'auto-edit', 'full-auto']);

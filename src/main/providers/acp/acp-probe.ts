@@ -50,6 +50,8 @@ export interface AcpProbeResult {
   agentVersion?: string;
   protocolVersion?: number;
   authMethods?: string[];
+  /** the agent's own label for each method, by id, where it gave one */
+  authMethodNames?: Record<string, string>;
   /** set when `authenticate` was asked for: which method ran */
   authMethod?: string;
   /** `authenticate` was asked for, but the agent offers several and none was named */
@@ -103,6 +105,7 @@ export function probeAcpAgent(req: AcpProbeRequest): Promise<AcpProbeResult> {
       ...(info?.version ? { agentVersion: info.version } : {}),
       ...(info?.protocolVersion !== undefined ? { protocolVersion: info.protocolVersion } : {}),
       ...(info ? { authMethods: info.authMethods } : {}),
+      ...(info && Object.keys(info.authMethodNames).length > 0 ? { authMethodNames: info.authMethodNames } : {}),
       ...(child.pid !== undefined ? { pid: child.pid } : {}),
     });
 

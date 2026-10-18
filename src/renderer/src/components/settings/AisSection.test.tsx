@@ -275,6 +275,28 @@ describe('Log in', () => {
     expect(login).toHaveBeenLastCalledWith('claude-code', 'device');
     expect(row('claude-code').textContent).toContain(en.ais.loginDone);
   });
+
+  it("several methods: each is shown by the AI's own label, and the id is what runs (#1316)", async () => {
+    const login = vi.fn(async (_id: string, m?: string) =>
+      m
+        ? { supported: true, ok: true }
+        : { supported: true, methods: ['api-key', 'chat-gpt'], methodLabels: { 'chat-gpt': 'ChatGPT' } }
+    );
+    stub({ login });
+    await render();
+    await click(button(row('claude-code'), en.ais.logIn));
+    // labelled where the AI gave one, the raw id where it did not
+    await click(button(row('claude-code'), 'ChatGPT'));
+    expect(login).toHaveBeenLastCalledWith('claude-code', 'chat-gpt');
+  });
+
+  it('a method id that is an Object.prototype name is shown as itself', async () => {
+    const login = vi.fn(async () => ({ supported: true, methods: ['constructor', 'b'], methodLabels: {} }));
+    stub({ login });
+    await render();
+    await click(button(row('claude-code'), en.ais.logIn));
+    expect(button(row('claude-code'), 'constructor')).toBeTruthy();
+  });
 });
 
 describe('install is shown, never run', () => {

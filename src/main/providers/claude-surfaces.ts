@@ -28,7 +28,8 @@ export const claudeSurfaces: Pick<
   'usage' | 'statusPage' | 'preflight' | 'labels' | 'mcpManager' | 'commandFiles'
 > = {
   usage: { estimateCostUsd: claudeEstimateCostUsd },
-  statusPage: { base: CLAUDE_STATUSPAGE_BASE },
+  // the page is Anthropic's, covering more than Claude Code, so it is named so
+  statusPage: { base: CLAUDE_STATUSPAGE_BASE, name: 'Anthropic' },
   preflight: { check: claudePreflight },
   labels: { run: runContainedPrompt },
   mcpManager: {

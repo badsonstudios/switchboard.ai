@@ -666,6 +666,11 @@ export interface UsageCapability {
 export interface StatusPageCapability {
   /** a Statuspage v2 host: `<base>/api/v2/status.json` is read */
   base: string;
+  /**
+   * Whose page it is, as the health dot's words say it ("Anthropic: all
+   * systems operational", #1316). Absent: the provider's display name.
+   */
+  name?: string;
 }
 
 /** One provider's preflight answer (P1-E6-03, §5.25). Facts, not advice. */

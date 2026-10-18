@@ -11,9 +11,9 @@
     "notifOff": "🔕 off",
     "autoLabelsOn": "🏷 auto labels",
     "autoLabelsOff": "🏷 labels off",
-    "autoLabelsHint": "Showing the title Claude gives each conversation, in blank task labels. Costs nothing, and does not follow the work as it changes. Click to hide task labels entirely.",
+    "autoLabelsHint": "Showing the title each AI gives its conversation, where it gives one, in blank task labels. Costs nothing, and does not follow the work as it changes. Click to hide task labels entirely.",
     "aiLabelsOn": "✨ AI labels",
-    "aiLabelsHint": "Claude reads what each session has been doing and writes its task label, refreshing it as the work moves on, and your first prompt names the card straight away. This spends your subscription — a short background check when a turn finishes; idle sessions cost nothing. Labels you type yourself are never touched. Click for the free title Claude gives the conversation instead.",
+    "aiLabelsHint": "Each session's own AI reads what it has been doing and writes its task label, refreshing it as the work moves on, and your first prompt names the card straight away. Only an AI that can write labels does; no conversation is sent to another AI to be named. This spends your subscription — a short background check when a turn finishes; idle sessions cost nothing. Labels you type yourself are never touched. Click for the free title the AI gives the conversation instead.",
     "forkOn": "⑂ fork sessions on",
     "forkOff": "⑂ fork sessions off",
     "forkHint": "Experimental. Adds \"Fork into a new session\" to a session's ⋯ menu, which starts a second session already carrying that conversation's whole history. The original is never touched. It relies on Claude Code behaviour that isn't documented — measured, not guessed — so if an update ever breaks it, switch it off here and nothing else changes.",
@@ -45,7 +45,7 @@
     "paletteHint": "Show every command, with its shortcut ({binding})",
     "buildLabel": "Version and build — click for details",
     "buildHint": "Branch {branch} · built {builtAt} — click for the full build details",
-    "labelsOffHint": "Task labels are hidden — nothing derived from your prompts is on the cards, the sessions list or desktop notifications. Labels you typed yourself still show. Click to let Claude write them again."
+    "labelsOffHint": "Task labels are hidden — nothing derived from your prompts is on the cards, the sessions list or desktop notifications. Labels you typed yourself still show. Click to let the AI write them again."
   },
   "about": {
     "title": "About this build",
@@ -113,7 +113,7 @@
   "emptyWorkspace": {
     "title": "No sessions open",
     "start": "Start a session",
-    "blurb": "Start a session to begin. You pick a folder, and Claude Code works in it."
+    "blurb": "Start a session to begin. You pick a folder, and an AI works in it."
   },
   "rail": {
     "eyebrow": "Sessions · {count}",
@@ -438,7 +438,7 @@
     "withheldChars": "{count, plural, one {# character} other {# characters}}"
   },
   "question": {
-    "title": "Claude is asking you a question",
+    "title": "This session is asking you a question",
     "submit": "Send answer",
     "submitHint": "Answer at least one question first",
     "submitPartialHint": "Sends the answers you've given; the rest go back marked as skipped",
@@ -492,15 +492,22 @@
     "full-auto": "🛡 full-auto",
     "desc": {
       "ask": "ask — every tool call comes to you first: file changes, shell commands, web fetches. Full gatekeeping, and the safe default.",
-      "plan": "plan — Claude reads, explores and writes you a plan, but changes nothing until you approve it. The block is Claude Code's own. What you will be asked is whether to go ahead with the plan — and Allow on that is what ends it: the session leaves plan mode and starts the work, asking about each change.",
-      "auto-edit": "auto-edit — Claude edits files inside the session's folder without asking you, and runs the housekeeping commands that go with it — mkdir, touch, mv, cp, rm, sed. Anything heavier still comes to you. This is Claude Code's acceptEdits, exactly as it behaves on its own; if you want every command to stop for you, use ask.",
-      "full-auto": "full-auto — nothing comes to you. Every tool call runs the moment Claude asks for it, including writes outside the session's folder. This is Claude Code's bypassPermissions, the mode --dangerously-skip-permissions turns on: deny rules in your settings still block, a few things always need a person (a question for you, rm on a critical path), and nothing else stops anything. It is not a sandbox."
+      "plan": "plan — the AI reads and explores, but changes nothing until you approve.",
+      "auto-edit": "auto-edit — the AI edits files inside the session's folder without asking you. Anything heavier still comes to you.",
+      "full-auto": "full-auto — nothing comes to you. Every tool call runs the moment the AI asks for it, including writes outside the session's folder. It is not a sandbox."
+    },
+    "claude": {
+      "plan": "With Claude Code: it writes you a plan, and the block is Claude Code's own. What you will be asked is whether to go ahead with the plan — and Allow on that is what ends it: the session leaves plan mode and starts the work, asking about each change.",
+      "auto-edit": "With Claude Code: this is its acceptEdits, exactly as it behaves on its own, so the housekeeping commands that go with editing — mkdir, touch, mv, cp, rm, sed — run without asking too. If you want every command to stop for you, use ask.",
+      "full-auto": "With Claude Code: this is its bypassPermissions, the mode --dangerously-skip-permissions turns on: deny rules in your settings still block, a few things always need a person (a question for you, rm on a critical path), and nothing else stops anything.",
+      "session": "Claude Code cannot switch mode mid-flight, so for this session that is the next start."
     },
     "scope": {
       "workspace": "Click to cycle. This sets the mode NEW sessions start at — each session keeps its own from then on.",
-      "session": "Click to cycle. The change applies the next time this session starts or resumes; Claude Code cannot switch mode mid-flight.",
+      "session": "Click to cycle. If this session's AI can switch mode mid-flight it switches straight away; if not, the change applies the next time this session starts or resumes.",
       "badge": "The mode this session is running at. Change it with the shield button under the prompt box.",
-      "moved": "This session is in {now} right now. Claude Code changed it itself — approving a plan takes a session out of plan mode. The mode below is the one it goes back to."
+      "moved": "This session is in {now} right now. {ai} changed it itself — approving a plan takes a session out of plan mode. The mode below is the one it goes back to.",
+      "movedUnnamed": "This session is in {now} right now. Its AI changed it itself — approving a plan takes a session out of plan mode. The mode below is the one it goes back to."
     },
     "nowThenNext": "{now} now · {next} at next start"
   },
@@ -873,10 +880,16 @@
   },
   "health": {
     "state": {
-      "operational": "Anthropic: all systems operational",
-      "degraded": "Anthropic: degraded performance",
-      "outage": "Anthropic: service outage",
-      "unknown": "Anthropic status: unknown"
+      "operational": "{name}: all systems operational",
+      "degraded": "{name}: degraded performance",
+      "outage": "{name}: service outage",
+      "unknown": "{name} status: unknown"
+    },
+    "stateUnnamed": {
+      "operational": "Status page: all systems operational",
+      "degraded": "Status page: degraded performance",
+      "outage": "Status page: service outage",
+      "unknown": "Status page: unknown"
     },
     "short": {
       "degraded": "provider degraded",
@@ -898,7 +911,7 @@
     "eventsIncident": "Provider incident: {name} ({status})",
     "banner": "{count, plural, one {# session} other {# sessions}} just hit errors in the last few minutes — this may be a problem at the provider rather than anything you did.",
     "setting": "Check provider status",
-    "settingHint": "Ask Anthropic's public status page every few minutes whether it is having a day. Nothing is sent; turning it off changes nothing else."
+    "settingHint": "Ask the public status page of the AI new sessions start on, every few minutes, whether it is having a day. An AI with no status page is never asked. Nothing is sent; turning it off changes nothing else."
   },
   "quiet": {
     "title": "Quiet hours",
@@ -979,11 +992,11 @@
     "searching": "Looking for this session's transcript…",
     "searchingDetail": "The conversation has started — this usually takes a moment.",
     "unbound": "Couldn't find this session's transcript",
-    "unboundFound": "This session has run at least one turn, and transcripts are being written for this folder — but none of them match this session. Its conversation may belong to another card, or Claude Code may have changed where it saves them.",
-    "unboundFoundQuiet": "Transcripts are being written for this folder, but none match this session — and Claude Code has not reported any activity to switchboard.ai either, which usually means its hooks aren't reaching us.",
+    "unboundFound": "This session has run at least one turn, and transcripts are being written for this folder — but none of them match this session. Its conversation may belong to another card, or its AI may have changed where it saves them.",
+    "unboundFoundQuiet": "Transcripts are being written for this folder, but none match this session — and its AI has not reported any activity to switchboard.ai either, which usually means its hooks aren't reaching us.",
     "unboundSilent": "This session has run at least one turn, but no transcript for it has turned up in {path}.",
     "unboundNothing": "Nothing has turned up in {path}.",
-    "unboundFallbackDirect": "Your session is unaffected — in Direct mode the conversation arrives in this window as Claude replies, rather than being read from that file. Watch the status on the card header; the transcript is only needed for usage totals and for resuming this session later."
+    "unboundFallbackDirect": "Your session is unaffected — in Direct mode the conversation arrives in this window as the AI replies, rather than being read from that file. Watch the status on the card header; the transcript is only needed for usage totals and for resuming this session later."
   },
   "contextMeter": {
     "label": "Context used",
@@ -1094,19 +1107,20 @@
       "both": "{images, plural, one {# image} other {# images}} and {documents, plural, one {# file} other {# files}} attached"
     },
     "modelHint": "The model this session is running — click to switch it",
-    "modelHintUnknown": "Claude Code hasn't said which model this session is running yet — click to choose one",
+    "modelHintUnknown": "This session's AI hasn't said which model it is running yet — click to choose one",
     "modelHintTerminal": "The model last seen in this session's transcript. This session runs in Terminal mode, so switchboard can't switch it.",
     "modelHintInactive": "The model last seen in this session's transcript",
     "modelUnknown": "model?",
     "controlUnavailable": "Not available with {ai}.",
     "send": "Send to the session",
     "sendIcon": "↑",
-    "stop": "Stop Claude — interrupts the current turn",
+    "stop": "Stop {ai} — interrupts the current turn",
+    "stopUnnamed": "Stop — interrupts the current turn",
     "stopIcon": "■",
     "quiet": "quiet",
     "normal": "normal",
     "firehose": "firehose",
-    "quietHint": "Prose only — your prompts and Claude's replies",
+    "quietHint": "Prose only — your prompts and the AI's replies",
     "normalHint": "Prose + tool activity",
     "firehoseHint": "Everything, including thinking and subagent chatter",
     "clearedMarker": "Conversation cleared — context starts fresh",
@@ -1136,7 +1150,8 @@
       "unnamed": "Subagent",
       "unnamedDiscriminated": "Subagent · {id}"
     },
-    "workingStrip": "Claude is working",
+    "workingStrip": "{ai} is working",
+    "workingStripUnnamed": "Working",
     "expandHint": "click to expand",
     "collapsedIcon": "▸",
     "expandedIcon": "▾",
@@ -1167,13 +1182,13 @@
     "openPageNamed": "Open {name} in your browser",
     "pagePicture": "A picture of the page {name}",
     "pageNote": "A picture of the top of this page as it is now. Scripts did not run and nothing was loaded from the web. Click it to open the real page.",
-    "promptTooLong": "That prompt is too long to send: {length, number} characters, and the most that can go is {max, number}. Nothing has been sent or cleared. Save the long part as a text file and attach it instead; Claude reads an attached file whole.",
+    "promptTooLong": "That prompt is too long to send: {length, number} characters, and the most that can go is {max, number}. Nothing has been sent or cleared. Save the long part as a text file and attach it instead.",
     "pictureFromTool": "Picture from {tool}",
     "pictureFromToolNth": "Picture {n} from {tool}",
     "pictureAttached": "Attached picture",
     "pictureAttachedNth": "Attached picture {n}",
     "pictureGone": "Not shown",
-    "pictureGoneHint": "This picture cannot be shown. Either it is an older one this app has let go of (recent pictures are kept in memory only), or it is of a kind or size this app does not draw. It is still in the conversation Claude Code saved.",
+    "pictureGoneHint": "This picture cannot be shown. Either it is an older one this app has let go of (recent pictures are kept in memory only), or it is of a kind or size this app does not draw. It may still be in the AI's own copy of the conversation.",
     "pictureNotShown": "Not shown: it is missing, too large, not a picture this app can draw, or outside the folders this app can read.",
     "copyCode": "Copy this code",
     "copySection": "Copy {section}",
@@ -1242,7 +1257,7 @@
     "thinking": "({n} thinking)",
     "thinkingTitle": "{pct}% of the output tokens were the model thinking before it answered. Already counted in the output figure, not on top of it.",
     "cacheTitle": "Cache-read tokens",
-    "costTitleEstimate": "An estimate, from this AI's public per-model rates — a floor, since not every billed detail is in what the AI reports. Some AIs (Claude Code among them) write their own exact figure when the session ends. You are billed by your subscription, not per token.",
+    "costTitleEstimate": "An estimate, from this AI's public per-model rates — a floor, since not every billed detail is in what the AI reports. Some AIs write their own exact figure when the session ends. You are billed by your subscription, not per token.",
     "costTitleCli": "Claude Code's own figure for this session, read from its transcript after the session ended. You are billed by your subscription, not per token.",
     "costTitleCliFloor": "Claude Code's own figure for this session — at least this much. It used a model it could not price, so its own total is short. You are billed by your subscription, not per token.",
     "costTitleNone": "No price: this AI did not give one for this model, so none is shown rather than a guess. The token counts are exact."
@@ -1467,7 +1482,7 @@
     "permissionDetail": "Allow {tool}? {detail}",
     "unknownTool": "a tool",
     "question": "A question for you: {question}{more, plural, =0 {} other { (+# more)}}",
-    "questionFallback": "Claude is asking you a question",
+    "questionFallback": "This session is asking you a question",
     "kind": {
       "done": "done",
       "ready": "ready",
@@ -1666,19 +1681,19 @@
     "title": "Model",
     "forSession": "for {title}",
     "noSession": "Open a session to choose its model.",
-    "loading": "Asking Claude Code which models it has…",
-    "empty": "Claude Code didn't offer any models.",
+    "loading": "Asking this session's AI which models it has…",
+    "empty": "This session's AI didn't offer any models.",
     "unavailable": "Couldn't read the model list.",
-    "unknownCurrent": "Claude Code hasn't said which model this session is running, so nothing is ticked. Pick one to set it.",
+    "unknownCurrent": "This session's AI hasn't said which model it is running, so nothing is ticked. Pick one to set it.",
     "unlistedCurrent": "This session is running {name}, which isn't one of the choices above. Picking one below will switch it.",
     "currentMark": "✓",
     "switching": "switching…",
     "runningNow": "running now",
-    "notStream": "This session has no live connection to Claude Code, so switchboard can't change its model. Restarting it usually fixes this.",
+    "notStream": "This session has no live connection to its AI, so switchboard can't change its model. Restarting it usually fixes this.",
     "sessionGone": "That session has stopped, so there's nothing to change.",
-    "timedOut": "Claude Code didn't answer. The session may be busy starting up — try again in a moment.",
+    "timedOut": "This session's AI didn't answer. The session may be busy starting up — try again in a moment.",
     "failed": "Couldn't change the model. The session is untouched.",
-    "cliNote": "This asks Claude Code to switch models for this session only, straight away — no restart. It doesn't change your default for new sessions.",
+    "cliNote": "This asks the session's AI to switch models for this session only, straight away — no restart. It doesn't change your default for new sessions.",
     "close": "Close",
     "closeIcon": "✕",
     "ok": "OK",
@@ -1686,7 +1701,7 @@
     "staged": "Not switched yet — press OK.",
     "stagedFrom": "Still running {name} — not switched yet, press OK.",
     "menuLabel": "Switch this session's model",
-    "menuUnknown": "Claude Code hasn't said which model this session is running, or it is one that isn't in this list, so nothing is ticked. Picking one sets it."
+    "menuUnknown": "This session's AI hasn't said which model it is running, or it is one that isn't in this list, so nothing is ticked. Picking one sets it."
   },
   "mcp": {
     "title": "MCP servers",
@@ -1889,7 +1904,7 @@
     "title": "Task label size",
     "blurb": "How much of each session’s task label to show, on the cards and in the sessions list. Longer labels say more; shorter ones fit more sessions on screen.",
     "full": "Full",
-    "fullNote": "Up to three lines. The default — Claude is asked for a phrase, and this is the room to read it.",
+    "fullNote": "Up to three lines. The default — the AI is asked for a phrase, and this is the room to read it.",
     "medium": "Medium",
     "mediumNote": "Up to two lines. A compromise when you are running a lot of sessions.",
     "compact": "Compact",
@@ -2118,6 +2133,6 @@
     "languageBlurb": "The language of the app, the desktop pop-ups, and anything sent to your phone. pseudo is a development aid that mangles every word to show up text nobody made translatable — you probably want en.",
     "experimentalFork": "Fork sessions",
     "updates": "Updates",
-    "providerStatus": "Anthropic status"
+    "providerStatus": "AI status page"
   }
 }

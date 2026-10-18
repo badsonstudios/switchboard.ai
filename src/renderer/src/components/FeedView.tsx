@@ -52,6 +52,8 @@ import {
 } from '../lib/composer-attachment-draft';
 import { interruptSession, resolveDraftMentions, submitPrompt } from '../lib/composer';
 import { controlUnavailable, useAiControls } from '../lib/ai-controls';
+import { useSessionAi } from '../lib/session-ai';
+import type { SessionControlsWire } from '../../../shared/engine-controls';
 import { mayMention } from '../../../shared/mention-finder';
 import {
   beginHandoffWait,
@@ -724,6 +726,12 @@ export function FeedView(props: {
   onAllowFile?: (filePath: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
+  // Which controls this session's AI declared (#1287), asked ONCE here and
+  // handed to the composer: its `ai` is also the fallback name the working
+  // strip and Stop share (#1316), so the two can never name different AIs.
+  const aiControls = useAiControls(props.sessionId);
+  // which AI the working strip names (#1316) — never "Claude" for every AI
+  const sessionAiName = useSessionAi(props.providerId, aiControls?.ai).name;
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
   /** counts the times `blocks` was REPLACED outright, for `useFeedSkipping` */
   const [conversation, setConversation] = React.useState(0);
@@ -1946,7 +1954,7 @@ export function FeedView(props: {
             letterSpacing: 0.2,
           }}
         >
-          {t('feedView.workingStrip')}
+          {sessionAiName ? t('feedView.workingStrip', { ai: sessionAiName }) : t('feedView.workingStripUnnamed')}
           {[0, 0.25, 0.5].map((delay) => (
             <span
               key={delay}
@@ -2013,6 +2021,7 @@ export function FeedView(props: {
         transport={props.transport}
         onCycleAutonomy={props.onCycleAutonomy}
         providerId={props.providerId}
+        aiControls={aiControls}
         onSwitchAi={props.onSwitchAi}
         // Everything ELSE docked in this column, as one value (#716 review).
         // The composer's height cap is what the panel can spare, which is its
@@ -2560,6 +2569,7 @@ function Composer({
   transport,
   onCycleAutonomy,
   providerId,
+  aiControls,
   onSwitchAi,
   dockedChrome,
   recall,
@@ -2596,6 +2606,8 @@ function Composer({
   onCycleAutonomy?: () => void;
   /** #1294: the card's AI, and the switch to another */
   providerId?: string;
+  /** this session's declared controls (#1287), asked by the feed; null while unknown */
+  aiControls: SessionControlsWire | null;
   onSwitchAi?: (providerId: string, stopFirst: boolean) => Promise<SwitchAiNext>;
   /**
    * An opaque stamp of what else is docked in this panel (#716 review).
@@ -2878,13 +2890,17 @@ function Composer({
    * without them gets that same nothing rather than a greyed chip with no
    * value in it.
    */
-  const aiControls = useAiControls(sessionId);
   const noModes = controlUnavailable(aiControls, 'modes', t);
   const noModels = controlUnavailable(aiControls, 'models', t);
   const noEffort = controlUnavailable(aiControls, 'effort', t);
   const noContextUsage = controlUnavailable(aiControls, 'contextUsage', t);
   const noSlashCommands = controlUnavailable(aiControls, 'slashCommands', t);
   const noInterrupt = controlUnavailable(aiControls, 'interrupt', t);
+  // The session's AI, for the words that name it (#1316): Stop's title, and
+  // the Claude-only half of the mode chip's tooltip. The catalog's name first,
+  // then the provider's own off the controls answer.
+  const sessionAi = useSessionAi(providerId, aiControls?.ai);
+  const stopTitle = sessionAi.name ? t('feedView.stop', { ai: sessionAi.name }) : t('feedView.stopUnnamed');
   const closeModelMenu = (): void => {
     // The REF, not the state — see `modelBusyRef`. Belt to the chip's
     // `disabled` braces, which is what actually stops the click getting here;
@@ -4605,7 +4621,7 @@ function Composer({
             onClick={() => {
               if (noInterrupt === null) void interruptSession(sessionId);
             }}
-            title={noInterrupt ?? t('feedView.stop')}
+            title={noInterrupt ?? stopTitle}
             disabled={noInterrupt !== null}
             data-unavailable={noInterrupt !== null ? 'interrupt' : undefined}
             style={{
@@ -4685,8 +4701,8 @@ function Composer({
             title={
               noModes ??
               (movedTo
-                ? `${t('autonomy.scope.moved', { now: t(`autonomy.${movedTo}`) })}\n\n${autonomyTooltip(t, autonomy, 'session')}`
-                : autonomyTooltip(t, autonomy, 'session'))
+                ? `${sessionAi.name ? t('autonomy.scope.moved', { now: t(`autonomy.${movedTo}`), ai: sessionAi.name }) : t('autonomy.scope.movedUnnamed', { now: t(`autonomy.${movedTo}`) })}\n\n${autonomyTooltip(t, autonomy, 'session', sessionAi.claude)}`
+                : autonomyTooltip(t, autonomy, 'session', sessionAi.claude))
             }
             data-live-mode={movedTo ?? undefined}
             className={CHIP_CLASS}

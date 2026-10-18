@@ -1737,7 +1737,7 @@ app
         const adapter = registry.resolve('provider-adapter', defaultProviderId());
         const page = adapter?.capabilities?.statusPage;
         return page
-          ? { base: page.base }
+          ? { base: page.base, name: page.name || adapter?.manifest.displayName || undefined }
           : { none: true as const, providerName: adapter?.manifest.displayName ?? '' };
       },
       // "no polling when offline is detected" (§5.14). Electron's own answer,

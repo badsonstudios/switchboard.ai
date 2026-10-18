@@ -14,6 +14,13 @@
  */
 export const AI_ICON_BASE = 'ai-icons/';
 
+/**
+ * Claude's catalog id, which is also its provider id. Shared because a few
+ * words are true only of Claude (#1316): the renderer adds them when a
+ * session's AI is this one, and says the AI-neutral sentence otherwise.
+ */
+export const CLAUDE_AI_ID = 'claude-code';
+
 /** How a person gets an AI onto this computer. Shown, never run. */
 export type InstallHint =
   /** a command to copy, e.g. `npm i -g @google/gemini-cli` */
@@ -146,6 +153,11 @@ export interface AiLoginResult {
   reason?: string;
   /** the sign-in methods the AI offers, when it offers more than one */
   methods?: string[];
+  /**
+   * The AI's own label for each of `methods`, by id ("ChatGPT" for
+   * `chat-gpt`, #1316). A method with no label is shown by its id.
+   */
+  methodLabels?: Record<string, string>;
 }
 
 /** One registry agent, trimmed to what a diff and a list need. */

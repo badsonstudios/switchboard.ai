@@ -2362,8 +2362,14 @@ and knows no model's window size. Rules:
 >   <AI>". Local corroboration still works, since it never needed the page.
 > - The dev override (`SWITCHBOARD_STATUS_FEED`) still wins, so the e2e stubs
 >   are unchanged.
-> - Not done: the state words in `en.json` (`health.state.*`) still say
->   "Anthropic", which is only true while the default AI is Claude.
+> - ~~Not done: the state words in `en.json` (`health.state.*`) still say
+>   "Anthropic", which is only true while the default AI is Claude.~~
+>   **Done, #1316 (2026-10-18).** The state words take `{name}`: whose page it
+>   is, carried on the record as `pageName`. The `statusPage` capability may
+>   name its owner (Claude's says "Anthropic", since the page covers more than
+>   Claude Code); without one it is the provider's display name. A record that
+>   names no page says "Status page: …". The setting's words no longer say
+>   Anthropic either.
 
 **Status bar** (bottom of main window): service health dot · plan-usage meter ·
 active sessions count · attention-queue count.

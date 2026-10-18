@@ -83,6 +83,12 @@ export interface ServiceHealthStatus {
    * so the tooltip can say WHICH AI has no page (#1288).
    */
   providerName?: string;
+  /**
+   * Whose status page the record is about ("Anthropic"), for the state words
+   * (#1316) — set whenever a page is the subject. Absent: the words fall back
+   * to an unnamed form rather than naming a company that may not be it.
+   */
+  pageName?: string;
 }
 
 export interface ServiceHealthPrefs {

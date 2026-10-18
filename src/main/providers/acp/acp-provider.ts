@@ -118,6 +118,7 @@ export function defaultAcpDetect(opts: {
         ok: false,
         ...(r.error ? { reason: r.error } : {}),
         ...(r.needsMethod && r.authMethods ? { methods: r.authMethods } : {}),
+        ...(r.needsMethod && r.authMethods && r.authMethodNames ? { methodLabels: r.authMethodNames } : {}),
       };
     },
   };

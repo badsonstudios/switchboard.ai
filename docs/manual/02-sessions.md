@@ -347,7 +347,7 @@ Every session shows one of these:
 | Status | Meaning |
 |---|---|
 | **starting** | Claude Code is booting up |
-| **working** | Claude is doing something — a wide "Claude is working" strip appears above the prompt box |
+| **working** | The AI is doing something — a wide strip naming it appears above the prompt box ("Claude Code is working", "Codex is working") |
 | **approval** | Waiting for you to allow or refuse something. In the list it says how long it has left, such as **approval · <5m** |
 | **question** | Waiting for you to answer a question |
 | **waiting** | Finished its turn, and waiting for your next prompt. In the list it reads **waiting for you** |

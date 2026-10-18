@@ -403,9 +403,17 @@ the little mode marker in a card's header.
 | **auto-edit** | File edits inside the session's folder. | Shell commands, web fetches, and reading anything outside the folder. |
 | **full-auto** | Everything. | Almost nothing — see below. |
 
-Changing the mode applies **the next time the session starts or resumes** —
-Claude Code can't switch modes mid-flight. The chip in the title bar sets the
-mode that *new* sessions start at; each session keeps its own after that.
+On a Claude Code session, changing the mode applies **the next time the session
+starts or resumes** — Claude Code can't switch modes mid-flight. An AI that can
+switch mid-flight, such as Codex, switches straight away. The chip in the title
+bar sets the mode that *new* sessions start at; each session keeps its own
+after that.
+
+Hover a mode chip to read what the mode means. The first part is true of any
+AI; on a Claude Code session it goes on to say which of Claude Code's own
+modes it is (auto-edit is Claude Code's `acceptEdits`, full-auto its
+`bypassPermissions`). Other AIs don't get those lines, because they aren't
+about them.
 
 **The one time a session changes mode by itself** is when you approve a plan:
 it leaves **plan** and carries on as an **ask** session. The chip under the

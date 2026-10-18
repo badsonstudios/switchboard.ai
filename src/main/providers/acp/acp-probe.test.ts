@@ -77,6 +77,8 @@ describe('probeAcpAgent: Test (initialize only)', () => {
     const r = await probeAcpAgent({ command: node, args: [agentJs], env: env(), timeoutMs: 15_000 });
     expect(r.error).toBeUndefined();
     expect(r).toMatchObject({ ok: true, agentName: 'fake-acp', agentVersion: '0.0.0', protocolVersion: 1, authMethods: ['fake-login'] });
+    // the agent's own label for each method rides along, by id (#1316)
+    expect(r.authMethodNames).toEqual({ 'fake-login': 'Fake login' });
     expect(r.pid).toBeTypeOf('number');
     expect(await goneSoon(r.pid!)).toBe(true);
   });
