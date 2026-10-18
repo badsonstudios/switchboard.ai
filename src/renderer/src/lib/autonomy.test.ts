@@ -94,8 +94,14 @@ describe('the hover copy', () => {
    * same as --dangerously-skip-permissions" — which describes the CLI's
    * separate `auto` mode, which we do not use.
    */
+  //
+  // SINCE #1316 the Claude Code half lives in `autonomy.claude.*` and is added
+  // only when the AI is Claude — the mode's own sentence is AI-neutral. The
+  // contract is pinned on the tooltip a Claude session actually shows.
+  const claudeTip = (m: Autonomy): string => autonomyTooltip(i18next.t.bind(i18next), m, 'session', true);
+
   it('tells the truth about full-auto', () => {
-    const d = desc('full-auto');
+    const d = claudeTip('full-auto');
     expect(d).toContain('bypassPermissions');
     expect(d).toContain('--dangerously-skip-permissions');
     expect(d).toContain('deny rules');
@@ -125,7 +131,7 @@ describe('the hover copy', () => {
    * wanted the old behaviour.
    */
   it('tells the truth about auto-edit', () => {
-    const d = desc('auto-edit');
+    const d = claudeTip('auto-edit');
     // it must NOT re-promise the deleted hold policy
     expect(d).not.toMatch(/Shell commands[^.]*still come to you/);
     // it must NAME what acceptEdits really waves through
@@ -147,5 +153,39 @@ describe('the hover copy', () => {
     const d = desc('ask');
     expect(d).toMatch(/every tool call/i);
     expect(d).not.toMatch(/outside the session's folder/);
+  });
+});
+
+describe('the Claude Code half is said only to Claude (#1316)', () => {
+  beforeAll(async () => {
+    await initI18nForTests();
+  });
+
+  it('another AI hears the AI-neutral sentence, with no Claude in it', () => {
+    const t = i18next.t.bind(i18next);
+    for (const m of AUTONOMIES) {
+      for (const s of ['workspace', 'session', 'badge'] as const) {
+        expect(autonomyTooltip(t, m, s)).not.toMatch(/claude|anthropic/i);
+        expect(autonomyTooltip(t, m, s, false)).not.toMatch(/claude|anthropic/i);
+      }
+    }
+  });
+
+  it('Claude hears the same sentence, then what Claude Code does with it', () => {
+    const t = i18next.t.bind(i18next);
+    for (const m of ['plan', 'auto-edit', 'full-auto'] as const) {
+      const tip = autonomyTooltip(t, m, 'badge', true);
+      expect(tip).toContain(en.autonomy.desc[m]);
+      expect(tip).toContain(en.autonomy.claude[m]);
+    }
+    // ask has nothing Claude-specific to add
+    expect(autonomyTooltip(t, 'ask', 'badge', true)).toBe(autonomyTooltip(t, 'ask', 'badge'));
+  });
+
+  it("only the session chip says Claude cannot switch mid-flight — it is about that chip's click", () => {
+    const t = i18next.t.bind(i18next);
+    expect(autonomyTooltip(t, 'ask', 'session', true)).toContain(en.autonomy.claude.session);
+    expect(autonomyTooltip(t, 'ask', 'workspace', true)).not.toContain(en.autonomy.claude.session);
+    expect(autonomyTooltip(t, 'ask', 'badge', true)).not.toContain(en.autonomy.claude.session);
   });
 });

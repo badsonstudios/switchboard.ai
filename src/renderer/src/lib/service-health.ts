@@ -15,8 +15,13 @@ export interface HealthTone {
   glyph: '●' | '○';
   /** a token name, never a literal colour (the renderer's lint rule and #206) */
   colorVar: string;
-  /** the i18n key for the state's own sentence */
+  /**
+   * The i18n key for the state's own sentence, which names whose page it is
+   * ("Anthropic: all systems operational") — `{name}` is `pageName` (#1316).
+   */
   labelKey: string;
+  /** the same sentence for a record that names no page */
+  unnamedKey: string;
   /**
    * The word the bar shows NEXT to the dot, or null when the bar stays quiet.
    *
@@ -34,6 +39,7 @@ export function healthTone(status: ServiceHealthStatus): HealthTone {
         glyph: '●',
         colorVar: 'var(--status-done-ink)',
         labelKey: 'health.state.operational',
+        unnamedKey: 'health.stateUnnamed.operational',
         shortKey: null,
       };
     case 'degraded':
@@ -41,6 +47,7 @@ export function healthTone(status: ServiceHealthStatus): HealthTone {
         glyph: '●',
         colorVar: 'var(--status-working-ink)',
         labelKey: 'health.state.degraded',
+        unnamedKey: 'health.stateUnnamed.degraded',
         shortKey: 'health.short.degraded',
       };
     case 'outage':
@@ -48,6 +55,7 @@ export function healthTone(status: ServiceHealthStatus): HealthTone {
         glyph: '●',
         colorVar: 'var(--status-crashed-ink)',
         labelKey: 'health.state.outage',
+        unnamedKey: 'health.stateUnnamed.outage',
         shortKey: 'health.short.outage',
       };
     default:
@@ -55,6 +63,7 @@ export function healthTone(status: ServiceHealthStatus): HealthTone {
         glyph: '○',
         colorVar: 'var(--status-idle-ink)',
         labelKey: 'health.state.unknown',
+        unnamedKey: 'health.stateUnnamed.unknown',
         // Unknown says nothing out loud on purpose: not knowing is the normal
         // state of a machine that is offline, or has polling off, or asked once
         // and got nothing. It is not news, and it is certainly not an error.
@@ -78,7 +87,7 @@ export interface TooltipLine {
 export function healthTooltip(status: ServiceHealthStatus): TooltipLine[] {
   const tone = healthTone(status);
   // NO STATUS PAGE (#1288) is its own sentence and the whole of the page half:
-  // the state words name Anthropic, and this AI is not it. The local half
+  // the state words name a page, and this AI has none. The local half
   // still applies — sessions here failing together needs no page.
   if (status.reason === 'no-status-page') {
     const out: TooltipLine[] = [
@@ -94,7 +103,13 @@ export function healthTooltip(status: ServiceHealthStatus): TooltipLine[] {
   // Our verdict leads, always. The page's own summary follows when it gave one
   // — it is more specific than we can be, but it is also untranslated marketing
   // copy, and a tooltip must not consist only of words we did not choose.
-  const lines: TooltipLine[] = [{ key: tone.labelKey }];
+  //
+  // WHOSE page, by name (#1316): these words said "Anthropic" whatever the
+  // default AI was. A record that names no page says "Status page: …" rather
+  // than guessing a company.
+  const lines: TooltipLine[] = [
+    status.pageName ? { key: tone.labelKey, params: { name: status.pageName } } : { key: tone.unnamedKey },
+  ];
   if (status.description) lines.push({ key: 'health.page', params: { page: status.description } });
   if (status.reason !== 'ok' && status.reason !== 'never-checked') {
     lines.push({ key: `health.reason.${status.reason}` });

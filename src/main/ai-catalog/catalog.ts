@@ -16,7 +16,7 @@
 //     (downloaded once from the registry CDN into `src/renderer/public/
 //     ai-icons/`, served from the renderer's own origin), and
 //     which provider id hosts it (Claude's native engine; Codex is #1290's).
-import type { CatalogEntry, RegistryAgent } from '../../shared/ais';
+import { CLAUDE_AI_ID, type CatalogEntry, type RegistryAgent } from '../../shared/ais';
 import catalogJson from './catalog.json';
 import snapshotJson from './registry-snapshot.json';
 
@@ -26,7 +26,7 @@ export const CATALOG_SNAPSHOT_DATE: string = catalogJson.snapshot;
 export const REGISTRY_URL = 'https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json';
 
 /** The provider id of Claude's native engine. */
-export const CLAUDE_CATALOG_ID = 'claude-code';
+export const CLAUDE_CATALOG_ID = CLAUDE_AI_ID;
 
 const ENTRIES: readonly CatalogEntry[] = Object.freeze(
   (catalogJson.entries as unknown as CatalogEntry[]).map((e) => Object.freeze({ ...e }))

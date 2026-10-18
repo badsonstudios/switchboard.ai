@@ -48,9 +48,23 @@ describe('the tooltip', () => {
 
   it("leads with our verdict, then the page's own words", () => {
     expect(keys({ ...base, description: 'All Systems Operational' })).toEqual([
-      'health.state.operational',
+      'health.stateUnnamed.operational',
       'health.page',
     ]);
+  });
+
+  // #1316: the verdict said "Anthropic" whatever the default AI was. It names
+  // whose page it is when main says, and names nobody when main does not.
+  it('names whose page it is, and only when it was told', () => {
+    expect(healthTooltip({ ...base, pageName: 'Anthropic' })[0]).toEqual({
+      key: 'health.state.operational',
+      params: { name: 'Anthropic' },
+    });
+    expect(healthTooltip({ ...base, state: 'outage', pageName: 'Codex' })[0]).toEqual({
+      key: 'health.state.outage',
+      params: { name: 'Codex' },
+    });
+    expect(healthTooltip(base)[0]).toEqual({ key: 'health.stateUnnamed.operational' });
   });
 
   it('says why when it could not find out', () => {
@@ -60,9 +74,9 @@ describe('the tooltip', () => {
   });
 
   it('says nothing about a reason when there is nothing to explain', () => {
-    expect(keys(base)).toEqual(['health.state.operational']);
+    expect(keys(base)).toEqual(['health.stateUnnamed.operational']);
     expect(keys({ ...base, state: 'unknown', reason: 'never-checked' })).toEqual([
-      'health.state.unknown',
+      'health.stateUnnamed.unknown',
     ]);
   });
 

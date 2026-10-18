@@ -969,7 +969,7 @@ test.describe('manual screenshots (#1082)', () => {
     };
     await w.waitForTimeout(600);
     await tidy(w, parent, reply);
-    const working = w.getByText('Claude is working').first();
+    const working = w.getByText('Claude Code is working').first();
     await shot(
       w,
       'direct-streaming',

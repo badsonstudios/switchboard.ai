@@ -5,8 +5,8 @@
 > Status: draft
 
 Some days the model is slow, or refuses, or a session just stops working. Before
-you go hunting through your prompt, the app can tell you whether Anthropic is
-having a bad afternoon.
+you go hunting through your prompt, the app can tell you whether the company
+behind your AI is having a bad afternoon.
 
 Two things answer that question, and they're independent.
 
@@ -34,8 +34,9 @@ gets a hollow dot, and hovering it says so.
 | **●** red, *"provider outage"* | The status page reports an outage. |
 | **○** hollow grey | We don't know — see below. |
 
-Hover the dot for the details: the status page's own summary, any open
-incidents, and when it was last checked.
+Hover the dot for the details. The first line says whose page it is and what
+it reports — *"Anthropic: all systems operational"* for Claude Code — then the
+status page's own summary, any open incidents, and when it was last checked.
 
 **Grey isn't an error.** It just means nothing useful came back. That happens
 when you're offline, when the status page can't be reached, or when you've

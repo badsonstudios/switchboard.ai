@@ -65,14 +65,29 @@ interface LoginState {
   busy: boolean;
   message?: string;
   methods?: string[];
+  /** the AI's own label per method id (#1316); a missing one shows the id */
+  methodLabels?: Record<string, string>;
 }
 
 /** One login answer, as the words under the row. */
 function loginMessage(r: AiLoginResult, t: (k: string, o?: Record<string, unknown>) => string): LoginState {
   if (!r.supported) return { busy: false, message: r.reason || t('ais.loginFailedNoReason') };
   if (r.ok === true) return { busy: false, message: t('ais.loginDone') };
-  if (r.methods && r.methods.length > 0) return { busy: false, methods: r.methods };
+  if (r.methods && r.methods.length > 0) {
+    return { busy: false, methods: r.methods, ...(r.methodLabels ? { methodLabels: r.methodLabels } : {}) };
+  }
   return { busy: false, message: r.reason ? t('ais.loginFailed', { reason: r.reason }) : t('ais.loginFailedNoReason') };
+}
+
+/**
+ * A sign-in method as a person reads it: the AI's own label, or its id when it
+ * gave none. `hasOwn`, because an id is the AI's string and `constructor` must
+ * not find `Object.prototype`'s.
+ */
+function methodLabel(login: LoginState | undefined, id: string): string {
+  const labels = login?.methodLabels;
+  const label = labels && Object.prototype.hasOwnProperty.call(labels, id) ? labels[id] : undefined;
+  return typeof label === 'string' && label ? label : id;
 }
 
 /** The status words for one row: presence, login, version. */
@@ -219,7 +234,7 @@ function AiRow(props: {
                   props.onLogin(row, m);
                 }}
               >
-                {m}
+                {methodLabel(props.login, m)}
               </button>
             ))}
           </div>

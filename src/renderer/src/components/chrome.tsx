@@ -16,6 +16,8 @@ import { LayoutPresets } from './LayoutPresets';
 import type { SessionsPlacement } from '../lib/sessions-placement';
 import { SessionsPlacementSwitch } from './SessionsPlacementSwitch';
 import { autonomyTooltip } from '../lib/autonomy';
+import { getAisState, subscribeAis } from '../lib/ais-store';
+import { isClaudeAi } from '../lib/session-ai';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
 import type { PlanLimitWindow } from '../../../shared/usage-report';
@@ -135,6 +137,8 @@ export function TitleBar(props: {
   paletteBinding: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
+  const ais = React.useSyncExternalStore(subscribeAis, getAisState);
+  const newSessionsOnClaude = isClaudeAi(ais.defaultId);
   return (
     <header style={barStyle}>
       <strong style={{ fontWeight: 600 }}>{t('app.title')}</strong>
@@ -234,7 +238,9 @@ export function TitleBar(props: {
       <Chip
         selected={false}
         onClick={props.onCycleAutonomy}
-        title={autonomyTooltip(t, props.autonomy, 'workspace')}
+        // the mode NEW sessions start at, so the Claude Code half applies when
+        // they start on Claude (#1316)
+        title={autonomyTooltip(t, props.autonomy, 'workspace', newSessionsOnClaude)}
         testId="titlebar-autonomy"
       >
         {t(`autonomy.${props.autonomy}`)}

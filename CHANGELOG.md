@@ -139,6 +139,18 @@ on the floor, and say so in your PR.
   answer to a request that wrote or edited a page draws the picture under the
   sentence that names it. A page that is only mentioned, or that was written
   in an earlier request, is not drawn.
+- **Words that said "Claude" for every AI now name the right one.** On a
+  Codex session the Stop button said "Stop Claude", the working strip said
+  "Claude is working", and the mode chip's hover described Claude Code's own
+  modes. They now name the session's AI ("Stop Codex", "Codex is working"),
+  and the Claude Code details in the mode hover appear only on Claude Code
+  sessions. The status dot's hover says whose status page it read
+  ("Anthropic: all systems operational") instead of always saying Anthropic,
+  and the setting is now "Check provider status". The model picker and a few
+  other messages say "this session's AI" instead of "Claude Code".
+- **Sign-in choices show their names.** When an AI offers more than one way to
+  sign in, the buttons on **Settings ▸ AIs** now show the AI's own names for
+  them ("ChatGPT", "API Key") instead of internal ids like `chat-gpt`.
 
 ## 0.8.124 — 2026-10-18
 

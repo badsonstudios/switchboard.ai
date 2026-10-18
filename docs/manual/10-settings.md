@@ -27,7 +27,7 @@ It is organised in **seven tabs** along the top:
 | Tab | Holds |
 |---|---|
 | **Appearance** | Theme, where the Sessions list goes, how a working session looks, the context meter, task label size |
-| **General** | Language, automatic update checks, Anthropic status checks |
+| **General** | Language, automatic update checks, AI status-page checks |
 | **AIs** | Which AI new sessions start on, the AIs found on this computer and their sign-in, adding another AI — see [Settings → AIs](24-ais.md) |
 | **Notifications** | The needs-you sound, quiet hours, phone push & webhooks |
 | **Sessions** | What happens to a finished dispatched session |
@@ -326,8 +326,10 @@ window under "Advanced"; each is now on the tab it belongs to.
   Off, switchboard never reaches the release host on its own; the **Check for
   updates…** button in the About panel still works whenever you ask it to. See
   [Updates](13-updates.md).
-- **Check Anthropic's status page** (**Settings ▸ General**) — on by default.
-  It is what colours the dot in the status bar. Off, the dot goes grey and says
+- **Check provider status** (**Settings ▸ General**, under **AI status page**)
+  — on by default. It asks the status page of the AI new sessions start on
+  (Anthropic's, for Claude Code), and is what colours the dot in the status
+  bar. An AI with no status page is never asked. Off, the dot goes grey and says
   why. See [Provider status](14-provider-status.md).
 
 Those last two are the **only** two things switchboard sends over the network

@@ -28,6 +28,7 @@ import { sessionPanels } from '../extensibility/panels';
 import { PanelContext } from '../extensibility/contributions';
 import { AUTONOMIES, autonomyTooltip } from '../lib/autonomy';
 import { UNKNOWN_BUILD_IDENTITY } from '../../../shared/build-identity';
+import { resetAisStoreForTests } from '../lib/ais-store';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -98,7 +99,7 @@ function stubBridge(): void {
 }
 
 /** the feed panel, whose composer carries this session's shield button */
-async function composerHost(autonomy: string): Promise<HTMLElement> {
+async function composerHost(autonomy: string, providerId?: string): Promise<HTMLElement> {
   const ctx: PanelContext = {
     sessionId: 'live-1',
     cardId: 'card-1',
@@ -112,6 +113,7 @@ async function composerHost(autonomy: string): Promise<HTMLElement> {
     setView: () => {},
     autonomy,
     onCycleAutonomy: noop,
+    ...(providerId ? { providerId } : {}),
   };
   return mount(feedPanel.render(ctx));
 }
@@ -167,14 +169,37 @@ describe('the permission-mode hover', () => {
 
   it('says what full-auto really is, wherever it is hovered', async () => {
     // the sentence the whole item exists for: the names alone never said that
-    // full-auto is the CLI's bypassPermissions rather than a gentler cousin
-    const titles = [
-      titled(await mount(bar('full-auto')), 'titlebar-autonomy').title,
-      titled(await composerHost('full-auto'), 'composer-autonomy').title,
-    ];
-    for (const tip of titles) {
-      expect(tip).toContain('bypassPermissions');
-      expect(tip).toContain('--dangerously-skip-permissions');
+    // full-auto is the CLI's bypassPermissions rather than a gentler cousin.
+    // Said on CLAUDE since #1316: new sessions start on Claude (the title
+    // bar), and this session is on Claude (the composer).
+    resetAisStoreForTests({ items: [], defaultId: 'claude-code' });
+    try {
+      const titles = [
+        titled(await mount(bar('full-auto')), 'titlebar-autonomy').title,
+        titled(await composerHost('full-auto', 'claude-code'), 'composer-autonomy').title,
+      ];
+      for (const tip of titles) {
+        expect(tip).toContain('bypassPermissions');
+        expect(tip).toContain('--dangerously-skip-permissions');
+      }
+    } finally {
+      resetAisStoreForTests();
+    }
+  });
+
+  it('says none of that to another AI (#1316)', async () => {
+    resetAisStoreForTests({ items: [], defaultId: 'codex' });
+    try {
+      const titles = [
+        titled(await mount(bar('full-auto')), 'titlebar-autonomy').title,
+        titled(await composerHost('full-auto', 'codex'), 'composer-autonomy').title,
+      ];
+      for (const tip of titles) {
+        expect(tip).toContain(en.autonomy.desc['full-auto']);
+        expect(tip).not.toMatch(/claude|bypassPermissions/i);
+      }
+    } finally {
+      resetAisStoreForTests();
     }
   });
 

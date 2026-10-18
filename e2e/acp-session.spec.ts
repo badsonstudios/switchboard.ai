@@ -113,14 +113,16 @@ test.describe('a session on the fake ACP agent (#1289)', () => {
       timeout: 30_000,
     });
 
-    // 5. Stop. `!cancel-slow` streams until cancelled; the title is matched on
-    //    its second half because the first still names Claude (#1288's labels).
+    // 5. Stop. `!cancel-slow` streams until cancelled. The title names THIS
+    //    AI, never Claude (#1316) — and so does the working strip.
     await send(w, '!cancel-slow');
     await expect(w.getByText(/tick 3/)).toBeVisible({ timeout: 30_000 });
-    await w
-      .getByTitle(/interrupts the current turn/i)
-      .first()
-      .click();
+    const acpStop = w.getByTitle(/interrupts the current turn/i).first();
+    await expect(acpStop).toHaveAttribute('title', 'Stop Fake ACP — interrupts the current turn', {
+      timeout: 30_000,
+    });
+    await expect(w.getByText('Fake ACP is working').first()).toBeVisible({ timeout: 30_000 });
+    await acpStop.click();
     await expect(w.getByTitle(/interrupts the current turn/i)).toHaveCount(0, {
       timeout: 30_000,
     });

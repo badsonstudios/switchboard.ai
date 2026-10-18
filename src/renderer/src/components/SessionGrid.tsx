@@ -89,6 +89,7 @@ import {
 } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { autonomyTooltip, DEFAULT_AUTONOMY, isAutonomy, nextAutonomy } from '../lib/autonomy';
+import { isClaudeAi } from '../lib/session-ai';
 import { submitTarget } from '../lib/presentation-policy';
 import { SubmitNotice, SubmitPolicyNotice, submitNoticeMuted } from './SubmitPolicyNotice';
 import { bulkClose } from '../lib/pinning';
@@ -2385,7 +2386,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             {shownMode && shownMode !== 'ask' && (
               <span
                 data-testid="card-mode-badge"
-                title={autonomyTooltip(t, shownMode, 'badge')}
+                title={autonomyTooltip(t, shownMode, 'badge', isClaudeAi(headerProvider))}
                 style={{
                   fontSize: 9.5,
                   fontFamily: 'var(--font-mono)',

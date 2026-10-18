@@ -59,7 +59,10 @@ export function pollIntervalFor(maxAgeMs: number | undefined): number {
  * DEFAULT provider, the one a new session starts on. `none` when that AI
  * publishes no status page, and then nothing is fetched at all.
  */
-export type StatusPageTarget = { base: string } | { none: true; providerName: string };
+export type StatusPageTarget =
+  /** `name`: whose page it is, for the state words ("Anthropic: …", #1316) */
+  | { base: string; name?: string }
+  | { none: true; providerName: string };
 
 export interface ServiceHealthDeps {
   getPrefs: () => ServiceHealthPrefs;
@@ -113,11 +116,17 @@ function signature(s: ServiceHealthStatus): string {
     s.incidents.map((i) => `${i.id}:${i.status}:${i.impact}`),
     s.corroboration ? s.corroboration.sessions : 0,
     s.providerName ?? '',
+    s.pageName ?? '',
   ]);
 }
 
 export class ServiceHealthService {
   private status: ServiceHealthStatus = { ...UNKNOWN_HEALTH };
+  /**
+   * Whose page the last target was (#1316), carried on every record about it
+   * so the state words name it. Cleared when the default AI has no page.
+   */
+  private pageName: string | undefined;
   private timer: NodeJS.Timeout | null = null;
   private sweep: NodeJS.Timeout | null = null;
   private stopped = false;
@@ -175,6 +184,7 @@ export class ServiceHealthService {
    */
   private goDark(reason: 'polling-off' | 'offline'): void {
     this.knownIncidents = new Set();
+    this.resolveTarget();
     if (reason === 'polling-off') {
       // The user said stop looking, so what we last saw stops being a claim:
       // the Events card and the tooltip's incident list are drawn from this
@@ -188,6 +198,7 @@ export class ServiceHealthService {
         state: 'unknown',
         reason,
         incidents: [],
+        ...this.named(),
         corroboration: this.status.corroboration,
       };
       this.pushIfChanged();
@@ -251,8 +262,7 @@ export class ServiceHealthService {
     // whatever the provider says; otherwise it is the provider's own, and a
     // provider with none is never asked anything — no request, no timer worth
     // the name, and a tooltip that says why.
-    const override = this.overrideOff() ? undefined : this.deps.feedOverride?.trim() || undefined;
-    const target: StatusPageTarget = override ? { base: override } : this.target();
+    const target = this.resolveTarget();
     if ('none' in target) {
       this.noStatusPage(target.providerName);
       // Cheap — nothing leaves the machine — and it is how a change of
@@ -299,11 +309,32 @@ export class ServiceHealthService {
     this.schedule(pollIntervalFor(probe.maxAgeMs));
   }
 
+  /**
+   * Which page to ask, with the dev seam applied, and — as a side effect —
+   * the name the state words use for it (#1316). Cheap and offline: it only
+   * asks the registry, so `goDark` calls it too, and a change of default AI
+   * while polling is off still renames the record.
+   */
+  private resolveTarget(): StatusPageTarget {
+    const override = this.overrideOff() ? undefined : this.deps.feedOverride?.trim() || undefined;
+    const own = this.target();
+    // The override moves WHERE we ask. The words still name the default AI's
+    // page owner, or the AI itself when it has no page (a dev-only stub then
+    // reads "Codex: …", which is the AI the stub stands in for).
+    const target: StatusPageTarget = override
+      ? { base: override, name: 'none' in own ? own.providerName || undefined : own.name }
+      : own;
+    this.pageName = 'none' in target ? undefined : target.name || undefined;
+    return target;
+  }
+
   /** The provider's answer, fail-open: a throw is "no page we can name". */
   private target(): StatusPageTarget {
     try {
       const t = this.deps.statusPage();
-      if ('base' in t && typeof t.base === 'string' && t.base) return { base: t.base };
+      if ('base' in t && typeof t.base === 'string' && t.base) {
+        return { base: t.base, ...(typeof t.name === 'string' && t.name ? { name: t.name } : {}) };
+      }
       if ('none' in t) return { none: true, providerName: t.providerName };
     } catch (err) {
       this.deps.log.warn('provider status: could not ask which page to poll', {
@@ -391,6 +422,11 @@ export class ServiceHealthService {
 
   // ── assembling and announcing ─────────────────────────────────────────────
 
+  /** The page's owner, as a record field — absent when nobody named it. */
+  private named(): { pageName?: string } {
+    return this.pageName ? { pageName: this.pageName } : {};
+  }
+
   private applyProbe(probe: StatuspageProbe): void {
     // Did the page actually answer? Only then do the incident list and the
     // "checked at" line mean anything.
@@ -409,6 +445,7 @@ export class ServiceHealthService {
       ...(probe.description ? { description: probe.description } : {}),
       incidents: answered ? probe.incidents : this.status.incidents,
       ...(checkedAt ? { checkedAt } : {}),
+      ...this.named(),
       // the local half is independent of the page and survives every poll
       corroboration: this.status.corroboration,
     };

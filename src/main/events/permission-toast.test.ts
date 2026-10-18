@@ -413,7 +413,7 @@ describe("the CLI's own question on a toast (#563)", () => {
 
   it('falls back to plain prose when the payload will not parse', () => {
     expect(permissionSummary(question('not an array'), t)).toBe(
-      'Claude is asking you a question'
+      'This session is asking you a question'
     );
   });
 });

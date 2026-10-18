@@ -12,6 +12,7 @@ import { RendererRegistry } from './registry-instance';
 import { formatTokens, formatUsd } from '../lib/usage';
 import { healthTone, healthTooltip } from '../lib/service-health';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
+import { CLAUDE_AI_ID } from '../../../shared/ais';
 import type { EventDto } from '../model/types';
 import type { PlanLimitWindow } from '../../../shared/usage-report';
 import { AiIcon } from '../components/AiIcon';
@@ -180,7 +181,7 @@ export interface StatusBarAi {
 }
 
 /** Claude's catalog id: first on the bar, as the design record's screen 1 has it. */
-const CLAUDE_ID = 'claude-code';
+const CLAUDE_ID = CLAUDE_AI_ID;
 
 /**
  * WHICH AIs THE BAR LISTS, and in what order (#1293) — a pure function so the

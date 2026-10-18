@@ -150,8 +150,25 @@ export interface AgentInfo {
   loadSession: boolean;
   image: boolean;
   authMethods: string[];
+  /**
+   * Each sign-in method's own label, by id (#1316) — the agent's `name` for
+   * it ("ChatGPT", "API Key"; measured from Codex in #1285). Only the methods
+   * that gave one; the id stays what is sent back.
+   */
+  authMethodNames: Record<string, string>;
   name?: string;
   version?: string;
+}
+
+function methodNames(methods: unknown[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const m of methods) {
+    const o = obj(m);
+    if (o && typeof o.id === 'string' && o.id && typeof o.name === 'string' && o.name.trim()) {
+      out[o.id] = o.name.trim();
+    }
+  }
+  return out;
 }
 
 export function readInitialize(result: Record<string, unknown>): AgentInfo {
@@ -164,6 +181,7 @@ export function readInitialize(result: Record<string, unknown>): AgentInfo {
     loadSession: caps.loadSession === true,
     image: prompt.image === true,
     authMethods: methods.map((m) => obj(m)?.id).filter((id): id is string => typeof id === 'string' && id !== ''),
+    authMethodNames: methodNames(methods),
     ...(typeof info.name === 'string' ? { name: info.name } : {}),
     ...(typeof info.version === 'string' ? { version: info.version } : {}),
   };

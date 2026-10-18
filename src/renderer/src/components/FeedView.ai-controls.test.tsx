@@ -19,6 +19,9 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import { sessionPanels } from '../extensibility/panels';
 import { PanelContext } from '../extensibility/contributions';
 import { ENGINE_CONTROLS, type EngineControl, type SessionControlsWire } from '../../../shared/engine-controls';
+import type { CatalogEntry } from '../../../shared/ais';
+import { resetAisStoreForTests } from '../lib/ais-store';
+import en from '../../../shared/i18n/locales/en.json';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -208,5 +211,71 @@ describe('a control the AI lacks greys out, with a reason (issue 1287)', () => {
     delete sessions.controls;
     const host = await mountFeed();
     expect(host.querySelector('[data-unavailable]')).toBeNull();
+  });
+});
+
+// #1316: the words that named Claude for every AI. Stop's title and the
+// working strip say the session's AI by name — the catalog's, then the
+// provider's own off `sessions:controls` — and the mode chip's tooltip adds
+// the Claude Code half only on Claude.
+describe("the composer names the session's AI, not Claude (issue 1316)", () => {
+  const ALL = [...ENGINE_CONTROLS];
+  const claudeEntry: CatalogEntry = {
+    id: 'claude-code',
+    name: 'Claude Code',
+    maker: 'Anthropic',
+    description: '',
+    engine: 'native',
+    install: { kind: 'link', url: 'https://example.invalid' },
+    detectCommand: 'claude',
+    runsLocalModels: false,
+    providerId: 'claude-code',
+  };
+  const strip = (host: HTMLElement): string =>
+    [...host.querySelectorAll('div')].map((d) => d.textContent ?? '').find((s) => / is working$|^Working$/.test(s)) ?? '';
+
+  afterEach(() => resetAisStoreForTests());
+
+  it("another AI's Stop says its name, and the strip does too", async () => {
+    resetAisStoreForTests({
+      items: [{ kind: 'provider', entry: { id: 'reduced', name: 'Reduced (test)' }, providerId: 'reduced', registered: true }],
+      defaultId: 'claude-code',
+    });
+    answer = { ai: 'Reduced (test)', has: ALL };
+    const host = await mountFeed({ providerId: 'reduced' });
+    expect(stop(host)!.getAttribute('title')).toBe('Stop Reduced (test) — interrupts the current turn');
+    expect(strip(host)).toBe('Reduced (test) is working');
+    expect(host.textContent).not.toMatch(/Claude/);
+  });
+
+  it("Claude's Stop names Claude Code, from the catalog", async () => {
+    resetAisStoreForTests({ items: [{ kind: 'catalog', entry: claudeEntry, providerId: 'claude-code', registered: true }], defaultId: 'claude-code' });
+    answer = { ai: 'Claude Code', has: ALL };
+    const host = await mountFeed({ providerId: 'claude-code' });
+    expect(stop(host)!.getAttribute('title')).toBe('Stop Claude Code — interrupts the current turn');
+    expect(strip(host)).toBe('Claude Code is working');
+  });
+
+  it("Stop falls back to the provider's own name when the list has no entry", async () => {
+    answer = { ai: 'Reduced (test)', has: ALL };
+    const host = await mountFeed({ providerId: 'reduced' });
+    expect(stop(host)!.getAttribute('title')).toBe('Stop Reduced (test) — interrupts the current turn');
+  });
+
+  it('nobody knows which AI: the unnamed words, never a guess', async () => {
+    answer = null;
+    const host = await mountFeed();
+    expect(stop(host)!.getAttribute('title')).toBe(en.feedView.stopUnnamed);
+    expect(strip(host)).toBe(en.feedView.workingStripUnnamed);
+  });
+
+  it('the mode chip tells Claude about Claude Code, and nobody else', async () => {
+    answer = { ai: 'Reduced (test)', has: ALL };
+    const other = await mountFeed({ providerId: 'reduced' });
+    expect(byId(other, 'composer-autonomy')!.getAttribute('title')).not.toMatch(/claude/i);
+    document.body.innerHTML = '';
+    answer = { ai: 'Claude Code', has: ALL };
+    const claude = await mountFeed({ providerId: 'claude-code' });
+    expect(byId(claude, 'composer-autonomy')!.getAttribute('title')).toContain(en.autonomy.claude.session);
   });
 });

@@ -293,6 +293,44 @@ describe('offline', () => {
   });
 });
 
+describe('whose page it is (#1316)', () => {
+  it('carries the page owner on the record, so the words can name it', async () => {
+    const { svc, pushed } = make({ statusPage: () => ({ base: PAGE, name: 'Anthropic' }) });
+    svc.start();
+    await vi.waitFor(() => expect(pushed.length).toBe(1));
+    expect(pushed[0]).toMatchObject({ reason: 'ok', pageName: 'Anthropic' });
+    svc.stop();
+  });
+
+  it('names nobody when the provider did not say', async () => {
+    const { svc, pushed } = make({ statusPage: () => ({ base: PAGE }) });
+    svc.start();
+    await vi.waitFor(() => expect(pushed.length).toBe(1));
+    expect(pushed[0].pageName).toBeUndefined();
+    svc.stop();
+  });
+
+  it('polling off still names the page, read fresh — nothing is fetched', async () => {
+    const { svc, pushed, probe } = make({ statusPage: () => ({ base: PAGE, name: 'Anthropic' }), poll: false });
+    svc.start();
+    await vi.waitFor(() => expect(pushed.length).toBe(1));
+    expect(probe).not.toHaveBeenCalled();
+    expect(pushed[0]).toMatchObject({ reason: 'polling-off', pageName: 'Anthropic' });
+    svc.stop();
+  });
+
+  it('the dev seam moves where we ask, not whose page it stands for', async () => {
+    const { svc, pushed } = make({
+      statusPage: () => ({ none: true as const, providerName: 'Codex' }),
+      feedOverride: 'http://127.0.0.1:9/stub',
+    });
+    svc.start();
+    await vi.waitFor(() => expect(pushed.length).toBe(1));
+    expect(pushed[0]).toMatchObject({ reason: 'ok', pageName: 'Codex' });
+    svc.stop();
+  });
+});
+
 describe('an AI with no status page (#1288)', () => {
   const none = () => ({ none: true as const, providerName: 'Codex' });
 
