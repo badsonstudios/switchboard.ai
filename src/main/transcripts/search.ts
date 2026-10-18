@@ -638,6 +638,9 @@ async function scanOne(
     // an AI-switch divider is the card's own mark, never a transcript line
     // (#1294), so it cannot anchor a hit — said for the type, not the data
     if (anchor.kind === 'ai-switch') return;
+    // ...and a compaction divider has no text of its own to match (#1259); it
+    // still takes an ordinal above, so the file and the Feed count alike
+    if (anchor.kind === 'compaction') return;
     if (!text) return;
     re.lastIndex = 0;
     let m: RegExpExecArray | null;

@@ -33,6 +33,7 @@ import { MAX_FEED_PICTURES_PER_BLOCK } from '../../shared/feed-picture';
 import { picturesIn, type PictureData } from './picture-data';
 import { mcpCall, webCall, type McpCall, type WebCall } from '../../shared/tool-fold';
 import type { AiSwitchMark } from '../../shared/ai-switch';
+import { compactionMarkOfEntry, type CompactionMark } from '../../shared/compaction';
 
 /**
  * What rode along with a prompt (#491, P2-E10-09/10).
@@ -65,8 +66,9 @@ export interface FeedAttachments {
  */
 export interface FeedBlock {
   seq: number;
-  /** `ai-switch`: the divider an AI switch draws (#1294) — see `aiSwitch` */
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch';
+  /** `ai-switch`: the divider an AI switch draws (#1294) — see `aiSwitch`.
+   *  `compaction`: the divider where the conversation was compacted (#1259) */
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch' | 'compaction';
   /** user/assistant/thinking prose */
   text?: string;
   tool?: {
@@ -145,6 +147,12 @@ export interface FeedBlock {
    * briefing it carried.
    */
   aiSwitch?: AiSwitchMark;
+  /**
+   * `compaction`: the conversation was compacted here (#1259) — by the user, or
+   * by the CLI on its own. From the CLI's `compact_boundary` frame, never
+   * inferred; see `shared/compaction.ts`. The summary is not on the block.
+   */
+  compaction?: CompactionMark;
   notice?: {
     /** which injected wrapper this was — the renderer dispatches on this */
     source: 'task-notification';
@@ -689,6 +697,14 @@ export function deriveIntents(
   if (entry.isMeta === true || entry.is_meta === true) return [];
   if (isNotForTheLiveView(entry)) return [];
   const ts = typeof entry.timestamp === 'string' ? entry.timestamp : undefined;
+
+  // A COMPACTION'S BOUNDARY (#1259): the transcript's spelling of the frame the
+  // stream sends as `system:compact_boundary` (that one is translated in
+  // `providers/claude-events.ts` and drawn by `StreamFeed`). Its summary, the
+  // next line, is dropped just above (#1026); this is the mark of where it
+  // happened. A `system` line has no `message`, so it is read before that test.
+  const compaction = compactionMarkOfEntry(entry);
+  if (compaction) return [{ t: 'block', block: { kind: 'compaction', compaction, ts } }];
 
   const local = localCommandText(entry);
   if (local !== null) {

@@ -110,6 +110,13 @@ on the floor, and say so in your PR.
   Changes tabs get a short menu: Close tab, Close other tabs, Pop out. The
   list on the left, the strip and the tab now build their session menu from
   one place, so they cannot drift apart.
+- **A divider marks where a conversation was compacted.** When you press
+  **Compact** (or type `/compact`), or Claude Code compacts on its own because
+  the context is filling up, the Session tab now draws *Conversation
+  compacted — 33k → 4.8k tokens (you asked)* (or *(automatically)*) at that
+  point. Everything above it is still there to read; Claude now remembers it
+  only as a summary. The divider survives quitting and reopening the app, and
+  the summary itself is still not shown as a prompt.
 
 ### Changed
 

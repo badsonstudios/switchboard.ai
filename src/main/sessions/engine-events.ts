@@ -245,9 +245,9 @@ export interface SettingsEvent {
 
 /**
  * The engine compacted the conversation's context. Token counts as the engine
- * reported them, when it did. No consumer yet — the per-AI surfaces item
- * (#1288) turned out not to need it — but carried so the first surface that
- * does (a compaction marker in the Feed) need not reach for a provider's frames.
+ * reported them, when it did. The Feed draws it as a divider (#1259,
+ * `StreamFeed.onCompaction`); `trigger` is `manual` (the user asked) or `auto`
+ * (the engine did it on its own), and anything else is drawn without a who.
  */
 export interface CompactionEvent {
   type: 'compaction';

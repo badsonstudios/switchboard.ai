@@ -4973,11 +4973,11 @@ function Composer({
                 <button
                   data-testid="composer-compact"
                   data-unavailable={noSlashCommands !== null ? 'slashCommands' : undefined}
-                  // Dead while a `/compact` is on the wire. Unlike Clear this
-                  // leaves no marker in the conversation, so a double-click
-                  // would type the command twice with nothing on screen to say
-                  // so -- the same reason the model chip next door has a busy
-                  // state.
+                  // Dead while a `/compact` is on the wire. Its divider (#1259)
+                  // only lands once the CLI has finished compacting, so until
+                  // then a double-click would type the command twice with
+                  // nothing on screen to say so -- the same reason the model
+                  // chip next door has a busy state.
                   disabled={controlsLock !== null || compactBusy || noSlashCommands !== null}
                   aria-label={controlName(t, 'grid.menuCompact', controlsLock)}
                   onClick={() => {

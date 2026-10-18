@@ -107,9 +107,22 @@ There are two shortcuts for this, and they do exactly the same thing:
   **"Conversation cleared — context starts fresh"** divider so you know it took.
 - **Compact conversation** — has Claude summarize the conversation so far to
   free up context. The summary is Claude Code's own working note, not
-  something you said, so it is not shown in the Session tab: the conversation
-  simply carries on. (Claude Code also compacts on its own when the context
-  fills up; the same applies.) Nothing yet marks the spot where it happened.
+  something you said, so it is not shown in the Session tab. Instead, a
+  **"Conversation compacted"** divider marks the spot where it happened, and
+  the conversation carries on below it. Everything above the divider is still
+  there for you to read; Claude now remembers it only as a summary. Hover over
+  the divider to be reminded of that.
+
+  The divider says how much context was freed, when Claude Code reports it,
+  and who asked:
+  - *Conversation compacted — 33k → 4.8k tokens (you asked)* — you pressed
+    **Compact** or typed `/compact`.
+  - *Conversation compacted — 969k → 21k tokens (automatically)* — Claude Code
+    compacted on its own because the context was filling up.
+
+  If Claude Code doesn't send the numbers, the divider just says
+  *Conversation compacted*. It stays after you quit and reopen the app, and
+  it shows at every verbosity setting (quiet, normal and firehose).
 
 You'll find both on the row just under the prompt box, beside the autonomy and
 model chips, as **Compact** and **Clear** — and in the **⋯** menu in the card

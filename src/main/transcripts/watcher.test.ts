@@ -735,6 +735,37 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
     expect(blocks[1].text).toBe('Current session: 2% used');
   });
 
+  // #1259 — the Terminal transport's half of the compaction divider: the
+  // transcript's `compact_boundary` line becomes the divider, and the summary
+  // the CLI writes after it stays out of the conversation (#1026).
+  it('draws a compaction where the transcript says one happened, and no summary prompt (#1259)', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [
+      entry({ type: 'user', message: { role: 'user', content: 'before' } }),
+      entry({
+        type: 'system',
+        subtype: 'compact_boundary',
+        level: 'info',
+        isMeta: false,
+        content: 'Conversation compacted',
+        compactMetadata: { trigger: 'auto', preTokens: 969261, postTokens: 21286 },
+        message: undefined,
+      }),
+      entry({
+        type: 'user',
+        isVisibleInTranscriptOnly: true,
+        isCompactSummary: true,
+        message: { role: 'user', content: 'This session is being continued from a previous conversation…' },
+      }),
+      entry({ type: 'user', message: { role: 'user', content: 'after' } }),
+    ]);
+    await sleep(150);
+    const blocks = watcher.blocks('s1');
+    expect(blocks.map((b) => b.kind)).toEqual(['user', 'compaction', 'user']);
+    expect(blocks[1].compaction).toEqual({ trigger: 'auto', preTokens: 969261, postTokens: 21286 });
+  });
+
   // A stream session's Feed is built from typed messages (P2-E18-10). The
   // watcher still binds, counts usage and learns the native id for it — it just
   // must not ALSO derive the MAIN conversation, or every block would render

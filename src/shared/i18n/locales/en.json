@@ -1124,6 +1124,15 @@
     "normalHint": "Prose + tool activity",
     "firehoseHint": "Everything, including thinking and subagent chatter",
     "clearedMarker": "Conversation cleared — context starts fresh",
+    "compaction": {
+      "manual": "Conversation compacted (you asked)",
+      "manualTokens": "Conversation compacted — {pre} → {post} tokens (you asked)",
+      "auto": "Conversation compacted (automatically)",
+      "autoTokens": "Conversation compacted — {pre} → {post} tokens (automatically)",
+      "plain": "Conversation compacted",
+      "plainTokens": "Conversation compacted — {pre} → {post} tokens",
+      "hint": "From here on, the AI remembers everything above this line only as a summary. The full conversation is still here to read."
+    },
     "turnMarker": "New prompt",
     "fold": {
       "title": "Explored the code",

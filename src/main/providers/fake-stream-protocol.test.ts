@@ -1474,6 +1474,10 @@ describe('`/compact` puts the summary on the wire as a synthetic user message (#
     expect(summary).toMatchObject({ isCompactSummary: true, isVisibleInTranscriptOnly: true });
     expect('isSynthetic' in summary).toBe(false);
     expect(lines.some((l) => l.type === 'system' && l.subtype === 'compact_boundary')).toBe(true);
+    // ...with the counts in the transcript's camelCase spelling (#1259), which
+    // is what draws the divider after a restart
+    const boundary = lines.find((l) => l.subtype === 'compact_boundary') as Record<string, unknown>;
+    expect(boundary.compactMetadata).toMatchObject({ trigger: 'manual', preTokens: 32516, postTokens: 4760 });
   });
 });
 // #1258 — ask, and KEEP STREAMING. The real CLI does (a message can carry

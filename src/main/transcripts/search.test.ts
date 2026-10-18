@@ -1045,6 +1045,19 @@ describe('lining a Direct session up (#458)', () => {
         continue;
       }
       if (e.isMeta === true) continue;
+      // A COMPACTION'S BOUNDARY (#1259), in the wire's spelling: the stream
+      // sends it as `system:compact_boundary` with snake_case metadata, and the
+      // Feed draws a divider from it, so a stream-built Feed holds a block here
+      // exactly where the file's derivation counts one.
+      if (e.type === 'system' && e.subtype === 'compact_boundary') {
+        const m = (e.compactMetadata ?? {}) as Record<string, unknown>;
+        sf.offer('s', {
+          type: 'system',
+          subtype: 'compact_boundary',
+          compact_metadata: { trigger: m.trigger, pre_tokens: m.preTokens, post_tokens: m.postTokens },
+        });
+        continue;
+      }
       if (e.type !== 'assistant' && e.type !== 'user') continue;
       // THE WIRE'S OWN FLAG (#1026). The CLI's converter writes one field for
       // a user message, `isSynthetic: isMeta || isVisibleInTranscriptOnly ||
@@ -1131,8 +1144,8 @@ describe('lining a Direct session up (#458)', () => {
       //
       // Note what this test can NOT pin, so nobody reads more into it than is
       // there: in this fixture the stream Feed's `seq` happens to equal the
-      // file's ordinal (no sidechain lines, one derivation, so both run 579 to
-      // 1,578), which means an implementation that ignored the offset
+      // file's ordinal (no sidechain lines, one derivation, so both run 580 to
+      // 1,579), which means an implementation that ignored the offset
       // arithmetic and returned `mainIndex` would satisfy every assertion here.
       // The offset itself is pinned by the small-window cases below, where the
       // view starts partway into the file and the two numbers differ.
