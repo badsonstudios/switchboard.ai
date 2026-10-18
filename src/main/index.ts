@@ -155,6 +155,14 @@ import { dialog } from 'electron';
 import { buildIdentity, isReleaseBuild, windowTitle } from '../shared/build-identity';
 import { clearDeadHttpCache } from './http-cache';
 import { acquireInstanceLock, focusRunningWindow, sleepSync } from './single-instance';
+import {
+  childWindowOptions,
+  noActivateRequested,
+  raiseWindow,
+  revealChildWindow,
+  revealWindow,
+  setNoActivate,
+} from './window-activation';
 import { refocusAfterDialog } from './dialog-refocus';
 
 /* ---- ONE switchboard per user profile (#289) -------------------------------
@@ -407,6 +415,10 @@ function scriptedQuit(): boolean {
 function audioMuted(): boolean {
   return !app.isPackaged && !!process.env.SWITCHBOARD_MUTE_AUDIO;
 }
+
+// `SWITCHBOARD_E2E_NO_ACTIVATE=1`: show every window without taking the OS
+// foreground (#1332). Non-packaged only; see `window-activation.ts`.
+setNoActivate(noActivateRequested(process.env, app.isPackaged));
 
 // Quit protection (P1-E6-02): intercept the WINDOW close — on Windows the X
 // destroys the sole window before before-quit, so guarding there strands
@@ -774,7 +786,7 @@ function createWindow(): BrowserWindow {
     if (win === currentWindow) onRendererLost?.(`renderer gone: ${details.reason}`);
   });
   win.once('ready-to-show', () => {
-    win.show();
+    revealWindow(win);
     if (win === currentWindow) mainWindowShown = true;
     log.ui.info('window shown', { restored: !!state.bounds, maximized: state.isMaximized });
     const afterPaint = onFirstWindowShown;
@@ -817,6 +829,10 @@ function createWindow(): BrowserWindow {
         overrideBrowserWindowOptions: {
           backgroundColor: '#242933',
           ...bounds,
+          // `{}` unless the e2e quiet mode is on (#1332), which creates the
+          // popout hidden and unfocusable so nothing — `did-create-window`'s
+          // show, or dockview's own `window.focus()` — can activate it
+          ...childWindowOptions(),
           // dockview persists the popout's INNER size (innerWidth/innerHeight);
           // without this Electron would read those as the OUTER frame size and
           // the window would lose the frame's worth of pixels on every
@@ -849,6 +865,7 @@ function createWindow(): BrowserWindow {
     if (!isPopoutUrl(details.url)) return;
     const entry = { win: child, groupId: groupIdFromFrameName(details.frameName) };
     popoutWindows.push(entry);
+    revealChildWindow(child); // no-op unless `childWindowOptions` hid it (#1332)
     // A popped-out session is still a session: the palette and the attention
     // jump have to work from its terminal too (#90, §5.8 — tearing a card off
     // must not remove capability). The claim is per-window, so this window
@@ -1349,11 +1366,9 @@ app
       const hit = popoutWindows.find((p) => p.groupId === groupId);
       const win = hit && !hit.win.isDestroyed() ? hit.win : null;
       if (!win) return false;
-      // minimized counts as "behind": restore before raising, or focus() on a
-      // minimized window is a taskbar flash and nothing else
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
+      // minimized counts as "behind": `raiseWindow` restores before raising, or
+      // focus() on a minimized window is a taskbar flash and nothing else
+      raiseWindow(win);
       return true;
     });
     // ...AND THE OTHER DIRECTION, ON AN EXPLICIT REQUEST ONLY (P2-E13-03).
@@ -1376,12 +1391,10 @@ app
     broker.handle('app:raiseMain', () => {
       const win = currentWindow;
       if (!win || win.isDestroyed()) return false;
-      // Minimized counts as "behind": restore before raising, or `focus()` on a
-      // minimized window is a taskbar flash and nothing else (`app:raisePopout`'s
-      // own lesson, reused rather than re-learned).
-      if (win.isMinimized()) win.restore();
-      win.show();
-      win.focus();
+      // Minimized counts as "behind": `raiseWindow` restores before raising, or
+      // `focus()` on a minimized window is a taskbar flash and nothing else
+      // (`app:raisePopout`'s own lesson, reused rather than re-learned).
+      raiseWindow(win);
       return true;
     });
     broker.handle('app:movePopout',

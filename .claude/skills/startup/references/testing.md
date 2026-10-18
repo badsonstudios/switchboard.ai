@@ -140,11 +140,47 @@ still how a new probe works; it is no longer how the project works.
      `onTestDisplay()` from `e2e/fixtures/app.ts`, which is a no-op when the
      switch is off. **No spec is exempt** — the audit's one candidate,
      `reconnect.spec.ts`, was measured rather than assumed and is
-     display-independent; the numbers are in its header. **It does not stop the
-     focus theft** —
-     activating a window grabs the keyboard however far away it is, and the
-     focus-anchored specs preclude launching without activation. Your screen
-     goes quiet; your typing can still be interrupted.
+     display-independent; the numbers are in its header. On its own it does not
+     stop the focus theft — activating a window grabs the keyboard however far
+     away it is. The next key does.
+   - **Keep the keyboard: `SWITCHBOARD_E2E_NO_ACTIVATE=1` (#1332).** Same
+     rules as the monitor key: env var if present (empty = explicit off), else
+     a `SWITCHBOARD_E2E_NO_ACTIVATE=1` line in `~/.switchboard-e2e.env`;
+     `1`/`true`/`on`/`yes` turn it on. The fixture passes it to the app, whose
+     main process (non-packaged builds only — `src/main/window-activation.ts`)
+     then shows every window with `showInactive()` and turns its own raises
+     (second launch, `app:raisePopout`, `app:raiseMain`, a toast click) into
+     show-without-activating; popouts are created hidden AND `focusable:
+     false`, because dockview activates them from the renderer
+     (`popoutWindow.focus()`), which no main-process seam sees. Off — every CI
+     run — the variable is not even in the child's environment. The suite
+     needs nothing from the OS for almost every spec (CDP drives keys and
+     mouse; focus emulation pins `document.hasFocus()`). What does change is
+     `BrowserWindow.isFocused()`: false from launch to close, so the app
+     correctly reads "away". A spec whose PRECONDITION is "the user is in this
+     window" calls **`bringToFront(a, 'main' | 'popout')`** — real `focus()`,
+     re-issued until `isFocused()` holds — and says so in its header; a spec
+     that TESTS an activation launches with `[E2E_NO_ACTIVATE_ENV]: ''`
+     (`popout-raise`). Never make the app pretend to be focused.
+     **Measured (2026-10-17, 50 ms `GetForegroundWindow` watcher, window class
+     logged):** a normal run takes the foreground once per launch; a quiet run
+     only in (a) the two specs above, and (b) the app's own `window.confirm()`
+     boxes, which Electron draws as native `#32770` dialogs that activate even
+     while Playwright answers them over CDP (~70 ms each, ~10 per run:
+     `popout-dock-back`, `popout-surfaces`, the close/suspend confirms). There
+     is no non-activating form of either, nor of `maximize()` (no spec seeds a
+     maximized window). Windows' foreground lock refuses most of these while
+     you are actively typing elsewhere — one whole quiet run saw none at all.
+     Side effect: because the app is "away", its WHEN_AWAY rules fire —
+     **silent OS toasts** appear on the primary screen during a quiet run.
+   - **A lost reply from the main process: `retryLostReply(() =>
+     a.app.evaluate(...))` (#1332).** An `app.evaluate` within about a second of
+     the window's geometry changing (the monitor move, a spec's `setBounds`)
+     can come back as CDP "Promise was collected", which Playwright reports as
+     "Execution context was destroyed, most likely because of a navigation" —
+     the main process never navigates. Measured in both modes; the quiet
+     launch makes the first resize hit it more often. Only for idempotent calls
+     (reads, `setBounds`): a lost reply does not mean the call did not run.
    - **Going AWAY in a spec: `blurApp(a)`, never a bare `blur()` (#538).**
      Every `WHEN_AWAY` rule (toast, voice, push) is gated on no window of ours
      being focused, and `BrowserWindow.blur()` is a fire-and-forget command the

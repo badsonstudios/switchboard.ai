@@ -14,11 +14,27 @@
 //
 // Window z-order is not readable from the DOM, so both are asserted through
 // Electron: `BrowserWindow.isFocused()` is the OS's own answer.
+//
+// ACTIVATES ITS WINDOWS, ON PURPOSE (#1332). A raise IS an activation, so this
+// spec can only test one through the app's real activation path: it launches
+// with the quiet mode (`SWITCHBOARD_E2E_NO_ACTIVATE`) forced OFF, and its
+// starting state ("the main window is in front") goes through `bringToFront`.
+// It is one of the two specs in the suite that may take the desktop foreground
+// - in practice Windows' foreground lock refuses that while you are typing
+// elsewhere, and the per-thread activation the assertions read still happens.
 import { test, expect } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, skipPopoutOnLinux, tempProjectFolder } from './fixtures/app';
+import {
+  bringToFront,
+  E2E_NO_ACTIVATE_ENV,
+  launchApp,
+  LaunchedApp,
+  skipPopoutOnLinux,
+  tempProjectFolder,
+} from './fixtures/app';
 
-const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
+// the app's REAL raise, whatever the developer's per-machine file says (#1332)
+const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream', [E2E_NO_ACTIVATE_ENV]: '' };
 
 /** Which window the OS says has focus — 'main', 'popout', or 'none'. */
 const focusedWindow = (a: LaunchedApp): Promise<string> =>
@@ -56,12 +72,7 @@ test.describe('raising a popped-out session (#571)', () => {
 
     // put the MAIN window in front, which is the state the report starts from:
     // the popout exists and is behind something
-    await a.app.evaluate(({ BrowserWindow }) => {
-      const main = BrowserWindow.getAllWindows().find(
-        (win) => !win.webContents.getURL().includes('popout.html')
-      );
-      main?.focus();
-    });
+    await bringToFront(a);
     await expect.poll(() => focusedWindow(a!), { timeout: 15_000 }).toBe('main');
 
     // RULE 2, checked here rather than in a test of its own: bringing the main

@@ -311,10 +311,9 @@ export interface LaunchOptions {
  * Settings → Advanced → Testing writes this file (#1331): it lists the attached
  * screens and saves the one picked, keeping every other line as it was.
  *
- * THE HONEST LIMITATION: this fixes the visual popping only. Activating a
- * window steals keyboard focus globally on Windows however far away it is, and
- * the focus-dependent specs preclude launching without activation — so typing
- * can still be interrupted. What you get back is a quiet screen.
+ * A quiet SCREEN is half of it. The other half is the keyboard: activating a
+ * window steals the foreground globally on Windows however far away the screen
+ * is — see `SWITCHBOARD_E2E_NO_ACTIVATE` below (#1332), which is the fix.
  */
 
 // The resolver itself — the value forms, the per-machine file's parser, and
@@ -331,26 +330,78 @@ export {
   type Point,
 } from '../../src/shared/test-display';
 
+/* ---- launch without taking the foreground (#1332) ---------------------------
+ *
+ * `SWITCHBOARD_E2E_NO_ACTIVATE=1` (env var, else the same per-machine file as
+ * the monitor key) launches every app QUIET: the main process shows its windows
+ * with `showInactive()` and turns every raise it issues on its own initiative
+ * into a show-without-activating (`src/main/window-activation.ts`; non-packaged
+ * builds only). So a developer typing in an editor keeps the keyboard while the
+ * suite's ~160 windows come and go.
+ *
+ * WHY THE SUITE DOES NOT CARE, mostly: keyboard and mouse go to the page over
+ * CDP, not through the OS, and Playwright's focus emulation pins
+ * `document.hasFocus()` true whatever the desktop is doing (measured —
+ * `tabFromFeedToComposer`'s header). What DOES change is the OS's own answer,
+ * `BrowserWindow.isFocused()`: false from launch to close. The app reads that
+ * for "is the user looking at us" (`visibilityAcross`, the WHEN_AWAY rules,
+ * "seen at once"), and the app is NEVER told otherwise — a spec that needs the
+ * user to be present makes them present with `bringToFront(a)`, which really
+ * activates the window, and says so in its header. The measured list is in that
+ * helper's comment.
+ *
+ * Accepted values: `1` / `true` / `on` / `yes` (any case). Anything else, empty,
+ * or absent is off — and off is the CI path: the child's environment never
+ * carries the variable at all, so the main process takes exactly the code path
+ * it took before this existed.
+ */
+export const E2E_NO_ACTIVATE_ENV = 'SWITCHBOARD_E2E_NO_ACTIVATE';
+
 // Frozen: one object is handed to every switch-off launch as its
 // `displayOffset`, and a shared mutable default is a question nobody should
 // have to ask.
 const NO_OFFSET: Point = Object.freeze({ x: 0, y: 0 });
 
 /**
- * The monitor setting as the developer meant it: the env var if PRESENT (empty
- * included — that is the explicit "off"), else the per-machine file, else
- * nothing. Fail-open on the file: unreadable is the same as absent.
+ * One per-machine e2e setting as the developer meant it: the env var if PRESENT
+ * (empty included — that is the explicit "off"), else the per-machine file,
+ * else nothing. Fail-open on the file: unreadable is the same as absent.
+ *
+ * Every key in `~/.switchboard-e2e.env` is read through here; a new one is a
+ * constant and a one-line accessor.
  */
-export function monitorSetting(): string | undefined {
-  const fromEnv = process.env[E2E_MONITOR_ENV];
+export function e2eSetting(key: string): string | undefined {
+  const fromEnv = process.env[key];
   if (fromEnv !== undefined) return fromEnv;
   try {
     const file = path.join(os.homedir(), E2E_SETTINGS_FILE);
     if (!fs.existsSync(file)) return undefined;
-    return readSettingsKey(fs.readFileSync(file, 'utf8'), E2E_MONITOR_ENV);
+    return readSettingsKey(fs.readFileSync(file, 'utf8'), key);
   } catch {
     return undefined;
   }
+}
+
+/** `SWITCHBOARD_E2E_MONITOR`, env var first, then the file (#479). */
+export function monitorSetting(): string | undefined {
+  return e2eSetting(E2E_MONITOR_ENV);
+}
+
+/** Whether to launch quiet — `SWITCHBOARD_E2E_NO_ACTIVATE` (#1332). */
+export function noActivateSetting(): boolean {
+  const v = e2eSetting(E2E_NO_ACTIVATE_ENV)?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'on' || v === 'yes';
+}
+
+/**
+ * Normalise the quiet-launch variable in a child's environment: exactly `'1'`
+ * when on, ABSENT when off. Absent rather than `''` so the CI path's
+ * environment is the one it always was. Runs BEFORE `opts.env`, so a spec can
+ * still turn it off for itself by passing `[E2E_NO_ACTIVATE_ENV]: ''`.
+ */
+function applyActivationMode(env: Record<string, string>): void {
+  if (noActivateSetting()) env[E2E_NO_ACTIVATE_ENV] = '1';
+  else delete env[E2E_NO_ACTIVATE_ENV];
 }
 
 /**
@@ -376,6 +427,36 @@ export function translateToDisplay(bounds: Box, from: Box, to: Box): Box {
     width,
     height,
   };
+}
+
+/**
+ * Run an IDEMPOTENT main-process call, re-issuing it if Playwright loses the
+ * reply (#1332).
+ *
+ * MEASURED, on this machine, in BOTH launch modes: an `app.evaluate` issued
+ * within about a second of the main window's geometry changing — the fixture's
+ * own cross-screen move, or a spec's `setBounds` — sometimes comes back as
+ * `Runtime.callFunctionOn` → `{"error":{"message":"Promise was collected"}}`.
+ * Playwright rewrites every protocol error from that channel into "Execution
+ * context was destroyed, most likely because of a navigation", which the main
+ * process cannot have: it never navigates. A probe of 4 x 3 launches saw it in
+ * every variant (quiet or not, window active or not); the quiet launch makes
+ * the FIRST resize after launch hit it more often, which turned `files-tab`
+ * from a rare flake into a 5-of-5 failure. The next call a moment later works.
+ *
+ * Only for calls that are safe to run twice — a read, a `setBounds` — because
+ * a lost reply does not mean the function did not run. Anything else is
+ * rethrown untouched, and so is the last lost reply.
+ */
+export async function retryLostReply<T>(call: () => Promise<T>, attempts = 8): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await call();
+    } catch (err) {
+      if (i >= attempts || !/Execution context was destroyed/.test(String(err))) throw err;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  }
 }
 
 /** Say which display we landed on ONCE per worker, not once per launch. */
@@ -413,7 +494,9 @@ async function moveToTestDisplay(app: ElectronApplication): Promise<Point> {
   // The default and the CI path: not one question asked of the app.
   if (!monitor?.trim()) return NO_OFFSET;
   try {
-    const info = await app.evaluate(({ BrowserWindow, screen }) => {
+    // Both calls are idempotent and both have been seen to lose their reply
+    // (`retryLostReply`) — the second one, mid-move, most of all.
+    const info = await retryLostReply(() => app.evaluate(({ BrowserWindow, screen }) => {
       const win = BrowserWindow.getAllWindows()[0];
       const bounds = win?.getBounds() ?? null;
       return {
@@ -426,7 +509,7 @@ async function moveToTestDisplay(app: ElectronApplication): Promise<Point> {
         // WHERE IT ALREADY IS — see the idempotence note below
         onId: bounds ? screen.getDisplayMatching(bounds).id : null,
       };
-    });
+    }));
     const picked = pickTestDisplay(info.displays, info.primaryId, monitor);
     if (!picked) {
       if (!announcedDisplay) {
@@ -463,9 +546,11 @@ async function moveToTestDisplay(app: ElectronApplication): Promise<Point> {
     if (!from) return NO_OFFSET; // same reasoning as the branch above
     if (info.onId !== picked.target.id) {
       const box = translateToDisplay(info.bounds, from, picked.target.workArea);
-      await app.evaluate(
-        ({ BrowserWindow }, arg) => BrowserWindow.fromId(arg.id)?.setBounds(arg.box),
-        { id: info.winId, box }
+      await retryLostReply(() =>
+        app.evaluate(
+          ({ BrowserWindow }, arg) => BrowserWindow.fromId(arg.id)?.setBounds(arg.box),
+          { id: info.winId, box }
+        )
       );
     }
     if (!announcedDisplay) {
@@ -567,6 +652,7 @@ export async function launchSecondInstance(
   env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
   env.SWITCHBOARD_MUTE_AUDIO = '1'; // the same scrub `launchApp` does (P2-E14-05a)
   env.SWITCHBOARD_FAKE_PROVIDER = '1';
+  applyActivationMode(env); // the same as `launchApp`, so the env matches (#1332)
   applyIsolatedPaths(env, home);
 
   // `--no-sandbox` on Linux, because that is what every OTHER app in this suite
@@ -749,6 +835,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   } else {
     env.SWITCHBOARD_FAKE_PROVIDER = '1';
   }
+  applyActivationMode(env);
   applyIsolatedPaths(env, home);
   if (opts.seedFolder) env.SWITCHBOARD_SEED_SESSION = opts.seedFolder;
   if (opts.seedDocument) env.SWITCHBOARD_SEED_DOCUMENT = opts.seedDocument;
@@ -1089,6 +1176,69 @@ export async function blurApp(a: LaunchedApp, timeoutMs = 15_000): Promise<void>
       return stillFocused === 0 ? true : null;
     },
     `the app never went away: a window still reports isFocused() after repeatedly asking every window to blur (${timeoutMs}ms)`,
+    timeoutMs
+  );
+}
+
+/**
+ * Make one of the app's windows the one the user is in — REALLY activate it,
+ * through `BrowserWindow.focus()` — and prove it stuck (#1332). The mirror of
+ * `blurApp`, with its shape: re-issue the command on every attempt, because on
+ * Windows an activation request can be dropped, and a longer wait cannot
+ * deliver a message nobody re-sent.
+ *
+ * For the specs whose PRECONDITION is "the user is in this window"
+ * (`BrowserWindow.isFocused()` true): in a quiet launch
+ * (`SWITCHBOARD_E2E_NO_ACTIVATE`) nothing else ever activates a window. On a
+ * normal launch it is usually a no-op — the window is already in front. It is
+ * the one place in the suite that activates a window on purpose, and a spec
+ * that calls it says why in its header.
+ *
+ * WHAT IT COSTS THE DEVELOPER, measured on Windows 11 (#1332): usually nothing.
+ * `isFocused()` is Chromium's `GetActiveWindow() == hwnd` — per-THREAD
+ * activation — and `focus()` gets that even when Windows' foreground lock
+ * refuses to hand over the desktop foreground, which it does while the
+ * developer is actively using another app. A watcher polling
+ * `GetForegroundWindow` every 50 ms saw no Electron window take the foreground
+ * across a whole quiet run in which this was called, and one short (~80 ms)
+ * steal in a run where the developer had been idle. So "the app believes it is
+ * in front" is reachable without moving the developer's keyboard most of the
+ * time — not guaranteed.
+ *
+ * WHICH WINDOW (the measured list of callers, #1332):
+ *   - `'main'` (default) — the lowest-id window that is not a popout.
+ *     `popout-raise.spec.ts`: rule 2's starting state is "the main window is in
+ *     front".
+ *   - `'popout'` — the most recently opened popout, made focusable first (a
+ *     quiet launch creates popouts with `focusable: false`).
+ *     `popout-new-session.spec.ts` (Mod+N): the keyboard route infers its target
+ *     from the OS-focused window.
+ */
+export async function bringToFront(
+  a: LaunchedApp,
+  which: 'main' | 'popout' = 'main',
+  timeoutMs = 15_000
+): Promise<void> {
+  await pollAsync(
+    async () => {
+      const focused = await a.app.evaluate(({ BrowserWindow }, pick) => {
+        const wins = BrowserWindow.getAllWindows()
+          .filter((w) => !w.isDestroyed())
+          .sort((x, y) => x.id - y.id);
+        const isPopout = (w: (typeof wins)[number]): boolean =>
+          w.webContents.getURL().includes('popout.html');
+        const target = pick === 'main' ? wins.find((w) => !isPopout(w)) : wins.filter(isPopout).at(-1);
+        if (!target) return false;
+        if (target.isFocused()) return true;
+        // a quiet launch creates popouts unfocusable (`childWindowOptions`) —
+        // a spec that needs one focused gets a window that CAN be, first
+        if (!target.isFocusable()) target.setFocusable(true);
+        target.focus();
+        return target.isFocused();
+      }, which);
+      return focused ? true : null;
+    },
+    `the app never came to the front: the ${which} window still reports isFocused() false after repeatedly asking it to focus (${timeoutMs}ms)`,
     timeoutMs
   );
 }
