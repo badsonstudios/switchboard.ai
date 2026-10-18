@@ -3,7 +3,7 @@
 import { registry } from './extensibility';
 import { claudeAdapter } from './providers/claude';
 import { fakeStreamAdapter } from './providers/fake-stream';
-import { fakeAcpAdapter } from './providers/acp/fake-acp';
+import { fakeAcpAdapter, fakeAcpAdapterAs } from './providers/acp/fake-acp';
 import { customAcpProvider } from './providers/acp/custom-acp';
 import type { CustomAi } from '../shared/ais';
 import { codexAdapter, shouldRegisterCodex } from './providers/codex/codex-provider';
@@ -32,6 +32,14 @@ export function registerBuiltinContributions(): void {
     // starts on it — and the fake ACP agent AFTER it: a second AI to switch a
     // card to (#1294) or to dispatch onto (#1296).
     if (process.env.SWITCHBOARD_FAKE_PROVIDER === 'both') registry.register('provider-adapter', fakeAcpAdapter);
+    // `ai-colours` (#1326): the manual's picture of one session on each of
+    // Claude, Codex and Gemini. The Claude fake stays first (the default); the
+    // fake ACP agent stands in for the other two under THEIR provider ids, so
+    // the badges draw the catalog's Codex and Gemini icons in their colours.
+    if (process.env.SWITCHBOARD_FAKE_PROVIDER === 'ai-colours') {
+      registry.register('provider-adapter', fakeAcpAdapterAs('codex', 'Codex'));
+      registry.register('provider-adapter', fakeAcpAdapterAs('gemini', 'Gemini CLI'));
+    }
     return;
   }
   registry.register('provider-adapter', claudeAdapter);

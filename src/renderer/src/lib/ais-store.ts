@@ -27,6 +27,7 @@
 import { answered } from '../../../shared/ipc/refusal';
 import { AI_ICON_BASE, type AiListItem, type AisSnapshot, type DefaultAiState } from '../../../shared/ais';
 import type { SwitchboardApi } from '../../../preload';
+import { aiInk, NEUTRAL_AI_INK } from './ai-ink';
 
 export type AisBridge = SwitchboardApi['ais'];
 
@@ -52,6 +53,11 @@ export interface AiLook {
   iconUrl?: string;
   /** the neutral glyph's letter */
   initial: string;
+  /**
+   * the CSS colour the icon is painted in (#1326): the AI's own per-theme ink,
+   * or `--text` for an AI with none. Absent = `--text`.
+   */
+  ink?: string;
 }
 
 const EMPTY_STATE: AisState = Object.freeze({ items: null, defaultId: null });
@@ -189,11 +195,14 @@ export function getAisState(): AisState {
 /** The list item that hosts this provider id, if the list has one. */
 export function aiItemFor(items: readonly AiListItem[] | null, providerId: string | undefined): AiListItem | undefined {
   if (!items || !providerId) return undefined;
-  return (
-    items.find((i) => i.providerId === providerId) ??
-    // a catalog AI with no provider registered still has its own id
-    items.find((i) => i.entry.id === providerId)
-  );
+  const hosting = items.find((i) => i.providerId === providerId);
+  if (hosting && hosting.kind !== 'provider') return hosting;
+  // A catalog AI with no provider named for it still has its own id — and it
+  // is the better answer than a provider-only row of the same id: that row
+  // means "the catalog has no entry for this provider", which is not true when
+  // one carries the id (#1326; a provider registered under a registry id, as
+  // the manual's AI-colours picture does for Gemini).
+  return items.find((i) => i.kind === 'catalog' && i.entry.id === providerId) ?? hosting;
 }
 
 /**
@@ -221,6 +230,7 @@ export function aiLook(state: AisState, providerId: string | undefined, fallback
     name,
     iconUrl: icon ? iconUrl(icon) : undefined,
     initial: (name.trim()[0] ?? '?').toUpperCase(),
+    ink: item?.kind === 'catalog' ? aiInk(item.entry.id) : NEUTRAL_AI_INK,
   };
 }
 

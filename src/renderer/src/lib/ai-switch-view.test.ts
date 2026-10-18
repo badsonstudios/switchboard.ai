@@ -32,6 +32,9 @@ describe('aiMenuRows (#1294, screen 2)', () => {
       ['Gemini CLI', false, false, true],
     ]);
     expect(rows[0].icon).toBe('ai-icons/claude-code.svg');
+    // each in its own colour (#1326)
+    expect(rows[0].ink).toBe('var(--ai-claude-code-ink, var(--text))');
+    expect(rows[1].ink).toBe('var(--ai-codex-acp-ink, var(--text))');
     // a missing one is never something a pick could switch to
     expect(rows[2].providerId).toBeUndefined();
   });

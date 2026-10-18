@@ -34,6 +34,8 @@ import { statusVars, STATUS_TOKENS, type StatusToken } from '../lib/rail-view';
 // #946: the §5.11 palette's other home. See the drift assertion further down.
 import { ACCENTS } from '../../../shared/accents';
 import { GROUP_PALETTE } from '../../../shared/group-palette';
+// #1326: the one place a catalog id becomes its icon ink's token name
+import { aiInk, aiInkToken } from '../lib/ai-ink';
 
 const cssPath = path.join(__dirname, 'tokens.css');
 // normalized: a selector spanning two lines would never match against CRLF.
@@ -1094,6 +1096,86 @@ it("paints the badge's ring in the status ink this measures (AiBadge.tsx)", () =
   expect(src).toContain('const ink = `var(--status-${paint.token}-ink)`;');
   // and no raw hue anywhere in it
   expect(src).not.toContain('var(--status-${paint.token})');
+});
+
+// --- Each AI's icon colour, in EVERY shipped theme (#1326) -----------------
+//
+// The icon is a mask painted in the AI's ink (`AiIcon.tsx`), and it is how a
+// glance tells Claude from Codex from Gemini. A mark that carries meaning owes
+// 1.4.11's 3:1 against every surface it sits on: the tab strip and the status
+// bar (`--panel`, `--bar`), the strip and the card header (`--panel2`), the rail
+// card, canvas and hovered row, Settings > AIs' tile (`--chip`), the workspace
+// behind a card (`--bg`),
+// and the OPEN tab and its header, which are washed in the session's accent —
+// so that wash in all eight accents. In all four themes, for the ring's
+// reason: an AI nobody can make out is not a subtler AI, it is a missing one.
+// The brand hues do not clear this everywhere (Claude's #d97757 is under 3:1 on
+// daylight's washes), which is why each theme carries its own value.
+const AI_INKS = TOKEN_GROUPS.find((g) => g.id === 'ai-ink')?.tokens ?? [];
+const AI_ICON_SURFACES = [
+  '--panel',
+  '--panel2',
+  '--rail-card',
+  '--rail-canvas',
+  '--rail-row-hover',
+  '--chip',
+  '--bg',
+  '--bar',
+] as const;
+
+describe('one AI ink per catalog AI with an icon', () => {
+  const catalog = JSON.parse(
+    fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main', 'ai-catalog', 'catalog.json'), 'utf8')
+  ) as { entries: Array<{ id: string; icon?: string }> };
+  const withIcon = catalog.entries.filter((e) => e.icon);
+
+  it('has a catalog and inks to measure', () => {
+    // the guard's guard: an empty list measures nothing and passes
+    expect(withIcon.length).toBeGreaterThan(2);
+    expect(AI_INKS.length).toBeGreaterThan(2);
+  });
+
+  it('names a token for every catalog AI with an icon, and no other', () => {
+    // a new catalog AI with no ink is drawn in --text (the fallback); that is
+    // safe, but it is a decision, so it is made here rather than by omission
+    expect(withIcon.map((e) => aiInkToken(e.id)).sort()).toEqual([...AI_INKS].sort());
+  });
+
+  it("is the name ai-ink.ts builds, with --text as its fallback", () => {
+    expect(aiInk('claude-code')).toBe('var(--ai-claude-code-ink, var(--text))');
+    expect(aiInk(undefined)).toBe('var(--text)');
+    // an id that is not a plain slug never becomes CSS
+    expect(aiInk('x) red')).toBe('var(--text)');
+  });
+});
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))("%s: each AI's icon colour", (id, theme) => {
+  const tokens = resolved(theme);
+  const surfaces: Array<[string, () => string]> = [
+    ...AI_ICON_SURFACES.map((s) => [s, () => tokens[s]] as [string, () => string]),
+    ...ACCENT_TOKENS.map(
+      (a) => [`the ${a} wash`, () => mix(tokens[a], tokens['--panel2'], IDENTITY_WASH)] as [string, () => string]
+    ),
+  ];
+  const cases = AI_INKS.flatMap((ink) => surfaces.map(([name, value]) => [ink, name, value] as const));
+
+  it.each(cases)('%s clears 3:1 on %s', (ink, surface, value) => {
+    const fill = value();
+    expect(tokens[ink], `${id} ${ink} must be #rrggbb to be measured`).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(fill, `${id} ${surface} must be #rrggbb to be measured`).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(ratio(tokens[ink], fill), `${id}: ${ink} on ${surface} (${tokens[ink]} on ${fill})`).toBeGreaterThanOrEqual(3);
+  });
+});
+
+it('paints the AI icon in the ink this measures, as a mask (AiIcon.tsx)', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'components', 'AiIcon.tsx'), 'utf8');
+  // the colour is the look's ink, and the shape comes from the file
+  expect(src).toContain('backgroundColor: look.ink ?? NEUTRAL_AI_INK,');
+  expect(src).toContain('maskImage: image,');
+  // never an <img>: an SVG shown through one cannot inherit a colour, which is
+  // what drew every icon black (#1326)
+  // (a JSX element starts its own line; the comments only mention one)
+  expect(src).not.toMatch(/^\s*<img\b/m);
 });
 
 // --- No raw status hue is ever a TEXT colour, anywhere (#246) ---------------

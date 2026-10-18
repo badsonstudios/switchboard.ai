@@ -32,8 +32,17 @@ import { tint } from '../lib/tint';
 
 /** the badge's box — the old glyph tile's size, so nothing around it moves */
 export const AI_BADGE_SIZE = 16;
-/** the icon inside the ring */
-const ICON_SIZE = 12;
+/**
+ * The icon inside the ring, with a CLEAR GAP between the two (#1326). The icon
+ * is drawn in its AI's colour now, and every AI colour sits near some ramp
+ * position — Claude's coral and the needs-permission orange, Codex's green and
+ * done, Gemini's blue and working — so an icon touching its ring could read as
+ * one blob of one colour. They are kept apart by space, not by bending the AI
+ * hues away from the ramp: 10px inside a ring whose inside is 12.8px leaves
+ * 1.4px of the surface showing between them (was 12px, which touched).
+ * AiBadge.test.tsx measures it.
+ */
+const ICON_SIZE = 10;
 
 export function AiBadge(props: {
   /** the provider the session is on; absent = not known yet (neutral glyph) */

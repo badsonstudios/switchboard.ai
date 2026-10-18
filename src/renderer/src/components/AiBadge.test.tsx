@@ -14,6 +14,7 @@ import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { AiBadge } from './AiBadge';
+import { resetAiIconChecksForTests } from './AiIcon';
 import { resetAisStoreForTests, aiLook, getAisState, subscribeAis, type AisState } from '../lib/ais-store';
 import type { AiListItem, AisSnapshot, CatalogEntry } from '../../../shared/ais';
 
@@ -51,6 +52,7 @@ async function render(el: React.JSX.Element): Promise<HTMLElement> {
 
 beforeEach(async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  resetAiIconChecksForTests();
   document.body.innerHTML = '';
   host = document.createElement('div');
   document.body.appendChild(host);
@@ -75,9 +77,28 @@ describe('the AI badge (#1293)', () => {
     expect(badge.getAttribute('role')).toBe('img');
     expect(badge.getAttribute('aria-label')).toBe('Claude Code, idle');
     expect(badge.getAttribute('title')).toBe('Claude Code, idle');
-    const img = badge.querySelector('img')!;
-    expect(img.getAttribute('src')).toMatch(/ai-icons\/claude-code\.svg$/);
-    expect(img.getAttribute('alt')).toBe('');
+    // a MASK of the catalog's file, painted in Claude's own ink (#1326): an
+    // <img> of a currentColor SVG cannot inherit a colour and drew black
+    expect(badge.querySelector('img')).toBeNull();
+    const icon = badge.querySelector<HTMLElement>('[data-ai-icon="mask"]')!;
+    expect(icon.getAttribute('data-ai-icon-src')).toMatch(/ai-icons\/claude-code\.svg$/);
+    expect(icon.style.maskImage).toMatch(/^url\(".*ai-icons\/claude-code\.svg"\)$/);
+    expect(icon.style.backgroundColor).toBe('var(--ai-claude-code-ink, var(--text))');
+    expect(icon.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('leaves a clear gap between the ring and the icon inside it', async () => {
+    // every AI colour sits near some ramp position (Claude's coral and the
+    // needs-permission orange, Codex and done, Gemini and working), so the
+    // two are kept apart by space rather than by hue: the icon is smaller than
+    // the ring's inside by at least a pixel each side
+    resetAisStoreForTests(WITH_LIST);
+    const badge = await render(<AiBadge providerId="claude-code" status="working" needsYou={false} />);
+    const icon = badge.querySelector<HTMLElement>('.ai-icon')!;
+    const ring = badge.querySelector<HTMLElement>('.status-ring')!;
+    const ringWidth = parseFloat(ring.style.border);
+    const inside = parseFloat(ring.style.inlineSize) - 2 * ringWidth;
+    expect((inside - parseFloat(icon.style.inlineSize)) / 2).toBeGreaterThanOrEqual(1);
   });
 
   it('paints the ring by the same rule the status glyph used, in the status INK', async () => {
@@ -130,13 +151,29 @@ describe('the AI badge (#1293)', () => {
 
   it('falls back to the initial when the icon fails to load', async () => {
     resetAisStoreForTests(WITH_LIST);
-    const badge = await render(<AiBadge providerId="claude-code" status="idle" needsYou={false} />);
-    const img = badge.querySelector('img')!;
-    await act(async () => {
-      img.dispatchEvent(new Event('error'));
-    });
-    expect(badge.querySelector('img')).toBeNull();
-    expect(badge.querySelector('[data-ai-icon="initial"]')!.getAttribute('data-initial')).toBe('C');
+    // a mask whose file fails paints nothing and fires nothing, so AiIcon
+    // checks the URL through an Image() beside it: fail THAT one
+    const probes: Array<{ src: string; onerror: (() => void) | null }> = [];
+    const RealImage = globalThis.Image;
+    globalThis.Image = class {
+      src = '';
+      onerror: (() => void) | null = null;
+      constructor() {
+        probes.push(this);
+      }
+    } as unknown as typeof Image;
+    try {
+      const badge = await render(<AiBadge providerId="claude-code" status="idle" needsYou={false} />);
+      expect(badge.querySelector('[data-ai-icon="mask"]')).not.toBeNull();
+      const probe = probes.find((p) => /claude-code\.svg$/.test(p.src))!;
+      await act(async () => {
+        probe.onerror?.();
+      });
+      expect(badge.querySelector('[data-ai-icon="mask"]')).toBeNull();
+      expect(badge.querySelector('[data-ai-icon="initial"]')!.getAttribute('data-initial')).toBe('C');
+    } finally {
+      globalThis.Image = RealImage;
+    }
   });
 
   it('keeps the ring and the words with no list at all (no bridge)', async () => {
@@ -204,5 +241,23 @@ describe('the AIs cache (lib/ais-store)', () => {
       defaultId: null,
     };
     expect(aiLook(state, 'gemini', 'AI').name).toBe('Gemini CLI');
+  });
+
+  it('prefers that catalog AI to a provider-only row of the same id (#1326)', () => {
+    const gemini = { ...claudeEntry, id: 'gemini', name: 'Gemini CLI', providerId: undefined, icon: 'gemini.svg' };
+    const state: AisState = {
+      items: [
+        { kind: 'catalog', entry: gemini, registered: false },
+        { kind: 'provider', entry: { id: 'gemini', name: 'gemini (fake)' }, providerId: 'gemini', registered: true },
+        { kind: 'provider', entry: { id: 'fake-acp', name: 'Fake ACP' }, providerId: 'fake-acp', registered: true },
+      ],
+      defaultId: null,
+    };
+    const look = aiLook(state, 'gemini', 'AI');
+    expect(look.name).toBe('Gemini CLI');
+    expect(look.iconUrl).toMatch(/ai-icons\/gemini\.svg$/);
+    expect(look.ink).toBe('var(--ai-gemini-ink, var(--text))');
+    // a provider the catalog has no entry for is still found by its id, uncoloured
+    expect(aiLook(state, 'fake-acp', 'AI')).toMatchObject({ name: 'Fake ACP', ink: 'var(--text)' });
   });
 });

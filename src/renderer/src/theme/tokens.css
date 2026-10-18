@@ -128,6 +128,40 @@
      not a status hue: an auto-group is a category, not an individual, and its
      look has to say "the app made this, you can't drop into it". */
   --auto-ink: #8b9bc4;
+
+  /* EACH AI'S ICON COLOUR (#1326), keyed by its catalog id. The icon is a CSS
+     mask painted in this ink (`AiIcon.tsx`), so it is the AI's colour in every
+     place the AI is named: tab, rail row, strip pill, card header, status bar,
+     the AI switch, Settings > AIs. Brand hue where the AI has one (Claude's
+     #d97757, ChatGPT's #10a37f for Codex, Google's #4285f4 for Gemini, GitHub
+     purple for Copilot, Qwen's indigo); the rest are spread round the wheel,
+     about 20 degrees apart, away from those first three. NONE is between 20
+     and 70 degrees: yellow, gold and orange mean "a session needs you" and
+     nothing else (#1165, reserved-hue.test.ts), which is why Mistral's amber
+     and Kilo's yellow are not used, and why Claude's coral (15 degrees) keeps
+     its hue in every theme and moves only in lightness. Each value below is that hue at its own
+     saturation, lightened in HSL until it clears 3:1 (1.4.11, a meaningful
+     non-text mark) on the LIGHTEST surface a badge sits on, which on the dark
+     themes is the open tab's identity wash in teal. tokens.drift.test.ts
+     measures every one against every surface, in all four themes. An AI with
+     no ink here (a custom AI, a test fake, a catalog entry added later) is
+     drawn in `--text`. Colour is never the only sign: the AI's name is always
+     written beside its badge. */
+  --ai-claude-code-ink: #e1947a;
+  --ai-codex-acp-ink: #13bd93;
+  --ai-gemini-ink: #77a7f7;
+  --ai-github-copilot-cli-ink: #b697ef;
+  --ai-qwen-code-ink: #a29ff4;
+  --ai-mistral-vibe-ink: #e97fe5;
+  --ai-kilo-ink: #2cd926;
+  --ai-goose-ink: #a3d926;
+  --ai-junie-ink: #68d926;
+  --ai-auggie-ink: #26d962;
+  --ai-cursor-ink: #26c1d9;
+  --ai-opencode-ink: #cf8eeb;
+  --ai-kimi-ink: #ea85c5;
+  --ai-cline-ink: #ea8aa7;
+  --ai-factory-droid-ink: #9aa8bb;
 }
 
 :root[data-theme='daylight'] {
@@ -175,6 +209,26 @@
   --rail-close-hover: #b02722;
 
   --auto-ink: #5a6a8f;
+
+  /* the AI inks (#1326, see the nordic block): DARKENED here, same hue and
+     saturation, until each clears 3:1 on the open tab's wash in pink, the
+     darkest surface a badge sits on in this theme. Claude's #d97757 is about
+     3:1 on white and under it on the washes, hence #cc552e. */
+  --ai-claude-code-ink: #cc552e;
+  --ai-codex-acp-ink: #0d896b;
+  --ai-gemini-ink: #2774f2;
+  --ai-github-copilot-cli-ink: #8957e5;
+  --ai-qwen-code-ink: #615ced;
+  --ai-mistral-vibe-ink: #d225cd;
+  --ai-kilo-ink: #1d8d19;
+  --ai-goose-ink: #638417;
+  --ai-junie-ink: #428918;
+  --ai-auggie-ink: #188b3f;
+  --ai-cursor-ink: #1a8596;
+  --ai-opencode-ink: #a326d9;
+  --ai-kimi-ink: #d92697;
+  --ai-cline-ink: #d9265c;
+  --ai-factory-droid-ink: #667b99;
 }
 
 /* ---- Layer 2: semantic, theme-independent --------------------------------- */
@@ -1063,6 +1117,16 @@ mark[data-feed-match-current] {
  * `textContent` stay the session's name and nothing else. */
 .ai-icon[data-initial]::before {
   content: attr(data-initial);
+}
+/* The icon is a mask painted with `background-color` (#1326), and Windows'
+ * contrast themes force every background to the window colour, which would
+ * paint the mark in the colour of what is behind it, i.e. not at all. There it
+ * is drawn in the system's text colour instead. */
+@media (forced-colors: active) {
+  .ai-icon[data-ai-icon='mask'] {
+    forced-color-adjust: none;
+    background-color: CanvasText !important;
+  }
 }
 .rail-row {
   transition: background 0.11s;
@@ -2210,7 +2274,7 @@ mark[data-feed-match-current] {
   border-width: 2.4px !important;
 }
 /* The same "bigger spinner" round an AI's icon (#1293). That ring is 16px at
- * rest (it has to clear the 12px icon), so 17px would be no change at all; it
+ * rest (it has to clear the 10px icon with a gap, #1326), so 17px would be no change at all; it
  * grows to 20px instead. It is absolutely placed and centred on its 16px box,
  * so nothing around it moves. A strip GROUP still draws the plain 12px
  * spinner (`StatusMark`), so this never matches inside one and the group keeps

@@ -115,12 +115,50 @@ test.describe('the AI icon with a status ring (#1293)', () => {
     const claudeRowBadge = row(w, claude).locator('.ai-badge');
     await expect(claudeRowBadge).toHaveAttribute('data-ai-badge', 'claude-code', { timeout: 25_000 });
     await expect(claudeRowBadge).toHaveAttribute('aria-label', /^Claude Code, /);
-    // the catalog's own icon, from the renderer's origin, and it LOADED
-    const img = claudeRowBadge.locator('img');
-    await expect(img).toHaveAttribute('src', /ai-icons\/claude-code\.svg$/);
-    await expect
-      .poll(() => img.evaluate((el) => (el as HTMLImageElement).complete && (el as HTMLImageElement).naturalWidth > 0))
-      .toBe(true);
+    // the catalog's own icon, from the renderer's origin, and it LOADED — as a
+    // mask now (#1326), so it is checked by loading the same URL beside it
+    const icon = claudeRowBadge.locator('[data-ai-icon="mask"]');
+    await expect(icon).toHaveAttribute('data-ai-icon-src', /ai-icons\/claude-code\.svg$/);
+    const loaded = await icon.evaluate(
+      (el) =>
+        new Promise<boolean>((resolve) => {
+          const probe = new Image();
+          probe.onload = () => resolve(probe.naturalWidth > 0);
+          probe.onerror = () => resolve(false);
+          probe.src = el.getAttribute('data-ai-icon-src') ?? '';
+        })
+    );
+    expect(loaded, 'the icon file is served').toBe(true);
+
+    // ── 3b. ...and it is painted in CLAUDE'S colour, not black (#1326) ──────
+    // The browser's answer for the colour, then the screen's: pixels of the
+    // icon as Chromium drew them, read from a capture of the window. A mask
+    // whose image failed would paint nothing; an <img> of the file painted
+    // black. Either fails here.
+    const paint = await icon.evaluate((el) => ({
+      bg: getComputedStyle(el).backgroundColor,
+      mask: getComputedStyle(el).maskImage,
+      ink: getComputedStyle(document.documentElement).getPropertyValue('--ai-claude-code-ink').trim(),
+    }));
+    expect(paint.mask).toContain('ai-icons/claude-code.svg');
+    const inkRgb = [1, 3, 5].map((i) => parseInt(paint.ink.slice(i, i + 2), 16));
+    expect(paint.bg).toBe(`rgb(${inkRgb.join(', ')})`);
+    const box = (await icon.boundingBox())!;
+    const pixels = await a.app.evaluate(async ({ BrowserWindow }, r) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      const shot = await win.webContents.capturePage({
+        x: Math.floor(r.x),
+        y: Math.floor(r.y),
+        width: Math.ceil(r.width),
+        height: Math.ceil(r.height),
+      });
+      const bmp = shot.toBitmap(); // BGRA
+      const out: number[][] = [];
+      for (let i = 0; i + 3 < bmp.length; i += 4) out.push([bmp[i + 2], bmp[i + 1], bmp[i]]);
+      return out;
+    }, box);
+    const near = pixels.filter((p) => p.every((v, i) => Math.abs(v - inkRgb[i]) <= 24)).length;
+    expect(near, `pixels of the icon in Claude's ink ${paint.ink}, of ${pixels.length}`).toBeGreaterThan(3);
     await expect(tab(w, claude).locator('.ai-badge')).toHaveAttribute('data-ai-name', 'Claude Code');
     await w.locator('.dv-tab', { hasText: claude }).first().click();
     await expect(header(w, claude).locator('.ai-badge')).toHaveAttribute('aria-label', /^Claude Code, /);
