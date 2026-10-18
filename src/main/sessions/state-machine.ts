@@ -28,6 +28,14 @@ export type SessionEvent =
     }
   | { kind: 'permission-held' } // our PreToolUse round-trip is pending (E2-05+)
   | { kind: 'permission-resolved' }
+  /**
+   * The ENGINE took its own request back (#1340) — the CLI's
+   * `control_cancel_request`, or ACP settling its requests on a cancel. Not an
+   * answer: nobody said yes or no, so nothing new will run because of it. The
+   * card goes to `working` only if a main turn is still running (see the
+   * `permission-withdrawn` arm and `TransitionContext.turn`).
+   */
+  | { kind: 'permission-withdrawn' }
   | { kind: 'user-input' } // user typed into the terminal
   /**
    * What the session's own traffic says about the turn (P2-E18-05) — stream
@@ -42,7 +50,17 @@ export type SessionEvent =
    * the frame the engine actually sent, kept for the transition log ONLY
    * (`stream:<label>`), which is why the log reads exactly as it did.
    */
-  | { kind: 'stream'; signal: 'output' | 'turn-end'; label: string }
+  | {
+      kind: 'stream';
+      signal: 'output' | 'turn-end';
+      label: string;
+      /**
+       * The output is a SUBAGENT's, not the main conversation's (#1340). It
+       * moves the status exactly as main output does; it does not open a turn
+       * (`TransitionContext.turn`), because no `result` is owed for it.
+       */
+      sidechain?: true;
+    }
   /** We wrote a prompt to the session's transport (P2-E18-05). */
   | { kind: 'prompt-sent' }
   /**
@@ -97,6 +115,26 @@ export function isPermissionNotification(ev: SessionEvent): boolean {
  */
 export interface TransitionContext {
   held?: boolean;
+  /**
+   * Is the session's MAIN turn running? (#1340) Read by `permission-withdrawn`
+   * only, and kept by the manager (`SessionManager.trackTurn`):
+   *
+   *  - `open`: a prompt was sent, or the main conversation produced output,
+   *    and no turn end has arrived since;
+   *  - `closed`: the last turn ended and nothing has opened another;
+   *  - `none`: no turn has run in this session at all.
+   *
+   * Absent means "nobody can say", and reads as `open` — what every release
+   * before this one assumed.
+   *
+   * ⚠️ A SUBAGENT'S OUTPUT DOES NOT OPEN A TURN, and the measurement is why.
+   * In the #1268 capture the parent turn's `result` came first; the background
+   * subagent's own `assistant` frame followed (which walks the card to
+   * `working` — a subagent working is the session working), then its request.
+   * "What was the card doing before it was asked" would have answered
+   * `working` there, and stranded it exactly as before.
+   */
+  turn?: 'open' | 'closed' | 'none';
 }
 
 /**
@@ -144,7 +182,9 @@ export function transition(
   // written for the PTY, where nothing told us a prompt had been answered. On
   // the control channel we KNOW: a request is held until it is answered, runs
   // out of time, or is cancelled by the CLI, and the router that held it says
-  // so each time (`permission-resolved`, applied after it has let go).
+  // so each time (`permission-resolved` for an answer or a deadline,
+  // `permission-withdrawn` for the CLI's cancel — #1340 — applied after it has
+  // let go).
   //
   // AN INTERRUPT IS ONE OF THOSE "CANCELLED BY THE CLI" CASES, measured (#1268,
   // 2.1.288): the CLI sends `control_cancel_request` for every request still
@@ -207,6 +247,28 @@ export function transition(
     case 'permission-held':
       return to('needs-permission');
     case 'permission-resolved':
+      return to('working');
+    case 'permission-withdrawn':
+      // Only a WAIT is ended by a withdrawal; any other status was not
+      // waiting on this request and has nothing to go back to. (`done` and
+      // `crashed` never get here: their own arms above keep them.)
+      if (current !== 'needs-permission' && current !== 'needs-input') {
+        return stay('withdrawn-not-waiting');
+      }
+      // Mid-turn (the ordinary Stop with a bar up): the CLI's `result` follows
+      // within ~20 ms (measured) and ends the turn, so `working` is right for
+      // that instant.
+      //
+      // With NO main turn running, nothing will follow, measured (#1268,
+      // 2.1.288): a background subagent asked 137 ms after its parent turn's
+      // `result`; on an interrupt the CLI killed the subagent, took the
+      // request back, and sent no `result` — there was no turn left to end.
+      // `working` there was for good. The turn that last ran is over, so the
+      // card says so. If something DID carry on (a cancel for another reason,
+      // unmeasured), its output walks `done` back to `working` on the next
+      // frame; a stranded `working` had no such way out.
+      if (ctx.turn === 'closed') return to('done', 'withdrawn-no-turn');
+      if (ctx.turn === 'none') return to('idle', 'withdrawn-no-turn');
       return to('working');
     case 'user-input':
       // A keystroke is NOT a submitted prompt — it must not change status.

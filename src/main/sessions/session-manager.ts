@@ -126,6 +126,13 @@ export class SessionManager {
     | ((sessionId: string, ev: PermissionRequestEvent) => boolean)
     | null = null;
   private heldRequestProbe: ((sessionId: string) => boolean) | null = null;
+  /**
+   * Whether each session's MAIN turn is running (#1340) — see
+   * `TransitionContext.turn` and `trackTurn`. Absent = no turn has run yet.
+   * A Map beside the record rather than a field on it: the record is what
+   * `get()`/`list()` hand out, and this is bookkeeping. Dropped in `remove()`.
+   */
+  private readonly turns = new Map<string, 'open' | 'closed'>();
 
   constructor(
     private readonly registry: ContributionRegistry<MainContributions>,
@@ -802,6 +809,7 @@ export class SessionManager {
     // onExit closure and never consult the map. Pinned by a test, because the
     // first version of that test asserted the wrong one of the two.)
     this.sessions.delete(id);
+    this.turns.delete(id);
     this.handles.delete(id);
     // …and its controls (#1287): anything still waiting on a reply hears
     // `session-gone` now, and nothing can write to the handle just dropped.
@@ -1214,6 +1222,36 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Is the session's MAIN turn running? (#1340) The one thing a withdrawn
+   * request needs to know that its status cannot say: a background subagent's
+   * output walks a finished card to `working` with no turn running at all.
+   *
+   * Opened by our own prompt or by the main conversation's output (a resumed
+   * turn we did not send); closed by a turn end or the session's exit. A
+   * subagent's output (`sidechain`) leaves it alone — no turn end is owed for
+   * it.
+   *
+   * ⚠️ ONE ASSUMPTION IS UNMEASURED: that a prompt sent while a request is held
+   * is owed a `result`. #1268 measured that the CLI QUEUES such a prompt and
+   * runs it once the held request is ANSWERED; what an INTERRUPT does to the
+   * queue was not measured (its ack carries `still_queued`). If it drops the
+   * prompt, that card would sit at `working` — the pre-#1340 behaviour, not a
+   * new one.
+   *
+   * Hooks are not read: the only reader is a withdrawal, which only an
+   * engine's control channel can send, and every such session reports its
+   * turns as `prompt-sent` / `turn-end`.
+   */
+  private trackTurn(id: string, ev: SessionEvent): void {
+    if (ev.kind === 'prompt-sent') this.turns.set(id, 'open');
+    else if (ev.kind === 'exit') this.turns.set(id, 'closed');
+    else if (ev.kind === 'stream') {
+      if (ev.signal === 'turn-end') this.turns.set(id, 'closed');
+      else if (!ev.sidechain) this.turns.set(id, 'open');
+    }
+  }
+
   /** Hook/permission/user events feed the state machine here. */
   apply(id: string, ev: SessionEvent): void {
     const r = this.sessions.get(id);
@@ -1221,7 +1259,13 @@ export class SessionManager {
     // asked only of a session that is waiting: this runs for every delta of
     // every stream, and the answer cannot matter to any other status
     const waiting = r.status === 'needs-permission' || r.status === 'needs-input';
-    const result = transition(r.status, ev, { held: waiting && this.requestHeld(id) });
+    const result = transition(r.status, ev, {
+      held: waiting && this.requestHeld(id),
+      turn: this.turns.get(id) ?? 'none',
+    });
+    // Whether or not the status moved: a prompt sent while a request pins the
+    // card still opens a turn (#1340).
+    this.trackTurn(id, ev);
     // ...and not logged per frame: a held request sits under a stream of them
     if (result.note && result.note !== 'request-still-held') {
       this.log.debug('session event note', { sessionId: id, note: result.note });

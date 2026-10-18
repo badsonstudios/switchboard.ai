@@ -100,6 +100,19 @@ test.describe('a session on the fake ACP agent (#1289)', () => {
       timeout: 30_000,
     });
 
+    // …and STOP with the bar up (#1340): offered while it is held, and the
+    //    cancel answers the request `cancelled`, so the bar and Stop both go.
+    await send(w, '!ask');
+    await expect(bar).toBeVisible({ timeout: 30_000 });
+    await w
+      .getByTitle(/interrupts the current turn/i)
+      .first()
+      .click();
+    await expect(bar).toHaveCount(0, { timeout: 30_000 });
+    await expect(w.getByTitle(/interrupts the current turn/i)).toHaveCount(0, {
+      timeout: 30_000,
+    });
+
     // 5. Stop. `!cancel-slow` streams until cancelled; the title is matched on
     //    its second half because the first still names Claude (#1288's labels).
     await send(w, '!cancel-slow');

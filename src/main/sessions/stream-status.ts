@@ -32,7 +32,9 @@ export function streamStatusEvent(e: EngineEvent): SessionEvent | null {
       // did not send (a resumed conversation continuing, a queued message the
       // engine picked up on its own) and the card would otherwise sit idle
       // while text streamed into it.
-      return { kind: 'stream', signal: 'output', label: e.label };
+      return e.sidechain
+        ? { kind: 'stream', signal: 'output', label: e.label, sidechain: true }
+        : { kind: 'stream', signal: 'output', label: e.label };
     case 'turn-end':
       // The turn is over, failed or not. Stream mode's `Stop` hook.
       return { kind: 'stream', signal: 'turn-end', label: e.label };
@@ -47,8 +49,8 @@ export function streamStatusEvent(e: EngineEvent): SessionEvent | null {
     //
     // A WITHDRAWN request does not move the status here, and never did: the
     // CLI's cancel frame was silent for status before the seam too. The
-    // router lets the request go and applies `permission-resolved` itself
-    // (#1258).
+    // router lets the request go and applies `permission-withdrawn` itself
+    // (#1258, #1340) — only it knows whether another is still held.
     case 'permission-withdrawn':
     case 'commands':
     case 'model':

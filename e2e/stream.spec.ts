@@ -298,11 +298,9 @@ test.describe('the stop button actually stops (#154)', () => {
       timeout: 25_000,
     });
 
-    // `!hang` starts a turn and never finishes it, which is the only way to
-    // hold a session in `working` — the one state the stop button renders in.
-    // `!perm` cannot serve: it moves the session to `needs-permission`, which
-    // is precisely why the first version of this test could not find the
-    // button at all.
+    // `!hang` starts a turn and never finishes it, which holds a session in
+    // `working`. (Stop is also offered while a request is held since #1340;
+    // that path is `approval-stays-counted.spec.ts`.)
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
     await box.fill('!hang');

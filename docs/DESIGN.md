@@ -1860,10 +1860,17 @@ composer (or routing it Terminal-first) while the session has not yet
 reached its first SessionStart.
 
 **Interrupt (2026-07-23).** A stop button beside the composer send button —
-shown only while the session is `working` — triggers the CLI's own interrupt:
+shown while the session is `working`, **and while an approval or a question is
+held on the card (#1340, 2026-10-18)** — triggers the CLI's own interrupt:
 Esc on the PTY transport, an `interrupt` control request on stream-json
 (E18-12). Same input-route rule: we send the signal, the CLI decides what
-stopping means.
+stopping means. With a request held, that is measured (#1268, 2.1.288): the CLI
+takes the request back (`control_cancel_request`) 2–6 ms after the interrupt and
+then ends the turn, so the bar closes on the CLI's cancel, never on our click.
+A withdrawn request resolves to wherever the session's main turn is: `working`
+if one is still running (its `result` follows), `done` if none is — the case of
+a background helper's request that arrived after its parent turn ended, where
+the CLI sends no further `result`.
 
 **Per-session view tabs (the session window's chrome).** Every session surface —
 grid card, maximized, popped-out OS window — carries one compact VS Code-style

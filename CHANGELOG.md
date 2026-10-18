@@ -96,6 +96,19 @@ on the floor, and say so in your PR.
 
 ## 0.8.125 — unreleased
 
+### Fixed
+
+- **Stop works while an approval or a question is waiting.** The ■ Stop
+  button used to disappear the moment a session asked you something, so a
+  turn with a bar up could not be stopped at all. It now stays beside the send
+  button: pressing it interrupts the turn, Claude Code takes the request back,
+  the bar closes and the session ends up finished. Nothing you were asked
+  about runs.
+- **A stopped background helper no longer leaves a session "working".** A
+  helper Claude started in the background can ask for permission after the
+  main reply has finished. Stopping it used to leave the session saying
+  "working" for good, with nothing running. It now goes back to finished.
+
 ## 0.8.124 — 2026-10-18
 
 ### Added

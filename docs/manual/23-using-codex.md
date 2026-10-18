@@ -46,7 +46,8 @@ See [Switching a session to another AI](25-switching-ais.md).
   picks Codex's "don't ask again" answer for you. **Deny** stops the whole
   turn. That is how Codex works: tell it what to do differently in your next
   message.
-- **Stop.** Stop ends the turn. Any question still waiting is withdrawn.
+- **Stop.** Stop ends the turn. Any question still waiting is withdrawn. Stop
+  is there while an approval bar is up, too.
 - **Model and effort.** The model chip lists Codex's models, and the effort
   button sets how hard it thinks. Both switch live.
 - **Modes.** The mode chip switches Codex live, with no restart needed. The

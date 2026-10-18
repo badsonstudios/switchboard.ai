@@ -558,11 +558,10 @@ test.describe('finished work is its own number, in both placements (#1258)', () 
 // turn, and the fake now does exactly that. Before, it dropped the request
 // silently, so nothing could show the bar closing and the count going down.
 //
-// THROUGH THE BRIDGE, NOT THE BUTTON, and on purpose: the Stop button renders
-// only while a card is `working`, and a held request pins it at
-// `needs-permission` (#1258), so there is no button to press. The call is the
-// one the button makes (`sessions.interrupt`), so main, the provider, the fake
-// and everything after are the real path.
+// THE REAL STOP BUTTON since #1340: it is offered while a bar is up (it used
+// to render only in `working`, and a held request pins the card at
+// `needs-permission`, #1258, so this drove `sessions.interrupt` through the
+// bridge instead).
 for (const kind of ['approval', 'question'] as const) {
   test.describe(`Stop with a ${kind} held closes it and stops counting it (#1268)`, () => {
     let a: LaunchedApp;
@@ -581,11 +580,13 @@ for (const kind of ['approval', 'question'] as const) {
       await expect(bar(w, kind)).toBeVisible({ timeout: 20_000 });
       await expect(railNeed(w)).toHaveAttribute('data-rail-need', '1', { timeout: 20_000 });
 
-      const held = (await w.evaluate(() => window.switchboard.sessions.pendingPermissions())) as Array<{
-        sessionId: string;
-      }>;
-      expect(held).toHaveLength(1);
-      expect(await w.evaluate((id) => window.switchboard.sessions.interrupt(id), held[0].sessionId)).toBe(true);
+      expect(await w.evaluate(() => window.switchboard.sessions.pendingPermissions())).toHaveLength(1);
+      // by TITLE: the button's content is a glyph (see stream.spec.ts)
+      const stop = w.getByTitle(/interrupts the current turn/i);
+      await expect(stop).toBeVisible({ timeout: 10_000 });
+      await expect(stop).toBeEnabled();
+      // the click does not close the bar itself: the CLI's cancel does
+      await stop.click();
 
       // the interrupt really reached the CLI and ended the turn (the fake's own
       // marker) — without this, a build that never sent it would pass below
@@ -595,6 +596,8 @@ for (const kind of ['approval', 'question'] as const) {
       await expect(row(w, only)).toHaveAttribute('data-needs-you', 'false');
       expect(await w.evaluate(() => window.switchboard.sessions.pendingPermissions())).toEqual([]);
       expect((await sessionStatuses(a)).get(only)).toBe('done');
+      // the turn is over, so Stop goes with the bar
+      await expect(stop).toHaveCount(0, { timeout: 15_000 });
       // and nothing late puts it back (a light check: once the request is
       // gone the fake stops streaming, so this guards a re-raise, not the stream)
       await staysFor(w, 1500, async () => {

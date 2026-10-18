@@ -2322,7 +2322,7 @@ describe('holdsRequestFor: is this session still waiting on a person? (#1258)', 
 describe('a request the CLI withdraws (#1258)', () => {
   const cancel = (requestId: string) => ({ type: 'control_cancel_request', request_id: requestId });
 
-  it('is let go: no answer is sent, the status is resolved, the bar is told', () => {
+  it('is let go: no answer is sent, the status is told it was withdrawn, the bar is told', () => {
     perms.offer('s1', canUseTool('req-1'));
     sent.length = 0;
 
@@ -2331,7 +2331,9 @@ describe('a request the CLI withdraws (#1258)', () => {
     expect(sent).toEqual([]); // the SDK sends nothing back, and neither do we
     expect(perms.holdsRequestFor('s1')).toBe(false);
     expect(perms.pendingRequests()).toEqual([]);
-    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+    // #1340: withdrawn, not resolved — nobody answered, and only the state
+    // machine knows whether a turn is still running to go back to
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-withdrawn' } }]);
     expect(resolved).toEqual(['stream:s1:req-1']);
   });
 
