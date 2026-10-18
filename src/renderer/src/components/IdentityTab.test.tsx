@@ -56,11 +56,15 @@ function closeTitle(): string {
   return host.querySelector('button')?.getAttribute('title') ?? '';
 }
 
-/** the name on the tab: everything in it that is not the ✕ */
+/** the name on the tab: everything in it that is not the ✕ or the state word */
 function tabText(): string {
-  const all = host.textContent ?? '';
+  let all = host.textContent ?? '';
   const btn = host.querySelector('button')?.textContent ?? '';
-  return (btn ? all.replace(btn, '') : all).trim();
+  // the state's word after the name (#1351) is decoration, not the name
+  const word = host.querySelector('[data-tab-state]')?.textContent ?? '';
+  if (btn) all = all.replace(btn, '');
+  if (word) all = all.replace(word, '');
+  return all.trim();
 }
 
 function rename(cardId: string, title: string): Promise<void> {
@@ -269,9 +273,10 @@ describe('the session tab paints the card identity (issue 312)', () => {
     const badge = aiBadge();
     expect(badge).not.toBeNull();
     expect(badge!.getAttribute('data-ai-badge')).toBe('claude-code');
-    // the ring follows the card's status, and STANDS STILL on a tab
+    // the ring follows the card's status, and SPINS while it works (#1279,
+    // folded into #1351): it stood still on the tab until then
     expect(badge!.getAttribute('data-ring')).toBe('working');
-    expect(badge!.getAttribute('data-ring-spin')).toBe('false');
+    expect(badge!.getAttribute('data-ring-spin')).toBe('true');
     // decoration on the tab: dockview's role="tab" is named by its content,
     // and that name stays the session's
     expect(badge!.getAttribute('aria-hidden')).toBe('true');
@@ -338,6 +343,75 @@ describe('the session tab paints the card identity (issue 312)', () => {
     await mount('Changes — acme', { folder: 'C:\\Projects\\acme' });
     expect(dotColor()).toBe('var(--faint)');
     expect(tabText()).toBe('Changes — acme');
+  });
+});
+
+describe('the session tab says when it is waiting on you (#1351)', () => {
+  beforeEach(async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    document.body.innerHTML = '';
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    sessionStore.setSessions([]);
+    await initI18nForTests();
+  });
+
+  afterEach(async () => {
+    if (root) {
+      const r = root;
+      root = null;
+      await act(async () => r.unmount());
+    }
+  });
+
+  async function tabFor(status: string): Promise<HTMLElement> {
+    await act(async () => {
+      sessionStore.setSessions([
+        { id: 'c1', title: 'acme', folder: 'C:/a', providerId: 'claude-code', status: status as never },
+      ]);
+    });
+    await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:/a' });
+    return host.querySelector<HTMLElement>('.identity-tab')!;
+  }
+
+  it.each([
+    ['needs-permission', 'approval', 'needs-permission'],
+    ['needs-input', 'question', 'needs-input'],
+    ['done', 'waiting', 'waiting'],
+  ])('a %s session: washed, its word after the name, its ring in the colour', async (status, word, token) => {
+    const tab = await tabFor(status);
+    expect(tab.dataset.waitState).toBe(status === 'done' ? 'waiting' : word);
+    expect(tab.style.getPropertyValue('--wait-hue')).toBe(`var(--status-${token})`);
+    const said = tab.querySelector<HTMLElement>('[data-tab-state]')!;
+    expect(said.textContent).toBe(word);
+    expect(said.style.color).toBe(`var(--status-${token}-ink)`);
+    // decoration: the tab's name stays the session's
+    expect(said.getAttribute('aria-hidden')).toBe('true');
+    expect(aiBadge()!.getAttribute('data-ring')).toBe(token);
+    expect(aiBadge()!.getAttribute('data-ring-spin')).toBe('false');
+    expect(tabText()).toBe('acme');
+  });
+
+  it('a working session says so quietly, unwashed, and its ring spins', async () => {
+    const tab = await tabFor('working');
+    expect(tab.dataset.waitState).toBeUndefined();
+    expect(tab.querySelector('[data-tab-state]')!.textContent).toBe('working');
+    expect(aiBadge()!.getAttribute('data-ring-spin')).toBe('true');
+  });
+
+  it('a session that has not had a turn is calm: no wash, no word, a still ring', async () => {
+    const tab = await tabFor('idle');
+    expect(tab.dataset.waitState).toBeUndefined();
+    expect(tab.style.getPropertyValue('--wait-hue')).toBe('');
+    expect(tab.querySelector('[data-tab-state]')).toBeNull();
+    expect(aiBadge()!.getAttribute('data-ring-spin')).toBe('false');
+  });
+
+  it('a document or diff tab has no state at all', async () => {
+    await mount('notes.md', { title: 'notes.md' }, 'doc-1');
+    expect(host.querySelector<HTMLElement>('.identity-tab')!.dataset.waitState).toBeUndefined();
+    expect(host.querySelector('[data-tab-state]')).toBeNull();
   });
 });
 

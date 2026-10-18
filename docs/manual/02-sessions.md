@@ -307,8 +307,8 @@ which AI it is, and what the session is doing.
 ![The same three tabs in the light Daylight theme](img/ai-colours-light.png)
 
 *Claude Code in coral, Codex in green, Gemini in blue, in a dark theme and a
-light one. Claude's ring is orange because that session needs you; Gemini's is
-blue because it is working.*
+light one. Claude's ring is orange because that session is waiting for your
+approval; Gemini's is blue because it is working.*
 
 **Each AI has its own colour.** Claude Code is coral, Codex is green, Gemini is
 blue, Copilot is purple, and every other AI the app knows has a colour of its
@@ -319,10 +319,12 @@ see on that theme's backgrounds. An AI the app has no colour for is drawn in
 the ordinary text colour.
 
 **The ring around the icon is the session's status.** It takes the place of the
-old status dot and uses the same colours: blue while it is working, yellow or
-orange when it needs you, green when it has finished, red if it crashed, grey
-when it is idle. In the sessions list, the ring spins while the session works,
-just as the dot did. On the tab and the header it stays still. There is always
+old status dot: blue while it is working, orange while it waits for your
+approval, yellow while it waits for your answer to a question, a softer gold
+when it has finished its turn and is waiting for your next prompt, red if it
+crashed, grey when it is calm. The ring spins while the session works, in the
+sessions list, on the strip and on the session's tab. On the card header it
+stays still. There is always
 a little space between the ring and the icon, so an orange ring around Claude's
 coral icon, or a blue one around Gemini's, still reads as two things.
 
@@ -336,7 +338,7 @@ read, the ring and the word still show; only the picture is missing.
 
 ## Status at a glance
 
-![The Sessions list, with one session marked done and one marked needs you](img/sessions-list.png)
+![The Sessions list, with one session waiting for you after its turn and one waiting for an approval](img/sessions-list.png)
 
 *Each row says what its session is doing.*
 
@@ -346,13 +348,46 @@ Every session shows one of these:
 |---|---|
 | **starting** | Claude Code is booting up |
 | **working** | Claude is doing something — a wide "Claude is working" strip appears above the prompt box |
-| **needs you** | Waiting on a permission decision |
-| **needs input** | Waiting for you to answer something |
-| **idle** | Ready for your next prompt |
-| **done** | Finished its turn |
+| **approval** | Waiting for you to allow or refuse something. In the list it says how long it has left, such as **approval · <5m** |
+| **question** | Waiting for you to answer a question |
+| **waiting** | Finished its turn, and waiting for your next prompt. In the list it reads **waiting for you** |
+| **calm** | Nothing has run in it yet |
 | **crashed** | Ended unexpectedly |
 | **suspended** | Kept, but not currently running |
 | **not started** | Nothing ever ran in this card — see below |
+
+### A session that is waiting on you
+
+Three of those mean the next move is yours: **approval**, **question** and
+**waiting**. A session in any of them is marked the same way in every place it
+appears, so you can find it from across the room:
+
+- **its tab** across the top of the workspace, whether or not it is the one
+  you have open;
+- **its row** in the Sessions list on the left;
+- **its pill** on the strip, when the sessions are listed across the top.
+
+Each one is **tinted in the state's colour**, with an edge in the same
+colour, the **word** after the session's name, and the ring around its AI's
+icon in that colour too. Approval is orange, question is yellow, and waiting
+is a softer gold, so a session that has simply finished does not shout as
+loudly as one that is stuck. The word is always there, so you never have to
+tell the states apart by colour alone.
+
+![Tabs in the dark theme: a calm session, then one waiting for an approval, one with a question, one waiting for its next prompt, and one working](img/waiting-states-tabs-nordic.png)
+
+![The same tabs in the light Daylight theme](img/waiting-states-tabs-daylight.png)
+
+![The Sessions list in the dark theme: calm, approval with its time left, question, waiting for you, working](img/waiting-states-list-nordic.png)
+
+![The same list in the light theme](img/waiting-states-list-daylight.png)
+
+![The strip across the top, in the dark theme](img/waiting-states-strip-nordic.png)
+
+![The strip in the light theme](img/waiting-states-strip-daylight.png)
+
+A session that is **working** says **working** quietly on its tab and its
+ring spins; a **calm** one has no tint and no word on its tab.
 
 ### Which ones need you, and which have finished
 
@@ -362,13 +397,19 @@ The Sessions list keeps **two counts**, because they are two different things:
   permission, asking you a question, it crashed, or a review you sent for has
   come back with a button waiting. It is in yellow.
 - **N finished** is for a session that completed its work and that you have
-  not looked at yet. Nothing is stuck. It is quieter, in the colour of *done*.
+  not looked at yet. Nothing is stuck. It is quieter, in the waiting gold.
 
-A row in either count is **highlighted**: tinted, with a thicker colored bar at
-its left edge and its name in bold. Each group's heading says both numbers
-(**"1 need you · 2 finished"**, or one of them, or **"calm"**), and the Sessions
-list totals them: at its foot when it is on the left, on its first line when it
-is across the top. The counts and the highlighted rows always match.
+A row in either count is **highlighted**: its name in bold and a thicker
+coloured bar at its left edge. The Sessions list totals them: at its foot when
+it is on the left, on its first line when it is across the top. The counts and
+the highlighted rows always match.
+
+**Each group's heading says what is inside it**: **"1 approval · 2 waiting"**
+(any of approval, question and waiting that it has, most urgent first), or
+**"2 working"** when something inside is busy and nothing is waiting, or
+**"calm"** when nothing is happening. When the group is folded shut, its
+heading is tinted in the most urgent state's colour, so a closed group still
+tells you something inside it is waiting.
 
 **A finished session clears when you look at it.** Any of these counts as
 looking:

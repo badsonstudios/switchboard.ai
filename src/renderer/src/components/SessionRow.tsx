@@ -15,9 +15,10 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { RailSession } from '../model/types';
 import { railDepthIndent } from '../lib/dispatch-lineage';
-import { attentionPaint, presentStatus } from '../lib/rail-view';
-import { approvalAttrs, approvalHint, NO_CARDS } from '../lib/approval-watch';
+import { attentionPaint, presentStatus, waitPaint, WAIT_WASH } from '../lib/rail-view';
+import { approvalAttrs, approvalHint, approvalLeftWord, NO_APPROVAL, NO_CARDS } from '../lib/approval-watch';
 import { useApprovalWatch } from '../lib/use-approval-watch';
+import { useShownStatus } from '../lib/use-shown-status';
 import { tint } from '../lib/tint';
 import { AiBadge } from './AiBadge';
 import { DEFAULT_TASK_LABEL_SIZE, LABEL_LINES } from '../../../shared/task-label-size';
@@ -180,7 +181,10 @@ export function SessionRow(props: {
   onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const s = props.session;
+  // the status as it is SHOWN: a held question says "question", not
+  // "approval", though main gives both the same status (#1351)
+  const shown = { ...props.session, status: useShownStatus(props.session.id, props.session.status) };
+  const s = shown;
   const p = presentStatus(s.status);
   // WHO NEEDS YOU is the count's own answer (#1137), not the status's: a row
   // is lit exactly when its session is one of the N the header is counting.
@@ -188,8 +192,15 @@ export function SessionRow(props: {
   // #1202: an approval runs out, so the row that is waiting on one moves, and
   // says how long is left. Lit by the same rule as the tint above.
   const approval = useApprovalWatch(
-    paint.lit && !paint.finished && s.status === 'needs-permission' ? [s.id] : NO_CARDS
+    s.status === 'needs-permission' ? [s.id] : NO_CARDS
   );
+  // ...the CLOCK is read for every held approval (#1351: a dismissed one is
+  // still held, and its word says how long it has left), but the PULSE stays
+  // the count's (#1202): it never claims an approval the count has dropped
+  const pulse = paint.lit && !paint.finished ? approval : NO_APPROVAL;
+  // #1351: a session WAITING on you is washed in its state's colour whether
+  // or not the count is still on it; `paint.lit` keeps the bar and the bold
+  const wait = waitPaint(s.status, paint);
   const hue = `var(--status-${paint.token})`;
   const ink = `var(--status-${paint.token}-ink)`;
   const accent = s.accent ?? 'var(--faint)';
@@ -198,9 +209,14 @@ export function SessionRow(props: {
   const waiting = props.waiting;
   const depth = props.depth;
   const indent = railDepthIndent(depth);
-  // a needy session outranks selection: the attention tint is the signal the
-  // whole panel exists to carry
-  const rowTint = paint.lit ? tint(hue, 10) : selected ? tint(accent, 10) : 'transparent';
+  // a waiting session outranks selection: the wash is the signal the whole
+  // panel exists to carry
+  const rowTint = wait.washed ? tint(hue, WAIT_WASH) : selected ? tint(accent, 10) : 'transparent';
+  // the list's word: the longer one where it has one ("waiting for you"), and
+  // an approval's time left beside it (#1202's clock, said on the row now)
+  const word = t(p.listKey ?? p.shortKey);
+  const left = approvalLeftWord(t, approval);
+  const stateWord = left ? t('rail.stateClock', { state: word, left }) : word;
 
   return (
     <div
@@ -215,8 +231,10 @@ export function SessionRow(props: {
       // leads to a row you can see, but it is the other count (#1219).
       data-needs-you={paint.lit && !paint.finished}
       data-finished={paint.finished ? 'true' : undefined}
-      {...approvalAttrs(approval)}
+      {...approvalAttrs(pulse)}
       data-session-status={p.token}
+      // which of the three waiting states, for the specs and the stylesheet
+      data-wait-state={wait.state}
       // which row is the session you have open, for the stylesheet (#718): a
       // "working" look repaints the tint and the edge bar that used to be the
       // only things saying so
@@ -257,7 +275,7 @@ export function SessionRow(props: {
       data-last-prompt-for={s.id}
       data-folded={props.folded ? 'true' : undefined}
       // the pill's own hint: a dashed edge is not self-explanatory
-      title={approval.active ? approvalHint(t, approval) : props.folded ? t('strip.pillFoldedHint') : undefined}
+      title={pulse.active ? approvalHint(t, pulse) : props.folded ? t('strip.pillFoldedHint') : undefined}
       style={{
         // the session's own colour, for whichever "working" look is in force
         // (#718, tokens.css "a working session"). A row only says what its
@@ -313,10 +331,11 @@ export function SessionRow(props: {
           insetBlockStart: 3,
           insetBlockEnd: 3,
           // thickens to 4px when it needs you — legible from the far edge of
-          // the screen without reading a word
+          // the screen without reading a word (the COUNT's, #1137) — and takes
+          // the state's colour whenever the row is washed (#1351)
           inlineSize: paint.lit ? 4 : 2.5,
           borderRadius: '0 2px 2px 0',
-          background: paint.lit ? hue : selected ? accent : tint(accent, 45),
+          background: wait.washed ? hue : selected ? accent : tint(accent, 45),
         }}
       />
       {depth !== undefined && (
@@ -484,7 +503,7 @@ export function SessionRow(props: {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {t(p.shortKey)}
+                {stateWord}
               </span>
             </div>
             {/* LINES 2…N — the task label, in its own space.

@@ -78,8 +78,15 @@ import {
   needCount,
   clampRailWidth,
   railWidthAtPointer,
+  rollupLead,
   RAIL_WIDTH_DEFAULT,
+  waitRollup,
+  ROLLUP_TOKEN,
+  WAIT_WASH,
 } from '../lib/rail-view';
+import { rollupWords } from '../lib/rollup-words';
+import { sessionStore } from '../store/session-store';
+import { StatusMark } from './StatusMark';
 import {
   approvalAttrs,
   approvalHint,
@@ -1008,8 +1015,24 @@ export function SessionsRail(props: {
     showEmpty?: boolean;
   }): React.JSX.Element => {
     const isCollapsed = collapsed.has(opts.key);
-    const need = needCount(opts.members, props.needing);
-    const done = props.finished ? finishedCount(opts.members, props.finished) : 0;
+    // WHAT IS INSIDE, BY STATE (#1351, #1196): "1 approval · 1 waiting", else
+    // "2 working", else "calm" — the same words the strip's group box uses,
+    // from the same function. It used to be "N need you" / "N finished" /
+    // "calm", and a closed group said "calm" over a session that was working.
+    const rollup = waitRollup(
+      opts.members,
+      (id) => props.needing.has(id) || (props.finished?.has(id) ?? false),
+      (id) => sessionStore.hasHeldQuestion(id)
+    );
+    const lead = rollupLead(rollup);
+    const leadToken = lead === undefined ? undefined : lead === 'working' ? 'working' : ROLLUP_TOKEN[lead];
+    // a CLOSED group is the only thing on screen for the sessions inside it, so
+    // it wears the most urgent one's colour: an edge, and the summary washed.
+    // An open one leaves that to its rows — two marks for one session is noise.
+    const washHead = isCollapsed && lead !== undefined && lead !== 'working';
+    // ...and, closed, the working mark and handle the strip's group box has
+    // (#1179), so the six "working" looks paint this header too
+    const workingHead = isCollapsed && lead === 'working';
     // #1202: a CLOSED group draws no rows, so its header is the only place the
     // approval cue can be. An open one leaves it to the rows: two things
     // pulsing for one request is noise.
@@ -1191,6 +1214,12 @@ export function SessionsRail(props: {
           // group shows, and an automatic group's header is opaque, so a cue
           // painted on the card behind it would not be seen at all.
           {...approvalAttrs(approval)}
+          // #1351: what the closed group is washed for — the roll-up's lead,
+          // which can be `crashed` as well as the three waiting states, so it
+          // is not `data-wait-state` — and the "working" looks' handle (#1196),
+          // both only while it is closed
+          data-rollup-lead={washHead ? lead : undefined}
+          data-session-status={workingHead ? 'working' : undefined}
           onClick={() => toggleCollapsed(opts.key)}
           title={
             approval.active
@@ -1245,12 +1274,35 @@ export function SessionsRail(props: {
               borderEndStartRadius: isCollapsed ? 7 : 0,
               borderEndEndRadius: isCollapsed ? 7 : 0,
               borderBlockEnd: '1px solid var(--rail-divider)',
+              // for the waiting edge below, and the looks' layers
+              position: 'relative',
+              // the group's own colour, for whichever "working" look is in force
+              '--work-accent': opts.color,
               // --g feeds .rail-group-ink, which darkens the color per theme so
               // the name clears AA on the white card (see tokens.css)
               '--g': opts.color,
             } as React.CSSProperties
           }
         >
+          {washHead && leadToken && (
+            // THE EDGE, in the most urgent state's colour, as a waiting row has
+            // (#1351). Absolutely placed so the header does not move a pixel.
+            <span
+              aria-hidden
+              data-rail-group-edge
+              style={{
+                position: 'absolute',
+                insetInlineStart: 0,
+                insetBlock: 3,
+                inlineSize: 4,
+                // logical corners: the edge is on the inline-start side, so
+                // its rounded corners are the end ones, in either direction
+                borderStartEndRadius: 2,
+                borderEndEndRadius: 2,
+                background: `var(--status-${leadToken})`,
+              }}
+            />
+          )}
           <span
             aria-hidden
             style={{
@@ -1475,29 +1527,40 @@ export function SessionsRail(props: {
               {t('rail.autoBadge')}
             </span>
           )}
+          {workingHead && (
+            // the spinner (or, in look 6, the bars) a working session has, for
+            // a closed group with one inside — the strip's group box's own mark
+            <span aria-hidden style={{ marginInlineStart: 'auto', display: 'flex', flexShrink: 0 }}>
+              <StatusMark status="working" needsYou={false} />
+            </span>
+          )}
           <span
+            data-rail-group-summary={opts.key}
             style={{
               fontFamily: 'var(--font-ui)',
-              fontWeight: 600,
+              fontWeight: lead && lead !== 'working' ? 700 : 600,
               fontSize: 9,
               whiteSpace: 'nowrap',
-              marginInlineStart: 'auto',
-              // yellow is for a demand only (#1219): finished work is said
-              // in the finished ramp, and is the quieter of the two
-              color: need
-                ? 'var(--status-needs-input-ink)'
-                : done
-                  ? 'var(--status-done-ink)'
-                  : 'var(--muted)',
+              marginInlineStart: workingHead ? undefined : 'auto',
+              // the most urgent state's INK (#1351), the working ink while
+              // something runs, quiet when the group is calm
+              color: leadToken ? `var(--status-${leadToken}-ink)` : 'var(--muted)',
+              // closed and waiting: the summary is washed in that colour, the
+              // mockup's count chip — the header's own fill stays the group's,
+              // which is what its name is measured against. OPAQUE, over the
+              // card: on an automatic group's darker header a see-through wash
+              // took the words under AA (tokens.drift measured 4.07:1)
+              ...(washHead && leadToken
+                ? {
+                    background: `color-mix(in srgb, var(--status-${leadToken}) ${WAIT_WASH}%, var(--rail-card))`,
+                    borderRadius: 7,
+                    paddingInline: 5,
+                    paddingBlock: 1,
+                  }
+                : {}),
             }}
           >
-            {need && done
-              ? t('rail.bothSummary', { need, finished: done })
-              : need
-                ? t('rail.needSummary', { count: need })
-                : done
-                  ? t('rail.finishedSummary', { count: done })
-                  : t('rail.calm')}
+            {rollupWords(t, rollup)}
           </span>
           {/* …and what siblings have left inside it (#774 review). AFTER the
               need summary and in its own chip rather than folded into that

@@ -169,10 +169,12 @@ for (const kind of ['approval', 'question'] as const) {
         await expect(railNeed(w)).toHaveText('2 need you');
         await expect(row(w, grouped)).toHaveAttribute('data-needs-you', 'true');
         await expect(row(w, loose)).toHaveAttribute('data-needs-you', 'true');
-        // the group's own line
-        await expect(w.locator('[data-group-card]').filter({ hasText: 'New group' })).toContainText(
-          '1 need you'
-        );
+        // the group's own line, which says WHAT it is waiting for since #1351
+        // — and a held question says "question", though main holds it under
+        // the same status an approval has
+        await expect(
+          w.locator('[data-group-card]').filter({ hasText: 'New group' }).locator('[data-rail-group-summary]')
+        ).toHaveText(kind === 'approval' ? '1 approval' : '1 question');
       };
       await leftSaysTwo();
       // …and STILL, a dozen frames later. This is the assertion that failed.

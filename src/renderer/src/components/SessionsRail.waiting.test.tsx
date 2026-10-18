@@ -207,7 +207,7 @@ describe('what a screen reader is told', () => {
     expect(name).toMatch(/2 messages waiting from other sessions/);
     // the state the row already announced is still in there — the waiting
     // clause WRAPS it rather than replacing it
-    expect(name).toMatch(/idle/);
+    expect(name).toMatch(/calm/);
     expect(name).toMatch(/card-b/);
   });
 
@@ -270,7 +270,10 @@ describe('a COLLAPSED group still says something is inside (#774 review)', () =>
       receiveSiblingMessage(msg('card-b'));
     });
     await mountGrouped([inTeam('card-a'), inTeam('card-b')]);
-    expect(groupChip()?.textContent).toBe('3 waiting');
+    // "messages", not "waiting", since #1351: "N waiting" is now the group's
+    // count of sessions waiting for their next prompt, and two chips saying
+    // "waiting" about two different things would be one too many
+    expect(groupChip()?.textContent).toBe('3 messages');
   });
 
   it('⚠️ is still there once the group is COLLAPSED and the rows are gone', async () => {
@@ -282,7 +285,7 @@ describe('a COLLAPSED group still says something is inside (#774 review)', () =>
 
     await collapseGroup();
     expect(mark('card-a')).toBeNull(); // the row itself is not rendered at all
-    expect(groupChip()?.textContent).toBe('1 waiting');
+    expect(groupChip()?.textContent).toBe('1 message');
   });
 
   it('is absent when the group holds nothing waiting', async () => {

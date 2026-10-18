@@ -567,23 +567,26 @@ test.describe('manual screenshots (#1082)', () => {
     await expect(allow).toBeVisible({ timeout: 30_000 });
     await w.waitForTimeout(800);
     await tidy(w, parent);
+    // the state words on the left list (#1351): "approval" and "waiting for you"
+    const approvalWord = w.locator('nav .rail-row[data-wait-state="approval"] [data-rail-state]').first();
+    const waitingWord = w.locator('nav .rail-row[data-wait-state="waiting"] [data-rail-state]').first();
     await shot(w, 'approval-bar', [
       { target: allow, label: 'Let it do this once', side: 'top' },
       { target: w.getByRole('button', { name: 'Deny', exact: true }), label: 'Or stop it', side: 'bottom' },
-      { target: w.getByText('needs you').first(), label: 'This session is waiting on you', side: 'right' },
+      { target: approvalWord, label: 'This session is waiting on you', side: 'right' },
     ]);
     const rows = [
       w.getByText('Add a dark mode toggle').first(),
-      w.getByText('done', { exact: true }).first(),
+      waitingWord,
       w.getByText('Run the production build').first(),
-      w.getByText('needs you').first(),
+      approvalWord,
     ];
     await shot(
       w,
       'sessions-list',
       [
-        { target: w.getByText('done', { exact: true }).first(), label: 'Finished its turn', side: 'right' },
-        { target: w.getByText('needs you').first(), label: 'Waiting for an answer', side: 'right' },
+        { target: waitingWord, label: 'Finished its turn, waiting for you', side: 'right' },
+        { target: approvalWord, label: 'Waiting for your approval', side: 'right' },
       ],
       { ...(await around(w, rows, 40)), x: 0, width: 660 }
     );

@@ -39,7 +39,7 @@ yet).
    name, so **Enter** keeps it; type over it to call the session something
    else.
 4. A card appears and Claude starts up inside it. The first moments show
-   *starting*; once it's ready the status changes to *idle*.
+   *starting*; once it's ready the status changes to *calm*.
 5. Type into the box at the bottom of the card and press **Enter**.
 
 You can also drag a folder from your file manager straight onto the window —

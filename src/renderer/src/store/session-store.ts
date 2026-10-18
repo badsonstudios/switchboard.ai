@@ -91,6 +91,7 @@ import {
 } from '../lib/permission-batches';
 import { dropRetired } from '../lib/held-permissions';
 import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
+import { ASK_USER_QUESTION_TOOL } from '../../../shared/ask-user-question';
 import {
   isPinned,
   NO_PINS,
@@ -365,6 +366,28 @@ export class SessionStore {
    */
   getNeedingCards(): ReadonlySet<string> {
     return this.derivedNeeding;
+  }
+
+  /**
+   * Is what this card is holding a QUESTION rather than an approval (#1351)?
+   *
+   * A Direct session's question arrives as a `can_use_tool` request for the
+   * CLI's own question tool, so main gives it the same `needs-permission`
+   * status an approval has (and no clock, #570). The words "approval" and
+   * "question" are the whole point of #1351, so the surfaces ask this and say
+   * which. A boolean, so a `useSyncExternalStore` reader re-renders only when
+   * the answer changes.
+   */
+  hasHeldQuestion(cardId: string): boolean {
+    // EVERY held request, not any: a card holding an approval AND a question
+    // is waiting on an approval, which is the one with a clock (#1202)
+    let any = false;
+    for (const r of this.state.pendingPermissions) {
+      if (r.cardId !== cardId) continue;
+      if (r.tool !== ASK_USER_QUESTION_TOOL) return false;
+      any = true;
+    }
+    return any;
   }
 
   /**

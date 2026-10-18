@@ -8,6 +8,12 @@
 // a finished session: looking relaxes its event from `done` to `ready`, which
 // takes it out of the count, but the session's status is still `done` — so its
 // row stayed lit, identical to the one that really was waiting.
+//
+// SINCE #1351 THE HEADER SAYS WHAT IS INSIDE BY STATE ("1 approval · 2
+// waiting"), and every session in one of those states is WASHED, counted or
+// not, so the header still leads to rows you can see. The LIT treatment (the
+// bold name, the 4px bar, `data-needs-you`) is still the count's alone, and the
+// count is still read where it is said: the footer's "N need you".
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { sessionStore } from '../store/session-store';
 import { createRoot, Root } from 'react-dom/client';
@@ -103,15 +109,17 @@ afterEach(async () => {
 
 describe('a group header and its rows agree about who needs you (#1137)', () => {
   // THE REPORT. Three finished sessions; the user has looked at two of them.
-  it('one finished session not yet looked at: the header says 1, and ONE row is lit', async () => {
+  it('one finished session not yet looked at: ONE row is lit, and all three are waiting', async () => {
     await mount([session('a', 'done'), session('b', 'done'), session('c', 'done')], ['b']);
-    expect(headerText()).toContain('1 need');
+    expect(host.querySelector<HTMLElement>('[data-rail-need]')!.dataset.railNeed).toBe('1');
     expect(litRows()).toEqual(['b']);
-    // the other two still say what they are, quietly
-    for (const id of ['a', 'c']) {
+    // #1351: every one of them is waiting for its next prompt, and says so
+    expect(headerText()).toContain('3 waiting');
+    for (const id of ['a', 'b', 'c']) {
+      expect(rowOf(id).dataset.waitState).toBe('waiting');
       const word = rowOf(id).querySelector<HTMLElement>('[data-rail-state]')!;
-      expect(word.textContent).toBe('done');
-      expect(word.style.color).toBe('var(--muted)');
+      expect(word.textContent).toBe('waiting for you');
+      expect(word.style.color).toBe('var(--status-waiting-ink)');
     }
   });
 
@@ -119,14 +127,19 @@ describe('a group header and its rows agree about who needs you (#1137)', () => 
     await mount([session('a', 'done'), session('b', 'done')], []);
     expect(headerText()).not.toContain('need');
     expect(litRows()).toEqual([]);
+    // ...but still waiting for their next prompts (#1351)
+    expect(headerText()).toContain('2 waiting');
   });
 
   // The #621 direction, held to the same rule: a dismissed ask leaves the count
   // AND stops the row shouting — while the row still says the session is asking.
   it('a dismissed permission ask: not counted, not lit, still labelled', async () => {
     await mount([session('a', 'needs-permission'), session('b', 'needs-input')], ['b']);
-    expect(headerText()).toContain('1 need');
+    expect(host.querySelector<HTMLElement>('[data-rail-need]')!.dataset.railNeed).toBe('1');
     expect(litRows()).toEqual(['b']);
+    // the header says what each is waiting for, the dismissed one included
+    expect(headerText()).toContain('1 approval · 1 question');
+    expect(rowOf('a').dataset.waitState).toBe('approval');
     expect(rowOf('a').dataset.sessionStatus).toBe('needs-permission');
     // off the count, but the word keeps its colour: it is still asking
     expect(rowOf('a').querySelector<HTMLElement>('[data-rail-state]')!.style.color).toBe(
@@ -138,8 +151,10 @@ describe('a group header and its rows agree about who needs you (#1137)', () => 
   // It is counted, so its row has to be findable.
   it('a session counted for something other than its status is lit too', async () => {
     await mount([session('a', 'idle'), session('b', 'working')], ['a']);
-    expect(headerText()).toContain('1 need');
+    expect(host.querySelector<HTMLElement>('[data-rail-need]')!.dataset.railNeed).toBe('1');
     expect(litRows()).toEqual(['a']);
+    // washed in the waiting gold, so the header counts it there
+    expect(headerText()).toContain('1 waiting');
   });
 });
 
@@ -244,7 +259,7 @@ describe('"N need you" and "N finished" are two counts (#1219)', () => {
 
   it('a finished session is in "finished", lit so it can be found, and NOT in "need you"', async () => {
     await mount([session('a', 'done'), session('b', 'idle')], [], ['a']);
-    expect(headerText()).toContain('1 finished');
+    expect(headerText()).toContain('1 waiting');
     expect(headerText()).not.toContain('need');
     expect(finishedRows()).toEqual(['a']);
     // "needs you" is a demand, and this is not one
@@ -260,7 +275,7 @@ describe('"N need you" and "N finished" are two counts (#1219)', () => {
       ['a'],
       ['b', 'c']
     );
-    expect(headerText()).toContain('1 need you · 2 finished');
+    expect(headerText()).toContain('1 approval · 2 waiting');
     expect(litRows()).toEqual(['a']);
     expect(finishedRows()).toEqual(['b', 'c']);
     expect(host.querySelector<HTMLElement>('[data-rail-need]')!.dataset.railNeed).toBe('1');
@@ -287,5 +302,64 @@ describe('"N need you" and "N finished" are two counts (#1219)', () => {
     await act(async () => footer()!.click());
     expect(ack.mock.calls).toEqual([['live-b']]);
     sessionStore.setEvents([]);
+  });
+});
+
+// #1351 / #1196 — a CLOSED group is the only thing on screen for the sessions
+// inside it, so it says what they are: "1 approval · 1 waiting", washed in the
+// most urgent one's colour with an edge in it; "N working" with the working
+// mark; and "calm" only when nothing inside is waiting or working.
+describe('a closed group says what is inside it (#1351, #1196)', () => {
+  const head = (): HTMLElement => host.querySelector<HTMLElement>('[data-group-card="g1"] .rail-head')!;
+  const summary = (): HTMLElement => host.querySelector<HTMLElement>('[data-rail-group-summary="g1"]')!;
+  const toggle = (): Promise<void> =>
+    act(async () => {
+      host.querySelector<HTMLElement>('[data-rail-group-toggle="g1"]')!.click();
+    });
+
+  it('waiting inside: the roll-up, washed in the most urgent colour, with an edge', async () => {
+    await mount([session('a', 'done'), session('b', 'needs-permission'), session('c', 'working')], []);
+    // open: the words, but the rows carry the colour
+    expect(summary().textContent).toBe('1 approval · 1 waiting');
+    expect(head().dataset.rollupLead).toBeUndefined();
+    await toggle();
+    try {
+      expect(summary().textContent).toBe('1 approval · 1 waiting');
+      expect(head().dataset.rollupLead).toBe('approval');
+      expect(summary().style.color).toBe('var(--status-needs-permission-ink)');
+      expect(summary().style.background).toContain('var(--status-needs-permission)');
+      expect(host.querySelector<HTMLElement>('[data-rail-group-edge]')!.style.background).toBe(
+        'var(--status-needs-permission)'
+      );
+      // waiting outranks working: no working look
+      expect(head().dataset.sessionStatus).toBeUndefined();
+    } finally {
+      await toggle();
+    }
+  });
+
+  it('working inside and nothing waiting: "N working", the mark, and the looks’ handle', async () => {
+    await mount([session('a', 'working'), session('b', 'working'), session('c', 'idle')], []);
+    await toggle();
+    try {
+      expect(summary().textContent).toBe('2 working');
+      expect(head().dataset.sessionStatus).toBe('working');
+      expect(head().querySelector('.status-ring')).not.toBeNull();
+      expect(host.querySelector('[data-rail-group-edge]')).toBeNull();
+    } finally {
+      await toggle();
+    }
+  });
+
+  it('nothing waiting or working: "calm", and nothing marked', async () => {
+    await mount([session('a', 'idle'), session('b', 'suspended')], []);
+    await toggle();
+    try {
+      expect(summary().textContent).toBe('calm');
+      expect(head().dataset.sessionStatus).toBeUndefined();
+      expect(head().dataset.rollupLead).toBeUndefined();
+    } finally {
+      await toggle();
+    }
   });
 });

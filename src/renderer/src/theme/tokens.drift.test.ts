@@ -30,7 +30,8 @@ import { builtinThemes } from './builtin-themes';
 // the status ramp and the var() pair a component paints it with (#221): the
 // pill's ratio is measured for the pair the app really substitutes, not for one
 // spelled out again here
-import { statusVars, STATUS_TOKENS, type StatusToken } from '../lib/rail-view';
+import { ROLLUP_TOKEN, statusVars, STATUS_TOKENS, WAIT_WASH, type StatusToken } from '../lib/rail-view';
+import { hueOf, isReservedColor, RESERVED_HUE_TO } from '../../../shared/reserved-hue';
 // #946: the §5.11 palette's other home. See the drift assertion further down.
 import { ACCENTS } from '../../../shared/accents';
 import { GROUP_PALETTE } from '../../../shared/group-palette';
@@ -1690,5 +1691,103 @@ describe('fields and fill-less buttons do not wear the hairline (#1209)', () => 
     const at = css.indexOf('.doc-btn,' + NL + '.diff-btn {');
     expect(at).toBeGreaterThanOrEqual(0);
     expect(css.slice(at, css.indexOf('}', at))).toContain('border: 1px solid var(--control-edge)');
+  });
+});
+
+// ── WAITING ON YOU: THE WASH AND THE GOLD (#1351) ─────────────────────────────
+//
+// A session waiting on you — an approval, a question, its next prompt — washes
+// its tab, its row and its pill in that state's colour at `WAIT_WASH` percent,
+// and writes its word on the wash in the state's INK. The word is real text
+// (9–9.5px), so AA; the ring on the wash is a meaningful mark, so 1.4.11's 3:1;
+// and the session's name on it is `--text`, AA again. Measured over every
+// surface a wash sits on, in all four themes: the rail card and canvas (a row
+// in a group, a loose one), the panel and panel2 (the strip, the tab strip),
+// and an automatic group's own surface.
+//
+// The gold is the new colour here, and it carries a second promise: it is
+// OUTSIDE the 20-70 degree band `shared/reserved-hue.ts` keeps for "needs
+// you", in every theme. A finished turn is waiting on you, but it is the calm
+// one of the three, and the band is what tells the other two apart from it.
+//
+// The surfaces: a row's and a pill's (the rail card and canvas, the panels, an
+// automatic group's surface). A CLOSED GROUP'S HEADER washes its summary
+// OPAQUELY over the card rather than over the header's own fill — over an
+// automatic group's darker `--auto-head` a see-through wash measured 4.07:1 —
+// so it is the `--rail-card` case, and the last block below holds the
+// component to that. The tokens: the three waiting states, and `crashed`,
+// which a group's roll-up names in its own colour and a counted crashed row is
+// washed in. The ring is drawn in the same ink as the word, so 4.5:1 here
+// covers its 3:1 too.
+const WASH_SURFACES = ['--rail-card', '--rail-canvas', '--panel', '--panel2', '--auto-surface'] as const;
+const WASH_TOKENS = [...new Set(Object.values(ROLLUP_TOKEN))];
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s: words on the waiting wash (#1351)', (id, theme) => {
+  const tokens = resolved(theme);
+  const surface = (name: string): string =>
+    name === '--auto-surface' ? derivedSurface(name, id, tokens) : tokens[name];
+  const fills: Array<[string, () => string]> = WASH_SURFACES.map(
+    (f) => [f, () => surface(f)] as [string, () => string]
+  );
+  const cases = WASH_TOKENS.flatMap((token) => fills.map(([name, under]) => [token, name, under] as const));
+
+  it.each(cases)('%s: its word and the name on its wash over %s', (token, name, underOf) => {
+    const under = underOf();
+    const hue = tokens[`--status-${token}`];
+    const ink = tokens[`--status-${token}-ink`];
+    for (const [t, v] of [['hue', hue], ['ink', ink], [name, under]] as const) {
+      expect(v, `${id} ${token} ${t} must be #rrggbb to be measured`).toMatch(/^#[0-9a-f]{6}$/i);
+    }
+    const wash = mix(hue, under, WAIT_WASH / 100);
+    expect(ratio(ink, wash), `${id}: --status-${token}-ink on ${WAIT_WASH}% over ${name} (${ink} on ${wash})`).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(tokens['--text'], wash), `${id}: --text on the ${token} wash over ${name}`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // A CLOSED GROUP with something working inside wears the working looks
+  // (#1196), and three of them repaint its header's background in the group's
+  // colour over the card. The name on it is `.rail-group-ink` (a hand-made
+  // group) or `--auto-ink`; both must still read, at the heaviest of the
+  // three (the default look's 20%).
+  it.each([...GROUP_PALETTE])('a %s group: its name on the default working look', (color) => {
+    const rule = /color-mix\(in srgb,\s*var\(--g\)\s*([\d.]+)%,\s*(#[0-9a-f]{6})\)/i.exec(
+      theme.colorScheme === 'light'
+        ? block(":root[data-color-scheme='light'] .rail-group-ink {")
+        : block('\n.rail-group-ink {')
+    );
+    expect(rule).not.toBeNull();
+    const ink = mix(color, rule![2], Number(rule![1]) / 100);
+    const fill = mix(color, tokens['--rail-card'], 0.2);
+    expect(ratio(ink, fill), `${id}: group ink ${ink} on ${fill}`).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('keeps the waiting gold outside the band reserved for "needs you"', () => {
+    for (const t of ['--status-waiting', '--status-waiting-ink']) {
+      const c = hueOf(tokens[t]);
+      expect(c, `${id} ${t}`).not.toBeNull();
+      expect(isReservedColor(tokens[t]), `${id} ${t} ${tokens[t]} is at ${c!.hue.toFixed(1)} degrees`).toBe(false);
+      // and on the far side of the band, not under it: a gold, not a red
+      expect(c!.hue, `${id} ${t}`).toBeGreaterThan(RESERVED_HUE_TO);
+    }
+  });
+});
+
+describe('the waiting wash is painted at the strength this measures (#1351)', () => {
+  const read = (rel: string): string => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+  it('the tab: dockview-tokens.css mixes `--wait-hue` at WAIT_WASH over --panel2', () => {
+    const dv = read('theme/dockview-tokens.css');
+    expect(dv).toContain(`background: color-mix(in srgb, var(--wait-hue) ${WAIT_WASH}%, var(--panel2));`);
+    // the washed tab's words are --text, never the unselected tab's --muted
+    expect(dv).toMatch(/\.identity-tab\[data-wait-state\] \{[^}]*color: var\(--text\);/);
+  });
+  it.each(['components/SessionRow.tsx', 'components/StripPill.tsx'])('%s tints its hue at WAIT_WASH', (rel) => {
+    expect(read(rel)).toContain('tint(hue, WAIT_WASH)');
+  });
+  it("the strip's group box washes its summary at WAIT_WASH, over its own card", () => {
+    expect(read('components/StripGroupEntry.tsx')).toContain('background: tint(`var(--status-${leadToken})`, WAIT_WASH)');
+  });
+  it("the left list's closed group washes its summary OPAQUELY over the card", () => {
+    expect(read('components/SessionsRail.tsx')).toContain(
+      'background: `color-mix(in srgb, var(--status-${leadToken}) ${WAIT_WASH}%, var(--rail-card))`'
+    );
   });
 });

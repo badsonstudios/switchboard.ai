@@ -1346,6 +1346,35 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
 Sessions expose a status machine (`working | needs-input | needs-permission | idle |
 done | crashed`) fed by hooks + transcript events. The layout engine reacts to it:
 
+> **WHAT THE STATES ARE CALLED ON SCREEN *(amended 2026-10-18, Dan, #1351)*.**
+> His words: *"If an AI session stops and it's waiting on me for anything — a
+> gate, a question, an approval — I want it to say it's waiting for me. It
+> should not say 'calm' or 'done'."* The status machine above is unchanged;
+> what a person READS changed, on the tab, the Sessions list row, the strip
+> pill and the card header's pill alike (§5.11: one word per state):
+> `needs-permission` → **approval** (the list adds the time left, `approval ·
+> <5m`), `needs-input` → **question**, `done` → **waiting** (`waiting for you`
+> in the list), `idle` → **calm**. A Direct session's question is held as a
+> `can_use_tool` request and so carries `needs-permission`; the renderer
+> tells it apart by the held request's tool and calls it a **question**.
+> **`idle` is "calm", not "waiting"**, because `done` is sticky in the state
+> machine — from it only a new prompt or new output moves a session — so
+> `idle` in practice means no turn has run yet (start, resume, a `/clear`
+> before anything ran). The three waiting states are painted the same way on
+> every surface (treatment A): a 15% wash in the state's colour, an edge in it,
+> the word after the name, and the ring in it — never colour alone. `done`
+> moved from the green ramp position to a new **`waiting` gold** (hue 72°,
+> outside the 20–70° band §5.20 reserves for "needs you", so it reads calmer
+> than an approval). The wash follows the STATE; the lit treatment (bold
+> name, 4px bar) still follows the count, so "N need you" is still exactly N
+> lit rows. A group's header (the list's and the strip's) says what is inside
+> it by state — `1 approval · 2 waiting` (a crash is its own part, `1
+> crashed`, after a question), else `N working`, else `calm` — in place of "N
+> need you / N finished"; the footer and strip totals still count the Events
+> list. A card whose process closed cleanly says **ended** in its header, not
+> the "waiting" its leftover `done` would read as. The tab's ring now spins
+> while working, like every other surface's.
+
 - **Auto-minimize on submit** (per-session toggle): submitting a prompt collapses the
   card to a slim status strip; it restores automatically on `Stop` (done) or
   `Notification` (needs human).

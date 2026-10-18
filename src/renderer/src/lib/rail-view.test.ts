@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   attentionPaint,
+  rollupLead,
+  rollupParts,
+  shownStatus,
+  waitPaint,
+  waitRollup,
+  waitState,
+  WAIT_TOKEN,
+  STATUS_TOKENS,
   finishedCount,
   presentStatus,
   statusVars,
@@ -237,7 +245,7 @@ describe("the row's short state word (#877)", () => {
 
 describe('attentionPaint — the one rule for who is lit (#1137)', () => {
   it('lights a counted session in its own ramp', () => {
-    expect(attentionPaint('done', true)).toMatchObject({ lit: true, token: 'done', stateInk: true });
+    expect(attentionPaint('done', true)).toMatchObject({ lit: true, token: 'waiting', stateInk: true });
     expect(attentionPaint('needs-input', true)).toMatchObject({
       lit: true,
       token: 'needs-input',
@@ -245,9 +253,10 @@ describe('attentionPaint — the one rule for who is lit (#1137)', () => {
     });
   });
 
-  // looking at a finished session takes it off the count and leaves it `done`
-  it('does not light a finished session nobody is counting', () => {
-    expect(attentionPaint('done', false)).toMatchObject({ lit: false, token: 'done', stateInk: false });
+  // looking at a finished session takes it off the count and leaves it `done`;
+  // it is still WAITING for its next prompt, so its word keeps the gold (#1351)
+  it('does not light a finished session nobody is counting, but keeps its word gold', () => {
+    expect(attentionPaint('done', false)).toMatchObject({ lit: false, token: 'waiting', stateInk: true });
   });
 
   // dismissing an ask does not answer it: the word keeps its colour
@@ -260,8 +269,8 @@ describe('attentionPaint — the one rule for who is lit (#1137)', () => {
 
   // a returned review is filed on its author, who is usually idle
   it('lights a counted session whose status is calm, as finished work', () => {
-    expect(attentionPaint('idle', true)).toMatchObject({ lit: true, token: 'done', stateInk: true });
-    expect(attentionPaint('working', true).token).toBe('done');
+    expect(attentionPaint('idle', true)).toMatchObject({ lit: true, token: 'waiting', stateInk: true });
+    expect(attentionPaint('working', true).token).toBe('waiting');
   });
 
   // #1219: finished work nobody has looked at is lit too, in the finished
@@ -269,7 +278,7 @@ describe('attentionPaint — the one rule for who is lit (#1137)', () => {
   it('lights FINISHED, unseen work, and marks it as not a demand', () => {
     expect(attentionPaint('done', false, true)).toEqual({
       lit: true,
-      token: 'done',
+      token: 'waiting',
       stateInk: true,
       finished: true,
     });
@@ -295,5 +304,136 @@ describe('finishedCount — every "N finished" readout (#1219)', () => {
     expect(finishedCount(sessions, new Set(['a', 'c', 'elsewhere']))).toBe(2);
     expect(finishedCount(sessions, new Set())).toBe(0);
     expect(finishedCount([], new Set(['a']))).toBe(0);
+  });
+});
+
+describe('waiting on you — the three states and their words (#1351)', () => {
+  it('names the three states, and nothing else waits on you', () => {
+    expect(waitState('needs-permission')).toBe('approval');
+    expect(waitState('needs-input')).toBe('question');
+    expect(waitState('done')).toBe('waiting');
+    // idle is a session that has not run a turn yet: calm, not waiting
+    for (const s of ['idle', 'working', 'starting', 'crashed', 'suspended', 'not-started', 'nonsense', undefined]) {
+      expect(waitState(s), String(s)).toBeUndefined();
+    }
+  });
+
+  it('paints each in its own ramp position, and the finished turn in the gold', () => {
+    expect(WAIT_TOKEN).toEqual({ approval: 'needs-permission', question: 'needs-input', waiting: 'waiting' });
+    expect(presentStatus('done').token).toBe('waiting');
+    expect(STATUS_TOKENS).toContain('waiting');
+  });
+
+  it('gives each its word, in the pill vocabulary, and the list its longer one', () => {
+    expect(presentStatus('needs-permission').shortKey).toBe('status.needs-permission');
+    expect(presentStatus('needs-input').shortKey).toBe('status.needs-input');
+    expect(presentStatus('done').shortKey).toBe('status.done');
+    expect(presentStatus('done').listKey).toBe('status.doneList');
+    expect(presentStatus('idle').listKey).toBeUndefined();
+  });
+
+  it('washes every waiting session, counted or not, and nothing calm', () => {
+    for (const s of ['needs-permission', 'needs-input', 'done']) {
+      expect(waitPaint(s, attentionPaint(s, false)).washed, s).toBe(true);
+      expect(waitPaint(s, attentionPaint(s, true)).washed, s).toBe(true);
+    }
+    for (const s of ['idle', 'working', 'suspended', 'crashed']) {
+      expect(waitPaint(s, attentionPaint(s, false)).washed, s).toBe(false);
+    }
+    // a session lit for something its status does not show is washed in the
+    // ramp it is lit in, so a lit row is never the one row left unexplained
+    expect(waitPaint('idle', attentionPaint('idle', true))).toEqual({
+      state: undefined,
+      washed: true,
+      token: 'waiting',
+    });
+    expect(waitPaint('needs-input', attentionPaint('needs-input', false)).token).toBe('needs-input');
+  });
+});
+
+describe('a held question is shown as one (#1351)', () => {
+  it('reads needs-permission as needs-input only when the held request is a question', () => {
+    expect(shownStatus('needs-permission', true)).toBe('needs-input');
+    expect(shownStatus('needs-permission', false)).toBe('needs-permission');
+    // nothing else moves, whatever is held
+    for (const s of ['working', 'done', 'idle', 'needs-input', undefined]) {
+      expect(shownStatus(s, true), String(s)).toBe(s);
+    }
+  });
+});
+
+describe("a group's roll-up (#1351, #1196)", () => {
+  const of = (...statuses: string[]): Array<{ status: string }> => statuses.map((status) => ({ status }));
+
+  it('counts each state, and working only for what is not waiting', () => {
+    expect(waitRollup(of('needs-permission', 'done', 'done', 'working', 'starting', 'idle'))).toEqual({
+      approval: 1,
+      question: 0,
+      crashed: 0,
+      waiting: 2,
+      working: 2,
+    });
+    expect(waitRollup([])).toEqual({ approval: 0, question: 0, crashed: 0, waiting: 0, working: 0 });
+  });
+
+  it('a crashed session is its own part — never "waiting", never "calm", counted or not', () => {
+    const members = [{ id: 'x', status: 'crashed' }, { id: 'y', status: 'done' }];
+    const r = waitRollup(members, (id) => id === 'x');
+    expect(r).toMatchObject({ crashed: 1, waiting: 1 });
+    expect(rollupLead(r)).toBe('crashed');
+    expect(rollupParts(r)).toEqual([
+      { key: 'rail.rollup.crashed', count: 1 },
+      { key: 'rail.rollup.waiting', count: 1 },
+    ]);
+    // an approval or a question still outranks it
+    expect(rollupLead(waitRollup(of('crashed', 'needs-input')))).toBe('question');
+  });
+
+  it('counts a session the count lit for something else as waiting, so the line matches the washed rows', () => {
+    const members = [
+      { id: 'a', status: 'idle' },
+      { id: 'b', status: 'working' },
+      { id: 'c', status: 'needs-input' },
+    ];
+    const lit = (id: string): boolean => id === 'a' || id === 'b' || id === 'c';
+    expect(waitRollup(members, lit)).toEqual({ approval: 0, question: 1, crashed: 0, waiting: 2, working: 0 });
+    // and with nothing lit, the states alone
+    expect(waitRollup(members, () => false)).toEqual({ approval: 0, question: 1, crashed: 0, waiting: 0, working: 1 });
+  });
+
+  it('leads with the most urgent: approval, question, waiting, working', () => {
+    expect(rollupLead(waitRollup(of('done', 'needs-input', 'needs-permission')))).toBe('approval');
+    expect(rollupLead(waitRollup(of('done', 'needs-input', 'working')))).toBe('question');
+    expect(rollupLead(waitRollup(of('done', 'working')))).toBe('waiting');
+    expect(rollupLead(waitRollup(of('working', 'idle')))).toBe('working');
+    expect(rollupLead(waitRollup(of('idle', 'suspended')))).toBeUndefined();
+  });
+
+  it('counts a Direct session holding a question as a question, not an approval', () => {
+    const members = [
+      { id: 'q', status: 'needs-permission' },
+      { id: 'p', status: 'needs-permission' },
+    ];
+    expect(waitRollup(members, undefined, (id) => id === 'q')).toEqual({
+      approval: 1,
+      question: 1,
+      crashed: 0,
+      waiting: 0,
+      working: 0,
+    });
+  });
+
+  it('says each non-zero state, most urgent first, and leaves the zeros out', () => {
+    expect(rollupParts(waitRollup(of('done', 'needs-permission', 'working')))).toEqual([
+      { key: 'rail.rollup.approval', count: 1 },
+      { key: 'rail.rollup.waiting', count: 1 },
+    ]);
+  });
+
+  it('says "N working" when nothing is waiting, and "calm" only when nothing is happening', () => {
+    expect(rollupParts(waitRollup(of('working', 'working', 'idle')))).toEqual([
+      { key: 'rail.workingSummary', count: 2 },
+    ]);
+    expect(rollupParts(waitRollup(of('idle', 'suspended', 'not-started')))).toEqual([{ key: 'rail.calm' }]);
   });
 });

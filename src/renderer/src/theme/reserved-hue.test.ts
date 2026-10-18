@@ -162,7 +162,6 @@ describe('who paints with the "needs you" colours', () => {
     'components/QuestionPanel.tsx',
     'components/SessionsRail.tsx',
     'components/SessionsStrip.tsx',
-    'components/StripGroupEntry.tsx',
     'extensibility/status-bar-items.tsx',
     'theme/tokens.css',
     'theme/tokens.ts',

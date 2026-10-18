@@ -75,8 +75,8 @@ describe('the AI badge (#1293)', () => {
     resetAisStoreForTests(WITH_LIST);
     const badge = await render(<AiBadge providerId="claude-code" status="idle" needsYou={false} />);
     expect(badge.getAttribute('role')).toBe('img');
-    expect(badge.getAttribute('aria-label')).toBe('Claude Code, idle');
-    expect(badge.getAttribute('title')).toBe('Claude Code, idle');
+    expect(badge.getAttribute('aria-label')).toBe('Claude Code, calm');
+    expect(badge.getAttribute('title')).toBe('Claude Code, calm');
     // a MASK of the catalog's file, painted in Claude's own ink (#1326): an
     // <img> of a currentColor SVG cannot inherit a colour and drew black
     expect(badge.querySelector('img')).toBeNull();
@@ -109,10 +109,14 @@ describe('the AI badge (#1293)', () => {
     const ring = badge.querySelector<HTMLElement>('[data-ai-ring]')!;
     expect(ring.style.border).toContain('var(--status-needs-permission-ink)');
     // counted but not itself a needs-you status (a working session with an
-    // outstanding event): `attentionPaint` lights it in the `done` ramp, and
-    // the ring follows the rule rather than the raw status
+    // outstanding event): `attentionPaint` lights it in the `waiting` ramp
+    // (`done` until #1351), and the ring follows the rule, not the raw status
     badge = await render(<AiBadge providerId="claude-code" status="working" needsYou />);
-    expect(badge.getAttribute('data-ring')).toBe('done');
+    expect(badge.getAttribute('data-ring')).toBe('waiting');
+    // a finished turn nobody is counting any more is still WAITING (#1351):
+    // the gold ring, not the green one
+    badge = await render(<AiBadge providerId="claude-code" status="done" needsYou={false} />);
+    expect(badge.getAttribute('data-ring')).toBe('waiting');
     // not counted: the status's own ramp
     badge = await render(<AiBadge providerId="claude-code" status="crashed" needsYou={false} />);
     expect(badge.getAttribute('data-ring')).toBe('crashed');
@@ -142,7 +146,7 @@ describe('the AI badge (#1293)', () => {
   it('draws the initial for an AI with no icon, as CSS and not as text', async () => {
     resetAisStoreForTests(WITH_LIST);
     const badge = await render(<AiBadge providerId="fake-acp" status="idle" needsYou={false} />);
-    expect(badge.getAttribute('aria-label')).toBe('Fake ACP, idle');
+    expect(badge.getAttribute('aria-label')).toBe('Fake ACP, calm');
     const glyph = badge.querySelector<HTMLElement>('[data-ai-icon="initial"]')!;
     expect(glyph.getAttribute('data-initial')).toBe('F');
     // a tab's or a row's textContent is the session's name; the badge adds none
@@ -180,7 +184,7 @@ describe('the AI badge (#1293)', () => {
     const badge = await render(<AiBadge providerId="codex" status="needs-input" needsYou />);
     expect(badge.getAttribute('data-ring')).toBe('needs-input');
     // the provider id is the best name there is
-    expect(badge.getAttribute('aria-label')).toBe('codex, needs input');
+    expect(badge.getAttribute('aria-label')).toBe('codex, question');
   });
 
   it('says "AI" for a card that has no provider yet', async () => {

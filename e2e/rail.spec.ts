@@ -33,6 +33,12 @@ import {
 } from './fixtures/app';
 
 const rail = (w: Page) => w.locator('nav');
+/** the group header's roll-up (#1351): "1 approval", "1 working", "calm" */
+const summaryOf = (w: Page, title: string) =>
+  rail(w)
+    .locator('[data-group-card]')
+    .filter({ has: w.locator('.rail-row', { hasText: title }) })
+    .locator('[data-rail-group-summary]');
 const row = (w: Page, title: string) =>
   rail(w).locator('[draggable="true"]', { hasText: title }).first();
 
@@ -66,10 +72,13 @@ test.describe('sessions rail', () => {
   test('a session that needs you is loud; a calm one stays plain', async () => {
     const { w, title } = await oneSessionInAGroup();
 
-    // calm to start: no attention tint, and the header summary says so
+    // calm to start: no attention tint, and the header summary says so (the
+    // row says "calm" too since #1351 — a session that has not had a turn)
     const r = row(w, title);
     await expect(r).toHaveAttribute('data-needs-you', 'false');
-    await expect(rail(w).getByText('calm')).toBeVisible();
+    await expect(summaryOf(w, title)).toHaveText('calm');
+    await expect(r.locator('[data-rail-state]')).toHaveText('calm');
+    await expect(r).not.toHaveAttribute('data-wait-state', /./);
     await expect(rail(w).getByText('need you')).toHaveCount(0);
 
     // A REAL held permission, not a Notification nudge (#952) — see the file
@@ -88,7 +97,9 @@ test.describe('sessions rail', () => {
     // row button's accessible name, which is asserted here rather than dropped:
     // nothing was lost, it was relocated, and this pair is what says so.
     await expect(r).toHaveAttribute('data-session-status', 'needs-permission', { timeout: 15_000 });
-    await expect(r.locator('[data-rail-state]')).toHaveText('needs you');
+    // "approval" since #1351, with its time left beside it once the clock is read
+    await expect(r.locator('[data-rail-state]')).toHaveText(/^approval( · <\d+[ms])?$/);
+    await expect(r).toHaveAttribute('data-wait-state', 'approval');
     await expect(r.locator('[data-rail-open]')).toHaveAttribute(
       'aria-label',
       /Wants permission to run/
@@ -104,9 +115,10 @@ test.describe('sessions rail', () => {
       .poll(() => r.locator('span[aria-hidden]').first().evaluate((el) => getComputedStyle(el).width))
       .toBe('4px');
 
-    // ...and both counters agree with the row, because one rule feeds all three
-    await expect(rail(w).getByText('1 need you')).toHaveCount(2); // group summary + footer
-    await expect(rail(w).getByText('calm')).toHaveCount(0);
+    // ...and the footer counts it; the group's header says WHAT it is waiting
+    // for (#1351) rather than "need you"
+    await expect(rail(w).getByText('1 need you')).toHaveCount(1); // the footer
+    await expect(summaryOf(w, title)).toHaveText('1 approval');
   });
 
   test('answering the session puts the rail back to calm', async () => {
@@ -114,20 +126,25 @@ test.describe('sessions rail', () => {
     const post = await hookPoster(a);
     await post(title, { hook_event_name: 'Stop' }); // finished, unreviewed
     const r = row(w, title);
-    await expect(r).toHaveAttribute('data-session-status', 'done', { timeout: 15_000 });
+    // a finished turn is WAITING for you since #1351, in the gold
+    await expect(r).toHaveAttribute('data-session-status', 'waiting', { timeout: 15_000 });
+    await expect(r).toHaveAttribute('data-wait-state', 'waiting');
     // …and the same relocation as above (#877): the short word on the row, the
     // whole sentence in its accessible name.
-    await expect(r.locator('[data-rail-state]')).toHaveText('done');
+    await expect(r.locator('[data-rail-state]')).toHaveText('waiting for you');
     await expect(r.locator('[data-rail-open]')).toHaveAttribute(
       'aria-label',
-      /Finished — review changes/
+      /Finished its turn — waiting for you/
     );
+    await expect(summaryOf(w, title)).toHaveText('1 waiting');
 
     // back to work: the attention treatment must clear completely, or the rail
     // cries wolf and the whole panel stops meaning anything
     await post(title, { hook_event_name: 'UserPromptSubmit' });
     await expect(r).toHaveAttribute('data-needs-you', 'false', { timeout: 15_000 });
-    await expect(rail(w).getByText('calm')).toBeVisible();
+    // working again: the header says so, not "calm" (#1196) and not "waiting"
+    await expect(summaryOf(w, title)).toHaveText('1 working');
+    await expect(r).not.toHaveAttribute('data-wait-state', /./);
     await expect(rail(w).getByText('need you')).toHaveCount(0);
   });
 
@@ -146,8 +163,10 @@ test.describe('sessions rail', () => {
 
     const r = row(w, title);
     await expect(r).toHaveAttribute('data-needs-you', 'true', { timeout: 15_000 });
-    // they agree BEFORE: the group summary and the footer, in words and as a number
-    await expect(rail(w).getByText('1 need you')).toHaveCount(2);
+    // the footer counts it, in words and as a number; the header says what the
+    // session is waiting for (#1351)
+    await expect(rail(w).getByText('1 need you')).toHaveCount(1);
+    await expect(summaryOf(w, title)).toHaveText('1 approval');
     await expect(w.locator('nav [data-rail-need]')).toHaveAttribute('data-rail-need', '1');
 
     await openEventsDrawer(w);
@@ -161,8 +180,10 @@ test.describe('sessions rail', () => {
     // ...and they follow it down. This is the regression: before #621 they
     // stayed at 1 for as long as the session lived.
     await expect(rail(w).getByText('need you')).toHaveCount(0, { timeout: 15_000 });
-    await expect(rail(w).getByText('calm')).toBeVisible();
     await expect(w.locator('nav [data-rail-need]')).toHaveCount(0);
+    // ...while the header, which says the STATE, still says it: the approval
+    // is held whether or not it is on your plate (#1351)
+    await expect(summaryOf(w, title)).toHaveText('1 approval');
 
     // The row follows the count down too (#1137): "0 need you" over a lit row
     // is the same disagreement from the other side. What does NOT move is what
