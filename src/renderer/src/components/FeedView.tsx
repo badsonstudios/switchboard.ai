@@ -1999,6 +1999,9 @@ export function FeedView(props: {
         liveAutonomy={props.liveAutonomy}
         model={props.model}
         status={props.status}
+        // #1340: a held approval or question keeps Stop on screen — including
+        // one the grouped prompt is showing instead of this card (P2-E9-11)
+        requestHeld={!!props.approval || !!props.approvalBatched}
         controlsLock={props.controlsLock}
         transport={props.transport}
         onCycleAutonomy={props.onCycleAutonomy}
@@ -2545,6 +2548,7 @@ function Composer({
   liveAutonomy,
   model,
   status,
+  requestHeld,
   controlsLock,
   transport,
   onCycleAutonomy,
@@ -2569,6 +2573,14 @@ function Composer({
   liveAutonomy?: string;
   model?: string;
   status?: string;
+  /**
+   * An approval or a question is up on this card (#1340). Stop stays offered
+   * while it is: a held request pins the card at `needs-permission` (#1258),
+   * and the CLI handles an interrupt there correctly — measured (#1268), it
+   * takes the request back and ends the turn. The bar closes on THAT, never
+   * on the click.
+   */
+  requestHeld?: boolean;
   /** #903: null means the Clear/Compact buttons work; otherwise it says why
    *  they do not. The CARD's answer, never re-derived from `status`. */
   controlsLock: SessionControlLock;
@@ -4579,7 +4591,7 @@ function Composer({
               : undefined,
         }}
       />
-      {status === 'working' &&
+      {(status === 'working' || requestHeld) &&
         withReason(
           noInterrupt,
           <button

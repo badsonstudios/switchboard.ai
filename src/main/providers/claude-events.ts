@@ -268,6 +268,18 @@ function messageEvent(role: 'assistant' | 'user', m: Record<string, unknown>): E
   ];
 }
 
+/**
+ * The `activity` for an output frame, marked `sidechain` when a subagent sent
+ * it (#1340). In the #1268 capture a BACKGROUND subagent's `assistant` frame
+ * arrived after its parent turn's `result`: it is the session working, but it
+ * is not a turn, and no `result` will come for it.
+ */
+function activityOf(type: string, m: Record<string, unknown>): EngineEvent {
+  return m.parent_tool_use_id != null
+    ? { type: 'activity', label: labelOf(type, m), sidechain: true }
+    : { type: 'activity', label: labelOf(type, m) };
+}
+
 function finite(n: unknown): number | undefined {
   return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
 }
@@ -374,11 +386,11 @@ export function translateClaudeFrame(
     case 'stream_event':
       // Output is arriving: an activity for EVERY frame (sidechain included —
       // a subagent working is the session working), then whatever it means
-      // for the Feed.
-      return [{ type: 'activity', label: labelOf(type, m) }, ...streamEventContent(m)];
+      // for the Feed. A sidechain one says so (#1340): it does not open a turn.
+      return [activityOf(type, m), ...streamEventContent(m)];
 
     case 'assistant':
-      return [{ type: 'activity', label: labelOf(type, m) }, ...messageEvent('assistant', m)];
+      return [activityOf(type, m), ...messageEvent('assistant', m)];
 
     case 'user':
       // Our own replay (`--replay-user-messages`) and tool results. Content,

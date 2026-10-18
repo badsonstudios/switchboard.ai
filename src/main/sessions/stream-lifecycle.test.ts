@@ -808,6 +808,43 @@ describe("the /clear tag comes from `conversation_reset`, not an id change (#753
 //
 // 51 of 305 held requests went that way (16 of them questions), and every
 // "N need you" readout hangs off this status by way of the Events list.
+// #1340 -- where a WITHDRAWN request leaves the card: wherever the main turn is.
+describe('a withdrawn request (#1340)', () => {
+  const withdrawn = { kind: 'permission-withdrawn' } as const;
+
+  for (const waiting of ['needs-permission', 'needs-input'] as const) {
+    it(`${waiting}: a running turn goes back to working`, () => {
+      expect(transition(waiting, withdrawn, { turn: 'open' }).status).toBe('working');
+    });
+    it(`${waiting}: with the last turn over, done`, () => {
+      expect(transition(waiting, withdrawn, { turn: 'closed' })).toMatchObject({
+        status: 'done',
+        note: 'withdrawn-no-turn',
+      });
+    });
+    it(`${waiting}: with no turn ever run, idle`, () => {
+      expect(transition(waiting, withdrawn, { turn: 'none' }).status).toBe('idle');
+    });
+    // "nobody can say" is the behaviour every release before this one had
+    it(`${waiting}: nobody can say, working`, () => {
+      expect(transition(waiting, withdrawn).status).toBe('working');
+    });
+    it(`${waiting}: another request still held keeps it waiting`, () => {
+      expect(transition(waiting, withdrawn, { held: true, turn: 'closed' })).toMatchObject({
+        status: waiting,
+        note: 'request-still-held',
+      });
+    });
+  }
+
+  it('a status that was not waiting is left alone', () => {
+    for (const s of ['working', 'idle', 'done', 'starting'] as const) {
+      expect(transition(s, withdrawn, { turn: 'closed' }).changed).toBe(false);
+    }
+    expect(transition('crashed', withdrawn).status).toBe('crashed');
+  });
+});
+
 describe('a held request pins the wait (#1258)', () => {
   const held = { held: true };
 
@@ -1046,11 +1083,15 @@ describe('a held request pins the wait (#1258)', () => {
     // subagent asked 137 ms AFTER its parent turn's `result`, and that request
     // was genuinely waiting. Dropping holds at turn end would have denied it.
     //
-    // The measured sequence, in order. What the STATUS does after the cancel is
-    // deliberately not asserted: `permission-resolved` walks it to `working`
-    // and the CLI sends no `result` after it, a known gap reported with #1268
-    // and not reachable from the UI today (Stop is not offered while held).
-    it("a request raised after the turn's result is held and counted, until the CLI takes it back", async () => {
+    // The measured sequence, in order (`captures/subagent.json`), including
+    // the subagent's own `assistant` frame between the `result` and its request
+    // -- which walks the card to `working`, so "the status before it asked"
+    // could not have told this apart from a running turn.
+    //
+    // #1340: and the status is ASSERTED now. The CLI sends no `result` after
+    // the cancel -- there is no turn left to end -- so `working` here was for
+    // good. With no main turn running, a withdrawal ends at `done`.
+    it("a request raised after the turn's result is held and counted, until the CLI takes it back, and the card ends done", async () => {
       const { mgr, perms, feed } = wired();
       const rec = mgr.create(identity);
       await tick();
@@ -1059,16 +1100,80 @@ describe('a held request pins the wait (#1258)', () => {
       stream.emit(rec.id, { type: 'result', subtype: 'success' });
       expect(mgr.get(rec.id)!.status).toBe('done');
 
-      // 137 ms later in the capture: the background subagent asks
+      // the background subagent's own frames: it is the session working
+      stream.emit(rec.id, { type: 'assistant', message: { content: [] }, parent_tool_use_id: 'toolu_bg' });
+      stream.emit(rec.id, { type: 'system', subtype: 'task_progress' });
+      expect(mgr.get(rec.id)!.status).toBe('working');
+
+      // 137 ms after the result in the capture: the background subagent asks
       stream.emit(rec.id, ask('sub-1', 'Write'));
       expect(mgr.get(rec.id)!.status).toBe('needs-permission');
       expect(kinds(feed)).toContain('needs-permission');
       expect(perms.pendingRequests().map((r) => r.requestId)).toEqual([`stream:${rec.id}:sub-1`]);
 
-      // the interrupt's cancel is what lets it go
+      // what the interrupt brought back, measured: the cancel, the task
+      // killed, the ack, the subagent's `user` messages -- and NO result
       stream.emit(rec.id, { type: 'control_cancel_request', request_id: 'sub-1' });
+      stream.emit(rec.id, { type: 'system', subtype: 'background_tasks_changed' });
+      stream.emit(rec.id, { type: 'system', subtype: 'task_updated' });
+      stream.emit(rec.id, { type: 'system', subtype: 'task_notification' });
+      stream.emit(rec.id, {
+        type: 'control_response',
+        response: { subtype: 'success', request_id: 'int-1', response: { still_queued: [] } },
+      });
+      stream.emit(rec.id, {
+        type: 'user',
+        message: { role: 'user', content: [{ type: 'tool_result', content: 'rejected', is_error: true }] },
+        parent_tool_use_id: 'toolu_bg',
+      });
       expect(perms.holdsRequestFor(rec.id)).toBe(false);
       expect(kinds(feed)).not.toContain('needs-permission');
+      expect(mgr.get(rec.id)!.status).toBe('done');
+    });
+
+    // #1340: the same withdrawal MID-turn still walks to `working` -- the
+    // turn's own `result` is what ends it, ~20 ms later (measured)
+    it('withdrawn mid-turn: working until the turn ends, never done early', async () => {
+      const { mgr } = wired();
+      const rec = mgr.create(identity);
+      await tick();
+      mgr.apply(rec.id, { kind: 'prompt-sent' });
+      stream.emit(rec.id, ask('held-1', 'Write'));
+      stream.emit(rec.id, { type: 'control_cancel_request', request_id: 'held-1' });
+      expect(mgr.get(rec.id)!.status).toBe('working');
+      stream.emit(rec.id, { type: 'result', subtype: 'error_during_execution', is_error: true });
+      expect(mgr.get(rec.id)!.status).toBe('done');
+    });
+
+    // #1340: a prompt sent while a post-turn request is held opens a turn
+    // beside it, and a withdrawal must not call that turn finished. (That the
+    // CLI owes that prompt a `result` after an INTERRUPT is unmeasured: #1268
+    // measured the queued prompt running once the hold was ANSWERED. See
+    // `SessionManager.trackTurn`.)
+    // #1340: a turn we did not send (a resumed conversation continuing) is
+    // opened by the MAIN conversation's output, not only by our prompt
+    it('main output with no prompt of ours opens a turn: the withdrawal leaves it working', async () => {
+      const { mgr } = wired();
+      const rec = mgr.create(identity);
+      await tick();
+      stream.emit(rec.id, { type: 'assistant', message: { content: [] }, parent_tool_use_id: null });
+      expect(mgr.get(rec.id)!.status).toBe('working');
+      stream.emit(rec.id, ask('held-1', 'Write'));
+      stream.emit(rec.id, { type: 'control_cancel_request', request_id: 'held-1' });
+      expect(mgr.get(rec.id)!.status).toBe('working');
+    });
+
+    it('a prompt sent while the late request is held: the withdrawal leaves it working', async () => {
+      const { mgr } = wired();
+      const rec = mgr.create(identity);
+      await tick();
+      mgr.apply(rec.id, { kind: 'prompt-sent' });
+      stream.emit(rec.id, { type: 'result', subtype: 'success' });
+      stream.emit(rec.id, ask('sub-1', 'Write'));
+      mgr.apply(rec.id, { kind: 'prompt-sent' }); // pinned: the card still waits
+      expect(mgr.get(rec.id)!.status).toBe('needs-permission');
+      stream.emit(rec.id, { type: 'control_cancel_request', request_id: 'sub-1' });
+      expect(mgr.get(rec.id)!.status).toBe('working');
     });
 
     it('the session next door is untouched by any of it', async () => {

@@ -511,7 +511,9 @@ The box at the bottom sends straight to the real Claude Code session:
   all of it, the conversation is what yields: the box keeps a line to type in
   and any buttons waiting for an answer stay on screen.
 - While Claude is working, the send button becomes a **■ stop** button, which
-  interrupts the current turn.
+  interrupts the current turn. It is also there while an approval or a
+  question is waiting for you: pressing it then stops the turn and closes the
+  bar without answering it.
 - Typing `/` at the start of a line opens command autocomplete — see
   [Slash commands](05-slash-commands.md).
 - Typing **`@`** opens a list of your other open sessions, anywhere in your

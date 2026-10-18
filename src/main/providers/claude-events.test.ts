@@ -123,12 +123,13 @@ describe('stream_event frames', () => {
   });
 
   // #977: a subagent's words come from its own transcript, never the stream
+  // ...and #1340: that activity is marked as a subagent's, so it opens no turn
   it('a SIDECHAIN frame is activity and nothing else', () => {
     expect(
       translateClaudeFrame(
         se({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'x' } }, { parent_tool_use_id: 'tu-9' })
       )
-    ).toEqual([activity]);
+    ).toEqual([{ ...activity, sidechain: true }]);
   });
 });
 
@@ -171,7 +172,7 @@ describe('assistant and user messages', () => {
 
   it('a sidechain message carries no content (#977); an assistant one is still activity', () => {
     expect(translateClaudeFrame(assistant({ parent_tool_use_id: 'tu-1' }))).toEqual([
-      { type: 'activity', label: 'assistant' },
+      { type: 'activity', label: 'assistant', sidechain: true },
     ]);
     expect(translateClaudeFrame({ type: 'user', parent_tool_use_id: 'tu-1' })).toEqual([]);
   });

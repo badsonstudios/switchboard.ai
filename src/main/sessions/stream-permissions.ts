@@ -1487,7 +1487,11 @@ export class StreamPermissions {
     this.pending.delete(requestId);
     if (p.timer) clearTimeout(p.timer);
     if (!this.holdsAnotherFor(sessionId, requestId)) {
-      this.applyStatus(sessionId, { kind: 'permission-resolved' });
+      // NOT `permission-resolved` (#1340): nobody answered, so nothing will
+      // run because of it — and with no main turn running (a background
+      // subagent's request, raised after its parent's `result`), `working`
+      // would be for good. The state machine decides where it goes.
+      this.applyStatus(sessionId, { kind: 'permission-withdrawn' });
     }
     this.log.info('stream permission withdrawn by the CLI', { requestId, sessionId });
     this.notifyResolved(requestId);

@@ -49,6 +49,13 @@ import type { PlanLimitWindow } from '../../shared/usage-report';
 export interface ActivityEvent {
   type: 'activity';
   label: string;
+  /**
+   * The output is a SUBAGENT's, not the main conversation's (#1340) — for
+   * Claude, a frame carrying a `parent_tool_use_id`. Status treats it like any
+   * output; only the turn tracking ignores it (no turn end is owed for it).
+   * Absent means the main conversation's.
+   */
+  sidechain?: true;
 }
 
 /** The engine named the native conversation this turn runs in (the resume id). */

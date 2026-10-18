@@ -127,11 +127,22 @@ of sessions:
 It stops the moment you answer, and the moment the request is declined. It also
 stops if Claude Code takes the request back itself (it does that when its turn
 is interrupted): the bar closes on its own and the session no longer counts as
-needing you. The **Stop** button is not shown while a bar is up, so answering
-is how you end the wait. A request from a helper Claude started in the
-background can arrive after the main reply has finished. That one is genuinely
-waiting, and it is handled like any other: it waits for your answer, and an
-approval is still declined for you when its five minutes run out.
+needing you.
+
+**You can also press Stop (■) while a bar is up.** It sits beside the send
+button, as it does while Claude is working. Pressing it interrupts the turn:
+Claude Code takes the request back, the bar (or the question) closes, and the
+session ends up finished rather than waiting. Nothing you were asked about
+runs. The bar closes because Claude Code said it no longer needs an answer,
+not because you clicked, so if it ever stays open, Claude Code has not let go
+yet.
+
+A request from a helper Claude started in the background can arrive after the
+main reply has finished. That one is genuinely waiting, and it is handled like
+any other: it waits for your answer, and an approval is still declined for you
+when its five minutes run out. Pressing Stop on it stops the helper, and the
+session goes back to finished (it used to be left saying "working" with nothing
+running).
 
 **If your system is set to reduce motion**, nothing pulses. The row is drawn
 with the outline at its strongest, held, and the outline gets thicker in the
