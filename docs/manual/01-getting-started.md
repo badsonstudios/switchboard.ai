@@ -35,12 +35,15 @@ yet).
    nothing open yet, the middle of the window also says **No sessions open**
    and has a **Start a session** button that does the same thing.)
 2. Pick the project folder you want Claude to work in.
-3. A card appears and Claude starts up inside it. The first moments show
+3. Name the session. The box comes up already filled in with the folder's
+   name, so **Enter** keeps it; type over it to call the session something
+   else.
+4. A card appears and Claude starts up inside it. The first moments show
    *starting*; once it's ready the status changes to *idle*.
-4. Type into the box at the bottom of the card and press **Enter**.
+5. Type into the box at the bottom of the card and press **Enter**.
 
 You can also drag a folder from your file manager straight onto the window —
-same result, no dialog.
+same result, without the folder picker.
 
 ## What you're looking at
 

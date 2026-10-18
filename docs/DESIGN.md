@@ -4764,7 +4764,8 @@ to every project — the CLI's own default, and the reason the common case stays
 short. Picking opens a **new** card resumed into that conversation in its own
 folder; the card the user clicked from is untouched, because "go back to a
 previous session" should never cost the one they are in. Two entry points: the
-card's chrome, and the `+ session` flow after a folder is chosen. v1 is search
+card's chrome, and the `+ session` flow after a folder is chosen *(the second
+removed 2026-10-15, #1282 — see below)*. v1 is search
 plus description; branch/worktree filters, rename and fork nesting wait.
 
 **⚠️ REVERSED FOR THE CARD'S OWN BUTTON (owner, 2026-10-04, #1090).** *"Whenever
@@ -4800,10 +4801,26 @@ its price was a second session nobody asked for. So:
 - **A pick from another folder still opens a new card.** A card is bound to its
   folder.
 - **The `+ session` picker is unchanged** — there is no card yet to open it in.
+  *(Removed altogether 2026-10-15, #1282 — see below.)*
 - It is its own channel (`sessions:switchConversation`), not a flag on
   `sessions:create`: the start plan's rule that a `requestedConversationId` is
   honoured only for a card with no conversation of its own still stands, so no
   session start can move a card as a side effect.
+
+**⚠️ THE `+ SESSION` ENTRY POINT IS GONE (owner, 2026-10-15, #1282).** *"Opening
+a new session should always start a fresh conversation"* — and ask for its name,
+pre-filled with the name it would get anyway. So the second entry point above is
+removed: no human "new session" gesture (`+ session` in the list or strip, the
+empty workspace's button, Mod+N / the palette, a popped-out card's
+＋, a dropped folder, a group's ⊕) offers history any more; each puts up a small
+naming dialog instead, and Cancel starts nothing. The card's own history button
+is untouched and is now the one way back to an earlier conversation. The name
+shown is main's: `sessions:create`'s de-dup (first free `-N` from `-2`, against
+every saved record, case-insensitive) moved into `main/sessions/session-title.ts`
+and is also served by `sessions:suggestTitle`, so the dialog pre-fills — and
+warns about a typed name that is taken — with exactly the name the start will
+give. Paths with nobody at the keyboard (dispatch, `send_to_session`, restore,
+the seed seam) are not asked.
 
 **Boundaries.** An entry that cannot be resumed — folder gone, transcript
 unreadable — explains itself rather than failing on click (the rule §5.4's

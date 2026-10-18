@@ -21,8 +21,28 @@ Three ways, all equivalent:
 - Click the **⊕** on a group header to start one inside that group (see
   [Organizing your workspace](07-workspace.md)).
 
-If you open a second session in a folder you already have open, switchboard
-adds a number to the name so you can tell them apart.
+Whichever way you start it, switchboard then asks **what to call the
+session**. The box is already filled in with the name it would get anyway — the
+folder's name — and the whole name is selected, so:
+
+- press **Enter** (or **OK**) to keep it,
+- or just start typing to replace it, then press **Enter**.
+
+**Esc**, **Cancel**, or clicking outside the box starts nothing.
+
+If you already have a session with that name — a second session in the same
+folder, say — the box is filled in with the name plus a number, like
+`my-project-2`, so you can tell them apart. If you type a name that is already
+taken, the box says so and shows the name the session will get instead (your
+name with a number on the end); **OK** still works. Names count as the same
+whatever their capitals, and a session you have closed but switchboard still
+remembers keeps its name.
+
+A new session **always starts a fresh conversation**. To pick up one you had
+before, start the session and then use its **🕘** button (below).
+
+If you have popped a session out into its own window, the **＋** in its header
+starts a new one in that window, and the name is asked for there too.
 
 ## Opening a conversation you had before
 
@@ -96,11 +116,6 @@ each one belongs to shown beside it. A conversation from a **different folder**
 is the one case that opens a new card — a session belongs to its folder and
 cannot be moved to another one — and the session you clicked from carries on
 untouched.
-
-You are offered the same list when you start a session with **+ session**, right
-after you pick a folder — but only when that folder has conversations in it
-already. **Start a new conversation instead** at the bottom skips it, and so
-does `Esc`.
 
 Two things the list will tell you rather than hide:
 

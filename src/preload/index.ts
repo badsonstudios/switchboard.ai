@@ -43,6 +43,7 @@ import type {
   SessionRecordWire,
   SessionSummary,
   StatusChange,
+  SuggestedTitle,
 } from '../shared/sessions';
 import type { BriefingTextResult, SwitchAiResult } from '../shared/ai-switch';
 import type {
@@ -303,6 +304,14 @@ const api = {
     pickFolder: (popoutGroupId?: string): Promise<string | null> =>
       ipcRenderer.invoke('sessions:pickFolder', popoutGroupId),
     isDirectory: (p: string): Promise<boolean> => ipcRenderer.invoke('sessions:isDirectory', p),
+    /**
+     * The name a new session asking for `wanted` would be given — `wanted`, or
+     * `wanted-N` when that is taken — and whether to ask the user at all
+     * (#1282). Main's own rule, so the naming dialog shows the real final name.
+     * Null for a blank or non-string `wanted`.
+     */
+    suggestTitle: (wanted: string): Promise<SuggestedTitle | null> =>
+      ipcRenderer.invoke('sessions:suggestTitle', wanted),
     /**
      * Start (or `--resume`) the live session for a card.
      *

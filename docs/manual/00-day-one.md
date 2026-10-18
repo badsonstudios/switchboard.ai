@@ -74,11 +74,15 @@ a version, and restart switchboard.
    nothing open yet, the middle of the window also says **No sessions open**
    and has a **Start a session** button that does the same thing.)
 2. Pick your project folder.
-3. A card appears. It says *starting* for a moment, then *idle*.
-4. Type what you want into the box at the bottom of the card and press
+3. A small box asks what to call the session. It is already filled in with the
+   folder's name, so just press **Enter** to keep it, or type a name of your
+   own first.
+4. A card appears. It says *starting* for a moment, then *idle*.
+5. Type what you want into the box at the bottom of the card and press
    **Enter**.
 
-Dragging a folder from Explorer onto the window does the same thing.
+Dragging a folder from Explorer onto the window does the same thing (it asks
+for the name too).
 
 A **session** is one conversation in one folder. Want a second task going in the
 same project, or in a different one? Click **+ session** again. Each gets its own

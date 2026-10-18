@@ -313,17 +313,6 @@ describe('SessionHistoryDialog', () => {
     expect(h2.picked).toHaveLength(1);
   });
 
-  it('offers "start a new conversation instead" ONLY when that is a real option', async () => {
-    // The card-header entry point has no such escape to offer — the user is not
-    // mid-gesture there, they are browsing.
-    await mount();
-    expect(host.querySelector('[data-history-new]')).toBeNull();
-    const fresh = vi.fn();
-    await mount({ onNewConversation: fresh });
-    await click(host.querySelector('[data-history-new]'));
-    expect(fresh).toHaveBeenCalledOnce();
-  });
-
   it('carries listbox semantics, which the composer popup still lacks (#828)', async () => {
     await mount();
     const list = host.querySelector('[data-history-rows]')!;

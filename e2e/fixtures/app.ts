@@ -650,6 +650,7 @@ export async function launchSecondInstance(
   delete env.SWITCHBOARD_AUTOCLOSE;
   delete env.SWITCHBOARD_TRANSPORT; // the same scrub `launchApp` does (#381)
   env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
+  env.SWITCHBOARD_NO_NAME_PROMPT = '1'; // the same as `launchApp` (#1282)
   env.SWITCHBOARD_MUTE_AUDIO = '1'; // the same scrub `launchApp` does (P2-E14-05a)
   env.SWITCHBOARD_FAKE_PROVIDER = '1';
   applyActivationMode(env); // the same as `launchApp`, so the env matches (#1332)
@@ -777,6 +778,12 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // so the one spec that exercises the dialog can turn it back off by passing
   // `SWITCHBOARD_NO_QUIT_CONFIRM: ''` (see quit-confirm.spec.ts).
   env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
+  // No naming dialog in front of every new session (#1282). Dozens of specs
+  // start sessions through `+ session` and the folder drop, and each would
+  // otherwise have to answer a dialog that has nothing to do with what it
+  // tests. Same shape as the quit confirm above: set BEFORE `opts.env`, so
+  // `session-name.spec.ts` turns it back off with `SWITCHBOARD_NO_NAME_PROMPT: ''`.
+  env.SWITCHBOARD_NO_NAME_PROMPT = '1';
   // No spec may make a NOISE (P2-E14-05a). Per-session cues and spoken
   // announcements reach a real speaker through the renderer, and this suite
   // runs on the machine its owner is working at — a run that chimed eight

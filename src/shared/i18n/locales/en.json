@@ -363,7 +363,6 @@
     "truncated": "Showing the {count} most recent. Some projects were skipped.",
     "lastActive": "Last active {when}",
     "openFailed": "That conversation couldn't be opened. It may have been deleted, or its folder may be gone.",
-    "newConversation": "Start a new conversation instead",
     "switchBusy": "This session is in the middle of something. Wait for it to finish or answer what it is asking, then pick again.",
     "stopTitle": "Stop this session?",
     "stopWorking": "This session is working. Opening “{name}” here stops it, and what it is doing right now is lost.",
@@ -1644,6 +1643,15 @@
     "switchBack": "Switch back to {ai}",
     "switchBackHint": "Put this card back on {ai}. It picks up the conversation it had there.",
     "switchBackFreshHint": "Put this card back on {ai}. It had no conversation there, so it starts a new one."
+  },
+  "nameSession": {
+    "title": "Name the new session",
+    "folder": "in {folder}",
+    "label": "Session name",
+    "taken": "That name is taken, so this session will be called “{name}”.",
+    "blank": "A session needs a name.",
+    "ok": "OK",
+    "cancel": "Cancel"
   },
   "model": {
     "title": "Model",
