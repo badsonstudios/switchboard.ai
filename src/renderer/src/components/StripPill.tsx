@@ -16,9 +16,10 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailSession } from '../model/types';
-import { attentionPaint, presentStatus } from '../lib/rail-view';
-import { approvalAttrs, approvalHint, NO_CARDS } from '../lib/approval-watch';
+import { attentionPaint, presentStatus, waitPaint, WAIT_WASH } from '../lib/rail-view';
+import { approvalAttrs, approvalHint, NO_APPROVAL, NO_CARDS } from '../lib/approval-watch';
 import { useApprovalWatch } from '../lib/use-approval-watch';
+import { useShownStatus } from '../lib/use-shown-status';
 import { tint } from '../lib/tint';
 import { sessionSpokenName } from './SessionRow';
 import { AiBadge } from './AiBadge';
@@ -48,29 +49,39 @@ export function StripPill(props: {
   dropEdge?: 'before' | 'after';
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const s = props.session;
+  // the status as it is SHOWN: a held question says "question", not
+  // "approval", though main gives both the same status (#1351)
+  const shown = { ...props.session, status: useShownStatus(props.session.id, props.session.status) };
+  const s = shown;
   const p = presentStatus(s.status);
   // WHO NEEDS YOU is the count's own answer (#1137), not the status's: a pill
   // is filled exactly when its session is one of the N in the line above.
   const paint = attentionPaint(s.status, props.needsYou, props.finished);
   // #1202: the same cue the row in the left list wears, from the same rule
   const approval = useApprovalWatch(
-    paint.lit && !paint.finished && s.status === 'needs-permission' ? [s.id] : NO_CARDS
+    s.status === 'needs-permission' ? [s.id] : NO_CARDS
   );
+  // ...the CLOCK is read for every held approval (#1351: a dismissed one is
+  // still held, and its word says how long it has left), but the PULSE stays
+  // the count's (#1202): it never claims an approval the count has dropped
+  const pulse = paint.lit && !paint.finished ? approval : NO_APPROVAL;
+  // #1351: washed for its STATE — approval, question, waiting — whether or not
+  // the count is still on it. `paint.lit` keeps the bar and the bold name.
+  const wait = waitPaint(s.status, paint);
   const hue = `var(--status-${paint.token})`;
   const ink = `var(--status-${paint.token}-ink)`;
   const accent = s.accent ?? 'var(--faint)';
   const spoken = sessionSpokenName(t, s, props.pinned, props.waiting);
-  // a needy session outranks selection, and outranks being folded away: a pill
-  // that needs you is filled in whether its card is on screen or not
-  const fill = paint.lit
-    ? tint(hue, 14)
+  // a waiting session outranks selection, and outranks being folded away: a
+  // pill that is waiting on you is washed whether its card is on screen or not
+  const fill = wait.washed
+    ? tint(hue, WAIT_WASH)
     : props.selected
       ? tint(accent, 12)
       : props.folded
         ? 'transparent'
         : 'var(--rail-card)';
-  const edge = paint.lit ? hue : props.selected ? accent : 'var(--group-frame)';
+  const edge = wait.washed ? hue : props.selected ? accent : 'var(--group-frame)';
 
   return (
     <button
@@ -82,17 +93,18 @@ export function StripPill(props: {
       // leads to a row you can see, but it is the other count (#1219).
       data-needs-you={paint.lit && !paint.finished}
       data-finished={paint.finished ? 'true' : undefined}
-      {...approvalAttrs(approval)}
+      {...approvalAttrs(pulse)}
       // read back by the strip when it measures what is off each end
       data-strip-item-need={paint.lit && !paint.finished ? 1 : 0}
       data-session-status={p.token}
+      data-wait-state={wait.state}
       data-folded={props.folded}
       data-pinned={props.pinned}
       data-flash={props.flash ? 'true' : undefined}
       // the row's own words, plus the one fact only a pill carries
       aria-label={props.folded ? t('strip.pillFolded', { name: spoken }) : spoken}
       aria-current={props.selected ? 'true' : undefined}
-      title={approval.active ? approvalHint(t, approval) : props.folded ? t('strip.pillFoldedHint') : undefined}
+      title={pulse.active ? approvalHint(t, pulse) : props.folded ? t('strip.pillFoldedHint') : undefined}
       onClick={props.onFocus}
       onContextMenu={props.onContextMenu}
       {...props.dragProps}
@@ -156,7 +168,7 @@ export function StripPill(props: {
           // thickens when it needs you, as the row's does
           inlineSize: paint.lit ? 4 : 2.5,
           borderRadius: '0 2px 2px 0',
-          background: paint.lit ? hue : props.selected ? accent : tint(accent, 45),
+          background: wait.washed ? hue : props.selected ? accent : tint(accent, 45),
         }}
       />
       {props.nested && (
@@ -179,8 +191,8 @@ export function StripPill(props: {
               minInlineSize: 0,
               fontSize: 11.5,
               fontWeight: paint.lit ? 700 : 600,
-              // a folded-away session that is calm steps back; one that needs you does not
-              color: props.folded && !paint.lit ? 'var(--muted)' : 'var(--text)',
+              // a folded-away session that is calm steps back; one waiting on you does not
+              color: props.folded && !wait.washed ? 'var(--muted)' : 'var(--text)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',

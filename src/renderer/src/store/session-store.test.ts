@@ -1926,3 +1926,36 @@ describe('SessionStore — dispatch lineage and ephemerality (#951)', () => {
     expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['other', 'author', 'reviewer']);
   });
 });
+
+// #1351: a Direct session's question is held as a permission request, and the
+// surfaces say "question" rather than "approval" only when that is ALL the
+// card is holding — an approval beside it is the one with a clock.
+describe('hasHeldQuestion (#1351)', () => {
+  const held = (requestId: string, cardId: string, tool: string) => ({
+    requestId,
+    sessionId: 'live-' + cardId,
+    cardId,
+    tool,
+    input: {},
+  });
+
+  it('is true when the card holds only a question', () => {
+    const store = new SessionStore();
+    store.addPendingPermission(held('q1', 'c1', 'AskUserQuestion'));
+    expect(store.hasHeldQuestion('c1')).toBe(true);
+  });
+
+  it('is false when the card holds a question AND an approval', () => {
+    const store = new SessionStore();
+    store.addPendingPermission(held('q1', 'c1', 'AskUserQuestion'));
+    store.addPendingPermission(held('p1', 'c1', 'Bash'));
+    expect(store.hasHeldQuestion('c1')).toBe(false);
+  });
+
+  it('is false when nothing is held, and does not read another card', () => {
+    const store = new SessionStore();
+    expect(store.hasHeldQuestion('c1')).toBe(false);
+    store.addPendingPermission(held('q2', 'c2', 'AskUserQuestion'));
+    expect(store.hasHeldQuestion('c1')).toBe(false);
+  });
+});

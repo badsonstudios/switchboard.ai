@@ -173,7 +173,7 @@ describe('sessions rail rows (issue 197)', () => {
     // here is readable to the eye and to nobody else
     const host = await mountRail();
     const rows = Array.from(host.querySelectorAll<HTMLElement>('[data-rail-open]'));
-    expect(name(rows[2])).toBe('loose one — refactor the parser, idle');
+    expect(name(rows[2])).toBe('loose one — refactor the parser, calm');
   });
 
   it('marks the row the grid is showing with aria-current, and only that one', async () => {

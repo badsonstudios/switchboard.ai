@@ -87,7 +87,7 @@ describe('text is never dimmed by fading its box (#1211)', () => {
     const read = (file: string): string => fs.readFileSync(path.join(SRC, file), 'utf8');
     // a folded calm pill's name
     expect(read('components/StripPill.tsx')).toContain(
-      "color: props.folded && !paint.lit ? 'var(--muted)' : 'var(--text)'"
+      "color: props.folded && !wait.washed ? 'var(--muted)' : 'var(--text)'"
     );
     // a find hit that cannot be jumped to
     expect(read('components/FindBar.tsx')).toContain("color: hit.jumpable ? 'var(--text)' : 'var(--muted)'");

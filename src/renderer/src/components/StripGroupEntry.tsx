@@ -11,7 +11,16 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailSession } from '../model/types';
-import { finishedCount, needCount, workingCount } from '../lib/rail-view';
+import {
+  finishedCount,
+  needCount,
+  rollupLead,
+  waitRollup,
+  ROLLUP_TOKEN,
+  WAIT_WASH,
+} from '../lib/rail-view';
+import { rollupWords } from '../lib/rollup-words';
+import { sessionStore } from '../store/session-store';
 import { approvalAttrs, approvalHint, waitingOnApproval } from '../lib/approval-watch';
 import { useApprovalWatch } from '../lib/use-approval-watch';
 import { StatusMark } from './StatusMark';
@@ -118,26 +127,26 @@ export function StripGroupEntry(props: {
   // NEEDS-YOU WINS. A group with one session working and one waiting for you
   // is a group that needs you: it keeps its yellow words, and the look (which
   // every rule gives only to what is NOT `data-needs-you`) stays off it.
-  const working = workingCount(props.members, props.needing);
-  // ...and not while it has FINISHED work to show either (#1219): the words
-  // would say "1 finished" in the working look's ink. One mark at a time,
-  // and something to look at outranks something still running.
-  const showsWorking = working > 0 && need === 0 && done === 0;
+  //
+  // WHAT IS INSIDE, BY STATE (#1351): "1 approval · 1 waiting", else "2
+  // working", else "calm" — the left list's group header says the same, from
+  // the same function. Anything waiting on you outranks "working", so the look
+  // stays off a group with one session working and one waiting: one mark at a
+  // time, and the thing that needs you wins.
+  const rollup = waitRollup(
+    props.members,
+    (id) => props.needing.has(id) || (props.finished?.has(id) ?? false),
+    (id) => sessionStore.hasHeldQuestion(id)
+  );
+  const lead = rollupLead(rollup);
+  const leadToken =
+    lead === undefined ? undefined : lead === 'working' ? 'working' : ROLLUP_TOKEN[lead];
+  const waitingLead = lead !== undefined && lead !== 'working';
+  const showsWorking = lead === 'working' && need === 0 && done === 0;
   const waitingHere = props.members.reduce((n, m) => n + (props.waiting.get(m.id) ?? 0), 0);
   const range = chordRange(props.members, props.ordinalOf);
   const foldedHere = props.folded ? props.members.filter((m) => props.folded!.has(m.id)).length : 0;
-  const summary =
-    props.members.length === 0
-      ? t('rail.groupEmpty')
-      : need > 0 && done > 0
-        ? t('rail.bothSummary', { need, finished: done })
-        : need > 0
-          ? t('rail.needSummary', { count: need })
-          : done > 0
-            ? t('rail.finishedSummary', { count: done })
-            : working > 0
-              ? t('rail.workingSummary', { count: working })
-              : t('rail.calm');
+  const summary = props.members.length === 0 ? t('rail.groupEmpty') : rollupWords(t, rollup);
   const toggle = (): void => {
     if (cell.current) props.onToggle(cell.current);
   };
@@ -158,7 +167,10 @@ export function StripGroupEntry(props: {
       data-strip-group-finished={done}
       // the handle the "working" looks hang off, exactly as on a row or a pill
       data-session-status={showsWorking ? 'working' : undefined}
-      data-strip-group-working={working}
+      data-strip-group-working={rollup.working}
+      // the roll-up's most urgent part (#1351); `crashed` is one of them, so
+      // this is not the rows' `data-wait-state`
+      data-rollup-lead={waitingLead ? lead : undefined}
       data-flash={props.flash ? 'true' : undefined}
       title={approval.active ? approvalHint(t, approval) : isAuto ? t('rail.autoGroupHint') : undefined}
       style={{
@@ -170,7 +182,17 @@ export function StripGroupEntry(props: {
         borderRadius: 7,
         position: 'relative',
         // lit while a session is held over it: "let go and it joins this group"
-        border: `1px solid ${props.dropInto ? 'var(--status-working-ink)' : props.open ? props.color : 'var(--group-frame)'}`,
+        // ...and in the most urgent waiting state's colour while something
+        // inside is waiting on you (#1351), as a waiting pill's edge is
+        border: `1px solid ${
+          props.dropInto
+            ? 'var(--status-working-ink)'
+            : waitingLead
+              ? `var(--status-${leadToken})`
+              : props.open
+                ? props.color
+                : 'var(--group-frame)'
+        }`,
         background: isAuto ? 'var(--auto-surface)' : 'var(--rail-card)',
         overflow: 'hidden',
         // the post-jump beat: the focus accent, as on a pill
@@ -345,15 +367,17 @@ export function StripGroupEntry(props: {
             style={{
               fontFamily: 'var(--font-ui)',
               fontSize: 9.5,
-              fontWeight: need > 0 ? 700 : done > 0 ? 600 : 400,
-              // yellow is for a demand only; finished work is said in the
-              // finished ramp, and is the quieter of the two
-              color:
-                need > 0
-                  ? 'var(--status-needs-input-ink)'
-                  : done > 0
-                    ? 'var(--status-done-ink)'
-                    : 'var(--muted)',
+              fontWeight: waitingLead ? 700 : 400,
+              // the most urgent state's ink, washed in its colour (#1351) —
+              // the working ink is the looks' to give, and calm is quiet
+              color: waitingLead ? `var(--status-${leadToken}-ink)` : 'var(--muted)',
+              ...(waitingLead
+                ? {
+                    background: tint(`var(--status-${leadToken})`, WAIT_WASH),
+                    borderRadius: 7,
+                    paddingInline: 5,
+                  }
+                : {}),
               whiteSpace: 'nowrap',
             }}
           >

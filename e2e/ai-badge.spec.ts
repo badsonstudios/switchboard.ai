@@ -64,8 +64,8 @@ test.describe('the AI icon with a status ring (#1293)', () => {
     await expect(acpRowBadge.locator('[data-ai-icon="initial"]')).toHaveAttribute('data-initial', 'F');
 
     // ── 2. The ring follows the status machine ─────────────────────────────
-    // working: the rail's ring spins (as its mark always did); the tab's
-    // stands still; the state word says it
+    // working: the rail's ring spins (as its mark always did), and so does the
+    // tab's since #1351 (it stood still until then); the state word says it
     await send(w, '!cancel-slow');
     await expect(w.getByText(/tick 3/)).toBeVisible({ timeout: 30_000 });
     await expect(acpRowBadge).toHaveAttribute('data-ring', 'working', { timeout: 15_000 });
@@ -74,7 +74,7 @@ test.describe('the AI icon with a status ring (#1293)', () => {
     await expect(row(w, acp).locator('[data-rail-state]')).toHaveText('working');
     const acpTabBadge = tab(w, acp).locator('.ai-badge');
     await expect(acpTabBadge).toHaveAttribute('data-ring', 'working');
-    await expect(acpTabBadge).toHaveAttribute('data-ring-spin', 'false');
+    await expect(acpTabBadge).toHaveAttribute('data-ring-spin', 'true');
     await w
       .getByTitle(/interrupts the current turn/i)
       .first()
@@ -85,12 +85,12 @@ test.describe('the AI icon with a status ring (#1293)', () => {
     await send(w, '!ask');
     await expect(w.locator('[data-approval-bar]')).toBeVisible({ timeout: 30_000 });
     await expect(acpRowBadge).toHaveAttribute('data-ring', 'needs-permission', { timeout: 15_000 });
-    await expect(acpRowBadge).toHaveAttribute('aria-label', 'Fake ACP, needs you');
-    await expect(row(w, acp).locator('[data-rail-state]')).toHaveText('needs you');
+    await expect(acpRowBadge).toHaveAttribute('aria-label', 'Fake ACP, approval');
+    await expect(row(w, acp).locator('[data-rail-state]')).toHaveText(/^approval( · <\d+[ms])?$/);
     await expect(acpTabBadge).toHaveAttribute('data-ring', 'needs-permission');
     await expect(header(w, acp).locator('.ai-badge')).toHaveAttribute('data-ring', 'needs-permission');
     // the header still says it in a word, too
-    await expect(header(w, acp).locator('.status-pill')).toHaveText('needs you');
+    await expect(header(w, acp).locator('.status-pill')).toHaveText('approval');
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
     await expect(w.getByText('ASK ALLOWED')).toBeVisible({ timeout: 30_000 });
     await expect(acpRowBadge).not.toHaveAttribute('data-ring', 'needs-permission', { timeout: 15_000 });

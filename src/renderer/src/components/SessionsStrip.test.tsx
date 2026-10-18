@@ -524,10 +524,11 @@ describe('a group’s drop-down list', () => {
 
   it('a count of N is exactly N highlighted rows', async () => {
     // #1137's rule at the strip: the entry's number and the rows under it are
-    // read from one set, so they cannot disagree
+    // read from one set, so they cannot disagree. Since #1351 the number is
+    // said by state, and a counted idle session is washed as WAITING
     const host = await mount({ ...WORLD, needing: ['api', 'db', 'manual'] });
     expect(text(entry(host, BACK.id).querySelector('[data-strip-group-summary]'))).toBe(
-      i18next.t('rail.needSummary', { count: 2 })
+      i18next.t('rail.rollup.waiting', { count: 2 })
     );
     await click(opener(host, BACK.id));
     const lit = Array.from(list(host)!.querySelectorAll<HTMLElement>('.rail-row')).filter(
@@ -717,7 +718,7 @@ describe('what a screen reader is told about a group', () => {
       i18next.t('strip.groupLabel', {
         name: 'Backend',
         count: 3,
-        summary: i18next.t('rail.needSummary', { count: 1 }),
+        summary: i18next.t('rail.rollup.waiting', { count: 1 }),
       })
     );
   });

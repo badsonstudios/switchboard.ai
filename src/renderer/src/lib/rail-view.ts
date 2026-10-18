@@ -59,6 +59,10 @@ export const STATUS_TOKENS = [
   'idle',
   'done',
   'crashed',
+  // the gold of a session whose turn ended and which is waiting for your next
+  // prompt (#1351). Hue 72, outside the 20-70 band `shared/reserved-hue.ts`
+  // keeps for "needs you", so it reads as calmer than an approval or a question
+  'waiting',
 ] as const;
 export type StatusToken = (typeof STATUS_TOKENS)[number];
 
@@ -90,6 +94,12 @@ export interface StatusPresentation {
    * state.
    */
   shortKey: string;
+  /**
+   * The left list's longer word, where the row has room for it (#1351):
+   * "waiting for you" where the tab and the pill say "waiting". Absent = the
+   * short word.
+   */
+  listKey?: string;
 }
 
 // A session "needs you" when a human is the only thing that can move it on.
@@ -126,13 +136,19 @@ const PRESENTATION: Record<RailStatusName, StatusPresentation> = {
     labelKey: 'railStatus.askPermission',
     shortKey: 'status.needs-permission',
   },
+  // THE TURN ENDED AND IT IS WAITING FOR YOU (#1351). Dan: "If an AI session
+  // stops and it's waiting on me for anything ... I want it to say it's
+  // waiting for me. It should not say 'calm' or 'done'." Painted in the
+  // `waiting` gold, not the `done` green: the green says "finished", and what
+  // the user needs to know is that the next move is theirs.
   done: {
-    token: 'done',
+    token: 'waiting',
     needsYou: true,
     spinner: false,
     glyphKey: 'railStatus.glyphDone',
     labelKey: 'railStatus.askDone',
     shortKey: 'status.done',
+    listKey: 'status.doneList',
   },
   crashed: {
     token: 'crashed',
@@ -257,8 +273,8 @@ const BLOCKED: ReadonlySet<string> = new Set(['needs-input', 'needs-permission',
  * me" that can disagree is the defect.
  *
  * A session counted for something its status does not show (a returned review
- * is filed on its author, who is usually idle) is lit in the `done` ramp:
- * finished work to look at, which is what it is.
+ * is filed on its author, who is usually idle) is lit in the `waiting` ramp
+ * (the `done` one until #1351): finished work to look at, which is what it is.
  */
 export function attentionPaint(
   status: string | undefined,
@@ -268,12 +284,195 @@ export function attentionPaint(
 ): AttentionPaint {
   const p = presentStatus(status);
   if (counted) {
-    return { lit: true, token: p.needsYou ? p.token : 'done', stateInk: true, finished: false };
+    return { lit: true, token: p.needsYou ? p.token : 'waiting', stateInk: true, finished: false };
   }
-  // FINISHED, UNSEEN: lit in the `done` ramp so the count leads to a row you
+  // FINISHED, UNSEEN: lit in the `waiting` ramp so the count leads to a row you
   // can see, exactly as "N need you" does. The same invariant, a second number.
-  if (finished) return { lit: true, token: 'done', stateInk: true, finished: true };
-  return { lit: false, token: p.token, stateInk: BLOCKED.has(status ?? ''), finished: false };
+  if (finished) return { lit: true, token: 'waiting', stateInk: true, finished: true };
+  return {
+    lit: false,
+    token: p.token,
+    // a session WAITING on you keeps its ink too (#1351): the word is in its
+    // colour whether or not anything is still counting it
+    stateInk: BLOCKED.has(status ?? '') || waitState(status) !== undefined,
+    finished: false,
+  };
+}
+
+// ── WAITING ON YOU (#1351) ───────────────────────────────────────────────────
+//
+// The owner, 2026-10-18: "If an AI session stops and it's waiting on me for
+// anything — a gate, a question, an approval — I want it to say it's waiting
+// for me. It should not say 'calm' or 'done'." Three states, and one word
+// each:
+//
+//   needs-permission   approval   an approval is held, on a clock (#1202)
+//   needs-input        question   it asked you something; no clock
+//   done               waiting    its turn ended; the next prompt is yours
+//
+// WHY `idle` IS NOT ON THE LIST. In the state machine `done` is sticky: from it
+// only a new prompt or new output moves a session (`main/sessions/state-
+// machine.ts`, the `current === 'done'` arm), so the CLI's idle nudge and a
+// `/clear` both leave a finished session at `done`. What reaches `idle` is a
+// session that has not run a turn yet — started, resumed, or cleared before it
+// did anything — which is the owner's "a session that has never had a turn",
+// and it reads "calm".
+//
+// THIS IS THE STATE, NOT THE COUNT. `attentionPaint` still decides who is LIT
+// (the 4px bar, the bold name, `data-needs-you`), from the count's own set, so
+// "N need you" is still exactly N lit rows. What this decides is the WASH and
+// the WORD every waiting session wears whether or not anything is counting it:
+// a dismissed approval is still held, and a looked-at finished session is
+// still waiting for its next prompt. Never colour-only: every surface that
+// washes also writes the word.
+
+export type WaitState = 'approval' | 'question' | 'waiting';
+
+/** The three, most urgent first — the order a group's summary and wash use. */
+export const WAIT_STATES: readonly WaitState[] = ['approval', 'question', 'waiting'];
+
+const WAIT_OF: Readonly<Record<string, WaitState>> = {
+  'needs-permission': 'approval',
+  'needs-input': 'question',
+  done: 'waiting',
+};
+
+/**
+ * The status a surface should PAINT: the session's own, except that a Direct
+ * session holding a QUESTION reads `needs-input` (#1351). Main gives a held
+ * question the `needs-permission` status an approval has — it arrives as a
+ * `can_use_tool` request for the CLI's question tool — and every surface would
+ * then call a question an "approval". `heldQuestion` is the store's
+ * `hasHeldQuestion(cardId)`.
+ */
+export function shownStatus<S extends string | undefined>(status: S, heldQuestion: boolean): S | 'needs-input' {
+  return status === 'needs-permission' && heldQuestion ? 'needs-input' : status;
+}
+
+/** Which waiting state a session is in, or undefined when it is not waiting on you. */
+export function waitState(status: string | undefined): WaitState | undefined {
+  return status === undefined ? undefined : WAIT_OF[status];
+}
+
+/** The ramp position each waiting state is painted in. */
+export const WAIT_TOKEN: Readonly<Record<WaitState, StatusToken>> = {
+  approval: 'needs-permission',
+  question: 'needs-input',
+  waiting: 'waiting',
+};
+
+/**
+ * How strong the wash is, in percent of the state's hue over the surface
+ * behind it. ONE number for the tab, the row, the pill and a group's summary,
+ * and `tokens.drift.test.ts` imports it: the words written on the wash are
+ * measured at exactly this strength. 15 rather than the mockup's 16: at 16 the
+ * "question" ink on nordic measured 4.46:1, under AA.
+ */
+export const WAIT_WASH = 15;
+
+/** What a session's surface paints for its state (#1351). */
+export interface WaitPaint {
+  /** the waiting state, if it is in one */
+  state: WaitState | undefined;
+  /** wear the wash and the coloured edge */
+  washed: boolean;
+  /** the ramp to paint the wash, the edge, the ring and the word in */
+  token: StatusToken;
+}
+
+/**
+ * The wash for one session. Washed when it is waiting on you, and also when
+ * the count lit it for something its status does not show (a returned review
+ * on an idle author): a lit row that was not washed would be the one row
+ * whose tint the count could not explain.
+ */
+export function waitPaint(status: string | undefined, paint: AttentionPaint): WaitPaint {
+  const state = waitState(status);
+  return { state, washed: state !== undefined || paint.lit, token: paint.token };
+}
+
+/** How many of a group's sessions are in each state (#1351, #1196). */
+export interface WaitRollup {
+  approval: number;
+  question: number;
+  /**
+   * Crashed: not one of the three waiting states, but blocked on you all the
+   * same (it is in "N need you"), so a group must not call it "waiting" or
+   * "calm". Its own part, in the alarm's colour.
+   */
+  crashed: number;
+  waiting: number;
+  /** busy and not waiting on you: the strip's "N working" (#1179) */
+  working: number;
+}
+
+/**
+ * The roll-up a group shows instead of "calm" — the left list's header and the
+ * strip's group box both read it, so the two cannot describe one group
+ * differently (#1196's done-when).
+ *
+ * IT COUNTS THE WASHED ROWS, so the line and the rows under it agree (#1137's
+ * invariant, kept): a session in one of the three states counts as that
+ * state, and a session the count lit for something its status does not show —
+ * a returned review on an idle author, which `waitPaint` washes in the
+ * waiting gold — counts as waiting. `lit` is the union of the two counted
+ * sets (`needing`, `finished`); omitted, only the states are counted. The "N
+ * need you" totals (the rail's footer, the strip's own line, the status bar)
+ * still count the Events window's list, which is the other question (#621).
+ */
+export function waitRollup(
+  sessions: ReadonlyArray<{ id?: string; status?: string }>,
+  lit?: (id: string) => boolean,
+  /** the store's `hasHeldQuestion`, so a Direct session's question is counted as one */
+  heldQuestion?: (id: string) => boolean
+): WaitRollup {
+  const r: WaitRollup = { approval: 0, question: 0, crashed: 0, waiting: 0, working: 0 };
+  for (const s of sessions) {
+    const status = shownStatus(s.status, s.id !== undefined && (heldQuestion?.(s.id) ?? false));
+    if (status === 'crashed') {
+      r.crashed += 1;
+      continue;
+    }
+    const w = waitState(status) ?? (s.id !== undefined && lit?.(s.id) ? 'waiting' : undefined);
+    if (w) r[w] += 1;
+    else if (presentStatus(status).spinner) r.working += 1;
+  }
+  return r;
+}
+
+/** A roll-up's parts, most urgent first: the three waiting states, with a crash after a question. */
+export type RollupPart = 'approval' | 'question' | 'crashed' | 'waiting';
+const ROLLUP_ORDER: readonly RollupPart[] = ['approval', 'question', 'crashed', 'waiting'];
+
+/** The ramp position each part is painted in. */
+export const ROLLUP_TOKEN: Readonly<Record<RollupPart, StatusToken>> = {
+  ...WAIT_TOKEN,
+  crashed: 'crashed',
+};
+
+/**
+ * The most urgent thing in a roll-up: approval > question > crashed > waiting
+ * > working. Undefined when the group is calm.
+ */
+export function rollupLead(r: WaitRollup): RollupPart | 'working' | undefined {
+  for (const w of ROLLUP_ORDER) if (r[w] > 0) return w;
+  return r.working > 0 ? 'working' : undefined;
+}
+
+/**
+ * A roll-up as the i18n keys and counts its words are built from: one part per
+ * state that is not zero, most urgent first; else "N working"; else "calm".
+ * Pure so the three orders and the omitted zeros are unit-tested here rather
+ * than read off a screen.
+ */
+export function rollupParts(r: WaitRollup): Array<{ key: string; count?: number }> {
+  const parts = ROLLUP_ORDER.filter((w) => r[w] > 0).map((w) => ({
+    key: `rail.rollup.${w}`,
+    count: r[w],
+  }));
+  if (parts.length > 0) return parts;
+  if (r.working > 0) return [{ key: 'rail.workingSummary', count: r.working }];
+  return [{ key: 'rail.calm' }];
 }
 
 /**

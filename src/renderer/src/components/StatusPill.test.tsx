@@ -40,8 +40,13 @@ afterEach(async () => {
 });
 
 describe('the status pill hands the rule the pair it promises', () => {
-  it.each(STATUS_TOKENS)('paints %s with that status’s ink, never its hue', async (token) => {
-    const el = await mount(token);
+  // Every ramp position a status is painted in. The positions are named after
+  // statuses, with one exception since #1351: `done` is painted in the
+  // `waiting` gold, and the green `done` position is the Events drawer's alone.
+  const painted = STATUS_TOKENS.filter((t) => t !== 'done');
+  const statusFor = (token: string): string => (token === 'waiting' ? 'done' : token);
+  it.each(painted)('paints %s with that status’s ink, never its hue', async (token) => {
+    const el = await mount(statusFor(token));
     expect(el.style.getPropertyValue('--pill-ink')).toBe(`var(--status-${token}-ink)`);
     expect(el.style.getPropertyValue('--pill-hue')).toBe(`var(--status-${token})`);
     expect(el.dataset.status).toBe(token);

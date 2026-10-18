@@ -104,6 +104,20 @@ export function approvalTimeLeft(leftMs: number): { unit: 'minutes' | 'seconds';
   return { unit: 'minutes', count: Math.ceil(leftMs / 60_000) };
 }
 
+/**
+ * The time left, short enough to sit beside the state word on a row (#1351):
+ * "<5m", "<50s". The same BOUND the tooltip states, for the same reason — the
+ * row is re-read every ten seconds, so a m:ss clock would be wrong for nine of
+ * every ten of them. `undefined` when there is no clock to show.
+ */
+export function approvalLeftWord(t: TFunction, w: ApprovalWatch): string | undefined {
+  if (!w.active || w.leftMs === null) return undefined;
+  const left = approvalTimeLeft(w.leftMs);
+  return t(left.unit === 'minutes' ? 'approvalWatch.leftMinutes' : 'approvalWatch.leftSeconds', {
+    count: left.count,
+  });
+}
+
 /** The two attributes the stylesheet keys on. `undefined` omits an attribute,
  *  so a calm row carries neither. */
 export function approvalAttrs(w: ApprovalWatch): {

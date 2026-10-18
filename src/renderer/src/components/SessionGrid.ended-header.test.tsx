@@ -331,10 +331,10 @@ describe('endedPill', () => {
     });
   });
 
-  it('calls a clean close done', () => {
+  it('calls a clean close ended — not "waiting", which is a finished TURN (#1351)', () => {
     expect(endedPill({ kind: 'exited', code: 0, crashed: false })).toEqual({
-      status: 'done',
-      labelKey: 'status.done',
+      status: 'idle',
+      labelKey: 'status.ended',
     });
   });
 

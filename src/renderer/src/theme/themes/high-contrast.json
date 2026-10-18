@@ -50,6 +50,7 @@
   "--status-idle-ink": "#c9c9c9",
   "--status-done-ink": "#5ddc72",
   "--status-crashed-ink": "#ff8a80",
+  "--status-waiting-ink": "#c7e25a",
 
   "--rail-canvas": "#000000",
   "--rail-card": "#0d0d0d",
@@ -81,6 +82,7 @@
   "--status-idle": "#c9c9c9",
   "--status-done": "#5ddc72",
   "--status-crashed": "#ff8a80",
+  "--status-waiting": "#c7e25a",
   "--status-needs-permission-ink-on-fill": "#000000",
 
   "--diff-added": "#5ddc72",

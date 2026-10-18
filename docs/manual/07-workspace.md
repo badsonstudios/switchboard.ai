@@ -6,7 +6,7 @@
 
 ## The Sessions list
 
-![The Sessions list, with one session marked done and one marked needs you](img/sessions-list.png)
+![The Sessions list, with one session waiting for you after its turn and one waiting for an approval](img/sessions-list.png)
 
 *Each row says what its session is doing.*
 
@@ -25,20 +25,31 @@ close it and a small indicator of its state:
 | **?** | it asked you a question |
 | **!** | it wants permission to do something |
 | **✓** | it finished, and you haven't looked yet |
-| **–** | idle |
+| **–** | calm: nothing has run in it yet |
 | **✕** | it crashed |
 
-**When a session needs you, the row says so in words.** It tints itself in the
-status color, thickens its edge bar, bolds the name, and replaces the "what
-it's doing" line with the actual ask — *Asked you a question*, *Wants
-permission to run*, *Finished — review changes*, *Crashed — needs restart*.
-Calm sessions stay plain and quiet. That contrast is the whole point: you
-should be able to spot the ones that need you from across the room.
+**When a session is waiting on you, the row says so in words.** It tints
+itself in that state's colour, its edge bar takes the same colour, and the word
+beside its name says which: **approval** (with the time it has left, such as
+**approval · <5m**), **question**, or **waiting for you** when it has finished
+its turn. A session that is still on your plate also bolds its name and
+thickens its edge bar. A screen reader hears the longer ask — *Asked you a
+question*, *Wants permission to run*, *Finished its turn — waiting for you*,
+*Crashed — needs restart*. Calm sessions stay plain and quiet. That contrast
+is the whole point: you should be able to spot the ones that need you from
+across the room. See [A session that is waiting on
+you](02-sessions.md#a-session-that-is-waiting-on-you).
 
-Each group header counts its own sessions: **"2 need you"** for sessions that
-are stuck until you act, **"1 finished"** for sessions that completed and that
-you have not looked at yet, both when there are both, or **"calm"**. The bar at
-the bottom of the list totals each for the whole workspace. When there is
+Each group header says what is inside it: **"1 approval · 2 waiting"** (each
+of approval, question and waiting it has, most urgent first, and **crashed**
+if a session in it crashed), **"2 working"**
+when something is busy and nothing is waiting, or **"calm"**. A group that is
+**folded shut** is tinted behind those words in the most urgent state's
+colour and gets an edge in it, or, when something inside is working, the
+spinner and the working look in the group's own colour — so you never have to
+open a group to see what it is doing. The bar at
+the bottom of the list totals **N need you** and **N finished** for the whole
+workspace. When there is
 nothing to count, there is no total there at all. See [Which ones need you,
 and which have finished](02-sessions.md#which-ones-need-you-and-which-have-finished). Those counts count exactly what the [Events
 drawer](09-notifications.md#the-events-drawer) is listing, so dismissing an
@@ -163,15 +174,16 @@ group is one box:
   on the left, so a shortcut goes to the same session either way,
 - the group's name,
 - how many sessions it holds,
-- underneath, **N need you**, or **calm**, or **empty**,
+- underneath, what is inside it — **1 approval · 2 waiting**, **2 working**,
+  **calm** or **empty** — the same words the list on the left uses,
 - **⊕** to open a new session in that group (not on automatic groups),
 - a tinted **▾** at the end.
 
 **Click a group** and a list of its sessions drops down. They are the same
 rows as in the list on the left: name, a word for what the session is doing,
 what it is working on, the AI's icon in its status ring and **✕** to close it, plus the
-shortcut number. When a group says **2 need you**, exactly two rows in its
-list are highlighted. Click a row to go to that session; the list closes.
+shortcut number. When a group says **2 waiting**, two rows in its list are
+tinted gold. Click a row to go to that session; the list closes.
 Click the group again, click anywhere else, or press `Esc` to close the list
 without going anywhere. A double-click does not rename a row here, as it does
 in the list on the left: the first click already goes to the session. Use
@@ -182,8 +194,8 @@ two-line pill: its name and a word for what it is doing, what it is working
 on underneath, the AI's icon in its status ring at the end (see
 [Which AI a session is on](02-sessions.md#which-ai-a-session-is-on)), and its colour as a bar down the
 left edge. A pill looks the way that session's row does in the list on the
-left, in every state: a session that needs you is filled in and bold. Click a
-pill to go to that session.
+left, in every state: a session waiting on you is tinted in that state's
+colour with the word beside its name. Click a pill to go to that session.
 
 A pill with a **dashed** edge is a session that is folded away: collapsed or
 hidden, still running, but not in the workspace. Click it and it comes back.
@@ -195,16 +207,18 @@ Click the row to bring it back.
 A pinned session comes first among the pills and shows a 📌. A session that
 another session started sits straight after it, with a small **↳**. A number
 in a small bubble means that many messages from other sessions are waiting in
-it; on a group the same thing reads **· 3 waiting**. Waiting messages are
-separate from **need you** and are not counted in it.
+it; on a group the same thing reads **· 3 messages**. Messages are separate
+from **need you** and are not counted in it.
 
-**A group tells you when something inside it is working**, without your having
-to open it. Where it would say **calm** it says **2 working**, it gets a
-spinner, and the whole box is marked the way a working session is, in the
-group's own colour. Which way that is, is your choice:
+**A group tells you what is going on inside it**, without your having to open
+it. Where it would say **calm** it says **2 working**, it gets a spinner, and
+the whole box is marked the way a working session is, in the group's own
+colour. Which way that is, is your choice:
 [How a working session looks](10-settings.md#how-a-working-session-looks).
-If any session in the group needs you, the group says that instead, in yellow,
-and is not marked as working: needing you always wins.
+If any session in the group is waiting on you, the group says what for
+instead (**1 approval · 1 waiting**), in that state's colour, with its edge in
+it too, and is not marked as working: waiting on you always wins. The same
+goes for a group folded shut in the list on the left.
 
 **When there are too many to fit**, the strip scrolls sideways: use the mouse
 wheel over it, or the cell that appears at each end. A cell turns **amber and

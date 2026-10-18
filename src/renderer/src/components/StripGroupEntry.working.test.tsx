@@ -115,7 +115,9 @@ describe('a closed group with a session working inside it', () => {
   });
 
   it('a quiet group is unmarked and still says "calm"', async () => {
-    const box = await mount([s('a', 'idle'), s('b', 'done')]);
+    // (a `done` session is not quiet since #1351: it is waiting for its next
+    // prompt, and the group says so — see the roll-up tests)
+    const box = await mount([s('a', 'idle'), s('b', 'suspended')]);
     expect(box.dataset.sessionStatus).toBeUndefined();
     expect(box.querySelector('.status-ring')).toBeNull();
     expect(box.querySelector('[data-strip-group-summary]')!.textContent).toBe('calm');
@@ -127,7 +129,8 @@ describe('a closed group with a session working inside it', () => {
     // no working look on it, and no spinner competing with the yellow words
     expect(box.dataset.sessionStatus).toBeUndefined();
     expect(box.querySelector('.status-ring')).toBeNull();
-    expect(box.querySelector('[data-strip-group-summary]')!.textContent).toBe('1 need you');
+    // the summary is BY STATE since #1351: what it is waiting for, not "need you"
+    expect(box.querySelector('[data-strip-group-summary]')!.textContent).toBe('1 question');
     // the count is still there for anything that wants it
     expect(box.dataset.stripGroupWorking).toBe('1');
   });
@@ -140,7 +143,8 @@ describe('the stylesheet paints a group with the same rules as a session', () =>
   it('every rule that paints a row or a pill paints a group too', () => {
     // one list of three, never a second copy of the six looks for groups
     expect(block).not.toContain(':is(.rail-row, [data-strip-pill])[data-session-status');
-    const shared = block.split(':is(.rail-row, [data-strip-pill], [data-strip-group])[data-session-status').length - 1;
+    // ...and the left list's closed group header, since #1351 (#1196)
+    const shared = block.split(':is(.rail-row, [data-strip-pill], [data-strip-group], .rail-head)[data-session-status').length - 1;
     expect(shared).toBeGreaterThan(20);
   });
 

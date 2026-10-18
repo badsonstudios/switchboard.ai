@@ -84,11 +84,14 @@ test.describe("the CLI's own questions (#563)", () => {
     // arity is real, not decorative: radios for pick-one, checkboxes for multi
     await expect(option(w, 0, 'Red')).toHaveAttribute('role', 'radio');
 
-    // a question is a session that needs you (§5.8) — same queue, same rail
-    // state as any other ask, which is what makes this better than the terminal
-    await expect(w.locator('nav .rail-row[data-session-status="needs-permission"]')).toHaveCount(1, {
+    // a question is a session that needs you (§5.8) — same queue as any other
+    // ask, which is what makes this better than the terminal. Main holds it
+    // under the permission status; the row SAYS question (#1351), in the
+    // question's colour, not "approval"
+    await expect(w.locator('nav .rail-row[data-wait-state="question"]')).toHaveCount(1, {
       timeout: 15_000,
     });
+    await expect(w.locator('nav .rail-row[data-wait-state="question"] [data-rail-state]')).toHaveText('question');
 
     // Submit stays shut until SOMETHING is answered (#567 — one is the floor,
     // and zero is the allow-all skip this panel exists to prevent)
@@ -173,7 +176,7 @@ test.describe("the CLI's own questions (#563)", () => {
 
     // and nothing is left claiming a question, on either surface
     await expect(panel(w)).toHaveCount(0);
-    await expect(w.locator('nav .rail-row[data-session-status="needs-permission"]')).toHaveCount(0, {
+    await expect(w.locator('nav .rail-row:is([data-wait-state="question"], [data-wait-state="approval"])')).toHaveCount(0, {
       timeout: 15_000,
     });
     expect(await heldIds(w)).toEqual([]);
@@ -232,7 +235,7 @@ test.describe("the CLI's own questions (#563)", () => {
     // still asking, the panel gone
     await expect(panel(w)).toHaveCount(0);
     expect(await heldIds(w)).toEqual([]);
-    await expect(w.locator('nav .rail-row[data-session-status="needs-permission"]')).toHaveCount(0, {
+    await expect(w.locator('nav .rail-row:is([data-wait-state="question"], [data-wait-state="approval"])')).toHaveCount(0, {
       timeout: 15_000,
     });
   });

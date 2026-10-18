@@ -119,7 +119,8 @@ import {
   withMode,
   withoutMaximized,
 } from '../lib/layout-mode';
-import { presentStatus } from '../lib/rail-view';
+import { attentionPaint, presentStatus, waitPaint } from '../lib/rail-view';
+import { useShownStatus } from '../lib/use-shown-status';
 import { tabStripAction } from '../lib/tabstrip-keys';
 import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
@@ -408,7 +409,10 @@ export function endedCopy(ended: CardEnded): {
  * like one state here and another one in the list beside it:
  *
  *   • a session that ran and CRASHED  → `crashed`, the ramp's alarm position;
- *   • a session that closed cleanly   → `done`, which is what it is;
+ *   • a session that closed cleanly   → **ended**, on the neutral position.
+ *     It said `done` until #1351, when `done` became "waiting" — the word for
+ *     a finished turn whose next prompt is yours — and a session whose process
+ *     has ENDED is not waiting for a prompt: it has to be started again;
  *   • a session that NEVER STARTED    → the neutral `idle` position, with its
  *     own word. It is not "idle" — nothing is sitting there waiting — but the
  *     ramp has no seventh colour and inventing one would paint a hue the
@@ -419,7 +423,7 @@ export function endedPill(ended: CardEnded): { status: string; labelKey: string 
   if (ended.kind === 'never-started') return { status: 'idle', labelKey: 'status.notStarted' };
   return ended.crashed
     ? { status: 'crashed', labelKey: 'status.crashed' }
-    : { status: 'done', labelKey: 'status.done' };
+    : { status: 'idle', labelKey: 'status.ended' };
 }
 
 /**
@@ -509,12 +513,34 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
   const providerId = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardProvider(cardId)
   );
-  const cardStatus = React.useSyncExternalStore(subscribeStore, () =>
+  const storeStatus = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardStatus(cardId)
   );
+  // as SHOWN: a held question is "question", not "approval" (#1351)
+  const cardStatus = useShownStatus(cardId, storeStatus);
   const needsYou = React.useSyncExternalStore(subscribeStore, () =>
     cardId ? sessionStore.getNeedingCards().has(cardId) : false
   );
+  // WAITING ON YOU, ON THE TAB (#1351). The owner wanted it "in the session:
+  // the session tab (colour or outline, if that session is open/visible)".
+  // The same rule the row and the pill paint from, so a session cannot be
+  // waiting in the list and calm on its tab. The wash itself is the
+  // stylesheet's (`.identity-tab[data-wait-state]`, dockview-tokens.css): the
+  // open tab's fill is painted there already, and an inline background here
+  // would lose to it.
+  const wait = cardId ? waitPaint(cardStatus, attentionPaint(cardStatus, needsYou)) : undefined;
+  const statusWord = presentStatus(cardStatus);
+  // the word: the state's, for a waiting session; "working" quietly while it
+  // works, as the list says it; nothing for a calm one, which keeps a calm tab
+  // the width it always was
+  const tabWord =
+    !cardId || cardStatus === undefined
+      ? undefined
+      : wait?.state
+        ? { text: t(statusWord.shortKey), ink: `var(--status-${wait.token}-ink)` }
+        : statusWord.spinner
+          ? { text: t(statusWord.shortKey), ink: undefined }
+          : undefined;
   // WHAT THE ✕ ACTUALLY DOES, said in three strings rather than one (#543).
   //
   // Every tab in the app used to be titled "Close (ends the session)", which is
@@ -590,9 +616,15 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
       onMouseDown={(e) => {
         if (e.button === 1) e.preventDefault();
       }}
+      // which of the three waiting states, if any: the stylesheet's wash, and
+      // what a spec asks
+      // (the STATE only: a tab has no count to answer to, and a wash it
+      // could not put a word to would be colour alone)
+      data-wait-state={wait?.state}
       style={
         {
           '--tab-wash': identityWash(accent),
+          ...(wait?.state ? { '--wait-hue': `var(--status-${wait.token})` } : {}),
           paddingInline: 16,
           display: 'flex',
           alignItems: 'center',
@@ -610,20 +642,44 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
         badge={badge}
         compact
         // a session's tab only: a document or a diff has no AI and no status.
-        // Standing still (`spin={false}`): the tab's mark never moved before.
+        // It SPINS while the session works (#1279, folded into #1351): it stood
+        // still until then, the one surface whose ring did not move, so the tab
+        // you were looking at was the one place that could not say "busy".
         mark={
           cardId ? (
             <AiBadge
               providerId={providerId}
               status={cardStatus}
               needsYou={needsYou}
-              spin={false}
               // the tab's name stays the session's name (see the prop)
               decorative
             />
           ) : undefined
         }
       />
+      {tabWord && (
+        // The state in a word, after the name (#1351) — never colour alone.
+        // `aria-hidden` for the reason the badge is decorative here: dockview's
+        // `role="tab"` takes its name from its content, and the tab's name is
+        // the session's. The card header's pill and the rail row say the state
+        // to a screen reader.
+        <span
+          aria-hidden
+          data-tab-state={wait?.state ?? 'working'}
+          style={{
+            flexShrink: 0,
+            marginInlineStart: 2,
+            fontFamily: 'var(--font-ui)',
+            fontSize: 9.5,
+            lineHeight: 1,
+            fontWeight: tabWord.ink ? 700 : 500,
+            color: tabWord.ink ?? 'inherit',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {tabWord.text}
+        </span>
+      )}
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -860,6 +916,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const cardNeedsYou = React.useSyncExternalStore(subscribeStore, () =>
     cardId ? sessionStore.getNeedingCards().has(cardId) : false
   );
+  // the header's word and ring as SHOWN: a held question is "question" (#1351)
+  const shownStatus = useShownStatus(cardId, status);
+  // ...and a session whose process closed CLEANLY says "ended", not the
+  // "waiting" its leftover `done` status would now read as (#1351): it is not
+  // waiting for a prompt, it has to be started again
+  const headerPill =
+    ended?.kind === 'exited' && !ended.crashed
+      ? endedPill(ended)
+      : { status: shownStatus as string, labelKey: `status.${shownStatus}` };
   const view = presentation.view;
   const poppedOut = presentation.poppedOut;
   const suspended = presentation.suspended;
@@ -2241,7 +2306,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             {/* WHICH AI, FIRST (#1293, the mockup's screen 1): the same icon and
                 ring the tab above draws, standing still — the pill at the end
                 of this row says the state in a word, as it always has. */}
-            <AiBadge providerId={headerProvider} status={status} needsYou={cardNeedsYou} spin={false} />
+            <AiBadge providerId={headerProvider} status={shownStatus} needsYou={cardNeedsYou} spin={false} />
             {/* the SAME badge the tab above draws (#269) — §5.11's "renders
                 identically everywhere", and the accent is the field, never the
                 ink: as 9px text it measured 1.80-3.11:1 on daylight */}
@@ -2338,7 +2403,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 {t(`autonomy.${shownMode}`)}
               </span>
             )}
-            <StatusPill status={status} label={t(`status.${status}`)} />
+            <StatusPill status={headerPill.status} label={t(headerPill.labelKey)} />
             {/* §5.8's ladder, one rung down (P2-E9-05). A mouse gesture for the
                 thing the two bindings and the palette also do — the card gives
                 its slot back and becomes a row in the collapsed strip, still

@@ -1379,14 +1379,15 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         )}
         {totalFinished > 0 && (
           // THE SECOND NUMBER (#1219), and the quieter one: no tint, the
-          // finished ramp, never yellow. A BUTTON, because it is also the one
-          // place to say "I have seen all of these" at once.
+          // waiting gold its rows are washed in (#1351), never yellow. A
+          // BUTTON, because it is also the one place to say "I have seen all
+          // of these" at once.
           <button
             type="button"
             data-strip-finished={totalFinished}
             title={t('seen.clearAllHint')}
             onClick={markAllSeen}
-            style={{ ...lineButton, color: 'var(--status-done-ink)', fontWeight: 600 }}
+            style={{ ...lineButton, color: 'var(--status-waiting-ink)', fontWeight: 600 }}
           >
             {t('urgency.finished', { n: totalFinished })}
           </button>

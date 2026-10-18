@@ -77,7 +77,7 @@ a version, and restart switchboard.
 3. A small box asks what to call the session. It is already filled in with the
    folder's name, so just press **Enter** to keep it, or type a name of your
    own first.
-4. A card appears. It says *starting* for a moment, then *idle*.
+4. A card appears. It says *starting* for a moment, then *calm*.
 5. Type what you want into the box at the bottom of the card and press
    **Enter**.
 
@@ -92,9 +92,15 @@ end that tells you what it's doing:
 | You see | It means |
 |---|---|
 | **working** | Claude is busy. Leave it. |
-| **needs you** | It's waiting for you to allow or refuse something. |
-| **needs input** | It asked you a question. |
-| **idle** / **done** | Ready for your next prompt. |
+| **approval** | It's waiting for you to allow or refuse something. |
+| **question** | It asked you a question. |
+| **waiting** | It finished its turn and is waiting for your next prompt. |
+| **calm** | Nothing has run in it yet. |
+
+A session that is waiting on you for an **approval**, a **question** or its
+next prompt is tinted in that state's colour (orange, yellow, or a softer
+gold) on its tab, its row and its pill, with the word beside its name, so you
+can spot it without reading.
 
 The **Events** panel on the right lists whatever is waiting on you across all
 your sessions. When it says *"Nothing needs you right now"*, nothing does.

@@ -96,6 +96,29 @@ on the floor, and say so in your PR.
 
 ## 0.8.125 — unreleased
 
+### Changed
+
+- **A session that is waiting on you says so, everywhere it appears.** Its
+  tab, its row in the Sessions list and its pill on the strip are tinted in
+  the colour of what it is waiting for, with the word beside its name:
+  **approval** (orange, with the time it has left in the list, such as
+  *approval · <5m*), **question** (yellow), or **waiting** (a softer gold) when
+  it has finished its turn and the next prompt is yours. It no longer says
+  "needs you", "needs input", "done" or "idle"; a session that has not run
+  anything yet says **calm**, and one whose process has closed says **ended**
+  in its header. A question in a Direct session now says *question*, not
+  *approval*.
+- **The tab's ring spins while its session works**, as it already did in the
+  Sessions list and on the strip.
+- **A group says what is inside it**: *1 approval · 2 waiting* (and *1
+  crashed* if one crashed), *2 working* or *calm*, the same words in the list
+  on the left and on the strip. A group
+  folded shut in the list on the left is tinted for the most urgent of them, or
+  gets the spinner and the working look when something inside is busy, so you
+  no longer have to open it to find out.
+- The bubble for messages from other sessions now says *3 messages* rather
+  than *3 waiting*, since "waiting" now means a session waiting for you.
+
 ### Fixed
 
 - **Stop works while an approval or a question is waiting.** The ■ Stop

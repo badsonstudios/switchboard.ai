@@ -176,6 +176,23 @@
 .dv-tab-ghost-drag .identity-tab {
   background: var(--tab-wash, var(--panel));
 }
+/* WAITING ON YOU, ON THE TAB (#1351, treatment A). A session that is waiting
+   for an approval, a question's answer or its next prompt washes its tab in
+   that state's colour — open or not — with an edge in the same colour, and
+   writes the state after its name (IdentityTab). It REPLACES the open tab's
+   identity wash while it lasts: the state is the more urgent of the two facts,
+   and the accent is still on the card's header and frame below it.
+   The strength is `WAIT_WASH` in lib/rail-view.ts, and tokens.drift.test.ts
+   reads it back out of this rule and measures the words on it in all four
+   themes. An unselected tab's words are `--muted`, which nothing measures on a
+   wash, so a washed tab is written in `--text`. An inset shadow rather than a
+   border, so the tab does not change size. */
+.dv-tabs-container > .dv-tab .identity-tab[data-wait-state],
+.dv-tab-ghost-drag .identity-tab[data-wait-state] {
+  background: color-mix(in srgb, var(--wait-hue) 15%, var(--panel2));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wait-hue) 60%, transparent);
+  color: var(--text);
+}
 /* The overflow dropdown's rows are not in `.dv-tabs-container`, so they keep
    the one weight the chip title used to hard-code before it inherited. */
 .dv-tabs-overflow-container .dv-tab {
