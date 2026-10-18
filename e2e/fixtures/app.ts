@@ -13,6 +13,14 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { execFileSync, spawn } from 'child_process';
+import {
+  E2E_MONITOR_ENV,
+  E2E_SETTINGS_FILE,
+  pickTestDisplay,
+  readSettingsKey,
+  type Box,
+  type Point,
+} from '../../src/shared/test-display';
 
 /**
  * Kill an entire process tree.
@@ -287,6 +295,11 @@ export interface LaunchOptions {
  * screen the day the second one powers down, while `=left` still means the
  * left one — and falls back to the primary only when there IS no left one.
  *
+ * `=id:<n>` names it by Electron's `display.id` (kept across reboots on Windows while the
+ * screen stays on the same connector), which is
+ * what Settings → Advanced → Testing writes when no direction word is
+ * unambiguous (#1331). An id that is not attached moves nothing, like the rest.
+ *
  * THE PER-MACHINE FILE (2026-10-17). An env var has to be exported by every
  * shell that runs the suite, and the shells this suite is mostly run from —
  * agent workers in sibling worktrees — do not inherit the developer's. So when
@@ -295,6 +308,8 @@ export interface LaunchOptions {
  * machine honours it. The env var, when present, always wins — including when
  * it is present and EMPTY, which is how a shell (or a unit test) says "off,
  * whatever the file says". CI has no such file and is byte-identical.
+ * Settings → Advanced → Testing writes this file (#1331): it lists the attached
+ * screens and saves the one picked, keeping every other line as it was.
  *
  * THE HONEST LIMITATION: this fixes the visual popping only. Activating a
  * window steals keyboard focus globally on Windows however far away it is, and
@@ -302,58 +317,24 @@ export interface LaunchOptions {
  * can still be interrupted. What you get back is a quiet screen.
  */
 
-/** A window rectangle in Electron's screen coordinates. */
-export interface Box {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-export interface Point {
-  x: number;
-  y: number;
-}
-
-/** One display, reduced to what the pure helpers below need. */
-export interface DisplayInfo {
-  id: number;
-  workArea: Box;
-}
-
-/** The env var that turns the move on. One definition, named once. */
-export const E2E_MONITOR_ENV = 'SWITCHBOARD_E2E_MONITOR';
-
-/** The per-machine file consulted when the env var is absent (in `~`). */
-export const E2E_SETTINGS_FILE = '.switchboard-e2e.env';
+// The resolver itself — the value forms, the per-machine file's parser, and
+// which screen a value means — lives in `src/shared/test-display.ts` since
+// #1331, because Settings → Advanced → Testing has to agree with it to the
+// screen. Re-exported from here so specs and `app.test.ts` keep one import.
+export {
+  E2E_MONITOR_ENV,
+  E2E_SETTINGS_FILE,
+  pickTestDisplay,
+  readSettingsKey,
+  type Box,
+  type DisplayInfo,
+  type Point,
+} from '../../src/shared/test-display';
 
 // Frozen: one object is handed to every switch-off launch as its
 // `displayOffset`, and a shared mutable default is a question nobody should
 // have to ask.
 const NO_OFFSET: Point = Object.freeze({ x: 0, y: 0 });
-
-/**
- * Pull one key out of a `KEY=VALUE` file. Pure; exported for `app.test.ts`.
- *
- * Deliberately a six-line dotenv: trims, skips blanks and `#` lines, strips one
- * layer of matching quotes, last occurrence wins. Anything fancier is a
- * dependency for a file with one key in it.
- */
-export function readSettingsKey(contents: string, key: string): string | undefined {
-  let found: string | undefined;
-  for (const raw of contents.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) continue;
-    const eq = line.indexOf('=');
-    if (eq < 0 || line.slice(0, eq).trim() !== key) continue;
-    let value = line.slice(eq + 1).trim();
-    if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0]) {
-      value = value.slice(1, -1);
-    }
-    found = value;
-  }
-  return found;
-}
 
 /**
  * The monitor setting as the developer meant it: the env var if PRESENT (empty
@@ -370,68 +351,6 @@ export function monitorSetting(): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-const DIRECTIONS = ['left', 'right', 'above', 'below'] as const;
-type Direction = (typeof DIRECTIONS)[number];
-
-/** The nearest display whose centre lies in `dir` from the primary's. */
-function nearestInDirection(
-  displays: DisplayInfo[],
-  primary: DisplayInfo,
-  dir: Direction
-): DisplayInfo | undefined {
-  const centre = (b: Box): Point => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
-  const p = centre(primary.workArea);
-  const inDirection = (c: Point): boolean =>
-    dir === 'left'
-      ? c.x < p.x
-      : dir === 'right'
-        ? c.x > p.x
-        : dir === 'above'
-          ? c.y < p.y
-          : c.y > p.y;
-  let best: { d: DisplayInfo; dist: number } | undefined;
-  for (const d of displays) {
-    if (d.id === primary.id) continue;
-    const c = centre(d.workArea);
-    if (!inDirection(c)) continue;
-    const dist = Math.hypot(c.x - p.x, c.y - p.y);
-    if (!best || dist < best.dist) best = { d, dist };
-  }
-  return best?.d;
-}
-
-/**
- * Resolve `SWITCHBOARD_E2E_MONITOR` against a real display list.
- *
- * Pure and exported so `app.test.ts` can pin the ordering rule without a
- * machine that has two monitors — the whole point being that CI has one.
- *
- * Answers `null` for every "do nothing" case, and they are all the same case to
- * the caller: unset, junk, out of range, a direction with no screen that way,
- * or monitor 1 (the primary), which is a legitimate thing to ask for as an A/B
- * and is simply the behaviour we already have.
- */
-export function pickTestDisplay(
-  displays: DisplayInfo[],
-  primaryId: number,
-  monitor: string | undefined
-): { primary: DisplayInfo; target: DisplayInfo } | null {
-  const want = monitor?.trim().toLowerCase();
-  if (!want) return null;
-  const primary = displays.find((d) => d.id === primaryId);
-  if (!primary) return null;
-  let target: DisplayInfo | undefined;
-  if ((DIRECTIONS as readonly string[]).includes(want)) {
-    target = nearestInDirection(displays, primary, want as Direction);
-  } else {
-    const n = Number(want);
-    if (!Number.isInteger(n) || n < 1) return null;
-    target = [primary, ...displays.filter((d) => d.id !== primaryId)][n - 1];
-  }
-  if (!target || target.id === primary.id) return null;
-  return { primary, target };
 }
 
 /**

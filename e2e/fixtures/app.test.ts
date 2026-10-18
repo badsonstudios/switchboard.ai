@@ -472,6 +472,39 @@ describe('pickTestDisplay — monitor 1 is the primary, 2..N are the rest (#479)
       );
     });
   });
+
+  describe('by display id — `id:<n>`, what Settings writes when a word is ambiguous (#1331)', () => {
+    const FAR_RIGHT: DisplayInfo = {
+      id: 5,
+      workArea: { x: 5120, y: 0, width: 1920, height: 1040 },
+    };
+
+    it('names exactly that screen, whatever order the list arrives in', () => {
+      expect(pickTestDisplay(three, PRIMARY.id, `id:${LEFT.id}`)?.target).toEqual(LEFT);
+      expect(pickTestDisplay([FAR_RIGHT, PRIMARY, RIGHT], PRIMARY.id, 'id:5')?.target).toEqual(
+        FAR_RIGHT
+      );
+      expect(pickTestDisplay(three, PRIMARY.id, ` ID:${RIGHT.id} `)?.target).toEqual(RIGHT); // forgiving
+    });
+
+    it('survives the OTHER screen in that direction detaching', () => {
+      // the case a direction word cannot cover: two screens to the right, and
+      // the nearer one powers down — `right` would now mean the far one
+      expect(pickTestDisplay([PRIMARY, FAR_RIGHT], PRIMARY.id, 'id:5')?.target).toEqual(FAR_RIGHT);
+      expect(pickTestDisplay([PRIMARY, RIGHT], PRIMARY.id, 'id:5')).toBeNull();
+    });
+
+    it.each([
+      ['an id that is not attached', 'id:999'],
+      ['the primary’s own id', `id:${PRIMARY.id}`],
+      ['no number', 'id:'],
+      ['junk after the colon', 'id:abc'],
+      ['a negative id', 'id:-2'],
+      ['a fractional id', 'id:2.5'],
+    ])('does nothing for %s', (_what, value) => {
+      expect(pickTestDisplay(three, PRIMARY.id, value)).toBeNull();
+    });
+  });
 });
 
 describe('monitorSetting — the env var, else the per-machine file', () => {

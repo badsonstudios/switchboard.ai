@@ -2032,6 +2032,39 @@
       "addFailed": "✗ {error}"
     }
   },
+  "testDisplay": {
+    "title": "Testing: run automated tests on this screen",
+    "blurb": "Where this project's own automated test windows open. Nothing else uses this.",
+    "loading": "Looking at your screens…",
+    "primaryDefault": "Primary screen (default)",
+    "primaryDefaultIs": "Primary screen (default) — {screen}",
+    "row": "Screen {number} — {details}",
+    "size": "{width}×{height}",
+    "position": {
+      "primary": "primary",
+      "left": "to the left",
+      "right": "to the right",
+      "above": "above",
+      "below": "below",
+      "above-left": "above, to the left",
+      "above-right": "above, to the right",
+      "below-left": "below, to the left",
+      "below-right": "below, to the right",
+      "overlapping": "overlapping the primary"
+    },
+    "savedValue": "Your saved choice: {value}",
+    "missing": "Not attached — tests run on the primary until it is back.",
+    "invalid": "The tests cannot read this value, so they run on the primary. Pick a screen to replace it.",
+    "readFailed": "Could not read {file} ({problem}). Nothing here will change it until it can be read.",
+    "writeFailed": "Could not save that ({problem}). The file was left as it was.",
+    "refused": "This window is not allowed to change that setting.",
+    "getFailed": "Could not list your screens ({problem}).",
+    "code": {
+      "not-a-screen": "that is not a screen",
+      "not-attached": "that screen is not attached any more"
+    },
+    "savedIn": "Saved in {file}, which every copy of the project on this computer reads. A {env} variable set in the shell that runs the tests overrides it."
+  },
   "settings": {
     "title": "Settings",
     "open": "Settings…",

@@ -61,6 +61,7 @@ import { DispatchRetireSection } from './settings/DispatchRetireSection';
 import type { DispatchRetirePolicy } from '../lib/dispatch-ephemeral';
 import { DiagnosticsSection } from './settings/DiagnosticsSection';
 import { AisSection } from './settings/AisSection';
+import { TestDisplaySection } from './settings/TestDisplaySection';
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -462,6 +463,10 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
               experimentalFork={props.experimentalFork}
               onToggleExperimentalFork={props.onToggleExperimentalFork}
             />
+            {/* LAST on the last tab, i.e. the bottom of Settings (#1331): it is
+                for the people who run this project's own tests, nobody else.
+                Self-contained like the AIs tab — no props through here. */}
+            <TestDisplaySection />
           </div>
         )}
 
