@@ -3439,6 +3439,47 @@ describe('v3 -> v4: one conversation per AI (#1294)', () => {
     expect(back.aiSwitches).toEqual([mark]);
   });
 
+  // #1317: an ACP card's model and effort, kept with the conversation
+  it('kept conversation settings round-trip, on the head and on a parked conversation', () => {
+    const s1 = makeStore(file);
+    s1.load();
+    s1.upsertSession({
+      ...sess('a'),
+      identity: { ...sess('a').identity, providerId: 'codex' },
+      nativeSessionId: 'codex-1',
+      conversationSettings: { conversation: 'codex-1', model: 'gpt-6-luna', effort: 'low' },
+      conversations: {
+        gemini: {
+          nativeSessionId: 'g-1',
+          parkedAt: '2026-10-16T10:00:00.000Z',
+          conversationSettings: { conversation: 'g-1', model: 'gemini-pro' },
+        },
+      },
+    });
+    s1.save();
+    const back = makeStore(file).load().sessions[0];
+    expect(back.conversationSettings).toEqual({ conversation: 'codex-1', model: 'gpt-6-luna', effort: 'low' });
+    expect(back.conversations?.gemini.conversationSettings).toEqual({ conversation: 'g-1', model: 'gemini-pro' });
+  });
+
+  it('a card written before kept settings loads unchanged, and ragged ones are dropped (agent defaults)', () => {
+    write({
+      version: 4,
+      sessions: [
+        sess('old'),
+        { ...sess('b'), conversationSettings: { model: 'no-conversation' } },
+        { ...sess('c'), conversationSettings: { conversation: 'native-c', model: 7, effort: '' } },
+        { ...sess('d'), conversationSettings: { conversation: 'native-d', effort: 'x'.repeat(500), model: 'm', extra: 'no' } },
+      ],
+    });
+    const [old, b, c, d] = makeStore(file).load().sessions;
+    expect(old).toEqual(sess('old'));
+    expect('conversationSettings' in old).toBe(false);
+    expect(b.conversationSettings).toBeUndefined();
+    expect(c.conversationSettings).toBeUndefined();
+    expect(d.conversationSettings).toEqual({ conversation: 'native-d', model: 'm' });
+  });
+
   it('a hand-edited per-AI half is repaired, not trusted', () => {
     write({
       version: 4,

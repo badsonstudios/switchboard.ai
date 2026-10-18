@@ -545,6 +545,13 @@ export interface SpawnOptions {
   /** provider-native session id to resume */
   resumeSessionId?: string;
   /**
+   * What the card last chose for that conversation, as the engine asked the
+   * host to keep it (a `settings` engine event, #1317): the engine's own model
+   * and effort ids. Only ever set alongside `resumeSessionId`, and only when
+   * it was kept for THAT conversation. Absent: the agent's defaults stand.
+   */
+  resumeSettings?: { model?: string; effort?: string };
+  /**
    * FORK the resumed conversation instead of continuing it (§5.5 Level 3).
    *
    * Only meaningful alongside `resumeSessionId` — there is nothing to fork from

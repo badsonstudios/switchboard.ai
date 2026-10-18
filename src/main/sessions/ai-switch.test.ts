@@ -22,6 +22,17 @@ function card(over: Partial<PersistedSession> = {}): PersistedSession {
 }
 
 describe('switchCardAi (#1294)', () => {
+  it('kept settings travel with their conversation: parked on the way out, put back on the way in (#1317)', () => {
+    const kept = { conversation: 'x-1', model: 'gpt-6-luna', effort: 'low' };
+    const onCodex = card({ identity: { title: 't', folder: 'C:/p', providerId: 'codex' }, nativeSessionId: 'x-1', conversationSettings: kept });
+    const away = switchCardAi(onCodex, codex, claude, '2026-10-16T10:00:00.000Z', 'm1');
+    expect(away.conversationSettings).toBeUndefined();
+    expect(away.conversations?.codex.conversationSettings).toEqual(kept);
+    const back = switchCardAi({ ...away, nativeSessionId: 'c-9' }, claude, codex, '2026-10-16T11:00:00.000Z', 'm2');
+    expect(back.nativeSessionId).toBe('x-1');
+    expect(back.conversationSettings).toEqual(kept);
+  });
+
   it('parks the conversation it leaves, with its numbers, and starts the target fresh', () => {
     const next = switchCardAi(card(), claude, codex, '2026-10-16T10:00:00.000Z', 'm1');
     expect(next.identity.providerId).toBe('codex');

@@ -88,6 +88,12 @@ export const MAX_REMEMBERED = 200;
 export interface AcpStart {
   cwd: string;
   resumeSessionId?: string;
+  /**
+   * What the host kept for `resumeSessionId` (#1317) — the fallback when this
+   * process's own memory has nothing for it, which is every reopen after an
+   * app restart.
+   */
+  resumeSettings?: Remembered;
   autonomy?: AutonomyMode;
   mcpServers: AcpMcpServer[];
   /** the provider never saw this session's start: refuse to open (no folder) */
@@ -719,13 +725,29 @@ export class AcpSession {
    * to the agent's defaults), then go READY once every reply is in.
    *
    * Mode comes from the card's autonomy, through the provider's map. Model and
-   * effort come from what this provider remembers of the conversation, which
-   * is in memory: an app restart loses them, and the agent's defaults stand.
+   * effort come from what this provider remembers of the conversation — its
+   * in-memory map first, then what the HOST kept for it across a restart
+   * (`AcpStart.resumeSettings`, #1317). Neither: the agent's defaults stand.
    */
   private reapply(loaded: boolean): void {
     this.phase = 'configuring';
     const pending: Array<Promise<unknown>> = [];
-    const remembered = loaded && this.acpSessionId ? this.memory.get(this.acpSessionId) : undefined;
+    const id = loaded ? this.acpSessionId : undefined;
+    const kept = id && id === this.start.resumeSessionId ? this.start.resumeSettings : undefined;
+    const inMemory = id ? this.memory.get(id) : undefined;
+    const remembered = inMemory ?? kept;
+    // What was KEPT goes into this process's memory field by field, and only
+    // once the agent has it (applied, or already current) — so a later set
+    // adds to it rather than replacing it (the event carries the whole entry),
+    // and a kept id the agent now refuses (a retired model) is not sent back
+    // to be kept again (review of #1317).
+    const seed = (category: string, value: string): void => {
+      if (!id || inMemory || category === 'mode') return;
+      const entry = this.memory.get(id) ?? {};
+      if (category === 'model') entry.model = value;
+      else if (category === THOUGHT_LEVEL) entry.effort = value;
+      this.memory.set(id, entry);
+    };
     const wantMode = this.start.autonomy ? this.cfg.modeMap?.[this.start.autonomy] : undefined;
     const wants: Array<[string, string | undefined]> = [
       ['model', remembered?.model],
@@ -733,9 +755,20 @@ export class AcpSession {
       ['mode', wantMode],
     ];
     for (const [category, value] of wants) {
-      if (!value || this.currentOf(category) === value) continue;
+      if (!value) continue;
+      if (this.currentOf(category) === value) {
+        seed(category, value);
+        continue;
+      }
       const sent = this.setRequest(category, value, 'reapply');
-      if (sent) pending.push(sent);
+      if (sent)
+        pending.push(
+          sent.then((r) => {
+            // verified by effect, as a control's set is: a reply that did not
+            // change the value is not "the agent has it"
+            if (r.ok && this.currentOf(category) === value) seed(category, value);
+          })
+        );
     }
     void Promise.all(pending).then(() => this.ready());
   }
@@ -917,6 +950,17 @@ export class AcpSession {
       if (this.memory.size <= MAX_REMEMBERED) break;
       this.memory.delete(oldest);
     }
+    // ...and the host is asked to keep it with the conversation, which is what
+    // survives a restart (#1317). The whole entry, so the host's copy is never
+    // half of what this one holds.
+    this.loopback([
+      {
+        type: 'settings',
+        conversation: this.acpSessionId,
+        ...(entry.model ? { model: entry.model } : {}),
+        ...(entry.effort ? { effort: entry.effort } : {}),
+      },
+    ]);
   }
 
   /** `model` and `mode` events for the current settings. */

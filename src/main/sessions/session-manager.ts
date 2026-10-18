@@ -422,6 +422,8 @@ export class SessionManager {
     identity: SessionIdentity,
     opts?: {
       resumeSessionId?: string;
+      /** kept settings for `resumeSessionId` (#1317), passed through to the adapter */
+      resumeSettings?: { model?: string; effort?: string };
       /**
        * Fork `resumeSessionId` rather than continuing it (§5.5 Level 3,
        * P2-E11-12). Passed straight through to the adapter, which decides
@@ -507,6 +509,7 @@ export class SessionManager {
         sessionId: id,
         stateDir: this.stateDir,
         resumeSessionId: opts?.resumeSessionId,
+        ...(opts?.resumeSessionId && opts.resumeSettings ? { resumeSettings: opts.resumeSettings } : {}),
         // §5.5 Level 3. Both undefined on every ordinary start, so the recipe an
         // adapter builds is unchanged for every session that is not a fork.
         forkSession: opts?.forkSession,

@@ -55,6 +55,7 @@ export function streamStatusEvent(e: EngineEvent): SessionEvent | null {
     case 'commands':
     case 'model':
     case 'mode':
+    case 'settings':
     case 'conversation':
     case 'conversation-reset':
     case 'message-start':

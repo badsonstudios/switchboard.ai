@@ -233,6 +233,7 @@ export function createAcpProvider(opts: AcpProviderOptions): ProviderAdapter & {
           cwd: options.cwd,
           mcpServers: readMcpServers(options.mcpConfig),
           ...(options.resumeSessionId ? { resumeSessionId: options.resumeSessionId } : {}),
+          ...(options.resumeSessionId && options.resumeSettings ? { resumeSettings: options.resumeSettings } : {}),
           ...(options.autonomy ? { autonomy: options.autonomy } : {}),
         },
         sessionConfig,

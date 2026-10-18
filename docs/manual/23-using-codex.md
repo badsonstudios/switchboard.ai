@@ -55,8 +55,9 @@ See [Switching a session to another AI](25-switching-ais.md).
 - **Resume.** Closing and reopening a Codex card picks up the same
   conversation. Codex replays it, so you see what was said. Codex forgets the
   model and effort when a conversation is reopened, so switchboard.ai puts
-  them back. If the app was restarted in between, they go back to Codex's own
-  defaults.
+  them back — including after you quit and restart the app, because the card
+  remembers what you picked for that conversation. A conversation you never
+  picked a model or effort for opens on Codex's own defaults.
 - **The other sessions.** A Codex session is connected to the other sessions
   the same way a Claude session is, so it can read their work and send them
   messages.

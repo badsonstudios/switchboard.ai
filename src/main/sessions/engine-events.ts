@@ -225,6 +225,25 @@ export interface ModeEvent {
 }
 
 /**
+ * The engine asks the host to KEEP these settings with the conversation
+ * (#1317), and to hand them back in `SpawnOptions.resumeSettings` when it is
+ * reopened. Sent after a set the agent confirmed, with everything the engine
+ * now holds for that conversation (not just the field that changed).
+ *
+ * Why the host keeps them: an ACP `session/load` resets model and effort to
+ * the agent's defaults (measured on Codex, `spike/findings/e40-codex-acp.md`
+ * Q5), and the engine's own memory of them dies with the process. The values
+ * are the engine's own ids, opaque to the host.
+ */
+export interface SettingsEvent {
+  type: 'settings';
+  /** the native conversation they belong to (the resume id) */
+  conversation: string;
+  model?: string;
+  effort?: string;
+}
+
+/**
  * The engine compacted the conversation's context. Token counts as the engine
  * reported them, when it did. No consumer yet — the per-AI surfaces item
  * (#1288) turned out not to need it — but carried so the first surface that
@@ -280,6 +299,7 @@ export type EngineEvent =
   | CommandsEvent
   | ModelEvent
   | ModeEvent
+  | SettingsEvent
   | CompactionEvent
   | UsageEvent;
 

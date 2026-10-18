@@ -84,7 +84,7 @@ export function shouldRegisterCodex(env: NodeJS.ProcessEnv = process.env): boole
   }
 }
 
-const engine = createAcpProvider({
+const createEngine = () => createAcpProvider({
   id: CODEX_PROVIDER_ID,
   displayName: 'Codex',
   command: codexCommand,
@@ -98,6 +98,7 @@ const engine = createAcpProvider({
   // MEASURED (#1285 Q7): Codex reads `AGENTS.md`, and never `CLAUDE.md`
   instructionFiles: ['AGENTS.md'],
 });
+const engine = createEngine();
 
 /**
  * NO PRICE (#1288's rule: "show whatever the AI reports"). The owner's Codex is
@@ -120,7 +121,19 @@ const codexDetect: DetectCapability = {
   detect: (signal) => detectCodex(signal),
 };
 
-export const codexAdapter: typeof engine = {
-  ...engine,
-  capabilities: { ...engine.capabilities, usage: codexUsage, detect: codexDetect },
-};
+/**
+ * A Codex adapter of its own — its own engine, so its own (empty) memory of
+ * conversations. The app registers ONE (`codexAdapter`); `check:codex` builds a
+ * second for its resume leg, which is how it stands in for an app restart
+ * (#1317): nothing the first one remembered can reach the second.
+ */
+export function createCodexAdapter(): typeof engine {
+  return asCodex(createEngine());
+}
+
+/** The engine with Codex's own usage and detection over it — one place. */
+function asCodex(e: typeof engine): typeof engine {
+  return { ...e, capabilities: { ...e.capabilities, usage: codexUsage, detect: codexDetect } };
+}
+
+export const codexAdapter: typeof engine = asCodex(engine);
