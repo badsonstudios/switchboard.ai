@@ -3,6 +3,34 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🎛️ ORCHESTRATION RUN — started 2026-10-17 (serial, five issues, Dan's order)
+>
+> **Single-writer rule:** this file is written ONLY by the orchestrator session.
+> Workers never touch it; their inputs are the handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md` (git-ignored, main checkout).
+> Resume from this block if the orchestrator session dies.
+>
+> **Dan's instruction:** work these five, ONE AT A TIME, in this order, each via
+> the normal work loop (plan → implement → test → review → PR → **merge on
+> green CI** → PROGRESS + dogfood tracker → report with the plain-English
+> summary and the numbered hand-test list). Not parallel: the first three all
+> touch permission holds. Stop only for a real blocker or red CI.
+>
+> | # | Issue | Worktree / branch | State |
+> |---|---|---|---|
+> | 1 | #1277 window vanishes off-screen; holds DENY after 300 s; liveness gate must test reachability; log hide/minimize/move; find the paired-restore second writer | `sb-wt-1` / `feature/1277-window-reachability` | **IN FLIGHT** — first Opus worker lost twice (Dan closed the host app; then a scheduled wakeup's interrupt stopped it mid-gate, killing its e2e run at 33 passed). Its work survived as WIP commits; the second resume was killed too (armed-wakeup interrupt); the THIRD worker verified-then-kept all four WIP commits, added the display-event re-check, and shipped. **DONE — PR #1333 merged `f260b929` (squash) 2026-10-17 ~20:20, issue closed.** Gate: unit 13,072, e2e 523/523, CI 4/4. **Two owner decisions, both one-line flips:** (1) minimized counts as REACHABLE (`MINIMIZED_IS_REACHABLE`, `window-reach.ts`) — opposite of the done-when's "not minimized", because DESIGN §5.9's toast answers a permission while minimized (DESIGN amended); (2) hidden/off-screen denies BEFORE a hold exists, so the toast has no Allow/Deny there. Already-held requests keep their deadline. Hand-test list in the PR body and the dogfood tracker |
+> | — | **Interrupt, Dan 2026-10-17 ~18:30:** e2e windows kept landing on his working screen. The switch existed (`SWITCHBOARD_E2E_MONITOR`, #479) but workers' shells never carried it. **PR #1330** (orchestrator-written dev tooling, `fix/e2e-monitor-file`): the fixture reads the key from `~/.switchboard-e2e.env`, and accepts `left/right/above/below`; his file says `right`. Then he asked for a **Settings picker** that detects monitors: filed **#1331**, worker dispatched into `sb-wt-2` / `feature/1331-test-screen-picker` (on top of #1330's commit; rebase drops it once #1330 lands). Runs beside #1277 — no hold code in common; the e2e lock serialises their suites. **#1331 DONE — PR #1334 merged `746fa4c7` (squash) 2026-10-17 ~21:00, issue closed** (second worker; the first was killed by the armed-wakeup interrupt with its work uncommitted and was resumed verify-then-keep). Settings ▸ Advanced, bottom: "Testing: run automated tests on this screen" lists attached screens (number, name, size, position), writes `right/left/above/below` or `id:<n>` to `~/.switchboard-e2e.env`, preserves other keys; unplugged choice → "not attached, tests run on the primary". Gate after the #1277 rebase: unit 13,156, e2e 524/524, CI 4/4. Follow-up to file after #1332: a checkbox for its key in the same section (~30 lines) | `sb-wt-2` | **DONE** |
+> | — | **Dan, ~19:10:** the moved windows still steal the foreground on every launch. Filed **#1332** (show test windows without activation, key in the same per-machine file; MEASURE which specs need the OS-active window and have them activate it themselves). Worker in `sb-wt-3` / `feature/1332-e2e-no-activate`. It will collide with #1277 in `src/main/index.ts` — told to keep the main-process change to one seam and rebase after #1277 lands | `sb-wt-3` | **IN FLIGHT** |
+> | 2 | #1268 a held request outlives its turn — probe first (`spike/probes/1268/`), then fix on what was measured | — | queued |
+> | 3 | #1267 sound for a held approval / question while focused. Dan's decisions: (a) only when the asking session is NOT the one in front; (b) a distinct sound from the done beep; (c) repeat once at one minute left; (d) new default rule, on by default, switchable in Settings | — | queued |
+> | 4 | #1326 colour the AI icons per AI (Claude #D97757, Codex green ~#10A37F), contrast-checked on every theme; fix the `<img>`/currentColor black-icon bug | — | queued |
+> | 5 | #1282 new session always starts fresh (no history picker on any entry point) and asks for the name, pre-filled with today's name | — | queued |
+>
+> Merge policy for this run: Dan asked for merge-on-green per issue, so the
+> orchestrator merges each PR itself (serial run; the parallel-run "queue
+> user-facing PRs" rule does not apply). PROGRESS close-outs land through a
+> `docs/` PR after each merge, never a push to main.
+
 > # 💬 2026-10-17 — #1328: THE `/` LIST SAYS WHY IT IS EMPTY, branch `feature/1328-slash-menu-skills-hint`
 >
 > The owner asked for #1328 straight after #1276 merged (PR #1327). Three
