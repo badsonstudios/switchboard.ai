@@ -45,7 +45,7 @@ import { buildEnv } from '../../transport/env';
 import { StreamService, launchSpec } from '../../transport/stream-service';
 import { codexInstalled, codexLoginState, codexVersion, npxPath } from './codex-detect';
 import { createLimitsReader } from './codex-limits';
-import { CODEX_PROVIDER_ID, codexAdapter } from './codex-provider';
+import { CODEX_PROVIDER_ID, codexAdapter, createCodexAdapter } from './codex-provider';
 import { claudeAdapter } from '../claude';
 import { switchCardAi } from '../../sessions/ai-switch';
 import { planSessionStart } from '../../sessions/start-plan';
@@ -182,19 +182,28 @@ async function main(): Promise<number> {
     },
   });
   const m = new SessionManager(registry, streams, createLogger(new LogSink({ dir: work }), 'sessions'), work);
+  // THE RESTART (#1317): the resume leg runs on a SECOND manager over a FRESH
+  // Codex adapter, so nothing the first one remembered in memory can help it.
+  // What carries model and effort across is only what an app would have kept
+  // on the card: the `settings` event, handed back as `resumeSettings`.
+  const registry2 = new ContributionRegistry<MainContributions>();
+  registry2.register('provider-adapter', createCodexAdapter());
+  const m2 = new SessionManager(registry2, streams, createLogger(new LogSink({ dir: work }), 'sessions-2'), work);
 
   const events: Array<{ sessionId: string; ev: EngineEvent }> = [];
   let permissionsAsked = 0;
-  m.onEngineEvent((sessionId, ev) => {
-    events.push({ sessionId, ev });
-    if (ev.type === 'permission-request') {
-      permissionsAsked += 1;
-      say(`Codex asked permission for "${ev.tool}" — denied (this check needs none)`);
-      m.answerPermission(sessionId, ev.requestId, { behavior: 'deny', message: 'not in this check' });
-    }
-  });
   const exited = new Set<string>();
-  m.onSessionExit((e) => exited.add(e.sessionId));
+  for (const mgr of [m, m2]) {
+    mgr.onEngineEvent((sessionId, ev) => {
+      events.push({ sessionId, ev });
+      if (ev.type === 'permission-request') {
+        permissionsAsked += 1;
+        say(`Codex asked permission for "${ev.tool}" — denied (this check needs none)`);
+        mgr.answerPermission(sessionId, ev.requestId, { behavior: 'deny', message: 'not in this check' });
+      }
+    });
+    mgr.onSessionExit((e) => exited.add(e.sessionId));
+  }
   const of = (sid: string): EngineEvent[] => events.filter((e) => e.sessionId === sid).map((e) => e.ev);
   const ofType = <T extends EngineEvent['type']>(sid: string, t: T) =>
     of(sid).filter((e): e is Extract<EngineEvent, { type: T }> => e.type === t);
@@ -277,11 +286,24 @@ async function main(): Promise<number> {
       say(`(no MCP stub at ${stub}; run from the repo root to check the Session Bus path)`);
     }
 
+    // what an app keeps on the card (#1317): the engine's last `settings` event
+    const kept = ofType(s1, 'settings').at(-1);
+    check(
+      `the engine asked to keep ${MODEL} / ${EFFORT} with the conversation`,
+      kept?.conversation === conversation && kept?.model === MODEL && kept?.effort === EFFORT,
+      JSON.stringify(kept)
+    );
+
     m.remove(s1);
     check('session 1 closed', await until(() => exited.has(s1), 15_000, 'session 1 to exit'));
 
-    // ── session 2: resume the same conversation, one turn ────────────────────
-    const s2 = m.create(identity, { autonomy: 'ask', resumeSessionId: conversation, mcpConfigFor }).id;
+    // ── session 2: an app RESTART, then resume the same conversation ─────────
+    const s2 = m2.create(identity, {
+      autonomy: 'ask',
+      resumeSessionId: conversation,
+      ...(kept ? { resumeSettings: { model: kept.model, effort: kept.effort } } : {}),
+      mcpConfigFor,
+    }).id;
     sessionIds.push(s2);
     const reopened = await until(() => ofType(s2, 'conversation').length > 0, OPEN_MS, 'session 2 to load');
     check('session 2 opened', reopened);
@@ -292,11 +314,21 @@ async function main(): Promise<number> {
       ofType(s2, 'conversation')[0].id
     );
     check('the load replayed turn 1', textsOf(of(s2), 'user').includes(PROMPT_1));
-    check('the model was re-applied after the load', ofType(s2, 'model').at(-1)?.id === MODEL, ofType(s2, 'model').at(-1)?.id);
+    check(
+      'the model survived the restart: re-applied after the load from what the card kept',
+      ofType(s2, 'model').at(-1)?.id === MODEL,
+      ofType(s2, 'model').at(-1)?.id
+    );
+    const effort2 = await m2.effort(s2);
+    check(
+      'the effort survived the restart too',
+      effort2.ok && (effort2.response as { effort?: unknown }).effort === EFFORT,
+      JSON.stringify(effort2)
+    );
 
     turns += 1;
     const before = textsOf(of(s2), 'assistant').length;
-    check('turn 2 sent', m.submitPrompt(s2, PROMPT_2));
+    check('turn 2 sent', m2.submitPrompt(s2, PROMPT_2));
     const t2 = await until(() => ofType(s2, 'turn-end').length > 0, TURN_MS, 'turn 2 to end');
     const end2 = ofType(s2, 'turn-end')[0];
     check('turn 2 ended, not failed', t2 && end2?.failed === false, end2?.label ?? 'no turn end');
@@ -306,7 +338,8 @@ async function main(): Promise<number> {
     const usage2 = ofType(s2, 'usage');
     say(`turn 2 usage: ${JSON.stringify(usage2)}`);
     check('turn 2 reported token usage', usage2.some((u) => (u.inputTokens ?? 0) + (u.outputTokens ?? 0) > 0));
-    m.remove(s2);
+    check('turn 2 ran on the kept model', usage2.some((u) => u.model === MODEL), usage2.map((u) => u.model).join(','));
+    m2.remove(s2);
     check('session 2 closed', await until(() => exited.has(s2), 15_000, 'session 2 to exit'));
 
     // ── the AI switch, Claude -> Codex -> Claude (#1294), opt-in ─────────────
@@ -411,7 +444,10 @@ async function main(): Promise<number> {
     say(`permissions asked: ${permissionsAsked}`);
     return failures.length ? 1 : 0;
   } finally {
-    for (const sid of sessionIds) if (m.get(sid)) m.remove(sid);
+    for (const sid of sessionIds) {
+      if (m.get(sid)) m.remove(sid);
+      if (m2.get(sid)) m2.remove(sid);
+    }
     await until(() => sessionIds.every((sid) => exited.has(sid)), 15_000, 'every session to exit');
     say(`model turns sent: ${turns}`);
     // ── clean up Codex's history: only what THIS run made ────────────────────

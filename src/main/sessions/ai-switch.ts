@@ -50,6 +50,7 @@ export function switchCardAi(
       usage: card.usage,
       model: card.model,
       cliCost: card.cliCost,
+      ...(card.conversationSettings ? { conversationSettings: card.conversationSettings } : {}),
       parkedAt: at,
     };
   } else if (card.nativeSessionLineage?.length) {
@@ -84,6 +85,7 @@ export function switchCardAi(
     usage: back?.usage,
     model: back?.model,
     cliCost: back?.cliCost,
+    conversationSettings: back?.conversationSettings,
     conversations: Object.keys(conversations).length > 0 ? conversations : undefined,
     aiSwitches: marks,
   };

@@ -650,6 +650,87 @@ describe('session/load', () => {
     expect(ofType(r2, 'conversation').map((c) => c.id)).toEqual([conversation]);
   });
 
+  // #1317: the provider's memory dies with the process. What survives a
+  // restart is what the HOST kept from the `settings` event, handed back in
+  // `resumeSettings` — so the engine re-applies it from a FRESH provider.
+  it('asks the host to keep model and effort, with the conversation they belong to', async () => {
+    const r = rig();
+    const id = await open(r);
+    const conversation = ofType(r, 'conversation')[0].id;
+    await r.m.setModel(id, 'fake-small');
+    await until(() => ofType(r, 'settings').length > 0, 'the model settings event');
+    expect(ofType(r, 'settings').at(-1)).toEqual({ type: 'settings', conversation, model: 'fake-small' });
+    await r.m.setEffort(id, 'high');
+    await until(() => ofType(r, 'settings').length > 1, 'the effort settings event');
+    // the WHOLE entry each time, never half of it
+    expect(ofType(r, 'settings').at(-1)).toEqual({ type: 'settings', conversation, model: 'fake-small', effort: 'high' });
+    // a refused set keeps nothing
+    await r.m.setModel(id, 'no-such-model');
+    expect(ofType(r, 'settings')).toHaveLength(2);
+  });
+
+  it('re-applies what the host kept, in a FRESH provider (an app restart)', async () => {
+    const r = rig();
+    const first = await open(r);
+    await r.m.setModel(first, 'fake-small');
+    await r.m.setEffort(first, 'high');
+    await turn(r, first, 'remember me');
+    const conversation = ofType(r, 'conversation')[0].id;
+    const kept = ofType(r, 'settings').at(-1)!;
+    r.m.remove(first);
+
+    // a NEW provider: nothing in its memory, as after a relaunch
+    const r2 = rig();
+    const second = r2.m.create(identity, {
+      resumeSessionId: conversation,
+      resumeSettings: { model: kept.model, effort: kept.effort },
+      autonomy: 'plan',
+    }).id;
+    await until(() => ofType(r2, 'conversation').length > 0, 'the load');
+    await turn(r2, second, '!state');
+    expect(texts(r2, 'assistant').at(-1)).toBe('STATE: model=fake-small effort=high mode=read-only');
+    // ...and a later set adds to what was kept rather than replacing it
+    await r2.m.setModel(second, 'fake-large');
+    await until(() => ofType(r2, 'settings').length > 0, 'the settings event');
+    expect(ofType(r2, 'settings').at(-1)).toEqual({ type: 'settings', conversation, model: 'fake-large', effort: 'high' });
+  });
+
+  it('a kept model the agent now refuses is not kept again; the rest still applies', async () => {
+    const r = rig();
+    const first = await open(r);
+    await turn(r, first, 'remember me');
+    const conversation = ofType(r, 'conversation')[0].id;
+    r.m.remove(first);
+    const r2 = rig();
+    const second = r2.m.create(identity, {
+      resumeSessionId: conversation,
+      resumeSettings: { model: 'a-retired-model', effort: 'high' },
+      autonomy: 'plan',
+    }).id;
+    await until(() => ofType(r2, 'conversation').length > 0, 'the load');
+    await turn(r2, second, '!state');
+    expect(texts(r2, 'assistant').at(-1)).toBe('STATE: model=fake-large effort=high mode=read-only');
+    await r2.m.setEffort(second, 'low');
+    await until(() => ofType(r2, 'settings').length > 0, 'the settings event');
+    // the retired id is gone from what the card is asked to keep
+    expect(ofType(r2, 'settings').at(-1)).toEqual({ type: 'settings', conversation, effort: 'low' });
+  });
+
+  it('without kept settings a fresh provider leaves the agent defaults (today’s behaviour)', async () => {
+    const r = rig();
+    const first = await open(r);
+    await r.m.setModel(first, 'fake-small');
+    await turn(r, first, 'remember me');
+    const conversation = ofType(r, 'conversation')[0].id;
+    r.m.remove(first);
+    const r2 = rig();
+    const second = r2.m.create(identity, { resumeSessionId: conversation, autonomy: 'plan' }).id;
+    await until(() => ofType(r2, 'conversation').length > 0, 'the load');
+    await turn(r2, second, '!state');
+    expect(texts(r2, 'assistant').at(-1)).not.toMatch(/model=fake-small/);
+    expect(sentMethod(r2, 'session/set_config_option').map((f) => (f.params as Obj).configId)).toEqual(['mode']);
+  });
+
   it('a conversation the agent cannot load falls back to a new one', async () => {
     const r = rig();
     r.m.create(identity, {

@@ -152,6 +152,14 @@ on the floor, and say so in your PR.
   sign in, the buttons on **Settings ▸ AIs** now show the AI's own names for
   them ("ChatGPT", "API Key") instead of internal ids like `chat-gpt`.
 
+- **A Codex card keeps its model and effort across a restart.** Codex forgets
+  both whenever a conversation is reopened, and switchboard.ai only remembered
+  them until the app closed, so after a restart a reopened Codex card was back
+  on Codex's defaults. The card now keeps what you picked for its
+  conversation and puts it back when that conversation is reopened, even in a
+  new run of the app. A conversation you never changed still opens on Codex's
+  defaults, as before.
+
 ## 0.8.124 — 2026-10-18
 
 ### Added

@@ -452,6 +452,7 @@ export class StreamFeed {
       case 'commands':
       case 'model':
       case 'mode':
+      case 'settings':
       case 'compaction':
       case 'usage':
         return;

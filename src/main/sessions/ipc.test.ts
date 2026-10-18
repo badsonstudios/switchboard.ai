@@ -208,6 +208,8 @@ function harness(
      *  carries it from the plan into the manager has something behind it */
     releaseSettingsFor?: unknown;
     resumeSessionId?: string;
+    /** what the card kept for that conversation (#1317) */
+    resumeSettings?: { model?: string; effort?: string };
     /** §5.5 Level 3 — recorded so the wiring that carries a fork from the plan
      *  into the manager has something behind it, and so a fork that silently
      *  degraded into an ordinary resume is visible rather than inferred. */
@@ -485,6 +487,7 @@ function harness(
           settingsFor?: unknown;
           releaseSettingsFor?: unknown;
           resumeSessionId?: string;
+          resumeSettings?: { model?: string; effort?: string };
           forkSession?: boolean;
           forkSessionId?: string;
           transport?: string;
@@ -496,6 +499,7 @@ function harness(
           settingsFor: o?.settingsFor,
           releaseSettingsFor: o?.releaseSettingsFor,
           resumeSessionId: o?.resumeSessionId,
+          ...(o?.resumeSettings ? { resumeSettings: o.resumeSettings } : {}),
           // §5.5 Level 3. Recorded rather than dropped so a fork that quietly
           // degraded into an ordinary resume — the damaging failure #801 names
           // — is assertable here instead of only visible against the real CLI.
@@ -1545,6 +1549,48 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
       expect(h.askedFor).toEqual(['codex']);
       expect(h.created[0].resumeSessionId).toBe('native-7');
       expect(h.upserted[0].nativeSessionId).toBe('native-7');
+    });
+
+    // #1317: an ACP agent forgets model and effort on `session/load`, so the
+    // card keeps them and hands them back on a resume of THAT conversation.
+    const onCodex = (over: Partial<PersistedSession> = {}) =>
+      priorCard({ folder, identity: { title: 't', folder, providerId: 'codex' }, nativeSessionId: 'native-7', ...over });
+
+    it('hands back the settings kept for the conversation it resumes (#1317)', () => {
+      const h = harness({ resume: { canResume: () => true } }, folder, {
+        prior: onCodex({ conversationSettings: { conversation: 'native-7', model: 'gpt-6-luna', effort: 'low' } }),
+        registered: ['generic', 'codex'],
+      });
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+      expect(h.created[0].resumeSessionId).toBe('native-7');
+      expect(h.created[0].resumeSettings).toEqual({ model: 'gpt-6-luna', effort: 'low' });
+    });
+
+    it("never hands one conversation's settings to another (#1317)", () => {
+      const h = harness({ resume: { canResume: () => true } }, folder, {
+        prior: onCodex({ conversationSettings: { conversation: 'native-OLD', model: 'gpt-6-luna' } }),
+        registered: ['generic', 'codex'],
+      });
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+      expect(h.created[0].resumeSessionId).toBe('native-7');
+      expect(h.created[0].resumeSettings).toBeUndefined();
+    });
+
+    it('keeps what the engine asks it to keep, tagged with the conversation (#1317)', () => {
+      const h = harness({ resume: { canResume: () => true } }, folder, {
+        prior: onCodex(),
+        registered: ['generic', 'codex'],
+      });
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+      h.fireEngineEvent('live-1', { type: 'settings', conversation: 'native-7', model: 'gpt-6-luna', effort: 'low' });
+      expect(h.upserted.at(-1)?.conversationSettings).toEqual({ conversation: 'native-7', model: 'gpt-6-luna', effort: 'low' });
+      // a late event for a conversation the card is no longer on keeps nothing
+      const n = h.upserted.length;
+      h.fireEngineEvent('live-1', { type: 'settings', conversation: 'native-OTHER', model: 'm' });
+      expect(h.upserted).toHaveLength(n);
+      // a session no card holds keeps nothing
+      h.fireEngineEvent('live-unknown', { type: 'settings', conversation: 'x', model: 'm' });
+      expect(h.upserted).toHaveLength(n);
     });
 
     it('declining a resume starts fresh but KEEPS the id (#484)', () => {

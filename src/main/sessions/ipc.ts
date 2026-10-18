@@ -124,7 +124,7 @@ import {
   isTaskLabelSize,
   type TaskLabelSize,
 } from '../../shared/task-label-size';
-import { PersistedSession } from '../workspace/store';
+import { PersistedSession, sanitizeConversationSettings } from '../workspace/store';
 import type { DispatchRegistry, PendingDispatch } from './dispatch-ipc';
 import type { DispatchResults } from './dispatch-results';
 import { buildDispatchPrompt } from './dispatch-prompt';
@@ -420,6 +420,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // cleared again. The moment a single turn happens the new transcript exists
     // and the chain is never walked past its head.
     if (existing) deps.persist.upsert({ ...existing, ...recordNativeId(existing, nativeId) });
+  });
+
+  // An engine asked for settings to be KEPT with its conversation (#1317):
+  // an ACP agent's model and effort, which `session/load` resets. Stored on
+  // the card, tagged with the conversation, and handed back at the next
+  // resume of that conversation (`sessions:create` below).
+  manager.onEngineEvent((liveId, ev) => {
+    if (ev.type !== 'settings') return;
+    const cardId = cardOfLive.get(liveId);
+    if (!cardId) return;
+    const existing = deps.persist.list().find((s) => s.id === cardId);
+    const kept = sanitizeConversationSettings(ev);
+    if (!existing || !kept) return;
+    // only for the conversation the card is ON: a late reply from a session
+    // being torn down (an AI switch) must not land on the new head
+    if (kept.conversation !== existing.nativeSessionId) return;
+    deps.persist.upsert({ ...existing, conversationSettings: kept });
   });
 
   // outbound goes through the broker too: it checks what the TARGET window
@@ -2474,6 +2491,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // can fail is `manager.create` itself, and its catch says what a briefing
       // lost there costs.
       if (dispatch) deps.dispatches?.consume(opts.dispatchId);
+      const resumeSettings = keptSettingsFor(prior, plan.resumeSessionId, plan.forkSession);
       let record: SessionRecord;
       try {
         record = manager.create(identity, {
@@ -2492,6 +2510,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           releaseMcpFor: plan.releaseMcpConfig,
           autonomy,
           resumeSessionId: plan.resumeSessionId,
+          // What this card kept for THAT conversation (#1317) — the model and
+          // effort an ACP `session/load` would otherwise reset. Never handed to
+          // a different conversation, and never to a fork.
+          ...(resumeSettings ? { resumeSettings } : {}),
           // §5.5 Level 3. Undefined on every ordinary start, so the spawn recipe
           // is unchanged for any session that is not a fork.
           forkSession: plan.forkSession,
@@ -3886,4 +3908,22 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     pendingPermissionFor,
     decidePermission,
   };
+}
+
+/**
+ * The model and effort this card kept for the conversation it is about to
+ * resume (#1317), or nothing. Only for a plain resume of the SAME conversation
+ * the settings were kept for: a fresh start has none to restore, a fork is a
+ * new conversation, and a card whose head has moved on must not carry the old
+ * conversation's choice into the new one.
+ */
+export function keptSettingsFor(
+  card: Pick<PersistedSession, 'conversationSettings'> | undefined,
+  resumeSessionId: string | undefined,
+  forkSession: boolean | undefined
+): { model?: string; effort?: string } | undefined {
+  const kept = card?.conversationSettings;
+  if (!kept || !resumeSessionId || forkSession || kept.conversation !== resumeSessionId) return undefined;
+  const out = { ...(kept.model ? { model: kept.model } : {}), ...(kept.effort ? { effort: kept.effort } : {}) };
+  return Object.keys(out).length > 0 ? out : undefined;
 }

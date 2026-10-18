@@ -264,9 +264,17 @@ provider's `authMethodId` once, then `session/new` again (no method named: the
 error is shown; `authenticate` is unmeasured) -> a failed load falls back to
 `session/new` -> model, effort and mode are re-applied (load resets them,
 item 02 Q5) -> ready. Prompts sent earlier queue; one prompt is in flight at a
-time. Model and effort are remembered per conversation **in memory**, so an app
-restart loses them and the agent's defaults stand; the mode comes from the
-card's autonomy through `modeMap`.
+time. Model and effort are remembered per conversation ~~**in memory**, so an app
+restart loses them and the agent's defaults stand~~ — **since #1317 (2026-10-18)
+also on the card**: after a set the agent confirmed, the engine sends a
+`settings` event (the conversation id plus its whole model/effort entry); the
+host stores it as `conversationSettings` next to `nativeSessionId` (and in a
+parked conversation, so an AI switch carries it), and hands it back as
+`SpawnOptions.resumeSettings` on a plain resume of THAT conversation. The engine
+re-applies its in-memory entry first, then the kept one; neither = the agent's
+defaults, as before. `check:codex`'s resume leg runs on a fresh adapter to
+prove it across a restart. The mode still comes from the card's autonomy
+through `modeMap`.
 
 The real mapping (it replaces the item 03 proposal above where they differ):
 

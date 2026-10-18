@@ -70,11 +70,39 @@ import type { AutonomyMode } from '../../shared/sessions';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../shared/transport';
 import type { NotificationPrefs } from '../../shared/notifications';
 
+/**
+ * The settings an engine asked the host to keep with one conversation (#1317):
+ * an ACP agent's model and effort, in the engine's own ids. `session/load`
+ * resets both to the agent's defaults (measured on Codex), so these are
+ * handed back at the next resume of THAT conversation, and only that one.
+ */
+export interface ConversationSettings {
+  /** the native conversation they belong to — a `nativeSessionId` */
+  conversation: string;
+  model?: string;
+  effort?: string;
+}
+
 export interface PersistedSession {
   id: string;
   identity: SessionIdentity;
   layoutSlot: number;
   nativeSessionId?: string;
+  /**
+   * The model and effort chosen for the card's conversation (#1317), kept
+   * because an ACP `session/load` forgets them. Tagged with the conversation
+   * they belong to, so a card that has moved on to another conversation never
+   * applies them there. **Absent: the agent's defaults**, which is what every
+   * card written before this field got, and what a Claude card always gets
+   * (Claude keeps its own; no `settings` event is ever sent for it).
+   *
+   * ONE slot, for the head: a resume that falls back to an ancestor in the
+   * lineage gets nothing (the tag does not match), which is the agent's
+   * defaults. No version bump: an older v4 build saves the head's field
+   * through untouched (it drops a parked one, and never updates the slot, so
+   * a downgrade can leave an older choice behind — fail-safe either way).
+   */
+  conversationSettings?: ConversationSettings;
   /**
    * The conversations this card descends from, newest first (#484).
    *
@@ -198,6 +226,8 @@ export interface PersistedParked extends ParkedConversation {
   usage?: PersistedSession['usage'];
   model?: string;
   cliCost?: CliCost;
+  /** the parked conversation's kept settings (#1317), put back with it */
+  conversationSettings?: ConversationSettings;
 }
 
 /**
@@ -834,9 +864,15 @@ export class WorkspaceStore {
                 conversations: sanitizeParked(withLineage.conversations, withLineage.identity.providerId),
                 aiSwitches: sanitizeAiSwitches(withLineage.aiSwitches),
               };
-        if (!withAis.groupId || groupIds.has(withAis.groupId)) return withAis;
-        orphaned.push(withAis.id);
-        return { ...withAis, groupId: undefined };
+        // Kept settings (#1317): named fields only, or none. Absent is the
+        // normal state of every card written before them, so silent.
+        const withSettings =
+          withAis.conversationSettings === undefined
+            ? withAis
+            : { ...withAis, conversationSettings: sanitizeConversationSettings(withAis.conversationSettings) };
+        if (!withSettings.groupId || groupIds.has(withSettings.groupId)) return withSettings;
+        orphaned.push(withSettings.id);
+        return { ...withSettings, groupId: undefined };
       });
       // TWO CARDS, ONE CONVERSATION — untied here, once, at the only moment the
       // whole card list is in one place (#539). The policy and every reason for
@@ -2213,9 +2249,35 @@ function sanitizeParked(v: unknown, currentProvider: string): Record<string, Per
       ...(usage ? { usage } : {}),
       ...(typeof p.model === 'string' ? { model: p.model } : {}),
       ...(p.cliCost && typeof p.cliCost === 'object' ? { cliCost: p.cliCost } : {}),
+      ...withConversationSettings(p.conversationSettings),
     };
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** Longest model or effort id kept off the file: ids, not prose. */
+const MAX_SETTING_ID = 200;
+
+/**
+ * Kept conversation settings as read off the file (#1317): a conversation id
+ * and short string ids, nothing else. Anything ragged is dropped — which is
+ * the agent's defaults, today's behaviour, never an error.
+ */
+export function sanitizeConversationSettings(v: unknown): ConversationSettings | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const o = v as Record<string, unknown>;
+  const id = (x: unknown): string | undefined =>
+    typeof x === 'string' && x.trim() && x.length <= MAX_SETTING_ID ? x : undefined;
+  if (!id(o.conversation)) return undefined;
+  const model = id(o.model);
+  const effort = id(o.effort);
+  if (!model && !effort) return undefined;
+  return { conversation: o.conversation as string, ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
+}
+
+function withConversationSettings(v: unknown): { conversationSettings?: ConversationSettings } {
+  const s = sanitizeConversationSettings(v);
+  return s ? { conversationSettings: s } : {};
 }
 
 /** A card's switch marks as read off the file: the sane ones, newest kept. */
