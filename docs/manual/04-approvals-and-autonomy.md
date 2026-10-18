@@ -124,7 +124,14 @@ of sessions:
   approval. In less than 3 minutes the request is declined for you, and the
   session is told nobody answered."*
 
-It stops the moment you answer, and the moment the request is declined.
+It stops the moment you answer, and the moment the request is declined. It also
+stops if Claude Code takes the request back itself (it does that when its turn
+is interrupted): the bar closes on its own and the session no longer counts as
+needing you. The **Stop** button is not shown while a bar is up, so answering
+is how you end the wait. A request from a helper Claude started in the
+background can arrive after the main reply has finished. That one is genuinely
+waiting, and it is handled like any other: it waits for your answer, and an
+approval is still declined for you when its five minutes run out.
 
 **If your system is set to reduce motion**, nothing pulses. The row is drawn
 with the outline at its strongest, held, and the outline gets thicker in the
@@ -317,6 +324,9 @@ inside the question you're on and never wander into another one.
 - **"Allow all (this session)" does not answer questions.** It's a standing yes
   to *tool use*, not a standing yes to *you*. Questions always wait for a real
   person, even in a session where you've turned everything else off.
+- **A question has no time limit, but Claude Code can take it back.** If it
+  does, the panel closes by itself, and anything you had typed into it is not
+  sent.
 
 ## When several sessions ask the same thing
 

@@ -1458,9 +1458,18 @@ export class StreamPermissions {
    * 'control_cancel_request', request_id }`, and the SDK's whole answer is to
    * abort its handler for that id. So: nothing is sent back.
    *
-   * NOT MEASURED against the CLI on PATH: when it actually sends one (an
-   * interrupt is the likely case). This only reads a message if it arrives;
-   * if the CLI never sends it, nothing here changes.
+   * MEASURED against the CLI on PATH since (#1268, 2.1.288,
+   * `spike/findings/1268-held-request-on-interrupt.md`): an interrupt sends
+   * one for the held request — measured for an approval, a question, and a
+   * background subagent's, one held at a time — about 2 ms later, BEFORE it
+   * acknowledges the interrupt and before the turn's `result`. A late answer to the id is
+   * ignored by the CLI, which is why nothing is sent back here either.
+   *
+   * THIS, NOT THE TURN ENDING, IS WHAT LETS A HOLD GO, and the same probe is
+   * why. A background subagent asked for permission 137 ms AFTER its parent
+   * turn's `result`, and that request was genuinely waiting: a router that
+   * released holds at turn end would have refused it. The CLI says when it no
+   * longer needs an answer; it is the only one that knows.
    *
    * Why it matters now. A request nobody will ever answer used to be hidden
    * by the next stream frame walking the status back to `working`. With a

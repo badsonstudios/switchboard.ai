@@ -997,6 +997,80 @@ describe('a held request pins the wait (#1258)', () => {
       expect(mgr.get(rec.id)!.status).toBe('done');
     });
 
+    // #1268 — the frames the PATH CLI actually sent after an interrupt with a
+    // request held, in order (2.1.288, `spike/findings/1268-held-request-on-
+    // interrupt.md`). The cancel comes FIRST, ahead of the interrupt's own ack
+    // and the result; the same for an approval and for a question.
+    for (const tool of ['Write', 'AskUserQuestion']) {
+      it(`Stop with a ${tool} held: the CLI's cancel lets it go, the count goes down, the turn ends`, async () => {
+        const { mgr, perms, feed } = wired();
+        const resolved: string[] = [];
+        perms.onPermissionResolved((id) => resolved.push(id));
+        const rec = mgr.create(identity);
+        await tick();
+        mgr.apply(rec.id, { kind: 'prompt-sent' });
+
+        stream.emit(rec.id, ask('held-1', tool));
+        stream.emit(rec.id, { type: 'stream_event' });
+        expect(kinds(feed)).toEqual(['needs-permission']);
+
+        // what came back, measured
+        stream.emit(rec.id, { type: 'control_cancel_request', request_id: 'held-1' });
+        stream.emit(rec.id, {
+          type: 'control_response',
+          response: { subtype: 'success', request_id: 'int-1', response: { still_queued: [] } },
+        });
+        stream.emit(rec.id, {
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'tool_result', content: 'rejected', is_error: true }] },
+          parent_tool_use_id: null,
+        });
+        stream.emit(rec.id, {
+          type: 'user',
+          message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user for tool use]' }] },
+          parent_tool_use_id: null,
+        });
+        stream.emit(rec.id, { type: 'result', subtype: 'error_during_execution', is_error: true });
+
+        expect(perms.holdsRequestFor(rec.id)).toBe(false);
+        expect(perms.pendingRequests()).toEqual([]);
+        expect(resolved).toEqual([`stream:${rec.id}:held-1`]); // the bar is told
+        expect(kinds(feed)).toEqual(['done']); // nobody is counted as needing you
+        expect(mgr.get(rec.id)!.status).toBe('done');
+        // a click on a bar that was slow to close answers nothing
+        expect(perms.decide(`stream:${rec.id}:held-1`, 'allow')).toBe(false);
+      });
+    }
+
+    // A turn's END is not what ends a hold, and the probe is why: a BACKGROUND
+    // subagent asked 137 ms AFTER its parent turn's `result`, and that request
+    // was genuinely waiting. Dropping holds at turn end would have denied it.
+    //
+    // The measured sequence, in order. What the STATUS does after the cancel is
+    // deliberately not asserted: `permission-resolved` walks it to `working`
+    // and the CLI sends no `result` after it, a known gap reported with #1268
+    // and not reachable from the UI today (Stop is not offered while held).
+    it("a request raised after the turn's result is held and counted, until the CLI takes it back", async () => {
+      const { mgr, perms, feed } = wired();
+      const rec = mgr.create(identity);
+      await tick();
+      mgr.apply(rec.id, { kind: 'prompt-sent' });
+
+      stream.emit(rec.id, { type: 'result', subtype: 'success' });
+      expect(mgr.get(rec.id)!.status).toBe('done');
+
+      // 137 ms later in the capture: the background subagent asks
+      stream.emit(rec.id, ask('sub-1', 'Write'));
+      expect(mgr.get(rec.id)!.status).toBe('needs-permission');
+      expect(kinds(feed)).toContain('needs-permission');
+      expect(perms.pendingRequests().map((r) => r.requestId)).toEqual([`stream:${rec.id}:sub-1`]);
+
+      // the interrupt's cancel is what lets it go
+      stream.emit(rec.id, { type: 'control_cancel_request', request_id: 'sub-1' });
+      expect(perms.holdsRequestFor(rec.id)).toBe(false);
+      expect(kinds(feed)).not.toContain('needs-permission');
+    });
+
     it('the session next door is untouched by any of it', async () => {
       const { mgr, feed } = wired();
       const asking = mgr.create(identity);

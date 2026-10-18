@@ -551,3 +551,56 @@ test.describe('finished work is its own number, in both placements (#1258)', () 
     await staysFor(w, 2500, back);
   });
 });
+
+// #1268 — Stop with a request still held. MEASURED on the PATH CLI (2.1.288,
+// `spike/findings/1268-held-request-on-interrupt.md`): an interrupt makes the
+// CLI take the held request back (`control_cancel_request`) before it ends the
+// turn, and the fake now does exactly that. Before, it dropped the request
+// silently, so nothing could show the bar closing and the count going down.
+//
+// THROUGH THE BRIDGE, NOT THE BUTTON, and on purpose: the Stop button renders
+// only while a card is `working`, and a held request pins it at
+// `needs-permission` (#1258), so there is no button to press. The call is the
+// one the button makes (`sessions.interrupt`), so main, the provider, the fake
+// and everything after are the real path.
+for (const kind of ['approval', 'question'] as const) {
+  test.describe(`Stop with a ${kind} held closes it and stops counting it (#1268)`, () => {
+    let a: LaunchedApp;
+    test.afterEach(async () => a?.cleanup());
+
+    test('the bar goes, "need you" goes back to none, and the turn is over', async () => {
+      test.setTimeout(120_000);
+      const folder = tempProjectFolder();
+      a = await launchApp({ seedFolder: folder });
+      const w = a.window;
+      const only = path.basename(folder);
+      await expect(row(w, only)).toBeVisible({ timeout: 25_000 });
+
+      const hold = kind === 'approval' ? streamingPermissionHolder(a) : streamingQuestionHolder(a);
+      await hold(only);
+      await expect(bar(w, kind)).toBeVisible({ timeout: 20_000 });
+      await expect(railNeed(w)).toHaveAttribute('data-rail-need', '1', { timeout: 20_000 });
+
+      const held = (await w.evaluate(() => window.switchboard.sessions.pendingPermissions())) as Array<{
+        sessionId: string;
+      }>;
+      expect(held).toHaveLength(1);
+      expect(await w.evaluate((id) => window.switchboard.sessions.interrupt(id), held[0].sessionId)).toBe(true);
+
+      // the interrupt really reached the CLI and ended the turn (the fake's own
+      // marker) — without this, a build that never sent it would pass below
+      await expect(w.getByText('INTERRUPTED', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
+      await expect(bar(w, kind)).toHaveCount(0, { timeout: 15_000 });
+      await expect(railNeed(w)).toHaveCount(0, { timeout: 15_000 });
+      await expect(row(w, only)).toHaveAttribute('data-needs-you', 'false');
+      expect(await w.evaluate(() => window.switchboard.sessions.pendingPermissions())).toEqual([]);
+      expect((await sessionStatuses(a)).get(only)).toBe('done');
+      // and nothing late puts it back (a light check: once the request is
+      // gone the fake stops streaming, so this guards a re-raise, not the stream)
+      await staysFor(w, 1500, async () => {
+        await expect(bar(w, kind)).toHaveCount(0);
+        await expect(railNeed(w)).toHaveCount(0);
+      });
+    });
+  });
+}

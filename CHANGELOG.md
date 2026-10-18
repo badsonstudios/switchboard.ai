@@ -146,6 +146,12 @@ on the floor, and say so in your PR.
   `SWITCHBOARD_E2E_NO_ACTIVATE=1` in `~/.switchboard-e2e.env`, the app's test
   windows open in the background instead of jumping in front of whatever you
   are typing in. Nothing changes for the shipped app.
+- **Checked against Claude Code: a request it takes back closes its bar.**
+  When Claude Code takes back an approval or a question it was waiting on (it
+  does when its turn is interrupted), switchboard closes the bar and stops
+  counting the session as needing you. This was measured against the real
+  Claude Code and is now covered by the automated tests. Nothing changes in how
+  the app behaves.
 
 ## 0.8.123 — 2026-10-17
 

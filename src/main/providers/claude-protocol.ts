@@ -300,10 +300,17 @@ export function userMessage(
  * wraps it as `{type:'control_request', request_id, request}`. The reply
  * carries `still_queued` — messages the CLI had queued and did NOT discard.
  *
- * NOTE the honest limit: what the CLI actually DOES on interrupt is still
- * unmeasured (S-11 probes 2-6 never ran; E18-12 owns that). This ships because
- * the alternative was a dead button — the stop control wrote Esc to a PTY that
- * a stream session does not have, so it did nothing at all.
+ * This shipped (#154) before anything measured what the CLI does with it,
+ * because the alternative was a dead button — the stop control wrote Esc to a
+ * PTY that a stream session does not have, so it did nothing at all.
+ *
+ * MEASURED SINCE, for the case that mattered (#1268, PATH CLI 2.1.288,
+ * `spike/findings/1268-held-request-on-interrupt.md`): with a `can_use_tool`
+ * held, the CLI first sends `control_cancel_request` for it (~2 ms), then the
+ * ack below, then a user `[Request interrupted by user for tool use]` and an
+ * `error_during_execution` result. It cancels a background subagent's held
+ * request too, and kills that subagent — with no `result` after it. A late
+ * answer to a cancelled request is ignored.
  */
 export interface StreamInterruptRequest {
   type: 'control_request';

@@ -1284,11 +1284,13 @@ export class FakeStreamProtocol {
   /**
    * A control request FROM the host (#154). Only `interrupt` today.
    *
-   * The fake models an interrupt as "the turn ends now": it answers the request
-   * and closes the turn with an error result, so a test can tell an interrupted
-   * turn from a completed one. What the REAL CLI does is still unmeasured
-   * (E18-12) — this is a plausible shape, not a measured one, and the fake
-   * cannot make it true.
+   * The fake models an interrupt as "the turn ends now": it takes back any
+   * request it is still holding, answers the interrupt, and closes the turn
+   * with an error result, so a test can tell an interrupted turn from a
+   * completed one. The take-back and its order are MEASURED (#1268, 2.1.288);
+   * the `INTERRUPTED` text is the fake's own marker, not something the real CLI
+   * writes (it writes a `[Request interrupted by user for tool use]` user
+   * message and an `error_during_execution` result).
    */
   private onControlRequest(msg: Record<string, unknown>): void {
     const req = msg.request as { subtype?: unknown } | undefined;
@@ -1442,6 +1444,22 @@ export class FakeStreamProtocol {
       });
       return;
     }
+    // Every request still held is TAKEN BACK first, and only then is the
+    // interrupt acknowledged (#1268). Cancel, then ack, then result is the
+    // measured order on 2.1.288: the `control_cancel_request` arrived 2 ms after
+    // the interrupt, ahead of the interrupt's own `control_response` and ahead
+    // of the `result`, for an approval and for a question alike. The probe only
+    // ever held ONE request; cancelling several in the order they were asked is
+    // this fake's own choice
+    // (`spike/findings/1268-held-request-on-interrupt.md`). This used to clear
+    // `pending` silently, so no test could watch the bar close the way it does
+    // against the real CLI. An answer that arrives for one of these afterwards
+    // finds nothing in `pending` and is ignored, which is also what the real
+    // CLI was measured to do.
+    for (const held of this.pending.keys()) {
+      this.emit({ type: 'control_cancel_request', request_id: held });
+    }
+    this.pending.clear();
     this.emit({
       type: 'control_response',
       response: {
@@ -1450,8 +1468,6 @@ export class FakeStreamProtocol {
         response: { still_queued: [] },
       },
     });
-    // any permission we were waiting on is moot once the turn is abandoned
-    this.pending.clear();
     this.emitAssistantText('INTERRUPTED');
     this.emitResult(true);
   }
