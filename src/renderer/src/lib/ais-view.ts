@@ -21,6 +21,7 @@ import {
   type DetectionResult,
   type InstallHint,
 } from '../../../shared/ais';
+import { aiInk } from './ai-ink';
 
 export interface AiRowView {
   /** the list item's id: the catalog id, `custom:<slug>`, or the provider id */
@@ -31,6 +32,8 @@ export interface AiRowView {
   description?: string;
   /** `<img src>`, relative to the page (the renderer's own origin) */
   iconSrc?: string;
+  /** the colour the icon is painted in (#1326); absent = `--text` */
+  ink?: string;
   /** set only when a session can start on it */
   providerId?: string;
   isDefault: boolean;
@@ -66,6 +69,7 @@ export function rowOf(item: AiListItem, defaultId: string): AiRowView {
       maker: e.maker,
       description: e.description,
       ...(e.icon ? { iconSrc: AI_ICON_BASE + e.icon } : {}),
+      ink: aiInk(e.id),
       install: e.install,
       runsLocalModels: e.runsLocalModels,
     };

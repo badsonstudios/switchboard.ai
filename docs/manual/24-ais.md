@@ -31,6 +31,9 @@ Switchboard looks for the AIs it knows about **every time it starts**. It does
 this after the window is on screen, so it never slows down starting the app.
 Each row shows:
 
+- **the AI's icon, in that AI's colour**: the same mark and colour you see on
+  its sessions' tabs (Claude Code coral, Codex green, Gemini blue, and so on).
+  An AI with no icon of its own shows its first letter on a plain tile;
 - **the AI's name and its maker**;
 - **whether it is signed in**: *Logged in*, *Logged in as* an account and a
   plan when the AI reports them, or *Not logged in*;

@@ -41,27 +41,40 @@ const fakeLaunch = {
 const fakeAcpLogin: NonNullable<DetectCapability['login']> = (signal, methodId) =>
   defaultAcpDetect({ ...fakeLaunch, authMethodId: 'fake-login' }).login!(signal, methodId);
 
-export const fakeAcpAdapter = createAcpProvider({
-  id: FAKE_ACP_PROVIDER_ID,
-  displayName: 'Fake ACP',
-  // `process.execPath` in main IS the Electron binary; run as plain Node.
-  ...fakeLaunch,
-  modeMap: FAKE_ACP_MODE_MAP,
-  authMethodId: 'fake-login',
-  // it stands in for Codex in the e2e, so it declares Codex's convention (#1295)
-  instructionFiles: ['AGENTS.md'],
-  // E40 item 08 (#1291): the fake is always installed (it ships in `out/`),
-  // its version is the one its `initialize` reports, and it is "logged out"
-  // exactly when `FAKE_ACP_REQUIRE_AUTH=1` makes it demand `authenticate`.
-  // "Log in" stays the engine's default: the fake's own `authenticate`, run
-  // standalone.
-  detect: {
-    detect: () =>
-      Promise.resolve({
-        installed: true,
-        version: FAKE_ACP_VERSION,
-        login: process.env.FAKE_ACP_REQUIRE_AUTH === '1' ? 'logged-out' : 'logged-in',
-      }),
-    login: fakeAcpLogin,
-  },
-});
+/**
+ * The fake agent under another provider id. ONE use: the manual's picture of
+ * the AIs' colours (#1326, `SWITCHBOARD_FAKE_PROVIDER=ai-colours`), which needs
+ * a session on Codex and one on Gemini at once — and a session's AI is its
+ * provider id, which is only ever a REGISTERED one (a restored card on an id
+ * nobody hosts is moved to the default, `start-plan.ts`). Registered as
+ * `codex` and `gemini`, the badge finds the catalog's Codex and Gemini entries
+ * by those ids, exactly as it would for the real ones.
+ */
+export function fakeAcpAdapterAs(id: string, displayName: string): ReturnType<typeof createAcpProvider> {
+  return createAcpProvider({
+    id,
+    displayName,
+    // `process.execPath` in main IS the Electron binary; run as plain Node.
+    ...fakeLaunch,
+    modeMap: FAKE_ACP_MODE_MAP,
+    authMethodId: 'fake-login',
+    // it stands in for Codex in the e2e, so it declares Codex's convention (#1295)
+    instructionFiles: ['AGENTS.md'],
+    // E40 item 08 (#1291): the fake is always installed (it ships in `out/`),
+    // its version is the one its `initialize` reports, and it is "logged out"
+    // exactly when `FAKE_ACP_REQUIRE_AUTH=1` makes it demand `authenticate`.
+    // "Log in" stays the engine's default: the fake's own `authenticate`, run
+    // standalone.
+    detect: {
+      detect: () =>
+        Promise.resolve({
+          installed: true,
+          version: FAKE_ACP_VERSION,
+          login: process.env.FAKE_ACP_REQUIRE_AUTH === '1' ? 'logged-out' : 'logged-in',
+        }),
+      login: fakeAcpLogin,
+    },
+  });
+}
+
+export const fakeAcpAdapter = fakeAcpAdapterAs(FAKE_ACP_PROVIDER_ID, 'Fake ACP');

@@ -146,8 +146,12 @@ describe('the AIs readout on the bar', () => {
     // never wraps; may clip with an ellipsis
     expect(readout.style.whiteSpace).toBe('nowrap');
     expect(readout.style.textOverflow).toBe('ellipsis');
-    // each AI's icon, decorative (the words are beside it)
-    expect(readout.querySelectorAll('img[alt=""]')).toHaveLength(2);
+    // each AI's icon, decorative (the words are beside it), in its own colour (#1326)
+    const icons = [...readout.querySelectorAll<HTMLElement>('[data-ai-icon="mask"][aria-hidden="true"]')];
+    expect(icons.map((i) => i.style.backgroundColor)).toEqual([
+      'var(--ai-claude-code-ink, var(--text))',
+      'var(--ai-codex-acp-ink, var(--text))',
+    ]);
   });
 
   it('keeps the dot on its own when the AI it describes is not listed', () => {

@@ -11,6 +11,7 @@ import type { AiSwitchMark } from '../../../shared/ai-switch';
 import type { SettingsSection } from './settings-sections';
 
 import { AI_ICON_BASE } from '../../../shared/ais';
+import { aiInk } from './ai-ink';
 
 /**
  * The Settings tab "Manage AIs…" opens: the AIs tab (#1292). ONE constant, so
@@ -107,6 +108,8 @@ export interface AiMenuRow {
   name: string;
   /** the icon URL, from the renderer's own origin */
   icon?: string;
+  /** the colour the icon is painted in (#1326); absent = `--text` */
+  ink?: string;
   /** the AI this card is on now */
   current: boolean;
   /** can be picked: registered, and not known to be missing */
@@ -163,6 +166,7 @@ export function aiMenuRows(
       providerId: missing ? undefined : providerId,
       name: item.entry.name,
       icon: item.entry.icon ? AI_ICON_BASE + item.entry.icon : undefined,
+      ...(item.kind === 'catalog' ? { ink: aiInk(item.entry.id) } : {}),
       current,
       selectable: !missing,
       missing,

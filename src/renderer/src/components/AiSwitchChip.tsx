@@ -52,11 +52,22 @@ export interface AiSwitchChipProps {
  * AI exactly as its tab, rail card and header do — the catalog's mark, or the
  * neutral tile with the initial when there is none or it does not load.
  */
-function AiGlyph({ row, size }: { row: Pick<AiMenuRow, 'icon' | 'name'> | undefined; size: number }): React.JSX.Element | null {
+function AiGlyph({
+  row,
+  size,
+}: {
+  row: Pick<AiMenuRow, 'icon' | 'ink' | 'name'> | undefined;
+  size: number;
+}): React.JSX.Element | null {
   if (!row) return null;
   return (
     <AiIcon
-      look={{ name: row.name, iconUrl: row.icon, initial: (row.name.trim()[0] ?? '?').toUpperCase() }}
+      look={{
+        name: row.name,
+        iconUrl: row.icon,
+        ...(row.ink ? { ink: row.ink } : {}),
+        initial: (row.name.trim()[0] ?? '?').toUpperCase(),
+      }}
       size={size}
     />
   );

@@ -192,8 +192,13 @@ describe('Found / Not found', () => {
   it('uses the AI’s own mark from the renderer origin, and an initial when there is none', async () => {
     stub();
     await render();
-    expect(row('claude-code').querySelector('img')!.getAttribute('src')).toBe('ai-icons/claude-code.svg');
-    expect(row('fake-acp').querySelector('[data-ai-icon-fallback]')!.textContent).toBe('F');
+    // the SHARED icon (#1326): a mask of the file, in Claude's own ink
+    const mark = row('claude-code').querySelector<HTMLElement>('[data-ai-row-icon] [data-ai-icon="mask"]')!;
+    expect(mark.getAttribute('data-ai-icon-src')).toBe('ai-icons/claude-code.svg');
+    expect(mark.style.backgroundColor).toBe('var(--ai-claude-code-ink, var(--text))');
+    // no mark: the initial, drawn by CSS so the row's words stay the row's
+    const initial = row('fake-acp').querySelector('[data-ai-row-icon] [data-ai-icon="initial"]')!;
+    expect(initial.getAttribute('data-initial')).toBe('F');
   });
 });
 

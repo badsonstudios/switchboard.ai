@@ -404,13 +404,29 @@ async function tidy(w: Page, tempParent: string, also: Record<string, string> = 
   }, { parent: tempParent, swaps: also });
 }
 
+/**
+ * Put the main window where the picture is taken. RETRIED, on one error only:
+ * the first call into the main process right after launch sometimes answers
+ * "Execution context was destroyed" (seen 2026-10-18 on the desktop, in four
+ * of the seven pictures at once and in "the core pages" five times running),
+ * and a picture run that dies there produces nothing. Anything else throws.
+ */
+async function placeWindow(a: LaunchedApp, box: { x: number; y: number; width: number; height: number }): Promise<void> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await a.app.evaluate(({ BrowserWindow }, b) => BrowserWindow.getAllWindows()[0]?.setBounds(b), box);
+      return;
+    } catch (err) {
+      if (attempt >= 20 || !/Execution context was destroyed/.test(String(err))) throw err;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+}
+
 /** The window every picture is taken in, at its size and in its theme. */
 async function staged(a: LaunchedApp, title: string): Promise<Page> {
   const w = a.window;
-  await a.app.evaluate(
-    ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
-    onTestDisplay(a, { x: 20, y: 20, ...WINDOW })
-  );
+  await placeWindow(a, onTestDisplay(a, { x: 20, y: 20, ...WINDOW }));
   await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
   // The dark theme a fresh install shows on a dark-mode machine (owner's pick).
   await setTheme(w, 'nordic');
@@ -456,10 +472,7 @@ test.describe('manual screenshots (#1082)', () => {
       env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_FAKE_SCRIPT: scriptFile },
     });
     const w = a.window;
-    await a.app.evaluate(
-      ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
-      onTestDisplay(a, { x: 20, y: 20, ...WINDOW })
-    );
+    await placeWindow(a, onTestDisplay(a, { x: 20, y: 20, ...WINDOW }));
     await expect(w.getByText('acme-storefront').first()).toBeVisible({ timeout: 25_000 });
     // The dark theme a fresh install shows on a dark-mode machine (owner's pick).
     await setTheme(w, 'nordic');
@@ -600,10 +613,7 @@ test.describe('manual screenshots (#1082)', () => {
       env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_FAKE_SCRIPT: scriptFile },
     });
     const w = a.window;
-    await a.app.evaluate(
-      ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
-      onTestDisplay(a, { x: 20, y: 20, ...WINDOW })
-    );
+    await placeWindow(a, onTestDisplay(a, { x: 20, y: 20, ...WINDOW }));
     await expect(w.getByText('acme-storefront').first()).toBeVisible({ timeout: 25_000 });
     await setTheme(w, 'nordic');
 
@@ -699,10 +709,7 @@ test.describe('manual screenshots (#1082)', () => {
     // no session at all: what a first launch looks like
     a = await launchApp({ env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
     const w = a.window;
-    await a.app.evaluate(
-      ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
-      onTestDisplay(a, { x: 20, y: 20, ...WINDOW })
-    );
+    await placeWindow(a, onTestDisplay(a, { x: 20, y: 20, ...WINDOW }));
     const start = w.getByTestId('empty-workspace-new-session');
     await expect(start).toBeVisible({ timeout: 25_000 });
     await setTheme(w, 'nordic');
@@ -1078,5 +1085,105 @@ test.describe('manual screenshots (#1082)', () => {
     } finally {
       await status.stop();
     }
+  });
+
+  // Each AI in its own colour (#1326): one session on each of Claude, Codex and
+  // Gemini, the tab strip in a dark and a light theme. The Claude fake is the
+  // default; `ai-colours` registers the fake ACP agent as `codex` and `gemini`
+  // too, so those two sessions are on those AIs by id and their badges draw the
+  // catalog's Codex and Gemini icons, exactly as the real ones would.
+  test('the AI colours', async () => {
+    test.setTimeout(180_000);
+    const parent = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-shots-')));
+    const folder = (name: string): string => {
+      const dir = path.join(parent, name);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'README.md'), `# ${name}\n`, 'utf8');
+      return dir;
+    };
+    const sessions = [
+      { title: 'storefront-web', ai: 'claude-code' },
+      { title: 'payments-api', ai: 'codex' },
+      { title: 'mobile-app', ai: 'gemini' },
+    ];
+    a = await launchApp({
+      seedFolder: folder(sessions[0].title),
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'ai-colours' },
+    });
+    const w = await staged(a, sessions[0].title);
+    const setDefault = (id: string): Promise<{ ok: boolean }> =>
+      w.evaluate(
+        (pid) =>
+          (
+            window as unknown as {
+              switchboard: { ais: { setDefault: (id: string) => Promise<{ ok: boolean }> } };
+            }
+          ).switchboard.ais.setDefault(pid),
+        id
+      );
+    for (const s of sessions.slice(1)) {
+      expect((await setDefault(s.ai)).ok).toBe(true);
+      const dir = folder(s.title);
+      await a.app.evaluate(({ dialog }, d) => {
+        dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
+      }, dir);
+      await w.getByRole('button', { name: '+ session' }).click();
+      await expect(w.locator('.dv-tab', { hasText: s.title }).first()).toBeVisible({ timeout: 25_000 });
+    }
+    expect((await setDefault('claude-code')).ok).toBe(true);
+    const tabBadge = (title: string): Locator =>
+      w.locator('.dv-tab', { hasText: title }).first().locator('.ai-badge');
+    for (const s of sessions) {
+      await expect(tabBadge(s.title)).toHaveAttribute('data-ai-badge', s.ai, { timeout: 25_000 });
+      await expect(tabBadge(s.title).locator('[data-ai-icon="mask"]')).toBeVisible();
+    }
+    // The two places an AI's colour sits next to a ring of nearly its own hue,
+    // so the picture shows the gap doing its job: Claude's coral inside the
+    // "needs you" orange, and Gemini's blue inside the working blue. Codex idles.
+    const send = async (title: string, text: string): Promise<void> => {
+      await w.locator('.dv-tab', { hasText: title }).first().click();
+      const box = w.getByPlaceholder(/Prompt this session/).first();
+      await box.click();
+      await box.fill(text);
+      await box.press('Enter');
+    };
+    await send(sessions[0].title, '!ask');
+    await expect(tabBadge(sessions[0].title)).toHaveAttribute('data-ring', 'needs-permission', { timeout: 30_000 });
+    // a turn that ticks for a minute: long enough for both pictures
+    await send(sessions[2].title, '!cancel-slow');
+    await expect(tabBadge(sessions[2].title)).toHaveAttribute('data-ring', 'working', { timeout: 30_000 });
+    // The tab strip alone, at 150% so a 10px icon can be made out in a page.
+    // (Not the card header under it: it says the fake's command word.)
+    // wide enough that three tabs still fit in one strip at that zoom
+    await placeWindow(a, onTestDisplay(a, { x: 20, y: 20, width: 2100, height: WINDOW.height }));
+    const dpr = await w.evaluate(() => window.devicePixelRatio);
+    await a.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.webContents.setZoomFactor(1.5));
+    // the zoom lands a frame or two later; measuring before it would clip the old layout
+    await expect.poll(() => w.evaluate(() => window.devicePixelRatio)).toBeCloseTo(dpr * 1.5, 2);
+    await w.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const strip = w
+      .locator('.dv-tabs-and-actions-container', { has: w.locator('.dv-tab', { hasText: sessions[0].title }) })
+      .first();
+    const clipOf = async (): Promise<Clip> => {
+      await expect.poll(async () => (await strip.boundingBox())?.height ?? 0).toBeGreaterThan(30);
+      const tabs = await Promise.all(
+        sessions.map(async (s) => (await w.locator('.dv-tab', { hasText: s.title }).first().boundingBox())!)
+      );
+      const row = (await strip.boundingBox())!;
+      const right = Math.max(...tabs.map((t) => t.x + t.width));
+      // the boxes are in the zoomed page's CSS pixels; the clip is not zoomed
+      const z = 1.5;
+      return {
+        x: row.x * z,
+        y: row.y * z,
+        width: Math.min(row.width, right - row.x + 16) * z,
+        height: row.height * z,
+      };
+    };
+    await tidy(w, parent);
+    await shot(w, 'ai-colours-dark', [], await clipOf());
+    await setTheme(w, 'daylight');
+    await tidy(w, parent);
+    await shot(w, 'ai-colours-light', [], await clipOf());
   });
 });

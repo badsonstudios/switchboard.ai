@@ -176,7 +176,7 @@ function FromTheList(props: { snapshot: AisSnapshot | null; open: boolean }): Re
                 background: 'var(--panel2)',
               }}
             >
-              <AiRowIcon {...(r.iconSrc ? { src: r.iconSrc } : {})} name={r.name} />
+              <AiRowIcon {...(r.iconSrc ? { src: r.iconSrc } : {})} {...(r.ink ? { ink: r.ink } : {})} name={r.name} />
               <div style={{ flex: '1 1 auto', minInlineSize: 0, display: 'grid', gap: 3 }}>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 600 }}>{r.name}</span>

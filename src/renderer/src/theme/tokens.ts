@@ -84,6 +84,34 @@ export const TOKEN_GROUPS: readonly TokenGroup[] = [
     ],
   },
   {
+    // Each AI's icon colour (#1326), per theme, keyed by its catalog id
+    // (`src/main/ai-catalog/catalog.json`). Layer 1 for the status inks'
+    // reason: a brand hue does not clear 3:1 on every surface of every theme,
+    // so each preset tunes its own, and tokens.drift.test.ts measures each one
+    // against every surface the badge sits on. `ai-ink.ts` is the one place
+    // that turns a catalog id into one of these names.
+    id: 'ai-ink',
+    layer: 1,
+    kind: 'color',
+    tokens: [
+      '--ai-claude-code-ink',
+      '--ai-codex-acp-ink',
+      '--ai-gemini-ink',
+      '--ai-github-copilot-cli-ink',
+      '--ai-cursor-ink',
+      '--ai-opencode-ink',
+      '--ai-goose-ink',
+      '--ai-qwen-code-ink',
+      '--ai-mistral-vibe-ink',
+      '--ai-cline-ink',
+      '--ai-auggie-ink',
+      '--ai-kimi-ink',
+      '--ai-kilo-ink',
+      '--ai-junie-ink',
+      '--ai-factory-droid-ink',
+    ],
+  },
+  {
     id: 'rail',
     layer: 1,
     kind: 'color',

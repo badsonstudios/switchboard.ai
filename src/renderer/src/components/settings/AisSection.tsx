@@ -178,7 +178,7 @@ function AiRow(props: {
       data-ai-probed={row.detection?.probedAt}
       style={rowStyle}
     >
-      <AiRowIcon {...(row.iconSrc ? { src: row.iconSrc } : {})} name={row.name} />
+      <AiRowIcon {...(row.iconSrc ? { src: row.iconSrc } : {})} {...(row.ink ? { ink: row.ink } : {})} name={row.name} />
       <div style={{ flex: '1 1 auto', minInlineSize: 0, display: 'grid', gap: 3 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 12.5, fontWeight: 600 }}>{row.name}</span>

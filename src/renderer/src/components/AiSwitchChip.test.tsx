@@ -100,7 +100,10 @@ describe('AiSwitchChip (#1294)', () => {
   it('the chip names the AI the card is on, with its icon', async () => {
     await mount();
     expect(chip().textContent).toBe('Claude Code');
-    expect(chip().querySelector('img')?.getAttribute('src')).toBe('ai-icons/claude-code.svg');
+    const icon = chip().querySelector<HTMLElement>('[data-ai-icon="mask"]');
+    expect(icon?.getAttribute('data-ai-icon-src')).toBe('ai-icons/claude-code.svg');
+    // in Claude's own colour (#1326), as on its tab
+    expect(icon?.style.backgroundColor).toBe('var(--ai-claude-code-ink, var(--text))');
   });
 
   it('the menu: every AI, the current one ticked, the missing one dimmed with "set it up…", the sentence, Manage AIs', async () => {

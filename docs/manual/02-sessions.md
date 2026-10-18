@@ -287,11 +287,29 @@ the start of its card header. Sessions on different AIs can sit side by side,
 and the icon is how you tell them apart at a glance. Hover the icon and it says
 which AI it is, and what the session is doing.
 
+![Three tabs: a Claude Code session with its coral icon, a Codex session with its green icon, and a Gemini session with its blue icon](img/ai-colours-dark.png)
+
+![The same three tabs in the light Daylight theme](img/ai-colours-light.png)
+
+*Claude Code in coral, Codex in green, Gemini in blue, in a dark theme and a
+light one. Claude's ring is orange because that session needs you; Gemini's is
+blue because it is working.*
+
+**Each AI has its own colour.** Claude Code is coral, Codex is green, Gemini is
+blue, Copilot is purple, and every other AI the app knows has a colour of its
+own. The same colour is used everywhere that AI appears: the tab, the sessions
+list, the card header, the status bar, the AI switch and **Settings ▸ AIs**.
+Each theme has its own shade of every colour, picked so the icon stays easy to
+see on that theme's backgrounds. An AI the app has no colour for is drawn in
+the ordinary text colour.
+
 **The ring around the icon is the session's status.** It takes the place of the
 old status dot and uses the same colours: blue while it is working, yellow or
 orange when it needs you, green when it has finished, red if it crashed, grey
 when it is idle. In the sessions list, the ring spins while the session works,
-just as the dot did. On the tab and the header it stays still.
+just as the dot did. On the tab and the header it stays still. There is always
+a little space between the ring and the icon, so an orange ring around Claude's
+coral icon, or a blue one around Gemini's, still reads as two things.
 
 **The colour is never the only sign.** The status is still written in a word
 next to it: on the row, on the strip, and in the pill at the right of the card

@@ -82,6 +82,8 @@ describe('splitAis', () => {
   it('a catalog row carries its icon from the renderer origin, and its install hint', () => {
     const r = splitAis(snap([claude])).found[0];
     expect(r.iconSrc).toBe('ai-icons/claude-code.svg');
+    // and the colour it is painted in (#1326)
+    expect(r.ink).toBe('var(--ai-claude-code-ink, var(--text))');
     expect(r.install).toEqual({ kind: 'command', command: 'npm i -g claude-code' });
   });
 

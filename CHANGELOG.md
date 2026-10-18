@@ -126,6 +126,14 @@ on the floor, and say so in your PR.
   stray click of the title-bar chip. The chip now has two settings, **Keep
   visible** and **Collapse on submit**. If you had "Hide on submit" on, the app
   now treats it as **Keep visible**. Hiding a session yourself still works.
+- **Each AI's icon is in its own colour.** Claude Code is coral, Codex is green,
+  Gemini is blue, and every other AI the app knows has a colour of its own, on
+  the tab, the sessions list, the card header, the status bar, the AI switch and
+  Settings ▸ AIs. The icons used to be black on every theme, which made them
+  nearly invisible on the dark ones and Claude and Codex hard to tell apart.
+  Each theme has its own shade of each colour so the icon stays easy to see,
+  and the status ring around the icon now leaves a little space so an orange
+  "needs you" ring and Claude's coral icon never run together.
 
 ### Fixed
 
