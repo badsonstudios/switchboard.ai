@@ -314,6 +314,16 @@ session-archive work in a later release.
 - **"The AI chosen to run this is no longer set up"** or **"… is not logged
   in"**: something changed while the box was open. Pick another AI, or log in,
   and press Dispatch again.
+- **The new card says "This was dispatched to … which is no longer set up"**:
+  the AI you picked was removed (for example a "Something else" AI deleted in
+  **Settings ▸ AIs**) after you pressed Dispatch but before the session
+  started. switchboard does not quietly run the role on a different AI
+  instead. The card names the AI that is gone and has a **Settings → AIs**
+  button. Add that AI again **with the same name** (a "Something else" AI is
+  known by its name, so a different name is a different AI) and press **Try
+  again**: the briefing is kept for about fifteen minutes, so the session still
+  gets it. After that, Try again starts an ordinary session on your default AI
+  with no briefing. Or close the card and dispatch again on another AI.
 
 ## What doesn't happen yet
 

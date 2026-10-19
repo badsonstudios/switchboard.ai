@@ -192,6 +192,13 @@ on the floor, and say so in your PR.
   sign in, the buttons on **Settings ▸ AIs** now show the AI's own names for
   them ("ChatGPT", "API Key") instead of internal ids like `chat-gpt`.
 
+- **A dispatched card whose AI was removed says which AI is gone.** If the AI
+  you picked under **Run it on** was removed (a "Something else" AI deleted in
+  Settings) before the new session started, the card used to show the general
+  "didn't start" text, which blames a moved folder. It now names the AI,
+  offers a **Settings → AIs** button, and **Try again** still carries the
+  briefing once that AI is added again under the same name.
+
 - **A Codex card keeps its model and effort across a restart.** Codex forgets
   both whenever a conversation is reopened, and switchboard.ai only remembered
   them until the app closed, so after a restart a reopened Codex card was back

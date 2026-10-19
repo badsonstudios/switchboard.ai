@@ -361,6 +361,37 @@ export interface SessionCardWire {
   switchBack?: CardSwitchBack;
 }
 
+/**
+ * `sessions:create`'s answer for a start it refused for a reason the card can
+ * NAME (#1318), as opposed to the bare `null` of every other refusal (#347).
+ *
+ * One reason today: a dispatched card's chosen AI ("Run it on", #1296) stopped
+ * being set up between the dialog and the spawn — a "Something else" AI removed
+ * in Settings while the app ran (P3-E40-08). The generic not-started sentence
+ * blames a missing folder, which is not what happened and sends the reader
+ * looking in the wrong place; the card names the AI and offers Settings → AIs.
+ *
+ * `aiName` is the name the dispatch was PREPARED with, carried on the pending
+ * dispatch, because once a custom AI is removed nothing else still knows it.
+ * Additive and narrow on purpose: a null answer still means "did not start, the
+ * log has why", and every other refusal keeps answering exactly that.
+ */
+export interface SessionNotStarted {
+  notStarted: { reason: 'ai-missing'; aiName: string };
+}
+
+/** Is this `sessions:create` answer a named refusal rather than a record? */
+export function isSessionNotStarted(v: unknown): v is SessionNotStarted {
+  if (typeof v !== 'object' || v === null) return false;
+  const n = (v as Record<string, unknown>).notStarted;
+  return (
+    typeof n === 'object' &&
+    n !== null &&
+    (n as Record<string, unknown>).reason === 'ai-missing' &&
+    typeof (n as Record<string, unknown>).aiName === 'string'
+  );
+}
+
 /** The AI a card was switched FROM, as its overlay offers to go back (#1294). */
 export interface CardSwitchBack {
   providerId: string;

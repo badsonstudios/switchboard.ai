@@ -536,6 +536,19 @@ describe('Run it on (#1296)', () => {
     expect(h.registry.peek(answer.dispatchId)?.providerId).toBe('codex');
   });
 
+  it('#1318: keeps the chosen AI’s NAME, so a card can say which AI went missing', async () => {
+    // A "Something else" AI removed before the spawn takes its name out of the
+    // catalog with it; the pending dispatch is the one place still holding it.
+    const custom = [...two, { id: 'custom:local-llama', name: 'Local Llama' }];
+    const h = harness({ providers: custom, logins: { 'custom:local-llama': 'logged-in' } });
+    const answer = await prepared(h, {
+      from: AUTHOR,
+      templateId: REVIEWER_ID,
+      targetProviderId: 'custom:local-llama',
+    });
+    expect(h.registry.peek(answer.dispatchId)?.providerName).toBe('Local Llama');
+  });
+
   it('with no target named, runs on the AUTHOR’S own AI', async () => {
     const h = harness({
       providers: [

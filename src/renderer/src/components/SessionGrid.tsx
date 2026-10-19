@@ -155,7 +155,9 @@ import {
   sessionControlLock,
 } from '../lib/session-controls';
 import { controlUnavailable, useAiControls } from '../lib/ai-controls';
-import { afterSwitchAiAnswer, type SwitchAiNext } from '../lib/ai-switch-view';
+import { afterSwitchAiAnswer, MANAGE_AIS_TAB, type SwitchAiNext } from '../lib/ai-switch-view';
+import { openSettingsAt } from '../lib/settings-port';
+import { isSessionNotStarted } from '../../../shared/sessions';
 import { type TransportKind } from '../../../shared/transport';
 import type {
   AutonomyMode,
@@ -297,6 +299,14 @@ export type CardEnded =
        * the conversation, nor a session, nor a reason.
        */
       pickRefused?: boolean;
+      /**
+       * A DISPATCHED card whose chosen AI is no longer set up (#1318) — the
+       * AI's name, as the dispatch was prepared with it. Main refused the
+       * start rather than running the role on some other AI, and the generic
+       * hint (a moved folder) is the wrong cause; this card names the AI and
+       * offers Settings → AIs. The briefing is kept for Try again.
+       */
+      aiMissing?: string;
     };
 
 /**
@@ -376,8 +386,20 @@ export function endedCopy(ended: CardEnded): {
   detailVars?: Record<string, unknown>;
   /** the primary button — "Restart" only makes sense for something that ran */
   action: string;
+  /** a second button that opens Settings → AIs, when the cause is an AI (#1318) */
+  aiSettings?: string;
 } {
   if (ended.kind === 'never-started') {
+    // the AI a dispatch chose is gone (#1318): say which, and where to fix it
+    if (ended.aiMissing !== undefined) {
+      return {
+        heading: 'grid.sessionNotStarted',
+        detail: 'grid.notStartedAiMissing',
+        detailVars: { ai: ended.aiMissing },
+        action: 'grid.tryAgain',
+        aiSettings: 'grid.openAiSettings',
+      };
+    }
     return {
       heading: 'grid.sessionNotStarted',
       // The picked-conversation refusal gets its OWN sentence: the generic hint
@@ -1713,16 +1735,22 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // is where a card main has never heard of becomes a session the workspace
     // can see. The title comes from the panel rather than the params, so a
     // rename that landed before the start failed is the one that shows.
-    const startFailed = (why: unknown): void => {
+    const startFailed = (why: unknown, aiMissing?: string): void => {
       console.warn(`[sessions] session did not start for ${cardId} — see the app log`, why ?? '');
       // A card opened FROM the history picker says why in its own words
       // (P2-E20-01). Every reachable failure on that path is about the
       // conversation — main refuses the create when it cannot be resumed or
       // another card holds it — and the sentence covers a missing folder too,
       // so it is more accurate than the generic hint even for the rarer causes.
+      // A dispatched card whose AI is gone names it (#1318); main only says so
+      // for a dispatch, which is never also a history pick.
       setEnded({
         kind: 'never-started',
-        ...(props.params?.resumeConversationId ? { pickRefused: true } : {}),
+        ...(aiMissing !== undefined
+          ? { aiMissing }
+          : props.params?.resumeConversationId
+            ? { pickRefused: true }
+            : {}),
       });
       if (cardId) {
         sessionStore.markCardNotStarted({
@@ -1775,6 +1803,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         // instead of the honest "never started".
         const record = answered(answer);
         if (!record) return startFailed(null);
+        // a refusal main could NAME (#1318): the AI this dispatch chose is gone
+        if (isSessionNotStarted(record)) return startFailed(record, record.notStarted.aiName);
         // it started, so main owns this card's row from here — drop ours (#687).
         // Unconditional: a retry that succeeds comes through this branch, and
         // `clearCardNotStarted` is a no-op for a card that was never marked.
@@ -2337,6 +2367,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         <button onClick={restartSelf} style={overlayBtn(true)}>
           {t(overlayCopy.action)}
         </button>
+        {/* the AI a dispatch chose is gone (#1318): one press to where it is
+            set up again, then Try again carries the kept briefing */}
+        {overlayCopy.aiSettings && (
+          <button
+            data-testid="card-open-ai-settings"
+            onClick={() => openSettingsAt(MANAGE_AIS_TAB)}
+            style={overlayBtn(false)}
+          >
+            {t(overlayCopy.aiSettings)}
+          </button>
+        )}
         {/* THE WAY BACK (#1294): a card switched to an AI that would not run
             here is one press from the AI it came from, in the conversation it
             had there — never stranded on a Retry that keeps failing. */}

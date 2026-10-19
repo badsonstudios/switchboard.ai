@@ -108,6 +108,13 @@ export interface PendingDispatch {
    * the dialog and the spawn.
    */
   providerId: string;
+  /**
+   * That AI's display name when the dispatch was prepared (#1318). Kept because
+   * a "Something else" AI removed before the spawn takes its name with it, and
+   * the card's refusal has to say WHICH AI is gone. Optional: absent reads as
+   * the id.
+   */
+  providerName?: string;
   at: number;
 }
 
@@ -408,7 +415,8 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
     const author = deps.contextDeps.queries.resolve(r.from);
     if (!author.ok) return refuse('dispatch:prepare', author.reason, { from: r.from });
     const target = r.targetProviderId ?? author.value.providerId;
-    if (!providerList().some((p) => p.id === target)) {
+    const targetEntry = providerList().find((p) => p.id === target);
+    if (!targetEntry) {
       log.warn('dispatch refused: the chosen AI is not set up', { from: r.from, target });
       return {
         ok: false,
@@ -480,6 +488,9 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
       from: resolved.value.id,
       folder: resolved.value.folder,
       providerId: target,
+      // read at the check above, not again here: the name is the one the user
+      // just picked from, and the card names it if that AI is gone by the spawn
+      providerName: targetEntry.name,
       at: Date.now(),
     });
     log.info('dispatch prepared', {

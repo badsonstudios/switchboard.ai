@@ -40,6 +40,7 @@ import type {
   AutonomyMode,
   SessionCardWire,
   SwitchConversationResult,
+  SessionNotStarted,
   SessionRecordWire,
   SessionSummary,
   StatusChange,
@@ -387,6 +388,8 @@ const api = {
           autonomy?: AutonomyMode;
           taskLabel?: string;
         })
+      // a refusal the card can name — a dispatched card's AI is gone (#1318)
+      | SessionNotStarted
       | null
     > => ipcRenderer.invoke('sessions:create', opts),
     list: (): Promise<SessionRecordDto[]> => ipcRenderer.invoke('sessions:list'),
