@@ -61,6 +61,12 @@ export interface UpdateCheckResult {
   url?: string;
   /** ISO timestamp from the release */
   publishedAt?: string;
+  /**
+   * The offer is a BETA (#1380): a GitHub pre-release, or a tag with a semver
+   * suffix. Only ever set on an install with "Get beta releases" turned on;
+   * the dialog says so in plain words.
+   */
+  prerelease?: boolean;
   reason?: UpdateFailureReason;
   /** ISO timestamp of this check */
   checkedAt: string;
@@ -194,6 +200,13 @@ export interface UpdateStatus {
 export interface UpdatePrefs {
   /** check on startup and once a day. Default ON. */
   autoCheck: boolean;
+  /**
+   * Settings ▸ Updates ▸ "Get beta releases" (#1380). Default OFF, and absent
+   * means off: pre-releases are offered only to an install that opted in.
+   * Turning it off while running a beta never downgrades — the install simply
+   * waits for the next production release newer than what it runs.
+   */
+  betaChannel?: boolean;
   /** "Skip this version" — suppressed for automatic checks only */
   skippedVersion?: string;
   /** ISO timestamp of the last completed check, for the daily timer */

@@ -339,6 +339,11 @@ window under "Advanced"; each is now on the tab it belongs to.
   Off, switchboard never reaches the release host on its own; the **Check for
   updates…** button in the About panel still works whenever you ask it to. See
   [Updates](13-updates.md).
+- **Get beta releases** (**Settings ▸ General**, under **Updates**) — off by
+  default. On, you're also offered beta versions: early builds of the next
+  release, labelled as betas. Turning it off while on a beta doesn't downgrade
+  you; you wait for the next regular release. See
+  [Updates ▸ Beta releases](13-updates.md#beta-releases).
 - **Check provider status** (**Settings ▸ General**, under **AI status page**)
   — on by default. It asks the status page of the AI new sessions start on
   (Anthropic's, for Claude Code), and is what colours the dot in the status

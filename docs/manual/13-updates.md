@@ -178,6 +178,37 @@ off the automatic check doesn't take the manual one away. That is why the two
 are in different places: one is a preference, the other is something you do to
 the build you are looking at.
 
+## Beta releases
+
+Some versions come out as a **beta** first: an early build of the next release,
+put out so it can be tried for real before everyone gets it. Betas are
+**off by default**. With them off you are never offered one, and nothing about
+updates changes.
+
+**To get betas:** press **`Ctrl+,`** for Settings and tick
+**Get beta releases** on the **General** tab, under **Updates**. The next check
+(at startup, the daily one, or **Check for updates…**) also looks at betas.
+
+What changes once it's on:
+
+- **You're offered whichever version is newest**, beta or not. If 0.8.125 is
+  out as a beta and you're on 0.8.124, you're offered the beta.
+- **A beta says so.** The box reads **"There's a new beta — v0.8.125-beta.1"**
+  and has a line explaining that it's an early build. A regular release looks
+  exactly as it always has.
+- **When the finished release ships, you move onto it.** 0.8.125 counts as
+  newer than any 0.8.125 beta, so a beta install is offered the regular release
+  the day it comes out. You aren't left on a beta.
+- **The notes don't repeat themselves.** Each beta carries the notes for the
+  upcoming release *so far*, so moving from a beta to the finished release
+  shows that release's notes once, not once per beta.
+
+**Turning it off while you're on a beta doesn't take you backwards.** Nothing
+is uninstalled and you aren't offered an older version. You stay on the beta
+you have until the next **regular** release newer than it comes out, and you're
+offered that as normal. Settings says this under the checkbox when the version
+you're running is a beta.
+
 ## If it can't check
 
 Sometimes it can't: you're offline, or the machine has no credentials for the

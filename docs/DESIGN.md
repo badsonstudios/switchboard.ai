@@ -3920,6 +3920,20 @@ Designed answer:
 
 - **App self-update**: standard Electron updater; update check only — no
   telemetry ride-alongs (P8).
+  **Beta channel (#1380, 2026-10-19):** two channels and no more. A tag
+  `v<x.y.z>-beta.<n>` (package.json carrying the same suffix) publishes a
+  GitHub **pre-release**, never marked Latest, with its notes taken from the
+  upcoming version's `— unreleased` CHANGELOG section. The in-app checker
+  skips pre-releases (GitHub flag OR semver suffix) unless the install opted
+  in with **Get beta releases** (a workspace-store pref, default off). With it
+  on, the newest by semver wins, so `0.8.125` beats `0.8.125-beta.2` and a beta
+  install moves onto stable when it ships. Turning it off never downgrades.
+  The notes rollup folds every release that shares a core version into the
+  newest one. **Promotion** is a version-only commit on top of the beta
+  (`scripts/promote-beta.js` refuses anything else), tagged `v<x.y.z>`, which
+  runs the ordinary production path. Flipping the flag in place was rejected
+  because the installed version string would keep its `-beta` suffix and rank
+  below the stable for good.
 - **CLI version drift**: transcript schema, hook payloads, and storage layout
   are UNOFFICIAL contracts that move per Claude Code release. Compat layer:
   detect CLI version per session; warn on untested versions; degrade gracefully

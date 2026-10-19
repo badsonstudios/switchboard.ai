@@ -21,6 +21,9 @@ import {
   buildNotes,
   decideAction,
   installerName,
+  channelOf,
+  releaseFlags,
+  notesForRelease,
 } from './release-notes.js';
 import { tempDir } from '../src/test-temp-dirs';
 import { isNewerVersion } from '../src/main/update/version';
@@ -117,7 +120,22 @@ describe('CHANGELOG parsing', () => {
     // The guard that matters on any given day: package.json's current version
     // must have real notes, or the next tag push fails in CI instead of here.
     const real = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
-    const { version } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    const pkgVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
+    // #1380: while a beta is cut, package.json says `0.8.125-beta.1` and the
+    // section it ships is the still-open `## 0.8.125 — unreleased` at the TOP.
+    const channel = channelOf(pkgVersion);
+    if (channel.prerelease) {
+      const top = listVersions(real)[0];
+      expect(top, `a beta of ${channel.base} ships the topmost section, which must be ${channel.base}`).toBe(
+        channel.base
+      );
+      expect(headingFor(real, top), 'a beta’s section stays "— unreleased" until promotion').toMatch(
+        /unreleased/i
+      );
+      expect((extractSection(real, top) ?? '').trim().length).toBeGreaterThan(0);
+      return;
+    }
+    const version = pkgVersion;
     const section = extractSection(real, version);
     expect(section, `CHANGELOG.md has no section for ${version}`).not.toBeNull();
     expect(section.trim().length).toBeGreaterThan(0);
@@ -198,6 +216,8 @@ describe('tag vs package.json version', () => {
         tag: 'v1.2.3',
         version: '1.2.3',
         fromTag: true,
+        prerelease: false,
+        notesVersion: '1.2.3',
       });
     }
   });
@@ -218,11 +238,101 @@ describe('tag vs package.json version', () => {
       tag: 'v0.1.0',
       version: '0.1.0',
       fromTag: false,
+      prerelease: false,
+      notesVersion: '0.1.0',
     });
   });
 
   it('always produces a v-prefixed canonical tag', () => {
     expect(resolveRelease({ ref: null, version: '9.9.9' }).tag).toBe('v9.9.9');
+  });
+});
+
+describe('beta channel (#1380)', () => {
+  it('reads x.y.z as production and x.y.z-beta.<n> as a beta of x.y.z', () => {
+    expect(channelOf('0.8.125')).toEqual({ base: '0.8.125', prerelease: false, beta: null });
+    expect(channelOf('0.8.125-beta.1')).toEqual({ base: '0.8.125', prerelease: true, beta: 1 });
+    expect(channelOf('0.8.125-beta.12')).toEqual({ base: '0.8.125', prerelease: true, beta: 12 });
+  });
+
+  it.each([['0.8.125-rc.1'], ['0.8.125-beta'], ['0.8.125-beta.0'], ['0.8.125-beta.01'], ['0.8.125-BETA.1'], ['0.8.125+b7'], ['0.8.125.1']])(
+    'REFUSES %s: two channels, and no suffix nobody designed',
+    (v) => {
+      expect(() => channelOf(v)).toThrow(ReleaseError);
+      expect(() => channelOf(v)).toThrow(/x\.y\.z-beta\.<n>/);
+    }
+  );
+
+  it('a beta tag must match package.json INCLUDING the suffix', () => {
+    expect(resolveRelease({ ref: 'refs/tags/v0.8.125-beta.1', version: '0.8.125-beta.1' })).toEqual({
+      tag: 'v0.8.125-beta.1',
+      version: '0.8.125-beta.1',
+      fromTag: true,
+      prerelease: true,
+      notesVersion: '0.8.125',
+    });
+    // a beta tag on a production tree, and a production tag on a beta tree —
+    // the second is exactly what tagging the beta commit `v0.8.125` would do,
+    // and why promotion is a version commit, not a second tag on the same SHA
+    expect(() => resolveRelease({ ref: 'refs/tags/v0.8.125-beta.1', version: '0.8.125' })).toThrow(
+      /does not match/
+    );
+    expect(() => resolveRelease({ ref: 'refs/tags/v0.8.125', version: '0.8.125-beta.1' })).toThrow(
+      /does not match/
+    );
+    expect(() => resolveRelease({ ref: 'refs/tags/v0.8.125-beta.2', version: '0.8.125-beta.1' })).toThrow(
+      /does not match/
+    );
+  });
+
+  it('a beta is published as a pre-release and NOT Latest; production passes nothing extra', () => {
+    expect(releaseFlags({ prerelease: true })).toEqual(['--prerelease', '--latest=false']);
+    // "a plain tag behaves exactly as today"
+    expect(releaseFlags({ prerelease: false })).toEqual([]);
+  });
+
+  it('a beta ships the UPCOMING version’s section, under a beta preamble', () => {
+    const { notes, prerelease, notesVersion, rolledUp } = notesForRelease({
+      changelog: CHANGELOG,
+      version: '0.3.0-beta.2',
+      isPublished: always,
+    });
+    expect(prerelease).toBe(true);
+    expect(notesVersion).toBe('0.3.0');
+    expect(rolledUp).toEqual([]);
+    expect(notes.split('\n')[0]).toMatch(/^\*\*Beta — 0\.3\.0-beta\.2\.\*\* A pre-release of 0\.3\.0/);
+    expect(notes).toContain('### Added\n\n- The newest thing.');
+  });
+
+  it('the production release of the same version carries the same section, without the preamble', () => {
+    const beta = notesForRelease({ changelog: CHANGELOG, version: '0.3.0-beta.2', isPublished: always });
+    const stable = notesForRelease({ changelog: CHANGELOG, version: '0.3.0', isPublished: always });
+    expect(stable.prerelease).toBe(false);
+    expect(stable.notes).toBe('### Added\n\n- The newest thing.');
+    expect(beta.notes.endsWith(stable.notes)).toBe(true);
+  });
+
+  it('the rollup asks about PLAIN versions only — a beta never stands in for a stable', () => {
+    // Stable-only installs never saw 0.2.0 if only its beta was published, so
+    // 0.3.0 still owes them 0.2.0's notes.
+    const asked = [];
+    const published = new Set(['0.1.0']); // `v0.2.0-beta.1` exists; `v0.2.0` does not
+    const { rolledUp } = notesForRelease({
+      changelog: CHANGELOG,
+      version: '0.3.0',
+      isPublished: (v) => {
+        asked.push(v);
+        return published.has(v);
+      },
+    });
+    expect(rolledUp).toEqual(['0.2.0']);
+    for (const v of asked) expect(v).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('a beta whose upcoming section is missing fails the same gate a release would', () => {
+    expect(() =>
+      notesForRelease({ changelog: CHANGELOG, version: '0.4.0-beta.1', isPublished: always })
+    ).toThrow(/no section for 0\.4\.0/);
   });
 });
 
@@ -426,6 +536,45 @@ describe('the CLI release.yml calls', () => {
     const r = cli(['--root', dir, '--ref', 'refs/tags/v0.3.0', '--no-rollup']);
     expect(r.status, r.err).toBe(0);
     expect(r.err).toMatch(/::warning::CHANGELOG\.md still marks 0\.3\.0 as unreleased/);
+  });
+
+  it('a beta tag writes prerelease + the gh flags, and does not warn about "unreleased"', () => {
+    const dir = fakeRepo('0.3.0-beta.1', CHANGELOG);
+    const outFile = path.join(dir, 'notes.md');
+    const ghOut = path.join(dir, 'gh-output.txt');
+    fs.writeFileSync(ghOut, '');
+    const r = cli(
+      ['--root', dir, '--ref', 'refs/tags/v0.3.0-beta.1', '--out', outFile, '--no-rollup'],
+      { GITHUB_OUTPUT: ghOut }
+    );
+    expect(r.status, r.err).toBe(0);
+    const outputs = fs.readFileSync(ghOut, 'utf8');
+    expect(outputs).toContain('tag=v0.3.0-beta.1');
+    expect(outputs).toContain('installer=switchboard-Setup-0.3.0-beta.1.exe');
+    expect(outputs).toContain('prerelease=true');
+    expect(outputs).toContain('gh_flags=--prerelease --latest=false');
+    expect(fs.readFileSync(outFile, 'utf8')).toMatch(/^\*\*Beta — 0\.3\.0-beta\.1\.\*\*/);
+    // the section is SUPPOSED to be open while a beta bakes
+    expect(r.err).not.toMatch(/::warning::/);
+    expect(r.err).toMatch(/BETA: pre-release, not Latest/);
+  });
+
+  it('a production tag writes prerelease=false and an EMPTY flag list', () => {
+    const dir = fakeRepo('0.3.0', CHANGELOG);
+    const ghOut = path.join(dir, 'gh-output.txt');
+    fs.writeFileSync(ghOut, '');
+    const r = cli(['--root', dir, '--ref', 'refs/tags/v0.3.0', '--no-rollup'], { GITHUB_OUTPUT: ghOut });
+    expect(r.status, r.err).toBe(0);
+    const outputs = fs.readFileSync(ghOut, 'utf8');
+    expect(outputs).toContain('prerelease=false');
+    expect(outputs).toMatch(/^gh_flags=$/m);
+  });
+
+  it('exits 1 on a suffix that is not a beta', () => {
+    const dir = fakeRepo('0.3.0-rc.1', CHANGELOG);
+    const r = cli(['--root', dir, '--ref', 'refs/tags/v0.3.0-rc.1', '--no-rollup']);
+    expect(r.status).toBe(1);
+    expect(r.err).toMatch(/::error::package\.json version 0\.3\.0-rc\.1 is not one this pipeline publishes/);
   });
   // 30 s rather than vitest's 5 s default: every case here spawns a real
   // process, and #512 is what that costs on a loaded Windows runner —

@@ -2394,6 +2394,12 @@ function sanitizeUpdates(u: unknown): Repaired<UpdatePrefs> {
   const x = u as Partial<UpdatePrefs>;
   const value: UpdatePrefs = {
     autoCheck: x.autoCheck !== false,
+    // #1380 — the OPPOSITE default to `autoCheck`, and deliberately so: only a
+    // literal `true` opts in. A file that predates the field, or a hand-edit
+    // that mangled it, leaves the install on production releases, which is the
+    // direction to be wrong in. Off is written as ABSENT, so a file that never
+    // opted in looks exactly as it did before the field existed.
+    ...(x.betaChannel === true ? { betaChannel: true } : {}),
     // Bounded: the value arrives over IPC from the renderer, and every other
     // sanitizer in this file refuses to write something arbitrary to disk. A
     // version string is never anywhere near this long.
@@ -2412,6 +2418,7 @@ function sanitizeUpdates(u: unknown): Repaired<UpdatePrefs> {
     value,
     repaired: badFields(u, [
       ['autoCheck', 'boolean'],
+      ['betaChannel', 'boolean'],
       ['skippedVersion', 'string'],
       ['lastCheck', 'string'],
       ['pendingUpdateVersion', 'string'],

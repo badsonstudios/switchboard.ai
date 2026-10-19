@@ -57,4 +57,4 @@ page at a time.
 | [Troubleshooting](11-troubleshooting.md) | The Help menu; when a session won't start, hangs, or vanishes; sending a problem report; asking for a feature |
 | [Is it me or is it them?](14-provider-status.md) | The status dot, provider incidents, and the "several sessions just hit errors" strip |
 | [When it feels slow](19-performance.md) | The performance summary (`Ctrl+Shift+P`), the detailed capture switch in Settings, what it records and what it never touches, and how to send the file |
-| [Updates](13-updates.md) | When it checks for a new version, what the release box offers, what Skip means |
+| [Updates](13-updates.md) | When it checks for a new version, what the release box offers, what Skip means, beta releases |

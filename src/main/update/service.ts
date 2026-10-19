@@ -93,6 +93,8 @@ export class UpdateService {
   private inFlight: Promise<UpdateCheckResult> | null = null;
   private lastAutoAt = 0;
   private last: UpdateStatus | null = null;
+  /** bumped by `channelChanged`; an answer from an older channel is never kept */
+  private channelGen = 0;
 
   constructor(private readonly deps: UpdateServiceDeps) {}
 
@@ -151,7 +153,17 @@ export class UpdateService {
       }
     }
 
+    const gen = this.channelGen;
     const result = await this.run();
+    if (gen !== this.channelGen) {
+      // The beta switch moved while this request was open (#1380), so the
+      // answer is about the OTHER channel: a startup check would otherwise open
+      // a dialog offering a beta to someone who just opted out. Ask again under
+      // the current setting — `channelChanged` cleared `inFlight`, so this is a
+      // fresh request, not the stale one joined. (After a quit, the guard at
+      // the top answers `quitting` instead.)
+      return this.check(manual, opts);
+    }
     if (this.stopped) {
       // Quit landed while the request was open. Answer the caller — it may be
       // a promise something is still awaiting — but write nothing and push
@@ -188,6 +200,20 @@ export class UpdateService {
     return this.last?.result ?? null;
   }
 
+  /**
+   * "Get beta releases" was switched (#1380). Everything remembered was
+   * decided under the other channel, so all of it goes: the cached offer
+   * (`update:install` must not install a beta the user just opted out of),
+   * the coalescing window (the next automatic check must really ask), and the
+   * in-flight request (a manual check must not join one asked the old way).
+   */
+  channelChanged(): void {
+    this.channelGen++;
+    this.last = null;
+    this.lastAutoAt = 0;
+    this.inFlight = null;
+  }
+
   /** "Skip this version" — persisted, and only ever suppresses AUTO prompts. */
   skip(version: string): UpdatePrefs {
     if (typeof version === 'string' && version.trim()) {
@@ -208,6 +234,8 @@ export class UpdateService {
     const deps: CheckDeps = {
       currentVersion: this.deps.currentVersion,
       log: (msg, meta) => this.deps.log.debug(msg, meta),
+      // #1380 — read fresh on every check, like the token sources below
+      includePrereleases: this.deps.getPrefs().betaChannel === true,
       // Read fresh on EVERY check, not captured at construction: the sources
       // are closures over a live `SecretStore`, so a token pasted into the
       // report dialog after the app started is picked up by the next check
@@ -245,7 +273,8 @@ export class UpdateService {
         };
       })
       .finally(() => {
-        this.inFlight = null;
+        // only if it is still OURS: `channelChanged` may have replaced it
+        if (this.inFlight === p) this.inFlight = null;
       });
     this.inFlight = p;
     return p;
