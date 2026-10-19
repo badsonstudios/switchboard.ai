@@ -43,6 +43,15 @@ import { DocumentViewer, documentReopened } from './DocumentViewer';
 import { SessionHistoryDialog } from './SessionHistoryDialog';
 import { NameSessionDialog } from './NameSessionDialog';
 import { createPortal } from 'react-dom';
+import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
+import { StripRenameBox } from './StripRenameBox';
+import { markSeen } from '../lib/seen';
+import {
+  plainTabMenuItems,
+  SessionMenuActions,
+  SessionMenuActionsContext,
+  sessionTabMenuItems,
+} from '../lib/session-menu';
 import { DispatchDialog, dispatchedTitle } from './DispatchDialog';
 import type { DispatchOptions } from '../../../shared/dispatch-wire';
 import { baseName } from '../lib/document-kind';
@@ -469,6 +478,18 @@ export function overlaySaid(card: {
  *  overlays (999). See the note at the menu's click-away layer. */
 const CARD_MENU_Z = 101;
 
+/**
+ * Card id -> the conversation a Fork from that card's TAB would continue
+ * (#1281). Published by the card while its ⋯ menu would show Fork (the
+ * experiment on, and a native conversation id to fork from), and only then:
+ * the tab cannot see the card's live session, and offering Fork where the
+ * ⋯ menu does not would be two answers to one question.
+ */
+const forkSources = new Map<string, string>();
+function forkSourceOf(cardId: string): string | undefined {
+  return forkSources.get(cardId);
+}
+
 export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.Element {
   const { t } = useTranslation();
   const cardId = props.params?.cardId;
@@ -582,13 +603,241 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
     }
     props.api.close();
   };
+  // ── THE TAB'S RIGHT-CLICK MENU (#1281) ────────────────────────────────────
+  //
+  // A session's tab had no menu at all: dockview only draws one when a
+  // context-menu module is registered, nothing here registers one, and the
+  // Electron fallback offers Cut/Copy/Paste on text boxes only. The menu is
+  // the SAME one the rail row and the strip pill show — `sessionTabMenuItems`
+  // is `sessionMenuItems` plus what is about the tab — so the three cannot
+  // drift. A document or diff tab gets the short one: no session items.
+  const actions = React.useContext(SessionMenuActionsContext);
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const [menu, setMenu] = React.useState<{ x: number; y: number; doc: Document } | null>(null);
+  const [renaming, setRenaming] = React.useState(false);
+  // NOT in the list of tabs that did not fit, for middle-click's reason: that
+  // drop-down shuts on `click` only, so a menu opened from one of its rows
+  // would act on a tab and leave the row behind
+  const inOverflowList = (props as { tabLocation?: string }).tabLocation === 'headerOverflow';
+  /** dockview's own tab element: what holds focus, and what Shift+F10 fires at */
+  const tabEl = (): HTMLElement | null =>
+    (rootRef.current?.closest?.('.dv-tab') as HTMLElement | null) ?? rootRef.current;
+  /**
+   * Hand the keyboard back to the tab — but only if nothing else has taken it
+   * by then. An item that opened something (the Changes tab) or a click away
+   * from the rename box put focus where the user wanted it; an item that just
+   * did its work leaves it on nothing, which for a keyboard user is the top of
+   * the document. Asked a beat later, once that has settled.
+   */
+  const backIfLost = (): void => {
+    setTimeout(() => {
+      const el = tabEl();
+      const active = el?.ownerDocument.activeElement;
+      if (el && (!active || active === el.ownerDocument.body)) el.focus();
+    }, 0);
+  };
+  // THE TAB MOVES BETWEEN DOCUMENTS without this component remounting: a
+  // pop-out (or a drag into another group) hands the same rendered part to a
+  // new dockview tab, in a new window's document. So where the listeners sit
+  // is worked out again whenever the panel changes group or window.
+  const [placedAt, setPlacedAt] = React.useState(0);
+  React.useEffect(() => {
+    const api = props.api as Partial<Pick<typeof props.api, 'onDidLocationChange' | 'onDidGroupChange'>>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // after dockview has finished moving the DOM, not while it is
+    const again = (): void => {
+      // a menu open while the tab moved belongs to where it WAS (and to a
+      // window that may be gone)
+      setMenu(null);
+      clearTimeout(timer);
+      timer = setTimeout(() => setPlacedAt((n) => n + 1), 0);
+    };
+    const subs = [api.onDidLocationChange?.(again), api.onDidGroupChange?.(again)];
+    return () => {
+      clearTimeout(timer);
+      for (const s of subs) s?.dispose();
+    };
+  }, [props.api]);
+  React.useEffect(() => {
+    if (inOverflowList) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const open = (e: MouseEvent, anchor: HTMLElement): void => {
+      // a text box owes its user the EDIT menu before it owes anyone ours (#526)
+      if ((e.target as HTMLElement | null)?.closest?.('input, textarea')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      let x = e.clientX;
+      let y = e.clientY;
+      // the keyboard reports (0, 0): open under the tab, at its start edge,
+      // the rail's rule (#526, #642) — not in the window's corner
+      if (x === 0 && y === 0) {
+        const box = anchor.getBoundingClientRect();
+        x = directionOf(anchor) === 'rtl' ? box.right - 12 : box.left + 12;
+        y = box.bottom;
+      }
+      // the menu is drawn in the document the tab is IN: a popped-out tab's
+      // menu opens in its own window
+      setMenu({ x, y, doc: anchor.ownerDocument });
+    };
+    // A RIGHT-CLICK lands on this box, wherever the tab is now.
+    const onBox = (e: MouseEvent): void => open(e, tabEl() ?? root);
+    // THE KEYBOARD'S MENU (Shift+F10, the ContextMenu key) is fired at what
+    // has focus, and that is dockview's tab element ABOVE this box — so it is
+    // heard at the document, and only for the tab this box is drawn in.
+    // Duck-typed, never `instanceof`: a popout's nodes belong to another
+    // window's classes.
+    const onDoc = (e: MouseEvent): void => {
+      const at = e.target as HTMLElement | null;
+      if (!at || at.closest?.('.dv-tab') !== at || !at.contains?.(root)) return;
+      open(e, at);
+    };
+    const doc = root.ownerDocument;
+    root.addEventListener('contextmenu', onBox);
+    doc.addEventListener('contextmenu', onDoc);
+    return () => {
+      root.removeEventListener('contextmenu', onBox);
+      doc.removeEventListener('contextmenu', onDoc);
+    };
+  }, [inOverflowList, placedAt]);
+  // stable, so the open menu's window listeners are not re-bound every render
+  const closeMenu = React.useCallback((restoreFocus: boolean): void => {
+    setMenu(null);
+    if (restoreFocus) {
+      const el = (rootRef.current?.closest?.('.dv-tab') as HTMLElement | null) ?? rootRef.current;
+      el?.focus();
+    }
+  }, []);
+  /** built when the menu is open, from what is true NOW */
+  const menuItems = ((): RailGroupMenuItem[] => {
+    if (!menu) return [];
+    const api = props.api;
+    // a unit fake may hand this component a panel api with no group/location
+    const group = (api.group as DockviewApi['groups'][number] | undefined) ?? null;
+    const loc = api.location as typeof api.location | undefined;
+    const poppedOut = loc?.type === 'popout';
+    const tabWindow = loc?.type === 'popout' ? loc.getWindow() : undefined;
+    const others = group?.panels.filter((p) => p.id !== api.id) ?? [];
+    const closeOthers = {
+      can: others.length > 0,
+      run: (): void => {
+        // closing a session's tab ends it, so ONE question first when any of
+        // the others is a session — asked in the window this tab is in (#1214)
+        const sessions = others.filter((p) => (p.params as CardParams | undefined)?.cardId).length;
+        if (
+          sessions > 0 &&
+          !nativeConfirm(t('tabMenu.closeOthersConfirm', { count: others.length, sessions }), tabWindow)
+        )
+          return;
+        for (const p of others) p.api.close();
+        backIfLost();
+      },
+    };
+    const back = backIfLost;
+    if (!cardId) {
+      const id = api.id ?? '';
+      // the tabs that already have a window of their own to go to
+      const canPop = isDocumentPanelId(id) || isGitPanelId(id);
+      return plainTabMenuItems(
+        {
+          close: closeThisTab,
+          closeOthers,
+          ...(canPop
+            ? { popOut: { poppedOut, run: () => popOutDocumentPanel(props.containerApi, id) } }
+            : {}),
+        },
+        t
+      );
+    }
+    const state = sessionStore.getState();
+    const rec = state.sessions.find((s) => s.id === cardId);
+    const folder = props.params?.folder ?? rec?.folder;
+    const forkFrom = forkSourceOf(cardId);
+    const bridgeNow = window.switchboard as typeof window.switchboard | undefined;
+    return sessionTabMenuItems(
+      {
+        // a card main has no record of yet is "not started" for the rules'
+        // purpose (#687): renaming or regrouping it is a write main declines
+        session: { id: cardId, title, status: rec ? rec.status : 'not-started', groupId: rec?.groupId },
+        groups: state.groups,
+        pinned: sessionStore.isPinned(cardId),
+        finished: sessionStore.getFinishedCards().has(cardId),
+      },
+      {
+        diff: () => {
+          actions?.diff(rec ?? { id: cardId, title, folder });
+          back();
+        },
+        rename: () => setRenaming(true),
+        pin: () => {
+          actions?.togglePin(cardId);
+          back();
+        },
+        close: closeThisTab,
+        seen: () => {
+          markSeen(cardId);
+          back();
+        },
+        move: (gid, here) => {
+          if (!here) actions?.moveToGroup(cardId, gid);
+          back();
+        },
+      },
+      {
+        // A FRESH session in the same folder and the same group, beside this
+        // one — `addSessionCardTo` without `forkFrom`, through the naming
+        // dialog every human start goes through (#1282)
+        duplicate: folder
+          ? () =>
+              void actions?.askName?.(folder, {
+                into: group,
+                ...(rec?.groupId ? { groupId: rec.groupId } : {}),
+              })
+          : undefined,
+        // exactly the ⋯ menu's Fork, offered exactly when it offers it
+        fork:
+          forkFrom && folder
+            ? () =>
+                void addSessionCardTo(props.containerApi, folder, {
+                  into: poppedOut ? group : null,
+                  forkFrom: { sourceSessionId: forkFrom, sourceFolder: folder },
+                })
+            : undefined,
+        popOut: { poppedOut, run: () => popOutCardPanel(props.containerApi, cardId) },
+        copyPath: folder
+          ? () => {
+              // the TAB's window: Chromium refuses a clipboard write from a
+              // document that does not have focus, and a popped-out tab's does
+              const clip = (menu.doc.defaultView ?? window).navigator.clipboard;
+              void clip?.writeText(folder).catch(() => {
+                /* fail-open: the clipboard was untouched */
+              });
+              back();
+            }
+          : undefined,
+        reveal: folder
+          ? {
+              platform: bridgeNow?.platform,
+              run: () => {
+                void bridgeNow?.files?.reveal?.(folder);
+                back();
+              },
+            }
+          : undefined,
+        closeOthers,
+      },
+      t
+    );
+  })();
   return (
-    // `--tab-wash` rides on THIS element because a custom property only flows
-    // down: `.dv-tab` is dockview's, above us, and cannot read a value set here.
-    // So the open tab's wash is painted by this box (dockview-tokens.css, #905)
-    // and dockview's own padding moves onto it: 16 = its 0.5rem plus the 8 this
-    // box always had, so a tab is exactly as wide as before.
+    <>
+    {/* `--tab-wash` rides on THIS element because a custom property only flows
+        down: `.dv-tab` is dockview's, above us, and cannot read a value set here.
+        So the open tab's wash is painted by this box (dockview-tokens.css, #905)
+        and dockview's own padding moves onto it: 16 = its 0.5rem plus the 8 this
+        box always had, so a tab is exactly as wide as before. */}
     <div
+      ref={rootRef}
       className="identity-tab"
       // a SESSION's tab shows its last prompt on hover (#631); a document or
       // diff tab has no card and so no attribute
@@ -634,6 +883,38 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
         } as React.CSSProperties
       }
     >
+      {renaming && cardId ? (
+        // RENAME, IN THE TAB (#1281): the strip's box, framed for a tab so the
+        // tab bar keeps its height. Its presses and keys stop HERE: below this
+        // is dockview's tab, whose pointerdown activates the panel (taking
+        // focus out of the field, which ends the edit) and whose mousedown
+        // starts a tab drag.
+        <span
+          data-tab-rename={cardId}
+          onPointerDown={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          // a middle-click in the field is a paste, not the tab's close
+          onAuxClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <StripRenameBox
+            compact
+            target={cardId}
+            label={t('strip.renameSessionLabel', { name: title })}
+            initial={title}
+            onRename={(name) => actions?.rename(cardId, name)}
+            onEnd={() => {
+              setRenaming(false);
+              // Enter and Esc leave the keyboard on nothing; a click away
+              // put it somewhere, and that is not ours to take back
+              backIfLost();
+            }}
+          />
+        </span>
+      ) : (
+        <>
       {/* undefined accent/badge are passed through as undefined on purpose: the
           chip's own fallbacks (grey dot, no badge) stay the behaviour for a
           derived tab and for a card the store has not answered for yet. */}
@@ -681,6 +962,8 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
           {tabWord.text}
         </span>
       )}
+        </>
+      )}
       <button
         onClick={(e) => {
           e.stopPropagation();
@@ -710,6 +993,23 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
         {t('grid.closeTabIcon')}
       </button>
     </div>
+    {menu &&
+      menuItems.length > 0 &&
+      // in the tab's OWN document (a popout is a second document, not a
+      // second renderer), and outside the tab's box so nothing pressed in the
+      // menu reaches the tab's middle-click or dockview's drag
+      createPortal(
+        <RailGroupMenu
+          testId="tab-menu"
+          x={menu.x}
+          y={menu.y}
+          label={t('rail.menuLabel', { title })}
+          items={menuItems}
+          onClose={closeMenu}
+        />,
+        menu.doc.body
+      )}
+    </>
   );
 }
 
@@ -1045,6 +1345,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       alive = false;
     };
   }, [settingsApi]);
+  // ...and the tab's menu offers Fork exactly when the ⋯ menu below does (#1281)
+  const forkSession = forkOn && props.params?.folder ? live?.nativeSessionId : undefined;
+  React.useEffect(() => {
+    if (!cardId) return;
+    if (!forkSession) return;
+    forkSources.set(cardId, forkSession);
+    return () => {
+      // only what THIS copy wrote: a remount can publish before we clean up
+      if (forkSources.get(cardId) === forkSession) forkSources.delete(cardId);
+    };
+  }, [cardId, forkSession]);
   // …and how many of their messages are waiting in this card's composer, for
   // the Session tab's badge. An OBSERVER subscription — the card chrome is
   // mounted whether or not the composer is, and must not make the card count
@@ -4306,9 +4617,11 @@ function closableDocumentIds(api: DockviewApi | null): string[] {
  * deliberate rather than lazy: the two are the same four lines today and the
  * reasons they might diverge are different (a document has back/forward state to
  * preserve; a diff has two editor models to keep alive), so a shared helper would
- * be a joint nobody could safely cut later. Dockview's native "Move to New
- * Window" on the tab's context menu keeps working either way — this is the
- * explicit button design §3 asks for, "for discoverability".
+ * be a joint nobody could safely cut later. The tab's right-click menu
+ * (#1281) offers the same move as "Pop out to a new window" — dockview's own
+ * tab menu is not registered in this build, so there is no native "Move to New
+ * Window" — and this is the explicit button design §3 asks for, "for
+ * discoverability".
  */
 export function popOutDiffPanel(api: DockviewApi | null, panelId: string): void {
   const panel = api?.getPanel(panelId);
@@ -6460,6 +6773,11 @@ export function SessionGrid(props: {
   /** which card the grid is showing — the rail paints it as the selected row */
   onActiveCardChanged?: (cardId: string | null) => void;
   controller?: React.MutableRefObject<GridController | null>;
+  /**
+   * App's half of what a tab's right-click menu can do (#1281): the same
+   * rename, open-changes, move and pin the lists of sessions are given.
+   */
+  sessionMenu?: Omit<SessionMenuActions, 'askName'>;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const apiRef = useRef<DockviewApi | null>(null);
@@ -6627,6 +6945,29 @@ export function SessionGrid(props: {
   const emptyWorkspaceActions = React.useMemo(
     () => ({ onNewSession: () => void newSessionInGrid() }),
     [newSessionInGrid]
+  );
+  // What a tab's menu can ask for (#1281). STABLE, so the tabs subscribed to
+  // it do not all re-render whenever App does: App's handlers are read
+  // through a ref at the moment an item runs.
+  const sessionMenuRef = useRef(props.sessionMenu);
+  sessionMenuRef.current = props.sessionMenu;
+  const sessionMenuActions = React.useMemo<SessionMenuActions>(
+    () => ({
+      rename: (cardId, name) => sessionMenuRef.current?.rename(cardId, name),
+      diff: (s) => sessionMenuRef.current?.diff(s),
+      moveToGroup: (cardId, gid) => sessionMenuRef.current?.moveToGroup(cardId, gid),
+      togglePin: (cardId) => sessionMenuRef.current?.togglePin(cardId),
+      // Duplicate: a person starting a session, so it is named first (#1282)
+      askName: async (folder, place) => {
+        setError(null); // a retry starts clean, as above
+        try {
+          await askName(folder, place);
+        } catch (e) {
+          setError(errorText(e)); // fail-open, and visible
+        }
+      },
+    }),
+    [askName]
   );
 
   // §5.8's presentation ladder (P2-E9-05). The verbs are MODULE functions on
@@ -7759,6 +8100,7 @@ export function SessionGrid(props: {
             dock draws its watermark exactly then; the context is how that
             component reaches this grid's own "new session". */}
         <EmptyWorkspaceActions.Provider value={emptyWorkspaceActions}>
+        <SessionMenuActionsContext.Provider value={sessionMenuActions}>
         <DockviewReact
           components={components}
           defaultTabComponent={IdentityTab}
@@ -7768,6 +8110,7 @@ export function SessionGrid(props: {
           /* the theme lives on the SHELL, set via api.updateOptions in onReady
              (#84) — a class here never reached the popups */
         />
+        </SessionMenuActionsContext.Provider>
         </EmptyWorkspaceActions.Provider>
       </div>
       {/* The naming dialog (#1282). Mounted at the GRID rather than inside a

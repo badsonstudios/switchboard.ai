@@ -139,9 +139,9 @@ export function GitDiffView(props: {
         {/* ⧉ / ⇤ — ONE CONTROL WITH TWO LABELS, which is what the document
             viewer's header does and for the same reason: "pop out" and "dock
             back" are the same gesture in two directions, and two buttons would
-            mean one of them is always dead. Design §3 asks for both, plus
-            dockview's native "Move to New Window" from the tab's context menu,
-            which keeps working without us. */}
+            mean one of them is always dead. Design §3 asks for both, plus a
+            way from the tab's context menu: that is our own "Pop out to a new
+            window" (#1281) — dockview's native tab menu is not registered. */}
         <button
           type="button"
           className="diff-btn"

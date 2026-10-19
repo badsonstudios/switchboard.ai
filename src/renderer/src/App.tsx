@@ -3051,6 +3051,8 @@ export function App(): React.JSX.Element {
           onArrangeableChanged={setArrangeable}
           onActiveCardChanged={(c) => sessionStore.setActiveCard(c)}
           controller={grid}
+          // a tab's right-click menu (#1281): the lists' own gestures
+          sessionMenu={{ rename: renameCard, diff: openChanges, moveToGroup, togglePin }}
         />
         {/* Shape B: the panel's content, in an overlay drawer that is shut by
             default. It is the LAST child of the workspace row and out of flow,

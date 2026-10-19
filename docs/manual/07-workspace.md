@@ -887,6 +887,46 @@ which brings back the sessions that layout had folded away, and then arranges
 them. While one of those is on the pictures are replaced by the **▦** chip;
 use the command palette, or click the chip until it goes away.
 
+## Right-click a tab
+
+Every tab across the top of the workspace has a right-click menu. (From the
+keyboard: click the tab, or move to it, then press `Shift+F10` or the **Menu**
+key. `↑` and `↓` walk the menu, `Enter` picks, `Esc` closes it and puts you
+back on the tab.) If the tab is in a window you popped out, the menu opens in
+that window.
+
+**On a session's tab** you get everything the session's menu in the Sessions
+list has, plus a few things that are about the tab:
+
+- **Rename…** puts a box in the tab itself. `Enter` keeps the new name, and
+  the tab, the Sessions list and the strip all show it; `Esc`, or clicking
+  away, leaves the old one. It is greyed out for a session that never started.
+- **Duplicate session** starts a **new, fresh** session in the same folder,
+  in the same group, as a tab next to this one. It asks for a name first,
+  with the usual suggestion filled in (*myproject-2* and so on). It does not
+  copy the conversation.
+- **Fork conversation** is only there if you have turned the experimental
+  **⑂ fork sessions** switch on and the session has taken at least one turn. It starts a
+  new session that **continues** this one's conversation: everything it knows
+  so far, then the two go their own ways. It sits right under Duplicate so
+  you can see which is which.
+- **Open changes**, **Pin session** / **Unpin session**, **Mark as seen** (only
+  when the session has finished and you have not looked), and **Move to
+  group** work exactly as they do in the Sessions list.
+- **Pop out to a new window** puts the session in a window of its own. On a
+  popped-out tab it says **Return to main window** instead.
+- **Copy folder path** copies the session's folder to the clipboard.
+- **Reveal folder in Explorer** opens the folder in your file manager
+  (**Finder** on a Mac).
+- **Close other tabs in this group** closes every other tab in the same row of
+  tabs. If any of them is a session it asks once first, because closing a
+  session's tab ends it. Greyed out when the tab is on its own.
+- **Close session** asks first, exactly as the ✕ does.
+
+**On a document or a Changes tab** the menu is short: **Close tab**, **Close
+other tabs in this group**, and (for a document or a comparison) **Pop out to a
+new window** / **Return to main window**.
+
 ## When you have more tabs than fit
 
 They wrap onto another row, so every session stays visible and one click away.

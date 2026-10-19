@@ -1900,6 +1900,19 @@
     "edgeMore": "More sessions past this end. Scroll there.",
     "edgeNone": "Nothing more past this end"
   },
+  "tabMenu": {
+    "duplicate": "Duplicate session",
+    "fork": "Fork conversation",
+    "popOut": "Pop out to a new window",
+    "dockIn": "Return to main window",
+    "copyPath": "Copy folder path",
+    "revealWindows": "Reveal folder in Explorer",
+    "revealMac": "Reveal folder in Finder",
+    "revealOther": "Reveal folder in file manager",
+    "close": "Close tab",
+    "closeOthers": "Close other tabs in this group",
+    "closeOthersConfirm": "Close {count, plural, one {the other tab} other {the # other tabs}} in this group? This ends {sessions, plural, one {# session} other {# sessions}} and removes {sessions, plural, one {its card} other {their cards}}."
+  },
   "taskLabelSize": {
     "title": "Task label size",
     "blurb": "How much of each session’s task label to show, on the cards and in the sessions list. Longer labels say more; shorter ones fit more sessions on screen.",

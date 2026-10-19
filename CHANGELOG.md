@@ -96,6 +96,21 @@ on the floor, and say so in your PR.
 
 ## 0.8.125 — unreleased
 
+### Added
+
+- **Right-click a tab for a real menu.** A session's tab now has the same menu
+  as the session in the Sessions list (Open changes, Rename…, Pin, Mark as
+  seen, Move to group, Close session), plus **Duplicate session** (a new, fresh
+  session in the same folder and group, next to this one, named the usual
+  way), **Fork conversation** (when the experimental fork is on), **Pop out to
+  a new window** / **Return to main window**, **Copy folder path**, **Reveal
+  folder in Explorer** (Finder on a Mac) and **Close other tabs in this
+  group**. **Rename…** edits the name right in the tab. `Shift+F10` opens it
+  from the keyboard, and in a popped-out window it opens there. Document and
+  Changes tabs get a short menu: Close tab, Close other tabs, Pop out. The
+  list on the left, the strip and the tab now build their session menu from
+  one place, so they cannot drift apart.
+
 ### Changed
 
 - **A session that is waiting on you says so, everywhere it appears.** Its
