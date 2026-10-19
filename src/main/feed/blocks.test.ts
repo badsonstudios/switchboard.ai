@@ -509,7 +509,7 @@ If this event is something the user would act on now, send a PushNotification.
 
   // One block in, one block out: the search engine derives every line to keep
   // its ordinals in step with the Feed's `seq`, so a kind change must not be a
-  // COUNT change. `SESSION_TRANSCRIPT_FACTS.blocks` did not move for it (1579 then; 1578 since #1026).
+  // COUNT change. `SESSION_TRANSCRIPT_FACTS.blocks` did not move for it (1579 then; 1578 since #1026; 1579 again since #1259).
   it('survives an identity-only derivation as one block', () => {
     const b = blocks(
       deriveIntents({ type: 'user', ...TN, message: { content: PAYLOAD } }, IDENTITY_ONLY_CAPS)
@@ -802,6 +802,52 @@ describe('what the CLI says is not for the live view (#1026)', () => {
     expect(blocks(deriveIntents(user({ isReplay: true }, 'do it')))).toHaveLength(1);
   });
 });
+// #1259 — where a compaction happened, from the transcript's own line.
+describe('a compaction boundary in the transcript (#1259)', () => {
+  // measured on CLI 2.1.288: no `message`, camelCase metadata
+  const boundary = (more: Record<string, unknown> = {}): Record<string, unknown> => ({
+    type: 'system',
+    subtype: 'compact_boundary',
+    content: 'Conversation compacted',
+    level: 'info',
+    isSidechain: false,
+    timestamp: '2026-10-18T10:00:00.000Z',
+    ...more,
+  });
+
+  it('is a divider carrying who asked and the counts', () => {
+    const got = deriveIntents(
+      boundary({ compactMetadata: { trigger: 'auto', preTokens: 969261, postTokens: 21286, durationMs: 1 } })
+    );
+    expect(got).toEqual([
+      {
+        t: 'block',
+        block: {
+          kind: 'compaction',
+          compaction: { trigger: 'auto', preTokens: 969261, postTokens: 21286 },
+          ts: '2026-10-18T10:00:00.000Z',
+        },
+      },
+    ]);
+  });
+
+  it('draws with nothing on it (fail-open), and never carries the summary', () => {
+    const got = blocks(deriveIntents(boundary())).map((i) => i.block);
+    expect(got).toEqual([{ kind: 'compaction', compaction: {}, ts: '2026-10-18T10:00:00.000Z' }]);
+    expect(got[0].text).toBeUndefined();
+  });
+
+  it('gives every pass the same ONE block, so a find counts it as the Feed does', () => {
+    for (const caps of [DISPLAY_CAPS, FULL_CAPS, IDENTITY_ONLY_CAPS]) {
+      expect(blocks(deriveIntents(boundary(), caps)).map((i) => i.block.kind)).toEqual(['compaction']);
+    }
+  });
+
+  it('other system lines still derive nothing', () => {
+    expect(deriveIntents({ type: 'system', subtype: 'turn_duration', durationMs: 5 })).toEqual([]);
+  });
+});
+
 // #1271 — what a run of calls folds BY is read once, in main.
 describe('the fold facts stamped on a tool block (#1271)', () => {
   const toolBlock = (name: string, input: Record<string, unknown>, caps = DISPLAY_CAPS) =>

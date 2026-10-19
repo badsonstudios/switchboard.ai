@@ -71,8 +71,13 @@ export const SESSION_TRANSCRIPT_FACTS = {
    * which the derivation used to hand on as a prompt and now drops for every
    * pass alike, so the search engine's ordinals and the Feed's `seq` moved
    * together.
+   *
+   * 1,579 AGAIN SINCE #1259, and for a different reason: the file's single
+   * `system:compact_boundary` line, which derived nothing before, is now the
+   * divider that marks where that compaction happened. Every reader moved by
+   * one together again.
    */
-  blocks: 1578,
+  blocks: 1579,
   toolResults: 1235,
   contentItems: 3356,
   /**

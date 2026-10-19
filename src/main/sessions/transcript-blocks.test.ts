@@ -127,3 +127,16 @@ describe('renderBlock labels a harness-injected turn (#704)', () => {
     ).toBe('[subagent: Explore] [background task] (event) Monitor event: "CI on PR 53"');
   });
 });
+
+describe('renderBlock says where a conversation was compacted (#1259)', () => {
+  it('as one labelled line, never empty and never the summary', () => {
+    expect(
+      renderBlock({ seq: 0, kind: 'compaction', compaction: { trigger: 'manual' }, sidechain: false })
+    ).toBe('[conversation compacted]');
+  });
+
+  it('blocksFrom turns the transcript line into that block', () => {
+    const got = blocksFrom([{ type: 'system', subtype: 'compact_boundary', content: 'Conversation compacted' }], DISPLAY_CAPS);
+    expect(got.map(renderBlock)).toEqual(['[conversation compacted]']);
+  });
+});

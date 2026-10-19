@@ -45,6 +45,7 @@ import { FEED_THUMB_HEIGHT, FEED_THUMB_WIDTH, feedPictureUrl } from '../../../sh
 import { Markdown } from '../lib/markdown';
 import { handleMarkdownLinkClick, openExternalBridge } from '../lib/markdown-links';
 import { briefingRefOf, dividerCopy, earlierTurnsCopy } from '../lib/ai-switch-view';
+import { compactionCopy } from '../lib/compaction-view';
 import { BriefingDialog } from '../components/BriefingDialog';
 
 /**
@@ -766,6 +767,40 @@ function AiSwitchDivider({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
         <span aria-hidden style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
       </div>
       {viewing && ref && <BriefingDialog mark={mark} briefingRef={ref} onClose={() => setViewing(false)} />}
+    </div>
+  );
+}
+
+/**
+ * Where the conversation was compacted (#1259): a rule across it, in the
+ * "conversation cleared" marker's look. Above it the AI now has only a
+ * summary; the hover says so. The summary itself is not offered (#1026: it is
+ * the CLI's working note, and its own live view hides it too).
+ */
+function CompactionDivider({ b }: { b: FeedBlockDto }): React.JSX.Element {
+  const { t } = useTranslation();
+  const copy = compactionCopy(b.compaction);
+  const text = t(copy.key, copy.vars);
+  return (
+    <div data-compaction-divider data-trigger={b.compaction?.trigger ?? 'unknown'}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBlock: 10,
+          marginInline: 10,
+          color: 'var(--muted)',
+          fontSize: 10.5,
+          fontFamily: 'var(--font-ui)',
+        }}
+      >
+        <span aria-hidden style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
+        <span role="separator" aria-label={text} title={t('feedView.compaction.hint')} data-compaction-label>
+          <span aria-hidden>{text}</span>
+        </span>
+        <span aria-hidden style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
+      </div>
     </div>
   );
 }
@@ -1696,6 +1731,12 @@ export const feedBlockRenderers: FeedBlockRendererContribution[] = [
     order: 54,
     matches: (b) => b.kind === 'ai-switch',
     render: (b) => <AiSwitchDivider b={b} />,
+  },
+  {
+    manifest: manifest('feed-block-compaction', 'Compaction divider'),
+    order: 56,
+    matches: (b) => b.kind === 'compaction',
+    render: (b) => <CompactionDivider b={b} />,
   },
   {
     manifest: manifest('feed-block-notice', 'Harness notification row'),

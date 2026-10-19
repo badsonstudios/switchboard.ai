@@ -2,14 +2,18 @@
 // the FeedView component applies these; tests pin the preset semantics.
 import type { SettledQuestion } from '../../../shared/ask-user-question';
 import type { AiSwitchMark } from '../../../shared/ai-switch';
+import type { CompactionMark } from '../../../shared/compaction';
 
 export interface FeedBlockDto {
   seq: number;
-  /** `ai-switch`: the divider an AI switch draws (#1294) — see `aiSwitch` */
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch';
+  /** `ai-switch`: the divider an AI switch draws (#1294) — see `aiSwitch`.
+   *  `compaction`: where the conversation was compacted (#1259) */
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch' | 'compaction';
   text?: string;
   /** `ai-switch`: the card's persisted mark (#1294). Main's twin is `main/feed/blocks.ts`. */
   aiSwitch?: AiSwitchMark;
+  /** `compaction`: who asked and the counts, when the CLI said (#1259) */
+  compaction?: CompactionMark;
   tool?: {
     name: string;
     /** presentation class stamped by the watcher — dispatch on THIS, never
@@ -129,8 +133,8 @@ export function upsertBlock(
  * so the column never jumps between a dotted block and an undotted one.
  */
 export function showsTimelineDot(kind: FeedBlockDto['kind']): boolean {
-  // a divider is a rule across the conversation, not a step in it (#1294)
-  return kind !== 'assistant' && kind !== 'ai-switch';
+  // a divider is a rule across the conversation, not a step in it (#1294, #1259)
+  return kind !== 'assistant' && kind !== 'ai-switch' && kind !== 'compaction';
 }
 
 export type Verbosity = 'quiet' | 'normal' | 'firehose';
@@ -148,6 +152,13 @@ export function blockVisible(b: FeedBlockDto, v: Verbosity): boolean {
   // Shown at EVERY setting (#1294): which AI the conversation below it is with
   // is part of the conversation, not an event about it.
   if (b.kind === 'ai-switch') return true;
+  // ...and so is where it was compacted (#1259), for the reason the cleared
+  // marker is: what the model still remembers is part of the conversation.
+  // The MAIN conversation's, that is: a subagent compacting its own context
+  // (none seen on disk yet) is subagent chatter, and must not read as the
+  // session's divider. It still takes its place in the list, so a find's
+  // ordinals are untouched; it is only not drawn below firehose.
+  if (b.kind === 'compaction') return !b.sidechain;
   if (b.kind === 'thinking') return false;
   if (v === 'quiet') return (b.kind === 'user' || b.kind === 'assistant') && !b.sidechain;
   return true; // normal (tools + todos + notices included)

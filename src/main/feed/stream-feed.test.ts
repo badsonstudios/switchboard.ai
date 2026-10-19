@@ -773,7 +773,11 @@ describe('`/clear` wipes the FIRST time (#748)', () => {
     feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
     feed.offer(SID, { type: 'system', subtype: 'compact_boundary', session_id: CONV });
 
-    expect(texts()).toEqual(['survives compaction']);
+    // the history stays; the boundary is a divider BELOW it (#1259), and one
+    // with no metadata at all still draws (fail-open)
+    expect(kinds()).toEqual(['assistant', 'compaction']);
+    expect(texts()[0]).toBe('survives compaction');
+    expect(feed.blocks(SID)[1].compaction).toEqual({});
     expect(resets).toEqual([]);
   });
 
@@ -1244,20 +1248,72 @@ describe('a compaction on the stream (#1026)', () => {
     { type: 'result', subtype: 'success', is_error: false, session_id: CONV },
   ];
 
-  it('adds NOTHING to the conversation: the summary is not a prompt', () => {
+  it('adds a divider and NOTHING else: the summary is not a prompt (#1259)', () => {
     feed.offer(SID, userFrame('first question', { isReplay: true }));
     feed.offer(SID, assistant([{ type: 'text', text: 'first answer' }]));
     for (const frame of compaction()) feed.offer(SID, frame);
     feed.offer(SID, userFrame('second question', { isReplay: true }));
-    expect(kinds()).toEqual(['user', 'assistant', 'user']);
-    expect(texts()).toEqual(['first question', 'first answer', 'second question']);
+    // the divider sits WHERE the compaction happened, between the two turns
+    expect(kinds()).toEqual(['user', 'assistant', 'compaction', 'user']);
+    expect(texts()).toEqual(['first question', 'first answer', undefined, 'second question']);
+    expect(feed.blocks(SID)[2]).toMatchObject({
+      kind: 'compaction',
+      sidechain: false,
+      compaction: { trigger: 'manual', preTokens: 32516, postTokens: 4760 },
+    });
+    // #1026's invariant: the prompts are the two the user typed, no more
+    expect(feed.blocks(SID).filter((b) => b.kind === 'user')).toHaveLength(2);
     // ...and it is not a `/clear`: nothing was wiped
     expect(resets).toEqual([]);
   });
 
-  it('a compaction as the very first thing a session does leaves an empty conversation', () => {
+  it('a compaction as the very first thing a session does leaves only its divider', () => {
     for (const frame of compaction()) feed.offer(SID, frame);
-    expect(feed.blocks(SID)).toEqual([]);
+    expect(kinds()).toEqual(['compaction']);
+  });
+
+  it('says who asked only when the CLI did, and counts only real numbers (#1259)', () => {
+    feed.offer(SID, system('compact_boundary', { compact_metadata: { trigger: 'auto', pre_tokens: 969261, post_tokens: 21286 } }));
+    // a trigger with no words for it, and counts that are not counts
+    feed.offer(SID, system('compact_boundary', { compact_metadata: { trigger: 'later', pre_tokens: '12', post_tokens: -1 } }));
+    feed.offer(SID, system('compact_boundary', { compact_metadata: { pre_tokens: 5000 } }));
+    expect(feed.blocks(SID).map((b) => b.compaction)).toEqual([
+      { trigger: 'auto', preTokens: 969261, postTokens: 21286 },
+      {},
+      { preTokens: 5000 },
+    ]);
+  });
+
+  it('after a restart, the transcript draws the same divider in the same place (#1259)', () => {
+    // the transcript's spelling: camelCase metadata, and the summary under the
+    // two flags #1026 drops
+    const line = (more: Record<string, unknown>): Record<string, unknown> => ({
+      sessionId: CONV,
+      cwd: '/repo',
+      timestamp: '2026-10-18T10:00:00.000Z',
+      isSidechain: false,
+      ...more,
+    });
+    feed.hydrate(SID, [
+      line({ type: 'user', message: { role: 'user', content: 'first question' } }),
+      line({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'first answer' }] } }),
+      line({
+        type: 'system',
+        subtype: 'compact_boundary',
+        content: 'Conversation compacted',
+        isMeta: false,
+        compactMetadata: { trigger: 'manual', preTokens: 32516, postTokens: 4760, durationMs: 10396 },
+      }),
+      line({
+        type: 'user',
+        isVisibleInTranscriptOnly: true,
+        isCompactSummary: true,
+        message: { role: 'user', content: SUMMARY },
+      }),
+      line({ type: 'user', message: { role: 'user', content: 'second question' } }),
+    ]);
+    expect(kinds()).toEqual(['user', 'assistant', 'compaction', 'user']);
+    expect(feed.blocks(SID)[2].compaction).toEqual({ trigger: 'manual', preTokens: 32516, postTokens: 4760 });
   });
 });
 

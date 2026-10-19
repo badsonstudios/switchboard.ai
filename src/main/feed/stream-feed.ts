@@ -72,8 +72,10 @@ import {
   TEXT_CAP,
   deriveIntents,
 } from './blocks';
+import { compactionMark } from '../../shared/compaction';
 import type {
   ChunkKind,
+  CompactionEvent,
   ConversationEvent,
   ConversationResetEvent,
   EngineEvent,
@@ -443,9 +445,11 @@ export class StreamFeed {
         // purpose is that a new message type is a DECISION rather than a
         // silent no-op. It was a silent no-op, and it cost a user-visible bug.
         return this.onConversationReset(sessionId, ev);
-      // Not content: status, the control-path notices (#1287), compaction
-      // and usage are other consumers'. Listed rather than defaulted so a NEW
-      // event type is somebody's decision rather than a silent no-op.
+      case 'compaction':
+        return this.onCompaction(sessionId, ev);
+      // Not content: status, the control-path notices (#1287) and usage are
+      // other consumers'. Listed rather than defaulted so a NEW event type is
+      // somebody's decision rather than a silent no-op.
       case 'activity':
       case 'permission-request':
       case 'permission-withdrawn':
@@ -453,7 +457,6 @@ export class StreamFeed {
       case 'model':
       case 'mode':
       case 'settings':
-      case 'compaction':
       case 'usage':
         return;
       default: {
@@ -464,6 +467,34 @@ export class StreamFeed {
         return unhandled;
       }
     }
+  }
+
+  /**
+   * The engine compacted the conversation (#1259): a divider at this point, the
+   * way a `/clear` gets one. Everything above it is, to the model, now only a
+   * summary — which a reader scrolling back could not otherwise tell.
+   *
+   * FROM THE ENGINE'S FRAME ONLY (Claude's `system:compact_boundary`), never
+   * inferred: the CLI decides when to compact, and this draws what it said.
+   * NOTHING IS WIPED — unlike a reset, the history above stays on screen, and
+   * the summary that follows on the wire is dropped by `deriveIntents` (#1026),
+   * so it never becomes a prompt. Counts the engine did not send are left off
+   * the mark, and the divider still draws (fail-open).
+   *
+   * After a restart the same divider comes from the transcript's
+   * `compact_boundary` line, through `hydrate` and the same `deriveIntents`
+   * every transcript reader runs; this is the live half only.
+   */
+  private onCompaction(sessionId: string, ev: CompactionEvent): void {
+    const s = this.ensure(sessionId);
+    s.buffer.push(
+      {
+        kind: 'compaction',
+        compaction: compactionMark(ev.trigger, ev.preTokens, ev.postTokens),
+        ts: new Date().toISOString(),
+      },
+      { sidechain: false }
+    );
   }
 
   /**

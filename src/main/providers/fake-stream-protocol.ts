@@ -1757,6 +1757,9 @@ export class FakeStreamProtocol {
       isSidechain: false,
       isMeta: false,
       content: 'Conversation compacted',
+      // measured (#1259): the transcript spells the stream's `compact_metadata`
+      // in camelCase, with the same counts
+      compactMetadata: { trigger: 'manual', preTokens: 32516, postTokens: 4760, durationMs: 10396 },
     });
     this.host.appendTranscript?.({
       type: 'user',

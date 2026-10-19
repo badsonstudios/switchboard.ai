@@ -100,6 +100,10 @@ export function renderBlockAs(block: FeedBlock, assistant: string): string {
     const status = block.notice.status ? ` (${block.notice.status})` : '';
     return `${tag}[background task]${status} ${block.notice.summary}`;
   }
+  // Where the conversation was compacted (#1259). Said, not dropped: a reader
+  // handed the window should know that what came before this line is, to the
+  // model, now only a summary. The summary itself is never here (#1026).
+  if (block.kind === 'compaction') return `${tag}[conversation compacted]`;
   const text = block.text ?? '';
   if (!text) return '';
   const label = block.kind === 'user' ? 'User' : block.kind === 'thinking' ? 'Thinking' : assistant;
