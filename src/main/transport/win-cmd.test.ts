@@ -504,17 +504,46 @@ onWindows('end to end through the real cmd.exe', () => {
     expect(got.dp0).toBe(onPath + path.sep);
   }, REAL_CMD_BUDGET_MS);
 
-  // The probe capture's own failing command, against the real install — only
-  // where Node really is under `Program Files`. `--version` only: no network.
+  // The shape of the probe capture's install, hermetically: a shim at
+  // `Program Files\nodejs\npx.cmd` inside our own temp dir. Same path shape,
+  // same cmd.exe parse, no real npm.
+  it('a shim at <temp>\\Program Files\\nodejs\\npx.cmd runs whole (#1301)', () => {
+    const dir = path.join(tempDir('sb-wincmd-'), 'Program Files', 'nodejs');
+    fs.mkdirSync(dir, { recursive: true });
+    const got = runIn(makeShimIn(dir, 'npx.cmd', path.dirname(path.dirname(dir))), [
+      '-y',
+      '@agentclientprotocol/codex-acp@2.2.2',
+      '--version',
+    ]);
+    expect(got.out).not.toMatch(/is not recognized/);
+    expect(got.argv).toEqual(['-y', '@agentclientprotocol/codex-acp@2.2.2', '--version']);
+    expect(got.dp0).toBe(dir + path.sep);
+  }, REAL_CMD_BUDGET_MS);
+
+  // The probe capture's EXACT line against the REAL install, OPT-IN ONLY
+  // (`SWITCHBOARD_PROBE_NETWORK=1`). Not in `npm test`: it downloads a package
+  // from npm, and even plain `npx --version` blew the 10 s per-spawn bound on a
+  // loaded windows-latest runner (run 39245329448) — real npm is slow to
+  // start, which is a fact about npm and not about the quoting this pins.
+  // Skipped too where Node is not actually under a spaced `Program Files`.
   const realNpx = path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'nodejs', 'npx.cmd');
-  it.skipIf(!realNpx.includes(' ') || !fs.existsSync(realNpx))(
-    'the probe capture’s failing line now runs the real npx.cmd under Program Files (#1301)',
+  it.skipIf(
+    process.env.SWITCHBOARD_PROBE_NETWORK !== '1' || !realNpx.includes(' ') || !fs.existsSync(realNpx)
+  )(
+    'OPT-IN: the probe capture’s exact line runs the real npx.cmd under Program Files (#1301)',
     () => {
-      const got = runIn(realNpx, ['--version']);
-      expect(got.out).not.toMatch(/is not recognized/);
-      expect(got.out.trim()).toMatch(/^\d+\.\d+\.\d+/);
+      const spec = execSpec(realNpx, ['-y', '@agentclientprotocol/codex-acp@2.2.2', '--version'], 'win32');
+      const out = String(
+        execFileSync(spec.file, spec.argv, {
+          encoding: 'utf8',
+          windowsHide: true,
+          timeout: 120_000,
+          windowsVerbatimArguments: spec.windowsVerbatimArguments,
+        } as Parameters<typeof execFileSync>[2])
+      );
+      expect(out).toContain('codex-acp 2.2.2');
     },
-    REAL_CMD_BUDGET_MS
+    150_000
   );
 
   it('does not substitute !VAR! even when delayed expansion is the default', () => {
