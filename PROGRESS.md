@@ -3,6 +3,12 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚀 RELEASING: v0.8.125, 2026-10-19 — THE WHOLE 2026-10-18/19 RUN PLUS THE BETA CHANNEL
+>
+> Dan, after the run's report and the #1380 merge: *"Cut it."* A **regular** release, deliberately: the installed 0.8.124 skips pre-releases unconditionally and has no beta switch, so a 0.8.125 beta would never have reached him — the beta machinery has to arrive through a normal release first. **0.8.126 can be the first beta.** This release PR carries the version, the lock and the dated notes together (`0.8.126 — unreleased` is open); on green CI it merges, tag `v0.8.125` is pushed, and the release workflow builds and publishes `switchboard-Setup-0.8.125.exe` + sha256. Tanner's install gets it too (the last release that reaches him unbidden).
+>
+> **In it:** #1343 (test tooling), #1340, #1278, #1351 (+#1279, #1196), #1281, #1316, #1317, #756, #1259, #1335 + #1338, #1318, #1301, #1380. **None of it is hand-tested** — the dogfood tracker has a row per item. Deliberately NOT in it: #1362 (a cleanly exited session reads "waiting"; Dan chose to cut without it), #1384 (diff toolbar, next cycle), and the run's other follow-ups.
+
 > # 🎛️ ORCHESTRATION RUN — started 2026-10-18 ~10:30 (ten issues, Dan's order; #1343 first and alone, then two at a time)
 >
 > **Single-writer rule:** this file is written ONLY by the orchestrator session.
