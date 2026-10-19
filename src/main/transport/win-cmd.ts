@@ -227,6 +227,53 @@ const CONTROL_CHARS = new RegExp(
  */
 const DOUBLE_QUOTE = /"/;
 
+/**
+ * The COMMAND TOKEN — the `.cmd` itself — spelled for cmd.exe: unquoted, with
+ * every metacharacter AND every token delimiter caret-escaped (#1301).
+ *
+ * NOT `escapeForCmd(quoteArg(cli))`, which is what this used to be, and which is
+ * right for an ARGUMENT and wrong for the command. A caret-escaped quote is a
+ * literal character, not a quote, so cmd.exe split the command name at the
+ * first space: `C:\Program Files\nodejs\npx.cmd` ran `"C:\Program` and failed
+ * with "is not recognized as an internal or external command" (P3-E40-02's
+ * probe, `spike/probes/1285/captures/a-spawn-shapes.jsonl`). Latent on the
+ * owner's machines only because neither npm directory has a space; any
+ * `C:\Users\First Last\...` profile hits it.
+ *
+ * THE TWO OBVIOUS FIXES ARE BOTH WRONG, MEASURED 2026-10-18 against a real
+ * `.cmd` in a temp directory, under the same `/d /v:off /s /c "…"` line:
+ *
+ *   - REAL QUOTES (`"C:\a b\x.cmd"`): fixes the space, and lets `%VAR%` in the
+ *     path expand — `C:\…\pct%OS%pair\cli.cmd` became "The system cannot find
+ *     the path specified". A caret is literal inside quotes, so there is no way
+ *     to escape the `%` there.
+ *   - REAL QUOTES SPLIT AROUND `^%` (`"C:\100"^%" sure\x.cmd"`): runs, but the
+ *     quotes land in the shim's `%0`, so its `%~dp0` comes out as
+ *     `…\100"%" sure\` — and `%~dp0` is how every npm shim finds its `node.exe`.
+ *
+ * Caret-escaping the space itself is what works: `^ ` is a literal space to
+ * cmd.exe's command-name parser, so the token is never split, no quote is
+ * involved for `%` to hide inside, and `%0` is the plain path. 13 of 13
+ * directory names round-tripped — a space, two spaces, `(x86)`, `100% sure`,
+ * `pct%OS%pair`, `amp & co`, `caret^dir`, `bang!dir`, `;`, `,`, `=`,
+ * `First Last` and none — each with the child's argv byte-exact AND its
+ * `%~dp0` equal to the shim's own directory. `;`, `,` and `=` are cmd.exe
+ * token delimiters too, so they are escaped with the space.
+ *
+ * A BARE NAME (`npx.cmd`, found on PATH by cmd.exe) is the same rule and is
+ * also fixed by it: QUOTED — either spelling — cmd.exe finds the shim but hands
+ * it a `%~dp0` of the CURRENT directory, so npx went looking for
+ * `<cwd>\node_modules\npm\bin\npx-cli.js` (the same capture). Unquoted, `%~dp0`
+ * is the directory PATH found it in. Measured both ways.
+ *
+ * The arguments keep their own rule (`quoteArg` then `escapeForCmd`); nothing
+ * about how a hostile argument is handled changes.
+ */
+function commandToken(cli: string): string {
+  // no `"` in the set: `execSpec` refuses a quote in the path before this runs
+  return cli.replace(/[()%!^<>&| ;,=]/g, (c) => '^' + c);
+}
+
 /** What `child_process.execFile`/`spawn` needs to launch this safely. */
 export interface ExecSpec {
   file: string;
@@ -269,7 +316,14 @@ export function execSpec(
       throw new Error('cmd.exe arguments cannot contain a double quote');
     }
   }
-  const line = [cli, ...args].map((a) => escapeForCmd(quoteArg(a))).join(' ');
+  // The CLI path is ours (resolved off PATH or a setting), and Windows forbids
+  // both of these in a file name — so this cannot refuse a real install. It is
+  // the same backstop as the arguments get: `commandToken` has no answer for a
+  // control character, and a quote there would be a guess.
+  if (CONTROL_CHARS.test(cli) || DOUBLE_QUOTE.test(cli)) {
+    throw new Error('cmd.exe cannot run a script whose path has a control character or a quote');
+  }
+  const line = [commandToken(cli), ...args.map((a) => escapeForCmd(quoteArg(a)))].join(' ');
   // The OUTER quotes are `/s`'s contract: cmd.exe strips the first and last
   // character of the remainder and uses what is between them verbatim. Without
   // them cmd.exe applies its own (much stranger) rules about which quotes to

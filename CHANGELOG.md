@@ -150,6 +150,14 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A Windows folder name with a space no longer breaks the MCP and quick
+  `claude` commands.** When the `claude` command, or `npx` for the Codex
+  agent check, sat in a folder whose name has a space (such as
+  `C:\Users\First Last\...` or `C:\Program Files\...`), Windows cut the name
+  at the space and said C:\Program "is not recognized". The MCP server list,
+  adding a server, the MCP health check and the other quick `claude` calls
+  failed for those users. The name now reaches Windows whole. Nothing changes
+  for paths without a space.
 - **Stop works while an approval or a question is waiting.** The ■ Stop
   button used to disappear the moment a session asked you something, so a
   turn with a bar up could not be stopped at all. It now stays beside the send
