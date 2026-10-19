@@ -35,6 +35,19 @@ export interface AdvancedSectionProps {
    */
   autoCheckUpdates?: boolean;
   onToggleAutoCheckUpdates?: (on: boolean) => void;
+  /**
+   * "Get beta releases" (#1380). Optional on the same fail-open terms as the
+   * auto-check box: no handler, no checkbox.
+   */
+  betaUpdates?: boolean;
+  onToggleBetaUpdates?: (on: boolean) => void;
+  /**
+   * The running build's version, when it is itself a beta (`0.8.125-beta.2`).
+   * Set, the screen says what turning the box OFF does from here — wait for
+   * the next production release, never downgrade — because that is the one
+   * moment the answer is not obvious.
+   */
+  runningBeta?: string;
   statusPolling?: boolean;
   onToggleStatusPolling?: (on: boolean) => void;
   /**
@@ -76,6 +89,31 @@ export function AdvancedSection(props: AdvancedSectionProps): React.JSX.Element 
           >
             {t('about.autoCheck')}
           </SettingCheckbox>
+          {props.onToggleBetaUpdates && (
+            <>
+              <SettingCheckbox
+                field="beta-updates"
+                checked={props.betaUpdates === true}
+                onChange={props.onToggleBetaUpdates}
+              >
+                {t('update.betaSetting')}
+              </SettingCheckbox>
+              <span
+                data-settings-note="beta-updates"
+                style={{
+                  fontSize: 11,
+                  color: 'var(--muted)',
+                  maxInlineSize: '46em',
+                  paddingInlineStart: 20,
+                }}
+              >
+                {t('update.betaSettingHint')}
+                {props.runningBeta
+                  ? ` ${t('update.betaOffWhileOnBeta', { version: props.runningBeta })}`
+                  : ''}
+              </span>
+            </>
+          )}
         </SettingItem>
       )}
 

@@ -92,11 +92,64 @@ on the floor, and say so in your PR.
    failing a build over — which is exactly what P2-E19-02's workflow does.
 4. Tag `v<version>`; the tag must equal `package.json`'s version.
 
+**To cut a beta (#1380):** a beta is a pre-release of the version the open
+`— unreleased` section names. It goes only to installs that ticked
+*Get beta releases*, and it is never marked Latest on the releases page.
+
+1. Set `version` in `package.json` to `<next>-beta.<n>`, e.g. `0.8.125-beta.1`
+   (`npm version 0.8.125-beta.1 --no-git-tag-version` does package.json and
+   the lock together). `<next>` must be the open section's number. `-beta.<n>`
+   is the only suffix the release gate accepts; `n` starts at 1 and goes up by
+   one for each beta of the same version.
+2. **Leave CHANGELOG.md alone.** Don't date the section and don't open a new
+   one. The beta ships whatever `## <next> — unreleased` holds at that commit,
+   under a one-line "this is a beta" preamble. Work that lands while the beta
+   bakes still files into that same section. But code merged after the beta
+   means it can't be promoted as-is (see below): cut `-beta.<n+1>` from the
+   new `main` and let that one bake.
+3. Release PR (version + lock only), merge on green, then tag and push from
+   the merged commit on `main`. A tag on a feature branch won't do: the squash
+   merge rewrites it, and promotion needs the beta in `main`'s history. Then:
+   `git checkout main && git pull && git tag v0.8.125-beta.1 && git push origin v0.8.125-beta.1`.
+   The Release workflow publishes it with `--prerelease --latest=false`, then
+   checks that GitHub recorded it as a pre-release.
+
+**To promote a beta to the production release:** the production build is the
+beta's commit plus ONE version commit. No code that skipped the bake gets in.
+
+1. Release PR with the ordinary cut steps 1–3 above and nothing else:
+   `version` back to `0.8.125` (plus the lock), date the section, and open the
+   next `— unreleased` one. Merge on green.
+2. `git checkout main && git pull`, then
+   `node scripts/promote-beta.js v0.8.125-beta.1 --dry-run`. It refuses if the
+   beta release doesn't exist or isn't a pre-release, if `v0.8.125` already
+   exists, if HEAD isn't `origin/main` or its package.json isn't `0.8.125`, if
+   the beta isn't an ancestor of HEAD, or if anything other than
+   `package.json`, `package-lock.json` and `CHANGELOG.md` changed since the
+   beta. On that last one, if code merged while the beta baked, cut another
+   beta from HEAD instead.
+3. Run it again without `--dry-run`. It tags `v0.8.125` on HEAD and pushes the
+   tag, and the Release workflow publishes a normal production release: same
+   version gate, same notes, same checksum. Stable-only installs see it (and
+   never saw the beta), and beta installs move onto it.
+
+Why not just flip the beta's pre-release flag on GitHub? Its installer reports
+`0.8.125-beta.1` for good, and the update checker ranks that *below* `0.8.125`.
+
 ---
 
 ## 0.8.125 — unreleased
 
 ### Added
+
+- **Beta releases, if you want them.** **Settings ▸ General ▸ Updates** has a
+  new **Get beta releases** box, off by default. Tick it and you're also offered
+  betas: early builds of the next version, put out to be tried before everyone
+  gets them. The update box says plainly when what it's offering is a beta.
+  When the finished version ships you're moved onto it, and its notes aren't
+  repeated once per beta. Untick it while you're on a beta and nothing goes
+  backwards: you wait for the next regular release. With the box off, nothing
+  changes and betas are never offered.
 
 - **"Always jump to it" now brings the window to the front, too.** When a
   session set to *Always jump to it* (for everything, or on its own card's

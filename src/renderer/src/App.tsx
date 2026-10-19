@@ -315,6 +315,9 @@ export function App(): React.JSX.Element {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
+  // #1380 — "Get beta releases". Main's workspace store is the authority;
+  // this is the box's picture of it, refreshed from every answer main gives.
+  const [betaUpdates, setBetaUpdates] = useState(false);
   // ── the install (E19-04) ─────────────────────────────────────────────────
   // Progress lives here rather than in the dialog because it OUTLIVES the
   // dialog: a cancelled download leaves the offer standing in the events
@@ -1087,6 +1090,7 @@ export function App(): React.JSX.Element {
         // auto-check box as if main had said so. Leave it as it was.
         const p = answered(answer);
         if (p) setAutoCheckUpdates(p.autoCheck !== false);
+        if (p) setBetaUpdates(p.betaChannel === true);
       })
       .catch(() => {});
     // THE STARTUP CHECK. Driven from here rather than from main's bootstrap
@@ -2780,6 +2784,19 @@ export function App(): React.JSX.Element {
             })
             .catch(() => {});
         }}
+        betaUpdates={betaUpdates}
+        onToggleBetaUpdates={(on) => {
+          setBetaUpdates(on); // optimistic, like the auto-check box above…
+          void bridge.update
+            ?.setPrefs?.({ betaChannel: on })
+            .then((answer) => {
+              // …then main's stored value wins (#650: a refusal is not an answer)
+              const p = answered(answer);
+              if (p) setBetaUpdates(p.betaChannel === true);
+            })
+            .catch(() => {});
+        }}
+        {...(/-/.test(bridge.appVersion) ? { runningBeta: bridge.appVersion } : {})}
         statusPolling={statusPolling}
         onToggleStatusPolling={(on) => {
           setStatusPolling(on); // optimistic, like the auto-check box above…

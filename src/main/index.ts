@@ -2141,10 +2141,21 @@ app
       return answer;
     });
     broker.handle('update:getPrefs', () => workspace.getUpdatePrefs());
-    broker.handle('update:setPrefs', (_e, p: { autoCheck?: boolean; skippedVersion?: string }) => {
+    type UpdatePrefsPatch = { autoCheck?: boolean; betaChannel?: boolean; skippedVersion?: string };
+    broker.handle('update:setPrefs', (_e, p: UpdatePrefsPatch) => {
       // Narrowed by hand rather than passed through: `lastCheck` is the
       // service's own bookkeeping and must not be settable from the renderer.
       if (typeof p?.autoCheck === 'boolean') workspace.setUpdatePrefs({ autoCheck: p.autoCheck });
+      // #1380. Only a real CHANGE resets the service: re-saying the same value
+      // must not throw away an offer the user is looking at.
+      if (typeof p?.betaChannel === 'boolean') {
+        const was = workspace.getUpdatePrefs().betaChannel === true;
+        workspace.setUpdatePrefs({ betaChannel: p.betaChannel });
+        if (was !== p.betaChannel) {
+          updates.channelChanged();
+          updateLog.info('beta channel switched', { on: p.betaChannel });
+        }
+      }
       if (typeof p?.skippedVersion === 'string') updates.skip(p.skippedVersion);
       return workspace.getUpdatePrefs();
     });

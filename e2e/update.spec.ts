@@ -184,6 +184,7 @@ class StubFeed {
 /** The workspace file's update prefs, once main has written them. */
 interface UpdatesOnDisk {
   autoCheck?: boolean;
+  betaChannel?: boolean;
   skippedVersion?: string;
   lastCheck?: string;
   pendingUpdateVersion?: string;
@@ -360,6 +361,56 @@ test.describe('update check (E19-03)', () => {
     await shellReady(a.window);
     await expect(dialog(a.window)).toBeVisible();
     await expect(dialog(a.window)).toContainText('9.9.9');
+  });
+
+  test('the beta channel (#1380): a beta is invisible until opted in, then offered AS a beta', async () => {
+    // One feed, both channels: a stable 9.9.9 and a newer 9.9.10-beta.1.
+    feed.body = [
+      { ...release('v9.9.10-beta.1', 'beta notes'), prerelease: true },
+      release('v9.9.9', 'stable notes'),
+    ];
+    a = await launch();
+    const w = a.window;
+    const home = a.home;
+    await shellReady(w);
+
+    // Off — the default: the startup check offers the STABLE, with no beta words.
+    await expect(dialog(w)).toBeVisible();
+    await expect(dialog(w)).toContainText('9.9.9');
+    await expect(dialog(w)).not.toContainText('9.9.10');
+    await expect(dialog(w)).not.toHaveAttribute('data-update-beta', 'true');
+    await w.keyboard.press('Escape');
+    await expect(dialog(w)).toHaveCount(0);
+
+    // Opt in, in Settings ▸ General ▸ Updates. Persisted in the workspace file.
+    const settings = await openSettingsTab(w, 'general');
+    const box = settings.locator('[data-settings-field="beta-updates"]');
+    await expect(box).not.toBeChecked();
+    await box.setChecked(true);
+    await closeSettings(w);
+    await poll(() => (updatePrefs(home)?.betaChannel === true ? true : null));
+
+    // A manual check now offers the beta — and SAYS it is one.
+    await w.keyboard.press(`${MOD}+Shift+P`);
+    await w.getByPlaceholder('Type a command or a session name…').fill('updates');
+    await w.locator('[data-palette-row="help.checkForUpdates"]').click();
+    await expect(dialog(w)).toBeVisible();
+    await expect(dialog(w)).toHaveAttribute('data-update-beta', 'true');
+    await expect(dialog(w)).toContainText("There's a new beta — v9.9.10-beta.1");
+    await expect(dialog(w).locator('[data-update-field="beta"]')).toBeVisible();
+    await w.keyboard.press('Escape');
+    await a.close();
+
+    // …and it survives a relaunch: the STARTUP check now offers the beta on
+    // its own, and the box is still ticked.
+    a = await launch(home);
+    await shellReady(a.window);
+    await expect(dialog(a.window)).toBeVisible();
+    await expect(dialog(a.window)).toHaveAttribute('data-update-beta', 'true');
+    await a.window.keyboard.press('Escape');
+    await expect(dialog(a.window)).toHaveCount(0);
+    const again = await openSettingsTab(a.window, 'general');
+    await expect(again.locator('[data-settings-field="beta-updates"]')).toBeChecked();
   });
 
   test('a dead feed is silent on startup and gentle when asked', async () => {

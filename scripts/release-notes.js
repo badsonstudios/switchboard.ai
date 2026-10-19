@@ -144,29 +144,92 @@ function tagFromRef(ref) {
   return /^v?\d+\.\d+\.\d+/.test(ref) ? ref : null;
 }
 
+/** `0.8.125-beta.2` — the ONE pre-release shape this pipeline publishes (#1380) */
+const BETA_VERSION = /^(\d+\.\d+\.\d+)-beta\.([1-9]\d*)$/;
+
+/**
+ * Which channel a package.json version ships on (#1380).
+ *
+ * Two channels and no more (the ticket's out-of-scope line): a plain `x.y.z`
+ * is a production release and `x.y.z-beta.<n>` is a beta. Anything else with a
+ * suffix — `-rc.1`, `-alpha`, `+build` — is REFUSED rather than guessed at:
+ * published as a stable it would be offered to every install with a version
+ * string the checker ranks BELOW the plain release, and published as a beta it
+ * would be a third channel nobody designed.
+ *
+ * `base` is the version whose CHANGELOG section a beta ships: the upcoming
+ * release's `— unreleased` section, as it stands at the beta commit. A beta
+ * has no section of its own, so promotion never has notes to reconcile.
+ *
+ * @param {string} version
+ * @returns {{base: string, prerelease: boolean, beta: number | null}}
+ */
+function channelOf(version) {
+  if (/^\d+\.\d+\.\d+$/.test(version)) return { base: version, prerelease: false, beta: null };
+  const m = BETA_VERSION.exec(version);
+  if (m) return { base: m[1], prerelease: true, beta: Number(m[2]) };
+  throw new ReleaseError(
+    `package.json version ${version} is not one this pipeline publishes. ` +
+      'A release is x.y.z, and a beta is x.y.z-beta.<n> — no other suffix.'
+  );
+}
+
 /**
  * Reconcile the ref with package.json's version.
  *
  * The canonical tag is ALWAYS `v<version>` — package.json is the single source
  * of the release number (CHANGELOG.md says so), so a tag is only ever allowed
  * to agree with it. A leading `v` is optional on the way in and mandatory on
- * the way out.
+ * the way out. A beta's tag carries its suffix, because package.json does
+ * (#1380): `v0.8.125-beta.1` is cut from a tree that says `0.8.125-beta.1`.
  *
  * @param {{ref?: string | null, version: string}} args
- * @returns {{tag: string, version: string, fromTag: boolean}}
+ * @returns {{tag: string, version: string, fromTag: boolean, prerelease: boolean, notesVersion: string}}
  */
 function resolveRelease({ ref, version }) {
   const tag = `v${version}`;
+  const { base, prerelease } = channelOf(version);
   const pushed = tagFromRef(ref);
-  if (pushed === null) return { tag, version, fromTag: false };
-  if (pushed.replace(/^v/, '') !== version) {
+  if (pushed !== null && pushed.replace(/^v/, '') !== version) {
     throw new ReleaseError(
       `tag ${pushed} does not match package.json version ${version}. ` +
         'The version and its changelog section are meant to land in one commit ' +
         'and be tagged from it — bump package.json, or tag the right commit.'
     );
   }
-  return { tag, version, fromTag: true };
+  return { tag, version, fromTag: pushed !== null, prerelease, notesVersion: base };
+}
+
+/**
+ * The `gh release create` / `gh release edit` flags for a channel (#1380).
+ *
+ * A production release passes NOTHING extra — "a plain tag behaves exactly as
+ * today" is the ticket's own line, and today GitHub decides Latest itself. A
+ * beta is `--prerelease` AND `--latest=false`: the first is what the in-app
+ * checker reads (`prerelease === true` is skipped unless the install opted
+ * in), the second keeps the releases page's Latest badge on the production
+ * build, which is what a human downloading by hand should get.
+ *
+ * @param {{prerelease: boolean}} args
+ * @returns {string[]}
+ */
+function releaseFlags({ prerelease }) {
+  return prerelease ? ['--prerelease', '--latest=false'] : [];
+}
+
+/**
+ * The line a beta's notes open with. The in-app dialog shows the body, so this
+ * is the sentence a beta tester reads first.
+ *
+ * @param {string} version  e.g. `0.8.125-beta.1`
+ * @param {string} base     e.g. `0.8.125`
+ */
+function betaPreamble(version, base) {
+  return (
+    `**Beta — ${version}.** A pre-release of ${base}, offered only to installs with ` +
+    '*Get beta releases* turned on. These are the notes for ' +
+    `${base} so far; the production release will carry the final ones.`
+  );
 }
 
 /**
@@ -220,6 +283,27 @@ function buildNotes({ changelog, version, isPublished }) {
   const parts = [ROLLUP_PREAMBLE, '', section, '', '---'];
   for (const r of rolled) parts.push('', `## ${r.version} (previously unpublished)`, '', r.body);
   return { notes: parts.join('\n'), rolledUp: rolled.map((r) => r.version) };
+}
+
+/**
+ * `buildNotes`, for either channel (#1380).
+ *
+ * A beta ships the UPCOMING version's section — `0.8.125-beta.2` publishes
+ * whatever `## 0.8.125 — unreleased` holds at its commit, under a one-line
+ * preamble — so it is looked up under the base version, and its rollup walks
+ * the same history a production release of that base would. `isPublished` is
+ * only ever asked about plain versions (the CLI checks `v<x>` tags), so a beta
+ * is never mistaken for the stable it precedes: a stable-only install going
+ * 0.8.124 → 0.8.125 is owed the whole section, and gets it.
+ *
+ * @param {{changelog: string, version: string, isPublished: (v: string) => boolean}} args
+ * @returns {{notes: string, rolledUp: string[], prerelease: boolean, notesVersion: string}}
+ */
+function notesForRelease({ changelog, version, isPublished }) {
+  const { base, prerelease } = channelOf(version);
+  const built = buildNotes({ changelog, version: base, isPublished });
+  const notes = prerelease ? [betaPreamble(version, base), '', built.notes].join('\n') : built.notes;
+  return { notes, rolledUp: built.rolledUp, prerelease, notesVersion: base };
 }
 
 /**
@@ -288,6 +372,11 @@ module.exports = {
   ReleaseError,
   VERSION_HEADING,
   ROLLUP_PREAMBLE,
+  BETA_VERSION,
+  channelOf,
+  releaseFlags,
+  betaPreamble,
+  notesForRelease,
   listVersions,
   headingFor,
   extractSection,
@@ -318,7 +407,10 @@ if (require.main === module) {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
     const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
-    const { tag, version, fromTag } = resolveRelease({ ref: flag('--ref'), version: pkg.version });
+    const { tag, version, fromTag, prerelease, notesVersion } = resolveRelease({
+      ref: flag('--ref'),
+      version: pkg.version,
+    });
 
     // LAZY on purpose. buildNotes only consults this after the section checks,
     // so "you forgot the changelog section" is never masked by "gh could not
@@ -330,10 +422,11 @@ if (require.main === module) {
       published ??= publishedTags(root);
       return published.has(`v${v}`);
     };
-    const { notes, rolledUp } = buildNotes({ changelog, version, isPublished });
+    const { notes, rolledUp } = notesForRelease({ changelog, version, isPublished });
 
-    const heading = headingFor(changelog, version) ?? '';
-    if (/unreleased/i.test(heading)) {
+    const heading = headingFor(changelog, notesVersion) ?? '';
+    // Expected for a beta: its section is still open while the build bakes.
+    if (!prerelease && /unreleased/i.test(heading)) {
       // A warning, not a failure: the heading itself never reaches the notes,
       // so this is untidy rather than broken. CHANGELOG.md's "To cut a release"
       // step 2 is the thing being skipped.
@@ -356,11 +449,15 @@ if (require.main === module) {
     if (process.env.GITHUB_OUTPUT) {
       fs.appendFileSync(
         process.env.GITHUB_OUTPUT,
-        `version=${version}\ntag=${tag}\ninstaller=${installer}\nfrom_tag=${fromTag}\n`
+        `version=${version}\ntag=${tag}\ninstaller=${installer}\nfrom_tag=${fromTag}\n` +
+          `prerelease=${prerelease}\ngh_flags=${releaseFlags({ prerelease }).join(' ')}\n`
       );
     }
 
-    console.error(`release ${tag} — installer ${installer}${fromTag ? '' : ' (not a tag ref)'}`);
+    console.error(
+      `release ${tag} (${prerelease ? 'BETA: pre-release, not Latest' : 'production'}) — ` +
+        `installer ${installer}${fromTag ? '' : ' (not a tag ref)'}`
+    );
     console.log(notes);
   } catch (err) {
     if (err instanceof ReleaseError) {

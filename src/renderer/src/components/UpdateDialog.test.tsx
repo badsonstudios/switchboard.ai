@@ -397,3 +397,23 @@ describe('the modal contract it shares with AboutPanel', () => {
     expect(handlers.onClose).toHaveBeenCalled();
   });
 });
+
+describe('a beta is labelled as a beta (#1380)', () => {
+  it('says "beta" in the title and in a sentence when the offer is a pre-release', async () => {
+    await render(true, status({ latestVersion: '0.2.0-beta.1', prerelease: true }));
+    expect(dialog()?.getAttribute('aria-label')).toBe(
+      en.update.availableBetaTitle.replace('{version}', '0.2.0-beta.1')
+    );
+    expect(dialog()?.getAttribute('data-update-beta')).toBe('true');
+    expect(host.querySelector('[data-update-field="beta"]')?.textContent).toBe(en.update.betaNotice);
+    // still an ordinary offer: the same three buttons
+    for (const label of [en.update.update, en.update.ignore, en.update.skip]) expect(button(label)).toBeTruthy();
+  });
+
+  it('a production release reads exactly as before — no beta words anywhere', async () => {
+    await render(true, status());
+    expect(dialog()?.getAttribute('aria-label')).toBe(en.update.availableTitle.replace('{version}', '0.2.0'));
+    expect(dialog()?.hasAttribute('data-update-beta')).toBe(false);
+    expect(host.querySelector('[data-update-field="beta"]')).toBeNull();
+  });
+});

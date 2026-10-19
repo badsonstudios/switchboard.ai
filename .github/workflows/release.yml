@@ -14,6 +14,15 @@
 #   workflow_dispatch -> everything except the release; artifacts land on the
 #                        workflow run so the whole path can be exercised without
 #                        publishing anything.
+#
+# Two channels (#1380). `v0.8.125` is a production release, exactly as before.
+# `v0.8.125-beta.1` (package.json saying `0.8.125-beta.1`) is a BETA: published
+# as a GitHub pre-release and never marked Latest, so only installs with
+# "Get beta releases" ticked are offered it. Which flags a channel gets is
+# decided in release-notes.js (`releaseFlags`, unit-tested) and handed over as
+# the `gh_flags` step output; this file only splices them in. Promotion of a
+# beta to production is `scripts/promote-beta.js` — a version commit, then a
+# plain tag, which runs this workflow's ordinary production path.
 name: Release
 
 on:
@@ -44,6 +53,8 @@ jobs:
       version: ${{ steps.notes.outputs.version }}
       tag: ${{ steps.notes.outputs.tag }}
       installer: ${{ steps.notes.outputs.installer }}
+      prerelease: ${{ steps.notes.outputs.prerelease }}
+      gh_flags: ${{ steps.notes.outputs.gh_flags }}
     steps:
       # A real release can only ever come from a tag. Dispatching with
       # dry_run:false from a branch would otherwise skip the release job in
@@ -78,6 +89,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release-notes.js --ref "${{ github.ref }}" --out release-notes.md
+
+      # What the publish step WOULD run, on every run — a dry run included, which
+      # is the only way to see a beta's pre-release flags without publishing one
+      # (#1380). Dispatch on a branch whose package.json carries a -beta.<n>
+      # version and this prints `--prerelease --latest=false`.
+      - name: Release plan
+        shell: bash
+        env:
+          TAG: ${{ steps.notes.outputs.tag }}
+          INSTALLER: ${{ steps.notes.outputs.installer }}
+          PRERELEASE: ${{ steps.notes.outputs.prerelease }}
+          GH_FLAGS: ${{ steps.notes.outputs.gh_flags }}
+        run: |
+          channel=production; [ "$PRERELEASE" = true ] && channel="BETA (pre-release, not Latest)"
+          echo "::notice::$TAG — $channel"
+          echo "publish would run: gh release create $TAG --title $TAG --notes-file release-notes.md $GH_FLAGS dist/$INSTALLER dist/$INSTALLER.sha256"
 
       - run: npm ci
       - run: npm run lint
@@ -134,6 +161,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.build.outputs.tag }}
           INSTALLER: ${{ needs.build.outputs.installer }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+          # `--prerelease --latest=false` for a beta, EMPTY for production
+          # (release-notes.js `releaseFlags`). Deliberately word-split below.
+          GH_FLAGS: ${{ needs.build.outputs.gh_flags }}
         run: |
           set -euo pipefail
           # Fail here, with the tree printed, rather than inside gh: the way
@@ -151,11 +182,20 @@ jobs:
           # duplicating — --clobber replaces assets of the same name.
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "::notice::$TAG already exists — updating notes and re-uploading assets."
-            gh release edit "$TAG" --title "$TAG" --notes-file release-notes.md
+            # shellcheck disable=SC2086
+            gh release edit "$TAG" --title "$TAG" --notes-file release-notes.md $GH_FLAGS
             gh release upload "$TAG" "dist/$INSTALLER" "dist/$INSTALLER.sha256" --clobber
           else
-            gh release create "$TAG" --title "$TAG" --notes-file release-notes.md \
+            # shellcheck disable=SC2086
+            gh release create "$TAG" --title "$TAG" --notes-file release-notes.md $GH_FLAGS \
               "dist/$INSTALLER" "dist/$INSTALLER.sha256"
+          fi
+          # A beta that landed as a normal release is offered to EVERY install,
+          # so the flag GitHub actually stored is checked, not assumed (#1380).
+          stored=$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)
+          if [ "$stored" != "$PRERELEASE" ]; then
+            echo "::error::$TAG was meant to be prerelease=$PRERELEASE but GitHub stored prerelease=$stored. Fix it on the releases page now."
+            exit 1
           fi
           gh release view "$TAG" --json url,assets \
             --jq '"published \(.url)\nassets: \([.assets[].name] | join(", "))"'

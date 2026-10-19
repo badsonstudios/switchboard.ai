@@ -50,6 +50,7 @@ const handlers = {
   onTestPush: vi.fn(async () => ({ ok: true })),
   onToggleExperimentalFork: vi.fn(),
   onToggleAutoCheckUpdates: vi.fn(),
+  onToggleBetaUpdates: vi.fn(),
   onToggleStatusPolling: vi.fn(),
   onTogglePerfCapture: vi.fn(),
   onRevealCapture: vi.fn(),
@@ -487,6 +488,28 @@ describe('every absorbed control is wired', () => {
     expect(handlers.onToggleAutoCheckUpdates).toHaveBeenCalledWith(true);
   });
 
+  it('Get beta releases (#1380) — off by default, reads the stored value, writes through', async () => {
+    await render(true);
+    expect(settingsField('beta-updates')?.checked).toBe(false);
+    await render(true, { betaUpdates: true });
+    expect(settingsField('beta-updates')?.checked).toBe(true);
+    await act(async () => {
+      settingsField('beta-updates')!.click();
+    });
+    expect(handlers.onToggleBetaUpdates).toHaveBeenCalledWith(false);
+    // it sits with the other update setting, on General
+    expect(settingsField('beta-updates')?.closest('[data-settings-item="updates"]')).not.toBeNull();
+  });
+
+  it('says what turning it OFF does — only when the running build is itself a beta', async () => {
+    const note = (): string => host.querySelector('[data-settings-note="beta-updates"]')?.textContent ?? '';
+    await render(true, { betaUpdates: true });
+    expect(note()).not.toMatch(/You are running a beta/);
+    await render(true, { betaUpdates: true, runningBeta: '0.8.125-beta.2' });
+    expect(note()).toContain('You are running a beta (0.8.125-beta.2)');
+    expect(note()).toMatch(/does not take you back to an older version/);
+  });
+
   it('provider status polling — reads the stored value and writes through', async () => {
     await render(true, { statusPolling: true });
     expect(settingsField('status-polling')?.checked).toBe(true);
@@ -505,6 +528,7 @@ describe('every absorbed control is wired', () => {
       onToggleStatusPolling: undefined,
     });
     expect(settingsField('auto-check-updates')).toBeNull();
+    expect(settingsField('beta-updates')).toBeNull();
     expect(settingsField('status-polling')).toBeNull();
     // …and the section is still there, because the fork switch is not optional
     expect(section('advanced')).not.toBeNull();

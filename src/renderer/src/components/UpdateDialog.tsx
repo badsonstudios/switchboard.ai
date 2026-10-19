@@ -134,6 +134,10 @@ export function UpdateDialog(props: {
   const { result } = props.status;
   const version = result.latestVersion ?? '';
   const available = result.state === 'available' && !!version;
+  // #1380: a beta is SAID to be one, in the title and in a sentence, so nobody
+  // installs a pre-release thinking it is the regular build. Main sets the
+  // flag; it is only ever true for an install on the beta channel.
+  const beta = available && result.prerelease === true;
 
   const install = props.install ?? null;
   // The three phases that OWN the dialog: while any of them is true the offer
@@ -155,7 +159,7 @@ export function UpdateDialog(props: {
   const title = failed
     ? t('update.installFailedTitle')
     : available
-      ? t('update.availableTitle', { version })
+      ? t(beta ? 'update.availableBetaTitle' : 'update.availableTitle', { version })
       : result.state === 'up-to-date'
         ? t('update.upToDateTitle')
         : t('update.unavailableTitle');
@@ -184,6 +188,7 @@ export function UpdateDialog(props: {
         inert={!top}
         aria-label={title}
         data-update-state={result.state}
+        data-update-beta={beta ? 'true' : undefined}
         // The install's own state, so the e2e suite can wait on a PHASE rather
         // than on a sentence (E19-04). Absent when nothing is installing.
         data-update-phase={install?.phase}
@@ -247,6 +252,14 @@ export function UpdateDialog(props: {
             >
               {t('update.runningVersion', { version: result.currentVersion })}
             </p>
+            {beta && (
+              <p
+                data-update-field="beta"
+                style={{ margin: 0, padding: '6px 14px 0', fontSize: 12, color: 'var(--text)' }}
+              >
+                {t('update.betaNotice')}
+              </p>
+            )}
             <div
               // The notes are the payload: they scroll, the dialog does not.
               style={{ padding: '8px 14px 12px', overflowY: 'auto', minBlockSize: 0, flex: 1 }}

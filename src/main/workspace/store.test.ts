@@ -1085,6 +1085,26 @@ describe('update prefs (P2-E19-03)', () => {
     expect(st.getUpdatePrefs()).toEqual({ autoCheck: true });
   });
 
+  it('the beta channel (#1380): off by default, on only for a literal true, off written as absent', () => {
+    const a = makeStore(file);
+    a.load();
+    expect(a.getUpdatePrefs().betaChannel).toBeUndefined();
+    a.setUpdatePrefs({ betaChannel: true });
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.getUpdatePrefs()).toEqual({ autoCheck: true, betaChannel: true });
+    b.setUpdatePrefs({ betaChannel: false });
+    expect(b.getUpdatePrefs()).toEqual({ autoCheck: true });
+    // a hand-edit is never an opt-in
+    for (const bad of ['true', 1, 'yes', null]) {
+      fs.writeFileSync(file, JSON.stringify({ version: 1, updates: { betaChannel: bad } }));
+      const c = makeStore(file);
+      c.load();
+      expect(c.getUpdatePrefs().betaChannel, String(bad)).toBeUndefined();
+    }
+  });
+
   it('a file written before this feature existed simply gets the defaults', () => {
     fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: [], autoTrust: false }));
     const st = makeStore(file);

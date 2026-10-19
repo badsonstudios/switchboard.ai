@@ -121,6 +121,11 @@ export interface SettingsDialogProps {
   onSetDispatchRetire: (policy: DispatchRetirePolicy) => void;
   autoCheckUpdates?: boolean;
   onToggleAutoCheckUpdates?: (on: boolean) => void;
+  /** #1380 — "Get beta releases"; optional like the auto-check switch */
+  betaUpdates?: boolean;
+  onToggleBetaUpdates?: (on: boolean) => void;
+  /** the running version when it is a beta, for the "turning this off" sentence */
+  runningBeta?: string;
   statusPolling?: boolean;
   onToggleStatusPolling?: (on: boolean) => void;
 
@@ -394,6 +399,11 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
               {...(props.onToggleAutoCheckUpdates
                 ? { onToggleAutoCheckUpdates: props.onToggleAutoCheckUpdates }
                 : {})}
+              {...(props.betaUpdates !== undefined ? { betaUpdates: props.betaUpdates } : {})}
+              {...(props.onToggleBetaUpdates
+                ? { onToggleBetaUpdates: props.onToggleBetaUpdates }
+                : {})}
+              {...(props.runningBeta ? { runningBeta: props.runningBeta } : {})}
               {...(props.statusPolling !== undefined
                 ? { statusPolling: props.statusPolling }
                 : {})}

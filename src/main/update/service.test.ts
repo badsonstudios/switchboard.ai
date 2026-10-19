@@ -65,7 +65,10 @@ function harness(
     checkImpl,
     now: opts.now,
   });
-  return { service, checkImpl, pushed, log, prefsNow: () => prefs };
+  const patchPrefs = (patch: Partial<UpdatePrefs>): void => {
+    prefs = { ...prefs, ...patch };
+  };
+  return { service, checkImpl, pushed, log, prefsNow: () => prefs, patchPrefs };
 }
 
 describe('shouldPrompt (the decision the renderer obeys)', () => {
@@ -461,5 +464,59 @@ describe('lastResult — what the install handler installs (E19-04)', () => {
     await h.service.check(false);
     await h.service.check(false);
     expect(h.service.lastResult()?.state).toBe('up-to-date');
+  });
+});
+
+describe('the beta channel (#1380)', () => {
+  it('asks the checker for pre-releases only when the pref is ON, read fresh on every check', async () => {
+    const h = harness();
+    await h.service.check(true);
+    expect(h.checkImpl.mock.calls[0][0].includePrereleases).toBe(false);
+    h.patchPrefs({ betaChannel: true });
+    h.service.channelChanged();
+    await h.service.check(true);
+    expect(h.checkImpl.mock.calls[1][0].includePrereleases).toBe(true);
+  });
+
+  it('switching channel forgets the offer, so Update cannot install a beta the user just opted out of', async () => {
+    const h = harness({ prefs: { betaChannel: true }, results: [result({ latestVersion: '0.2.0-beta.1', prerelease: true })] });
+    await h.service.check(true);
+    expect(h.service.lastResult()?.latestVersion).toBe('0.2.0-beta.1');
+    h.patchPrefs({ betaChannel: false });
+    h.service.channelChanged();
+    expect(h.service.lastResult()).toBeNull();
+  });
+
+  it('switching channel ends the coalescing window — the next automatic check really asks', async () => {
+    let t = 1_000_000;
+    const h = harness({ now: () => t });
+    await h.service.check(false);
+    t += 1000;
+    await h.service.check(false); // coalesced
+    expect(h.checkImpl).toHaveBeenCalledTimes(1);
+    h.service.channelChanged();
+    await h.service.check(false);
+    expect(h.checkImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('an answer that was in flight across the switch is RE-ASKED, never shown or kept', async () => {
+    let release!: (r: UpdateCheckResult) => void;
+    const h = harness();
+    h.checkImpl.mockImplementationOnce(() => new Promise((res) => (release = res)));
+    const pending = h.service.check(true);
+    await Promise.resolve();
+    h.service.channelChanged();
+    // a check started after the switch does NOT join the stale request
+    const fresh = h.service.check(true);
+    expect(h.checkImpl).toHaveBeenCalledTimes(2);
+    release(result({ latestVersion: '0.2.0-beta.1', prerelease: true }));
+    const status = await pending;
+    // the caller (a startup check, say) gets the CURRENT channel's answer —
+    // not a dialog offering the beta somebody just opted out of
+    expect(status.result.latestVersion).toBe('0.2.0');
+    expect(status.result.prerelease).toBeUndefined();
+    await fresh;
+    // the offer kept is the fresh one, not the stale beta
+    expect(h.service.lastResult()?.latestVersion).toBe('0.2.0');
   });
 });

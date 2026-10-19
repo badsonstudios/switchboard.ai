@@ -1138,7 +1138,12 @@ const api = {
     },
     getPrefs: (): Promise<UpdatePrefs> => ipcRenderer.invoke('update:getPrefs'),
     /** merge-patch; `lastCheck` is main's own bookkeeping and is not settable */
-    setPrefs: (p: { autoCheck?: boolean; skippedVersion?: string }): Promise<UpdatePrefs> =>
+    setPrefs: (p: {
+      autoCheck?: boolean;
+      /** #1380 — "Get beta releases" */
+      betaChannel?: boolean;
+      skippedVersion?: string;
+    }): Promise<UpdatePrefs> =>
       ipcRenderer.invoke('update:setPrefs', p),
     /** resolves FALSE for anything that is not an https GitHub URL */
     openExternal: (url: string): Promise<boolean> =>

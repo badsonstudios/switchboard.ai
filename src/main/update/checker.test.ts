@@ -442,3 +442,151 @@ describe('the notes cover EVERY release since the running one (0.8.95)', () => {
     expect(notes.length).toBeLessThan(20_100);
   });
 });
+
+describe('the beta channel (#1380)', () => {
+  const beta = (tag: string, body = `notes for ${tag}`) => release(tag, { prerelease: true, body });
+  const ON = { includePrereleases: true };
+
+  describe('setting OFF (the default) — pre-releases are never offered', () => {
+    it('pickLatest skips a flagged pre-release even when it is the newest', () => {
+      expect(pickLatest([release('v0.8.124'), beta('v0.8.125-beta.1')] as never)?.tag_name).toBe('v0.8.124');
+    });
+
+    it('a suffixed tag is a pre-release even if nobody ticked the box on GitHub', () => {
+      const mislabelled = release('v0.8.125-beta.1'); // prerelease: false
+      expect(pickLatest([release('v0.8.124'), mislabelled] as never)?.tag_name).toBe('v0.8.124');
+      expect(notesSince([mislabelled] as never, '0.8.124')).toBe('');
+    });
+
+    it('checkForUpdate with no includePrereleases says up to date, and offers nothing beta', async () => {
+      const r = await checkForUpdate({
+        currentVersion: '0.8.124',
+        fetchImpl: respond(200, [beta('v0.8.125-beta.2'), release('v0.8.124')]),
+        skipToken: true,
+      });
+      expect(r.state).toBe('up-to-date');
+      expect(r.prerelease).toBeUndefined();
+    });
+
+    it('turned off while ON a beta: no downgrade — waits for the next stable newer than it', async () => {
+      const feed = [release('v0.8.124'), beta('v0.8.125-beta.2')];
+      const waiting = await checkForUpdate({
+        currentVersion: '0.8.125-beta.2',
+        fetchImpl: respond(200, feed),
+        skipToken: true,
+      });
+      expect(waiting.state).toBe('up-to-date'); // 0.8.124 is OLDER than 0.8.125-beta.2
+      const shipped = await checkForUpdate({
+        currentVersion: '0.8.125-beta.2',
+        fetchImpl: respond(200, [release('v0.8.125'), ...feed]),
+        skipToken: true,
+      });
+      expect(shipped.state).toBe('available');
+      expect(shipped.latestVersion).toBe('0.8.125');
+      expect(shipped.prerelease).toBeUndefined();
+    });
+  });
+
+  describe('setting ON', () => {
+    it('offers a beta over an OLDER stable, and labels it', async () => {
+      const r = await checkForUpdate({
+        currentVersion: '0.8.124',
+        fetchImpl: respond(200, [release('v0.8.124'), beta('v0.8.125-beta.1')]),
+        skipToken: true,
+        includePrereleases: true,
+      });
+      expect(r.state).toBe('available');
+      expect(r.latestVersion).toBe('0.8.125-beta.1');
+      expect(r.prerelease).toBe(true);
+    });
+
+    it('offers the STABLE over a same-numbered beta — semver §11', () => {
+      const list = [beta('v0.8.125-beta.2'), release('v0.8.125'), beta('v0.8.125-beta.1')];
+      expect(pickLatest(list as never, undefined, ON)?.tag_name).toBe('v0.8.125');
+    });
+
+    it('a beta install moves onto the stable when it ships, and it is NOT labelled beta', async () => {
+      const r = await checkForUpdate({
+        currentVersion: '0.8.125-beta.2',
+        fetchImpl: respond(200, [release('v0.8.125'), beta('v0.8.125-beta.2')]),
+        skipToken: true,
+        includePrereleases: true,
+      });
+      expect(r.latestVersion).toBe('0.8.125');
+      expect(r.prerelease).toBeUndefined();
+    });
+
+    it('orders betas by number, not by string (beta.10 > beta.9)', () => {
+      const list = [beta('v0.8.125-beta.9'), beta('v0.8.125-beta.10')];
+      expect(pickLatest(list as never, undefined, ON)?.tag_name).toBe('v0.8.125-beta.10');
+    });
+
+    it('a malformed pre-release is skipped, never blocks the check', async () => {
+      const r = await checkForUpdate({
+        currentVersion: '0.8.124',
+        fetchImpl: respond(200, [
+          beta('vNEXT-beta'),
+          beta('v0.8.x-beta.1'),
+          { prerelease: true }, // no tag at all
+          null,
+          release('v0.8.125'),
+        ]),
+        skipToken: true,
+        includePrereleases: true,
+      });
+      expect(r.state).toBe('available');
+      expect(r.latestVersion).toBe('0.8.125');
+    });
+
+    it('drafts stay out even on the beta channel', () => {
+      const list = [release('v0.8.124'), release('v0.8.125-beta.1', { draft: true, prerelease: true })];
+      expect(pickLatest(list as never, undefined, ON)?.tag_name).toBe('v0.8.124');
+    });
+  });
+
+  describe('the notes rollup across a beta → stable hop', () => {
+    // A beta ships the upcoming version's section AS IT STANDS (release-notes.js),
+    // so each beta's body is a superset of the last, and the stable's is the
+    // final one. One heading per core version, the newest of them.
+    const section1 = '- Feature A';
+    const section2 = '- Feature A\n- Feature B';
+    const final = '- Feature A\n- Feature B\n- Fix C';
+    const feed = [
+      release('v0.8.124', { body: '- old stuff' }),
+      beta('v0.8.125-beta.1', `**Beta.**\n\n${section1}`),
+      beta('v0.8.125-beta.2', `**Beta.**\n\n${section2}`),
+    ];
+
+    it('0.8.125-beta.2 → 0.8.125 shows the stable notes ONCE, not the betas again', () => {
+      const notes = notesSince([release('v0.8.125', { body: final }), ...feed] as never, '0.8.125-beta.2', ON);
+      expect(notes).toBe(final); // one release → no heading, as before
+    });
+
+    it('0.8.124 on the beta channel, two betas out: the newest beta’s notes, once', () => {
+      const notes = notesSince(feed, '0.8.124', ON);
+      expect(notes).toBe(`**Beta.**\n\n${section2}`);
+      expect(notes.match(/Feature A/g)).toHaveLength(1);
+    });
+
+    it('0.8.124 on the beta channel once the stable exists: the stable’s notes, betas folded in', () => {
+      const notes = notesSince([release('v0.8.125', { body: final }), ...feed] as never, '0.8.124', ON);
+      expect(notes).toBe(final);
+    });
+
+    it('a stable-only install going 0.8.124 → 0.8.125 sees the FULL section and never the betas', () => {
+      const notes = notesSince([release('v0.8.125', { body: final }), ...feed] as never, '0.8.124');
+      expect(notes).toBe(final);
+      expect(notes).not.toContain('Beta');
+    });
+
+    it('several versions behind on the beta channel: one heading per version, newest first', () => {
+      const list = [
+        beta('v0.8.126-beta.1', 'next'),
+        release('v0.8.125', { body: final }),
+        ...feed,
+      ];
+      const notes = notesSince(list, '0.8.124', ON);
+      expect(notes).toBe(`## v0.8.126-beta.1\n\nnext\n\n## v0.8.125\n\n${final}`);
+    });
+  });
+});

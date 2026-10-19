@@ -232,6 +232,38 @@ describe('a re-run converges instead of duplicating (idempotency)', () => {
   });
 });
 
+describe('the beta channel (#1380)', () => {
+  const releaseJob = jobs.slice(jobs.indexOf('\n  release:'));
+
+  it('carries the channel from the gate to the publish job', () => {
+    for (const out of ['prerelease', 'gh_flags']) {
+      expect(wf).toContain(`${out}: \${{ steps.notes.outputs.${out} }}`);
+      expect(releaseJob).toContain(`\${{ needs.build.outputs.${out} }}`);
+    }
+  });
+
+  it('splices the flags into BOTH the create and the re-run edit', () => {
+    // A beta re-run that dropped them would leave a pre-release the edit never
+    // re-asserts; a create without them publishes a beta to every install.
+    expect(releaseJob).toMatch(/gh release create "\$TAG" [^\n]*\$GH_FLAGS/);
+    expect(releaseJob).toMatch(/gh release edit "\$TAG" [^\n]*\$GH_FLAGS/);
+    // never a literal in the YAML: release-notes.js `releaseFlags` decides
+    expect(wf).not.toMatch(/^\s*gh release (create|edit)[^\n]*--prerelease/m);
+  });
+
+  it('checks the flag GitHub actually stored against the intended channel', () => {
+    expect(releaseJob).toContain('--json isPrerelease');
+    expect(releaseJob).toContain('"$stored" != "$PRERELEASE"');
+  });
+
+  it('prints the publish plan on every run, so a dry run shows a beta’s flags', () => {
+    const plan = jobs.slice(jobs.indexOf('- name: Release plan'), jobs.indexOf('\n  release:'));
+    expect(plan).toContain('$GH_FLAGS');
+    // it must come before the build, and must not sit in the publish job
+    expect(jobs.indexOf('- name: Release plan')).toBeLessThan(jobs.indexOf('- run: npm ci'));
+  });
+});
+
 describe('CI is untouched (P2-E19-02 done-when)', () => {
   it('still declares its two matrices — 4 jobs on PRs, 5 on main pushes', () => {
     // The build matrix became conditional on 2026-08-06 (Dan's call): macOS

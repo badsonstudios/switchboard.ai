@@ -73,6 +73,11 @@
   },
   "update": {
     "availableTitle": "There's a new release — v{version}",
+    "availableBetaTitle": "There's a new beta — v{version}",
+    "betaNotice": "This is a beta: an early build of the next release, offered because Get beta releases is turned on (Settings ▸ General ▸ Updates). It may have rough edges.",
+    "betaSetting": "Get beta releases",
+    "betaSettingHint": "Be offered early builds of the next release before everyone else. They may have rough edges. When the finished release comes out, you are moved onto it.",
+    "betaOffWhileOnBeta": "You are running a beta ({version}). Turning this off does not take you back to an older version: you stay on this one until the next regular release newer than it comes out.",
     "runningVersion": "You are running {version}.",
     "noNotes": "This release came with no notes.",
     "update": "Update",
