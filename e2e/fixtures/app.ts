@@ -15,7 +15,9 @@ import os from 'os';
 import { execFileSync, spawn } from 'child_process';
 import {
   E2E_MONITOR_ENV,
+  E2E_NO_ACTIVATE_ENV,
   E2E_SETTINGS_FILE,
+  noActivateOn,
   pickTestDisplay,
   readSettingsKey,
   type Box,
@@ -322,6 +324,7 @@ export interface LaunchOptions {
 // screen. Re-exported from here so specs and `app.test.ts` keep one import.
 export {
   E2E_MONITOR_ENV,
+  E2E_NO_ACTIVATE_ENV,
   E2E_SETTINGS_FILE,
   pickTestDisplay,
   readSettingsKey,
@@ -354,8 +357,11 @@ export {
  * or absent is off — and off is the CI path: the child's environment never
  * carries the variable at all, so the main process takes exactly the code path
  * it took before this existed.
+ *
+ * The constant and the parse (`noActivateOn`) live in `src/shared/test-display.ts`
+ * since #1335, because Settings → Advanced → Testing ticks a checkbox from the
+ * same line and must read it the way this does.
  */
-export const E2E_NO_ACTIVATE_ENV = 'SWITCHBOARD_E2E_NO_ACTIVATE';
 
 // Frozen: one object is handed to every switch-off launch as its
 // `displayOffset`, and a shared mutable default is a question nobody should
@@ -389,8 +395,7 @@ export function monitorSetting(): string | undefined {
 
 /** Whether to launch quiet — `SWITCHBOARD_E2E_NO_ACTIVATE` (#1332). */
 export function noActivateSetting(): boolean {
-  const v = e2eSetting(E2E_NO_ACTIVATE_ENV)?.trim().toLowerCase();
-  return v === '1' || v === 'true' || v === 'on' || v === 'yes';
+  return noActivateOn(e2eSetting(E2E_NO_ACTIVATE_ENV));
 }
 
 /**
@@ -819,6 +824,7 @@ export async function launchSecondInstance(
   env.SWITCHBOARD_NO_QUIT_CONFIRM = '1';
   env.SWITCHBOARD_NO_NAME_PROMPT = '1'; // the same as `launchApp` (#1282)
   env.SWITCHBOARD_MUTE_AUDIO = '1'; // the same scrub `launchApp` does (P2-E14-05a)
+  env.SWITCHBOARD_MUTE_TOASTS = '1'; // the same as `launchApp` (#1338)
   env.SWITCHBOARD_FAKE_PROVIDER = '1';
   applyActivationMode(env); // the same as `launchApp`, so the env matches (#1332)
   applyIsolatedPaths(env, home);
@@ -960,6 +966,16 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // on every launch and BEFORE `opts.env`, like the two above, so a spec that
   // genuinely wants audio can still ask for it.
   env.SWITCHBOARD_MUTE_AUDIO = '1';
+  // No spec may put a TOAST on the desktop either (#1338) — the audio mute's
+  // twin. A quiet launch (`SWITCHBOARD_E2E_NO_ACTIVATE`, #1332) leaves the app
+  // genuinely "away", so the WHEN_AWAY toast rules fire for real, and a full
+  // run used to stack silent Windows notifications in the corner of the
+  // owner's screen. Muted, main still builds, tracks and LOGS every toast
+  // (`events/os-toast.ts`), so the toast specs prove the whole chain and only
+  // `Notification.show()` is skipped. BEFORE `opts.env`, so a spec that needs a
+  // real toast passes `SWITCHBOARD_MUTE_TOASTS: ''` — `permission-toast.spec.ts`
+  // does, on CI only, to keep proving Windows accepts the actionable one.
+  env.SWITCHBOARD_MUTE_TOASTS = '1';
   // No test may talk to the real release feed (P2-E19-03). `off` disables the
   // update check entirely, so nothing in the suite makes a live call to
   // github.com or reaches for this machine's real `gh` credentials — and no

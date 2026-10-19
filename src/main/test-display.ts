@@ -20,7 +20,10 @@ import path from 'path';
 import {
   describeScreens,
   E2E_MONITOR_ENV,
+  E2E_NO_ACTIVATE_ENV,
+  E2E_NO_ACTIVATE_ON,
   E2E_SETTINGS_FILE,
+  noActivateOn,
   readSettingsKey,
   resolveTestDisplay,
   valueForScreen,
@@ -32,6 +35,7 @@ import {
   type TestDisplayState,
 } from '../shared/test-display';
 import { errorText } from '../shared/error-text';
+import type { IpcBroker } from './ipc/broker';
 
 /** The displays as main sees them right now, plus which one is primary. */
 export interface ScreenSnapshot {
@@ -91,39 +95,40 @@ export function readTestDisplayState(snap: ScreenSnapshot, home?: string): TestD
   const file = testDisplayFile(home);
   const read = readFile(file);
   const base = { screens: describeScreens(snap.screens, snap.primaryId), file };
-  if ('problem' in read) return { ...base, saved: { kind: 'none' }, readProblem: read.problem };
-  return { ...base, saved: savedFrom(read.text, snap) };
+  if ('problem' in read) {
+    return { ...base, saved: { kind: 'none' }, noActivate: false, readProblem: read.problem };
+  }
+  return {
+    ...base,
+    saved: savedFrom(read.text, snap),
+    noActivate: noActivateOn(readSettingsKey(read.text, E2E_NO_ACTIVATE_ENV)),
+  };
 }
 
 /**
- * Run the tests on screen `screenId` — `null` for the primary (the default,
- * which removes the line). Every other line of the file is kept.
+ * Set one key of the file (`null` removes its line), keeping every other line.
+ * The one write path both settings share: refuse a file that cannot be read,
+ * write through a temp file + rename, answer the state as it now is.
  */
-export function writeTestDisplay(
+function writeKey(
   snap: ScreenSnapshot,
-  screenId: unknown,
-  home?: string
+  key: string,
+  value: string | null,
+  home: string | undefined
 ): TestDisplaySetResult {
   const file = testDisplayFile(home);
-  const fail = (problem: string, code?: TestDisplayRefusal): TestDisplaySetResult => ({
+  const fail = (problem: string): TestDisplaySetResult => ({
     ok: false,
     problem,
-    ...(code ? { code } : {}),
     state: readTestDisplayState(snap, home),
   });
-  if (screenId !== null && (typeof screenId !== 'number' || !Number.isSafeInteger(screenId))) {
-    return fail('not a screen', 'not-a-screen');
-  }
-  if (screenId !== null && !snap.screens.some((s) => s.id === screenId)) {
-    return fail('that screen is not attached any more', 'not-attached');
-  }
   const read = readFile(file);
   if ('problem' in read) return fail(read.problem);
-  const value = screenId === null ? null : valueForScreen(snap.screens, snap.primaryId, screenId);
   const next = writeSettingsKey(
-    // a file we are about to create says what it is, for whoever finds it
+    // a file we are about to create (or an empty one) says what it is, for
+    // whoever finds it
     read.text === '' && value !== null ? HEADER : read.text,
-    E2E_MONITOR_ENV,
+    key,
     value
   );
   if (next !== read.text) {
@@ -143,6 +148,68 @@ export function writeTestDisplay(
   return { ok: true, state: readTestDisplayState(snap, home) };
 }
 
+/**
+ * Run the tests on screen `screenId` — `null` for the primary (the default,
+ * which removes the line). Every other line of the file is kept.
+ */
+export function writeTestDisplay(
+  snap: ScreenSnapshot,
+  screenId: unknown,
+  home?: string
+): TestDisplaySetResult {
+  if (screenId !== null && (typeof screenId !== 'number' || !Number.isSafeInteger(screenId))) {
+    return refuse(snap, home, 'not a screen', 'not-a-screen');
+  }
+  if (screenId !== null && !snap.screens.some((s) => s.id === screenId)) {
+    return refuse(snap, home, 'that screen is not attached any more', 'not-attached');
+  }
+  const value = screenId === null ? null : valueForScreen(snap.screens, snap.primaryId, screenId);
+  return writeKey(snap, E2E_MONITOR_ENV, value, home);
+}
+
+/**
+ * Open the test windows without taking focus (#1335) — `SWITCHBOARD_E2E_NO_ACTIVATE`.
+ * On writes `=1`; off REMOVES the line, because absent is what the fixture
+ * reads as off and a `=0` line would be one more thing to explain. Anything
+ * but a boolean is refused with the file untouched.
+ */
+export function writeTestNoActivate(
+  snap: ScreenSnapshot,
+  on: unknown,
+  home?: string
+): TestDisplaySetResult {
+  if (typeof on !== 'boolean') return refuse(snap, home, 'not on or off', 'not-a-switch');
+  return writeKey(snap, E2E_NO_ACTIVATE_ENV, on ? E2E_NO_ACTIVATE_ON : null, home);
+}
+
+/** A write refused before the file was touched: a code the renderer words. */
+function refuse(
+  snap: ScreenSnapshot,
+  home: string | undefined,
+  problem: string,
+  code: TestDisplayRefusal
+): TestDisplaySetResult {
+  return { ok: false, problem, code, state: readTestDisplayState(snap, home) };
+}
+
+/**
+ * The three invoke channels (#1331, #1335). The push half, `testDisplay:changed`,
+ * is sent from main's display listeners. `home` is for the tests only.
+ */
+export function registerTestDisplayIpc(deps: {
+  broker: Pick<IpcBroker, 'handle'>;
+  snapshot: () => ScreenSnapshot;
+  home?: string;
+}): void {
+  const { broker, snapshot, home } = deps;
+  broker.handle('testDisplay:get', () => readTestDisplayState(snapshot(), home));
+  broker.handle('testDisplay:set', (_e, screenId) => writeTestDisplay(snapshot(), screenId, home));
+  broker.handle('testDisplay:setNoActivate', (_e, on) =>
+    writeTestNoActivate(snapshot(), on, home)
+  );
+}
+
 const HEADER =
-  "# Which screen switchboard.ai's own automated tests open their windows on.\n" +
+  "# How switchboard.ai's own automated tests open their windows: which screen,\n" +
+  '# and whether they take focus.\n' +
   '# Written by Settings > Advanced > Testing; one KEY=VALUE per line.\n';

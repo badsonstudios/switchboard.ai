@@ -372,6 +372,13 @@ project on this computer uses it the next time the tests run.
   wins over this.** Settings cannot see a variable like that, so if the tests
   ignore your choice, check for one.
 
+Under the list of screens is one more box: **Open test windows without taking
+focus**. Tick it and the tests' windows open in the background, so you can keep
+typing in another program while they run. It is saved in the same file, as the
+line `SWITCHBOARD_E2E_NO_ACTIVATE=1`; unticking it removes that line. If the
+file is missing it shows unticked. As with the screen, a
+`SWITCHBOARD_E2E_NO_ACTIVATE` variable set in the shell wins over the box.
+
 ## Good to know
 
 - switchboard has no account, no cloud sync, and sends no telemetry anywhere.

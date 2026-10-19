@@ -48,6 +48,8 @@ interface ToastLine {
   ruleId: string;
   /** did the desktop take it? false where the OS has no notifier at all */
   shown: boolean;
+  /** kept off the desktop by the e2e toast mute (#1338) — built, tracked, not shown */
+  muted: boolean;
   /** how many Allow/Deny buttons went on it */
   buttons: number;
   /** the held request those buttons would answer; '' when there is none */
@@ -70,6 +72,20 @@ const toasts = (home: string): ToastLine[] => lines<ToastLine>(home, 'os toast r
 /** Whether THIS desktop can put a button on a toast — `toastActionsSupported`. */
 const BUTTONS_HERE = process.platform === 'darwin' || process.platform === 'win32';
 
+/**
+ * The toast mute (#1338), and why this spec lifts it on CI and nowhere else.
+ *
+ * The fixture mutes every launch's OS toasts, so a run on a developer's desk
+ * puts nothing in the corner of their screen. Muted, everything this spec
+ * asserts still happens — the toast is built with its buttons, tracked, logged
+ * and withdrawn — EXCEPT the one half only a real show can prove: that Windows
+ * did not REFUSE the actionable toast. CI has no one at the desk, so there the
+ * mute is lifted (`''` is the fixture's "off") and that half is insisted on as
+ * it always was.
+ */
+const REAL_TOASTS = !!process.env.CI;
+const TOAST_ENV: Record<string, string> = REAL_TOASTS ? { SWITCHBOARD_MUTE_TOASTS: '' } : {};
+
 /** How many permissions main is holding right now. */
 async function heldCount(w: Page): Promise<number> {
   const held = (await w.evaluate(() =>
@@ -85,7 +101,7 @@ test.describe('actionable permission toasts (P2-E14-04)', () => {
   test('a held permission toasts with Allow/Deny, and the bar withdraws it', async () => {
     const folder = tempProjectFolder();
     const title = path.basename(folder);
-    a = await launchApp({ seedFolder: folder });
+    a = await launchApp({ seedFolder: folder, env: TOAST_ENV });
     const w = a.window;
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
@@ -133,8 +149,12 @@ test.describe('actionable permission toasts (P2-E14-04)', () => {
       // the desktop did not REFUSE the actionable one. A toast Windows rejects
       // is the failure this whole item could have shipped invisibly.
       expect(fired[0].shown).toBe(true);
+      // only a proof where the toast was really shown — CI (see REAL_TOASTS);
+      // a muted local run cannot be refused, so this passes trivially there
       expect(lines(a.home, 'the desktop refused an OS toast')).toHaveLength(0);
     }
+    // muted exactly when the fixture muted it and the desktop could have taken it
+    expect(fired[0].muted).toBe(fired[0].shown && !REAL_TOASTS);
 
     // The SAFETY half. The toast body is `permissionSummary(req)` of the
     // request main is holding — so an Allow pressed off-screen grants a tool

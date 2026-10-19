@@ -1549,7 +1549,10 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   makes "an attention event always makes a noise" survive a broken audio
   channel. `SWITCHBOARD_MUTE_AUDIO=1` (non-packaged builds only) makes the sink
   log instead of sound, so the e2e suite proves the whole chain on the machine
-  its owner is working at without making a sound.)*
+  its owner is working at without making a sound. Its twin for OS toasts,
+  `SWITCHBOARD_MUTE_TOASTS=1` (#1338, same rule), builds, tracks and logs every
+  toast and skips only `Notification.show()` — `main/events/os-toast.ts` is the
+  one place main shows one.)*
   *(The **needs-you cue** shipped #1267, the second built-in that fires while
   the app is FOCUSED. Owner decisions, 2026-10-17: it plays only for a session
   the user is **not in**; it is a **distinct** sound; an approval repeats it

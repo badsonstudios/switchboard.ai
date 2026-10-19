@@ -1540,6 +1540,9 @@ const api = {
     get: (): Promise<TestDisplayState> => ipcRenderer.invoke('testDisplay:get'),
     set: (screenId: number | null): Promise<TestDisplaySetResult> =>
       ipcRenderer.invoke('testDisplay:set', screenId),
+    /** open the test windows without taking focus (#1335) */
+    setNoActivate: (on: boolean): Promise<TestDisplaySetResult> =>
+      ipcRenderer.invoke('testDisplay:setNoActivate', on),
     onChanged: (cb: (state: TestDisplayState) => void): (() => void) => {
       const h = (_e: unknown, state: TestDisplayState) => cb(state);
       ipcRenderer.on('testDisplay:changed', h);

@@ -9,12 +9,22 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { cleanupTempDirs, tempDir } from '../test-temp-dirs';
-import { E2E_MONITOR_ENV, E2E_SETTINGS_FILE, type ScreenFacts } from '../shared/test-display';
+import {
+  E2E_MONITOR_ENV,
+  E2E_NO_ACTIVATE_ENV,
+  E2E_SETTINGS_FILE,
+  type ScreenFacts,
+  type TestDisplaySetResult,
+  type TestDisplayState,
+} from '../shared/test-display';
+import type { IpcBroker } from './ipc/broker';
 import {
   readTestDisplayState,
+  registerTestDisplayIpc,
   snapshotScreens,
   testDisplayFile,
   writeTestDisplay,
+  writeTestNoActivate,
   type ScreenSnapshot,
 } from './test-display';
 
@@ -35,6 +45,7 @@ const RIGHT = facts(1473062231, 2560);
 const LEFT = facts(2452621004, -2560, 'LG ULTRAFINE');
 const DESK: ScreenSnapshot = { screens: [RIGHT, PRIMARY, LEFT], primaryId: PRIMARY.id };
 const K = E2E_MONITOR_ENV;
+const NA = E2E_NO_ACTIVATE_ENV;
 
 function home(contents?: string): string {
   const dir = tempDir('sb-testdisplay-');
@@ -99,7 +110,7 @@ describe('writeTestDisplay — the file round trip', () => {
     const h = home();
     const r = writeTestDisplay(DESK, LEFT.id, h);
     expect(r.ok).toBe(true);
-    expect(fileIn(h)).toMatch(/^# Which screen/);
+    expect(fileIn(h)).toMatch(/^# How switchboard.ai's own automated tests/);
     expect(fileIn(h).endsWith(`${K}=left\n`)).toBe(true);
     expect(r.state.saved).toEqual({ kind: 'attached', value: 'left', screenId: LEFT.id });
   });
@@ -173,6 +184,144 @@ describe('writeTestDisplay — the file round trip', () => {
     expect(testDisplayFile()).toBe(path.join(h, E2E_SETTINGS_FILE));
     writeTestDisplay(DESK, RIGHT.id);
     expect(fileIn(h)).toContain(`${K}=right\n`);
+  });
+});
+
+describe('open test windows without taking focus (#1335)', () => {
+  it('reads as off with no file, no line, or a line that is not on', () => {
+    expect(readTestDisplayState(DESK, home()).noActivate).toBe(false);
+    expect(readTestDisplayState(DESK, home(`${K}=right\n`)).noActivate).toBe(false);
+    expect(readTestDisplayState(DESK, home(`${NA}=0\n`)).noActivate).toBe(false);
+    expect(readTestDisplayState(DESK, home(`${NA}=\n`)).noActivate).toBe(false);
+  });
+
+  it('reads Dan’s file as on, and every spelling the fixture accepts', () => {
+    const s = readTestDisplayState(DESK, home(`${NA}=1\n${K}=right\n`));
+    expect(s.noActivate).toBe(true);
+    expect(s.saved).toEqual({ kind: 'attached', value: 'right', screenId: RIGHT.id });
+    for (const v of ['true', 'ON', ' yes ']) {
+      expect(readTestDisplayState(DESK, home(`${NA}=${v}\n`)).noActivate).toBe(true);
+    }
+  });
+
+  it('a file it cannot read is off, with the problem said', () => {
+    const h = home();
+    fs.mkdirSync(path.join(h, E2E_SETTINGS_FILE));
+    const s = readTestDisplayState(DESK, h);
+    expect(s.noActivate).toBe(false);
+    expect(s.readProblem).toBeTruthy();
+  });
+
+  it('on adds its line and keeps every other one, line endings included', () => {
+    const h = home(`# mine\r\n${K}=right\r\n`);
+    const r = writeTestNoActivate(DESK, true, h);
+    expect(r.ok).toBe(true);
+    expect(fileIn(h)).toBe(`# mine\r\n${K}=right\r\n${NA}=1\r\n`);
+    expect(r.state.noActivate).toBe(true);
+    expect(r.state.saved).toEqual({ kind: 'attached', value: 'right', screenId: RIGHT.id });
+  });
+
+  it('off removes its line and keeps the rest', () => {
+    const h = home(`${NA}=1\n${K}=right\n`);
+    const r = writeTestNoActivate(DESK, false, h);
+    expect(r.ok).toBe(true);
+    expect(fileIn(h)).toBe(`${K}=right\n`);
+    expect(r.state.noActivate).toBe(false);
+  });
+
+  it('a hand-written `=yes` is rewritten as `=1` when ticked again, not duplicated', () => {
+    const h = home(`${NA}=yes\n`);
+    expect(writeTestNoActivate(DESK, true, h).ok).toBe(true);
+    expect(fileIn(h)).toBe(`${NA}=1\n`);
+  });
+
+  it('on with no file creates it with the header; off with no file creates none', () => {
+    const h = home();
+    expect(writeTestNoActivate(DESK, false, h).ok).toBe(true);
+    expect(fs.existsSync(path.join(h, E2E_SETTINGS_FILE))).toBe(false);
+    expect(writeTestNoActivate(DESK, true, h).ok).toBe(true);
+    expect(fileIn(h)).toMatch(/^# How switchboard/);
+    expect(fileIn(h).endsWith(`${NA}=1\n`)).toBe(true);
+  });
+
+  it.each([
+    ['a string', 'true'],
+    ['a number', 1],
+    ['nothing', undefined],
+    ['null', null],
+  ])('refuses %s and leaves the file alone', (_what, on) => {
+    const h = home(`${NA}=1\n`);
+    const r = writeTestNoActivate(DESK, on, h);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.code).toBe('not-a-switch');
+    expect(fileIn(h)).toBe(`${NA}=1\n`);
+    expect(r.state.noActivate).toBe(true);
+  });
+
+  it('does not write over a file it could not read', () => {
+    const h = home();
+    fs.mkdirSync(path.join(h, E2E_SETTINGS_FILE));
+    const r = writeTestNoActivate(DESK, true, h);
+    expect(r.ok).toBe(false);
+    expect(!r.ok && r.code).toBeUndefined();
+    expect(fs.statSync(path.join(h, E2E_SETTINGS_FILE)).isDirectory()).toBe(true);
+  });
+
+  it('a failed write leaves the file untouched and no temp file behind', () => {
+    const h = home(`${K}=right\n`);
+    vi.spyOn(fs, 'renameSync').mockImplementation(() => {
+      throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+    });
+    const r = writeTestNoActivate(DESK, true, h);
+    expect(!r.ok && r.problem).toMatch(/EPERM/);
+    expect(fileIn(h)).toBe(`${K}=right\n`);
+    expect(fs.readdirSync(h)).toEqual([E2E_SETTINGS_FILE]);
+  });
+});
+
+describe('registerTestDisplayIpc', () => {
+  function wired(h: string) {
+    const handlers = new Map<string, (e: unknown, ...args: unknown[]) => unknown>();
+    const broker = {
+      handle: (channel: string, fn: (e: unknown, ...args: unknown[]) => unknown) => {
+        handlers.set(channel, fn);
+      },
+    } as unknown as Pick<IpcBroker, 'handle'>;
+    registerTestDisplayIpc({ broker, snapshot: () => DESK, home: h });
+    const call = <T,>(channel: string, ...args: unknown[]): T => {
+      const fn = handlers.get(channel);
+      if (!fn) throw new Error(`${channel} is not registered`);
+      return fn(null, ...args) as T;
+    };
+    return { handlers, call };
+  }
+
+  it('registers exactly the three invoke channels', () => {
+    expect([...wired(home()).handlers.keys()].sort()).toEqual([
+      'testDisplay:get',
+      'testDisplay:set',
+      'testDisplay:setNoActivate',
+    ]);
+  });
+
+  it('get reads the file; set and setNoActivate each write only their own line', () => {
+    const h = home(`# mine\n${K}=right\n`);
+    const { call } = wired(h);
+    expect(call<TestDisplayState>('testDisplay:get').noActivate).toBe(false);
+    expect(call<TestDisplaySetResult>('testDisplay:setNoActivate', true).ok).toBe(true);
+    expect(fileIn(h)).toBe(`# mine\n${K}=right\n${NA}=1\n`);
+    expect(call<TestDisplaySetResult>('testDisplay:set', LEFT.id).ok).toBe(true);
+    expect(fileIn(h)).toBe(`# mine\n${K}=left\n${NA}=1\n`);
+    const s = call<TestDisplayState>('testDisplay:get');
+    expect(s.noActivate).toBe(true);
+    expect(s.saved).toEqual({ kind: 'attached', value: 'left', screenId: LEFT.id });
+  });
+
+  it('setNoActivate hands a non-boolean to the refusal, creating no file', () => {
+    const h = home();
+    const r = wired(h).call<TestDisplaySetResult>('testDisplay:setNoActivate', 'yes');
+    expect(!r.ok && r.code).toBe('not-a-switch');
+    expect(fs.existsSync(path.join(h, E2E_SETTINGS_FILE))).toBe(false);
   });
 });
 

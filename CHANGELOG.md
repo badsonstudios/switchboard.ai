@@ -111,6 +111,13 @@ on the floor, and say so in your PR.
   list on the left, the strip and the tab now build their session menu from
   one place, so they cannot drift apart.
 
+- **Settings ▸ Advanced ▸ Testing has a box for "Open test windows without
+  taking focus".** For people who work on switchboard itself: ticked, the
+  automated tests' windows open in the background instead of taking the
+  keyboard from whatever you are typing in. It reads and writes the same
+  `~/.switchboard-e2e.env` file as the screen picker above it, changes only its
+  own line, and shows what the file says when Settings opens.
+
 ### Changed
 
 - **A session that is waiting on you says so, everywhere it appears.** Its
@@ -174,6 +181,13 @@ on the floor, and say so in your PR.
   conversation and puts it back when that conversation is reopened, even in a
   new run of the app. A conversation you never changed still opens on Codex's
   defaults, as before.
+
+### Internal
+
+- **The test suite no longer fills your notification corner.** Its test
+  windows put no Windows notifications on the screen any more: the app still
+  builds and records every one, so the tests still check them, but none is
+  shown. Nothing changes for the shipped app.
 
 ## 0.8.124 — 2026-10-18
 

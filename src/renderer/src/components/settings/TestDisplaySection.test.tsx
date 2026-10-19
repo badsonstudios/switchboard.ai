@@ -9,7 +9,9 @@
 //    saying "not attached — tests run on the primary until it is back";
 //  • a hotplug push replaces the list;
 //  • FAIL-OPEN: a failed write keeps the selection and says so inline; a file
-//    that cannot be read disables the control; no bridge, nothing drawn.
+//    that cannot be read disables the control; no bridge, nothing drawn;
+//  • the second key (#1335): one checkbox, ticked from what the FILE says,
+//    sending a yes/no to main and showing main's answer.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
@@ -38,11 +40,16 @@ const FILE = 'C:\\Users\\someone\\.switchboard-e2e.env';
 const state = (over: Partial<TestDisplayState> = {}): TestDisplayState => ({
   screens: [PRIMARY, LEFT, RIGHT],
   saved: { kind: 'none' },
+  noActivate: false,
   file: FILE,
   ...over,
 });
 
-function stub(initial: TestDisplayState, set?: (id: number | null) => Promise<TestDisplaySetResult>) {
+function stub(
+  initial: TestDisplayState,
+  set?: (id: number | null) => Promise<TestDisplaySetResult>,
+  setNoActivate?: (on: boolean) => Promise<TestDisplaySetResult>
+) {
   let push: ((s: TestDisplayState) => void) | null = null;
   const testDisplay = {
     get: vi.fn(async () => initial),
@@ -54,6 +61,10 @@ function stub(initial: TestDisplayState, set?: (id: number | null) => Promise<Te
             saved: id === null ? { kind: 'none' } : { kind: 'attached', value: `id:${id}`, screenId: id },
           }),
         }))
+    ),
+    setNoActivate: vi.fn(
+      setNoActivate ??
+        (async (on: boolean) => ({ ok: true as const, state: { ...initial, noActivate: on } }))
     ),
     onChanged: vi.fn((cb: (s: TestDisplayState) => void) => {
       push = cb;
@@ -79,6 +90,18 @@ const radio = (key: string): HTMLInputElement => option(key).querySelector('inpu
 const keys = (): string[] =>
   [...host.querySelectorAll<HTMLElement>('[data-test-display-option]')].map((o) => o.dataset.testDisplayOption!);
 const ticked = (): string[] => keys().filter((k) => radio(k).checked);
+
+const box = (): HTMLInputElement =>
+  host.querySelector<HTMLInputElement>('[data-settings-field="test-no-activate"]')!;
+
+async function toggleBox(): Promise<void> {
+  await act(async () => {
+    box().click();
+  });
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
+}
 
 async function pick(key: string): Promise<void> {
   await act(async () => {
@@ -223,6 +246,55 @@ describe('picking', () => {
     expect(ticked()).toEqual([]);
     await pick('7');
     expect(testDisplay.set).not.toHaveBeenCalled();
+  });
+});
+
+describe('open test windows without taking focus (#1335)', () => {
+  it('is unticked when the file does not say so, with its words and the variable that overrides it', async () => {
+    stub(state());
+    await render();
+    expect(box().checked).toBe(false);
+    expect(box().disabled).toBe(false);
+    const block = host.querySelector('[data-test-no-activate]')!;
+    expect(block.textContent).toContain(en.testDisplay.noActivate);
+    expect(block.textContent).toContain('SWITCHBOARD_E2E_NO_ACTIVATE');
+  });
+
+  it('is ticked when the file says so', async () => {
+    stub(state({ noActivate: true }));
+    await render();
+    expect(box().checked).toBe(true);
+  });
+
+  it('ticking sends true to main and shows its answer; unticking sends false', async () => {
+    const { testDisplay } = stub(state());
+    await render();
+    await toggleBox();
+    expect(testDisplay.setNoActivate).toHaveBeenCalledWith(true);
+    expect(box().checked).toBe(true);
+    await toggleBox();
+    expect(testDisplay.setNoActivate).toHaveBeenLastCalledWith(false);
+    expect(box().checked).toBe(false);
+    // the screen choice was not touched by either
+    expect(testDisplay.set).not.toHaveBeenCalled();
+  });
+
+  it('a failed write leaves the box as the file is and says so inline', async () => {
+    const before = state();
+    stub(before, undefined, async () => ({ ok: false, problem: 'EPERM: operation not permitted', state: before }));
+    await render();
+    await toggleBox();
+    expect(box().checked).toBe(false);
+    expect(host.querySelector('[data-test-display-problem]')!.textContent).toContain('EPERM');
+  });
+
+  it('a file that cannot be read shows it unticked and disabled', async () => {
+    const { testDisplay } = stub(state({ noActivate: true, readProblem: 'EISDIR' }));
+    await render();
+    expect(box().checked).toBe(false);
+    expect(box().disabled).toBe(true);
+    await toggleBox();
+    expect(testDisplay.setNoActivate).not.toHaveBeenCalled();
   });
 });
 
