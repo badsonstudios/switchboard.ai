@@ -14,6 +14,7 @@ import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import {
   answerHeldPermissions,
+  E2E_NO_ACTIVATE_ENV,
   launchApp,
   LaunchedApp,
   tempProjectFolder,
@@ -27,6 +28,7 @@ import {
   permissionHolder,
   setOnFrontCard,
   readOnFrontCard,
+  skipPopoutOnLinux,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -258,5 +260,126 @@ test.describe('focus-stealing policy (E9-10)', () => {
     await row(a.window, second).click();
     await expect(focused(a.window)).toHaveText(new RegExp(second));
     expect(await readOnFrontCard(a.window, 'card-focus-policy')).toBe('none');
+  });
+});
+
+// #756 — the OS half: the WINDOW hosting the session comes forward too.
+//
+// PLAYWRIGHT CANNOT SEE OS FOCUS MOVE BETWEEN WINDOWS, so this proves the raise
+// is REQUESTED and DECIDED, not that Windows performed it. Main records every
+// request it receives (non-packaged builds only) with its outcome; the spec
+// reads that list. The raise itself — the measured minimize/restore — is unit
+// tested in `window-activation.test.ts`, and `spike/findings/756-foreground-lock.md`
+// is the measurement of what Windows allows.
+//
+// LAUNCHED QUIET ON PURPOSE, everywhere including CI (`[E2E_NO_ACTIVATE_ENV]:
+// '1'`). Two reasons: a spec must never take the developer's foreground (#1332),
+// and the outcome is then deterministic — `no-activate` sits below the person's
+// own gates (master switch, quiet hours) and above "was it already in front",
+// which depends on what else the machine is doing.
+const QUIET = { [E2E_NO_ACTIVATE_ENV]: '1' };
+
+type RaiseRecord = { outcome: string; window: string };
+/** every attention raise main has been asked for, in order */
+const raises = (a: LaunchedApp): Promise<RaiseRecord[]> =>
+  a.app.evaluate(() => {
+    const g = globalThis as { __switchboardAttentionRaises?: RaiseRecord[] };
+    return (g.__switchboardAttentionRaises ?? []).map((r) => ({ outcome: r.outcome, window: r.window }));
+  });
+
+/** quiet hours that contain the app's NOW: an hour either side, local time */
+async function quietHoursNow(w: Page): Promise<void> {
+  await w.evaluate(async () => {
+    const hhmm = (d: Date) =>
+      `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const now = Date.now();
+    await window.switchboard.notifications.setPrefs({
+      enabled: true,
+      quietStart: hhmm(new Date(now - 3_600_000)),
+      quietEnd: hhmm(new Date(now + 3_600_000)),
+    });
+  });
+}
+
+test.describe('the hosting window comes forward too (#756)', () => {
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined;
+    await launched?.cleanup();
+  });
+
+  test('`focus` asks for the main window; a per-session `urgent` and quiet hours do not get one', async () => {
+    test.setTimeout(150_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: QUIET });
+    const w = a.window;
+    const first = path.basename(folder);
+    await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
+    const second = await addSession(a);
+    await expect(tabs(w)).toHaveCount(2);
+
+    await palette(w, 'When any session needs you: always jump to it');
+    // the second session out of the workspace, and stand in the first
+    await row(w, second).click();
+    await palette(w, 'Hide session (keeps it running)');
+    await expect(tabs(w)).toHaveCount(1);
+    await row(w, first).click();
+    await expect(focused(w)).toHaveText(new RegExp(first));
+    expect(await raises(a)).toEqual([]);
+
+    // it needs you: back in the workspace, focused (the shipped in-app half)…
+    await permissionHolder(a)(second);
+    await expect(tabs(w)).toHaveCount(2, { timeout: 20_000 });
+    await expect(focused(w)).toHaveText(new RegExp(second));
+    // …and main was asked to bring the MAIN window (where the card lives) to
+    // the front, and — launched quiet — declined to activate
+    await expect.poll(() => raises(a!), { timeout: 15_000 }).toEqual([{ outcome: 'no-activate', window: 'main' }]);
+
+    // a PER-SESSION `urgent` beats the global `focus` for the OS level exactly
+    // as it does for the jump: one resolution, both levels
+    // (set BEFORE answering: an answered `!perm` turn then finishes, and under
+    // `focus` that `done` is a request of its own)
+    await setSessionFocusPolicy(w, second, 'urgent');
+    expect(await answerHeldPermissions(a)).toBe(1);
+    await expect(listed(w, second)).toHaveAttribute('data-needs-you', 'false', { timeout: 20_000 });
+    await row(w, first).click();
+    await expect(focused(w)).toHaveText(new RegExp(first));
+    const before = (await raises(a)).length;
+    await permissionHolder(a)(second);
+    await expect(listed(w, second)).toHaveAttribute('data-needs-you', 'true', { timeout: 20_000 });
+    await expect(focused(w)).toHaveText(new RegExp(first));
+    // give a wrongly-sent request the time a right one took above
+    await w.waitForTimeout(1500);
+    expect(await raises(a)).toHaveLength(before);
+
+    // QUIET HOURS suppress the raise (the 2026-10-18 decision): the request
+    // still arrives — the in-app jump is not a notification — and main says no
+    await quietHoursNow(w);
+    await permissionHolder(a)(first);
+    await expect
+      .poll(async () => (await raises(a!)).slice(before), { timeout: 15_000 })
+      .toEqual([{ outcome: 'quiet-hours', window: 'main' }]);
+    // and nothing before it was ever anything but the quiet launch declining
+    expect((await raises(a)).slice(0, before).every((r) => r.outcome === 'no-activate')).toBe(true);
+  });
+
+  test('a popped-out session asks for ITS window, not the main one', async () => {
+    test.setTimeout(150_000);
+    skipPopoutOnLinux();
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: QUIET });
+    const w = a.window;
+    const name = path.basename(folder);
+    await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
+    await palette(w, 'When any session needs you: always jump to it');
+
+    await w.getByTitle('Pop out into its own window').click();
+    await expect
+      .poll(() => a!.app.windows().filter((p) => p.url().includes('popout.html')).length, { timeout: 20_000 })
+      .toBe(1);
+
+    await permissionHolder(a)(name);
+    await expect.poll(() => raises(a!), { timeout: 20_000 }).toEqual([{ outcome: 'no-activate', window: 'popout' }]);
   });
 });

@@ -98,6 +98,17 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **"Always jump to it" now brings the window to the front, too.** When a
+  session set to *Always jump to it* (for everything, or on its own card's
+  **⋯** menu) needs you, the window it lives in — the main window, or its own
+  popped-out window — comes to the front even if you are in another program.
+  On Windows you will see it minimise and come straight back up in front:
+  that is the one way Windows lets an app come forward on its own. If Windows
+  still refuses, the taskbar button flashes and the session is marked in the
+  list instead. Quiet hours and the 🔔 switch stop it, like any other
+  notification. The default (*Jump if it's on screen*) and the two quieter
+  settings never move a window.
+
 - **Right-click a tab for a real menu.** A session's tab now has the same menu
   as the session in the Sessions list (Open changes, Rename…, Pin, Mark as
   seen, Move to group, Close session), plus **Duplicate session** (a new, fresh

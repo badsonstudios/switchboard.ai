@@ -6588,8 +6588,17 @@ export interface GridController {
   moveCardToGroup: (cardId: string, groupId: string | null) => void;
   /** focus an existing session's card */
   /** focus a card by card id or live session id; true if it raised ANOTHER
-   *  OS window (the card was popped out) — see the popout key bridge in App */
-  focusSession: (sessionId: string) => boolean;
+   *  OS window (the card was popped out) — see the popout key bridge in App.
+   *  `raiseWindow: false` skips that raise (the return value still says the
+   *  card is popped out): the attention jump asks main for its raise through
+   *  `attentionRaise` instead, behind the focus-stealing gates (#756). */
+  focusSession: (sessionId: string, opts?: { raiseWindow?: boolean }) => boolean;
+  /**
+   * Which OS window HOSTS this card's panel right now (#756): `popoutGroupId`
+   * names a popped-out window (main's registry key), null is the main window.
+   * Null overall when the card has no panel.
+   */
+  hostWindowOf: (cardId: string) => { popoutGroupId: string | null } | null;
   /** re-pop rescued popouts at their stashed positions (E8-06 accept) */
   restoreRescuedPopouts: () => void;
   /** open (or focus) the per-session diff tab (E5-02) */
@@ -6712,7 +6721,7 @@ export interface GridController {
   /** put a card back where it was (§5.8's reveal contract). `focus` is false
    *  for an ATTENTION reveal — see revealCard's own note on why showing and
    *  focusing are two questions. */
-  revealCard: (cardId: string, focus?: boolean) => void;
+  revealCard: (cardId: string, focus?: boolean) => Promise<void>;
   /**
    * Is this card's panel ON SCREEN right now (E9-10)?
    *
@@ -7275,7 +7284,14 @@ export function SessionGrid(props: {
       },
       moveCardToGroup: (cardId, groupId) => void clusterCardWithGroup(apiRef.current, cardId, groupId),
       hideCard,
-      revealCard: (cardId, focus) => void revealCard(cardId, focus ?? true),
+      revealCard: (cardId, focus) => revealCard(cardId, focus ?? true),
+      hostWindowOf: (cardId) => {
+        const panel = apiRef.current?.getPanel(`session-${cardId}`);
+        if (!panel) return null;
+        if (panel.group.api.location.type !== 'popout') return { popoutGroupId: null };
+        const groupId = panel.group?.id;
+        return groupId ? { popoutGroupId: groupId } : null;
+      },
       isCardOnScreen: (cardId) => {
         const panel = apiRef.current?.getPanel(`session-${cardId}`);
         // No panel at all (collapsed, tabbed-away, hidden) is trivially not on
@@ -7311,7 +7327,7 @@ export function SessionGrid(props: {
       applyPreset: (preset) => arrangeWorkspace(apiRef.current, preset),
       equalize: () => (layoutSweepPort.ready() ? equalizeGrid(apiRef.current) : false),
       applyLayout: (trigger) => applyLayout(apiRef.current, trigger),
-      focusSession: (liveId) => {
+      focusSession: (liveId, opts) => {
         const cardId = sessionStore.cardIdForLive(liveId);
         const panel = apiRef.current?.getPanel(`session-${cardId}`);
         // §5.8: "reveal triggers: ... user click anywhere (sidebar, event,
@@ -7326,7 +7342,7 @@ export function SessionGrid(props: {
         // leaves it buried behind this one, so raise its window too (E9-01)
         const loc = panel.group.api.location;
         if (loc.type !== 'popout') return false;
-        raisePopoutWindow(panel, loc.getWindow());
+        if (opts?.raiseWindow !== false) raisePopoutWindow(panel, loc.getWindow());
         // tells the caller we raised a DIFFERENT window: the popout keyboard
         // bridge must not then pull the main window in front of it
         return true;

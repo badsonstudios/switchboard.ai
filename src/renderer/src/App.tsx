@@ -146,6 +146,7 @@ import {
 import {
   attentionResponse,
   FocusPolicy,
+  raisesHostWindow,
   withFocusCard,
   withFocusGlobal,
 } from './lib/focus-policy';
@@ -1729,11 +1730,59 @@ export function App(): React.JSX.Element {
     // finished in a pane beside the one being typed in was marked as seen in
     // the same frame it was counted, and "1 finished" was a flicker.
     for (const cardId of plan.focusIds) noteBroughtForward(cardId);
-    for (const cardId of plan.cardIds) grid.current?.revealCard(cardId, focusing.has(cardId));
+    const reveals = plan.cardIds.map(
+      (cardId) => grid.current?.revealCard(cardId, focusing.has(cardId)) ?? Promise.resolve()
+    );
     for (const cardId of plan.focusIds) {
       // through App's own wrapper, not grid's: it records that a DIFFERENT OS
-      // window was raised, which the popout key bridge below has to know
-      if (!placing.has(cardId)) focusSession(cardId);
+      // window was raised, which the popout key bridge below has to know.
+      // `raiseWindow: false` — a popout's OS raise is the one below, behind
+      // the gates; this one used to raise it unconditionally, quiet hours
+      // included (#756).
+      if (!placing.has(cardId)) focusSession(cardId, { raiseWindow: false });
+    }
+    // ...AND THE WINDOW HOSTING IT (#756), the second level of "pop it to the
+    // forefront". Decided by the SAME resolved policy as the jump above
+    // (`raisesHostWindow`: `focus` only — see its note on why `smart` stays
+    // in-app), so the two levels cannot disagree about a session. Main has the
+    // last word: master switch, quiet hours, reachability, the no-activate e2e
+    // seam, and the OS's own foreground lock (it flashes when refused).
+    //
+    // ONE window per batch, the last card's — the same coin toss the ordering
+    // note above declines to load. Asked after the reveals settle, because a
+    // card coming back from hidden only has a host once it has a panel.
+    // `'focus'` is not a guess: every card in `focusIds` is there because its
+    // response WAS `focus` (revealTargets lists only those)
+    const raiseFor = plan.focusIds
+      .filter((cardId) => raisesHostWindow(sessionStore.focusPolicyFor(cardId), 'focus'))
+      .at(-1);
+    if (raiseFor) {
+      // allSettled: one reveal that fails must not cost the raise (or surface
+      // as an unhandled rejection) — the card may still have a host
+      void Promise.allSettled(reveals).then(async () => {
+        const host = grid.current?.hostWindowOf(raiseFor);
+        if (!host) return;
+        let outcome: string | undefined;
+        try {
+          // laundered: a refused call resolves an IpcRefusal, not a string (#346)
+          outcome = answered(
+            await window.switchboard?.attentionRaise?.({
+              groupId: host.popoutGroupId,
+              cardId: raiseFor,
+            })
+          );
+        } catch {
+          return; // a window torn down mid-request: the jump has done what it can
+        }
+        // §5.8's delayed urgency reset applies when focus is stolen FOR you:
+        // the lamp stays lit a beat after the window comes forward, so you can
+        // see which session yanked you there. Only when it DID come forward —
+        // a declined raise (quiet hours, already in front) stole nothing, and
+        // a refused one leaves the session's own needs-you mark to carry it.
+        // The beat starts at the lamp's first paint (#320), which a window that
+        // has just been raised gives it at once.
+        if (outcome === 'raised') sessionStore.markUrgency(raiseFor);
+      });
     }
   }, [events]);
 
@@ -1816,11 +1865,11 @@ export function App(): React.JSX.Element {
   // pin, close and find mean the same thing there as on a docked card, and
   // pulling the main window forward would bury the window the user is in.
   const actedInPopoutRef = React.useRef(false);
-  const focusSession = React.useCallback((sessionId: string): boolean => {
+  const focusSession = React.useCallback((sessionId: string, opts?: { raiseWindow?: boolean }): boolean => {
     // #923. Click in the rail to the card painted — #904's second named
     // interaction, and the one the owner notices after typing.
     measureToPaint('session-switch');
-    const raised = grid.current?.focusSession(sessionId) ?? false;
+    const raised = grid.current?.focusSession(sessionId, opts) ?? false;
     if (raised) raisedOtherWindowRef.current = true;
     return raised;
   }, []);

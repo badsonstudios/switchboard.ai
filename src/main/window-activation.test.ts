@@ -7,6 +7,7 @@ import {
   NO_ACTIVATE_ENV,
   noActivate,
   noActivateRequested,
+  raiseForAttention,
   raiseWindow,
   revealChildWindow,
   revealWindow,
@@ -171,5 +172,66 @@ describe('every show/focus in src/main goes through this seam', () => {
     ])
       expect(ACTIVATING.test(line), line).toBe(true);
     expect(ACTIVATING.test('win.showInactive();')).toBe(false);
+  });
+});
+
+describe('raiseForAttention (#756) — the measured technique', () => {
+  /** an AttentionWindow stand-in: the activation fake plus minimize/full screen */
+  function attentionWindow(state: { destroyed?: boolean; minimized?: boolean; fullScreen?: boolean } = {}) {
+    const w = fakeWindow(state);
+    return Object.assign(w, {
+      minimize: () => w.calls.push('minimize'),
+      isFullScreen: () => state.fullScreen === true,
+    });
+  }
+  const OTHER_APP = { appHasForeground: false, platform: 'win32' as const };
+
+  it('Windows, another app in front, behind: minimize() then restore() — the only sequence that took the foreground', () => {
+    const w = attentionWindow();
+    expect(raiseForAttention(w, OTHER_APP)).toBe('minimize-restore');
+    // and NO focus(): a refused focus() leaves isFocused() lying (the probe)
+    expect(w.calls).toEqual(['minimize', 'restore']);
+  });
+
+  it('Windows, another app in front, minimized: restore() alone', () => {
+    const w = attentionWindow({ minimized: true });
+    expect(raiseForAttention(w, OTHER_APP)).toBe('restore');
+    expect(w.calls).toEqual(['restore']);
+  });
+
+  it('Windows, full screen: NO call at all — every option left is a refused focus()', () => {
+    const w = attentionWindow({ fullScreen: true });
+    expect(raiseForAttention(w, OTHER_APP)).toBe('none');
+    expect(w.calls).toEqual([]);
+  });
+
+  it('one of OUR windows in front: the plain raise between our own windows, no swoop', () => {
+    const w = attentionWindow();
+    expect(raiseForAttention(w, { appHasForeground: true, platform: 'win32' })).toBe('show-focus');
+    expect(w.calls).toEqual(['show', 'focus']);
+    const m = attentionWindow({ minimized: true });
+    raiseForAttention(m, { appHasForeground: true, platform: 'win32' });
+    expect(m.calls).toEqual(['restore', 'show', 'focus']);
+  });
+
+  it('other platforms: the plain raise', () => {
+    const w = attentionWindow();
+    expect(raiseForAttention(w, { appHasForeground: false, platform: 'darwin' })).toBe('show-focus');
+    expect(w.calls).toEqual(['show', 'focus']);
+  });
+
+  it('quiet mode: NOTHING at all — not even showInactive', () => {
+    setNoActivate(true);
+    for (const appHasForeground of [true, false]) {
+      const w = attentionWindow({ minimized: true });
+      expect(raiseForAttention(w, { appHasForeground, platform: 'win32' })).toBe('quiet');
+      expect(w.calls).toEqual([]);
+    }
+  });
+
+  it('a destroyed window is left alone', () => {
+    const w = attentionWindow({ destroyed: true });
+    expect(raiseForAttention(w, OTHER_APP)).toBe('destroyed');
+    expect(w.calls).toEqual([]);
   });
 });

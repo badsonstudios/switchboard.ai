@@ -1458,6 +1458,33 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
   visible, else mark urgent — default) · `urgent` (never steal; lamp only) ·
   `focus` (always) · `none`. Settles up front a question every notification
   system otherwise answers by accident.
+  **Two levels, one resolution** *(amended 2026-10-18, #756)*: the policy governs
+  the in-app jump (reveal + focus the card) AND, at the OS level, whether the
+  WINDOW hosting the session — main, or its popout — is brought to the
+  foreground. Resolved once, in the renderer (session override beats global),
+  and both levels read that one answer. **Only `focus` raises the OS window**:
+  `smart`'s "visible" is dockview's answer about our own window and cannot know
+  that window is buried under another app — i3's `smart` focuses only on the
+  active workspace, else marks urgent, so `smart`'s OS answer is the urgency
+  half (taskbar flash + lamp). **Quiet hours and the master notification switch
+  suppress the raise** (decided 2026-10-18): it is aimed at a person in the
+  room, like the beep and the flash, which those gates already silence; the
+  in-app jump is not a notification and is not suppressed. **Measured on
+  Windows 11** (`spike/findings/756-foreground-lock.md`): with another process
+  holding the foreground, every `focus()` variant (`focus`, `show+focus`,
+  `moveTop+focus`, `app.focus({steal})`, `webContents.focus`, `hide+show`) is
+  refused, and a refused `focus()` leaves Electron's `isFocused()` reporting
+  true; the always-on-top flicker raises without the keyboard. `restore()` on a
+  minimized window and `minimize()`+`restore()` on a buried one take the
+  foreground (3/3 each; a maximized window comes back maximized), so that is
+  the raise when another app is in front; between our OWN windows the plain
+  `show()+focus()` works (3/3) and is used instead; a full-screen window gets no
+  call (the flash carries it); macOS and Linux get the plain raise,
+  unmeasured. **The OS gets the last word**:
+  when it refuses, degrade to the taskbar flash on that window + the lamp, and
+  log the refusal at info. The delayed urgency reset (below) applies when focus
+  is stolen FOR you. A raise never activates under the no-activate e2e seam
+  (#1332) and never targets an unreachable window (#1277).
 - **Delayed urgency reset** (research v2: i3 `force_display_urgency_hint`): after
   jumping to a session that demanded attention, its urgency lamp stays lit for a
   configurable beat (~0.5–2s) — you can still see WHICH session called you after

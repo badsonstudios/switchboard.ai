@@ -22,6 +22,7 @@ import {
   pruneFocusPolicies,
   resolveFocusPolicy,
   revealsCard,
+  raisesHostWindow,
   takesFocus,
   withFocusCard,
   withFocusGlobal,
@@ -235,5 +236,41 @@ describe('attentionEvents — where `none` actually bites', () => {
       return 'smart';
     });
     expect(seen).toEqual(['live-9']);
+  });
+});
+
+describe('raisesHostWindow — the OS level rides on the same answer (#756)', () => {
+  it('only `focus` brings the hosting window forward, visible or not', () => {
+    for (const visible of [true, false])
+      expect(raisesHostWindow('focus', attentionResponse('focus', { visible }))).toBe(true);
+  });
+
+  it('`smart` jumps IN the app for a card it can see, but never raises the OS window', () => {
+    // "visible" is dockview's answer about our window, which may be buried
+    // under another app — i3's smart marks that urgent
+    expect(takesFocus(attentionResponse('smart', { visible: true }))).toBe(true);
+    expect(raisesHostWindow('smart', attentionResponse('smart', { visible: true }))).toBe(false);
+    expect(raisesHostWindow('smart', attentionResponse('smart', { visible: false }))).toBe(false);
+  });
+
+  it('the quiet rungs never raise', () => {
+    for (const p of ['urgent', 'none'] as const)
+      for (const visible of [true, false])
+        expect(raisesHostWindow(p, attentionResponse(p, { visible }))).toBe(false);
+  });
+
+  it('a response that does not take focus never raises, whatever the policy says', () => {
+    expect(raisesHostWindow('focus', 'reveal')).toBe(false);
+    expect(raisesHostWindow('focus', 'mark')).toBe(false);
+  });
+
+  it('the per-session override decides, exactly as it does for the jump', () => {
+    const book = withFocusCard(withFocusGlobal(DEFAULT_FOCUS_BOOK, 'focus'), 'quiet-card', 'urgent');
+    const raises = (cardId: string) => {
+      const p = resolveFocusPolicy(book, cardId);
+      return raisesHostWindow(p, attentionResponse(p, { visible: false }));
+    };
+    expect(raises('other-card')).toBe(true);
+    expect(raises('quiet-card')).toBe(false);
   });
 });

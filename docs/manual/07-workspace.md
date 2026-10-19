@@ -759,7 +759,7 @@ There are four settings, from loudest to quietest:
 
 | Setting | When a session needs you |
 |---|---|
-| **Always jump to it** | its card comes back if it isn't in the workspace, and you're taken straight to it |
+| **Always jump to it** | its card comes back if it isn't in the workspace, you're taken straight to it — and **its window comes to the front**, even from another app (see below) |
 | **Jump if it's on screen** | you're taken to it *only* when you can already see its card. Otherwise your cursor stays where it is *(default)* |
 | **Never jump, just mark it** | nothing on screen moves at all. It is highlighted in the Sessions list and it joins the Events list, and that's the whole of it |
 | **Never jump, skip the queue** | as above, and it doesn't join the queue either: `Ctrl+Space` never stops there and it's never marked *next* |
@@ -782,6 +782,39 @@ the Sessions list.
 be dragged to — and it stops the card reappearing as well, so the workspace
 stays exactly as you arranged it. **Always jump** is its opposite: useful when
 you're watching one thing and want to be pulled to whatever calls next.
+
+### Bringing the window to the front
+
+**Always jump to it** goes one step further than the rest: it brings the
+*window* the session lives in to the front of your screen, even when you're
+working in another program. That's the main switchboard window for a session
+in the workspace, or the session's own window if you popped it out. Coming from
+another program, you'll see the window minimise and come straight back up in
+front — that little swoop is how Windows lets an app come forward on its own,
+and it's how you know which window pulled you there. (If you're already in
+switchboard and the session is in your other switchboard window, it simply
+comes forward, no swoop.) The session's mark in the Sessions list stays lit for
+a moment after you land, so you can see which one it was.
+
+The other three settings never bring a window forward. **Jump if it's on
+screen** (the default) only moves you *inside* switchboard: it can't tell
+whether its window is hidden behind your editor, so it leaves the window where
+it is, and switchboard's taskbar button flashes instead.
+
+**Your computer gets the last word.** Windows protects whatever you're typing
+in from being interrupted, and it can say no — expect that if the switchboard
+window is in full screen, which it can't come out of to swoop forward. When
+that happens switchboard doesn't pretend: the taskbar button flashes and the
+session is marked in the Sessions list, exactly as if you'd picked a quieter
+setting. (If you're curious, the
+app's log records each time it asked and what Windows said.)
+
+**It is a notification, so the notification switches apply.** With **🔔**
+turned off, or during your [quiet hours](10-settings.md#quiet-hours), nothing
+is brought to the front — the jump inside switchboard still happens, but your
+screen is left alone.
+
+### Skipping the queue
 
 **Never jump, skip the queue** goes one further and takes the session off the
 to-do list entirely — worth knowing that a session on it can hold a permission

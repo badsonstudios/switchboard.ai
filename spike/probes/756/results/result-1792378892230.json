@@ -1,0 +1,67 @@
+{
+  "electron": "43.1.1",
+  "os": "10.0.26300",
+  "pid": 7868,
+  "rows": [
+    {
+      "technique": "showInactive()  (the quiet e2e path)",
+      "start": "minimized",
+      "idleMs": 0,
+      "grab": "grab=True",
+      "foregroundBefore": "38308|powershell|probe-756-holder",
+      "validStart": true,
+      "foregroundAfter": "38308|powershell|probe-756-holder",
+      "tookForeground": false,
+      "foregroundAt": {
+        "150": false,
+        "700": false,
+        "2000": false
+      },
+      "onTopAtCentre": false,
+      "isFocusedBefore": false,
+      "isFocused": false,
+      "isMinimized": false,
+      "errors": []
+    },
+    {
+      "technique": "showInactive()  (the quiet e2e path)",
+      "start": "minimized",
+      "idleMs": 0,
+      "grab": "grab=True",
+      "foregroundBefore": "38308|powershell|probe-756-holder",
+      "validStart": true,
+      "foregroundAfter": "38308|powershell|probe-756-holder",
+      "tookForeground": false,
+      "foregroundAt": {
+        "150": false,
+        "700": false,
+        "2000": false
+      },
+      "onTopAtCentre": false,
+      "isFocusedBefore": false,
+      "isFocused": false,
+      "isMinimized": false,
+      "errors": []
+    },
+    {
+      "technique": "showInactive()  (the quiet e2e path)",
+      "start": "minimized",
+      "idleMs": 0,
+      "grab": "grab=True",
+      "foregroundBefore": "38308|powershell|probe-756-holder",
+      "validStart": true,
+      "foregroundAfter": "38308|powershell|probe-756-holder",
+      "tookForeground": false,
+      "foregroundAt": {
+        "150": false,
+        "700": false,
+        "2000": false
+      },
+      "onTopAtCentre": false,
+      "isFocusedBefore": false,
+      "isFocused": false,
+      "isMinimized": false,
+      "errors": []
+    }
+  ]
+}
