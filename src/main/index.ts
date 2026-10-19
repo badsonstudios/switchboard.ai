@@ -74,7 +74,7 @@ import { ReadScope } from './fs/read-scope';
 import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
 import { EventFeed } from './events/feed';
-import { Notifier, quietWindowOf } from './events/notifier';
+import { Notifier, inQuietHours, quietWindowOf } from './events/notifier';
 import {
   ACTION_NEEDS_YOU_SOUND,
   ACTION_OS_TOAST,
@@ -160,13 +160,23 @@ import { clearDeadHttpCache } from './http-cache';
 import { acquireInstanceLock, focusRunningWindow, sleepSync } from './single-instance';
 import {
   childWindowOptions,
+  noActivate,
   noActivateRequested,
+  raiseForAttention,
   raiseWindow,
   revealChildWindow,
   revealWindow,
   setNoActivate,
 } from './window-activation';
 import { refocusAfterDialog } from './dialog-refocus';
+import {
+  FrontAtEvent,
+  logRaise,
+  RAISE_EVENT_KINDS,
+  performAttentionRaise,
+  planAttentionRaise,
+  type RaiseRecord,
+} from './attention-raise';
 
 /* ---- ONE switchboard per user profile (#289) -------------------------------
  *
@@ -2656,8 +2666,78 @@ app
       // for (P2-E14-05b).
       now: clock,
     });
+    // #756: which of our windows held the foreground a moment before a session
+    // called. Read HERE, at event time, and never at raise time — see
+    // `FrontAtEvent` for the measured reason (a refused focus() makes
+    // `isFocused()` lie, and the in-app jump can issue one for a popout).
+    const frontAtEvent = new FrontAtEvent();
     feed.onEvent((e) => {
+      if (e && RAISE_EVENT_KINDS.includes(e.kind)) {
+        const card = cardIdForLive(e.sessionId);
+        if (card) frontAtEvent.note(card, BrowserWindow.getFocusedWindow()?.id ?? null, Date.now());
+      }
       if (e) notifier.handle(e); // null = pure removal, nothing to announce
+    });
+    // The OS half of §5.8's focus-stealing policy (#756). The renderer asks,
+    // once its own resolution of the session's policy has said "this one may
+    // take you there" (`raisesHostWindow`); main applies the gates only it can
+    // know and does the raise. `groupId` names a popout MAIN made (#531's rule,
+    // as `app:raisePopout`): a renderer-supplied id selects one of our windows
+    // or nothing. Absent = the main window.
+    const raiseLog = createLogger(sink, 'attention');
+    const raiseReach = (w: BrowserWindow, which: 'main' | 'popout'): string | null => {
+      if (which === 'main' && !mainWindowShown) return 'not shown yet';
+      // mid-hotplug the #864 restore is about to place it; a raise now would
+      // show it wherever the OS dropped it
+      if (displaySettling) return 'displays are settling';
+      try {
+        return unreachableReason(w, [], workAreas(), {
+          minimizedIsReachable: MINIMIZED_IS_REACHABLE,
+          appHiddenByUser: process.platform === 'darwin' && app.isHidden(),
+        });
+      } catch {
+        return 'could not be checked';
+      }
+    };
+    broker.handle('app:attentionRaise', async (_e, req: unknown) => {
+      const r = (req && typeof req === 'object' ? req : {}) as { groupId?: unknown; cardId?: unknown };
+      const groupId = typeof r.groupId === 'string' && r.groupId ? r.groupId : null;
+      const cardId = typeof r.cardId === 'string' && r.cardId ? r.cardId : undefined;
+      const which = groupId ? 'popout' : 'main';
+      const found = groupId ? popoutWindows.find((p) => p.groupId === groupId)?.win : currentWindow;
+      const win = found && !found.isDestroyed() ? found : null;
+      const prefs = workspace.getNotificationPrefs();
+      const front = cardId ? frontAtEvent.frontFor(cardId, Date.now()) : undefined;
+      const plan = planAttentionRaise({
+        notificationsOn: prefs.enabled,
+        inQuietHours: inQuietHours(prefs, clock()),
+        hasWindow: win !== null,
+        hadEvent: front !== undefined,
+        unreachable: win ? raiseReach(win, which) : null,
+        noActivate: noActivate(),
+        wasFront: !!win && front?.windowId === win.id,
+      });
+      let rec: RaiseRecord;
+      if (!plan.go) {
+        rec = { outcome: plan.outcome, window: which, ...(plan.detail ? { detail: plan.detail } : {}) };
+      } else {
+        const done = await performAttentionRaise(win!, {
+          // one of OUR windows in front: the plain raise between our own
+          // windows (measured); another app in front: the swoop
+          raise: (w) => raiseForAttention(w, { appHasForeground: front?.windowId != null }),
+          wait: (ms) => new Promise((res) => setTimeout(res, ms)),
+        });
+        rec = { outcome: done.outcome, window: which, technique: done.technique };
+      }
+      logRaise(raiseLog, rec, cardId);
+      // The e2e's window onto this (#756): Playwright cannot see OS focus move
+      // between windows, so a spec reads what was REQUESTED and decided here.
+      // Non-packaged builds only, the rule every test seam in this file follows.
+      if (!app.isPackaged) {
+        const g = globalThis as { __switchboardAttentionRaises?: RaiseRecord[] };
+        (g.__switchboardAttentionRaises ??= []).push(rec);
+      }
+      return rec.outcome;
     });
     // The needs-you cue's one repeat, a minute before a held approval's
     // deadline (#1267). This decides WHEN only: at that moment the rule is

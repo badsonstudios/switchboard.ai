@@ -194,6 +194,10 @@ export const CHANNEL_CAPABILITIES = {
   // because it is the same power pointed the other way: bring one of this app's own
   // windows to the front on an explicit request.
   'app:raiseMain': 'app.window',
+  // A session that needs you brings ITS window forward (#756). The same power
+  // again, on the renderer's resolved focus-stealing policy rather than a
+  // click; main gates it (master switch, quiet hours, reachability).
+  'app:attentionRaise': 'app.window',
   'app:workAreas': 'app.window',
   // The Help ▸ Report a problem dialog (#815). `reportStatus` answers BOOLEANS
   // only — whether a credential can be resolved at all — and never a value;

@@ -247,6 +247,15 @@ const api = {
    * the main window's DOM, asked for from a popout, needs main to do the raising.
    */
   raiseMain: (): Promise<boolean> => ipcRenderer.invoke('app:raiseMain'),
+  /**
+   * A session that needs you may bring the window hosting it to the front
+   * (#756) — the main window, or the popout `groupId` names. Asked only when
+   * the session's focus-stealing policy allows it (`raisesHostWindow`); main
+   * still gates it on the master switch, quiet hours and whether the window can
+   * be reached, and resolves what happened (`raised`, `refused`, `quiet-hours`…).
+   */
+  attentionRaise: (req: { groupId?: string | null; cardId?: string }): Promise<string> =>
+    ipcRenderer.invoke('app:attentionRaise', req),
   /** a display was (re)connected — new work areas (E8-06 reconnect offer) */
   onDisplaysChanged: (
     cb: (areas: Array<{ x: number; y: number; width: number; height: number }>) => void

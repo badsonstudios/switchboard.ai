@@ -197,6 +197,28 @@ export function takesFocus(r: AttentionResponse): boolean {
   return r === 'focus';
 }
 
+/**
+ * May this attention event bring the OS WINDOW hosting the card to the front
+ * (#756)? The second level of "pop it to the forefront": the first is the
+ * in-app jump `attentionResponse` decides, and this rides on that same answer
+ * so the two can never disagree about a session.
+ *
+ * `focus` ONLY. Under `smart` the in-app jump still happens for a card you can
+ * see, but "you can see it" is dockview's answer about OUR window — it cannot
+ * know whether that window is behind your editor. i3's `smart` focuses a
+ * window on the ACTIVE workspace; a window buried under another app is not on
+ * it, so `smart`'s OS answer is i3's other half: mark it urgent (the taskbar
+ * flash and the lamp, which already happen). Raising there would make the
+ * DEFAULT the loudest thing the app can do — the failure `isCardOnScreen`'s
+ * popout note already refuses for the same reason.
+ *
+ * Main still has the last word below this: the master switch, quiet hours,
+ * whether the window can be reached at all, and the OS's own foreground lock.
+ */
+export function raisesHostWindow(policy: FocusPolicy, r: AttentionResponse): boolean {
+  return policy === 'focus' && takesFocus(r);
+}
+
 /** Does this response put the card back on screen? `focus` implies it — you
  *  cannot focus a panel that is not there. */
 export function revealsCard(r: AttentionResponse): boolean {

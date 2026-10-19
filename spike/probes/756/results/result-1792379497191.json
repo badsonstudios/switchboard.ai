@@ -1,0 +1,27 @@
+{
+  "electron": "43.1.1",
+  "os": "10.0.26300",
+  "pid": 47724,
+  "rows": [
+    {
+      "technique": "show()+focus() after 205 s idle",
+      "start": "behind",
+      "idleMs": 205000,
+      "grab": "grab=True",
+      "foregroundBefore": "30056|powershell|probe-756-holder",
+      "validStart": true,
+      "foregroundAfter": "30056|powershell|probe-756-holder",
+      "tookForeground": false,
+      "foregroundAt": {
+        "150": false,
+        "700": false,
+        "2000": false
+      },
+      "onTopAtCentre": false,
+      "isFocusedBefore": false,
+      "isFocused": true,
+      "isMinimized": false,
+      "errors": []
+    }
+  ]
+}

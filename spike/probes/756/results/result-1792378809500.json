@@ -1,0 +1,67 @@
+{
+  "electron": "43.1.1",
+  "os": "10.0.26300",
+  "pid": 52780,
+  "rows": [
+    {
+      "technique": "setAlwaysOnTop(true)+show()+focus()+setAlwaysOnTop(false)",
+      "start": "behind",
+      "idleMs": 0,
+      "grab": "grab=True",
+      "foregroundBefore": "35068|powershell|probe-756-holder",
+      "validStart": true,
+      "foregroundAfter": "35068|powershell|probe-756-holder",
+      "tookForeground": false,
+      "foregroundAt": {
+        "150": false,
+        "700": false,
+        "2000": false
+      },
+      "onTopAtCentre": true,
+      "isFocusedBefore": false,
+      "isFocused": true,
+      "isMinimized": false,
+      "errors": []
+    },
+    {
+      "technique": "setAlwaysOnTop(true)+show()+focus()+setAlwaysOnTop(false)",
+      "start": "behind",
+      "idleMs": 0,
+      "grab": "grab=True",
+      "foregroundBefore": "35068|powershell|probe-756-holder",
+      "validStart": true,
+      "foregroundAfter": "35068|powershell|probe-756-holder",
+      "tookForeground": false,
+      "foregroundAt": {
+        "150": false,
+        "700": false,
+        "2000": false
+      },
+      "onTopAtCentre": true,
+      "isFocusedBefore": true,
+      "isFocused": true,
+      "isMinimized": false,
+      "errors": []
+    },
+    {
+      "technique": "setAlwaysOnTop(true)+show()+focus()+setAlwaysOnTop(false)",
+      "start": "behind",
+      "idleMs": 0,
+      "grab": "grab=True",
+      "foregroundBefore": "35068|powershell|probe-756-holder",
+      "validStart": true,
+      "foregroundAfter": "35068|powershell|probe-756-holder",
+      "tookForeground": false,
+      "foregroundAt": {
+        "150": false,
+        "700": false,
+        "2000": false
+      },
+      "onTopAtCentre": true,
+      "isFocusedBefore": true,
+      "isFocused": true,
+      "isMinimized": false,
+      "errors": []
+    }
+  ]
+}

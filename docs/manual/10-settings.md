@@ -136,6 +136,19 @@ its card is on screen** (the default), **never jump, just mark it in the list**,
 flash — that's the **🔔** switch above.) The full story is in
 [Organizing your workspace](07-workspace.md#when-a-session-interrupts-you).
 
+**Always jump to it** also brings the session's *window* to the front — the main
+window, or the session's own window if it's popped out — even when you're in
+another program. The other three never do. Two things to know:
+
+- **Your computer gets the last word.** Windows sometimes refuses to let an app
+  come forward on its own. When it does, the
+  taskbar button flashes and the session is marked in the list instead.
+- **Quiet hours and the 🔔 switch stop it.** Bringing a window forward counts as
+  a notification, so during quiet hours, or with notifications off, your screen
+  is left alone. The jump inside switchboard still happens.
+
+Details: [Bringing the window to the front](07-workspace.md#bringing-the-window-to-the-front).
+
 ## Trusting folders
 
 **There is no longer a trust setting, and there is nothing you need to do about
