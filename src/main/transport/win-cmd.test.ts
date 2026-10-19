@@ -22,6 +22,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { escapeForCmd, execSpec, quoteArg } from './win-cmd';
+import { tempDir } from '../../test-temp-dirs';
 
 const WIN_CMD = 'C:\\Users\\d\\AppData\\Roaming\\npm\\claude.cmd';
 const MARK = 'BROKE_OUT';
@@ -223,6 +224,34 @@ describe('execSpec', () => {
     expect(() => execSpec('/usr/bin/claude', ['a' + LF + 'b'], 'linux')).not.toThrow();
   });
 
+  // #1301: the probe capture's failing line, string-level so every runner pins it
+  it('spells a command path WITH A SPACE so cmd.exe cannot split it (#1301)', () => {
+    const npx = String.raw`C:\Program Files\nodejs\npx.cmd`;
+    const spec = execSpec(npx, ['-y', '@agentclientprotocol/codex-acp@2.2.2', '--version'], 'win32');
+    // the space caret-escaped, the token unquoted; the arguments unchanged
+    expect(spec.argv[4]).toBe(
+      String.raw`"C:\Program^ Files\nodejs\npx.cmd ^"-y^" ^"@agentclientprotocol/codex-acp@2.2.2^" ^"--version^""`
+    );
+    // ...and never the old spelling, whose escaped quotes were what split it
+    expect(spec.argv[4]).not.toContain(String.raw`^"C:\Program`);
+  });
+
+  it('escapes every cmd.exe metacharacter and delimiter in the command path (#1301)', () => {
+    const odd = String.raw`C:\x (x86)\100% & co;a,b=c^d!e\cli.cmd`;
+    expect(execSpec(odd, [], 'win32').argv[4]).toBe(
+      '"' + String.raw`C:\x^ ^(x86^)\100^%^ ^&^ co^;a^,b^=c^^d^!e\cli.cmd` + '"'
+    );
+  });
+
+  it('a bare name is left unquoted too, so the shim’s %~dp0 is its own folder (#1301)', () => {
+    expect(execSpec('npx.cmd', ['--version'], 'win32').argv[4]).toBe('"npx.cmd ^"--version^""');
+  });
+
+  it('REFUSES a quote or a control character in the command path — Windows allows neither', () => {
+    expect(() => execSpec('C:\\a"b\\cli.cmd', [], 'win32')).toThrow(/path/);
+    expect(() => execSpec('C:\\a' + String.fromCharCode(10) + 'b\\cli.cmd', [], 'win32')).toThrow(/path/);
+  });
+
   it('treats .bat like .cmd, and matches case-insensitively', () => {
     expect(execSpec('C:\\x\\claude.BAT', [], 'win32').file).toMatch(/cmd\.exe$/i);
   });
@@ -384,6 +413,138 @@ onWindows('end to end through the real cmd.exe', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // ── #1301: a .cmd whose PATH has a space (or worse) ───────────────────────
+  //
+  // The shim reports its argv AND its own `%~dp0`, because `%~dp0` is how every
+  // npm shim finds its `node.exe` — a spelling that ran the shim but gave it the
+  // wrong `%~dp0` would pass an argv-only test and still break `npx`.
+  //
+  // The echo script lives in the temp ROOT, never beside an awkward shim: a `%`
+  // in the shim's OWN `node "<path>"` line is batch-file syntax, which is the
+  // shim's problem and not the one under test.
+  function makeShimIn(dir: string, name = 'fake cli.cmd', echoDir = path.dirname(dir)): string {
+    const echo = path.join(echoDir, `echoargs-${path.basename(dir).replace(/[^A-Za-z0-9]/g, '_')}.cjs`);
+    fs.writeFileSync(
+      echo,
+      'console.log("ARGV:"+JSON.stringify(process.argv.slice(2)));console.log("DP0:"+process.env.SB_DP0);'
+    );
+    const cmd = path.join(dir, name);
+    fs.writeFileSync(cmd, `@echo off\r\nset "SB_DP0=%~dp0"\r\nnode "${echo}" %*\r\n`);
+    return cmd;
+  }
+
+  function runIn(
+    cmd: string,
+    args: readonly string[],
+    opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}
+  ): { argv: string[] | null; dp0: string | undefined; out: string } {
+    const spec = execSpec(cmd, args, 'win32');
+    let out: string;
+    try {
+      out = String(
+        execFileSync(spec.file, spec.argv, {
+          encoding: 'utf8',
+          windowsHide: true,
+          timeout: PER_SPAWN_MS,
+          windowsVerbatimArguments: spec.windowsVerbatimArguments,
+          ...opts,
+        } as Parameters<typeof execFileSync>[2])
+      );
+    } catch (e) {
+      const err = e as { stdout?: string | Buffer; stderr?: string | Buffer };
+      out = String(err.stdout ?? '') + String(err.stderr ?? '');
+    }
+    return { argv: argvOf(out), dp0: /DP0:(.*)/.exec(out)?.[1]?.trim(), out };
+  }
+
+  // Each one MEASURED to fail through the pre-#1301 spelling, or to be a
+  // spelling the two obvious fixes get wrong (see `commandToken`).
+  const AWKWARD_DIRS = [
+    'First Last',
+    'two  spaces',
+    'Program Files (x86)',
+    '100% sure',
+    'pct%OS%pair',
+    'amp & co',
+    'caret^dir',
+    'end caret^',
+    'bang!dir',
+    'semi;colon',
+    'com,ma',
+    'eq=uals',
+    'unicodé ü',
+  ];
+
+  it('runs a real .cmd from a folder whose name has a space, and gets its output (#1301)', () => {
+    const root = tempDir('sb-wincmd-');
+    const args = ['mcp', 'a&b', '%PATH%', 'has space'];
+    for (const name of AWKWARD_DIRS) {
+      const dir = path.join(root, name);
+      fs.mkdirSync(dir);
+      const got = runIn(makeShimIn(dir), args);
+      expect(got.argv, `${name}: ${got.out}`).toEqual(args);
+      // the shim knows where it lives — what npx.cmd needs to find node.exe
+      expect(got.dp0, name).toBe(dir + path.sep);
+    }
+  }, REAL_CMD_BUDGET_MS);
+
+  it('a BARE name found on PATH gets its own folder as %~dp0, not the cwd (#1301)', () => {
+    const root = tempDir('sb-wincmd-');
+    const onPath = path.join(root, 'on path');
+    const elsewhere = path.join(root, 'elsewhere');
+    fs.mkdirSync(onPath);
+    fs.mkdirSync(elsewhere);
+    makeShimIn(onPath, 'sbbarecli1301.cmd');
+    const got = runIn('sbbarecli1301.cmd', ['x'], {
+      cwd: elsewhere,
+      env: { ...process.env, PATH: `${onPath};${process.env.PATH ?? ''}` },
+    });
+    expect(got.argv, got.out).toEqual(['x']);
+    expect(got.dp0).toBe(onPath + path.sep);
+  }, REAL_CMD_BUDGET_MS);
+
+  // The shape of the probe capture's install, hermetically: a shim at
+  // `Program Files\nodejs\npx.cmd` inside our own temp dir. Same path shape,
+  // same cmd.exe parse, no real npm.
+  it('a shim at <temp>\\Program Files\\nodejs\\npx.cmd runs whole (#1301)', () => {
+    const dir = path.join(tempDir('sb-wincmd-'), 'Program Files', 'nodejs');
+    fs.mkdirSync(dir, { recursive: true });
+    const got = runIn(makeShimIn(dir, 'npx.cmd', path.dirname(path.dirname(dir))), [
+      '-y',
+      '@agentclientprotocol/codex-acp@2.2.2',
+      '--version',
+    ]);
+    expect(got.out).not.toMatch(/is not recognized/);
+    expect(got.argv).toEqual(['-y', '@agentclientprotocol/codex-acp@2.2.2', '--version']);
+    expect(got.dp0).toBe(dir + path.sep);
+  }, REAL_CMD_BUDGET_MS);
+
+  // The probe capture's EXACT line against the REAL install, OPT-IN ONLY
+  // (`SWITCHBOARD_PROBE_NETWORK=1`). Not in `npm test`: it downloads a package
+  // from npm, and even plain `npx --version` blew the 10 s per-spawn bound on a
+  // loaded windows-latest runner (run 39245329448) — real npm is slow to
+  // start, which is a fact about npm and not about the quoting this pins.
+  // Skipped too where Node is not actually under a spaced `Program Files`.
+  const realNpx = path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'nodejs', 'npx.cmd');
+  it.skipIf(
+    process.env.SWITCHBOARD_PROBE_NETWORK !== '1' || !realNpx.includes(' ') || !fs.existsSync(realNpx)
+  )(
+    'OPT-IN: the probe capture’s exact line runs the real npx.cmd under Program Files (#1301)',
+    () => {
+      const spec = execSpec(realNpx, ['-y', '@agentclientprotocol/codex-acp@2.2.2', '--version'], 'win32');
+      const out = String(
+        execFileSync(spec.file, spec.argv, {
+          encoding: 'utf8',
+          windowsHide: true,
+          timeout: 120_000,
+          windowsVerbatimArguments: spec.windowsVerbatimArguments,
+        } as Parameters<typeof execFileSync>[2])
+      );
+      expect(out).toContain('codex-acp 2.2.2');
+    },
+    150_000
+  );
 
   it('does not substitute !VAR! even when delayed expansion is the default', () => {
     // `/v:off` is what makes this true; `^!` alone does not. Forced on here via

@@ -4,7 +4,9 @@
 //
 // IT RIDES THE EXISTING STREAM TRANSPORT. `StreamService` already spawns the
 // agent through `launchSpec` (`cmd.exe /c <absolute .cmd>`, measured to work
-// for Codex where `execSpec` does not, #1301), frames NDJSON, logs and skips a
+// for Codex; `execSpec` split a `.cmd` path at its space until #1301 fixed it,
+// and the stream transport is `launchSpec`'s by design, not by that bug —
+// its arguments are ours, not a user's), frames NDJSON, logs and skips a
 // line that is not JSON, and reports a dead child to `SessionManager`, which
 // ends the session exactly as it ends a dead Claude CLI. So this is not a
 // transport: it is a translator and a set of controls over one, paired by
