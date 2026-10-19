@@ -2122,8 +2122,11 @@
     "getFailed": "Could not list your screens ({problem}).",
     "code": {
       "not-a-screen": "that is not a screen",
-      "not-attached": "that screen is not attached any more"
+      "not-attached": "that screen is not attached any more",
+      "not-a-switch": "that is not on or off"
     },
+    "noActivate": "Open test windows without taking focus",
+    "noActivateNote": "Their windows appear without taking the keyboard from what you are typing in. A {env} variable set in the shell overrides it.",
     "savedIn": "Saved in {file}, which every copy of the project on this computer reads. A {env} variable set in the shell that runs the tests overrides it."
   },
   "settings": {

@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 import {
   describeScreens,
   E2E_MONITOR_ENV,
+  E2E_NO_ACTIVATE_ON,
+  noActivateOn,
   readSettingsKey,
   resolveTestDisplay,
   screenPosition,
@@ -15,6 +17,18 @@ import {
   writeSettingsKey,
   type ScreenFacts,
 } from './test-display';
+
+describe('noActivateOn — the one reading of SWITCHBOARD_E2E_NO_ACTIVATE (#1332, #1335)', () => {
+  it.each(['1', 'true', 'TRUE', 'on', 'Yes', ' 1 '])('%j is on', (v) => {
+    expect(noActivateOn(v)).toBe(true);
+  });
+  it.each(['', '0', 'false', 'off', 'no', 'nope', undefined, null])('%j is off', (v) => {
+    expect(noActivateOn(v)).toBe(false);
+  });
+  it('what Settings writes reads back as on', () => {
+    expect(noActivateOn(E2E_NO_ACTIVATE_ON)).toBe(true);
+  });
+});
 
 const screen = (id: number, x: number, y: number, label = '', w = 2560, h = 1440, scale = 1.5): ScreenFacts => ({
   id,

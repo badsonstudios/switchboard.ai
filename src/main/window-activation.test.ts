@@ -122,8 +122,9 @@ describe('every show/focus in src/main goes through this seam', () => {
     // to bring the keys back after a native dialog): it takes nothing from
     // anyone else
     'dialog-refocus.ts: focused.focus();': 'already in front',
-    // an OS notification, not a window
-    'index.ts: toast.show();': 'a Notification',
+    // an OS notification, not a window — the one `show()` of one, behind the
+    // e2e toast mute (#1338)
+    'events/os-toast.ts: toast.show();': 'a Notification',
     // KNOWN EXCEPTIONS (#1332), named in window-activation.ts: Windows has no
     // non-activating maximize, and no spec seeds a maximized window. A quiet
     // run that restores one maximized WILL take the foreground here.
