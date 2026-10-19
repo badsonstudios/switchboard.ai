@@ -20,21 +20,29 @@
 // to is shown as its own row — ticked, because it IS what the file says — with
 // the words "not attached — tests run on the primary until it is back". It is
 // never silently shown as "Primary", which would be a lie about the file.
+//
+// THE SECOND KEY (#1335). Under the screens, one checkbox: open the test
+// windows without taking focus — `SWITCHBOARD_E2E_NO_ACTIVATE` (#1332) in the
+// same file. Ticked writes `=1`, unticked removes the line. Like the radios it
+// is controlled by MAIN's answer, so it shows what the file says, not what was
+// clicked.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { answered } from '../../../../shared/ipc/refusal';
 import { errorText } from '../../../../shared/error-text';
 import {
   E2E_MONITOR_ENV,
+  E2E_NO_ACTIVATE_ENV,
   type TestDisplaySetResult,
   type TestDisplayState,
   type TestScreen,
 } from '../../../../shared/test-display';
-import { SettingItem } from './controls';
+import { SettingCheckbox, SettingItem } from './controls';
 
 interface TestDisplayBridge {
   get: () => Promise<TestDisplayState>;
   set: (screenId: number | null) => Promise<TestDisplaySetResult>;
+  setNoActivate: (on: boolean) => Promise<TestDisplaySetResult>;
   onChanged: (cb: (state: TestDisplayState) => void) => () => void;
 }
 
@@ -101,10 +109,12 @@ export function TestDisplaySection(): React.JSX.Element | null {
 
   if (!bridge) return null;
 
-  const choose = async (screenId: number | null): Promise<void> => {
+  // Both controls write through here: one request at a time, and the state
+  // shown is always the one main answered with.
+  const apply = async (write: () => Promise<TestDisplaySetResult>): Promise<void> => {
     setBusy(true);
     try {
-      const r = answered(await bridge.set(screenId));
+      const r = answered(await write());
       if (!r) {
         setProblem(t('testDisplay.refused'));
       } else {
@@ -193,9 +203,11 @@ export function TestDisplaySection(): React.JSX.Element | null {
               primary
                 ? t('testDisplay.primaryDefaultIs', { screen: describe(primary) })
                 : t('testDisplay.primaryDefault'),
-              () => void choose(null)
+              () => void apply(() => bridge.set(null))
             )}
-            {others.map((s) => option(String(s.id), choice === s.id, describe(s), () => void choose(s.id)))}
+            {others.map((s) =>
+              option(String(s.id), choice === s.id, describe(s), () => void apply(() => bridge.set(s.id)))
+            )}
             {state.saved.kind === 'missing' || state.saved.kind === 'invalid'
               ? option(
                   'saved',
@@ -208,6 +220,23 @@ export function TestDisplaySection(): React.JSX.Element | null {
           </>
         )}
       </div>
+      {state ? (
+        <div data-test-no-activate style={{ display: 'grid', gap: 2, marginBlockStart: 4 }}>
+          <SettingCheckbox
+            field="test-no-activate"
+            // an unreadable file says nothing about the box: shown unticked, and
+            // disabled with the radios, so nothing writes over it
+            checked={!state.readProblem && state.noActivate}
+            disabled={disabled}
+            onChange={(on) => void apply(() => bridge.setNoActivate(on))}
+          >
+            {t('testDisplay.noActivate')}
+          </SettingCheckbox>
+          <span style={{ fontSize: 11, color: 'var(--muted)', paddingInlineStart: 19 }}>
+            {t('testDisplay.noActivateNote', { env: E2E_NO_ACTIVATE_ENV })}
+          </span>
+        </div>
+      ) : null}
       {state?.readProblem ? (
         <span role="alert" data-test-display-problem style={{ fontSize: 11, color: 'var(--status-crashed-ink)' }}>
           {t('testDisplay.readFailed', { file: state.file, problem: state.readProblem })}

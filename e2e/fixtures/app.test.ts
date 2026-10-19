@@ -646,6 +646,24 @@ describe('launchApp — the quiet-launch variable in the child env (#1332)', () 
     expect(childEnv()[E2E_NO_ACTIVATE_ENV]).toBe('');
     await launched.cleanup();
   });
+
+  // #1338 — the toast mute rides the same launch, set like SWITCHBOARD_MUTE_AUDIO
+  it('mutes OS toasts on every launch, as it mutes audio', async () => {
+    vi.stubEnv(E2E_MONITOR_ENV, '');
+    launchable();
+    const launched = await launchApp();
+    expect(childEnv().SWITCHBOARD_MUTE_TOASTS).toBe('1');
+    expect(childEnv().SWITCHBOARD_MUTE_AUDIO).toBe('1');
+    await launched.cleanup();
+  });
+
+  it('lets a spec turn the toast mute back off through opts.env', async () => {
+    vi.stubEnv(E2E_MONITOR_ENV, '');
+    launchable();
+    const launched = await launchApp({ env: { SWITCHBOARD_MUTE_TOASTS: '' } });
+    expect(childEnv().SWITCHBOARD_MUTE_TOASTS).toBe('');
+    await launched.cleanup();
+  });
 });
 
 describe('translateToDisplay — shift, do not re-centre (#479)', () => {

@@ -17,11 +17,11 @@ import { launchApp, LaunchedApp, openSettingsTab } from './fixtures/app';
 
 const FILE = '.switchboard-e2e.env';
 
-test.describe('Settings → Advanced → Testing (#1331)', () => {
+test.describe('Settings → Advanced → Testing (#1331, #1335)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
-  test('lists the attached screens, says a saved screen is not attached, and picking the primary removes only that line', async () => {
+  test('lists the attached screens, says a saved screen is not attached, picking the primary removes only that line, and the focus box writes only its own', async () => {
     a = await launchApp();
     const w = a.window;
 
@@ -56,6 +56,20 @@ test.describe('Settings → Advanced → Testing (#1331)', () => {
     await expect(saved).toHaveCount(0);
     await expect(block.locator('[data-test-display-option="primary"] input')).toBeChecked();
     await expect.poll(() => fs.readFileSync(file, 'utf8')).toBe('# mine\r\nSWITCHBOARD_E2E_NO_ACTIVATE=1\r\n');
+
+    // the file's other key is the checkbox under the screens (#1335): ticked,
+    // because the file says `=1`. Unticking removes ONLY that line; ticking
+    // puts it back. Controlled by main's answer, so click and wait, as above.
+    const box = d.locator('[data-settings-field="test-no-activate"]');
+    await expect(box).toBeChecked();
+    await box.click();
+    await expect(box).not.toBeChecked();
+    await expect.poll(() => fs.readFileSync(file, 'utf8')).toBe('# mine\r\n');
+    await box.click();
+    await expect(box).toBeChecked();
+    await expect.poll(() => fs.readFileSync(file, 'utf8')).toBe('# mine\r\nSWITCHBOARD_E2E_NO_ACTIVATE=1\r\n');
+    // the screen choice it sits beside was not touched
+    await expect(block.locator('[data-test-display-option="primary"] input')).toBeChecked();
 
     // and nothing complained along the way
     await expect(d.locator('[data-test-display-problem]')).toHaveCount(0);

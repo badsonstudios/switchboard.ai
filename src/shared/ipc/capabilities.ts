@@ -219,6 +219,9 @@ export const CHANNEL_CAPABILITIES = {
   // never a path or a value — main decides what the line says.
   'testDisplay:get': 'settings.read',
   'testDisplay:set': 'settings.write',
+  // …and the same file's other key (#1335): open the test windows without
+  // taking focus. A boolean in, one line out; the same grant as the screen.
+  'testDisplay:setNoActivate': 'settings.write',
   'diag:reportStatus': 'diagnostics.credential',
   'diag:submit': 'diagnostics.report',
   'diag:setGitHubToken': 'diagnostics.credential',

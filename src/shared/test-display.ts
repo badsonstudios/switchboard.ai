@@ -34,6 +34,23 @@ export const E2E_MONITOR_ENV = 'SWITCHBOARD_E2E_MONITOR';
 /** The per-machine file consulted when the env var is absent (in `~`). */
 export const E2E_SETTINGS_FILE = '.switchboard-e2e.env';
 
+/**
+ * The file's second key (#1332, surfaced in Settings by #1335): launch the
+ * suite's windows without taking the OS foreground. Read by the fixture and by
+ * Settings → Advanced → Testing, through `noActivateOn`, so the checkbox and
+ * the suite can never disagree about what a hand-written value means.
+ */
+export const E2E_NO_ACTIVATE_ENV = 'SWITCHBOARD_E2E_NO_ACTIVATE';
+
+/** What Settings writes when the box is ticked; unticked removes the line. */
+export const E2E_NO_ACTIVATE_ON = '1';
+
+/** `1` / `true` / `on` / `yes`, any case, is on. Empty, absent or anything else is off. */
+export function noActivateOn(value: string | undefined | null): boolean {
+  const v = value?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'on' || v === 'yes';
+}
+
 /** A rectangle in Electron's screen coordinates. */
 export interface Box {
   x: number;
@@ -332,6 +349,12 @@ export interface TestDisplayState {
   /** every attached display, primary first */
   screens: TestScreen[];
   saved: SavedTestDisplay;
+  /**
+   * `SWITCHBOARD_E2E_NO_ACTIVATE` as the file says it (#1335): open the test
+   * windows without taking focus. False for an absent file, an absent line, or
+   * a file that could not be read.
+   */
+  noActivate: boolean;
   /** where the file lives, to say so on screen */
   file: string;
   /** the file exists but could not be read — shown, and writes are refused */
@@ -343,7 +366,7 @@ export interface TestDisplayState {
  * they travel as codes and the renderer says them in the user's language; an
  * I/O failure has no code and carries the OS's own words in `problem`.
  */
-export type TestDisplayRefusal = 'not-a-screen' | 'not-attached';
+export type TestDisplayRefusal = 'not-a-screen' | 'not-attached' | 'not-a-switch';
 
 export type TestDisplaySetResult =
   | { ok: true; state: TestDisplayState }

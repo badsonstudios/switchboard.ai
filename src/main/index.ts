@@ -33,7 +33,8 @@ import { registerBuiltinContributions, registerCustomAi, unregisterCustomAi } fr
 import { AisStore } from './ai-catalog/ais-store';
 import { AiCatalogService } from './ai-catalog/service';
 import { registerAisIpc } from './ai-catalog/ipc';
-import { readTestDisplayState, snapshotScreens, writeTestDisplay } from './test-display';
+import { readTestDisplayState, registerTestDisplayIpc, snapshotScreens } from './test-display';
+import { showOsToast, toastsMuted } from './events/os-toast';
 import { checkRegistry, lastRegistryCheck } from './ai-catalog/registry-refresh';
 import { testAcpCommand } from './providers/acp/custom-acp';
 import { registry } from './extensibility';
@@ -417,6 +418,10 @@ function scriptedQuit(): boolean {
 function audioMuted(): boolean {
   return !app.isPackaged && !!process.env.SWITCHBOARD_MUTE_AUDIO;
 }
+
+// `SWITCHBOARD_MUTE_TOASTS=1`: build, track and log every OS toast, and show
+// none (#1338). The audio mute's twin, for the same suite; see `events/os-toast.ts`.
+const toastMuted = toastsMuted(process.env, app.isPackaged);
 
 // `SWITCHBOARD_E2E_NO_ACTIVATE=1`: show every window without taking the OS
 // foreground (#1332). Non-packaged only; see `window-activation.ts`.
@@ -2082,13 +2087,11 @@ app
       return true;
     });
     // ── Settings → Advanced → Testing (#1331) ─────────────────────────────
-    // Which screen this project's own e2e windows open on. Main owns the file;
-    // the renderer names a screen. The push half is `testDisplay:changed`,
-    // sent from the display listeners above.
-    broker.handle('testDisplay:get', () => readTestDisplayState(snapshotScreens(screen)));
-    broker.handle('testDisplay:set', (_e, screenId: unknown) =>
-      writeTestDisplay(snapshotScreens(screen), screenId)
-    );
+    // Which screen this project's own e2e windows open on, and whether they
+    // take focus (#1335). Main owns the file; the renderer names a screen or a
+    // yes/no. The push half is `testDisplay:changed`, sent from the display
+    // listeners above.
+    registerTestDisplayIpc({ broker, snapshot: () => snapshotScreens(screen) });
     broker.handle('update:check', (_e, opts: { manual?: boolean } = {}) =>
       // `push: false` — this caller gets the answer as the return value, and
       // pushing as well would open the dialog twice.
@@ -2327,6 +2330,7 @@ app
       // rather than grant it. The click path below still raises the card, which
       // is the only place the question can actually be answered.
       const decidable = !!req && answerableFromToast(req) && toastActionsSupported(process.platform);
+      let muted = false;
       if (shown) {
         const toast = new Notification({
           title: ctx.title,
@@ -2359,7 +2363,8 @@ app
           // `close()` still removes it. See `PermissionToasts.withdraw`.
           permissionToasts.track(requestId, toast);
         }
-        toast.show();
+        // the one `show()` in main — muted under e2e, everything above still ran
+        muted = showOsToast(toast, { muted: toastMuted }).muted;
       }
       // The e2e proof that a rule reached the toast action
       // (`e2e/rules.spec.ts`, `e2e/permission-toast.spec.ts`) — and the line to
@@ -2369,7 +2374,11 @@ app
         cardId: ctx.cardId ?? '',
         visibility: ctx.visibility,
         ruleId: ctx.rule.id,
+        // `shown` is whether the DESKTOP can take a toast; `muted` is whether
+        // the e2e mute kept this one off it (#1338). Both, so a muted run
+        // still proves the platform half and says why nothing popped.
         shown,
+        muted,
         // How many Allow/Deny buttons went on it, and which request they
         // answer. Zero with a requestId present means this desktop cannot
         // carry buttons — the click path is what the user gets.
