@@ -83,7 +83,7 @@ import { EventFeed } from '../events/feed';
 import { HistoryRepair } from './history-repair-log';
 import { planSessionStart } from './start-plan';
 import { MAX_SESSION_TITLE, uniqueSessionTitle } from './session-title';
-import type { SuggestedTitle } from '../../shared/sessions';
+import type { SessionNotStarted, SuggestedTitle } from '../../shared/sessions';
 import { heldNativeIds, recordNativeId, resumeCandidates } from './lineage';
 import { arrivalMark, markArrived, patchMark, pendingArrival, switchCardAi } from './ai-switch';
 import type { FeedBlock } from '../feed/blocks';
@@ -2193,11 +2193,21 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // here: the user asked for a review by a DIFFERENT AI, and running it on
       // the author's own instead would look like exactly what they asked for.
       const dispatchedOn = dispatch && !prior ? dispatch.providerId : undefined;
+      //
+      // NAMED, NOT A BARE NULL (#1318). The card's generic "did not start" copy
+      // blames a missing folder; this answer lets it say which AI is gone and
+      // offer Settings → AIs. Still before the point of no return, so the
+      // briefing is not spent and Try again (once the AI is back) carries it.
       if (dispatchedOn !== undefined && !deps.isRegisteredProvider(dispatchedOn)) {
-        return refuse('sessions:create', 'the AI this dispatch was prepared for is no longer set up', {
+        // for its LOG LINE only — the answer is the named one below, not its null
+        refuse('sessions:create', 'the AI this dispatch was prepared for is no longer set up', {
           cardId: opts.cardId,
           provider: dispatchedOn,
         });
+        const notStarted: SessionNotStarted = {
+          notStarted: { reason: 'ai-missing', aiName: dispatch?.providerName || dispatchedOn },
+        };
+        return notStarted;
       }
       // ASK the provider what this session start involves; do not assume Claude
       // (P2-E15-01, §5.3). Everything Claude-shaped that used to be inline —

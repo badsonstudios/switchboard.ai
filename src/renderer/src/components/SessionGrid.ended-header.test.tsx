@@ -37,6 +37,7 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../../../shared/i18n/locales/en.json';
 import { sessionStore } from '../store/session-store';
 import { DEFAULT_LAYOUT } from '../lib/layout-mode';
+import { registerSettingsOpener } from '../lib/settings-port';
 import { registerBuiltinContributions } from '../bootstrap';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import type { IDockviewPanelProps } from 'dockview-react';
@@ -320,6 +321,73 @@ describe('endedCopy — the picked-conversation refusal (P2-E20-01)', () => {
       .split('.')
       .reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], en);
     expect(typeof text).toBe('string');
+  });
+});
+
+// #1318: a DISPATCHED card whose chosen AI was removed between the dialog and
+// the spawn. Main refuses the start with a NAMED answer, and the card must say
+// which AI is gone and offer Settings → AIs — not the generic folder-moved hint.
+describe('a dispatched card whose AI is gone (#1318)', () => {
+  const answerAiMissing = (): void => {
+    const bridge = (window as unknown as { switchboard: { sessions: Record<string, unknown> } })
+      .switchboard.sessions;
+    bridge.create = () => {
+      created += 1;
+      return Promise.resolve({ notStarted: { reason: 'ai-missing', aiName: 'Local Llama' } });
+    };
+  };
+
+  it('endedCopy names the AI, keeps Try again, and adds the Settings → AIs button', () => {
+    expect(endedCopy({ kind: 'never-started', aiMissing: 'Local Llama' })).toEqual({
+      heading: 'grid.sessionNotStarted',
+      detail: 'grid.notStartedAiMissing',
+      detailVars: { ai: 'Local Llama' },
+      action: 'grid.tryAgain',
+      aiSettings: 'grid.openAiSettings',
+    });
+    // every other never-started card is untouched: no Settings button
+    expect(endedCopy({ kind: 'never-started' }).aiSettings).toBeUndefined();
+    expect(endedCopy({ kind: 'never-started', pickRefused: true }).aiSettings).toBeUndefined();
+  });
+
+  it('the card says which AI is gone, not the folder-moved hint', async () => {
+    answerAiMissing();
+    await mountCard();
+    const overlay = host.querySelector('[data-testid="card-overlay"]')!;
+    expect(overlay.textContent).toContain(en.grid.sessionNotStarted);
+    expect(overlay.textContent).toContain('Local Llama');
+    expect(overlay.textContent).toContain('no longer set up');
+    expect(overlay.textContent).not.toContain(en.grid.notStartedHint);
+    // one start, not a retry loop
+    expect(created).toBe(1);
+  });
+
+  it('its Settings → AIs button opens Settings on the AIs section', async () => {
+    answerAiMissing();
+    const opened: Array<string | null> = [];
+    const unregister = registerSettingsOpener((section) => opened.push(section ?? null));
+    try {
+      await mountCard();
+      const button = host.querySelector<HTMLButtonElement>('[data-testid="card-open-ai-settings"]');
+      expect(button?.textContent).toBe(en.grid.openAiSettings);
+      await act(async () => button!.click());
+      expect(opened).toEqual(['ais']);
+      // ...and it did not re-arm the spawn: Try again is still the user's call
+      expect(created).toBe(1);
+    } finally {
+      unregister();
+    }
+  });
+
+  it('an ordinary refusal (bare null) shows no Settings button', async () => {
+    await mountCard();
+    expect(host.querySelector('[data-testid="card-open-ai-settings"]')).toBeNull();
+  });
+
+  it('the new keys exist and do not name Claude', () => {
+    expect(en.grid.notStartedAiMissing).toContain('{ai}');
+    expect(en.grid.notStartedAiMissing).not.toMatch(/claude/i);
+    expect(en.grid.openAiSettings.length).toBeGreaterThan(0);
   });
 });
 

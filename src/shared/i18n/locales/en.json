@@ -291,6 +291,8 @@
     "exitClean": "The session closed.",
     "sessionNotStarted": "Session didn't start",
     "notStartedHint": "Nothing has run in this card. The folder may have been renamed, deleted, or be on a drive that isn't connected. The log has the reason.",
+    "notStartedAiMissing": "This was dispatched to {ai}, which is no longer set up on this computer. Add it again under Settings → AIs, with the same name, and press Try again soon (the briefing is kept for a few minutes), or close this card and dispatch it to another AI.",
+    "openAiSettings": "Settings → AIs",
     "tryAgain": "Try again",
     "suspended": "Session suspended",
     "suspendedHint": "The window was closed. The session is kept and resumes when you reopen it.",

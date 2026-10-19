@@ -22,6 +22,7 @@ import { readAiTitle } from '../providers/claude';
 import type { TransportKind } from '../../shared/transport';
 import { DEFAULT_TASK_LABEL_SIZE, type TaskLabelSize } from '../../shared/task-label-size';
 import type { PendingDispatch } from './dispatch-ipc';
+import { isSessionNotStarted } from '../../shared/sessions';
 import { BUILT_IN_TEMPLATES, type RoleTemplate } from '../../shared/dispatch';
 import { REPEAT_HEAVY, REVISED, titlesOf } from '../transcripts/fixtures/ai-title';
 import {
@@ -5860,12 +5861,48 @@ describe('sessions:create carrying a dispatch (P2-E13-03, §5.15)', () => {
 
   it('⚠️ a chosen AI that is NO LONGER REGISTERED is refused — never the default instead', async () => {
     const h = harness(undefined, dir, { dispatch: pending({ providerId: 'codex' }) });
-    expect(await create(h)).toBeNull();
+    // named, not a bare null (#1318) — the name falls back to the id
+    expect(await create(h)).toEqual({ notStarted: { reason: 'ai-missing', aiName: 'codex' } });
     expect(h.created).toHaveLength(0);
     expect(h.upserted).toHaveLength(0);
     // NOT SPENT: the refusal is before the point of no return, so "Try again"
     // (once the AI is back) still carries the briefing.
     expect(h.spent).toEqual([]);
+  });
+
+  it('#1318: a CUSTOM AI removed between dispatch and spawn — the card is told WHICH AI is gone', async () => {
+    // The P3-E40-08 path: a "Something else" AI was registered when the dialog
+    // prepared the dispatch, and removed in Settings before the card spawned. The
+    // name comes off the pending dispatch, because the catalog no longer has it.
+    const h = harness(undefined, dir, {
+      dispatch: pending({ providerId: 'custom:local-llama', providerName: 'Local Llama' }),
+      registered: ['generic'],
+    });
+    const answer = await create(h);
+    expect(answer).toEqual({ notStarted: { reason: 'ai-missing', aiName: 'Local Llama' } });
+    expect(isSessionNotStarted(answer)).toBe(true);
+    // nothing started, nothing persisted, and the briefing is KEPT for Try again
+    expect(h.created).toHaveLength(0);
+    expect(h.upserted).toHaveLength(0);
+    expect(h.spent).toEqual([]);
+    expect(h.submitted).toEqual([]);
+  });
+
+  it('#1318: ...and once that AI is back, Try again starts on it WITH the kept briefing', async () => {
+    // ONE harness — one registry — so this proves the same pending entry survives
+    // the refusal; the registration list is read per call, so the AI "comes back"
+    const registered = ['generic'];
+    const back = harness(undefined, dir, {
+      dispatch: pending({ providerId: 'custom:local-llama', providerName: 'Local Llama' }),
+      registered,
+    });
+    expect(isSessionNotStarted(await create(back))).toBe(true);
+    registered.push('custom:local-llama');
+    expect(isSessionNotStarted(await create(back))).toBe(false);
+    expect(back.spent).toEqual([DISPATCH_ID]);
+    expect(back.upserted[0].identity.providerId).toBe('custom:local-llama');
+    expect(back.submitted).toHaveLength(1);
+    expect(back.submitted[0].text).toContain('# Clean-room handoff from @App');
   });
 
   it('a dispatched card that already exists keeps its persisted AI on a restart', async () => {
