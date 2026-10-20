@@ -27,7 +27,20 @@ export type SessionEvent =
       source?: string;
     }
   | { kind: 'permission-held' } // our PreToolUse round-trip is pending (E2-05+)
-  | { kind: 'permission-resolved' }
+  /**
+   * A held request was ANSWERED (#1359): what the router sent, `allow` or
+   * `deny`. A deadline that ran out, a window nobody could see and every other
+   * refusal the router makes on the user's behalf are a `deny`, because that is
+   * what went to the engine. Absent = `allow`, the rule before #1359: the card
+   * goes to `working`.
+   *
+   * A `deny` with NO main turn running (`TransitionContext.turn`) routes where
+   * `permission-withdrawn` routes: nothing will run because of it, and no
+   * `result` is owed. An `allow` goes to `working` either way — the helper that
+   * asked is running and its tool is about to — and `background-work` below is
+   * what moves it on when the helper is done.
+   */
+  | { kind: 'permission-resolved'; answer?: 'allow' | 'deny' }
   /**
    * The ENGINE took its own request back (#1340) — the CLI's
    * `control_cancel_request`, or ACP settling its requests on a cancel. Not an
@@ -36,6 +49,16 @@ export type SessionEvent =
    * `permission-withdrawn` arm and `TransitionContext.turn`).
    */
   | { kind: 'permission-withdrawn' }
+  /**
+   * How many BACKGROUND tasks the engine says are running (#1359) — Claude's
+   * `system:background_tasks_changed`, which re-sends the whole list whenever
+   * it changes. Only `running: 0` can move the status: with no main turn
+   * running, a card left at `working` by a helper (its output, or an Allow on
+   * its request) has nothing else to end it, and an empty list is the engine
+   * saying the helper is gone. With a main turn running it is ignored; the
+   * turn's own end is the signal there.
+   */
+  | { kind: 'background-work'; running: number }
   | { kind: 'user-input' } // user typed into the terminal
   /**
    * What the session's own traffic says about the turn (P2-E18-05) — stream
@@ -116,8 +139,9 @@ export function isPermissionNotification(ev: SessionEvent): boolean {
 export interface TransitionContext {
   held?: boolean;
   /**
-   * Is the session's MAIN turn running? (#1340) Read by `permission-withdrawn`
-   * only, and kept by the manager (`SessionManager.trackTurn`):
+   * Is the session's MAIN turn running? (#1340) Read by `permission-withdrawn`,
+   * a denied `permission-resolved` and `background-work` (#1359), and kept by
+   * the manager (`SessionManager.trackTurn`):
    *
    *  - `open`: a prompt was sent, or the main conversation produced output,
    *    and no turn end has arrived since;
@@ -152,6 +176,23 @@ export interface TransitionContext {
  */
 function endsHeldWait(ev: SessionEvent): boolean {
   return ev.kind === 'permission-held' || (ev.kind === 'stream' && ev.signal === 'turn-end');
+}
+
+/** Is this status waiting on a person — the only statuses a request's end can release? */
+function isWaiting(status: SessionStatus): boolean {
+  return status === 'needs-permission' || status === 'needs-input';
+}
+
+/**
+ * Where a card goes when the wait it was in ends and NO main turn is running
+ * (#1340, #1359): the turn that last ran is over, so `done`; none ever ran, so
+ * `idle`. Undefined while a main turn is running (or nobody can say, which
+ * reads as running): the caller's own answer applies there.
+ */
+function afterTurn(ctx: TransitionContext): SessionStatus | undefined {
+  if (ctx.turn === 'closed') return 'done';
+  if (ctx.turn === 'none') return 'idle';
+  return undefined;
 }
 
 export function transition(
@@ -246,13 +287,41 @@ export function transition(
   switch (ev.kind) {
     case 'permission-held':
       return to('needs-permission');
-    case 'permission-resolved':
-      return to('working');
+    case 'permission-resolved': {
+      // A DENY WITH NO MAIN TURN RUNNING (#1359): the same place a withdrawal
+      // goes, below, and for the same reason. The request was a background
+      // helper's, asked after its parent turn's `result` (#1268's capture);
+      // refusing it runs nothing, and no `result` is coming. `working` here was
+      // the #1340 strand by another door: a Deny, or a deadline nobody saw.
+      // If the helper carries on after the refusal, its next frame walks `done`
+      // back to `working`, and `background-work` ends that.
+      //
+      // Only from a WAIT, like a withdrawal: a deny that lands on a card that
+      // was not waiting on it has nothing to go back to.
+      //
+      // An ALLOW goes to `working` with or without a turn: the helper is running
+      // (the engine listed it when it asked) and the tool it was allowed is
+      // about to. Mid-turn, every answer goes to `working`, as it always has.
+      const settled = ev.answer === 'deny' ? afterTurn(ctx) : undefined;
+      if (settled === undefined) return to('working');
+      if (!isWaiting(current)) return stay('denied-not-waiting');
+      return to(settled, 'denied-no-turn');
+    }
+    case 'background-work': {
+      // THE HELPER IS GONE (#1359). The engine's list of running background
+      // tasks is empty, no main turn is running, and the card still says
+      // `working`: nothing else will ever end that. Only from `working` —
+      // a wait is a request's to end (`held` above, the router's answers), and
+      // a calm card has nothing to be moved off.
+      const settled = ev.running === 0 ? afterTurn(ctx) : undefined;
+      if (settled === undefined || current !== 'working') return stay('background-work');
+      return to(settled, 'helpers-done');
+    }
     case 'permission-withdrawn':
       // Only a WAIT is ended by a withdrawal; any other status was not
       // waiting on this request and has nothing to go back to. (`done` and
       // `crashed` never get here: their own arms above keep them.)
-      if (current !== 'needs-permission' && current !== 'needs-input') {
+      if (!isWaiting(current)) {
         return stay('withdrawn-not-waiting');
       }
       // Mid-turn (the ordinary Stop with a bar up): the CLI's `result` follows
@@ -267,9 +336,10 @@ export function transition(
       // card says so. If something DID carry on (a cancel for another reason,
       // unmeasured), its output walks `done` back to `working` on the next
       // frame; a stranded `working` had no such way out.
-      if (ctx.turn === 'closed') return to('done', 'withdrawn-no-turn');
-      if (ctx.turn === 'none') return to('idle', 'withdrawn-no-turn');
-      return to('working');
+      {
+        const settled = afterTurn(ctx);
+        return settled === undefined ? to('working') : to(settled, 'withdrawn-no-turn');
+      }
     case 'user-input':
       // A keystroke is NOT a submitted prompt — it must not change status.
       // The UserPromptSubmit hook marks 'working' on actual submit; answering

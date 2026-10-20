@@ -41,6 +41,10 @@ export function streamStatusEvent(e: EngineEvent): SessionEvent | null {
     case 'permission-request':
       // The engine handed us a decision — the whole point of E18.
       return { kind: 'permission-held' };
+    case 'background-work':
+      // How many helpers are still running (#1359). Lifecycle for the case a
+      // turn's end cannot cover: a helper that outlived its turn.
+      return { kind: 'background-work', running: e.running };
     // Content (chunks, messages, tool calls), the conversation's identity,
     // the control-path notices (a withdrawn request, the command list, the
     // model, the mode — #1287), compaction and usage are not lifecycle

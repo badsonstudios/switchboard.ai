@@ -671,7 +671,7 @@ export class StreamPermissions {
       // injected probe. What matters here is that the reachable case this branch
       // introduced, a parallel `Write` held by THIS router, is covered.
       if (![...this.pending.values()].some((p) => p.sessionId === sessionId)) {
-        this.applyStatus(sessionId, { kind: 'permission-resolved' });
+        this.applyStatus(sessionId, { kind: 'permission-resolved', answer: 'deny' });
       }
       this.log.info('dispatched session asked to leave plan mode — denied at once', {
         sessionId,
@@ -806,7 +806,7 @@ export class StreamPermissions {
       // this one is declined. Walking the session to `working` would hide the
       // held one: #1202 again, the guard `decide` and `denyUnanswered` carry.
       if (!this.holdsAnotherFor(sessionId, requestId)) {
-        this.applyStatus(sessionId, { kind: 'permission-resolved' });
+        this.applyStatus(sessionId, { kind: 'permission-resolved', answer: 'deny' });
       }
       const line = gone
         ? 'no live window to ask — denying to keep the session moving'
@@ -877,7 +877,7 @@ export class StreamPermissions {
       // for five minutes. Suppressing it would make the invariant violation
       // quieter, not the app calmer.
       if (!this.holdsAnotherFor(sessionId, requestId)) {
-        this.applyStatus(sessionId, { kind: 'permission-resolved' });
+        this.applyStatus(sessionId, { kind: 'permission-resolved', answer: 'deny' });
       }
       // HOW LOUD depends on whether anybody was still listening, and `send` is
       // the only thing that knows (#333 review).
@@ -1049,7 +1049,9 @@ export class StreamPermissions {
     // "working". That is exactly an approval running out unseen. The plan-mode
     // branch of `offer` already had this guard; this is the same one.
     if (!this.holdsAnotherFor(p.sessionId, requestId)) {
-      this.applyStatus(p.sessionId, { kind: 'permission-resolved' });
+      // the answer that actually WENT (#1359): an undeliverable answer is sent
+      // as a deny, whatever the user clicked
+      this.applyStatus(p.sessionId, { kind: 'permission-resolved', answer: payload.behavior });
     }
     this.log.info('stream permission decided', {
       requestId,
@@ -1438,7 +1440,7 @@ export class StreamPermissions {
     // the same guard as `decide`: one of two holds timing out must not walk
     // the session to `working` over the one that is still waiting (#1202)
     if (!this.holdsAnotherFor(p.sessionId, requestId)) {
-      this.applyStatus(p.sessionId, { kind: 'permission-resolved' });
+      this.applyStatus(p.sessionId, { kind: 'permission-resolved', answer: 'deny' });
     }
     this.log.warn('stream permission denied — nobody answered', {
       requestId,
