@@ -390,6 +390,59 @@ Things worth knowing:
   marks down the scrollbar. It works in a popped-out diff window too, and opens
   the box in that window. See [Finding something](16-find.md).
 
+### Moving through a diff panel — ↑ ↓
+
+A diff panel's toolbar has **↑** and **↓** buttons and a counter beside them.
+
+- **↓** jumps to the next change and scrolls it into view; **↑** goes back. The
+  same keys as VS Code work too: **Alt+F5** for the next change, **Shift+Alt+F5**
+  for the previous one (hover a button to be reminded). They work whether the
+  cursor is in the diff or you last clicked the toolbar, and in a popped-out
+  diff window as well.
+- **The counter** tells you how big the diff is before you start: *7 changes*.
+  Once you're on one it reads *3 of 7*. When the two sides are the same it says
+  *no changes* and the arrows are greyed.
+- **It wraps round.** **↓** on the last change takes you back to the first, and
+  **↑** on the first takes you to the last — the counter shows where you landed.
+- It works the same in **Side by side** and **Inline**.
+
+### Ignore whitespace, Collapse unchanged, Word wrap
+
+Three switches sit beside the arrows. Each one remembers how you left it — for
+every diff panel, and after a restart — the same way Side by side / Inline does.
+
+- **Ignore whitespace** (on to begin with) hides changes that are only spaces
+  or indentation at the start or end of a line, so a reformat doesn't bury the
+  real edits. Turn it off to see every changed character; the counter updates
+  either way. A file whose *only* change is indentation reads *no changes* while
+  it's on.
+- **Collapse unchanged** folds long stretches of unchanged lines down to a bar
+  saying how many lines are hidden. Click the bar to open it. Most useful on big
+  files where the changes are far apart.
+- **Word wrap** wraps long lines — Markdown, JSON, long strings — instead of
+  making you scroll sideways.
+
+These switches belong to the diff panel. The diff inside the Changes tab itself,
+and the everything-in-one-scroll panel, look the way they always have.
+
+### Open the file — ↗
+
+**↗** opens the file in the [document viewer](15-document-viewer.md), at the line
+you're looking at: the line your cursor is on if you clicked into the diff or
+used the arrows, otherwise the top line on screen. The viewer opens in **Source**
+view so the line can be shown — for a Markdown file, click **Rendered** to switch
+back. It's there for a diff of your working files; a diff of an old commit
+doesn't have it, because today's file no longer lines up with what you're
+reading.
+
+### In a narrow panel — …
+
+When the panel gets too narrow for everything, the toolbar doesn't squash or
+wrap onto a second line. First the three switches and **↗** move into a **…**
+menu; narrower still, **Side by side** / **Inline** join them. The path
+shortens from the front, and the arrows, the counter and the pop-out button
+always stay on the toolbar.
+
 ## Everything in one scroll — ⧉
 
 Beside the flat-or-tree buttons there's a **⧉**. It opens a panel containing

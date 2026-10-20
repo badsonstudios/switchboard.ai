@@ -75,7 +75,7 @@ import {
 import { canOpenAllChanges, openAllChanges } from '../lib/allchanges-open';
 import { canOpenDiffs, openDiff } from '../lib/diff-open';
 import { WORKING_TREE_LEFT, WORKING_TREE_RIGHT } from '../lib/diff-panels';
-import { openDocument } from '../lib/document-open';
+import { joinFolderPath, openDocument } from '../lib/document-open';
 import { canShowFileHistory, requestFileHistory } from '../lib/file-history';
 
 /**
@@ -123,18 +123,6 @@ export const LETTER_INKS: Record<string, string> = {
 
 function letterInk(letter: string): string {
   return `var(${LETTER_INKS[letter] ?? '--muted'})`;
-}
-
-/**
- * `folder` + git's forward-slash relative path, in the folder's own spelling.
- *
- * git reports `src/main/index.ts` on every platform; main resolves whatever it is
- * handed, so the only thing that matters is that the two halves are joined with a
- * separator the OS will accept — and both accept `/` on Windows.
- */
-function joinPath(folder: string, relative: string): string {
-  const sep = folder.includes('\\') && !folder.includes('/') ? '\\' : '/';
-  return `${folder.replace(/[\\/]+$/, '')}${sep}${relative}`;
 }
 
 export function ScmSidebar(props: {
@@ -1336,7 +1324,7 @@ function Row(props: {
             className="scm-act"
             title={t('diff.openInViewer', { file: row.path })}
             aria-label={t('diff.openInViewer', { file: row.path })}
-            onClick={() => openDocument(joinPath(props.folder, row.path), props.attributionCardId)}
+            onClick={() => openDocument(joinFolderPath(props.folder, row.path), props.attributionCardId)}
           >
             {t('diff.openInViewerIcon')}
           </button>

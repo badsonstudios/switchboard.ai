@@ -31,6 +31,7 @@ import {
 import { openFindBar, resetFindBarState, setFindTerm } from '../lib/find-bar-state';
 import { setDocumentOutline } from '../lib/document-outline';
 import { sessionStore } from '../store/session-store';
+import { requestDocumentLine, resetDocumentLines } from '../lib/document-reveal';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -1372,5 +1373,46 @@ describe('formatBytes', () => {
     expect(formatBytes(9_000)).toBe('8.8 KB');
     expect(formatBytes(5_000_000)).toBe('4.8 MB');
     expect(formatBytes(-1)).toBe('—');
+  });
+});
+
+describe('opening at a line (#1384, the diff panel’s Open file)', () => {
+  afterEach(() => resetDocumentLines());
+  const last = (): Record<string, unknown> => sourceProps[sourceProps.length - 1] ?? {};
+
+  it('a NEW viewer takes the line on mount — and a Markdown file opens in Source to show it', async () => {
+    answer = () => ok('# T\n\none\ntwo\nthree\n');
+    requestDocumentLine('/p/notes.md', 4);
+    await mount('/p/notes.md');
+    expect(q('[data-testid="doc-source"]')).not.toBeNull();
+    expect(last().revealLine).toEqual({ line: 4, seq: 1 });
+  });
+
+  it('a viewer ALREADY showing the file takes a later request', async () => {
+    answer = () => ok('a\nb\nc\nd\n');
+    await mount('/p/a.ts');
+    expect(last().revealLine).toBeNull();
+    await act(async () => requestDocumentLine('/p/a.ts', 3));
+    expect(last().revealLine).toEqual({ line: 3, seq: 1 });
+  });
+
+  it('a viewer of ANOTHER file takes nothing', async () => {
+    answer = () => ok('a\nb\n');
+    await mount('/p/a.ts');
+    await act(async () => requestDocumentLine('/p/b.ts', 2));
+    expect(last().revealLine).toBeNull();
+  });
+
+  it('once applied it is DROPPED, so a Rendered/Source round trip does not replay it (review)', async () => {
+    answer = () => ok('# T\n\none\ntwo\n');
+    requestDocumentLine('/p/notes.md', 3);
+    await mount('/p/notes.md');
+    const applied = last().onRevealed as (seq: number) => void;
+    await act(async () => applied(1));
+    expect(last().revealLine).toBeNull();
+    await click(buttonByText('Rendered'));
+    expect(q('[data-testid="doc-source"]')).toBeNull();
+    await click(buttonByText('Source'));
+    expect(last().revealLine).toBeNull();
   });
 });

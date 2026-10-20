@@ -43,6 +43,12 @@ export interface RailGroupMenuItem {
    * to open, aim at and keep open, for a list that is short.
    */
   checked?: boolean;
+  /**
+   * With `checked`: this item is an on/off switch of its own rather than one
+   * choice of a set, so it is a `menuitemcheckbox` (the diff panel's folded
+   * view toggles, #1384). Same mark, truer role.
+   */
+  toggle?: boolean;
 }
 
 export function RailGroupMenu(props: {
@@ -171,7 +177,9 @@ export function RailGroupMenu(props: {
           )}
           <button
             type="button"
-            role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+            role={
+              item.checked === undefined ? 'menuitem' : item.toggle ? 'menuitemcheckbox' : 'menuitemradio'
+            }
             aria-checked={item.checked}
             data-group-menu-item={item.id}
             aria-disabled={!item.can}

@@ -45,6 +45,19 @@ export interface DocumentSourceProps {
    * never imports monaco to hold it.
    */
   onEditor?: (editor: FindableEditor | null) => void;
+  /**
+   * Put this line in view and the cursor on it (#1384 — the diff panel's Open
+   * file). `seq` makes a second request for the SAME line a new request; each
+   * is applied once, after the text it refers to is in.
+   */
+  revealLine?: { line: number; seq: number } | null;
+  /**
+   * Told once a reveal has been applied, so the parent can DROP it. The
+   * parent holds the request, not this component: a Rendered/Source toggle
+   * unmounts this, and a remount must not apply the same old line a second
+   * time over the reader's remembered scroll (found in review).
+   */
+  onRevealed?: (seq: number) => void;
 }
 
 export default function DocumentSource(props: DocumentSourceProps): React.JSX.Element {
@@ -111,6 +124,46 @@ export default function DocumentSource(props: DocumentSourceProps): React.JSX.El
     old?.dispose();
     editor.setScrollTop(keep);
   }, [props.text, props.language]);
+
+  // AFTER the model effect above, which restores the remembered scroll on every
+  // install — this one has to win the first time it applies, and only then.
+  const revealed = useRef(0);
+  const revealFrame = useRef<number | null>(null);
+  const onRevealed = useRef(props.onRevealed);
+  onRevealed.current = props.onRevealed;
+  const reveal = props.revealLine;
+  useEffect(() => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    // an empty text is the viewer still loading: wait for the real one
+    if (!editor || !model || !reveal || reveal.seq === revealed.current || props.text.length === 0) return;
+    revealed.current = reveal.seq;
+    const line = Math.max(1, Math.min(reveal.line, model.getLineCount()));
+    const apply = (): void => {
+      editor.setPosition({ lineNumber: line, column: 1 });
+      editor.revealLineInCenter(line);
+    };
+    apply();
+    // ...and once more a frame later: a viewer that has just mounted has not been
+    // laid out yet, and "centre" of a zero-height viewport is the top. The
+    // parent is told after THAT, since telling it is what ends the request.
+    //
+    // NOT cancelled when the deps change — only on unmount (below). The text
+    // re-reading in that frame would otherwise cancel the one call that ends the
+    // request, and the parent would hold it for ever.
+    const seq = reveal.seq;
+    revealFrame.current = requestAnimationFrame(() => {
+      revealFrame.current = null;
+      if (editorRef.current !== editor) return; // disposed in between
+      apply();
+      onRevealed.current?.(seq);
+    });
+  }, [reveal, props.text, props.language]);
+  useEffect(() => {
+    return () => {
+      if (revealFrame.current !== null) cancelAnimationFrame(revealFrame.current);
+    };
+  }, []);
 
   return <div ref={hostRef} className="doc-source" style={{ inlineSize: '100%', blockSize: '100%' }} />;
 }

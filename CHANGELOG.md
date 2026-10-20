@@ -140,6 +140,18 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.126 — unreleased
 
+### Added
+
+- **Move through a diff change by change.** A diff opened in its own panel now
+  has **↑** and **↓** buttons that jump to the previous or next change, with a
+  counter beside them — *3 of 7* — so you can see how big the diff is before you
+  start. **Alt+F5** and **Shift+Alt+F5** do the same, as in VS Code, and going
+  past the last change wraps round to the first. Next to them are three
+  switches that remember how you left them: **Ignore whitespace**, **Collapse
+  unchanged** (folds long unchanged stretches away) and **Word wrap**, plus
+  **↗** to open the file in the reader at the line you were looking at. In a
+  narrow panel the switches tuck into a **…** menu rather than squashing.
+
 ### Fixed
 
 - **A session whose Claude Code has closed says "ended", not "waiting".**
