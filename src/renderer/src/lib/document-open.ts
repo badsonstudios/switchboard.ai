@@ -32,6 +32,19 @@ export type DocumentOpener = (absolutePath: string, attributionCardId?: string) 
 
 let opener: DocumentOpener | null = null;
 
+/**
+ * `folder` + git's forward-slash relative path, in the folder's own spelling.
+ *
+ * git reports `src/main/index.ts` on every platform; main resolves whatever it is
+ * handed, so the only thing that matters is that the two halves are joined with a
+ * separator the OS will accept — and both accept `/` on Windows. (Moved here from
+ * `ScmSidebar` when the diff panel's Open file (#1384) became its second caller.)
+ */
+export function joinFolderPath(folder: string, relative: string): string {
+  const sep = folder.includes('\\') && !folder.includes('/') ? '\\' : '/';
+  return `${folder.replace(/[\\/]+$/, '')}${sep}${relative}`;
+}
+
 /** Install (or, with null, remove) the opener. Called from App's mount effect. */
 export function setDocumentOpener(next: DocumentOpener | null): void {
   opener = next;

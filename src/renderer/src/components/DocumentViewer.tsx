@@ -59,6 +59,7 @@ import { findSurfaceKey, publishFindSurface, type DocumentFindSurface } from '..
 import { openMonacoFind, type FindableEditor } from '../lib/monaco-find';
 import { answered } from '../../../shared/ipc/refusal';
 import { runCopy } from '../lib/feed-code';
+import { subscribeDocumentLine, takeDocumentLine } from '../lib/document-reveal';
 import { sessionStore } from '../store/session-store';
 
 const DocumentSource = React.lazy(() => import('./DocumentSource'));
@@ -224,6 +225,29 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   React.useEffect(() => {
     setMode(meta.defaultMode);
   }, [meta.defaultMode, current]);
+
+  /**
+   * "Open this file at line N" (#1384, the diff panel's Open file). The request
+   * waits in `lib/document-reveal` and is TAKEN here — on mount for a new
+   * viewer, on the announcement for one already showing this path. A line is a
+   * Source-mode idea, so a Markdown file that opened Rendered switches to
+   * Source to show it. AFTER the default-mode effect above, which would
+   * otherwise switch it straight back on mount.
+   */
+  const [revealLine, setRevealLine] = React.useState<{ line: number; seq: number } | null>(null);
+  const revealSeq = React.useRef(0);
+  React.useEffect(() => {
+    if (meta.kind === 'external') return;
+    const take = (): void => {
+      const line = takeDocumentLine(current);
+      if (line === null) return;
+      setMode('source');
+      revealSeq.current += 1;
+      setRevealLine({ line, seq: revealSeq.current });
+    };
+    take();
+    return subscribeDocumentLine(take);
+  }, [current, meta.kind]);
   React.useEffect(() => {
     props.onTitleChange?.(meta.name);
   }, [meta.name, props.onTitleChange]);
@@ -1280,6 +1304,10 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
               language={meta.language}
               colorScheme={props.colorScheme}
               initialScrollTop={scrollMemo.current.source}
+              revealLine={revealLine}
+              // applied: drop it, so a Rendered/Source round trip does not
+              // replay it over the remembered scroll
+              onRevealed={(seq) => setRevealLine((r) => (r && r.seq === seq ? null : r))}
               onScrollTop={(top) => {
                 scrollMemo.current.source = top;
               }}

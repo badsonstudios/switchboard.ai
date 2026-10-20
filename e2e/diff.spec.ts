@@ -40,7 +40,7 @@
 // would therefore light up `line-insert` with the worker stone dead. So the
 // fixture commits the file first and then MODIFIES it: a non-empty original,
 // and a `line-delete` that no short-circuit can manufacture.
-import { test, expect, Page } from '@playwright/test';
+import { test, expect, Locator, Page } from '@playwright/test';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -884,4 +884,256 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     await expect(w.locator('.dv-tab').filter({ hasText: 'All changes' })).toHaveCount(1);
   });
 
+
+  // ───────────────────────────── #1384 — the diff toolbar ─────────────────────
+  //
+  // ↑ / ↓ and the counter, Alt+F5, the three view toggles, Open file, and the
+  // "…" fold. The fixture's `greeting.ts` has exactly TWO changes (lines 2 and
+  // 6), which is what makes the counter's every state assertable.
+
+  /** A file whose ONLY change is indentation — invisible with whitespace ignored. */
+  const SPACES = 'spaces.ts';
+  function addWhitespaceOnlyChange(dir: string): void {
+    const git = (args: string[]): void => {
+      execFileSync('git', args, { cwd: dir, stdio: 'ignore', windowsHide: true });
+    };
+    const body = (indent: string): string =>
+      ['export const a = 1;', `${indent}export const b = 2;`, 'export const c = 3;', ''].join('\n');
+    fs.writeFileSync(path.join(dir, SPACES), body('  '));
+    git(['add', SPACES]);
+    git(['commit', '-m', 'spaces']);
+    fs.writeFileSync(path.join(dir, SPACES), body('      '));
+  }
+
+  /** Open a `gitdiff-` panel on `file` the way a reader does: Changes tab, the row, ⧉. */
+  async function openDiffPanel(
+    file: string = FILE,
+    prepare?: (dir: string) => void
+  ): Promise<{ w: Page; panel: Locator }> {
+    const folder = tempGitProject();
+    prepare?.(folder);
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.locator('[data-testid="view-tabs"]').first()).toBeVisible({ timeout: 25_000 });
+    await w.locator('[data-testid="view-tabs"] [data-vtab="diff"]').first().click();
+    await w.getByText(file, { exact: true }).click();
+    await expect(diffEditor(w)).toBeVisible({ timeout: 15_000 });
+    await w.locator('[data-testid="diff-popout"]').click();
+    const panel = w.locator('.git-diff-view');
+    await expect(panel.locator('.monaco-diff-editor')).toBeVisible({ timeout: 15_000 });
+    return { w, panel };
+  }
+
+  /**
+   * Run a toolbar control that may be on the row OR folded into "…" — which one
+   * depends on the panel's width, and that is the toolbar's business, not the
+   * test's. `menuId` is the item's id in the menu.
+   */
+  async function runControl(panel: Locator, testId: string, menuId: string): Promise<void> {
+    const inline = panel.locator(`[data-testid="${testId}"]`);
+    if ((await inline.count()) > 0) return inline.click();
+    await panel.locator('[data-testid="git-diff-more"]').click();
+    await panel.locator(`[data-testid="git-diff-menu"] [data-group-menu-item="${menuId}"]`).click();
+  }
+
+  /** Is a view toggle on — read from the row, or from the menu's check mark. */
+  async function toggleIsOn(panel: Locator, w: Page, which: string): Promise<boolean> {
+    const inline = panel.locator(`[data-testid="git-diff-toggle-${which}"]`);
+    if ((await inline.count()) > 0) return (await inline.getAttribute('aria-pressed')) === 'true';
+    await panel.locator('[data-testid="git-diff-more"]').click();
+    const item = panel.locator(`[data-testid="git-diff-menu"] [data-group-menu-item="${which}"]`);
+    const on = (await item.getAttribute('aria-checked')) === 'true';
+    await w.keyboard.press('Escape');
+    await expect(panel.locator('[data-testid="git-diff-menu"]')).toHaveCount(0);
+    return on;
+  }
+
+  test('↑ / ↓ walk the changes, wrap at the ends, and Alt+F5 does the same — in both layouts (#1384)', async () => {
+    const { w, panel } = await openDiffPanel();
+    const counter = panel.locator('[data-testid="git-diff-counter"]');
+    const next = panel.locator('[data-testid="git-diff-next"]');
+    const prev = panel.locator('[data-testid="git-diff-prev"]');
+    // the size of the diff before you start: nothing under the cursor yet
+    await expect(counter).toHaveText('2 changes', { timeout: 15_000 });
+    // hovering says the shortcut
+    await expect(next).toHaveAttribute('title', /Alt\+F5/);
+    await expect(prev).toHaveAttribute('title', /Shift\+Alt\+F5/);
+
+    await next.click();
+    await expect(counter).toHaveText('1 of 2');
+    await next.click();
+    await expect(counter).toHaveText('2 of 2');
+    // WRAP: next on the last goes back to the first, and the counter shows it
+    await next.click();
+    await expect(counter).toHaveText('1 of 2');
+    await prev.click();
+    await expect(counter).toHaveText('2 of 2');
+
+    // The chord, with focus on the toolbar rather than in the editor — the path
+    // label is not a control, so a click there leaves focus outside Monaco.
+    await panel.locator('.git-diff-path').click();
+    await w.keyboard.press('Alt+F5');
+    await expect(counter).toHaveText('1 of 2');
+    await w.keyboard.press('Shift+Alt+F5');
+    await expect(counter).toHaveText('2 of 2');
+
+    // INLINE: the same buttons over the other layout.
+    await runControl(panel, 'git-diff-layout-inline', 'layout-inline');
+    await expect(panel.locator('.monaco-diff-editor.side-by-side')).toHaveCount(0, { timeout: 10_000 });
+    await next.click();
+    await expect(counter).toHaveText('1 of 2');
+    await next.click();
+    await expect(counter).toHaveText('2 of 2');
+    await next.click();
+    await expect(counter).toHaveText('1 of 2');
+    // and the chord from INSIDE the editor this time: a click on line 3 (not a
+    // change) puts the cursor between the two, so "next" is the second one
+    await panel.locator('.editor.modified .view-line', { hasText: 'export function greet' }).click();
+    await expect(counter).toHaveText('2 changes');
+    await w.keyboard.press('Alt+F5');
+    await expect(counter).toHaveText('2 of 2');
+  });
+
+  test('a whitespace-only change: "no changes" with whitespace ignored, and the toggles are remembered (#1384)', async () => {
+    const { w, panel } = await openDiffPanel(SPACES, addWhitespaceOnlyChange);
+    const counter = panel.locator('[data-testid="git-diff-counter"]');
+    // Ignore whitespace is ON by default — it is what every diff showed before
+    await expect(counter).toHaveText('no changes', { timeout: 15_000 });
+    await expect(panel.locator('[data-testid="git-diff-next"]')).toBeDisabled();
+    await expect(panel.locator('[data-testid="git-diff-prev"]')).toBeDisabled();
+    expect(await toggleIsOn(panel, w, 'ignoreWhitespace')).toBe(true);
+
+    // OFF: the indentation is a change again, and the counter follows
+    await runControl(panel, 'git-diff-toggle-ignoreWhitespace', 'ignoreWhitespace');
+    await expect(counter).toHaveText('1 change', { timeout: 10_000 });
+    await expect(panel.locator('[data-testid="git-diff-next"]')).toBeEnabled();
+    // ...and the other two, on
+    await runControl(panel, 'git-diff-toggle-collapseUnchanged', 'collapseUnchanged');
+    await runControl(panel, 'git-diff-toggle-wordWrap', 'wordWrap');
+    expect(await toggleIsOn(panel, w, 'collapseUnchanged')).toBe(true);
+    expect(await toggleIsOn(panel, w, 'wordWrap')).toBe(true);
+
+    // REMEMBERED: close the panel and open a fresh one on the same file.
+    await w.locator('.dv-tab', { hasText: SPACES }).click({ button: 'middle' });
+    await expect(panel).toHaveCount(0, { timeout: 10_000 });
+    await w.locator('[data-testid="diff-popout"]').click();
+    await expect(panel.locator('.monaco-diff-editor')).toBeVisible({ timeout: 15_000 });
+    await expect(counter).toHaveText('1 change', { timeout: 15_000 });
+    expect(await toggleIsOn(panel, w, 'ignoreWhitespace')).toBe(false);
+    expect(await toggleIsOn(panel, w, 'collapseUnchanged')).toBe(true);
+    expect(await toggleIsOn(panel, w, 'wordWrap')).toBe(true);
+  });
+
+  test('Open file opens the working file in the viewer, at the change you were on (#1384)', async () => {
+    const { w, panel } = await openDiffPanel();
+    const counter = panel.locator('[data-testid="git-diff-counter"]');
+    await expect(counter).toHaveText('2 changes', { timeout: 15_000 });
+    const next = panel.locator('[data-testid="git-diff-next"]');
+    await next.click();
+    await next.click();
+    await expect(counter).toHaveText('2 of 2'); // line 6, `ANSWER = 99`
+    await runControl(panel, 'git-diff-open-file', 'open-file');
+    await expect(w.locator('[data-testid="doc-name"]', { hasText: FILE })).toBeVisible({ timeout: 15_000 });
+    const source = w.locator('[data-testid="doc-source"]');
+    await expect(source).toContainText('ANSWER = 99', { timeout: 15_000 });
+    await expect(source.locator('.active-line-number')).toHaveText('6', { timeout: 10_000 });
+  });
+
+  test('the toolbar folds instead of wrapping, at the app’s narrowest window (#1384)', async () => {
+    const { w, panel } = await openDiffPanel();
+    // the app's own floor (800px, `minWidth` in main), so every runner lands at
+    // the same pressure or worse — #903's precedent
+    await a!.app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win.unmaximize();
+      win.setContentSize(800, win.getContentSize()[1]);
+    });
+    await w.waitForTimeout(600);
+    const bar = panel.locator('.diff-toolbar');
+    await expect(panel.locator('[data-testid="git-diff-counter"]')).toHaveText('2 changes', {
+      timeout: 15_000,
+    });
+
+    /**
+     * SUMMED FROM THE CHILDREN, not `scrollWidth` (#885 / #903): a flex row's
+     * scrollWidth hides what it wanted, and Linux CI fonts are ~5% wider. The
+     * path is EXCLUDED from the sum — it is the one child built to truncate.
+     */
+    const m = await bar.evaluate((node) => {
+      const el = node as HTMLElement;
+      const box = el.getBoundingClientRect();
+      const kids = Array.from(el.children) as HTMLElement[];
+      const rects = kids.map((k) => k.getBoundingClientRect());
+      const fixed = kids.filter((k) => !k.classList.contains('git-diff-path'));
+      // ONE LINE = every child overlaps every other vertically. Not "same top":
+      // the row is `align-items: center`, so a 10px counter and an 11px button
+      // on the same line have different tops.
+      const fr = fixed.map((k) => k.getBoundingClientRect());
+      return {
+        right: box.right,
+        furthest: Math.max(...rects.map((r) => r.right)),
+        oneLine: Math.max(...fr.map((r) => r.top)) < Math.min(...fr.map((r) => r.bottom)),
+        width: Math.round(box.width),
+        height: Math.round(box.height),
+      };
+    });
+    expect(m.furthest, `a control hangs off a ${m.width}px toolbar`).toBeLessThanOrEqual(m.right + 1);
+    expect(m.oneLine, `the ${m.width}px toolbar wrapped onto a second line`).toBe(true);
+    // one row of 11px buttons, not two
+    expect(m.height).toBeLessThan(40);
+    // and the point of the exercise is still on screen
+    await expect(panel.locator('[data-testid="git-diff-next"]')).toBeVisible();
+    await expect(panel.locator('[data-testid="git-diff-prev"]')).toBeVisible();
+    await expect(panel.locator('[data-testid="git-diff-popout"]')).toBeVisible();
+    // MEASURED: at this window the toolbar is ~235px on Windows, so BOTH stages
+    // have folded — the toggles and the layout pair are in "…", and every one of
+    // them is still reachable there.
+    await expect(panel.locator('[data-testid="git-diff-toggle-wordWrap"]')).toHaveCount(0);
+    await expect(panel.locator('[data-testid="git-diff-layout-inline"]')).toHaveCount(0);
+    await panel.locator('[data-testid="git-diff-more"]').click();
+    const menu = panel.locator('[data-testid="git-diff-menu"]');
+    for (const id of ['ignoreWhitespace', 'collapseUnchanged', 'wordWrap', 'open-file', 'layout-inline']) {
+      await expect(menu.locator(`[data-group-menu-item="${id}"]`)).toBeVisible();
+    }
+    // the menu is inside the window, not hanging off its edge
+    const mb = (await menu.boundingBox())!;
+    const vw = await w.evaluate(() => document.documentElement.clientWidth);
+    expect(mb.x + mb.width).toBeLessThanOrEqual(vw + 1);
+    // a layout choice from the menu works like the button did
+    await menu.locator('[data-group-menu-item="layout-inline"]').click();
+    await expect(menu).toHaveCount(0);
+    await panel.locator('[data-testid="git-diff-more"]').click();
+    await expect(menu.locator('[data-group-menu-item="layout-inline"]')).toHaveAttribute('aria-checked', 'true');
+    await w.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+  });
+
+  test('a popped-out diff has the same controls, and Alt+F5 works in that window (#1384)', async () => {
+    skipPopoutOnLinux();
+    const { w } = await openDiffPanel();
+    const app = a!.app;
+    await w.locator('[data-testid="git-diff-popout"]').click();
+    await expect
+      .poll(() => app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 20_000,
+      })
+      .toBe(1);
+    const win = app.windows().find((p) => p.url().includes('popout.html'))!;
+    await win.waitForLoadState('domcontentloaded');
+    const panel = win.locator('.git-diff-view');
+    await expect(panel.locator('.monaco-diff-editor')).toBeVisible({ timeout: 20_000 });
+    const counter = panel.locator('[data-testid="git-diff-counter"]');
+    await expect(counter).toHaveText('2 changes', { timeout: 15_000 });
+    await panel.locator('[data-testid="git-diff-next"]').click();
+    await expect(counter).toHaveText('1 of 2');
+    // A second DOCUMENT: a listener on the main one would never hear this.
+    await panel.locator('.git-diff-path').click();
+    await win.keyboard.press('Alt+F5');
+    await expect(counter).toHaveText('2 of 2');
+    // the toggles are here too, on the row or in the menu
+    expect(await toggleIsOn(panel, win, 'ignoreWhitespace')).toBe(true);
+
+    await win.evaluate(() => window.close());
+    await expect(w.locator('.git-diff-view')).toBeVisible({ timeout: 15_000 });
+  });
 });

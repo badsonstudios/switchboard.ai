@@ -1478,6 +1478,34 @@ mark[data-feed-match-current] {
   font-family: var(--font-ui);
   font-size: 10px;
 }
+/* The diff panel's toolbar is a row of GROUPS (#1384) — ↑/↓ and the counter,
+ * the view toggles, the layout pair — because a group is what folds into "…"
+ * when the panel is narrow (`lib/diff-toolbar-fit`). A group never shrinks and
+ * never wraps: it is either on the row whole or in the menu. */
+.diff-group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.diff-group .diff-narrow-note {
+  margin-inline-end: 0;
+  white-space: nowrap;
+}
+.diff-counter {
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  white-space: nowrap;
+  /* tabular figures, so "9 of 12" -> "10 of 12" does not nudge the row */
+  font-variant-numeric: tabular-nums;
+  padding-inline: 2px;
+  /* a floor wide enough for "12 changes" / "88 of 88", so the toolbar's fold
+     (`lib/diff-toolbar-fit`) is not re-decided every time the cursor moves and
+     the text changes length */
+  min-inline-size: 5.5em;
+  text-align: center;
+}
 .doc-btn,
 .diff-btn {
   background: transparent;

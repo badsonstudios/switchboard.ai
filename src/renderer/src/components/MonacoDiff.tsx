@@ -44,6 +44,8 @@ import {
 } from '../lib/find-surfaces';
 import { openMonacoFind } from '../lib/monaco-find';
 import { rememberDiffPlace, readDiffPlace } from '../lib/diff-places';
+import { diffNavState, sameDiffNavState, type DiffNavState } from '../lib/diff-nav';
+import { monacoDiffViewOptions, type DiffViewOptions } from '../lib/diff-view-prefs';
 
 /**
  * Where the two sides come from.
@@ -79,6 +81,22 @@ export type DiffSource =
       /** the "after" revision */
       right: string;
     };
+
+/**
+ * What a host with a toolbar can ask of the editor (#1384), filled in through
+ * `controlRef` while the editor exists and set back to `null` when it is gone.
+ * Imperative on purpose: "go to the next change" is an act, not a state.
+ */
+export interface MonacoDiffControl {
+  /** Monaco's own `goToDiff` — it wraps at both ends and centres the change */
+  go(direction: 'next' | 'previous'): void;
+  /**
+   * The line the reader is looking at, on the MODIFIED side: the cursor's line
+   * when the cursor is on screen (they clicked there, or ↑/↓ put it there), else
+   * the first line in view. `null` before a file is loaded.
+   */
+  lineInView(): number | null;
+}
 
 /** What the host needs to know to label its own toggle. */
 export interface DiffLayoutState {
@@ -126,6 +144,16 @@ export function MonacoDiff(props: {
   placeKey?: string;
   /** told whenever the drawn layout or the narrow verdict changes */
   onLayout?: (state: DiffLayoutState) => void;
+  /**
+   * The view toggles (#1384). ABSENT means Monaco's defaults — which is what a
+   * surface that does not draw the toggles must show, so a preference set in
+   * the diff panel never changes a diff whose toolbar cannot say so.
+   */
+  viewOptions?: DiffViewOptions;
+  /** told whenever the change count or the change under the cursor changes */
+  onNav?: (state: DiffNavState) => void;
+  /** the host's handle on navigation (see `MonacoDiffControl`) */
+  controlRef?: React.MutableRefObject<MonacoDiffControl | null>;
 }): React.JSX.Element {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
@@ -225,6 +253,8 @@ export function MonacoDiff(props: {
       automaticLayout: true,
       minimap: { enabled: false },
       theme: DIFF_THEME[props.colorScheme],
+      // read for the first paint only; the effect below owns every change
+      ...(props.viewOptions ? monacoDiffViewOptions(props.viewOptions) : {}),
     });
     editorRef.current = editor;
     return () => {
@@ -246,6 +276,69 @@ export function MonacoDiff(props: {
   useEffect(() => {
     editorRef.current?.updateOptions({ renderSideBySide: layout === 'side-by-side' });
   }, [layout]);
+
+  // The view toggles, live and in place for the same reason (#1384). As three
+  // primitives, so a host that builds the object inline does not re-apply them
+  // on every render. Changing `ignoreTrimWhitespace` makes Monaco recompute the
+  // diff, and `onDidUpdateDiff` below then moves the counter.
+  const viewOn = props.viewOptions !== undefined;
+  const ignoreWs = props.viewOptions?.ignoreWhitespace;
+  const collapse = props.viewOptions?.collapseUnchanged;
+  const wrap = props.viewOptions?.wordWrap;
+  useEffect(() => {
+    if (!viewOn) return;
+    editorRef.current?.updateOptions(
+      monacoDiffViewOptions({
+        ignoreWhitespace: !!ignoreWs,
+        collapseUnchanged: !!collapse,
+        wordWrap: !!wrap,
+      })
+    );
+  }, [viewOn, ignoreWs, collapse, wrap]);
+
+  // ↑ / ↓ and the counter (#1384). The callback through a ref, so a host that
+  // passes an inline arrow does not re-subscribe on every render.
+  const onNav = useRef(props.onNav);
+  onNav.current = props.onNav;
+  const controlRef = props.controlRef;
+  useEffect(() => {
+    const ed = editorRef.current;
+    if (!ed) return;
+    let last: DiffNavState | null = null;
+    const report = (): void => {
+      const me = ed.getModifiedEditor();
+      const model = me.getModel();
+      const next: DiffNavState = model
+        ? diffNavState(ed.getLineChanges(), me.getPosition()?.lineNumber ?? 1, model.getLineCount())
+        : { kind: 'pending' };
+      if (last && sameDiffNavState(last, next)) return;
+      last = next;
+      onNav.current?.(next);
+    };
+    const subs = [
+      ed.onDidUpdateDiff(report),
+      ed.onDidChangeModel(report),
+      ed.getModifiedEditor().onDidChangeCursorPosition(report),
+    ];
+    report();
+    if (controlRef) {
+      controlRef.current = {
+        go: (direction) => ed.goToDiff(direction),
+        lineInView: () => {
+          const me = ed.getModifiedEditor();
+          if (!me.getModel()) return null;
+          const ranges = me.getVisibleRanges();
+          const at = me.getPosition()?.lineNumber;
+          if (at && ranges.some((r) => at >= r.startLineNumber && at <= r.endLineNumber)) return at;
+          return ranges[0]?.startLineNumber ?? 1;
+        },
+      };
+    }
+    return () => {
+      subs.forEach((d) => d.dispose());
+      if (controlRef) controlRef.current = null;
+    };
+  }, [controlRef]);
 
   // How wide the DIFF is, which is not how wide the card is — a file list or a
   // toolbar takes its width off the front first. Measured rather than derived,
