@@ -3,6 +3,35 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🎛️ ORCHESTRATION RUN — started 2026-10-20 ~12:00 EDT (the audit's "next five", three workers)
+>
+> **Single-writer rule:** this file is written ONLY by the orchestrator session.
+> Workers never touch it; their inputs are the handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md` (git-ignored, main checkout).
+> Resume from this block if the orchestrator session dies.
+>
+> **Dan's instruction:** `/orchestrate pick five tickets to do.` The five are
+> the ones the 2026-10-20 audit proposed and he accepted in principle (block
+> below): **#1002** (the one-tick `poll` fix, first), **#1362 → #1359** (one
+> worker, status code, serial), **#1384 → #1378** (one worker, serial). Normal
+> loop per issue; **merge on green CI** as in the 2026-10-17 and 10-18 runs
+> (the 2026-09-08 standing rule; Dan's lever is "change that"/"revert that");
+> PROGRESS + dogfood tracker close-outs via `docs/` PRs from `sb-docs`, never a
+> push to `main`. Rules kept from 2026-10-17/18: NEVER arm ScheduleWakeup while
+> a worker runs; workers WIP-commit whenever something compiles; known flakes a
+> worker may re-run alone: #1320, #1367, #1369 (and #1002 until it lands);
+> auto-merge is disabled, watch the run id and merge by hand.
+>
+> | Order | Issue | Worktree / branch | State |
+> |---|---|---|---|
+> | 1 | #1002 `quiet-hours.spec.ts:287` one-tick race: wrap the `toastLines()` read in `poll`, plus the mirror assertion in the first test | `sb-wt-3` / `feature/1002-quiet-hours-flake` | dispatched 2026-10-20 ~12:15 EDT |
+> | 2 | #1362 a cleanly exited session reads "waiting" on tab/row/pill — needs a distinct `ended` status (neutral, never counted as waiting) | `sb-wt-1` / `feature/1362-ended-status` | dispatched 2026-10-20 ~12:15 EDT |
+> | 3 | #1384 diff toolbar: previous/next change + counter, ignore whitespace, collapse unchanged, word wrap, popout parity | `sb-wt-2` / `feature/1384-diff-toolbar` | dispatched 2026-10-20 ~12:15 EDT |
+> | 4 | #1359 a late background-helper request that is ANSWERED or times out still sends the card to `working` with no main turn open | `sb-wt-1` after #1362 | queued (same worker as #1362) |
+> | 5 | #1378 after the briefing's 15-minute TTL, Try again on a not-started card silently starts an ordinary session on the default AI | `sb-wt-2` after #1384 | queued (same worker as #1384) |
+>
+> **Merge log:** (none yet).
+
 > # 🧹 OPEN-ISSUE AUDIT, 2026-10-20 — 54 open → 37; nothing in flight
 >
 > Dan asked for an audit of every open ticket against git history and the live code before the next run ("I'm okay doing anything you suggest here"). Four parallel read-only agents checked the 54 open issues; every verdict is posted on its ticket under the heading *Open-issue audit, 2026-10-20* with commit shas and file refs. **Closed 18:** fixed or fixed another way (#255, #450, #893, #705, #904, #528, #710), spec/feature deleted or a single stale sighting (#637, #550, #647, #661, #891), accepted at the site (#697), duplicates folded into umbrellas (#1007 → #1013, #1370 + #1244 → #651, #719's leftover → #1013 item 6), and #323 (prettier is DROPPED — Dan's word; `code-style.md` fixed in this PR). **Two umbrellas:** #651 (unit tests that time out on a busy machine: 5 s default / raw wall-clock budgets) and #1013 (many-session responsiveness, with a scorecard: items 1, 2, 5, 8 done; 3 low value; 4 unexplained; 6, 7 open; plus #1007's session-switch p95 3.2 s / worst 103 s, never measured). **Rescoped 8:** #965 (manual is bundled in-app, drop the HTML render and shot-list), #722 (ON HOLD, design sitting first; Dan's 2026-10-10 direction leads), #1116 (umbrella → the review-map tree spike), #680 (premise flipped: the replay echo IS Direct mode's prompt source now), #1323 and #1319 (trimmed to what #1326 left), #671 (trimmed), #966 (ON HOLD in the title). **Split:** #1218's OS voice picker is now **#1390**, unblocked and shippable alone. **Note edits:** #1365 (part 1 is a one-line swap to `renderBlockAs`), #824 (CLI 2.1.288), #1303 (no longer blocks #1294), #717 (prompt-jump moot), #529 (do as mockup-and-pick), #675 (blocked on the Action Center hand-test), #716 (stays open only as the laptop acceptance test). **Flake queue order:** #1002 first (confirmed one-tick race, one-line `poll` fix plus the mirror assertion), then #1320 (order-dependent repro: after `quiet-hours.spec.ts`, `--repeat-each=2`, 2/2).
