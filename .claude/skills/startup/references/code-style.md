@@ -1,7 +1,8 @@
 # Code Style — switchboard.ai
 
-Formal ESLint/Prettier config arrives with the Phase 1 scaffold (P1-E1-01);
-until then, these conventions govern:
+ESLint is the formatter-of-record (type-checked preset, `eslint.config.mjs`,
+#255). **Prettier is deliberately not used** (Dan, 2026-10-20, closing #323):
+no config, no dependency, no CI step. These conventions govern:
 
 - **TypeScript strict mode**, no `any` unless justified with a comment.
 - Naming: `camelCase` functions/vars, `PascalCase` types/components,
