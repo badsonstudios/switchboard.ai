@@ -59,6 +59,7 @@ import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
 import {
+  cardStatusOf,
   isAutonomyMode,
   type SessionCardWire,
   type SwitchConversationRefusal,
@@ -3300,7 +3301,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   };
 
   // joined view for the rail: every persisted card, with its live status if
-  // running or 'suspended' if restored-but-not-yet-resumed (E7-05)
+  // running, 'ended' if its process has exited cleanly (#1362), or 'suspended'
+  // if restored-but-not-yet-resumed (E7-05)
   //
   // KEEP THE SNAPSHOT SYNCHRONOUS. The renderer drops a `cards` response that a
   // later-issued one has already overtaken (#251, lib/latest-wins), and that
@@ -3352,7 +3354,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // the AI the icon shows (#1293): what is running now, else what ran
           // last; '' (a card never started) is "no answer", not an id
           providerId: rec?.identity.providerId || card.identity.providerId || undefined,
-          status: rec?.status ?? 'suspended',
+          // 'suspended' with no live record, 'ended' once its process has
+          // exited cleanly (#1362) — never the leftover `done`, which every
+          // surface reads as "waiting for you"
+          status: cardStatusOf(rec),
           liveId,
           groupId: card.groupId,
           // The transport this card's next session will be ASKED for, by the SAME

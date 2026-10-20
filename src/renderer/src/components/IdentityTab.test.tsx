@@ -408,6 +408,20 @@ describe('the session tab says when it is waiting on you (#1351)', () => {
     expect(aiBadge()!.getAttribute('data-ring-spin')).toBe('false');
   });
 
+  it('a session whose process has ended says "ended" quietly: no wash, a still neutral ring (#1362)', async () => {
+    const tab = await tabFor('ended');
+    expect(tab.dataset.waitState).toBeUndefined();
+    expect(tab.style.getPropertyValue('--wait-hue')).toBe('');
+    const said = tab.querySelector<HTMLElement>('[data-tab-state]')!;
+    expect(said.textContent).toBe('ended');
+    expect(said.dataset.tabState).toBe('ended');
+    // the tab's own ink, never the waiting gold
+    expect(said.style.color).toBe('inherit');
+    expect(aiBadge()!.getAttribute('data-ring')).toBe('idle');
+    expect(aiBadge()!.getAttribute('data-ring-spin')).toBe('false');
+    expect(tabText()).toBe('acme');
+  });
+
   it('a document or diff tab has no state at all', async () => {
     await mount('notes.md', { title: 'notes.md' }, 'doc-1');
     expect(host.querySelector<HTMLElement>('.identity-tab')!.dataset.waitState).toBeUndefined();

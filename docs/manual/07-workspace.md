@@ -25,7 +25,7 @@ close it and a small indicator of its state:
 | **?** | it asked you a question |
 | **!** | it wants permission to do something |
 | **✓** | it finished, and you haven't looked yet |
-| **–** | calm: nothing has run in it yet |
+| **–** | calm: nothing has run in it yet; or, with the word **ended** beside its name, Claude Code has closed and the session needs a **Restart** |
 | **✕** | it crashed |
 
 **When a session is waiting on you, the row says so in words.** It tints
@@ -35,7 +35,9 @@ beside its name says which: **approval** (with the time it has left, such as
 its turn. A session that is still on your plate also bolds its name and
 thickens its edge bar. A screen reader hears the longer ask — *Asked you a
 question*, *Wants permission to run*, *Finished its turn — waiting for you*,
-*Crashed — needs restart*. Calm sessions stay plain and quiet. That contrast
+*Crashed — needs restart*. Calm sessions stay plain and quiet, and so does
+a session that has **ended**: it is never tinted, never says "waiting", and a
+group never counts it as waiting. That contrast
 is the whole point: you should be able to spot the ones that need you from
 across the room. See [A session that is waiting on
 you](02-sessions.md#a-session-that-is-waiting-on-you).

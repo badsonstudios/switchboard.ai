@@ -322,7 +322,7 @@ the ordinary text colour.
 old status dot: blue while it is working, orange while it waits for your
 approval, yellow while it waits for your answer to a question, a softer gold
 when it has finished its turn and is waiting for your next prompt, red if it
-crashed, grey when it is calm. The ring spins while the session works, in the
+crashed, grey when it is calm or has ended. The ring spins while the session works, in the
 sessions list, on the strip and on the session's tab. On the card header it
 stays still. There is always
 a little space between the ring and the icon, so an orange ring around Claude's
@@ -352,6 +352,7 @@ Every session shows one of these:
 | **question** | Waiting for you to answer a question |
 | **waiting** | Finished its turn, and waiting for your next prompt. In the list it reads **waiting for you** |
 | **calm** | Nothing has run in it yet |
+| **ended** | Claude Code closed, without crashing. It is not waiting for anything: click **Restart** on the card to use it again |
 | **crashed** | Ended unexpectedly |
 | **suspended** | Kept, but not currently running |
 | **not started** | Nothing ever ran in this card — see below |
@@ -387,7 +388,11 @@ tell the states apart by colour alone.
 ![The strip in the light theme](img/waiting-states-strip-daylight.png)
 
 A session that is **working** says **working** quietly on its tab and its
-ring spins; a **calm** one has no tint and no word on its tab.
+ring spins; a **calm** one has no tint and no word on its tab. A session that
+has **ended** (Claude Code closed, and did not crash) is never tinted and
+never says "waiting": its tab, its row and its pill all say **ended** quietly,
+in grey, the same word as its card's header. A group never counts it as
+waiting.
 
 ### Which ones need you, and which have finished
 
@@ -461,6 +466,13 @@ stops saying
 If a session ends or crashes, the card stays put and shows **Session ended**
 with two buttons: **Restart** starts it again in the same folder, **Close**
 removes the card. Nothing vanishes on its own.
+
+A session that closed cleanly says **ended** everywhere: on its card's header,
+its tab, its row in the Sessions list and its pill on the strip. One that
+crashed says **crashed**, in red. If Claude Code closes with an error code
+*after* it had already finished its turn, the panel reports the code
+("Exited unexpectedly (code 1)") but the session still reads **ended**,
+not crashed: the work it was doing had already finished.
 
 Either way the card keeps its **header** — the session's name, its colour and
 badge, the same strip every other card wears. A card that never started shows the

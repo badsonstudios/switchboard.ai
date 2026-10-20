@@ -4,6 +4,7 @@ import {
   rollupLead,
   rollupParts,
   shownStatus,
+  tabWordFor,
   waitPaint,
   waitRollup,
   waitState,
@@ -28,7 +29,7 @@ describe('presentStatus', () => {
     // already drawing its own overlay with Try again and Close, and a session
     // that never started has made no demand — putting it in the attention queue
     // and the "N need you" count would be us inventing one.
-    const calm = ['starting', 'working', 'idle', 'suspended', 'not-started'];
+    const calm = ['starting', 'working', 'idle', 'suspended', 'ended', 'not-started'];
     for (const s of needy) expect(presentStatus(s).needsYou, s).toBe(true);
     for (const s of calm) expect(presentStatus(s).needsYou, s).toBe(false);
   });
@@ -48,6 +49,7 @@ describe('presentStatus', () => {
       'crashed',
       'idle',
       'suspended',
+      'ended',
       'not-started',
     ]) {
       expect(presentStatus(s).glyphKey, s).toBeTruthy();
@@ -313,7 +315,7 @@ describe('waiting on you — the three states and their words (#1351)', () => {
     expect(waitState('needs-input')).toBe('question');
     expect(waitState('done')).toBe('waiting');
     // idle is a session that has not run a turn yet: calm, not waiting
-    for (const s of ['idle', 'working', 'starting', 'crashed', 'suspended', 'not-started', 'nonsense', undefined]) {
+    for (const s of ['idle', 'working', 'starting', 'crashed', 'suspended', 'ended', 'not-started', 'nonsense', undefined]) {
       expect(waitState(s), String(s)).toBeUndefined();
     }
   });
@@ -435,5 +437,97 @@ describe("a group's roll-up (#1351, #1196)", () => {
       { key: 'rail.workingSummary', count: 2 },
     ]);
     expect(rollupParts(waitRollup(of('idle', 'suspended', 'not-started')))).toEqual([{ key: 'rail.calm' }]);
+  });
+});
+
+describe('a session whose process has ended (#1362)', () => {
+  // Main reports 'ended' off `sessions:cards` for a card whose CLI exited and
+  // was not called a crash. It used to arrive as the leftover `done`, which
+  // read "waiting" everywhere but the card's own header.
+  it('is neutral: the idle ramp, no spinner, not a demand, and its own word', () => {
+    const p = presentStatus('ended');
+    expect(p.token).toBe('idle');
+    expect(p.needsYou).toBe(false);
+    expect(p.spinner).toBe(false);
+    expect(p.shortKey).toBe('status.ended');
+    expect(p.labelKey).toBe('railStatus.ended');
+    expect(p.listKey).toBeUndefined();
+    // not answered through the fail-open path: its word is not "calm"
+    expect(p.shortKey).not.toBe(presentStatus('nonsense').shortKey);
+    // ...and not the finished turn's
+    expect(p.shortKey).not.toBe(presentStatus('done').shortKey);
+  });
+
+  it('is not waiting on you, and is never washed — counted, finished or neither', () => {
+    expect(waitState('ended')).toBeUndefined();
+    for (const [counted, finished] of [
+      [false, false],
+      [true, false],
+      [false, true],
+    ] as const) {
+      const paint = attentionPaint('ended', counted, finished);
+      const wait = waitPaint('ended', paint);
+      expect(wait.washed, `counted=${counted} finished=${finished}`).toBe(false);
+      expect(wait.state).toBeUndefined();
+      // a count may still LIGHT it (the bar and the bold stay the count's,
+      // #1137), but never in the waiting gold
+      expect(paint.token, `counted=${counted} finished=${finished}`).toBe('idle');
+      expect(paint.lit).toBe(counted || finished);
+    }
+    // its word is quiet unless something is counting it
+    expect(attentionPaint('ended', false).stateInk).toBe(false);
+  });
+
+  it('is never "waiting" in a group roll-up, even lit — and the group around it is calm', () => {
+    const members = [
+      { id: 'e', status: 'ended' },
+      { id: 'i', status: 'idle' },
+    ];
+    const r = waitRollup(members, (id) => id === 'e');
+    expect(r).toEqual({ approval: 0, question: 0, crashed: 0, waiting: 0, working: 0 });
+    expect(rollupParts(r)).toEqual([{ key: 'rail.calm' }]);
+    // beside a finished turn, only the finished turn is waiting
+    expect(waitRollup([{ id: 'e', status: 'ended' }, { id: 'd', status: 'done' }])).toMatchObject({ waiting: 1 });
+    // a crash keeps its own part: ended is not a crash, and a crash is not ended
+    expect(waitRollup([{ id: 'c', status: 'crashed' }, { id: 'e', status: 'ended' }])).toMatchObject({
+      crashed: 1,
+      waiting: 0,
+    });
+  });
+
+  it('a finished turn still reads waiting, exactly as #1351 built it', () => {
+    expect(presentStatus('done').token).toBe('waiting');
+    expect(waitState('done')).toBe('waiting');
+    expect(waitPaint('done', attentionPaint('done', false, true)).washed).toBe(true);
+    expect(attentionPaint('idle', false, true).token).toBe('waiting');
+  });
+});
+
+describe("the tab's word (#1351, #1362)", () => {
+  const word = (status: string | undefined, counted = false) =>
+    tabWordFor(status, status === undefined ? undefined : waitPaint(status, attentionPaint(status, counted)));
+
+  it('says the waiting state in its colour', () => {
+    expect(word('needs-permission')).toEqual({
+      key: 'status.needs-permission',
+      state: 'approval',
+      ink: 'var(--status-needs-permission-ink)',
+    });
+    expect(word('needs-input')).toEqual({ key: 'status.needs-input', state: 'question', ink: 'var(--status-needs-input-ink)' });
+    expect(word('done')).toEqual({ key: 'status.done', state: 'waiting', ink: 'var(--status-waiting-ink)' });
+  });
+
+  it('says "working" quietly while it works', () => {
+    expect(word('working')).toEqual({ key: 'status.working', state: 'working' });
+    expect(word('starting')).toEqual({ key: 'status.starting', state: 'working' });
+  });
+
+  it('says "ended" quietly once its process has gone — never "waiting", lit or not', () => {
+    expect(word('ended')).toEqual({ key: 'status.ended', state: 'ended' });
+    expect(word('ended', true)).toEqual({ key: 'status.ended', state: 'ended' });
+  });
+
+  it('says nothing for a calm one, so a calm tab keeps its width', () => {
+    for (const s of ['idle', 'suspended', 'not-started', undefined]) expect(word(s), String(s)).toBeUndefined();
   });
 });

@@ -187,4 +187,54 @@ test.describe('waiting on you (#1351)', () => {
       await setTheme(w, 'nordic');
     }
   });
+
+  // #1362: a session whose CLI EXITED is not waiting for anything. The state
+  // machine leaves it at the same `done` a finished turn has, and until main
+  // projected it as `ended` it read "waiting" on all three surfaces while its
+  // own card said "Session ended". One of each, side by side, through the real
+  // exit path: the fake stream CLI's `!exit 0` ends the child cleanly.
+  test('a session whose process has exited says "ended" on the tab, the row and the pill, not "waiting"', async () => {
+    test.setTimeout(180_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    const ended = path.basename(folder);
+    await expect(row(w, ended)).toBeVisible({ timeout: 25_000 });
+    const waiting = await addSession(a);
+
+    const prompt = streamPrompter(a);
+    await prompt(waiting, 'hello');
+    await prompt(ended, '!exit 0');
+
+    // the card's own panel: the clean-exit copy, which is what makes this the
+    // ENDED path and not a crash. The second session opened as a tab over the
+    // first, so bring the ended one forward to see its panel.
+    await expect(row(w, ended).locator('[data-rail-state]')).toHaveText(/^ended$/, { timeout: 30_000 });
+    await tab(w, ended).click();
+    const overlay = w.getByTestId('card-overlay');
+    await expect(overlay.getByText('Session ended')).toBeVisible({ timeout: 25_000 });
+    await expect(overlay.getByText('The session closed.')).toBeVisible();
+
+    // ── the left list: "ended", neutral, unwashed ──
+    await expect(row(w, ended).locator('[data-rail-state]')).toHaveText(/^ended$/, { timeout: 30_000 });
+    await expect(row(w, ended)).not.toHaveAttribute('data-wait-state', /./);
+    await expect(row(w, ended)).toHaveAttribute('data-session-status', 'idle');
+    // ...beside a finished turn that still says it is waiting (#1351, unchanged)
+    await expect(row(w, waiting).locator('[data-rail-state]')).toHaveText(/^waiting for you$/, { timeout: 30_000 });
+    await expect(row(w, waiting)).toHaveAttribute('data-wait-state', 'waiting');
+
+    // ── the tab: the word, quietly, and no wash ──
+    await expect(tab(w, ended).locator('[data-tab-state]')).toHaveText('ended');
+    await expect(tab(w, ended).locator('[data-tab-state]')).toHaveAttribute('data-tab-state', 'ended');
+    await expect(tab(w, ended)).not.toHaveAttribute('data-wait-state', /./);
+    await expect(tab(w, ended).locator('.ai-badge')).toHaveAttribute('data-ring', 'idle');
+    await expect(tab(w, waiting)).toHaveAttribute('data-wait-state', 'waiting');
+
+    // ── the strip ──
+    await w.locator('[data-placement="top"]').click();
+    await expect(strip(w)).toBeVisible();
+    await expect(pill(w, ended).locator('[data-strip-pill-state]')).toHaveText('ended');
+    await expect(pill(w, ended)).not.toHaveAttribute('data-wait-state', /./);
+    await expect(pill(w, waiting)).toHaveAttribute('data-wait-state', 'waiting');
+  });
 });
