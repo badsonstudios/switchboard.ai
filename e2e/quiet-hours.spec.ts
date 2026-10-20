@@ -93,6 +93,20 @@ function toastLines(home: string): number {
     .length;
 }
 
+/**
+ * Let main finish the turn it was in (#1002).
+ *
+ * The toast handler for `needs-permission` usually writes its line under
+ * `setImmediate` (the #952 deferral in `src/main/index.ts`), so it lands one
+ * main-process tick AFTER the engine's "notification rules fired" line. An
+ * immediate queued here, once that rules line has been seen, runs after any
+ * immediate the same `fire` queued — so when this resolves, a deferred toast
+ * line is either in the log or never coming.
+ */
+async function mainTickPassed(a: LaunchedApp): Promise<void> {
+  await a.app.evaluate(() => new Promise<void>((r) => setImmediate(r)));
+}
+
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 // #885 folded quiet hours and phone push into ONE modal as sections. The
 // controls did not change and neither did their `data-*` hooks — only the
@@ -236,6 +250,10 @@ test.describe('quiet hours (P2-E14-05b)', () => {
     // Not "no popup appeared" — the handler writes its line unconditionally, so
     // an unchanged count means the action never ran at all. Checked AFTER the
     // webhook arrived, so the engine has demonstrably finished with this event.
+    // …and after main's next tick (#1002): a toast that DID run would write its
+    // line one tick after the rules line, so reading straight away could pass
+    // on a build that never held the toast at all.
+    await mainTickPassed(a);
     expect(toastLines(a.home)).toBe(toastsBefore);
 
     // ── the held event is written down for the digest (#483) ────────────────
@@ -327,6 +345,9 @@ test.describe('quiet hours (P2-E14-05b)', () => {
     }, 20_000);
     expect(fired.quiet).toBe(false);
     expect(fired.held).toBe('');
-    expect(toastLines(a.home)).toBeGreaterThan(0);
+    // Polled, not read once (#1002): the toast handler writes its line one
+    // main-process tick after the rules line above, and a single read in that
+    // gap saw 0 on Windows CI with `quiet === false` and nothing held.
+    await expect.poll(() => toastLines(a.home), { timeout: 10_000 }).toBeGreaterThan(0);
   });
 });
