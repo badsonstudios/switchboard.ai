@@ -453,6 +453,7 @@ export class StreamFeed {
       case 'activity':
       case 'permission-request':
       case 'permission-withdrawn':
+      case 'background-work':
       case 'commands':
       case 'model':
       case 'mode':

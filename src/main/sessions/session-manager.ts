@@ -1242,9 +1242,10 @@ export class SessionManager {
    * prompt, that card would sit at `working` — the pre-#1340 behaviour, not a
    * new one.
    *
-   * Hooks are not read: the only reader is a withdrawal, which only an
-   * engine's control channel can send, and every such session reports its
-   * turns as `prompt-sent` / `turn-end`.
+   * Hooks are not read: the readers are a withdrawal, a denied answer and the
+   * engine's background-work report (#1359), which only an engine's control
+   * channel can produce, and every such session reports its turns as
+   * `prompt-sent` / `turn-end`.
    */
   private trackTurn(id: string, ev: SessionEvent): void {
     if (ev.kind === 'prompt-sent') this.turns.set(id, 'open');
@@ -1395,6 +1396,12 @@ function describeCause(ev: SessionEvent): string {
       return `stream:${ev.label}`;
     case 'exit':
       return `exit:${ev.code}`;
+    case 'permission-resolved':
+      // which answer went back (#1359): a deny can settle a card an allow
+      // sends to `working`, and the log has to say which it was
+      return ev.answer ? `permission-resolved:${ev.answer}` : ev.kind;
+    case 'background-work':
+      return `background-work:${ev.running}`;
     default:
       return ev.kind;
   }

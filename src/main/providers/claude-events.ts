@@ -351,6 +351,22 @@ export function translateClaudeFrame(
         }
         return mode ? [{ type: 'mode', mode }] : [];
       }
+      // The CLI's running BACKGROUND tasks, the whole list, re-sent whenever it
+      // changes (#1359). Read from the binary: a state-diff listener compares
+      // the running-task list before and after every state change and sends
+      // this on any difference — not only on a kill. Shape MEASURED in #1268's
+      // capture (`spike/probes/1268/captures/subagent.json`):
+      //   {type:"system", subtype:"background_tasks_changed",
+      //    tasks:[{task_id, task_type:"local_agent", description}]}
+      // and `tasks: []` once the backgrounded subagent was gone. A `tasks` that
+      // is not a list says nothing.
+      if (m.subtype === 'background_tasks_changed') {
+        if (!Array.isArray(m.tasks)) {
+          skipped?.('stream background task list ignored: not an array', { got: kind(m.tasks) });
+          return [];
+        }
+        return [{ type: 'background-work', running: m.tasks.length }];
+      }
       // `/compact`'s marker (#748 probe 3; shape in
       // `spike/findings/1026-not-for-the-live-view.md`):
       //   compact_metadata: {trigger: "manual", pre_tokens, post_tokens}

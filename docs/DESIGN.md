@@ -1945,6 +1945,24 @@ A withdrawn request resolves to wherever the session's main turn is: `working`
 if one is still running (its `result` follows), `done` if none is — the case of
 a background helper's request that arrived after its parent turn ended, where
 the CLI sends no further `result`.
+*(Amended 2026-10-20, #1359.)* The same helper request **answered** follows
+the same rule by what was answered. A **Deny**, and a deadline that runs out
+(which sends a deny), resolves exactly like a withdrawal. An **Allow** goes
+to `working` whether or not a main turn is running, because the helper is
+running the tool it was just allowed. What ends that is the CLI's own list
+of running background tasks (`system:background_tasks_changed`, which is
+re-sent whenever the list changes): when it is empty and no main turn is
+running, a card still at `working` goes to `done`. It does the same for a
+helper that kept working after a Deny. While a main turn runs, the list is
+ignored and the turn's `result` ends it.
+
+The list being re-sent when a task finishes normally (rather than only when
+one is killed) is read from the binary, not measured. If the CLI stays
+silent there, the card stays at `working`, as before.
+
+Still unmeasured: a prompt sent while such a request is held is counted as
+opening a turn. If an interrupt drops that queued prompt, the card would sit
+at `working`.
 
 **Per-session view tabs (the session window's chrome).** Every session surface —
 grid card, maximized, popped-out OS window — carries one compact VS Code-style
