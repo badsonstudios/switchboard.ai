@@ -1374,6 +1374,21 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
 > list. A card whose process closed cleanly says **ended** in its header, not
 > the "waiting" its leftover `done` would read as. The tab's ring now spins
 > while working, like every other surface's.
+>
+> **`ended` on every surface *(amended 2026-10-20, #1362)*.** The header was
+> the only surface that knew: the tab, the list row and the strip pill read the
+> leftover `done` as **waiting**. `ended` is now a CARD status beside
+> `suspended` — a fact about the process, never a state the machine transitions
+> to — and `sessions:cards` reports it for a card whose live session's process
+> has exited and that the state machine did not call `crashed`. So `idle` →
+> **calm**, and the process gone → **ended**: neutral ramp, no wash, the word
+> quietly on the tab, the row and the pill, never counted as **waiting** in a
+> group's roll-up. The Events list may still light it (a turn it finished and
+> nobody has looked at) — the lit treatment stays the count's, drawn in the
+> neutral ramp. An exit after a finished turn is `ended` whatever its code (the
+> state machine calls it a wind-down; the panel still reports the code); an
+> exit mid-turn with a nonzero code is **crashed**, as before. A card restored
+> with no live process reads **suspended**.
 
 - **Auto-minimize on submit** (per-session toggle): submitting a prompt collapses the
   card to a slim status strip; it restores automatically on `Stop` (done) or

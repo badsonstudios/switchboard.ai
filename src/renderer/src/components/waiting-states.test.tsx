@@ -127,6 +127,20 @@ describe('the row in the left list', () => {
     expect(r.querySelector('[data-rail-state]')!.textContent).toBe('calm');
   });
 
+  it('an ended one (its process has gone, #1362) is unwashed and says "ended", counted or not', async () => {
+    for (const counted of [false, true]) {
+      const r = await mountRow('ended', counted);
+      expect(r.dataset.waitState).toBeUndefined();
+      expect(r.style.background).toBe('transparent');
+      const said = r.querySelector<HTMLElement>('[data-rail-state]')!;
+      expect(said.textContent).toBe('ended');
+      expect(said.style.color).not.toContain('waiting');
+      expect(r.querySelector('.ai-badge')!.getAttribute('data-ring')).toBe('idle');
+      await act(async () => root!.unmount());
+      root = null;
+    }
+  });
+
   it('a working one is unwashed and says "working"', async () => {
     const r = await mountRow('working');
     expect(r.dataset.waitState).toBeUndefined();
@@ -213,6 +227,19 @@ describe('the pill on the strip', () => {
     expect(p.querySelector('.ai-badge')!.getAttribute('data-ring')).toBe(token);
   });
 
+  it('an ended pill (#1362) is not washed and says "ended", counted or not', async () => {
+    for (const counted of [false, true]) {
+      const p = await mountPill('ended', counted);
+      expect(p.dataset.waitState).toBeUndefined();
+      expect(p.style.background).toBe('var(--rail-card)');
+      expect(p.style.border).not.toContain('waiting');
+      expect(p.querySelector('[data-strip-pill-state]')!.textContent).toBe('ended');
+      expect(p.querySelector('.ai-badge')!.getAttribute('data-ring')).toBe('idle');
+      await act(async () => root!.unmount());
+      root = null;
+    }
+  });
+
   it('a calm pill is not washed', async () => {
     const p = await mountPill('idle');
     expect(p.dataset.waitState).toBeUndefined();
@@ -256,6 +283,17 @@ describe("a group's box on the strip (#1196's twin)", () => {
     expect(box.style.border).toContain('var(--status-needs-permission)');
     // waiting outranks working: no working look on it
     expect(box.dataset.sessionStatus).toBeUndefined();
+  });
+
+  it('never counts an ended session as waiting (#1362)', async () => {
+    const box = await mountGroup([member('a', 'ended'), member('b', 'done'), member('c', 'ended')]);
+    expect(box.querySelector('[data-strip-group-summary]')!.textContent).toBe('1 waiting');
+  });
+
+  it('a group of ended sessions is calm (#1362)', async () => {
+    const box = await mountGroup([member('a', 'ended'), member('b', 'idle')]);
+    expect(box.querySelector('[data-strip-group-summary]')!.textContent).toBe('calm');
+    expect(box.dataset.rollupLead).toBeUndefined();
   });
 
   it('plural, and the zeros left out', async () => {

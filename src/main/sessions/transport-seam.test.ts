@@ -483,14 +483,15 @@ describe('sessions:cards is one declaration, not two (#618)', () => {
     expect(derived).toBe(true);
   });
 
-  it("a card's status is the live union plus 'suspended', not `string`", () => {
-    // It said `string` here too. 'suspended' is not a state the machine can
-    // reach — `sessions:cards` answers `rec?.status ?? 'suspended'`, so it is
-    // the ABSENCE of a live record, named. That is why it is a separate union
-    // and not an eighth `SessionStatus`.
+  it("a card's status is the live union plus 'suspended' and 'ended', not `string`", () => {
+    // It said `string` here too. Neither extra name is a state the machine can
+    // reach — `sessions:cards` answers `cardStatusOf(rec)`: 'suspended' is the
+    // ABSENCE of a live record, named, and 'ended' (#1362) is a record whose
+    // process has exited cleanly. That is why it is a separate union and not
+    // more `SessionStatus`es.
     const union: Exact<PreloadCard['status'], CardStatus> = true;
     expect(union).toBe(true);
-    const isSuper: Exact<CardStatus, SessionStatus | 'suspended'> = true;
+    const isSuper: Exact<CardStatus, SessionStatus | 'suspended' | 'ended'> = true;
     expect(isSuper).toBe(true);
   });
 

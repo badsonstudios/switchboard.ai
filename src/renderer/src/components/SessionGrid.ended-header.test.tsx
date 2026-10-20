@@ -45,6 +45,7 @@ import {
   SessionGrid,
   endedCopy,
   endedPill,
+  headerPillFor,
   samePickFolder,
   switchRefusalKey,
   afterSwitchAnswer,
@@ -426,6 +427,39 @@ describe('endedPill', () => {
       expect(typeof text).toBe('string');
       expect((text as string).length).toBeGreaterThan(0);
     }
+  });
+});
+
+// The LIVE header's pill (#1362): its status, unless its process has exited.
+// The same rule `sessions:cards` follows (`cardStatusOf`), so the header and
+// the tab, the row and the pill cannot name one dead card two ways.
+describe('headerPillFor — a live card whose process has gone (#1362)', () => {
+  it('says the status while the process runs, a finished turn included', () => {
+    expect(headerPillFor(null, 'done')).toEqual({ status: 'done', labelKey: 'status.done' });
+    expect(headerPillFor(null, 'working')).toEqual({ status: 'working', labelKey: 'status.working' });
+  });
+
+  it('a clean exit is ended, on the neutral position', () => {
+    expect(headerPillFor({ kind: 'exited', code: 0, crashed: false }, 'done')).toEqual({
+      status: 'idle',
+      labelKey: 'status.ended',
+    });
+  });
+
+  it('a crash the state machine called a crash stays crashed', () => {
+    expect(headerPillFor({ kind: 'exited', code: 3, crashed: true }, 'crashed')).toEqual({
+      status: 'crashed',
+      labelKey: 'status.crashed',
+    });
+  });
+
+  it('a nonzero exit AFTER a finished turn is ended, not "waiting" — the state machine calls it a wind-down', () => {
+    // It read the leftover `done` ("waiting") until #1362, because the pill
+    // followed the exit's own `crashed` flag rather than the state.
+    expect(headerPillFor({ kind: 'exited', code: 1, crashed: true }, 'done')).toEqual({
+      status: 'idle',
+      labelKey: 'status.ended',
+    });
   });
 });
 

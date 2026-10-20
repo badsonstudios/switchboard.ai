@@ -129,7 +129,7 @@ import {
   withMode,
   withoutMaximized,
 } from '../lib/layout-mode';
-import { attentionPaint, presentStatus, waitPaint } from '../lib/rail-view';
+import { attentionPaint, presentStatus, tabWordFor, waitPaint } from '../lib/rail-view';
 import { useShownStatus } from '../lib/use-shown-status';
 import { tabStripAction } from '../lib/tabstrip-keys';
 import { cardHeaderTitle } from '../lib/card-title';
@@ -459,6 +459,33 @@ export function endedPill(ended: CardEnded): { status: string; labelKey: string 
 }
 
 /**
+ * The pill a LIVE card's header wears — its status, unless its process has
+ * exited (#1362).
+ *
+ * THE SAME RULE `sessions:cards` follows (`cardStatusOf` in `shared/sessions`),
+ * so the header cannot say one thing while the tab, the row and the pill say
+ * another: once the process has exited, the session is **ended** unless the
+ * state machine called it `crashed`.
+ *
+ * That is narrower than the exit's own `crashed` flag on purpose. The flag is
+ * "nonzero and nobody asked for it"; the state machine also calls an exit that
+ * comes AFTER a finished turn a wind-down (`transition`: from `done`, any exit
+ * stays `done`). This used to follow the flag, so that case — a finished
+ * session whose CLI then went away with a nonzero code — wore the "waiting" of
+ * its leftover `done`. The overlay under it still reports the real code
+ * ("Exited unexpectedly (code N)"); the pill names the state.
+ */
+export function headerPillFor(
+  ended: CardEnded | null,
+  shownStatus: string
+): { status: string; labelKey: string } {
+  if (ended?.kind === 'exited' && shownStatus !== 'crashed') {
+    return endedPill({ kind: 'exited', code: ended.code, crashed: false });
+  }
+  return { status: shownStatus, labelKey: `status.${shownStatus}` };
+}
+
+/**
  * What the card's live region should be SAYING right now — the keys, not the
  * words (#358).
  *
@@ -573,18 +600,11 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
   // open tab's fill is painted there already, and an inline background here
   // would lose to it.
   const wait = cardId ? waitPaint(cardStatus, attentionPaint(cardStatus, needsYou)) : undefined;
-  const statusWord = presentStatus(cardStatus);
   // the word: the state's, for a waiting session; "working" quietly while it
-  // works, as the list says it; nothing for a calm one, which keeps a calm tab
-  // the width it always was
-  const tabWord =
-    !cardId || cardStatus === undefined
-      ? undefined
-      : wait?.state
-        ? { text: t(statusWord.shortKey), ink: `var(--status-${wait.token}-ink)` }
-        : statusWord.spinner
-          ? { text: t(statusWord.shortKey), ink: undefined }
-          : undefined;
+  // works, as the list says it; "ended" quietly once its process has gone
+  // (#1362); nothing for a calm one, which keeps a calm tab the width it
+  // always was. The rule is `tabWordFor`, unit-tested beside the row's.
+  const tabWord = cardId ? tabWordFor(cardStatus, wait) : undefined;
   // WHAT THE ✕ ACTUALLY DOES, said in three strings rather than one (#543).
   //
   // Every tab in the app used to be titled "Close (ends the session)", which is
@@ -969,7 +989,7 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
         // to a screen reader.
         <span
           aria-hidden
-          data-tab-state={wait?.state ?? 'working'}
+          data-tab-state={tabWord.state}
           style={{
             flexShrink: 0,
             marginInlineStart: 2,
@@ -981,7 +1001,7 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
             whiteSpace: 'nowrap',
           }}
         >
-          {tabWord.text}
+          {t(tabWord.key)}
         </span>
       )}
         </>
@@ -1241,13 +1261,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   );
   // the header's word and ring as SHOWN: a held question is "question" (#1351)
   const shownStatus = useShownStatus(cardId, status);
-  // ...and a session whose process closed CLEANLY says "ended", not the
-  // "waiting" its leftover `done` status would now read as (#1351): it is not
-  // waiting for a prompt, it has to be started again
-  const headerPill =
-    ended?.kind === 'exited' && !ended.crashed
-      ? endedPill(ended)
-      : { status: shownStatus as string, labelKey: `status.${shownStatus}` };
+  // ...and a session whose process has gone says "ended", not the "waiting"
+  // its leftover `done` status would read as (#1351) — by the rule the tab,
+  // the row and the pill follow (#1362, `headerPillFor`)
+  const headerPill = headerPillFor(ended, shownStatus);
   const view = presentation.view;
   const poppedOut = presentation.poppedOut;
   const suspended = presentation.suspended;

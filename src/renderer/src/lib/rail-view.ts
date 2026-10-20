@@ -31,7 +31,8 @@ import type { WritingDirection } from './writing-direction';
 
 /**
  * The status vocabulary the rail can receive — `SessionStatus`, the card-level
- * 'suspended' (restored, not yet resumed), and 'not-started' (#687).
+ * 'suspended' (restored, not yet resumed) and 'ended' (its process exited
+ * cleanly, #1362), and 'not-started' (#687).
  *
  * It was a second hand-written copy of those eight names until #618; it is
  * `RailCardStatus` from `shared/sessions.ts` now. That is `CardStatus` — what
@@ -174,6 +175,21 @@ const PRESENTATION: Record<RailStatusName, StatusPresentation> = {
     labelKey: 'railStatus.suspended',
     shortKey: 'status.suspended',
   },
+  // THE PROCESS HAS EXITED, AND NOT IN A CRASH (#1362). Main reports it off
+  // `sessions:cards` (`cardStatusOf`) in place of the leftover `done`, which
+  // read "waiting" here, on the tab and on the pill while the card's own
+  // header said "ended". It is not waiting for a prompt — it has to be started
+  // again — so it is neutral: the `idle` ramp, no wash, never in a group's
+  // "waiting" (see `QUIET` below), and the same word the header's pill uses
+  // (`endedPill`).
+  ended: {
+    token: 'idle',
+    needsYou: false,
+    spinner: false,
+    glyphKey: 'railStatus.glyphIdle',
+    labelKey: 'railStatus.ended',
+    shortKey: 'status.ended',
+  },
   // #687: the card is on screen and nothing ever ran in it — `sessions:create`
   // was refused, so main has no record of it and this row exists only because
   // the store minted it.
@@ -249,6 +265,18 @@ export interface AttentionPaint {
 const BLOCKED: ReadonlySet<string> = new Set(['needs-input', 'needs-permission', 'crashed']);
 
 /**
+ * Statuses never painted as WAITING, even while a count lights them (#1362).
+ *
+ * A session whose process has ended can still be in a count: the turn it
+ * finished before it closed is "finished" until it is looked at, and a review
+ * returned to it is a demand. The count keeps its lit row — "N finished" is
+ * still N lit rows (#1137, #1219) — but in the neutral ramp, unwashed, and a
+ * group's roll-up does not call it "waiting": nothing is waiting for its next
+ * prompt, because there is no process to take one.
+ */
+const QUIET: ReadonlySet<string> = new Set(['ended']);
+
+/**
  * THE ONE RULE for the needs-you treatment on a row or a lamp (#1137).
  *
  * `counted` is "is this session in `needingCards`" — the same set every
@@ -283,12 +311,15 @@ export function attentionPaint(
   finished = false
 ): AttentionPaint {
   const p = presentStatus(status);
+  // lit for the count, but never in the waiting gold for a session that has
+  // ended (#1362): its own neutral ramp
+  const litToken: StatusToken = QUIET.has(status ?? '') ? p.token : 'waiting';
   if (counted) {
-    return { lit: true, token: p.needsYou ? p.token : 'waiting', stateInk: true, finished: false };
+    return { lit: true, token: p.needsYou ? p.token : litToken, stateInk: true, finished: false };
   }
   // FINISHED, UNSEEN: lit in the `waiting` ramp so the count leads to a row you
   // can see, exactly as "N need you" does. The same invariant, a second number.
-  if (finished) return { lit: true, token: 'waiting', stateInk: true, finished: true };
+  if (finished) return { lit: true, token: litToken, stateInk: true, finished: true };
   return {
     lit: false,
     token: p.token,
@@ -388,7 +419,33 @@ export interface WaitPaint {
  */
 export function waitPaint(status: string | undefined, paint: AttentionPaint): WaitPaint {
   const state = waitState(status);
-  return { state, washed: state !== undefined || paint.lit, token: paint.token };
+  // an ended session is never washed, lit or not (#1362): see `QUIET`
+  const washed = state !== undefined || (paint.lit && !QUIET.has(status ?? ''));
+  return { state, washed, token: paint.token };
+}
+
+/**
+ * The word a session's TAB writes after its name, if any (#1351, #1362).
+ *
+ * A tab is narrow, so it speaks only when there is something to say: the
+ * waiting state's word in its colour; "working", quietly, while it works; and
+ * "ended", quietly, once its process has gone (#1362) — the one calm state a
+ * glance at the tab must not mistake for a live, calm session. Nothing for a
+ * calm one, which keeps a calm tab the width it always was.
+ *
+ * `state` is the element's `data-tab-state`. `ink` absent = the tab's own text
+ * colour.
+ */
+export function tabWordFor(
+  status: string | undefined,
+  wait: WaitPaint | undefined
+): { key: string; state: string; ink?: string } | undefined {
+  if (status === undefined) return undefined;
+  const p = presentStatus(status);
+  if (wait?.state) return { key: p.shortKey, state: wait.state, ink: statusVars(wait.token).ink };
+  if (p.spinner) return { key: p.shortKey, state: 'working' };
+  if (status === 'ended') return { key: p.shortKey, state: 'ended' };
+  return undefined;
 }
 
 /** How many of a group's sessions are in each state (#1351, #1196). */
@@ -433,7 +490,11 @@ export function waitRollup(
       r.crashed += 1;
       continue;
     }
-    const w = waitState(status) ?? (s.id !== undefined && lit?.(s.id) ? 'waiting' : undefined);
+    // a lit session counts as waiting only if it could be: an ended one is
+    // not washed (`waitPaint`), so it is not counted either (#1362)
+    const w =
+      waitState(status) ??
+      (s.id !== undefined && !QUIET.has(status ?? '') && lit?.(s.id) ? 'waiting' : undefined);
     if (w) r[w] += 1;
     else if (presentStatus(status).spinner) r.working += 1;
   }

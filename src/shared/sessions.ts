@@ -199,18 +199,43 @@ export interface StatusChange {
 }
 
 /**
- * What a CARD's status can be: every live status, plus 'suspended'.
+ * What a CARD's status can be: every live status, plus 'suspended' and 'ended'.
  *
- * A card outlives its session. `sessions:cards` answers `rec?.status ??
- * 'suspended'` (`main/sessions/ipc.ts`), so 'suspended' is not a state the
- * state machine can reach — it is the absence of a live record, named. That is
- * why this union is here and not in `SessionStatus`: nothing in main may
- * TRANSITION to it.
+ * A card outlives its session. `sessions:cards` answers `cardStatusOf(rec)`
+ * (below), so neither extra name is a state the state machine can reach —
+ * each is a fact about the PROCESS, named. That is why this union is here and
+ * not in `SessionStatus`: nothing in main may TRANSITION to either.
+ *
+ *  - 'suspended' — the card has no live record at all: restored from the
+ *    workspace and not resumed, or its popout was closed.
+ *  - 'ended' (#1362) — the card HAS a live record and its process has exited,
+ *    and the state machine did not call that exit a crash. The record's status
+ *    is then the leftover `done` (`transition`: `exit` with code 0, or any exit
+ *    after a finished turn → `done`), which every surface reads as "waiting"
+ *    since #1351 — and a session whose CLI has gone is not waiting for a
+ *    prompt: it has to be started again.
  *
  * The rail's `RailStatusName` (`renderer/src/lib/rail-view.ts`) is `RailCardStatus`
  * below, which is this type plus the one status the renderer mints for itself.
  */
-export type CardStatus = SessionStatus | 'suspended';
+export type CardStatus = SessionStatus | 'suspended' | 'ended';
+
+/**
+ * A card's status from its live record, if it has one (#1362) — the ONE rule
+ * `sessions:cards` and the card header's pill both follow, so the header cannot
+ * say "ended" while the tab, the row and the pill say "waiting".
+ *
+ * `exitCode` is set in exactly one place (the transport's exit) and never
+ * cleared, so `!== null` is "the process is gone" — the same test #765's
+ * `SessionSummary.exited` reads. A crash keeps its own word: `crashed` is a
+ * demand (it is in "N need you") and `ended` is not.
+ */
+export function cardStatusOf(
+  rec: { readonly status: SessionStatus; readonly exitCode: number | null } | undefined
+): CardStatus {
+  if (!rec) return 'suspended';
+  return rec.exitCode !== null && rec.status !== 'crashed' ? 'ended' : rec.status;
+}
 
 /**
  * What the RAIL's status can be: `CardStatus` plus 'not-started' (#687).
@@ -317,7 +342,10 @@ export interface SessionCardWire {
    * reads the same field, so it can name the AI while no session is running.
    */
   providerId?: string;
-  /** the live session's status, or 'suspended' when the card has no session */
+  /**
+   * the live session's status, 'ended' when its process has exited cleanly, or
+   * 'suspended' when the card has no session (`cardStatusOf`)
+   */
   status: CardStatus;
   /** the live session under this card, if any */
   liveId?: string;

@@ -6607,3 +6607,56 @@ describe('sessions:switchAi — one card, one conversation per AI (#1294)', () =
     });
   });
 });
+
+// #1362 — a card whose CLI has exited must not read as the leftover `done`.
+//
+// The state machine calls both a finished turn and a clean exit `done`, and
+// since #1351 every surface reads `done` as "waiting for you". `sessions:cards`
+// is the one list the tab, the row and the pill render from, so the fact is
+// projected here — 'ended' joins 'suspended' as a name for something about the
+// PROCESS, never a state anything transitions to.
+describe("an exited session's card says 'ended', not the leftover 'done' (#1362)", () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-ended-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+  const statusOf = async (h: { call: (c: string, ...a: unknown[]) => unknown }): Promise<string> => {
+    const cards = (await h.call('sessions:cards')) as Array<{ cardId: string; status: string }>;
+    return cards.find((c) => c.cardId === CARD)!.status;
+  };
+
+  it('a finished turn with its process still running is `done` — "waiting", exactly as before', async () => {
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'], status: 'done' });
+    await start(h);
+    expect(await statusOf(h)).toBe('done');
+  });
+
+  it('the same card once its process has exited cleanly is `ended`', async () => {
+    const exitCodes: Record<string, number> = {};
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'], status: 'done', exitCodes });
+    await start(h);
+    exitCodes['live-1'] = 0;
+    expect(await statusOf(h)).toBe('ended');
+  });
+
+  it('a nonzero exit after a finished turn is `ended` too — the state machine kept it `done`', async () => {
+    const exitCodes: Record<string, number> = {};
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'], status: 'done', exitCodes });
+    await start(h);
+    exitCodes['live-1'] = 1;
+    expect(await statusOf(h)).toBe('ended');
+  });
+
+  it('a crash keeps its own word', async () => {
+    const exitCodes: Record<string, number> = {};
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'], status: 'crashed', exitCodes });
+    await start(h);
+    exitCodes['live-1'] = 3;
+    expect(await statusOf(h)).toBe('crashed');
+  });
+
+  it('a card restored from the workspace with no live process is `suspended` — never "waiting"', async () => {
+    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'], status: 'done' });
+    expect(await statusOf(h)).toBe('suspended');
+  });
+});

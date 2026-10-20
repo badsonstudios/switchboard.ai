@@ -140,6 +140,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.126 — unreleased
 
+### Fixed
+
+- **A session whose Claude Code has closed says "ended", not "waiting".**
+  When the program inside a session closed without crashing, its tab, its row in the Sessions list and its pill on the strip
+  went on saying **waiting** in gold, as if it wanted your next prompt; only
+  its card's header said **ended**. Now all four say **ended**, quietly and
+  untinted, and a group no longer counts it as waiting. A session that has
+  finished its turn and is still running still says **waiting**, and a crash
+  still says **crashed**.
+
 ## 0.8.125 — 2026-10-19
 
 ### Added

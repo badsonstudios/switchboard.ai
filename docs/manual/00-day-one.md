@@ -96,6 +96,7 @@ end that tells you what it's doing:
 | **question** | It asked you a question. |
 | **waiting** | It finished its turn and is waiting for your next prompt. |
 | **calm** | Nothing has run in it yet. |
+| **ended** | Claude Code has closed. Click **Restart** on the card to use it again. |
 
 A session that is waiting on you for an **approval**, a **question** or its
 next prompt is tinted in that state's colour (orange, yellow, or a softer
