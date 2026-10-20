@@ -392,6 +392,139 @@ describe('a dispatched card whose AI is gone (#1318)', () => {
   });
 });
 
+// #1378: a DISPATCHED card whose briefing EXPIRED before it started. Main
+// refuses with a named answer; the card must say so plainly, name the AI, offer
+// to dispatch again from the source session — and never offer a Try again that
+// could only fail, nor start anything on its own after a relaunch.
+describe('a dispatched card whose briefing expired (#1378)', () => {
+  const EXPIRED = {
+    notStarted: {
+      reason: 'briefing-expired',
+      aiName: 'Codex',
+      fromName: 'Payments API',
+      fromId: 'live-author',
+      templateId: 'builtin:code-reviewer',
+    },
+  };
+  let paramWrites: Array<Record<string, unknown>>;
+
+  const answerExpired = (): void => {
+    const bridge = (window as unknown as { switchboard: { sessions: Record<string, unknown> } })
+      .switchboard.sessions;
+    bridge.create = () => {
+      created += 1;
+      return Promise.resolve(EXPIRED);
+    };
+  };
+
+  async function mountWith(params: Partial<CardParams> = {}): Promise<void> {
+    paramWrites = [];
+    const base = panelProps('c1');
+    const props = {
+      ...base,
+      api: { ...base.api, updateParameters: (p: Record<string, unknown>) => void paramWrites.push(p) },
+      params: { ...base.params, dispatchId: 'd-1', ...params },
+    } as unknown as IDockviewPanelProps<CardParams>;
+    await act(async () => {
+      root!.render(React.createElement(components.sessionCard, props));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  const overlay = (): Element => host.querySelector('[data-testid="card-overlay"]')!;
+  const buttons = (): string[] =>
+    [...overlay().querySelectorAll('button')].map((b) => b.textContent ?? '');
+
+  it('endedCopy: plain words, the AI and the source named, Dispatch again, and NO Try again', () => {
+    expect(endedCopy({ kind: 'never-started', briefingExpired: { ai: 'Codex', from: 'Payments API' } })).toEqual({
+      heading: 'grid.sessionNotStarted',
+      detail: 'grid.notStartedBriefingExpired',
+      detailVars: { ai: 'Codex', from: 'Payments API' },
+      redispatch: 'grid.dispatchAgain',
+    });
+    // without a source name it still says where to go, in words
+    expect(endedCopy({ kind: 'never-started', briefingExpired: { ai: 'Codex' } }).detail).toBe(
+      'grid.notStartedBriefingExpiredNoSource'
+    );
+    // every other never-started card keeps its Try again and gains nothing
+    expect(endedCopy({ kind: 'never-started' }).action).toBe('grid.tryAgain');
+    expect(endedCopy({ kind: 'never-started' }).redispatch).toBeUndefined();
+  });
+
+  it('the card says the briefing expired and names the AI and the source — no Try again', async () => {
+    answerExpired();
+    await mountWith();
+    const text = overlay().textContent ?? '';
+    expect(text).toContain(en.grid.sessionNotStarted);
+    expect(text).toContain('Codex');
+    expect(text).toContain('Payments API');
+    expect(text).toContain('expired');
+    expect(text).not.toContain(en.grid.notStartedHint);
+    expect(buttons()).not.toContain(en.grid.tryAgain);
+    expect(buttons()).toContain(en.grid.close);
+    expect(created).toBe(1);
+  });
+
+  it('remembers the expiry in its own params, so a relaunch cannot fall through to an ordinary start', async () => {
+    answerExpired();
+    await mountWith();
+    expect(paramWrites).toEqual([
+      {
+        dispatchExpired: {
+          ai: 'Codex',
+          from: 'Payments API',
+          fromId: 'live-author',
+          templateId: 'builtin:code-reviewer',
+        },
+      },
+    ]);
+  });
+
+  it('a card that already knows its briefing expired does NOT ask main to start (the relaunch)', async () => {
+    // main would now answer with the fail-open ordinary start — so it is not asked
+    await mountWith({ dispatchExpired: { ai: 'Codex', from: 'Payments API' } });
+    expect(created).toBe(0);
+    expect(overlay().textContent).toContain('Codex');
+    expect(buttons()).not.toContain(en.grid.tryAgain);
+  });
+
+  it('Dispatch again is offered when the source session is still running, found by lineage', async () => {
+    sessionStore.setSessions([
+      { id: 'c1', title: 'acme', status: 'idle' },
+      { id: 'c2', title: 'Payments API', status: 'idle', liveId: 'live-now' },
+    ]);
+    sessionStore.setDispatchParent('c1', 'c2');
+    try {
+      answerExpired();
+      await mountWith();
+      const again = host.querySelector<HTMLButtonElement>('[data-testid="card-dispatch-again"]');
+      expect(again?.textContent).toBe(en.grid.dispatchAgain);
+      expect(again?.title).toContain('Payments API');
+    } finally {
+      sessionStore.forgetDispatchLineage('c1');
+    }
+  });
+
+  it('...and not when the source session is gone — the sentence still says where to go', async () => {
+    answerExpired();
+    await mountWith();
+    expect(host.querySelector('[data-testid="card-dispatch-again"]')).toBeNull();
+    expect(overlay().textContent).toContain('Payments API');
+  });
+
+  it('the new keys exist, do not name Claude, and say how long a briefing is kept', () => {
+    for (const k of [en.grid.notStartedBriefingExpired, en.grid.notStartedBriefingExpiredNoSource]) {
+      expect(k).toContain('{ai}');
+      expect(k).toMatch(/15 minutes/);
+      expect(k).not.toMatch(/claude|TTL|dispatchId/i);
+    }
+    expect(en.grid.notStartedBriefingExpired).toContain('{from}');
+    expect(en.grid.dispatchAgain.length).toBeGreaterThan(0);
+  });
+});
+
 describe('endedPill', () => {
   it('calls a crash a crash, on the ramp position the alarm lives at', () => {
     expect(endedPill({ kind: 'exited', code: 137, crashed: true })).toEqual({

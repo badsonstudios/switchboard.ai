@@ -157,7 +157,8 @@ import {
 import { controlUnavailable, useAiControls } from '../lib/ai-controls';
 import { afterSwitchAiAnswer, MANAGE_AIS_TAB, type SwitchAiNext } from '../lib/ai-switch-view';
 import { openSettingsAt } from '../lib/settings-port';
-import { isSessionNotStarted } from '../../../shared/sessions';
+import { isSessionNotStarted, type SessionNotStarted } from '../../../shared/sessions';
+import { parentOf } from '../lib/dispatch-lineage';
 import { type TransportKind } from '../../../shared/transport';
 import type {
   AutonomyMode,
@@ -234,6 +235,28 @@ export interface CardParams {
    * longer resolves starts an ordinary session and says so in the log.
    */
   dispatchId?: string;
+  /**
+   * This card's dispatch briefing EXPIRED before it started (#1378), as main
+   * reported it. Written into the params the moment main says so, because main
+   * only remembers an expired briefing for the life of the process: after a
+   * relaunch the same `dispatchId` would read as one main never held, and that
+   * one is fail-open — an ordinary session on the default AI, no briefing,
+   * which is the very thing this card was refused to avoid. With it, the card
+   * shows the same message on every later mount and never asks main to start.
+   */
+  dispatchExpired?: BriefingExpired;
+}
+
+/** What a card whose dispatch briefing expired knows (#1378) — all descriptive. */
+export interface BriefingExpired {
+  /** the AI it was dispatched to — named, never swapped for the default */
+  ai?: string;
+  /** the session that sent it, by name, for "dispatch it again from …" */
+  from?: string;
+  /** that session's live id when it dispatched (a fallback for finding it) */
+  fromId?: string;
+  /** the role, so Dispatch again opens on it */
+  templateId?: string;
 }
 
 interface Live {
@@ -307,6 +330,13 @@ export type CardEnded =
        * offers Settings → AIs. The briefing is kept for Try again.
        */
       aiMissing?: string;
+      /**
+       * A DISPATCHED card whose briefing expired before it started (#1378).
+       * Main refused rather than start an ordinary session on the default AI;
+       * the card says so, names the AI, and offers to dispatch again from the
+       * session that sent it. No Try again: it can never succeed.
+       */
+      briefingExpired?: BriefingExpired;
     };
 
 /**
@@ -384,12 +414,29 @@ export function endedCopy(ended: CardEnded): {
   detail: string;
   /** ICU args for `detail`, when it takes any */
   detailVars?: Record<string, unknown>;
-  /** the primary button — "Restart" only makes sense for something that ran */
-  action: string;
+  /**
+   * the primary button — "Restart" only makes sense for something that ran.
+   * ABSENT where pressing it could never work (#1378's expired briefing).
+   */
+  action?: string;
   /** a second button that opens Settings → AIs, when the cause is an AI (#1318) */
   aiSettings?: string;
+  /** a button that re-opens the dispatch box from the source session (#1378) */
+  redispatch?: string;
 } {
   if (ended.kind === 'never-started') {
+    // the briefing expired (#1378): say so in plain words, name the AI it was
+    // for, and point at the session to dispatch again from — never "Try again",
+    // which main would refuse for ever
+    if (ended.briefingExpired !== undefined) {
+      const { ai, from } = ended.briefingExpired;
+      return {
+        heading: 'grid.sessionNotStarted',
+        detail: from ? 'grid.notStartedBriefingExpired' : 'grid.notStartedBriefingExpiredNoSource',
+        detailVars: { ai: ai ?? '', from: from ?? '' },
+        redispatch: 'grid.dispatchAgain',
+      };
+    }
     // the AI a dispatch chose is gone (#1318): say which, and where to fix it
     if (ended.aiMissing !== undefined) {
       return {
@@ -1752,7 +1799,33 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // is where a card main has never heard of becomes a session the workspace
     // can see. The title comes from the panel rather than the params, so a
     // rename that landed before the start failed is the one that shows.
-    const startFailed = (why: unknown, aiMissing?: string): void => {
+    const startFailed = (why: unknown, named?: SessionNotStarted['notStarted']): void => {
+      const aiMissing = named?.reason === 'ai-missing' ? named.aiName : undefined;
+      // #1378: the briefing expired — remembered in the card's own params so a
+      // relaunch shows this again instead of falling through to main's fail-open
+      if (named?.reason === 'briefing-expired') {
+        const expired: BriefingExpired = {
+          ...(named.aiName ? { ai: named.aiName } : {}),
+          ...(named.fromName ? { from: named.fromName } : {}),
+          ...(named.fromId ? { fromId: named.fromId } : {}),
+          ...(named.templateId ? { templateId: named.templateId } : {}),
+        };
+        props.api.updateParameters({ dispatchExpired: expired });
+        return markNeverStarted(why, { briefingExpired: expired });
+      }
+      return markNeverStarted(
+        why,
+        aiMissing !== undefined
+          ? { aiMissing }
+          : props.params?.resumeConversationId
+            ? { pickRefused: true }
+            : {}
+      );
+    };
+    const markNeverStarted = (
+      why: unknown,
+      cause: Omit<Extract<CardEnded, { kind: 'never-started' }>, 'kind'>
+    ): void => {
       console.warn(`[sessions] session did not start for ${cardId} — see the app log`, why ?? '');
       // A card opened FROM the history picker says why in its own words
       // (P2-E20-01). Every reachable failure on that path is about the
@@ -1761,14 +1834,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       // so it is more accurate than the generic hint even for the rarer causes.
       // A dispatched card whose AI is gone names it (#1318); main only says so
       // for a dispatch, which is never also a history pick.
-      setEnded({
-        kind: 'never-started',
-        ...(aiMissing !== undefined
-          ? { aiMissing }
-          : props.params?.resumeConversationId
-            ? { pickRefused: true }
-            : {}),
-      });
+      setEnded({ kind: 'never-started', ...cause });
       if (cardId) {
         sessionStore.markCardNotStarted({
           id: cardId,
@@ -1783,6 +1849,16 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         });
       }
     };
+    // A card already told its briefing expired (#1378) does not ask again: after
+    // a relaunch main no longer knows, and its answer would be the fail-open
+    // ordinary start this card exists to refuse. Same overlay, no spawn.
+    const expiredBefore = props.params?.dispatchExpired;
+    if (expiredBefore) {
+      markNeverStarted(null, { briefingExpired: expiredBefore });
+      // nothing is in flight: say so, rather than leave a spawn "running" (review)
+      spawning.current = false;
+      return;
+    }
     void window.switchboard.sessions
       .create({
         cardId,
@@ -1821,7 +1897,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         const record = answered(answer);
         if (!record) return startFailed(null);
         // a refusal main could NAME (#1318): the AI this dispatch chose is gone
-        if (isSessionNotStarted(record)) return startFailed(record, record.notStarted.aiName);
+        if (isSessionNotStarted(record)) return startFailed(record, record.notStarted);
         // it started, so main owns this card's row from here — drop ours (#687).
         // Unconditional: a retry that succeeds comes through this branch, and
         // `clearCardNotStarted` is a no-op for a card that was never marked.
@@ -2365,6 +2441,26 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // never got going. `maxInlineSize` matches the suspended overlay: the
   // never-started line is a sentence, not a code.
   const overlayCopy = ended ? endedCopy(ended) : null;
+  /**
+   * Where "Dispatch again" opens the dialog from (#1378): the session that sent
+   * this card, if it is still running. Found by the card's own LINEAGE first —
+   * card ids, which survive a resume and a relaunch — and by the live id main
+   * recorded at prepare time second. `null` hides the button, and the sentence
+   * above it still says where to go.
+   */
+  const redispatchSource = (): { id: string; name: string } | null => {
+    const info = ended?.kind === 'never-started' ? ended.briefingExpired : undefined;
+    if (!info) return null;
+    const rows = sessionStore.getState().sessions;
+    const parentCard = parentOf(sessionStore.getLineage(), cardId);
+    const row =
+      (parentCard ? rows.find((r) => r.id === parentCard) : undefined) ??
+      (info.fromId ? rows.find((r) => r.liveId === info.fromId) : undefined);
+    // through `cardHeaderTitle`, as the ⋯ menu and the palette do — a raw empty
+    // stored title would name the new card "Code Reviewer of " (review)
+    return row?.liveId ? { id: row.liveId, name: cardHeaderTitle(row.title, undefined, row.folder) } : null;
+  };
+  const redispatchFrom = overlayCopy?.redispatch ? redispatchSource() : null;
   // ...and the one word the header above it wears (#606)
   const pill = ended ? endedPill(ended) : null;
   const endedOverlay = overlayCopy ? (
@@ -2381,9 +2477,31 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         {t(overlayCopy.detail, overlayCopy.detailVars)}
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-        <button onClick={restartSelf} style={overlayBtn(true)}>
-          {t(overlayCopy.action)}
-        </button>
+        {overlayCopy.action && (
+          <button onClick={restartSelf} style={overlayBtn(true)}>
+            {t(overlayCopy.action)}
+          </button>
+        )}
+        {/* the briefing expired (#1378): the same dialog, from the same session,
+            on the same role — a NEW card; this one is then only for closing */}
+        {overlayCopy.redispatch && redispatchFrom && (
+          <button
+            data-testid="card-dispatch-again"
+            onClick={() => {
+              const from = redispatchSource();
+              if (!from) return;
+              const info = ended?.kind === 'never-started' ? ended.briefingExpired : undefined;
+              openDispatchDialog?.(from, {
+                into: props.api.location.type === 'popout' ? props.api.group : null,
+                ...(info?.templateId ? { templateId: info.templateId } : {}),
+              });
+            }}
+            title={t('grid.dispatchAgainHint', { from: redispatchFrom.name })}
+            style={overlayBtn(true)}
+          >
+            {t(overlayCopy.redispatch)}
+          </button>
+        )}
         {/* the AI a dispatch chose is gone (#1318): one press to where it is
             set up again, then Try again carries the kept briefing */}
         {overlayCopy.aiSettings && (

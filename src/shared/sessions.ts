@@ -405,19 +405,47 @@ export interface SessionCardWire {
  * log has why", and every other refusal keeps answering exactly that.
  */
 export interface SessionNotStarted {
-  notStarted: { reason: 'ai-missing'; aiName: string };
+  notStarted: NotStartedAiMissing | NotStartedBriefingExpired;
 }
+
+export interface NotStartedAiMissing {
+  reason: 'ai-missing';
+  aiName: string;
+}
+
+/**
+ * The second named reason (#1378): a dispatched card's briefing EXPIRED before
+ * the card started — main keeps a prepared briefing for a bounded time
+ * (`DISPATCH_TTL_MS`). Refused rather than started as an ordinary session on
+ * the default AI, which is what it used to do with only a log line to say so.
+ *
+ * Everything but `reason` is optional and DESCRIPTIVE: the card names the AI
+ * and the session it came from when it can, and offers to dispatch again from
+ * that session with the same role (`fromId` is the author's live id at prepare
+ * time, a fallback — the card's own lineage is the first way it finds the
+ * author; `templateId` preselects the role).
+ */
+export interface NotStartedBriefingExpired {
+  reason: 'briefing-expired';
+  aiName?: string;
+  fromName?: string;
+  fromId?: string;
+  templateId?: string;
+}
+
+const optString = (v: unknown): boolean => v === undefined || typeof v === 'string';
 
 /** Is this `sessions:create` answer a named refusal rather than a record? */
 export function isSessionNotStarted(v: unknown): v is SessionNotStarted {
   if (typeof v !== 'object' || v === null) return false;
   const n = (v as Record<string, unknown>).notStarted;
-  return (
-    typeof n === 'object' &&
-    n !== null &&
-    (n as Record<string, unknown>).reason === 'ai-missing' &&
-    typeof (n as Record<string, unknown>).aiName === 'string'
-  );
+  if (typeof n !== 'object' || n === null) return false;
+  const r = n as Record<string, unknown>;
+  if (r.reason === 'ai-missing') return typeof r.aiName === 'string';
+  if (r.reason === 'briefing-expired') {
+    return optString(r.aiName) && optString(r.fromName) && optString(r.fromId) && optString(r.templateId);
+  }
+  return false;
 }
 
 /** The AI a card was switched FROM, as its overlay offers to go back (#1294). */

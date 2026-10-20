@@ -154,6 +154,14 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ### Fixed
 
+- **A dispatched session that starts too late says so, instead of quietly
+  starting the wrong thing.** switchboard keeps a dispatch's briefing for 15
+  minutes. If the new card didn't start in that time — it sat in a background
+  tab, or you pressed **Try again** later — it used to start a plain session on
+  your default AI with no briefing at all, and only the log said why. Now the
+  card says the briefing has expired, names the AI and the session it came
+  from, and offers **Dispatch again**, which reopens the Dispatch box from that
+  session with the same role.
 - **A session whose Claude Code has closed says "ended", not "waiting".**
   When the program inside a session closed without crashing, its tab, its row in the Sessions list and its pill on the strip
   went on saying **waiting** in gold, as if it wanted your next prompt; only

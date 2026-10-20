@@ -1941,6 +1941,35 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // lookup would be a real change for a log level.
           const routine = deps.persist.list().some((s) => s.id === opts.cardId);
           const where = { cardId: opts.cardId, folder: opts.folder };
+          // ⚠️ AN EXPIRED BRIEFING IS REFUSED, NOT FAILED OPEN (#1378). The
+          // fail-open below exists for an id main never held — a layout restored
+          // after a relaunch, which §5.15 says must still start. An id whose
+          // briefing main HELD and let expire is a different fact: the user
+          // dispatched a role to a chosen AI moments ago (a card that stayed
+          // hidden, or a Try again after the 15 minutes), and starting it as an
+          // ordinary session on the DEFAULT AI with no briefing looks like the
+          // dispatch they asked for while being nothing of the kind. Main is the
+          // only side that knows the difference (`DispatchRegistry.expired`), so
+          // it says so — named, before anything starts — and the card offers to
+          // dispatch again. A card with a record already ran, and was briefed then.
+          const gone = routine ? undefined : deps.dispatches?.expired(opts.dispatchId);
+          if (gone) {
+            log.warn('a dispatch briefing expired before its card started; refusing rather than starting an unbriefed session', {
+              ...where,
+              provider: gone.providerId,
+              templateId: gone.templateId,
+            });
+            const notStarted: SessionNotStarted = {
+              notStarted: {
+                reason: 'briefing-expired',
+                aiName: gone.providerName || gone.providerId,
+                ...(gone.fromName ? { fromName: gone.fromName } : {}),
+                fromId: gone.from,
+                templateId: gone.templateId,
+              },
+            };
+            return notStarted;
+          }
           if (routine) {
             log.debug('a dispatched card restarted; it was briefed on its first start', where);
           } else {

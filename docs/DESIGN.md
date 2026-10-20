@@ -2680,6 +2680,22 @@ transfer + role templates, all already in the design.
 > A handle that no longer resolves starts an ordinary session and says which card
 > lost its briefing — fail-open (P6), because a restored layout must still start.
 >
+> **⚠️ AMENDED (#1378): except a briefing main HELD AND LET EXPIRE.** The briefing
+> lives 15 minutes (`DISPATCH_TTL_MS`). Before this change an expired handle took
+> the fail-open path above, so a card that first started late (it sat out of sight,
+> or Try again was pressed after the 15 minutes, including on #1318's removed-AI
+> card) became an ordinary session on the **default** AI with no briefing. That
+> looked like the dispatch while being nothing of the kind, and only the log said
+> so. Main now keeps a small, bounded tombstone per expired or cap-evicted handle,
+> and a FIRST start carrying one is **refused** with a named answer
+> (`notStarted.reason = 'briefing-expired'`: the AI, the role and the sender). The
+> card says the briefing expired, offers **Dispatch again** from the sending session
+> on the same role, and has no Try again. It writes the fact into its own panel
+> params, so after a relaunch (when main no longer remembers) it still does not
+> start. The fail-open above is unchanged for the case it was written for: a handle
+> main never held, i.e. a dispatched card that had not yet tried to start when the
+> app was quit.
+>
 > **What the gesture refuses rather than half-doing:** a dispatch with no
 > typed-message transport is refused **before** the spawn, because `submitPrompt`
 > needs a stream handle and a live card wearing a role with no instruction in it

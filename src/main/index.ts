@@ -3293,6 +3293,10 @@ app
         Promise.resolve(
           aiCatalog.list().find((i) => i.providerId === providerId)?.detection?.login ?? 'unknown'
         ),
+      // The e2e seam for the briefing's lifetime (#1378): the real one is 15
+      // minutes, which no spec can wait out. Non-packaged builds only — the rule
+      // `SWITCHBOARD_BIND_GIVEUP_MS` follows.
+      ttlMs: app.isPackaged ? undefined : positiveMs(process.env.SWITCHBOARD_DISPATCH_TTL_MS),
     });
     // ── THE ROUND-TRIP (P2-E13-05, §5.15) — Phase 2 exit criterion 5 ────────
     //
