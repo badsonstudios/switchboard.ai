@@ -22,6 +22,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   registerDispatchIpc,
   DISPATCH_TTL_MS,
+  MAX_EXPIRED_DISPATCHES,
   LOGIN_WAIT_MS,
   MAX_PENDING_DISPATCHES,
   OPTIONS_LOGIN_WAIT_MS,
@@ -82,6 +83,8 @@ function harness(
     providers?: Array<{ id: string; name: string }>;
     /** each AI's login answer; absent = no `loginStateOf` dep at all */
     logins?: Record<string, DispatchAiLogin | 'throw' | 'hang' | 'slow-out'>;
+    /** the TTL override (#1378's e2e seam) */
+    ttlMs?: number;
   } = {}
 ) {
   const handlers = new Map<string, Handler>();
@@ -121,6 +124,7 @@ function harness(
     // that ignored the guard entirely.
     taskStatementOf: (id) => opts.tasks?.[id],
     experimentalFork: () => opts.fork === true,
+    ...(opts.ttlMs === undefined ? {} : { ttlMs: opts.ttlMs }),
     providers: () =>
       opts.providers ?? [
         { id: 'claude-code', name: 'Claude Code' },
@@ -443,6 +447,111 @@ describe('the pending registry', () => {
     expect(h.registry.peek(ids[0])).toBeUndefined();
     expect(h.registry.peek(ids[ids.length - 1])).toBeTruthy();
     expect(h.logs.some((l) => l.msg.includes('stay under the cap'))).toBe(true);
+  });
+});
+
+// ── AN EXPIRED BRIEFING IS REMEMBERED AS EXPIRED (#1378) ─────────────────────
+//
+// Expiry drops the briefing; without a record of it, an expired id reads exactly
+// like one main never held (a relaunch), and `sessions:create` fails THAT open —
+// so a card dispatched to a chosen AI quietly became an unbriefed session on the
+// default one. The registry keeps a tombstone: enough to name what was lost.
+describe('expired briefings (#1378)', () => {
+  const expire = (h: ReturnType<typeof harness>, id: string): void => {
+    (h.registry.peek(id) as { at: number }).at = Date.now() - DISPATCH_TTL_MS - 1;
+  };
+
+  it('a live briefing is not "expired"', async () => {
+    const h = harness();
+    const { dispatchId } = await prepared(h);
+    expect(h.registry.expired(dispatchId)).toBeUndefined();
+  });
+
+  it('once past its TTL it says WHICH AI, WHICH role and WHO sent it — and keeps saying so', async () => {
+    const two = [
+      { id: 'claude-code', name: 'Claude Code' },
+      { id: 'codex', name: 'Codex' },
+    ];
+    const h = harness({ providers: two });
+    const { dispatchId } = await prepared(h, {
+      from: AUTHOR,
+      templateId: REVIEWER_ID,
+      targetProviderId: 'codex',
+    });
+    expect(h.registry.peek(dispatchId)?.fromName).toBe('TradingApp');
+    expire(h, dispatchId);
+    const gone = h.registry.expired(dispatchId);
+    expect(gone).toMatchObject({
+      from: AUTHOR,
+      fromName: 'TradingApp',
+      providerId: 'codex',
+      providerName: 'Codex',
+      templateId: REVIEWER_ID,
+      templateName: BUILT_IN_TEMPLATES[0].name,
+    });
+    // the briefing itself is gone, and NOT kept in the tombstone
+    expect(h.registry.peek(dispatchId)).toBeUndefined();
+    expect(JSON.stringify(gone)).not.toContain('const a = 2');
+    // not consuming: every Try again gets the same answer
+    expect(h.registry.expired(dispatchId)).toEqual(gone);
+    // the existing expiry line is still logged, once
+    expect(h.logs.filter((l) => l.msg.includes('expired before its card started'))).toHaveLength(1);
+  });
+
+  it('notices an expiry nobody has read yet — `expired` asks before `peek` ever did', async () => {
+    const h = harness();
+    const { dispatchId } = await prepared(h);
+    expire(h, dispatchId);
+    // no peek in between: the entry is still in the pending map, past its TTL
+    expect(h.registry.expired(dispatchId)?.templateId).toBe(REVIEWER_ID);
+  });
+
+  it('a SPENT briefing is not expired — that card started and was briefed', async () => {
+    const h = harness();
+    const { dispatchId } = await prepared(h);
+    h.registry.consume(dispatchId);
+    expect(h.registry.expired(dispatchId)).toBeUndefined();
+  });
+
+  it('an id it never held is not expired — that is the relaunch case, fail-open by design', () => {
+    const h = harness();
+    for (const id of ['never-held', '', undefined, 42]) expect(h.registry.expired(id)).toBeUndefined();
+  });
+
+  it('a briefing EVICTED by the cap is as gone as an expired one', async () => {
+    const h = harness();
+    const ids: string[] = [];
+    for (let i = 0; i < MAX_PENDING_DISPATCHES + 1; i++) ids.push((await prepared(h)).dispatchId);
+    expect(h.registry.peek(ids[0])).toBeUndefined();
+    expect(h.registry.expired(ids[0])?.templateId).toBe(REVIEWER_ID);
+  });
+
+  it('the tombstones are bounded too', async () => {
+    const h = harness();
+    const ids: string[] = [];
+    for (let i = 0; i < MAX_EXPIRED_DISPATCHES + 2; i++) {
+      const { dispatchId } = await prepared(h);
+      expire(h, dispatchId);
+      h.registry.peek(dispatchId);
+      ids.push(dispatchId);
+    }
+    expect(h.registry.expired(ids[0])).toBeUndefined();
+    expect(h.registry.expired(ids[ids.length - 1])).toBeTruthy();
+  });
+
+  it('honours the TTL override (the e2e seam), and ignores a nonsense one', async () => {
+    const short = harness({ ttlMs: 1 });
+    const a = (await prepared(short)).dispatchId;
+    // 2 ms old: past a 1 ms lifetime, nowhere near the real 15 minutes
+    (short.registry.peek(a) as { at: number }).at = Date.now() - 2;
+    expect(short.registry.peek(a)).toBeUndefined();
+    expect(short.registry.expired(a)).toBeTruthy();
+
+    const bogus = harness({ ttlMs: -5 });
+    const b = (await prepared(bogus)).dispatchId;
+    // the same 2 ms: a nonsense override falls back to the real lifetime
+    (bogus.registry.peek(b) as { at: number }).at = Date.now() - 2;
+    expect(bogus.registry.peek(b)).toBeTruthy();
   });
 });
 

@@ -583,7 +583,7 @@ describe('endedCopy', () => {
     const shown = `${copyText(copy.heading)} ${copyText(copy.detail)}`;
     expect(shown).not.toMatch(/\bended\b|\bexited\b|\bcode\b/i);
     // and it does not offer to "Restart" something that never ran
-    expect(copyText(copy.action)).not.toMatch(/restart/i);
+    expect(copyText(copy.action ?? '')).not.toMatch(/restart/i);
   });
 
   it('keeps the exit copy — with the real code — for a session that ran and died', () => {
@@ -608,11 +608,14 @@ describe('endedCopy', () => {
   it('names only keys that exist in en.json', () => {
     for (const ended of [
       { kind: 'never-started' },
+      { kind: 'never-started', briefingExpired: { ai: 'Codex', from: 'App' } },
+      { kind: 'never-started', briefingExpired: {} },
       { kind: 'exited', code: 0, crashed: false },
       { kind: 'exited', code: -1, crashed: true },
     ] as const) {
       const copy = endedCopy(ended);
-      for (const key of [copy.heading, copy.detail, copy.action]) {
+      for (const key of [copy.heading, copy.detail, copy.action, copy.redispatch]) {
+        if (key === undefined) continue;
         expect(copyText(key).length).toBeGreaterThan(0);
       }
     }

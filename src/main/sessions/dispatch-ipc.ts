@@ -87,6 +87,12 @@ export const DISPATCH_TTL_MS = 15 * 60_000;
 export const MAX_PENDING_DISPATCHES = 32;
 
 /**
+ * How many EXPIRED dispatches are remembered (#1378) — see `ExpiredDispatch`.
+ * Bounded for `MAX_PENDING_DISPATCHES`' reason; a tombstone is a few strings.
+ */
+export const MAX_EXPIRED_DISPATCHES = 64;
+
+/**
  * A briefing waiting for the card that will carry it.
  *
  * The TEMPLATE, not its id: it was resolved with `templateById` at prepare time
@@ -115,6 +121,36 @@ export interface PendingDispatch {
    * the id.
    */
   providerName?: string;
+  /**
+   * The author session's display name when the dispatch was prepared (#1378),
+   * so a card whose briefing expired can say where to dispatch it again from.
+   * Optional: absent, the card says "the session that sent it".
+   */
+  fromName?: string;
+  at: number;
+}
+
+/**
+ * A dispatch whose briefing EXPIRED before its card started (#1378).
+ *
+ * ⚠️ WHY A TOMBSTONE AT ALL. Expiry drops the briefing, and with only the pending
+ * map an expired id is indistinguishable from one main never held — the id a
+ * layout restored after a relaunch carries. `sessions:create` deliberately starts
+ * an ordinary session for THAT one (§5.15: a restored layout must still start),
+ * so an expired briefing took the same branch: Try again on a card dispatched to
+ * a chosen AI quietly started an unbriefed session on the DEFAULT AI. Main is the
+ * only side that knows the difference, so it keeps it — no briefing, just enough
+ * for the card to say what happened and offer to dispatch again.
+ */
+export interface ExpiredDispatch {
+  /** the author's live id at prepare time — the renderer's fallback for finding it */
+  from: string;
+  fromName?: string;
+  providerId: string;
+  providerName?: string;
+  templateId: string;
+  templateName: string;
+  /** when it expired (or was evicted), for the log */
   at: number;
 }
 
@@ -170,6 +206,12 @@ export interface DispatchIpcDeps {
    * `unknown`. `index.ts` wires it to the AI catalog's detection (#1291).
    */
   loginStateOf?: (providerId: string) => Promise<DispatchAiLogin>;
+  /**
+   * How long a prepared dispatch is kept, overriding `DISPATCH_TTL_MS` — the
+   * e2e seam (#1378), wired from an env var in UNPACKAGED builds only. Absent
+   * (always, in a shipped app) means the constant.
+   */
+  ttlMs?: number;
 }
 
 /**
@@ -205,6 +247,13 @@ export interface DispatchRegistry {
    * documents, with a worse failure at the end of it.
    */
   consume: (dispatchId: unknown) => void;
+  /**
+   * Did this id's briefing EXPIRE (or get evicted) before its card started
+   * (#1378)? `undefined` for an id that is live, spent, or was never held here.
+   * Not consuming: the card asks again on every Try again and must get the same
+   * answer each time.
+   */
+  expired: (dispatchId: unknown) => ExpiredDispatch | undefined;
 }
 
 /**
@@ -217,6 +266,26 @@ export interface DispatchRegistry {
 export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
   const { broker, log } = deps;
   const pending = new Map<string, PendingDispatch>();
+  const expired = new Map<string, ExpiredDispatch>();
+  const ttlMs = deps.ttlMs !== undefined && deps.ttlMs > 0 ? deps.ttlMs : DISPATCH_TTL_MS;
+  /** Remember that `dispatchId`'s briefing is gone, oldest tombstone out first. */
+  const bury = (dispatchId: string, found: PendingDispatch): void => {
+    expired.delete(dispatchId);
+    while (expired.size >= MAX_EXPIRED_DISPATCHES) {
+      const oldest = expired.keys().next();
+      if (oldest.done) break;
+      expired.delete(oldest.value);
+    }
+    expired.set(dispatchId, {
+      from: found.from,
+      ...(found.fromName === undefined ? {} : { fromName: found.fromName }),
+      providerId: found.providerId,
+      ...(found.providerName === undefined ? {} : { providerName: found.providerName }),
+      templateId: found.template.id,
+      templateName: found.template.name,
+      at: Date.now(),
+    });
+  };
 
   const refuse = (channel: string, reason: string, fields: LogFields = {}): DispatchPrepared => {
     log.warn(`${channel} refused: ${reason}`, fields);
@@ -477,6 +546,10 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
     while (pending.size >= MAX_PENDING_DISPATCHES) {
       const oldest = pending.keys().next();
       if (oldest.done) break;
+      // an evicted briefing is as gone as an expired one, and its card must say
+      // so rather than start unbriefed (#1378)
+      const evicted = pending.get(oldest.value);
+      if (evicted) bury(oldest.value, evicted);
       pending.delete(oldest.value);
       log.warn('dropped the oldest prepared dispatch to stay under the cap', {
         cap: MAX_PENDING_DISPATCHES,
@@ -491,6 +564,9 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
       // read at the check above, not again here: the name is the one the user
       // just picked from, and the card names it if that AI is gone by the spawn
       providerName: targetEntry.name,
+      // the name the user knows the author by, for an expired card's "dispatch
+      // again from …" (#1378)
+      fromName: resolved.value.name,
       at: Date.now(),
     });
     log.info('dispatch prepared', {
@@ -527,8 +603,9 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
     if (typeof dispatchId !== 'string' || dispatchId === '') return undefined;
     const found = pending.get(dispatchId);
     if (!found) return undefined;
-    if (Date.now() - found.at > DISPATCH_TTL_MS) {
+    if (Date.now() - found.at > ttlMs) {
       pending.delete(dispatchId);
+      bury(dispatchId, found);
       log.warn('a prepared dispatch expired before its card started', {
         dispatchId,
         templateId: found.template.id,
@@ -544,6 +621,13 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
     consume: (dispatchId: unknown): void => {
       if (typeof dispatchId !== 'string') return;
       if (pending.delete(dispatchId)) log.debug('prepared dispatch spent', { dispatchId });
+    },
+    expired: (dispatchId: unknown): ExpiredDispatch | undefined => {
+      if (typeof dispatchId !== 'string' || dispatchId === '') return undefined;
+      // ASK `live` FIRST: an entry past its TTL that nobody has read yet is still
+      // in `pending`, and only the read that notices it buries it
+      if (live(dispatchId)) return undefined;
+      return expired.get(dispatchId);
     },
   };
 }

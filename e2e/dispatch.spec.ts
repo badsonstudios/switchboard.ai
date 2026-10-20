@@ -392,4 +392,54 @@ test.describe('dispatching a Code Reviewer (#948, §5.15)', () => {
     await expect(w.locator('[data-rail-lineage]')).toHaveCount(0);
     await expect(authorTurns).toHaveCount(1);
   });
+
+  // ── #1378: A BRIEFING THAT EXPIRED BEFORE ITS CARD STARTED ────────────────
+  //
+  // The real lifetime is 15 minutes; `SWITCHBOARD_DISPATCH_TTL_MS` (unpackaged
+  // builds only) shrinks it to 1 ms, so the card's FIRST start finds the briefing
+  // already expired — the same state a card that sat hidden for 15 minutes, or a
+  // Try again after them, reaches. It used to start an ordinary session on the
+  // default AI with no briefing. It must say so instead, and offer Dispatch again.
+  test('an expired briefing is refused in plain words, and Dispatch again reopens the dialog (#1378)', async () => {
+    test.setTimeout(180_000);
+    const folder = tempGitProject();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_DISPATCH_TTL_MS: '1' },
+    });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    await pollAsync(async () => {
+      const s = await sessionStatuses(a);
+      return s.size >= 1 && [...s.values()].every((v) => v !== 'suspended');
+    }, 'the author session never came up live', 60_000);
+    const before = await liveSessions(w);
+    expect(before).toHaveLength(1);
+
+    await w.getByTitle('Session menu').click();
+    await w.getByTestId('card-menu').getByTestId('card-dispatch').click();
+    await expect(dialog(w)).toBeVisible({ timeout: 20_000 });
+    await w.locator('[data-testid="dispatch-go"]').click();
+    await expect(dialog(w)).toBeHidden({ timeout: 20_000 });
+
+    // THE CARD SAYS SO — the briefing expired, plainly, with no Try again
+    const card = w.locator('[data-testid="card-overlay"]', { hasText: 'expired' });
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await expect(card).toContainText('15 minutes');
+    await expect(card).toContainText("won't start without its briefing");
+    await expect(card.getByRole('button', { name: 'Try again' })).toHaveCount(0);
+
+    // ...and NOTHING STARTED on any AI: still exactly the author's one session
+    await w.waitForTimeout(1_500);
+    expect(await liveSessions(w)).toHaveLength(1);
+
+    // Dispatch again: the same dialog, from the same session, on the same role
+    const again = card.getByTestId('card-dispatch-again');
+    await expect(again).toBeVisible();
+    await again.click();
+    await expect(dialog(w)).toBeVisible({ timeout: 20_000 });
+    expect(
+      await w.locator('[data-dispatch-template="builtin:code-reviewer"]').getAttribute('data-selected')
+    ).toBe('yes');
+  });
 });

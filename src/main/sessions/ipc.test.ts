@@ -21,7 +21,7 @@ import { MisplacedSkills, SlashCommand } from '../../shared/slash-commands';
 import { readAiTitle } from '../providers/claude';
 import type { TransportKind } from '../../shared/transport';
 import { DEFAULT_TASK_LABEL_SIZE, type TaskLabelSize } from '../../shared/task-label-size';
-import type { PendingDispatch } from './dispatch-ipc';
+import type { ExpiredDispatch, PendingDispatch } from './dispatch-ipc';
 import { isSessionNotStarted } from '../../shared/sessions';
 import { BUILT_IN_TEMPLATES, type RoleTemplate } from '../../shared/dispatch';
 import { REPEAT_HEAVY, REVISED, titlesOf } from '../transcripts/fixtures/ai-title';
@@ -194,6 +194,11 @@ function harness(
      * spent exactly once". A registry that only answered could not express either.
      */
     dispatch?: PendingDispatch;
+    /**
+     * #1378: the registry's answer to `expired(DISPATCH_ID)` — the briefing was
+     * held and let expire. A function so a test can make it expire mid-run.
+     */
+    expired?: ExpiredDispatch | (() => ExpiredDispatch | undefined);
     /** #1294: what each AI is called, and the briefing hook #1295 fills */
     providerName?: SessionIpcDeps['providerName'];
     aiSwitchBriefing?: SessionIpcDeps['aiSwitchBriefing'];
@@ -663,6 +668,10 @@ function harness(
         return id === DISPATCH_ID && !spent.length ? opts.dispatch : undefined;
       },
       consume: (id: unknown) => void spent.push(id),
+      expired: (id: unknown) => {
+        if (id !== DISPATCH_ID) return undefined;
+        return typeof opts.expired === 'function' ? opts.expired() : opts.expired;
+      },
     },
     persist: {
       // A store that REMEMBERS. The label loop reads the card back after every
@@ -5970,6 +5979,100 @@ describe('sessions:create carrying a dispatch (P2-E13-03, §5.15)', () => {
       stringContaining('dispatch briefing was not available'),
       expect.anything()
     );
+  });
+
+  // ── #1378: AN EXPIRED BRIEFING IS REFUSED, NAMED — never an ordinary start ──
+  const gone = (over: Partial<ExpiredDispatch> = {}): ExpiredDispatch => ({
+    from: 'live-author',
+    fromName: 'App',
+    providerId: 'codex',
+    providerName: 'Codex',
+    templateId: 'mine-1',
+    templateName: 'Security review',
+    at: Date.now(),
+    ...over,
+  });
+
+  it('#1378: a briefing that EXPIRED before the first start is refused and named — not the default AI, unbriefed', async () => {
+    // A PLAIN dispatched card: the lazy spawn waits for visibility, so a card that
+    // landed out of sight for 15 minutes makes its FIRST start with an expired handle.
+    const h = harness(undefined, dir, { expired: gone() });
+    const answer = await create(h);
+    expect(answer).toEqual({
+      notStarted: {
+        reason: 'briefing-expired',
+        aiName: 'Codex',
+        fromName: 'App',
+        fromId: 'live-author',
+        templateId: 'mine-1',
+      },
+    });
+    expect(isSessionNotStarted(answer)).toBe(true);
+    // NOTHING started — on any AI — and nothing was persisted or submitted
+    expect(h.created).toHaveLength(0);
+    expect(h.upserted).toHaveLength(0);
+    expect(h.submitted).toEqual([]);
+    // the reason is in the log, and the fail-open line is NOT (nothing failed open)
+    expect(h.warn).toHaveBeenCalledWith(stringContaining('expired before its card started'), expect.anything());
+    expect(h.warn).not.toHaveBeenCalledWith(
+      stringContaining('starting an ordinary session'),
+      expect.anything()
+    );
+  });
+
+  it('#1378: the AI name falls back to its id, and an unnamed author is simply not named', async () => {
+    const h = harness(undefined, dir, { expired: gone({ providerName: undefined, fromName: undefined }) });
+    const answer = (await create(h)) as { notStarted: Record<string, unknown> };
+    expect(answer.notStarted.aiName).toBe('codex');
+    expect('fromName' in answer.notStarted).toBe(false);
+  });
+
+  it('#1378: a plain card whose first start failed for ANOTHER reason, retried after the TTL, is refused too', async () => {
+    let expiredNow = false;
+    const h = harness(undefined, dir, {
+      get dispatch() {
+        return expiredNow ? undefined : pending();
+      },
+      expired: () => (expiredNow ? gone() : undefined),
+    });
+    // first start: the folder is gone (a drive unplugged) — refused, briefing NOT spent
+    expect(await create(h, { folder: `${dir}-not-there` })).toBeNull();
+    expect(h.spent).toEqual([]);
+    // ...fifteen minutes later the drive is back and the user presses Try again
+    expiredNow = true;
+    const answer = await create(h);
+    expect(isSessionNotStarted(answer)).toBe(true);
+    expect((answer as { notStarted: { reason: string } }).notStarted.reason).toBe('briefing-expired');
+    expect(h.created).toHaveLength(0);
+  });
+
+  it('#1378: the #1318 removed-AI card, Try again after the TTL — still refused, still naming its AI', async () => {
+    let expiredNow = false;
+    const h = harness(undefined, dir, {
+      get dispatch() {
+        return expiredNow ? undefined : pending({ providerId: 'custom:local-llama', providerName: 'Local Llama' });
+      },
+      expired: () =>
+        expiredNow ? gone({ providerId: 'custom:local-llama', providerName: 'Local Llama' }) : undefined,
+      registered: ['generic'],
+    });
+    expect(await create(h)).toEqual({ notStarted: { reason: 'ai-missing', aiName: 'Local Llama' } });
+    // the briefing expires while the user is re-adding the AI
+    expiredNow = true;
+    const answer = (await create(h)) as { notStarted: Record<string, unknown> };
+    expect(answer.notStarted).toMatchObject({ reason: 'briefing-expired', aiName: 'Local Llama' });
+    // and NOT an ordinary session on the default AI, which is what it used to be
+    expect(h.created).toHaveLength(0);
+    expect(h.upserted).toHaveLength(0);
+  });
+
+  it('#1378: a card that already STARTED keeps starting — its briefing was spent on the first start', async () => {
+    // A tombstone and a record together should not happen (starting spends), but
+    // if they ever did, the card that ran must not be locked out of its own restart.
+    const h = harness(undefined, dir, { prior: priorCard({ folder: dir }), expired: gone() });
+    const answer = await create(h);
+    expect(isSessionNotStarted(answer)).toBe(false);
+    expect(answer).not.toBeNull();
   });
 
   it('refuses a dispatchId that is not a string (§5.29)', async () => {

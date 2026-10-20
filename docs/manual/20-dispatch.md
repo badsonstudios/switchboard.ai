@@ -322,8 +322,22 @@ session-archive work in a later release.
   button. Add that AI again **with the same name** (a "Something else" AI is
   known by its name, so a different name is a different AI) and press **Try
   again**: the briefing is kept for about fifteen minutes, so the session still
-  gets it. After that, Try again starts an ordinary session on your default AI
-  with no briefing. Or close the card and dispatch again on another AI.
+  gets it. After that the card tells you the briefing has expired (next item).
+  Or close the card and dispatch again on another AI.
+- **The new card says its briefing "has expired"**: switchboard keeps what a
+  dispatched session is going to be told — its *briefing* — for fifteen
+  minutes, and this card didn't start in time. That happens when a dispatched
+  card sits out of sight (in a hidden or background tab) for that long before
+  you look at it, or when you press **Try again** on a card that didn't start
+  more than fifteen minutes after dispatching it. Nothing has run in the card,
+  and switchboard won't start it without its briefing — it never quietly
+  starts a plain session instead, or switches it to your default AI. The card
+  names the AI it was for and the session that sent it. Press **Dispatch
+  again**: the Dispatch box opens from that session with the same role picked,
+  and makes a fresh card; then close the old one. (If the session that sent it
+  has been closed or suspended, there's no button — dispatch again from wherever that work
+  is now.) A briefing also doesn't survive quitting switchboard, so dispatch
+  and look at the card in the same run.
 
 ## What doesn't happen yet
 
