@@ -530,7 +530,7 @@ describe('a decision resolves the status, without waiting for the CLI (#310)', (
     perms.offer('s1', canUseTool());
     perms.decide('stream:s1:req-1', 'allow');
 
-    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved', answer: 'allow' } }]);
   });
 
   it('walks needs-permission back to working with NO further stream message', () => {
@@ -556,7 +556,7 @@ describe('a decision resolves the status, without waiting for the CLI (#310)', (
     perms.offer('s1', canUseTool());
     perms.decide('stream:s1:req-1', 'deny', 'no');
 
-    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved', answer: 'deny' } }]);
   });
 
   it('an id it does not own moves nobody', () => {
@@ -654,7 +654,7 @@ describe('denying at once when nobody can answer (#319)', () => {
 
       p.offer('s1', canUseTool());
 
-      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved', answer: 'deny' } }]);
       expect(transition('needs-permission', applied[0].ev).status).toBe('working');
     });
 
@@ -705,7 +705,7 @@ describe('denying at once when nobody can answer (#319)', () => {
       // is what makes an agent route around a denial instead of accepting it.
       expect(String(behaviourOf().message)).toMatch(/not a sandbox restriction/i);
       expect(resolved).toEqual(['stream:s1:req-1']); // the bar comes down too
-      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved', answer: 'deny' } }]);
     });
 
     it('the held request SAYS when it runs out, so the window can show a clock (#1202)', () => {
@@ -735,7 +735,7 @@ describe('denying at once when nobody can answer (#319)', () => {
       expect(resolved).toEqual(['stream:s1:req-1']); // but that bar comes down
 
       p.decide('stream:s1:req-2', 'allow');
-      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved', answer: 'allow' } }]);
     });
 
     it('...and one of two timing out does not hide the other either', async () => {
@@ -748,7 +748,7 @@ describe('denying at once when nobody can answer (#319)', () => {
       expect(p.pendingRequests().map((r) => r.requestId)).toEqual(['stream:s1:req-2']);
       expect(applied).toEqual([]);
       await new Promise((r) => setTimeout(r, 300));
-      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+      expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved', answer: 'deny' } }]);
     });
 
     it('a decision cancels it — no second answer arrives later', async () => {
@@ -804,8 +804,8 @@ describe('denying at once when nobody can answer (#319)', () => {
       p.releaseHeld('renderer gone: crashed');
 
       expect(applied).toEqual([
-        { sessionId: 's1', ev: { kind: 'permission-resolved' } },
-        { sessionId: 's2', ev: { kind: 'permission-resolved' } },
+        { sessionId: 's1', ev: { kind: 'permission-resolved', answer: 'deny' } },
+        { sessionId: 's2', ev: { kind: 'permission-resolved', answer: 'deny' } },
       ]);
     });
 
@@ -875,7 +875,7 @@ describe('a window nobody can see is treated as no window (#1277)', () => {
     expect(sent).toHaveLength(1);
     expect(denialSent().behavior).toBe('deny');
     // the badge comes down: the session is alive and carries on
-    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved', answer: 'deny' } }]);
   });
 
   it('tells the model what happened, and to STOP rather than retry', () => {
@@ -1185,7 +1185,7 @@ describe('a session with no card to show it is declined at once (#333)', () => {
 
     p.offer('ghost', canUseTool());
 
-    expect(applied).toEqual([{ sessionId: 'ghost', ev: { kind: 'permission-resolved' } }]);
+    expect(applied).toEqual([{ sessionId: 'ghost', ev: { kind: 'permission-resolved', answer: 'deny' } }]);
     expect(transition('needs-permission', applied[0].ev).status).toBe('working');
   });
 
@@ -1647,6 +1647,8 @@ describe('a rejected answer is denied, never silently allowed (#563 review)', ()
     expect(String(r.message)).toMatch(/ask again; it will be reviewed then/i);
     // and never an allow that would read as "the user did not answer"
     expect(r.updatedInput).toBeUndefined();
+    // the STATUS hears the answer that went, not the click (#1359): a deny
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved', answer: 'deny' } }]);
   });
 
   // The distinction that makes the rule safe: NOT supplying an answer at all is
@@ -1856,7 +1858,7 @@ describe('a dispatched session and ExitPlanMode (#948, §5.15)', () => {
     // otherwise the card carries the badge for a request already answered.
     perms.setDispatched('s1');
     perms.offer('s1', exitPlanMode());
-    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved', answer: 'deny' } }]);
   });
 
   it('⚠️ IS NARROW — every OTHER tool from a dispatched session still holds', () => {
@@ -1948,7 +1950,7 @@ describe('a dispatched session and ExitPlanMode (#948, §5.15)', () => {
     // needs-permission badge for a request that is already answered.
     perms.setDispatched('s1');
     perms.offer('s1', exitPlanMode());
-    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved', answer: 'deny' } }]);
   });
 
   it('forgets the marking when the live session goes, so a restart is ordinary', () => {

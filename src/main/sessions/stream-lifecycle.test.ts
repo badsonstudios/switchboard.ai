@@ -1227,3 +1227,216 @@ describe('a held request pins the wait (#1258)', () => {
     });
   });
 });
+
+// #1359 -- a late helper request that is ANSWERED, or runs out of time. #1340
+// routed the WITHDRAWN case by the main turn; an answer still sent the card to
+// `working` with nothing left to end it. Now the router says which answer
+// went, and a deny (a deadline is a deny) routes exactly where a withdrawal
+// does. An allow goes to `working` -- the helper is running -- and the
+// engine's empty background-task list is what ends it.
+describe('a held request that is answered (#1359)', () => {
+  const allow = { kind: 'permission-resolved', answer: 'allow' } as const;
+  const deny = { kind: 'permission-resolved', answer: 'deny' } as const;
+  const withdrawn = { kind: 'permission-withdrawn' } as const;
+
+  for (const waiting of ['needs-permission', 'needs-input'] as const) {
+    for (const turn of ['open', 'closed', 'none', undefined] as const) {
+      const ctx = turn === undefined ? {} : { turn };
+      const label = turn ?? 'unknown';
+      it(`${waiting}, main turn ${label}: a deny goes where a withdrawal goes`, () => {
+        expect(transition(waiting, deny, ctx).status).toBe(transition(waiting, withdrawn, ctx).status);
+      });
+      it(`${waiting}, main turn ${label}: an allow goes to working`, () => {
+        expect(transition(waiting, allow, ctx).status).toBe('working');
+      });
+    }
+    it(`${waiting}: the deny with no turn says why in the log`, () => {
+      expect(transition(waiting, deny, { turn: 'closed' })).toMatchObject({ status: 'done', note: 'denied-no-turn' });
+      expect(transition(waiting, deny, { turn: 'none' })).toMatchObject({ status: 'idle', note: 'denied-no-turn' });
+    });
+    it(`${waiting}: another request still held keeps it waiting, whatever the answer`, () => {
+      for (const ev of [allow, deny]) {
+        expect(transition(waiting, ev, { held: true, turn: 'closed' }).status).toBe(waiting);
+      }
+    });
+  }
+
+  it('an answer with no `answer` reads as an allow -- the rule before #1359', () => {
+    expect(transition('needs-permission', { kind: 'permission-resolved' }, { turn: 'closed' }).status).toBe(
+      'working'
+    );
+  });
+
+  it('a deny on a card that was not waiting leaves it where it is, with no turn running', () => {
+    for (const s of ['working', 'idle', 'starting'] as const) {
+      expect(transition(s, deny, { turn: 'closed' }).changed).toBe(false);
+    }
+    expect(transition('done', deny, { turn: 'closed' }).status).toBe('done');
+  });
+});
+
+describe('the engine says no background work is left (#1359)', () => {
+  const idle = { kind: 'background-work', running: 0 } as const;
+  const busy = { kind: 'background-work', running: 1 } as const;
+
+  it('a card left at working with no main turn running is done -- or idle if no turn ever ran', () => {
+    expect(transition('working', idle, { turn: 'closed' })).toMatchObject({ status: 'done', note: 'helpers-done' });
+    expect(transition('working', idle, { turn: 'none' }).status).toBe('idle');
+  });
+
+  it('a main turn running ends itself: the empty list moves nothing', () => {
+    expect(transition('working', idle, { turn: 'open' }).changed).toBe(false);
+    expect(transition('working', idle).changed).toBe(false); // nobody can say = running
+  });
+
+  it('helpers still running move nothing', () => {
+    expect(transition('working', busy, { turn: 'closed' }).changed).toBe(false);
+  });
+
+  it('only a working card is moved: a wait is ended by its request, and a calm card has nowhere to go', () => {
+    for (const s of ['needs-permission', 'needs-input', 'idle', 'done', 'starting'] as const) {
+      expect(transition(s, idle, { turn: 'closed' }).changed, s).toBe(false);
+    }
+  });
+
+  it("Claude's frame is read: the length of the list, and a list that is not one says nothing", () => {
+    expect(translateClaudeFrame({ type: 'system', subtype: 'background_tasks_changed', tasks: [] })).toEqual([
+      { type: 'background-work', running: 0 },
+    ]);
+    expect(
+      translateClaudeFrame({
+        type: 'system',
+        subtype: 'background_tasks_changed',
+        tasks: [{ task_id: 'a', task_type: 'local_agent', description: 'x' }],
+      })
+    ).toEqual([{ type: 'background-work', running: 1 }]);
+    expect(translateClaudeFrame({ type: 'system', subtype: 'background_tasks_changed' })).toEqual([]);
+    expect(statusOf({ type: 'system', subtype: 'background_tasks_changed', tasks: [] })).toEqual(idle);
+  });
+});
+
+// The measured late request (#1268's capture): the parent turn's `result`, the
+// background subagent's own frames, then its `can_use_tool` 137 ms later. Each
+// of the three ways it can be settled, with and without a main turn running.
+describe('a late helper request, answered, through the pump and the router (#1359)', () => {
+  const ask = (requestId: string) => ({
+    type: 'control_request',
+    request_id: requestId,
+    request: { subtype: 'can_use_tool', tool_name: 'Write', input: { file_path: 'sub.txt' } },
+  });
+  const tasks = (n: number) => ({
+    type: 'system',
+    subtype: 'background_tasks_changed',
+    tasks: Array.from({ length: n }, (_, i) => ({ task_id: `t${i}`, task_type: 'local_agent', description: 'x' })),
+  });
+
+  function wired(holdTimeoutMs?: number): { mgr: SessionManager; perms: StreamPermissions; feed: EventFeed } {
+    const mgr = streamManager();
+    const perms = new StreamPermissions(
+      () => true,
+      (sessionId, ev) => mgr.apply(sessionId, ev),
+      createLogger(new LogSink({ dir }), 'perm'),
+      { hasLiveWindow: () => true, ...(holdTimeoutMs !== undefined ? { holdTimeoutMs } : {}) }
+    );
+    perms.setAnswerSurfaceProbe(() => true);
+    mgr.onEngineEvent((sessionId, ev) => perms.ingest(sessionId, ev));
+    mgr.setHeldRequestProbe((sessionId) => perms.holdsRequestFor(sessionId));
+    const feed = new EventFeed();
+    feed.setHeldRequestProbe((sessionId) => perms.holdsRequestFor(sessionId));
+    mgr.onStatusChange((c) => feed.ingest(c));
+    return { mgr, perms, feed };
+  }
+
+  /** a session whose turn has ENDED, with a backgrounded helper asking */
+  async function lateAsk(holdTimeoutMs?: number) {
+    const w = wired(holdTimeoutMs);
+    const rec = w.mgr.create(identity);
+    await tick();
+    w.mgr.apply(rec.id, { kind: 'prompt-sent' });
+    stream.emit(rec.id, tasks(1));
+    stream.emit(rec.id, { type: 'result', subtype: 'success' });
+    stream.emit(rec.id, { type: 'assistant', message: { content: [] }, parent_tool_use_id: 'toolu_bg' });
+    stream.emit(rec.id, ask('sub-1'));
+    expect(w.mgr.get(rec.id)!.status).toBe('needs-permission');
+    return { ...w, id: rec.id };
+  }
+
+  /** the same, with a main turn running beside it: a prompt of ours is out */
+  async function askMidTurn(holdTimeoutMs?: number) {
+    const w = wired(holdTimeoutMs);
+    const rec = w.mgr.create(identity);
+    await tick();
+    w.mgr.apply(rec.id, { kind: 'prompt-sent' });
+    stream.emit(rec.id, ask('req-1'));
+    expect(w.mgr.get(rec.id)!.status).toBe('needs-permission');
+    return { ...w, id: rec.id };
+  }
+
+  describe('no main turn running', () => {
+    it('DENIED: the card ends done, and nobody is counted as needing you', async () => {
+      const { mgr, perms, feed, id } = await lateAsk();
+      expect(perms.decide(`stream:${id}:sub-1`, 'deny', 'no')).toBe(true);
+      expect(mgr.get(id)!.status).toBe('done');
+      expect(feed.list().map((e) => e.kind)).not.toContain('needs-permission');
+    });
+
+    it('TIMED OUT: the deadline is a deny, and the card ends done', async () => {
+      const { mgr, perms, id } = await lateAsk(20);
+      await new Promise((r) => setTimeout(r, 80));
+      expect(perms.holdsRequestFor(id)).toBe(false);
+      expect(mgr.get(id)!.status).toBe('done');
+    });
+
+    it('ALLOWED: working while the helper runs, done when the engine says it has none left', async () => {
+      const { mgr, perms, id } = await lateAsk();
+      perms.decide(`stream:${id}:sub-1`, 'allow');
+      expect(mgr.get(id)!.status).toBe('working');
+      // the helper's own frames keep it there
+      stream.emit(id, { type: 'assistant', message: { content: [] }, parent_tool_use_id: 'toolu_bg' });
+      expect(mgr.get(id)!.status).toBe('working');
+      stream.emit(id, tasks(0));
+      expect(mgr.get(id)!.status).toBe('done');
+    });
+
+    it('DENIED, and the helper carries on regardless: its frames walk it to working, the empty list ends it', async () => {
+      const { mgr, perms, id } = await lateAsk();
+      perms.decide(`stream:${id}:sub-1`, 'deny', 'no');
+      expect(mgr.get(id)!.status).toBe('done');
+      stream.emit(id, { type: 'assistant', message: { content: [] }, parent_tool_use_id: 'toolu_bg' });
+      expect(mgr.get(id)!.status).toBe('working');
+      stream.emit(id, tasks(0));
+      expect(mgr.get(id)!.status).toBe('done');
+    });
+
+    it('a turn the CLI starts on its own after the helper (a main frame) is not ended by the empty list', async () => {
+      const { mgr, perms, id } = await lateAsk();
+      perms.decide(`stream:${id}:sub-1`, 'allow');
+      stream.emit(id, { type: 'assistant', message: { content: [] }, parent_tool_use_id: null });
+      stream.emit(id, tasks(0));
+      expect(mgr.get(id)!.status).toBe('working');
+      stream.emit(id, { type: 'result', subtype: 'success' });
+      expect(mgr.get(id)!.status).toBe('done');
+    });
+  });
+
+  describe('a main turn running', () => {
+    for (const answer of ['allow', 'deny'] as const) {
+      it(`${answer.toUpperCase()}: working until the turn's own result, as before`, async () => {
+        const { mgr, perms, id } = await askMidTurn();
+        perms.decide(`stream:${id}:req-1`, answer, answer === 'deny' ? 'no' : undefined);
+        expect(mgr.get(id)!.status).toBe('working');
+        stream.emit(id, tasks(0)); // a helper finishing mid-turn ends nothing
+        expect(mgr.get(id)!.status).toBe('working');
+        stream.emit(id, { type: 'result', subtype: 'success' });
+        expect(mgr.get(id)!.status).toBe('done');
+      });
+    }
+
+    it('TIMED OUT: working until the turn ends, never done early', async () => {
+      const { mgr, perms, id } = await askMidTurn(20);
+      await new Promise((r) => setTimeout(r, 80));
+      expect(perms.holdsRequestFor(id)).toBe(false);
+      expect(mgr.get(id)!.status).toBe('working');
+    });
+  });
+});

@@ -161,6 +161,14 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   untinted, and a group no longer counts it as waiting. A session that has
   finished its turn and is still running still says **waiting**, and a crash
   still says **crashed**.
+- **A session no longer gets stuck on "working" after you answer a helper's
+  late request.** Claude can hand work to a helper that keeps going after its
+  own turn has finished. If that helper asked you for permission and you said
+  **Deny** (or nobody answered in time), the session used to say *working*
+  forever, with nothing running. Now it goes back to *waiting* (or *calm*),
+  as it already did when Claude took the request back itself. If you said
+  **Allow**, it says *working* while the helper finishes, then *waiting* once
+  Claude Code reports that no background work is left.
 
 ## 0.8.125 — 2026-10-19
 

@@ -198,6 +198,18 @@ export interface PermissionWithdrawnEvent {
 }
 
 /**
+ * How many BACKGROUND tasks the engine has running right now (#1359): helpers
+ * that outlive the turn that started them — a backgrounded subagent, a
+ * background command. A REPLACEMENT, sent whenever the set changes, so
+ * `running: 0` means "none is left". The status machine reads it: with no main
+ * turn running, it is the only thing that says a helper's work is over.
+ */
+export interface BackgroundWorkEvent {
+  type: 'background-work';
+  running: number;
+}
+
+/**
  * The commands this engine offers right now, in full — a REPLACEMENT, not a
  * delta. `dropped` counts entries the translator could not read (logged by the
  * store, at debug).
@@ -296,6 +308,7 @@ export type EngineEvent =
   | TurnEndEvent
   | PermissionRequestEvent
   | PermissionWithdrawnEvent
+  | BackgroundWorkEvent
   | CommandsEvent
   | ModelEvent
   | ModeEvent
