@@ -3,9 +3,9 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚀 RELEASING: v0.8.126, 2026-10-21 — THE WHOLE 2026-10-20 RUN
+> # ✅ RELEASED: v0.8.126, 2026-10-21 (PR #1402, tag on `70923bd5`, release run 39602844521) — THE WHOLE 2026-10-20 RUN
 >
-> Dan, after the run's report: *"Cut a release. Not a beta release, a regular release."* So **a regular release, on his word** — not the first beta the #1380 close-out suggested; the beta channel is still unproven and stays that way until he asks for one. Version, lock and dated notes together as for 0.8.125 (`0.8.127 — unreleased` is open). On green CI this PR merges, then tag `v0.8.126` is pushed from the merge commit and the release workflow publishes `switchboard-Setup-0.8.126.exe` + sha256 as a normal release marked Latest. Tanner's install gets it too.
+> Dan, after the run's report: *"Cut a release. Not a beta release, a regular release."* So **a regular release, on his word** — not the first beta the #1380 close-out suggested; the beta channel is still unproven and stays that way until he asks for one. Version, lock and dated notes together as for 0.8.125 (`0.8.127 — unreleased` is open). The release PR merged on green CI as `70923bd5`, tag `v0.8.126` was pushed from it, and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.126.exe` (105 MB) + `.sha256` as a normal release — `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.126`. Tanner's install gets it too. The four dogfood rows now read RELEASED.
 >
 > **In it:** #1362 (ended status), #1359 (late helper request routing), #1384 (diff toolbar), #1378 (expired dispatch briefing); #1002 is test-only. **None of it is hand-tested** — four dogfood UNTESTED rows. Open follow-ups: #1394, #1399 (flake sightings), #1400 (dispatch-restart gap). **Nothing in flight. DO NOT CUT ANOTHER unless he asks.**
 
