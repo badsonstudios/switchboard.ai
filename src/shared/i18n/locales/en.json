@@ -978,6 +978,16 @@
     "enable": "Play the needs-you sound",
     "preview": "Play it"
   },
+  "speakVoice": {
+    "title": "Announcement voice",
+    "blurb": "Which of this computer's own voices reads the spoken announcements out. Announcements themselves are switched on from the title bar. If the voice you chose is not on this computer any more, the system's default voice speaks instead.",
+    "systemDefault": "System default",
+    "option": "{name} ({lang})",
+    "missing": "{name} (not on this computer)",
+    "fellBack": "That voice is not on this computer, so the system default voice speaks instead.",
+    "preview": "Preview",
+    "sample": "This is how your announcements will sound."
+  },
   "push": {
     "title": "Phone push & webhooks",
     "intro": "Have a session reach you when you are away from the machine, or tell another program about it. Both are off until you set one up, and neither can hold a session up.",

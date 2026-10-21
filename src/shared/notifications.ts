@@ -49,6 +49,14 @@ export interface NotificationPrefs {
    *  this is the one nobody should ever meet without asking for it. */
   speak?: boolean;
   /**
+   * Which OS voice says the announcements (#1390): the voice's `voiceURI`.
+   * Absent = the OS default. Kept even when this machine has no such voice
+   * (it may be the other machine's, or reinstalled later); the renderer falls
+   * back to the default voice at speak time (`lib/announcer.ts`), so a stale
+   * value costs nothing. A non-string or an empty string is dropped on load.
+   */
+  speakVoice?: string;
+  /**
    * The "this needs you" cue (#1267): a distinct sound when a session you are
    * NOT in asks for an approval or asks a question while switchboard is the
    * window you are using, and once more with a minute left on an approval.
