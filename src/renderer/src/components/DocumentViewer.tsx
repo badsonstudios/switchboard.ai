@@ -54,6 +54,11 @@ import {
   subscribeDocumentOutline,
   toggleDocumentOutline,
 } from '../lib/document-outline';
+import {
+  getDocumentMeasure,
+  subscribeDocumentMeasure,
+  toggleDocumentMeasure,
+} from '../lib/document-measure';
 import { findBarState, findQuery } from '../lib/find-bar-state';
 import { findSurfaceKey, publishFindSurface, type DocumentFindSurface } from '../lib/find-surfaces';
 import { openMonacoFind, type FindableEditor } from '../lib/monaco-find';
@@ -663,6 +668,9 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   const outlineWanted = React.useSyncExternalStore(subscribeDocumentOutline, getDocumentOutline);
   const outlineRef = React.useRef<HTMLElement | null>(null);
   const outlineToggleRef = React.useRef<HTMLButtonElement | null>(null);
+  // How wide the prose runs (#1404): the pane by default, 78 characters when
+  // the reader asks for the old measure back. Global, for the outline's reason.
+  const measure = React.useSyncExternalStore(subscribeDocumentMeasure, getDocumentMeasure);
 
   // Scroll position per MODE, so the toggle round-trips. Two numbers rather
   // than one shared offset: a rendered line and a source line are not the same
@@ -1105,6 +1113,27 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
         >
           {t('document.outline')}
         </button>
+        {/* The reading-width switch (#1404, §5.30). The same pressed-toggle
+            shape as Outline beside it: the chip names the thing in both states
+            and the tooltip carries the verb. Greyed outside the rendered view,
+            where there is no prose for it to measure (§5.8). */}
+        <button
+          type="button"
+          className="doc-btn doc-measure-toggle"
+          data-testid="doc-measure-toggle"
+          aria-pressed={measure === 'readable'}
+          disabled={!showRendered}
+          title={
+            !showRendered
+              ? t('document.readableWidthUnavailable')
+              : measure === 'readable'
+                ? t('document.fillPaneWidth')
+                : t('document.useReadableWidth')
+          }
+          onClick={() => void toggleDocumentMeasure()}
+        >
+          {t('document.readableWidth')}
+        </button>
         <button
           type="button"
           className="doc-btn"
@@ -1292,7 +1321,12 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
                   React: it is decorated DOM, not JSX, and letting React own the
                   children would have it discard the decoration on every
                   render. */}
-              <div ref={bodyRef} className="doc-md" data-testid="doc-rendered" />
+              <div
+                ref={bodyRef}
+                className="doc-md"
+                data-testid="doc-rendered"
+                data-measure={measure}
+              />
             </div>
           </div>
         </div>

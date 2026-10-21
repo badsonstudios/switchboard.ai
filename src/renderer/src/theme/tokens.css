@@ -1407,9 +1407,9 @@ mark[data-feed-match-current] {
  * Vars only, like every rule above it, so a fifth theme costs nothing here.
  * `.doc-md` extends `.feed-md` rather than replacing it: the viewer's element
  * carries BOTH classes, so every markdown rule above still applies and this
- * block only says what a DOCUMENT needs and a chat message does not — a
- * readable measure, larger type, real heading sizes, and the chrome the
- * decoration pass adds. */
+ * block only says what a DOCUMENT needs and a chat message does not — larger
+ * type, real heading sizes, an optional readable measure (#1404), and the
+ * chrome the decoration pass adds. */
 .doc-viewer {
   display: flex;
   flex-direction: column;
@@ -1711,6 +1711,18 @@ mark[data-feed-match-current] {
     display: none;
   }
 }
+/* Readable width goes earlier (#1404). 78ch of the viewer's 12.5px type
+   MEASURED 526px on Windows, so with `.doc-body`'s 36px of side padding the cap
+   cannot bite in a pane under ~562px, and the chip would be a control that
+   visibly does nothing. 600 rather than 562 because the same probe found the
+   header already overflowing in a narrow pane without this chip, and 600 is
+   where adding its 88px no longer does. The PREFERENCE still applies in a
+   pane this size; only the button is hidden, like the outline's. */
+@container doc-pane (max-width: 600px) {
+  .doc-measure-toggle {
+    display: none;
+  }
+}
 .doc-outline-l3 { padding-inline-start: 10px; }
 .doc-outline-l4 { padding-inline-start: 20px; }
 .doc-outline-l5,
@@ -1751,17 +1763,24 @@ mark[data-feed-match-current] {
   overflow: auto;
   padding: 12px 18px 40px;
 }
-/* A READABLE MEASURE, not a 3000-pixel line (§5.30). 78 characters is the
- * width typography has agreed on for a century; the pane can be as wide as the
- * monitor and the prose stays legible.
+/* THE PROSE FILLS THE PANE (#1404, §5.30 amended 2026-10-21). This used to be
+ * a fixed 78-character measure; the owner found that in a wide window it read
+ * as broken — a narrow column on the left, empty pane beside it, and widening
+ * the window did nothing. `.doc-body`'s padding is what keeps text off the
+ * edges. Tables, images and code fences are sized to this box, so they take
+ * the extra width too and keep their own sideways scroll when it still isn't
+ * enough.
  *
- * On the INNER element, not on `.doc-body`: the scroll container has to fill
- * the pane or the scrollbar ends up 78 characters in with dead space beside
- * it. */
+ * The old measure is one click away (the header's Readable width chip,
+ * `lib/document-measure`). It caps the INNER element, never `.doc-body`: the
+ * scroll container has to fill the pane or the scrollbar ends up 78 characters
+ * in with dead space beside it. */
 .doc-md {
-  max-inline-size: 78ch;
   font-size: 12.5px;
   line-height: 1.65;
+}
+.doc-md[data-measure='readable'] {
+  max-inline-size: 78ch;
 }
 .doc-md p {
   margin: 0 0 10px;

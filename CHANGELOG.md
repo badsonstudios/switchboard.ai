@@ -140,6 +140,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.127 — unreleased
 
+### Changed
+
+- **A Markdown document's text now fills the width of its pane.** It used to
+  stay in a narrow column of about 78 characters however wide you made the
+  window, which left empty space beside it. Now it widens and rewraps as you
+  resize the pane or a popped-out document window, and tables, pictures and code
+  blocks use the room too. If you preferred the narrow column, the new
+  **Readable width** button in the document's header brings it back, and the
+  app remembers your choice.
+
 ## 0.8.126 — 2026-10-21
 
 ### Added
