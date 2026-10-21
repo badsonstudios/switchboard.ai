@@ -26,6 +26,7 @@ import {
   readWorkspaceFile,
   registerTempDir,
   retryLostReply,
+  skipPopoutOnLinux,
   tempProjectFolder,
 } from './fixtures/app';
 
@@ -384,6 +385,172 @@ test.describe('document viewer (P2-E16-02)', () => {
     await expect(card.getByRole('button', { name: 'Open externally' })).toBeVisible();
     await expect(w.locator('[data-testid="doc-rendered"]')).toHaveCount(0);
     await expect(w.locator('[data-testid="doc-source"]')).toHaveCount(0);
+  });
+
+  // ── the prose FILLS the pane (#1404) ──────────────────────────────────────
+  //
+  // `.doc-md` used to carry a fixed 78ch cap; the owner found a wide window
+  // read as broken. Only a real engine has widths, so this is where "it
+  // tracks the pane" is proven. ONE heading, so there is no outline sharing
+  // the pane and the arithmetic is the scroll box against the prose alone.
+  const WIDE = `# Wide
+
+${'A long paragraph that should wrap at the edge of the pane and nowhere else. '.repeat(30)}
+
+| one | two | three |
+|---|---|---|
+| a | b | c |
+
+\`\`\`
+${'x'.repeat(600)}
+\`\`\`
+`;
+
+  function wideProject(): { folder: string; doc: string } {
+    const folder = tempProjectFolder();
+    const doc = path.join(folder, 'WIDE.md');
+    fs.writeFileSync(doc, WIDE, 'utf8');
+    return { folder, doc };
+  }
+
+  type Widths = {
+    /** the scroll box's content width: its client width less its padding */
+    inner: number;
+    prose: number;
+    table: number;
+    /** > 0 means the PROSE scrolls sideways, which it must never do */
+    overflow: number;
+    /** the scroll box's right edge against the pane's — the scrollbar's place */
+    edgeGap: number;
+  };
+
+  async function widths(p: Page): Promise<Widths> {
+    return p.evaluate(() => {
+      const body = document.querySelector('[data-testid="doc-scroll"]') as HTMLElement;
+      const wrap = document.querySelector('.doc-rendered-wrap') as HTMLElement;
+      const prose = document.querySelector('[data-testid="doc-rendered"]') as HTMLElement;
+      const table = prose.querySelector('.doc-table-wrap') as HTMLElement;
+      const cs = getComputedStyle(body);
+      return {
+        inner: body.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+        prose: prose.getBoundingClientRect().width,
+        table: table.getBoundingClientRect().width,
+        overflow: body.scrollWidth - body.clientWidth,
+        edgeGap: Math.abs(wrap.getBoundingClientRect().right - body.getBoundingClientRect().right),
+      };
+    });
+  }
+
+  /** The full-width claim, at whatever size the pane is right now. */
+  function expectFills(m: Widths, where: string): void {
+    expect(
+      Math.abs(m.prose - m.inner),
+      `${where}: prose ${m.prose} vs pane ${m.inner}`
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(m.table - m.prose),
+      `${where}: the table did not take the width`
+    ).toBeLessThanOrEqual(1);
+    // the 600-character code line scrolls inside its own block, not the page
+    expect(m.overflow, `${where}: the document scrolls sideways`).toBeLessThanOrEqual(0);
+    expect(m.edgeGap, `${where}: the scrollbar is not at the pane's edge`).toBeLessThanOrEqual(1);
+  }
+
+  test('the prose fills the pane and tracks it across a resize; Readable width caps it and is remembered (#1404)', async () => {
+    const { folder, doc } = wideProject();
+    a = await launchApp({ seedFolder: folder, seedDocument: doc });
+    let w = a.window;
+    await setBounds(1700, 950);
+    await expect(rendered(w).locator('h1')).toHaveText('Wide');
+    const chip = viewer(w).locator('[data-testid="doc-measure-toggle"]');
+    await expect(chip).toHaveAttribute('aria-pressed', 'false');
+
+    // wide: settle on the pane the window resize produced, then measure
+    await expect.poll(async () => (await widths(w)).inner).toBeGreaterThan(OUTLINE_MIN_PANE);
+    const wide = await widths(w);
+    expectFills(wide, 'wide');
+
+    // narrower: the prose follows the pane down, and still does not scroll
+    await setBounds(1200, 950);
+    await expect.poll(async () => (await widths(w)).inner).toBeLessThan(wide.inner - 50);
+    const narrow = await widths(w);
+    expectFills(narrow, 'narrow');
+
+    // and back up
+    await setBounds(1700, 950);
+    await expect.poll(async () => (await widths(w)).inner).toBeGreaterThan(narrow.inner + 50);
+    expectFills(await widths(w), 'wide again');
+
+    // ── Readable width: the old 78ch measure, on the INNER element ────────
+    await chip.click();
+    await expect(chip).toHaveAttribute('aria-pressed', 'true');
+    const capped = await widths(w);
+    const cap = await rendered(w).evaluate((el) => parseFloat(getComputedStyle(el).maxWidth));
+    expect(cap, 'the readable cap is not a length').toBeGreaterThan(0);
+    // the pane this test made is wider than 78 characters, so the cap bites
+    expect(cap).toBeLessThan(capped.inner);
+    expect(Math.abs(capped.prose - cap)).toBeLessThanOrEqual(1);
+    // ...and the scroll box still fills the pane, which is why the cap is on
+    // `.doc-md` and not on `.doc-body`
+    expect(capped.edgeGap).toBeLessThanOrEqual(1);
+
+    // remembered: written to the workspace file, and read back by a fresh
+    // viewer after a relaunch (by attribute, so it needs no geometry)
+    const home = a.home;
+    await a.close();
+    expect(readWorkspaceFile(home).ui?.documentMeasure).toBe('readable');
+    a = await launchApp({ seedFolder: folder, seedDocument: doc, home });
+    w = a.window;
+    await expect(rendered(w).locator('h1')).toHaveText('Wide');
+    await expect(rendered(w)).toHaveAttribute('data-measure', 'readable');
+    await expect(viewer(w).locator('[data-testid="doc-measure-toggle"]')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+  });
+
+  test('a popped-out viewer fills its own window and tracks it across a resize (#1404)', async () => {
+    skipPopoutOnLinux();
+    const { folder, doc } = wideProject();
+    a = await launchApp({ seedFolder: folder, seedDocument: doc });
+    const w = a.window;
+    await expect(rendered(w).locator('h1')).toHaveText('Wide');
+
+    await w.getByTitle('Open this document in its own window').click();
+    await expect
+      .poll(() => a.app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 15_000,
+      })
+      .toBe(1);
+    const popout = a.app.windows().find((p) => p.url().includes('popout.html'))!;
+    await popout.waitForLoadState('domcontentloaded');
+    await expect(rendered(popout).locator('h1')).toHaveText('Wide', {
+      timeout: 15_000,
+    });
+
+    const sizePopout = async (width: number): Promise<void> => {
+      const box = onTestDisplay(a, { x: 60, y: 60, width, height: 700 });
+      await retryLostReply(() =>
+        a.app.evaluate(({ BrowserWindow }, b) => {
+          BrowserWindow.getAllWindows()
+            .find((win) => win.webContents.getURL().includes('popout.html'))
+            ?.setBounds(b);
+        }, box)
+      );
+    };
+
+    await sizePopout(800);
+    await expect.poll(async () => (await widths(popout)).inner).toBeLessThan(800);
+    const small = await widths(popout);
+    expectFills(small, 'popout small');
+
+    await sizePopout(1300);
+    await expect.poll(async () => (await widths(popout)).inner).toBeGreaterThan(small.inner + 300);
+    expectFills(await widths(popout), 'popout large');
+
+    // hand the window back through its own close (the popout teardown rule)
+    await popout.evaluate(() => window.close());
+    await expect(viewer(w)).toBeVisible({ timeout: 15_000 });
   });
 });
 

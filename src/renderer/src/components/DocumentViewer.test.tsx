@@ -30,6 +30,7 @@ import {
 } from '../lib/find-surfaces';
 import { openFindBar, resetFindBarState, setFindTerm } from '../lib/find-bar-state';
 import { setDocumentOutline } from '../lib/document-outline';
+import { setDocumentMeasure } from '../lib/document-measure';
 import { sessionStore } from '../store/session-store';
 import { requestDocumentLine, resetDocumentLines } from '../lib/document-reveal';
 
@@ -619,7 +620,9 @@ describe('hiding the outline (#1010)', () => {
     // between the mode pair and "Open externally", which is the cluster the
     // owner named
     expect(chips.indexOf('Outline')).toBe(chips.indexOf('Source') + 1);
-    expect(chips.indexOf('Open externally')).toBe(chips.indexOf('Outline') + 1);
+    // ...with Readable width (#1404) between it and "Open externally"
+    expect(chips.indexOf('Readable width')).toBe(chips.indexOf('Outline') + 1);
+    expect(chips.indexOf('Open externally')).toBe(chips.indexOf('Readable width') + 1);
   });
 
   it('starts pressed, and hiding takes the nav out of the tree', async () => {
@@ -716,6 +719,69 @@ describe('hiding the outline (#1010)', () => {
     // focus. Without the rescue, `activeElement` falls to <body>.
     await click(toggle());
     expect(document.activeElement).toBe(toggle());
+  });
+});
+
+// --- the reading width (#1404) ---------------------------------------------
+//
+// The preference is `lib/document-measure.test.ts`; the WIDTH it produces is
+// layout, which jsdom does not have, so `document-viewer.spec.ts` measures it.
+// What this owns: the attribute the stylesheet keys on, and the chip.
+describe('the reading width (#1404)', () => {
+  const measureToggle = (): HTMLButtonElement =>
+    q('[data-testid="doc-measure-toggle"]') as HTMLButtonElement;
+  const body = (): HTMLElement => q('[data-testid="doc-rendered"]') as HTMLElement;
+
+  beforeEach(() => {
+    setDocumentMeasure('full');
+  });
+
+  it('fills the pane by default: no cap, chip not pressed', async () => {
+    answer = () => ok('# A\n\ntext\n');
+    await mount('/p/NOTES.md');
+    expect(body().getAttribute('data-measure')).toBe('full');
+    expect(measureToggle().disabled).toBe(false);
+    expect(measureToggle().getAttribute('aria-pressed')).toBe('false');
+    expect(measureToggle().getAttribute('title')).toBe(
+      'Keep lines to a readable width (78 characters)'
+    );
+  });
+
+  it('the chip caps it and lifts the cap again', async () => {
+    answer = () => ok('# A\n\ntext\n');
+    await mount('/p/NOTES.md');
+    await click(measureToggle());
+    expect(body().getAttribute('data-measure')).toBe('readable');
+    expect(measureToggle().getAttribute('aria-pressed')).toBe('true');
+    expect(measureToggle().getAttribute('title')).toBe('Let the text fill the width of the pane');
+    await click(measureToggle());
+    expect(body().getAttribute('data-measure')).toBe('full');
+  });
+
+  it('opens capped when that is what was stored', async () => {
+    setDocumentMeasure('readable');
+    answer = () => ok('# A\n\ntext\n');
+    await mount('/p/NOTES.md');
+    expect(body().getAttribute('data-measure')).toBe('readable');
+    expect(measureToggle().getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('is greyed over a source view', async () => {
+    answer = () => ok('# A\n\ntext\n');
+    await mount('/p/NOTES.md');
+    await click(buttonByText('Source'));
+    expect(measureToggle().disabled).toBe(true);
+    expect(measureToggle().getAttribute('title')).toBe(
+      'Only the rendered view has a reading width'
+    );
+    await click(buttonByText('Rendered'));
+    expect(measureToggle().disabled).toBe(false);
+  });
+
+  it('is greyed for a file that is only ever a card', async () => {
+    answer = () => ok('', { binary: true, size: 148_000, encoding: undefined });
+    await mount('/p/spec.pdf');
+    expect(measureToggle().disabled).toBe(true);
   });
 });
 

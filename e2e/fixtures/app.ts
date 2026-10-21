@@ -1732,6 +1732,8 @@ export interface PersistedUi {
   focusPolicy?: { global?: string; cards?: Record<string, string> };
   /** §5.30's outline switch (#1010) — absent means shown, which is the default */
   documentOutline?: boolean;
+  /** §5.30's reading width (#1404) — absent means 'full', which is the default */
+  documentMeasure?: string;
 }
 
 /**

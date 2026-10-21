@@ -4273,7 +4273,15 @@ metadata chip, not an `<hr>` and a line of garbage. Heading anchors plus a
 **document outline** — our own docs run past 1,700 lines. Relative links
 navigate IN the viewer with back/forward (`DESIGN.md` → `docs/plans/00-process.md`
 works), which is what makes a cross-linked doc tree readable at all. A readable
-measure instead of 3,000-pixel lines, a sticky heading breadcrumb, wide tables
+measure instead of 3,000-pixel lines *(amended 2026-10-21, #1404: the rendered
+prose now FILLS the pane by default and reflows as the pane or popped-out window
+is resized, with `.doc-body`'s padding keeping it off the edges. The owner found
+the fixed 78-character measure read as broken in a wide window — a narrow column
+on the left, empty pane beside it, and widening the window did nothing; VS Code's
+preview has no cap either. The measure survives as an opt-in: a **Readable width**
+chip in the header restores 78ch, one app-wide preference remembered across
+restarts like the Outline switch. The cap stays on the inner `.doc-md`, never the
+scroll container, so the scrollbar is always at the pane's edge)*, a sticky heading breadcrumb, wide tables
 scrolling inside their own container, and **find-in-page wired explicitly** —
 Chromium's find needs `webContents.findInPage` in Electron, so Ctrl+F does not
 come free. *(Corrected 2026-07-30: `findInPage` is right for a viewer in its

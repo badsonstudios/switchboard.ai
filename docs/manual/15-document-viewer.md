@@ -212,6 +212,28 @@ outline back.
   along with it, because there is nothing left for it to do. Widen the pane and
   both come back.
 
+### How wide the text runs
+
+The rendered text **fills the width of the pane**, with a little space at each
+side so it never touches the edges. Make the pane or the window wider and the
+text widens with it; make it narrower and the text rewraps, with no sideways
+scrolling. Wide tables, pictures and code blocks use the extra room too. A code
+line that still doesn't fit scrolls sideways inside its own box, not the whole
+page. This works the same in a document you have popped out into its own window.
+
+If you would rather read in a narrower column, press **Readable width** in the
+header, next to **Outline**. It holds lines to about 78 characters, the width
+books and newspapers use, however wide the window is. Press it again to fill
+the pane.
+
+- **The app remembers.** Like the outline switch, it is one setting for every
+  document, and it survives closing switchboard.ai.
+- **It is greyed in the Source view**, which has no rendered text to measure.
+- **It disappears in a narrow pane** (under about 600 pixels), where the text
+  is already about 78 characters wide or less and the button would do almost
+  nothing. Your choice still applies there; widen the pane and the button comes
+  back.
+
 ## It follows the file
 
 This is the reason the viewer exists rather than a Markdown preview you could
