@@ -3,6 +3,40 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🎛️ ORCHESTRATION RUN — started 2026-10-21 ~18:30 EDT: five issues in Dan's order, three workers, merge on green CI
+>
+> **Single-writer rule:** this file is written ONLY by the orchestrator session.
+> Workers never touch it; their inputs are the handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md` (git-ignored, main checkout).
+> Resume from this block if the orchestrator session dies.
+>
+> **Dan's instruction:** `/orchestrate 1405 1404 1400 1390 1365` — his order, three
+> workers, **the orchestrator merges every PR on green CI** (as 2026-10-17/18/20;
+> nothing queues for Dan). **#1405 first and highest priority**: he has been typing
+> into the wrong session; options A + D from the issue, D first (session name in
+> the pane header and composer placeholder), then A (waiting is a word not a fill;
+> the selected tab gets the strong look); every theme, pill strip, rail, popouts.
+> **#1404 concurrently** (both touch `tokens.css` on different rules — rebase-trivial).
+> Third worker serial: **#1390 → #1400 → #1365**. Known flakes a worker may re-run
+> alone: #1320, #1367, #1369, #1394, #1399. Adjacent CHANGELOG/dogfood-row conflicts
+> at update-branch: resolve docs-only by hand in an idle worktree keeping both, run
+> the changelog tests, force-with-lease. `0.8.127 — unreleased` is the open
+> changelog section. **Do NOT cut a release**; report with the hand-test list when
+> all five are merged. Rules kept from the earlier runs: NEVER arm ScheduleWakeup
+> while a worker runs (a wakeup mid-turn kills in-flight workers); workers
+> WIP-commit; auto-merge is disabled, watch the run id and merge by hand; PROGRESS
+> and tracker close-outs via `docs/` PRs from `sb-docs`, never a push to `main`.
+>
+> | Order | Issue | Worktree / branch | State |
+> |---|---|---|---|
+> | 1 | #1405 two waiting tabs look identical — selected-tab emphasis + session name in pane header and message box (A + D) | `sb-wt-1` / `feature/1405-selected-tab-session-name` | **IN FLIGHT** — dispatched ~18:30 |
+> | 2 | #1404 Markdown preview fills the pane instead of a fixed 78ch column (+ DESIGN §5.30 owner note; Readable-width toggle only if cheap) | `sb-wt-2` / `feature/1404-doc-md-fill-pane` | **IN FLIGHT** — dispatched ~18:30 |
+> | 3 | #1390 announcer: OS voice picker in Settings → Notifications with Preview, fail-open ladder | `sb-wt-3` / `feature/1390-announcer-voice-picker` | **IN FLIGHT** — dispatched ~18:30 |
+> | 4 | #1400 dispatched card that never started before a quit within 15 min relaunches as a plain default-AI session (renderer stores AI + role in card params) | `sb-wt-3` / `feature/1400-dispatch-card-remembers-ai-role` (same worker, after #1390) | queued |
+> | 5 | #1365 transcript label "Claude:" → AI name (`renderBlockAs`); main's sign-in/probe reasons as code + params; delete the dead Direct-mode locale family | `sb-wt-3` / `feature/1365-transcript-label-reason-codes-dead-locale` (same worker, after #1400) | queued |
+>
+> **Merge log:** (none yet). **Worktree pool:** `sb-wt-1/2/3` on the branches above off `4f339fb8`; `sb-docs` on `docs/orchestration-2026-10-21-open` for this block.
+
 > # ✅ RELEASED: v0.8.126, 2026-10-21 (PR #1402, tag on `70923bd5`, release run 39602844521) — THE WHOLE 2026-10-20 RUN
 >
 > Dan, after the run's report: *"Cut a release. Not a beta release, a regular release."* So **a regular release, on his word** — not the first beta the #1380 close-out suggested; the beta channel is still unproven and stays that way until he asks for one. Version, lock and dated notes together as for 0.8.125 (`0.8.127 — unreleased` is open). The release PR merged on green CI as `70923bd5`, tag `v0.8.126` was pushed from it, and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.126.exe` (105 MB) + `.sha256` as a normal release — `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.126`. Tanner's install gets it too. The four dogfood rows now read RELEASED.
