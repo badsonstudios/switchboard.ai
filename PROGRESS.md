@@ -3,7 +3,13 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ ORCHESTRATION RUN — 2026-10-21 ~18:30 → 2026-10-22 ~10:45 EDT: ALL FIVE MERGED (#1405 #1404 #1390 #1400 #1365, Dan's order, three workers), NOTHING IN FLIGHT, NOT RELEASED (`0.8.127 — unreleased` holds all five; DO NOT CUT unless Dan asks)
+> # 🚀 RELEASING: v0.8.127, 2026-10-22 — THE WHOLE 2026-10-21/22 RUN
+>
+> Dan, after the run's report: *"Go ahead and cut a release."* A **regular release, on his word**, as 0.8.126 was (the beta channel stays unproven until he asks for one). Version, lock and dated notes together as before (`0.8.128 — unreleased` is open). On green CI this PR merges, then tag `v0.8.127` is pushed from the merge commit and the release workflow publishes `switchboard-Setup-0.8.127.exe` + sha256 as a normal release marked Latest. Tanner's install gets it too.
+>
+> **In it:** #1405 (selected tab + session name in header and message box), #1404 (Markdown preview fills the pane), #1390 (announcement voice picker), #1400 (never-started dispatched card after a quit), #1365 (AIs-tab reason codes, bus labels, dead keys), plus #1410 (crash-safe workspace save, from Dan's other session). **None of it is hand-tested** — five dogfood UNTESTED rows from this run (+#1410's). Open follow-ups: #1408, #1416, #1417, #1419. **Nothing in flight. DO NOT CUT ANOTHER unless he asks.**
+
+> # ✅ ORCHESTRATION RUN — 2026-10-21 ~18:30 → 2026-10-22 ~10:45 EDT: ALL FIVE MERGED (#1405 #1404 #1390 #1400 #1365, Dan's order, three workers), NOTHING IN FLIGHT, RELEASED AS v0.8.127 (block above)
 >
 > **Outcome:** five PRs merged on green CI (4/4 jobs each), five issues closed, four follow-ups filed (#1408 doc-header overflow, #1416 flake sighting, #1417 silent vanish of a never-started dispatched card, #1419 auto-labeler "Claude:"), one #651 comment. **None of it is hand-tested** — five dogfood UNTESTED rows. The run survived TWO interruptions (Esc at ~19:52, PC crash at ~21:35; see below) on WIP commits alone, with three workers in series on #1405 and #1400. Five docs hand-rebases by the orchestrator (adjacent CHANGELOG/dogfood rows, both kept every time) — the normal cost of two PRs open at once. Main checkout `out/` rebuilt at `b709a3a7` for Dan's About-stamp check.
 >
