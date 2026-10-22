@@ -182,6 +182,15 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   instead of an empty workspace if the main file is ever unreadable. At worst
   you redo your last change.
 
+- **The reasons on the AIs tab can now be translated.** When signing in to an
+  AI, testing a custom AI, or checking whether an AI is installed went wrong,
+  the reason was always in English, even with another language chosen. Those
+  reasons now come from the app's own language files, like the rest of the
+  tab. A few now read more plainly too: *it would not start talking to
+  switchboard* instead of *it refused initialize*, and Codex without Node.js
+  says that Codex runs through npx, which comes with Node.js. An AI's own error
+  text is still shown as the AI wrote it.
+
 ## 0.8.126 — 2026-10-21
 
 ### Added

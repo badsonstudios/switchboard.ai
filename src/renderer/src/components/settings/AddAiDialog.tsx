@@ -29,6 +29,7 @@ import { useTranslation } from 'react-i18next';
 import { useModalLayer } from '../../lib/modal-layer';
 import { answered } from '../../../../shared/ipc/refusal';
 import { errorText } from '../../../../shared/error-text';
+import { aiReasonText } from '../../lib/ai-reason-text';
 import type { AisSnapshot, CustomAiDraft, CustomAiTestResult, RegistryCheckResult } from '../../../../shared/ais';
 import { aisBridge } from '../../lib/ais-store';
 import { catalogRows, draftOf, presenceOf, sameProgram } from '../../lib/ais-view';
@@ -228,7 +229,11 @@ function FromTheList(props: { snapshot: AisSnapshot | null; open: boolean }): Re
 }
 
 function testLine(r: CustomAiTestResult, t: (k: string, o?: Record<string, unknown>) => string): string {
-  if (!r.ok) return r.error ? t('ais.add.testFailed', { error: r.error }) : t('ais.add.testFailedNoReason');
+  if (!r.ok) {
+    // #1365: the probe's reason as a code, translated; its English otherwise
+    const error = aiReasonText(r.errorCode, r.error, t);
+    return error ? t('ais.add.testFailed', { error }) : t('ais.add.testFailedNoReason');
+  }
   const agent = [r.agentName, r.agentVersion].filter(Boolean).join(' ') || t('ais.add.anAgent');
   return r.protocolVersion !== undefined
     ? t('ais.add.testOk', { agent, protocol: r.protocolVersion })

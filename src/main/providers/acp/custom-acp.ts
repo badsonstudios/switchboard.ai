@@ -72,5 +72,6 @@ export async function testAcpCommand(
     ...(r.protocolVersion !== undefined ? { protocolVersion: r.protocolVersion } : {}),
     ...(r.authMethods ? { authMethods: r.authMethods } : {}),
     ...(r.error ? { error: r.error } : {}),
+    ...(r.errorCode ? { errorCode: r.errorCode } : {}),
   };
 }

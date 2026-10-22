@@ -25,6 +25,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { answered } from '../../../../shared/ipc/refusal';
 import { errorText } from '../../../../shared/error-text';
+import { aiReasonText } from '../../lib/ai-reason-text';
 import type { AiLoginResult, AisSnapshot } from '../../../../shared/ais';
 import {
   acceptAisDefault,
@@ -71,12 +72,14 @@ interface LoginState {
 
 /** One login answer, as the words under the row. */
 function loginMessage(r: AiLoginResult, t: (k: string, o?: Record<string, unknown>) => string): LoginState {
-  if (!r.supported) return { busy: false, message: r.reason || t('ais.loginFailedNoReason') };
+  // #1365: main's reasons arrive as a code beside the English; the code wins
+  const reason = aiReasonText(r.reasonCode, r.reason, t);
+  if (!r.supported) return { busy: false, message: reason || t('ais.loginFailedNoReason') };
   if (r.ok === true) return { busy: false, message: t('ais.loginDone') };
   if (r.methods && r.methods.length > 0) {
     return { busy: false, methods: r.methods, ...(r.methodLabels ? { methodLabels: r.methodLabels } : {}) };
   }
-  return { busy: false, message: r.reason ? t('ais.loginFailed', { reason: r.reason }) : t('ais.loginFailedNoReason') };
+  return { busy: false, message: reason ? t('ais.loginFailed', { reason }) : t('ais.loginFailedNoReason') };
 }
 
 /**
@@ -97,7 +100,8 @@ function statusParts(row: AiRowView, t: (k: string, o?: Record<string, unknown>)
   if (presence === 'checking') return [<span key="p">{t('ais.checking')}</span>];
   if (presence === 'missing') return [<span key="p">{t('ais.missing')}</span>];
   if (presence === 'unknown') {
-    return [<span key="p">{d?.detail ? t('ais.unknownWhy', { detail: d.detail }) : t('ais.unknown')}</span>];
+    const detail = aiReasonText(d?.detailCode, d?.detail, t);
+    return [<span key="p">{detail ? t('ais.unknownWhy', { detail }) : t('ais.unknown')}</span>];
   }
   const parts: React.ReactNode[] = [];
   if (d?.login === 'logged-in') {

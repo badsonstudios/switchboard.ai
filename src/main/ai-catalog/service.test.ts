@@ -203,8 +203,17 @@ describe('dispose (app quit)', () => {
 describe('sign-in', () => {
   it('an AI whose detect has no login: not supported, with the reason', async () => {
     const { service } = setup({}, [{ id: 'fake-stream', displayName: 'Fake' }]);
-    expect(await service.login('fake-stream')).toMatchObject({ supported: false });
-    expect(await service.login('nope')).toEqual({ supported: false, reason: 'That AI is not set up here.' });
+    // #1365: each with its code beside the English, for the AIs tab to translate
+    expect(await service.login('fake-stream')).toMatchObject({
+      supported: false,
+      reason: 'Fake signs in on its own; there is nothing to run from here.',
+      reasonCode: { code: 'signs-in-on-its-own', params: { ai: 'Fake' } },
+    });
+    expect(await service.login('nope')).toEqual({
+      supported: false,
+      reason: 'That AI is not set up here.',
+      reasonCode: { code: 'not-set-up' },
+    });
   });
 
   it('Claude answers for itself (not driven from here)', async () => {

@@ -18,6 +18,7 @@ import type { PlanLimitWindow } from '../../../shared/usage-report';
 import { BUS_SERVER_NAME } from '../../bus/bus-paths';
 import { errorText } from '../../../shared/error-text';
 import type { AiLoginResult } from '../../../shared/ais';
+import { aiReason, reasonOfError } from '../../../shared/ai-reason';
 import type { DetectCapability, ProviderAdapter, SpawnOptions, SpawnRecipe } from '../../extensibility/contributions';
 import { findOnPath } from '../../transport/find-on-path';
 import type { EngineTranslator, TranslatorHooks } from '../../sessions/engine-events';
@@ -93,7 +94,12 @@ export function defaultAcpDetect(opts: {
       }
       return Promise.resolve(
         found
-          ? { installed: true, login: 'unknown', detail: 'this AI does not report its version or sign-in until a session starts' }
+          ? {
+              installed: true,
+              login: 'unknown',
+              detail: 'this AI does not report its version or sign-in until a session starts',
+              detailCode: aiReason('reports-at-session-start'),
+            }
           : { installed: false, login: 'unknown' }
       );
     },
@@ -102,7 +108,13 @@ export function defaultAcpDetect(opts: {
       try {
         command = opts.command();
       } catch (err) {
-        return { supported: true, ok: false, reason: err instanceof Error ? err.message : errorText(err) };
+        const code = reasonOfError(err);
+        return {
+          supported: true,
+          ok: false,
+          reason: err instanceof Error ? err.message : errorText(err),
+          ...(code ? { reasonCode: code } : {}),
+        };
       }
       const r = await probeAcpAgent({
         command,
@@ -117,6 +129,7 @@ export function defaultAcpDetect(opts: {
         supported: true,
         ok: false,
         ...(r.error ? { reason: r.error } : {}),
+        ...(r.errorCode ? { reasonCode: r.errorCode } : {}),
         ...(r.needsMethod && r.authMethods ? { methods: r.authMethods } : {}),
         ...(r.needsMethod && r.authMethods && r.authMethodNames ? { methodLabels: r.authMethodNames } : {}),
       };

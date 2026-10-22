@@ -20,6 +20,7 @@ import {
   OUTPUT_CHAR_CAP,
   OUTPUT_FIRST_WINDOW,
   SessionQueries,
+  assistantLabelFor,
   TRIM_MARKER,
   type DiffSource,
   type QueryResult,
@@ -1090,5 +1091,62 @@ describe('the transport-free constraint', () => {
     expect(source).not.toMatch(/\b(ipcMain|ipcRenderer|BrowserWindow|webContents)\b/);
     expect(source).not.toMatch(/require\(|await import\(/);
     expect(source).not.toMatch(/@modelcontextprotocol/);
+  });
+});
+
+
+// #1365: what one session reads of another labels each AI's replies by that
+// AI's own name, not "Claude" whatever ran.
+describe('sessionOutput labels the replies by the AI that wrote them (#1365)', () => {
+  const named = (names: Record<string, string>, sessions: SessionSummary[]) => {
+    const file = writeTranscript([userLine('go'), assistantLine('done it')]);
+    return new SessionQueries({
+      list: () => sessions,
+      transcriptFor: () => file,
+      git: noDiff,
+      aiNameFor: (id) => names[id],
+    });
+  };
+
+  it('a Codex session reads as Codex, not Claude', () => {
+    const q = named({ codex: 'Codex' }, [session({ providerId: 'codex' })]);
+    const r = q.sessionOutput('TradingApp');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.text).toContain('Codex: done it');
+    expect(r.value.text).not.toContain('Claude');
+  });
+
+  it('a Claude session keeps "Claude:" byte-for-byte, whatever its catalog name', () => {
+    const q = named({ 'claude-code': 'Claude Code' }, [session()]);
+    const r = q.sessionOutput('TradingApp');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.text).toContain('Claude: done it');
+    expect(r.value.text).not.toContain('Claude Code:');
+  });
+
+  it('an AI nobody can name, or a lookup that throws, falls back to "Claude:" rather than an id or a crash', () => {
+    const unnamed = named({}, [session({ providerId: 'mystery' })]).sessionOutput('TradingApp');
+    if (!unnamed.ok) throw new Error(unnamed.reason);
+    expect(unnamed.value.text).toContain('Claude: done it');
+    expect(unnamed.value.text).not.toContain('mystery');
+
+    const file = writeTranscript([assistantLine('still here')]);
+    const throwing = new SessionQueries({
+      list: () => [session({ providerId: 'codex' })],
+      transcriptFor: () => file,
+      git: noDiff,
+      aiNameFor: () => {
+        throw new Error('catalog gone');
+      },
+    }).sessionOutput('TradingApp');
+    if (!throwing.ok) throw new Error(throwing.reason);
+    expect(throwing.value.text).toContain('Claude: still here');
+  });
+
+  it('assistantLabelFor flattens a name that lands inside a prompt', () => {
+    expect(assistantLabelFor('custom-1', `My${String.fromCharCode(10)}Agent`)).toBe('My Agent');
+    expect(assistantLabelFor('custom-1', '   ')).toBe('Claude');
+    expect(assistantLabelFor('claude-code', 'Anything')).toBe('Claude');
+    expect(assistantLabelFor('codex', undefined)).toBe('Claude');
   });
 });

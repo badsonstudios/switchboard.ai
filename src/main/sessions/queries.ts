@@ -43,7 +43,9 @@
 // on believing it.
 import { errorText } from '../../shared/error-text';
 import { DISPLAY_CAPS } from '../feed/blocks';
-import { blocksFrom, renderBlock, sliceTail } from './transcript-blocks';
+import { blocksFrom, renderBlockAs, sliceTail } from './transcript-blocks';
+import { CLAUDE_AI_ID } from '../../shared/ais';
+import { cleanSenderName } from '../../shared/sibling-message';
 import {
   HISTORY_MAX_LINES,
   HISTORY_TAIL_BYTES,
@@ -266,6 +268,26 @@ export interface SessionQueryDeps {
   list(): readonly SessionSummary[];
   transcriptFor(sessionId: string): string | null;
   git: DiffSource;
+  /**
+   * The display name of the AI a provider id runs (#1365), from the AI
+   * catalog, for the label on that AI's replies in `getOutput`. Optional, and
+   * `undefined` for an id nobody can name: the label then stays `Claude`, the
+   * pre-#1365 text, rather than a raw provider id.
+   */
+  aiNameFor?(providerId: string): string | undefined;
+}
+
+/**
+ * The label on a session's replies in text another session reads (#1365).
+ * Claude's stay `Claude:` byte-for-byte, as do those of an AI with no name to
+ * give; any other AI's carry its own name, so a Codex reply handed to a
+ * sibling is not attributed to Claude. Flattened like every name that lands
+ * inside a prompt (`cleanSenderName`).
+ */
+export function assistantLabelFor(providerId: string, name: string | undefined): string {
+  if (providerId === CLAUDE_AI_ID) return 'Claude';
+  const flat = name ? cleanSenderName(name).trim() : '';
+  return flat && flat !== '(unnamed)' ? flat : 'Claude';
 }
 
 /**
@@ -529,7 +551,8 @@ export class SessionQueries {
     const shown = opts.compactTools
       ? taken.map((b) => (b.kind === 'tool' && b.tool ? { ...b, tool: { ...b.tool, out: undefined } } : b))
       : taken;
-    const pieces = shown.map(renderBlock).filter((s) => s !== '');
+    const label = assistantLabelFor(session.providerId, attempt(() => this.deps.aiNameFor?.(session.providerId), undefined));
+    const pieces = shown.map((b) => renderBlockAs(b, label)).filter((s) => s !== '');
     const rendered = pieces.join('\n\n');
 
     // CUT FROM THE FRONT, keeping the NEWEST text. `taken` selects the newest

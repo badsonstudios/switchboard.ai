@@ -13,6 +13,7 @@ import path from 'path';
 import { probeAcpAgent } from './acp-probe';
 import { testAcpCommand } from './custom-acp';
 import { defaultAcpDetect } from './acp-provider';
+import { AiReasonError, aiReason } from '../../../shared/ai-reason';
 
 let dir: string;
 let agentJs: string;
@@ -87,6 +88,8 @@ describe('probeAcpAgent: Test (initialize only)', () => {
     const r = await probeAcpAgent({ command: 'definitely-not-an-agent-1291', args: [] });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/was not found on this computer/);
+    // #1365: the same reason as a code the AIs tab translates
+    expect(r.errorCode).toEqual({ code: 'command-not-found', params: { command: 'definitely-not-an-agent-1291' } });
   });
 
   it('an agent that answers and exits at once still counts as answered', async () => {
@@ -98,12 +101,14 @@ describe('probeAcpAgent: Test (initialize only)', () => {
     const r = await probeAcpAgent({ command: node, args: [dyingJs], timeoutMs: 15_000 });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/exited \(code 3\) before answering: no such model/);
+    expect(r.errorCode).toEqual({ code: 'exited-before-answering', params: { code: 3, output: 'no such model' } });
   });
 
   it('a program that never answers times out, and is killed', async () => {
     const r = await probeAcpAgent({ command: node, args: [silentJs], timeoutMs: 800 });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/did not answer within 1 s/);
+    expect(r.errorCode).toEqual({ code: 'no-answer-in-time', params: { seconds: 1 } });
     expect(await goneSoon(r.pid!)).toBe(true);
   });
 
@@ -113,6 +118,7 @@ describe('probeAcpAgent: Test (initialize only)', () => {
     setTimeout(() => c.abort(), 300);
     const r = await p;
     expect(r.error).toBe('cancelled');
+    expect(r.errorCode).toEqual({ code: 'cancelled' });
     expect(await goneSoon(r.pid!)).toBe(true);
   });
 });
@@ -134,6 +140,7 @@ describe('probeAcpAgent: Log in (the agent’s own authenticate)', () => {
     const r = await probeAcpAgent({ command: node, args: [agentJs], env: env(), authenticate: { methodId: 'api-key' }, timeoutMs: 15_000 });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/does not offer the sign-in method "api-key"/);
+    expect(r.errorCode).toEqual({ code: 'sign-in-method-not-offered', params: { method: 'api-key' } });
   });
 
   it('defaultAcpDetect.login maps the probe onto the AiLoginResult the IPC returns', async () => {
@@ -143,13 +150,29 @@ describe('probeAcpAgent: Log in (the agent’s own authenticate)', () => {
     const r = await missing.login!(new AbortController().signal);
     expect(r).toMatchObject({ supported: true, ok: false });
     expect(r.reason).toMatch(/not found/);
+    expect(r.reasonCode).toMatchObject({ code: 'command-not-found' });
+  });
+
+  it('a command() that throws a coded error carries its code to the sign-in answer (#1365)', async () => {
+    const cap = defaultAcpDetect({
+      command: () => {
+        throw new AiReasonError('npx not found on PATH', aiReason('npx-missing'));
+      },
+      args: () => [],
+    });
+    expect(await cap.login!(new AbortController().signal)).toEqual({
+      supported: true,
+      ok: false,
+      reason: 'npx not found on PATH',
+      reasonCode: { code: 'npx-missing' },
+    });
   });
 });
 
 describe('defaultAcpDetect.detect: a PATH scan, nothing started', () => {
   it('installed when the command resolves; version and login unknown', async () => {
     const found = await defaultAcpDetect({ command: () => node, args: () => [] }).detect(new AbortController().signal);
-    expect(found).toMatchObject({ installed: true, login: 'unknown' });
+    expect(found).toMatchObject({ installed: true, login: 'unknown', detailCode: { code: 'reports-at-session-start' } });
     const missing = await defaultAcpDetect({ command: () => 'definitely-not-an-agent-1291', args: () => [] }).detect(
       new AbortController().signal
     );
@@ -163,5 +186,12 @@ describe('testAcpCommand: the custom-AI Test result', () => {
     expect(r).toMatchObject({ ok: true, agentName: 'fake-acp', agentVersion: '0.0.0', protocolVersion: 1, authMethods: ['fake-login'] });
     expect(r).not.toHaveProperty('pid');
     expect(r.ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it('a failed Test carries the code beside the English (#1365)', async () => {
+    const r = await testAcpCommand({ command: 'definitely-not-an-agent-1291', args: [] });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/was not found/);
+    expect(r.errorCode).toMatchObject({ code: 'command-not-found' });
   });
 });

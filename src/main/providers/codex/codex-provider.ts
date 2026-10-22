@@ -14,6 +14,7 @@
 // (Codex's browser sign-in) — and only when `session/new` says
 // "Authentication required". No key path, no stored credential (§6).
 import type { AutonomyMode } from '../../../shared/sessions';
+import { AiReasonError, aiReason } from '../../../shared/ai-reason';
 import { createAcpProvider } from '../acp/acp-provider';
 import type { DetectCapability, UsageCapability } from '../../extensibility/contributions';
 import { detectCodex, npxPath } from './codex-detect';
@@ -60,7 +61,9 @@ export const CODEX_MODE_MAP: Record<AutonomyMode, string> = {
  */
 export function codexCommand(): string {
   const npx = npxPath();
-  if (!npx) throw new Error('npx not found on PATH — Codex runs its ACP adapter through npx (Node.js)');
+  if (!npx) {
+    throw new AiReasonError('npx not found on PATH — Codex runs its ACP adapter through npx (Node.js)', aiReason('npx-missing'));
+  }
   return npx;
 }
 

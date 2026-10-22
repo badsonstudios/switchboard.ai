@@ -15,6 +15,7 @@
 // (`ready-to-show` -> `show()`), never before.
 import type { DetectionResult, LoginState } from '../../shared/ais';
 import { errorText } from '../../shared/error-text';
+import { aiReason, aiReasonKey, type AiReason } from '../../shared/ai-reason';
 import { findOnPath } from '../transport/find-on-path';
 
 /** Per-probe deadline. A slow probe answers "unknown"; "Look again" retries. */
@@ -38,6 +39,9 @@ export function normalizeAnswer(v: unknown): DetectAnswer | null {
   const account = str('account');
   const plan = str('plan');
   const detail = str('detail');
+  // a code is passed through only with its English beside it, and only if it
+  // is one the renderer can read (#1365)
+  const detailCode = detail && aiReasonKey(o.detailCode) ? (o.detailCode as AiReason) : undefined;
   return {
     installed,
     login,
@@ -45,6 +49,17 @@ export function normalizeAnswer(v: unknown): DetectAnswer | null {
     ...(account ? { account } : {}),
     ...(plan ? { plan } : {}),
     ...(detail ? { detail } : {}),
+    ...(detailCode ? { detailCode } : {}),
+  };
+}
+
+/** A probe that threw: its own words, under "the check failed". */
+function checkFailed(err: unknown): DetectAnswer {
+  return {
+    installed: 'unknown',
+    login: 'unknown',
+    detail: `the check failed: ${errorText(err)}`,
+    detailCode: aiReason('check-failed', { message: errorText(err) }),
   };
 }
 
@@ -73,11 +88,16 @@ export function runProbe(
     };
     const timer = setTimeout(() => {
       controller.abort();
-      done({ installed: 'unknown', login: 'unknown', detail: `the check did not answer within ${Math.round(timeoutMs / 1000)} s` });
+      done({
+        installed: 'unknown',
+        login: 'unknown',
+        detail: `the check did not answer within ${Math.round(timeoutMs / 1000)} s`,
+        detailCode: aiReason('check-timed-out', { seconds: Math.round(timeoutMs / 1000) }),
+      });
     }, timeoutMs);
     const onCancel = (): void => {
       controller.abort();
-      done({ installed: 'unknown', login: 'unknown', detail: 'the check was cancelled' });
+      done({ installed: 'unknown', login: 'unknown', detail: 'the check was cancelled', detailCode: aiReason('check-cancelled') });
     };
     if (cancel?.aborted) {
       onCancel();
@@ -88,12 +108,20 @@ export function runProbe(
     try {
       pending = probe(controller.signal);
     } catch (err) {
-      done({ installed: 'unknown', login: 'unknown', detail: `the check failed: ${errorText(err)}` });
+      done(checkFailed(err));
       return;
     }
     Promise.resolve(pending).then(
-      (v) => done(normalizeAnswer(v) ?? { installed: 'unknown', login: 'unknown', detail: 'the check answered something unreadable' }),
-      (err: unknown) => done({ installed: 'unknown', login: 'unknown', detail: `the check failed: ${errorText(err)}` })
+      (v) =>
+        done(
+          normalizeAnswer(v) ?? {
+            installed: 'unknown',
+            login: 'unknown',
+            detail: 'the check answered something unreadable',
+            detailCode: aiReason('check-unreadable'),
+          }
+        ),
+      (err: unknown) => done(checkFailed(err))
     );
   });
 }

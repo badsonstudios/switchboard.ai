@@ -16,6 +16,7 @@ import type {
   RegistryCheckResult,
 } from '../../shared/ais';
 import { errorText } from '../../shared/error-text';
+import { aiReason, reasonOfError } from '../../shared/ai-reason';
 import type { DetectCapability } from '../extensibility/contributions';
 import type { AisStore } from './ais-store';
 import { catalogEntries } from './catalog';
@@ -58,7 +59,12 @@ export interface AiCatalogDeps {
 }
 
 const UNREPORTED: Probe = () =>
-  Promise.resolve({ installed: 'unknown', login: 'unknown', detail: 'this AI does not report whether it is installed' });
+  Promise.resolve({
+    installed: 'unknown',
+    login: 'unknown',
+    detail: 'this AI does not report whether it is installed',
+    detailCode: aiReason('check-not-offered'),
+  });
 
 export class AiCatalogService {
   private readonly runner: DetectionRunner;
@@ -305,6 +311,7 @@ export class AiCatalogService {
       return Promise.resolve({
         supported: false,
         reason: p ? `${p.displayName} signs in on its own; there is nothing to run from here.` : 'That AI is not set up here.',
+        reasonCode: p ? aiReason('signs-in-on-its-own', { ai: p.displayName }) : aiReason('not-set-up'),
       });
     }
     const controller = new AbortController();
@@ -322,7 +329,8 @@ export class AiCatalogService {
         this.deps.log.info('AI sign-in finished', { providerId, ok: r.ok ?? null, supported: r.supported });
         return r;
       } catch (err) {
-        return { supported: true, ok: false, reason: errorText(err) };
+        const code = reasonOfError(err);
+        return { supported: true, ok: false, reason: errorText(err), ...(code ? { reasonCode: code } : {}) };
       } finally {
         this.inFlight.delete(controller);
         this.logins.delete(providerId);

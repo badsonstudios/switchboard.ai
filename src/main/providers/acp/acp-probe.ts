@@ -18,6 +18,7 @@
 // kill has been carried out. NEVER REJECTS.
 import { spawn, type ChildProcess } from 'child_process';
 import { errorText } from '../../../shared/error-text';
+import { aiReason, type AiReason } from '../../../shared/ai-reason';
 import { trackChild } from '../../diagnostics/live-children';
 import { buildEnv } from '../../transport/env';
 import { findOnPath } from '../../transport/find-on-path';
@@ -56,7 +57,10 @@ export interface AcpProbeResult {
   authMethod?: string;
   /** `authenticate` was asked for, but the agent offers several and none was named */
   needsMethod?: boolean;
+  /** why it failed, in English: for the log, and the fallback for `errorCode` */
   error?: string;
+  /** the same reason as a code the AIs tab translates (#1365) */
+  errorCode?: AiReason;
   ms: number;
   /** the pid that was started, for a test to prove it is gone */
   pid?: number;
@@ -71,11 +75,16 @@ export function probeAcpAgent(req: AcpProbeRequest): Promise<AcpProbeResult> {
   return new Promise<AcpProbeResult>((resolve) => {
     const resolved = (req.resolve ?? ((c) => findOnPath(c)))(req.command);
     if (!resolved) {
-      resolve({ ok: false, error: `"${req.command}" was not found on this computer`, ms: ms() });
+      resolve({
+        ok: false,
+        error: `"${req.command}" was not found on this computer`,
+        errorCode: aiReason('command-not-found', { command: req.command }),
+        ms: ms(),
+      });
       return;
     }
     if (req.signal?.aborted) {
-      resolve({ ok: false, error: 'cancelled', ms: ms() });
+      resolve({ ok: false, error: 'cancelled', errorCode: aiReason('cancelled'), ms: ms() });
       return;
     }
     let child: ChildProcess;
@@ -88,7 +97,12 @@ export function probeAcpAgent(req: AcpProbeRequest): Promise<AcpProbeResult> {
         windowsVerbatimArguments: spec.windowsVerbatimArguments,
       });
     } catch (err) {
-      resolve({ ok: false, error: `could not start it: ${errorText(err)}`, ms: ms() });
+      resolve({
+        ok: false,
+        error: `could not start it: ${errorText(err)}`,
+        errorCode: aiReason('could-not-start', { message: errorText(err) }),
+        ms: ms(),
+      });
       return;
     }
     trackChild('oneshot', child);
@@ -135,10 +149,16 @@ export function probeAcpAgent(req: AcpProbeRequest): Promise<AcpProbeResult> {
     };
 
     const timer = setTimeout(
-      () => finish({ ok: false, ...describe(), error: `it did not answer within ${Math.round(timeoutMs / 1000)} s` }),
+      () =>
+        finish({
+          ok: false,
+          ...describe(),
+          error: `it did not answer within ${Math.round(timeoutMs / 1000)} s`,
+          errorCode: aiReason('no-answer-in-time', { seconds: Math.round(timeoutMs / 1000) }),
+        }),
       timeoutMs
     );
-    const onAbort = (): void => finish({ ok: false, ...describe(), error: 'cancelled' });
+    const onAbort = (): void => finish({ ok: false, ...describe(), error: 'cancelled', errorCode: aiReason('cancelled') });
     req.signal?.addEventListener('abort', onAbort, { once: true });
 
     const send = (frame: Record<string, unknown>): void => {
@@ -170,7 +190,11 @@ export function probeAcpAgent(req: AcpProbeRequest): Promise<AcpProbeResult> {
         if (m.kind !== 'response' && m.kind !== 'error') continue;
         if (m.id === INIT_ID) {
           if (m.kind === 'error') {
-            finish({ ok: false, error: `it refused initialize: ${m.message}` });
+            finish({
+              ok: false,
+              error: `it refused initialize: ${m.message}`,
+              errorCode: aiReason('refused-initialize', { message: m.message }),
+            });
             continue;
           }
           info = readInitialize(m.result);
@@ -191,6 +215,11 @@ export function probeAcpAgent(req: AcpProbeRequest): Promise<AcpProbeResult> {
                 : wanted
                   ? `it does not offer the sign-in method "${wanted}"`
                   : 'it offers more than one sign-in method; choose one',
+              errorCode: methods.length === 0
+                ? aiReason('no-sign-in-method')
+                : wanted
+                  ? aiReason('sign-in-method-not-offered', { method: wanted })
+                  : aiReason('choose-sign-in-method'),
             });
             continue;
           }
@@ -201,13 +230,26 @@ export function probeAcpAgent(req: AcpProbeRequest): Promise<AcpProbeResult> {
         if (m.id === AUTH_ID) {
           finish(
             m.kind === 'error'
-              ? { ok: false, ...describe(), ...(chosen ? { authMethod: chosen } : {}), error: `sign-in failed: ${m.message}` }
+              ? {
+                  ok: false,
+                  ...describe(),
+                  ...(chosen ? { authMethod: chosen } : {}),
+                  error: `sign-in failed: ${m.message}`,
+                  errorCode: aiReason('sign-in-failed', { message: m.message }),
+                }
               : { ok: true, ...describe(), ...(chosen ? { authMethod: chosen } : {}) }
           );
         }
       }
     });
-    child.on('error', (e) => finish({ ok: false, ...describe(), error: `could not start it: ${errorText(e)}` }));
+    child.on('error', (e) =>
+      finish({
+        ok: false,
+        ...describe(),
+        error: `could not start it: ${errorText(e)}`,
+        errorCode: aiReason('could-not-start', { message: errorText(e) }),
+      })
+    );
     // 'close', not 'exit': 'exit' can fire before stdout's last chunk is
     // delivered, and an agent that answers and exits at once would read as one
     // that exited before answering.
@@ -217,6 +259,7 @@ export function probeAcpAgent(req: AcpProbeRequest): Promise<AcpProbeResult> {
         ok: false,
         ...describe(),
         error: `it exited (code ${code ?? '?'}) before answering${tail ? `: ${tail}` : ''}`,
+        errorCode: aiReason('exited-before-answering', { code: code ?? '?', output: tail }),
       });
     });
 

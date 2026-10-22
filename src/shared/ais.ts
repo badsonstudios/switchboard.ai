@@ -5,6 +5,8 @@
 // Shared because both halves name them: main fills them in, the preload
 // passes them through, and #1292 / #1293 draw them.
 
+import type { AiReason } from './ai-reason';
+
 /**
  * Where the AIs' icons are served, relative to the renderer's page: the
  * renderer's own `public/ai-icons/`, so an `<img src={AI_ICON_BASE + icon}>`
@@ -99,8 +101,10 @@ export interface DetectionResult {
   account?: string;
   /** the plan the AI reports (`max`, …), where it says */
   plan?: string;
-  /** why an answer is `unknown`, in words */
+  /** why an answer is `unknown`, in words (English: the log, and the fallback) */
   detail?: string;
+  /** the same, as a code the AIs tab translates (#1365) */
+  detailCode?: AiReason;
   /** epoch ms the answer was produced */
   probedAt: number;
   /** how long the probe took */
@@ -143,6 +147,8 @@ export interface CustomAiTestResult {
   protocolVersion?: number;
   authMethods?: string[];
   error?: string;
+  /** `error` as a code the dialog translates (#1365) */
+  errorCode?: AiReason;
   ms: number;
 }
 
@@ -151,6 +157,8 @@ export interface AiLoginResult {
   supported: boolean;
   ok?: boolean;
   reason?: string;
+  /** `reason` as a code the AIs tab translates (#1365); `reason` stays the English */
+  reasonCode?: AiReason;
   /** the sign-in methods the AI offers, when it offers more than one */
   methods?: string[];
   /**
