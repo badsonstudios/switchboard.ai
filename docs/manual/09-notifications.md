@@ -342,6 +342,26 @@ is downloaded.
   permission announcements say "needs permission" and leave the details on
   screen where you can read them.
 
+### Choosing the voice
+
+By default the announcements use your computer's default voice. To pick a
+different one, open **Settings ▸ Notifications** and find **Announcement
+voice**. The list shows the voices your computer has installed — on Windows,
+the ones under *Settings ▸ Time & language ▸ Speech*. Choose one, then press
+**Preview** to hear a sample sentence in it. The next announcement uses it.
+
+- **Preview works even with 🗣 announce off**, so you can try voices before
+  turning announcements on.
+- **If the voice you chose goes away** — you uninstalled it, or you opened the
+  same workspace on another computer that does not have it — switchboard
+  quietly uses the default voice instead. Nothing pops up and no announcement
+  is skipped. The picker shows the missing voice as *"(not on this computer)"*
+  so you can see why, and you can pick another or go back to **System default**.
+- **The list can be empty for a moment** right after switchboard starts, while
+  your computer loads its voices; it fills in on its own. If it stays at just
+  **System default**, your computer has no voices to choose from, and the
+  default (if there is one) is what speaks.
+
 If your computer has no voice installed (some Linux setups), nothing is said and
 nothing breaks — the sound and the Events entry still happen.
 

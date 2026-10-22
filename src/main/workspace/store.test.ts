@@ -778,6 +778,34 @@ describe('notification prefs merge-patch (review P1 #13)', () => {
     expect(old.getNotificationPrefs().needsYouSound).toBe(false);
   });
 
+  // #1390: the announcer's voice. Free text from the OS, absent is the default,
+  // and the empty string is how the picker says "System default" over IPC.
+  it('stores a chosen voice, survives other patches, and clears on an empty string', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.getNotificationPrefs().speakVoice).toBeUndefined();
+    st.setNotificationPrefs({ speakVoice: 'Microsoft Zira - English (United States)' });
+    st.setNotificationPrefs({ speak: true });
+    expect(st.getNotificationPrefs().speakVoice).toBe('Microsoft Zira - English (United States)');
+    st.setNotificationPrefs({ speakVoice: '' });
+    expect(st.getNotificationPrefs().speakVoice).toBeUndefined();
+  });
+
+  it('drops a voice that is not a usable string on load, and names the repair', () => {
+    fs.writeFileSync(file, JSON.stringify({ notifications: { enabled: true, speakVoice: 42 } }));
+    const warns: Line[] = [];
+    const bad = makeStore(file, fakeLogger(warns));
+    bad.load();
+    expect(bad.getNotificationPrefs().speakVoice).toBeUndefined();
+    expect(JSON.stringify(warns)).toContain('speakVoice');
+
+    fs.writeFileSync(file, JSON.stringify({ notifications: { enabled: true, speakVoice: 'Gone voice' } }));
+    const kept = makeStore(file);
+    kept.load();
+    // kept even though no such voice exists here: the renderer falls back at speak time
+    expect(kept.getNotificationPrefs().speakVoice).toBe('Gone voice');
+  });
+
   // P2-E14-05b. The window is the ONE pref where "stored but unreadable" and
   // "not stored" used to look identical from the outside and behave completely
   // differently — a `quietStart` of "10pm" made the dialog say quiet hours were

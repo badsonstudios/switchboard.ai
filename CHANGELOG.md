@@ -140,6 +140,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.127 — unreleased
 
+### Added
+
+- **Choose the voice that reads announcements out.** Settings ▸ Notifications
+  now has **Announcement voice**: a list of the voices installed on your
+  computer, and a **Preview** button that says a sample sentence in the one you
+  picked. If that voice later goes away (uninstalled, or the workspace opened on
+  another computer), the system default voice speaks instead, with no error and
+  no missed announcement, and the picker marks the voice as not on this
+  computer.
+
 ### Changed
 
 - **A Markdown document's text now fills the width of its pane.** It used to

@@ -61,7 +61,13 @@ import { WorkspaceNoticeBanner } from './components/WorkspaceNoticeBanner';
 import { PreflightBanner } from './components/PreflightBanner';
 import { ServiceHealthBanner } from './components/ServiceHealthBanner';
 import type { ServiceHealthStatus } from '../../shared/service-health';
-import { installAnnouncer, setAudioMuted, sharedAnnouncer } from './lib/announcer';
+import {
+  installAnnouncer,
+  listVoices,
+  setAudioMuted,
+  setVoicePreference,
+  sharedAnnouncer,
+} from './lib/announcer';
 // ...and its namesake for the OTHER sense (#581): `lib/announcer` is the sound,
 // `LiveRegion` is the words a screen reader reads.
 import { LiveRegion } from './components/LiveRegion';
@@ -950,6 +956,10 @@ export function App(): React.JSX.Element {
   // only ever sends here.
   useEffect(() => {
     setAudioMuted(bridge.sounds?.muted === true);
+    // Start Chromium loading the OS voices now (#1390): `getVoices()` is empty
+    // until they have loaded, and the first announcement should not be the
+    // call that finds the chosen voice missing.
+    listVoices();
     return installAnnouncer(bridge.sounds, sharedAnnouncer());
   }, []);
 
@@ -964,6 +974,8 @@ export function App(): React.JSX.Element {
       setNotifEnabled(p.enabled);
       setSoundsOn(p.sounds === true);
       setSpeakOn(p.speak === true);
+      // #1390: which OS voice says it; absent is the system default
+      setVoicePreference(p.speakVoice);
     });
     // `took`, not the setter point-free (#440). These two answers become the
     // state behind a CHIP: a truthy refusal draws auto-trust as ON, and the
