@@ -45,7 +45,8 @@ import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
 import { DND_TYPE, GROUP_DND_TYPE } from '../lib/rail-dnd';
 import { edgeAtX, edgeAtY, insertIndex } from '../lib/strip-drag';
 import { finishedCount, needCount } from '../lib/rail-view';
-import { markAllSeen, markSeen } from '../lib/seen';
+import { dismissWaiting, markAllSeen } from '../lib/seen';
+import { sessionStore } from '../store/session-store';
 import { useHeldCounts } from '../lib/sibling-inbox';
 import { edgeOverflow, EdgeState, sameEdges } from '../lib/strip-overflow';
 import { isLit, UrgencyMarks } from '../lib/urgency';
@@ -982,7 +983,8 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
           session: s,
           groups: props.groups,
           pinned: props.pinned.has(s.id),
-          finished: props.finished?.has(s.id) ?? false,
+          // ...or a "waiting" to dismiss: the same action since #1413
+          finished: (props.finished?.has(s.id) ?? false) || sessionStore.canDismissWait(s.id),
         },
         {
           diff: () => {
@@ -1007,7 +1009,7 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
           },
           seen: () => {
             ran('session', s.id);
-            markSeen(s.id);
+            dismissWaiting(s.id);
           },
           move: (gid, here) => {
             ran('session', s.id);

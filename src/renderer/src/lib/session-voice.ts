@@ -37,6 +37,7 @@ import { stepDown, stepUp } from './ladder';
 import { announce } from './live-region';
 import type { Ladder } from './presentation';
 import { bucketLabel } from './rail-order';
+import { rollupParts, waitRollup } from './rail-view';
 
 /** The narrow slice of `t` these builders need — the same shape
  *  `McpManagerDialog` passes down, and trivially fakeable in a test. */
@@ -169,6 +170,54 @@ export function sayPinToggled(cardId: string): void {
   const title = titleOf(cardId);
   if (!title) return;
   announce(pinSaid(t, title, sessionStore.isPinned(cardId)));
+}
+
+/**
+ * A "waiting" was dismissed (#1413): say so, and what the session's group now
+ * reads — the roll-up the group's own header shows, from the same function, so
+ * the sentence and the header cannot word the count two ways.
+ */
+export function waitDismissedSaid(
+  t: Translate,
+  facts: { title: string; group?: string; summary?: string }
+): string {
+  return facts.group !== undefined && facts.summary !== undefined
+    ? t('rail.announceWaitDismissedIn', facts)
+    : t('rail.announceWaitDismissed', { title: facts.title });
+}
+
+/** The store write is synchronous, so the roll-up read here is the new one. */
+export function sayWaitDismissed(cardId: string): void {
+  const title = titleOf(cardId);
+  if (!title) return;
+  const order = sessionStore.getRailOrder();
+  const bucket = order.bucketOf.get(cardId);
+  const ids = bucket ? (order.buckets.get(bucket) ?? []) : [];
+  if (!bucket || ids.length === 0) {
+    announce(waitDismissedSaid(t, { title }));
+    return;
+  }
+  const state = sessionStore.getState();
+  const members = ids
+    .map((id) => state.sessions.find((s) => s.id === id))
+    .filter((s): s is NonNullable<typeof s> => s !== undefined);
+  const needing = sessionStore.getNeedingCards();
+  const finished = sessionStore.getFinishedCards();
+  const rollup = waitRollup(
+    members,
+    (id) => needing.has(id) || finished.has(id),
+    (id) => sessionStore.hasHeldQuestion(id),
+    (id) => sessionStore.isWaitDismissed(id)
+  );
+  announce(
+    waitDismissedSaid(t, {
+      title,
+      group: bucketLabel(bucket, state.groups, t('rail.ungrouped')),
+      summary: rollupParts(rollup)
+        .map((p) => (p.count === undefined ? t(p.key) : t(p.key, { count: p.count })))
+        .join(t('rail.rollupJoin')),
+    })
+  );
 }
 
 /** `Mod+Alt+Arrow` has landed (also synchronous): say where the row sits now.

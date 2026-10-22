@@ -230,6 +230,31 @@ export interface SessionState {
    * renders the rail directly; both read the same stored value.
    */
   readonly taskLabelSize: TaskLabelSize;
+  /**
+   * "Waiting" the user dismissed (#1413): card id -> WHICH finished turn they
+   * dismissed — the `at` of its `done`/`ready` row in the feed, or, when the
+   * feed had no row for it yet, the moment of the dismissal (`WaitDismissal`).
+   *
+   * A RENDERER-SIDE ACKNOWLEDGEMENT, NOT A STATUS. Main's record stays `done`
+   * (the state machine is the CLI's, and a finished turn is still finished);
+   * every surface asks `isWaitDismissed` through `shownStatus`, which paints a
+   * dismissed `done` as calm. The entry goes the moment that turn is over: the
+   * status leaves `done`, or the feed carries a different finished turn
+   * (`set`'s prune), so the next turn that finishes is "waiting" again.
+   *
+   * In `state` because surfaces RENDER from it. NOT persisted: "waiting" does
+   * not outlive the app either — a relaunched card comes back suspended, and
+   * the feed its turn was recorded in is in main's memory.
+   */
+  readonly waitDismissed: ReadonlyMap<string, WaitDismissal>;
+}
+
+/** Which finished turn a dismissal was for (#1413): see `waitDismissed`. */
+export interface WaitDismissal {
+  /** the `at` of the turn's feed row, when the feed had one */
+  readonly at?: string;
+  /** epoch ms of the click: what a row that arrives LATER is compared to */
+  readonly dismissedAt: number;
 }
 
 const EMPTY: SessionState = {
@@ -250,6 +275,7 @@ const EMPTY: SessionState = {
   dispatchRetire: DEFAULT_DISPATCH_RETIRE,
   pendingPermissions: [],
   taskLabelSize: DEFAULT_TASK_LABEL_SIZE,
+  waitDismissed: new Map(),
 };
 
 /** The "no batch" snapshot, once. `useSyncExternalStore` compares by identity,
@@ -296,6 +322,8 @@ export class SessionStore {
   private derivedNeeding: ReadonlySet<string> = new Set();
   /** finished work nobody has looked at (#1219): never overlaps `derivedNeeding` */
   private derivedFinished: ReadonlySet<string> = new Set();
+  /** the same, before dismissed "waiting" is taken out of it (#1413) */
+  private feedFinished: ReadonlySet<string> = this.derivedFinished;
   // §5.8's batch prompt (P2-E9-11): the ONE group currently on screen, and the
   // request ids it has taken responsibility for. Derived on mutation like the
   // rest, and — unlike the rest — deliberately identity-STABLE across a
@@ -418,8 +446,102 @@ export class SessionStore {
     return out;
   }
 
+  // ── dismissed "waiting" (#1413) ──────────────────────────────────────────
+
+  /**
+   * The `at` of this card's finished turn as the feed records it: its status
+   * row while that row is `done` (unlooked-at) or `ready` (looked at — main's
+   * `acknowledge` keeps the `at`). Undefined when the feed has no such row.
+   */
+  private finishedTurnAt(cardId: string): string | undefined {
+    // the NEWEST such row: main appends, and a card that was resumed can
+    // briefly hold a row from its previous live session as well
+    const events = this.state.events;
+    for (let i = events.length - 1; i >= 0; i--) {
+      const e = events[i];
+      if ((e.kind === 'done' || e.kind === 'ready') && this.cardIdForLive(e.sessionId) === cardId) {
+        return e.at;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Has the user dismissed this card's "waiting" (#1413)? True only while the
+   * card is still `done` on the turn they dismissed. A boolean, so a
+   * `useSyncExternalStore` reader settles by value.
+   */
+  isWaitDismissed(cardId: string | undefined): boolean {
+    if (!cardId || !this.state.waitDismissed.has(cardId)) return false;
+    return this.getCardStatus(cardId) === 'done';
+  }
+
+  /**
+   * Is there a "waiting" on this card that a dismiss would clear? `done` and
+   * not already dismissed. What decides whether the waiting word is a button
+   * and whether a menu offers "Mark as seen".
+   */
+  canDismissWait(cardId: string | undefined): boolean {
+    return !!cardId && this.getCardStatus(cardId) === 'done' && !this.isWaitDismissed(cardId);
+  }
+
+  /**
+   * Dismiss this card's "waiting" (#1413): from here until its next turn
+   * finishes it reads as calm everywhere, and it is out of every waiting
+   * count. Returns whether anything changed. Pair it with the feed's
+   * acknowledgement (`lib/seen`'s `dismissWaiting` does both) — this half is
+   * the tint and the word, that half is the "N finished" count in main.
+   */
+  dismissWait(cardId: string | undefined): boolean {
+    if (!cardId || !this.canDismissWait(cardId)) return false;
+    const map = new Map(this.state.waitDismissed);
+    const at = this.finishedTurnAt(cardId);
+    map.set(cardId, Object.freeze({ ...(at !== undefined ? { at } : {}), dismissedAt: Date.now() }));
+    this.set({ waitDismissed: map });
+    return true;
+  }
+
+  /**
+   * Drop every dismissal whose turn is over: the card is no longer `done`
+   * (it took a prompt, ended, crashed, was closed), or the feed now records a
+   * DIFFERENT finished turn for it. The second test is what re-arms a turn
+   * that started and finished between two pushes of the session list, which
+   * then never showed the card as anything but `done`.
+   *
+   * A dismissal recorded with NO feed row (the list said `done` before the
+   * feed's row for that turn arrived) keeps a row that turns up LATER only if
+   * the row is from no later than the click: that is the late delivery of the
+   * turn the user dismissed. A row stamped after it is a new turn.
+   */
+  private prunedWaitDismissed(): ReadonlyMap<string, WaitDismissal> {
+    const cur = this.state.waitDismissed;
+    let next: Map<string, WaitDismissal> | null = null;
+    for (const [cardId, d] of cur) {
+      const now = this.finishedTurnAt(cardId);
+      const newTurn =
+        now !== undefined &&
+        (d.at !== undefined ? now !== d.at : !(Date.parse(now) <= d.dismissedAt));
+      const over = this.getCardStatus(cardId) !== 'done' || newTurn;
+      if (!over) continue;
+      next ??= new Map(cur);
+      next.delete(cardId);
+    }
+    return next ?? cur;
+  }
+
   private set(patch: Partial<SessionState>): void {
     this.state = { ...this.state, ...patch };
+    // a dismissed "waiting" lasts exactly as long as the turn it dismissed
+    // (#1413). Pruned BEFORE the derives below, so "N finished" and every
+    // surface read the same answer in this same notify.
+    let waitChanged = 'waitDismissed' in patch;
+    if (('sessions' in patch || 'events' in patch) && this.state.waitDismissed.size > 0) {
+      const pruned = this.prunedWaitDismissed();
+      if (pruned !== this.state.waitDismissed) {
+        this.state = { ...this.state, waitDismissed: pruned };
+        waitChanged = true;
+      }
+    }
     // KEY presence, not truthiness: `setEvents([])` must still recompute, and
     // a future optional-param setter must not silently skip the derive
     // `pinned` is in the condition because a pinned session sorts first (E9-09):
@@ -452,6 +574,10 @@ export class SessionStore {
     // do: setting a session to `none` must take it off the to-do list the same
     // moment, not at the next event push.
     if ('events' in patch || 'focusPolicies' in patch) this.rederiveAttention();
+    // ...and when a dismissed "waiting" comes or goes (#1413): a dismissed
+    // card is out of "N finished" on the same click, not a round trip later.
+    // Only the finished set: nothing else here reads the dismissals.
+    else if (waitChanged) this.refilterFinished();
     if ('pendingPermissions' in patch) this.rederiveBatch();
     for (const l of this.listeners) {
       try {
@@ -488,9 +614,27 @@ export class SessionStore {
     );
     // ...and its quieter sibling (#1219), from the same feed in the same
     // recompute, so "N need you" and "N finished" can never be a push apart
-    this.derivedFinished = finishedCards(this.state.events, (liveId) =>
+    this.feedFinished = finishedCards(this.state.events, (liveId) =>
       this.cardIdForLive(liveId)
     );
+    this.refilterFinished();
+  }
+
+  /**
+   * The finished set minus the cards whose "waiting" was dismissed (#1413):
+   * such a card is not finished-and-unlooked-at, whether or not main's
+   * acknowledgement has come back yet. The feed's own set, identity and all,
+   * whenever no dismissal takes anything out of it.
+   */
+  private refilterFinished(): void {
+    const raw = this.feedFinished;
+    if (this.state.waitDismissed.size === 0 || raw.size === 0) {
+      this.derivedFinished = raw;
+      return;
+    }
+    const kept = new Set<string>();
+    for (const c of raw) if (!this.isWaitDismissed(c)) kept.add(c);
+    this.derivedFinished = kept.size === raw.size ? raw : kept;
   }
 
   /**

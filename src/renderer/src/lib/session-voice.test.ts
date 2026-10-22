@@ -21,6 +21,7 @@ import {
   reorderSaid,
   sayPinToggled,
   sayReordered,
+  sayWaitDismissed,
   setLadderAloud,
   stepLadderAloud,
   type Translate,
@@ -60,6 +61,26 @@ beforeEach(async () => {
   subscribeAnnouncements((text) => heard.push(text));
   sessionStore.setSessions([]);
   sessionStore.setGroups([]);
+});
+
+describe('a dismissed "waiting" says what its group now reads (#1413)', () => {
+  it('names the session and the new roll-up, in the header\'s own words', () => {
+    const [a, b, c] = [card(), card(), card()];
+    const g: RailGroup = { id: 'g-1413', name: 'Work', color: 'var(--accent-1)' };
+    sessionStore.setGroups([g]);
+    sessionStore.setSessions([
+      session(a, 'alpha', { status: 'done', groupId: g.id }),
+      session(b, 'beta', { status: 'done', groupId: g.id }),
+      session(c, 'gamma', { status: 'done', groupId: g.id }),
+    ]);
+    sessionStore.dismissWait(a);
+    sayWaitDismissed(a);
+    expect(heard).toEqual(['alpha is no longer marked waiting. Work: 2 waiting']);
+    sessionStore.dismissWait(b);
+    sessionStore.dismissWait(c);
+    sayWaitDismissed(c);
+    expect(heard[1]).toBe('gamma is no longer marked waiting. Work: calm');
+  });
 });
 
 describe('the words, through the real ICU chain', () => {

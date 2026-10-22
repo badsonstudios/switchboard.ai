@@ -23,6 +23,7 @@ import { rollupWords } from '../lib/rollup-words';
 import { sessionStore } from '../store/session-store';
 import { approvalAttrs, approvalHint, waitingOnApproval } from '../lib/approval-watch';
 import { useApprovalWatch } from '../lib/use-approval-watch';
+import { useWaitDismissed } from '../lib/use-wait-dismissed';
 import { StatusMark } from './StatusMark';
 import { tint } from '../lib/tint';
 import { FolderGlyph } from './FolderGlyph';
@@ -106,6 +107,8 @@ export function StripGroupEntry(props: {
   onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
 }): React.JSX.Element {
   const { t } = useTranslation();
+  // a dismissed "waiting" is calm in the roll-up too (#1413)
+  const waitDismissed = useWaitDismissed();
   const cell = React.useRef<HTMLDivElement | null>(null);
   const isAuto = props.kind === 'auto';
   // THE COUNT AND THE ROWS AGREE (#1137): this is `needCount` over the same
@@ -136,7 +139,8 @@ export function StripGroupEntry(props: {
   const rollup = waitRollup(
     props.members,
     (id) => props.needing.has(id) || (props.finished?.has(id) ?? false),
-    (id) => sessionStore.hasHeldQuestion(id)
+    (id) => sessionStore.hasHeldQuestion(id),
+    waitDismissed
   );
   const lead = rollupLead(rollup);
   const leadToken =

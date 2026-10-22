@@ -364,6 +364,40 @@ describe('a held question is shown as one (#1351)', () => {
   });
 });
 
+describe('a dismissed "waiting" is shown as calm (#1413)', () => {
+  it('reads a dismissed done as idle, and nothing else moves', () => {
+    expect(shownStatus('done', false, true)).toBe('idle');
+    expect(shownStatus('done', false, false)).toBe('done');
+    // approval and question are NOT dismissable: they are really blocked
+    expect(shownStatus('needs-permission', false, true)).toBe('needs-permission');
+    expect(shownStatus('needs-permission', true, true)).toBe('needs-input');
+    for (const s of ['working', 'idle', 'needs-input', 'crashed', 'ended', undefined]) {
+      expect(shownStatus(s, false, true), String(s)).toBe(s);
+    }
+  });
+
+  it("a group's roll-up does not count it as waiting", () => {
+    const members = [
+      { id: 'a', status: 'done' },
+      { id: 'b', status: 'done' },
+      { id: 'c', status: 'done' },
+    ];
+    expect(waitRollup(members).waiting).toBe(3);
+    const r = waitRollup(members, undefined, undefined, (id) => id === 'b');
+    expect(r.waiting).toBe(2);
+    expect(rollupParts(r)).toEqual([{ key: 'rail.rollup.waiting', count: 2 }]);
+    // the last one: the clause goes, and the group is calm
+    const none = waitRollup(members, undefined, undefined, () => true);
+    expect(rollupLead(none)).toBeUndefined();
+    expect(rollupParts(none)).toEqual([{ key: 'rail.calm' }]);
+  });
+
+  it('an approval in the group is not dismissed by the predicate', () => {
+    const r = waitRollup([{ id: 'a', status: 'needs-permission' }], undefined, undefined, () => true);
+    expect(r.approval).toBe(1);
+  });
+});
+
 describe("a group's roll-up (#1351, #1196)", () => {
   const of = (...statuses: string[]): Array<{ status: string }> => statuses.map((status) => ({ status }));
 

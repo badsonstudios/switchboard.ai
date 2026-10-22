@@ -1416,6 +1416,43 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
 > message box's placeholder is **Message <name>…**, with the name cut to 40
 > characters; its accessible name keeps the full name and the Enter /
 > Shift+Enter hint.
+>
+> **Click "waiting" to dismiss it; one kind of "seen" *(amended 2026-10-22,
+> Dan, #1413)*.** Looking at a finished session (`lib/seen`: going to it,
+> touching its card, or it finishing in front of you) acknowledges its `done`
+> in the Events list, so it leaves **N finished**, but the record stays `done`
+> and every surface read `done` as **waiting**: the word, the gold ring and the
+> group's "N waiting" stayed until the next prompt. Now the **waiting** word is
+> a click target on the tab, the card header's pill, the list row and the strip
+> pill, and a click **dismisses** it. The dismissal is a RENDERER-SIDE
+> acknowledgement, not a status change in main: the store keeps, per card, the
+> `at` of the finished turn the user dismissed (`waitDismissed`), and
+> `shownStatus` paints a dismissed `done` as `idle` (calm: no word, neutral
+> ring), so every surface and every group roll-up reads one derived value, and
+> **N finished** drops on the same click. The entry is dropped the moment that
+> turn is over (the card's status leaves `done`, or the feed carries a
+> different finished turn), so the next finished turn is **waiting** again.
+> **One mechanism:** the word, **Mark as seen** and the **N finished** button
+> are the same action (`dismissWaiting`: the feed's acknowledgement plus the
+> dismissal); the menu offers **Mark as seen** whenever there is a finished
+> count or a waiting word to clear. **Looking is not dismissing** (Dan's call
+> on the issue's open question): selecting a waiting tab, `Ctrl+Space` or
+> typing in its card still clears the finished count, exactly as before, and
+> leaves **waiting**, because a session that finished while in front of you
+> would otherwise never say "waiting" at all. The `seen` watch therefore still
+> calls the acknowledgement alone (`markSeen`), never `dismissWaiting`.
+> **Only `done` is dismissable:** an **approval** or a **question** is a
+> session that is really blocked, so its word is not a button, and the rule
+> above that a dismissed Events entry leaves such a word coloured stands. The
+> tab's word and the header pill are real buttons ("Dismiss waiting on
+> <session>"); on the list row and the strip pill the word sits inside the
+> row's own button, so it is marked `data-dismiss-waiting` and the row's click
+> handles it (a click there dismisses and does not open the session); the
+> keyboard route there is the menu's **Mark as seen**. The live region says the
+> group's new roll-up. **Not persisted:** "waiting" itself does not survive a
+> restart (a relaunched card is `suspended`, and the feed is in main's
+> memory), and a dismissal survives tab switches and popouts because a popout
+> is a second document of the same renderer and store.
 
 - **Auto-minimize on submit** (per-session toggle): submitting a prompt collapses the
   card to a slim status strip; it restores automatically on `Stop` (done) or

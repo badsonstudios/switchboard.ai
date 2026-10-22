@@ -19,6 +19,7 @@ import { attentionPaint, presentStatus, waitPaint } from '../lib/rail-view';
 import { approvalAttrs, approvalHint, approvalLeftWord, NO_APPROVAL, NO_CARDS } from '../lib/approval-watch';
 import { useApprovalWatch } from '../lib/use-approval-watch';
 import { useShownStatus } from '../lib/use-shown-status';
+import { dismissWaiting, isDismissClick } from '../lib/seen';
 import { tint } from '../lib/tint';
 import { AiBadge } from './AiBadge';
 import { DEFAULT_TASK_LABEL_SIZE, LABEL_LINES } from '../../../shared/task-label-size';
@@ -219,6 +220,9 @@ export function SessionRow(props: {
   const word = t(p.listKey ?? p.shortKey);
   const left = approvalLeftWord(t, approval);
   const stateWord = left ? t('rail.stateClock', { state: word, left }) : word;
+  // a finished turn nobody has dismissed (#1413): `s` is the SHOWN status, so
+  // a dismissed one already reads calm here
+  const dismissable = s.status === 'done';
 
   return (
     <div
@@ -398,6 +402,12 @@ export function SessionRow(props: {
               // the row div below already focuses on click; without this the
               // mouse would run it twice
               e.stopPropagation();
+              // a click on the "waiting" word dismisses it, and only that
+              // (#1413): it is not a second way to open the session
+              if (dismissable && isDismissClick(e.target)) {
+                dismissWaiting(s.id);
+                return;
+              }
               props.onFocus();
             }}
             style={{
@@ -491,6 +501,11 @@ export function SessionRow(props: {
                 // (#877), and a spec that looks for it by its words is a spec
                 // that breaks the next time the vocabulary is reworded.
                 data-rail-state={s.id}
+                // the click target that dismisses "waiting" (#1413). Read by
+                // the button's own click above; a keyboard user has the tab's
+                // word, the card header's pill and "Mark as seen" in the menu
+                data-dismiss-waiting={dismissable ? 'row' : undefined}
+                title={dismissable ? t('rail.dismissWaitingHint') : undefined}
                 style={{
                   flexShrink: 0,
                   fontFamily: 'var(--font-ui)',

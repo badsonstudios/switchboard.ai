@@ -45,6 +45,7 @@
 // silenced by looking at them, by construction and not by a check here.
 import { sessionStore } from '../store/session-store';
 import { getPopoutWindows, subscribePopoutWindows } from './popout-windows';
+import { sayWaitDismissed } from './session-voice';
 
 /**
  * Cards that are in front because the APP put them there, not the user.
@@ -102,9 +103,33 @@ export function markSeen(cardId: string | null | undefined): void {
   }
 }
 
-/** Acknowledge every finished session at once: the "N finished" button. */
+/**
+ * THE USER SAID "SEEN" (#1413): a click on the "waiting" word, "Mark as seen",
+ * or the "N finished" button. ONE action for all three, and it does both
+ * halves: the feed's acknowledgement (out of "N finished", as `markSeen`) AND
+ * the store's dismissal (the tint, the word and every group's "N waiting").
+ *
+ * `markSeen` alone stays what LOOKING does — the three ways the watch below
+ * counts — and looking does NOT dismiss "waiting" (Dan, on #1413): a session
+ * that finished while it was in front of you would otherwise never say
+ * "waiting" at all. Selecting a tab clears the finished count, as it always
+ * has, and leaves the word.
+ *
+ * Only `done` is dismissable (`canDismissWait`): an approval or a question is
+ * a session that is really blocked, and a click cannot make that untrue.
+ */
+export function dismissWaiting(cardId: string | null | undefined, opts: { quiet?: boolean } = {}): void {
+  if (!cardId) return;
+  // FIRST: `unseenDoneFor` answers only for a card still in the finished
+  // count, and the dismissal below takes it out of that count
+  markSeen(cardId);
+  if (sessionStore.dismissWait(cardId) && !opts.quiet) sayWaitDismissed(cardId);
+}
+
+/** Every finished session at once: the "N finished" button. The same action
+ *  as dismissing each one (#1413), said once rather than N times. */
 export function markAllSeen(): void {
-  for (const cardId of sessionStore.getFinishedCards()) markSeen(cardId);
+  for (const cardId of [...sessionStore.getFinishedCards()]) dismissWaiting(cardId, { quiet: true });
 }
 
 /** `closest`, for a node that may belong to ANOTHER window's document, where
@@ -112,6 +137,19 @@ export function markAllSeen(): void {
 function closestOf(target: unknown, selector: string): Element | null {
   const el = target as { closest?: (s: string) => Element | null } | null;
   return typeof el?.closest === 'function' ? el.closest(selector) : null;
+}
+
+/**
+ * Did this click land on a "waiting" word that dismisses (#1413)?
+ *
+ * For the two surfaces whose word sits INSIDE the row's own button — the rail
+ * row and the strip pill — where a button inside a button is not allowed: the
+ * word is marked `data-dismiss-waiting`, and the row's click asks this before
+ * it does what a row click does. The tab's word and the card header's pill are
+ * real buttons of their own. Duck-typed, for a popped-out window's nodes.
+ */
+export function isDismissClick(target: unknown): boolean {
+  return closestOf(target, '[data-dismiss-waiting]') !== null;
 }
 
 /**

@@ -290,6 +290,124 @@ describe('the needing-cards set — every "N need you" readout (#621)', () => {
   });
 });
 
+describe('a dismissed "waiting" (#1413)', () => {
+  let store: SessionStore;
+  const at = (s: number): string => new Date(2026, 0, 1, 0, 0, s).toISOString();
+  beforeEach(() => {
+    store = new SessionStore();
+    store.mapLiveToCard('live-a', 'a');
+    store.mapLiveToCard('live-b', 'b');
+    store.mapLiveToCard('live-c', 'c');
+    store.setSessions([
+      session('a', { status: 'done' }),
+      session('b', { status: 'done' }),
+      session('c', { status: 'done' }),
+    ]);
+    store.setEvents([event(1, 'live-a', 'done'), event(2, 'live-b', 'done'), event(3, 'live-c', 'done')]);
+  });
+
+  it('is dismissed until the turn it dismissed is over, and out of "N finished" at once', () => {
+    expect(store.getFinishedCards().size).toBe(3);
+    expect(store.canDismissWait('b')).toBe(true);
+    expect(store.dismissWait('b')).toBe(true);
+    expect(store.isWaitDismissed('b')).toBe(true);
+    expect(store.canDismissWait('b')).toBe(false);
+    // no round trip to main: the count drops on the same click
+    expect([...store.getFinishedCards()].sort()).toEqual(['a', 'c']);
+    // a second dismiss changes nothing
+    expect(store.dismissWait('b')).toBe(false);
+    // main's acknowledgement arrives: `ready`, same `at` — still dismissed
+    store.setEvents([
+      event(1, 'live-a', 'done'),
+      { id: 9, sessionId: 'live-b', kind: 'ready', at: at(2) },
+      event(3, 'live-c', 'done'),
+    ]);
+    expect(store.isWaitDismissed('b')).toBe(true);
+  });
+
+  it('re-arms on the next turn: the status leaves done', () => {
+    store.dismissWait('a');
+    store.setSessions([
+      session('a', { status: 'working' }),
+      session('b', { status: 'done' }),
+      session('c', { status: 'done' }),
+    ]);
+    expect(store.isWaitDismissed('a')).toBe(false);
+    expect(store.getState().waitDismissed.has('a')).toBe(false);
+    store.setSessions([
+      session('a', { status: 'done' }),
+      session('b', { status: 'done' }),
+      session('c', { status: 'done' }),
+    ]);
+    expect(store.isWaitDismissed('a')).toBe(false);
+    expect(store.canDismissWait('a')).toBe(true);
+  });
+
+  it('re-arms on the next turn even if the list never saw it working: a new finished turn in the feed', () => {
+    store.dismissWait('a');
+    store.setEvents([
+      { id: 10, sessionId: 'live-a', kind: 'done', at: at(50) },
+      event(2, 'live-b', 'done'),
+      event(3, 'live-c', 'done'),
+    ]);
+    expect(store.isWaitDismissed('a')).toBe(false);
+    expect(store.getFinishedCards().has('a')).toBe(true);
+  });
+
+  it('a dismissal made before the feed row arrived survives that row, and not a later turn', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(2026, 0, 1, 0, 0, 30));
+      // the list says done; the feed has no row for this card yet
+      store.setEvents([event(2, 'live-b', 'done'), event(3, 'live-c', 'done')]);
+      expect(store.dismissWait('a')).toBe(true);
+      // the late row for the SAME turn: stamped before the click
+      store.setEvents([
+        { id: 11, sessionId: 'live-a', kind: 'done', at: at(20) },
+        event(2, 'live-b', 'done'),
+        event(3, 'live-c', 'done'),
+      ]);
+      expect(store.isWaitDismissed('a')).toBe(true);
+      expect(store.getFinishedCards().has('a')).toBe(false);
+      // a NEW turn, stamped after it
+      store.setEvents([
+        { id: 12, sessionId: 'live-a', kind: 'done', at: at(40) },
+        event(2, 'live-b', 'done'),
+        event(3, 'live-c', 'done'),
+      ]);
+      expect(store.isWaitDismissed('a')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('reads the NEWEST feed row for a card that holds two', () => {
+    store.mapLiveToCard('live-a2', 'a');
+    store.setEvents([
+      event(1, 'live-a', 'ready'),
+      { id: 20, sessionId: 'live-a2', kind: 'done', at: at(45) },
+    ]);
+    store.dismissWait('a');
+    expect(store.getState().waitDismissed.get('a')?.at).toBe(at(45));
+  });
+
+  it('only a finished turn is dismissable: never an approval, a question, a crash or an ended session', () => {
+    for (const status of ['needs-permission', 'needs-input', 'crashed', 'ended', 'idle', 'working'] as const) {
+      store.setSessions([session('a', { status })]);
+      expect(store.canDismissWait('a'), status).toBe(false);
+      expect(store.dismissWait('a'), status).toBe(false);
+      expect(store.isWaitDismissed('a'), status).toBe(false);
+    }
+  });
+
+  it('keeps the finished set stable across an unrelated write', () => {
+    store.dismissWait('a');
+    const f = store.getFinishedCards();
+    store.setGroups([]);
+    expect(store.getFinishedCards()).toBe(f);
+  });
+});
+
 describe('the attention walk (the batching behaviour the refs protected)', () => {
   let store: SessionStore;
   beforeEach(() => {

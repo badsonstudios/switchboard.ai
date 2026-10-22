@@ -385,7 +385,18 @@ const WAIT_OF: Readonly<Record<string, WaitState>> = {
  * then call a question an "approval". `heldQuestion` is the store's
  * `hasHeldQuestion(cardId)`.
  */
-export function shownStatus<S extends string | undefined>(status: S, heldQuestion: boolean): S | 'needs-input' {
+export function shownStatus<S extends string | undefined>(
+  status: S,
+  heldQuestion: boolean,
+  /**
+   * The user dismissed this session's "waiting" (#1413): the store's
+   * `isWaitDismissed(cardId)`. A finished turn they dismissed is SHOWN as calm
+   * (`idle`) until the next one finishes. Only `done` is dismissable: an
+   * approval or a question is a session that is really blocked.
+   */
+  waitDismissed = false
+): S | 'needs-input' | 'idle' {
+  if (status === 'done' && waitDismissed) return 'idle';
   return status === 'needs-permission' && heldQuestion ? 'needs-input' : status;
 }
 
@@ -490,17 +501,25 @@ export function waitRollup(
   sessions: ReadonlyArray<{ id?: string; status?: string }>,
   lit?: (id: string) => boolean,
   /** the store's `hasHeldQuestion`, so a Direct session's question is counted as one */
-  heldQuestion?: (id: string) => boolean
+  heldQuestion?: (id: string) => boolean,
+  /** the store's `isWaitDismissed` (#1413): a dismissed "waiting" is calm here too */
+  waitDismissed?: (id: string) => boolean
 ): WaitRollup {
   const r: WaitRollup = { approval: 0, question: 0, crashed: 0, waiting: 0, working: 0 };
   for (const s of sessions) {
-    const status = shownStatus(s.status, s.id !== undefined && (heldQuestion?.(s.id) ?? false));
+    const status = shownStatus(
+      s.status,
+      s.id !== undefined && (heldQuestion?.(s.id) ?? false),
+      s.id !== undefined && (waitDismissed?.(s.id) ?? false)
+    );
     if (status === 'crashed') {
       r.crashed += 1;
       continue;
     }
     // a lit session counts as waiting only if it could be: an ended one is
     // not washed (`waitPaint`), so it is not counted either (#1362)
+    // (a dismissed one is out of the finished count on the same click, #1413,
+    // so `lit` only still holds it for a demand of its own)
     const w =
       waitState(status) ??
       (s.id !== undefined && !QUIET.has(status ?? '') && lit?.(s.id) ? 'waiting' : undefined);

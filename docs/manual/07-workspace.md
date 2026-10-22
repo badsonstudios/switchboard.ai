@@ -40,7 +40,10 @@ a session that has **ended**: it is never tinted, never says "waiting", and a
 group never counts it as waiting. That contrast
 is the whole point: you should be able to spot the ones that need you from
 across the room. See [A session that is waiting on
-you](02-sessions.md#a-session-that-is-waiting-on-you).
+you](02-sessions.md#a-session-that-is-waiting-on-you). To put a **waiting for
+you** row back to normal without answering it, click the words **waiting for
+you** (see [Dismissing "waiting"](02-sessions.md#dismissing-waiting)); the
+group's count drops by one straight away.
 
 Each group header says what is inside it: **"1 approval · 2 waiting"** (each
 of approval, question and waiting it has, most urgent first, and **crashed**
@@ -163,7 +166,10 @@ Along the top of the strip, in this order:
 - **N need you** appears beside them when any session is waiting on you, and
   is the same number the list on the left shows at its foot.
 - **N finished** appears beside that when sessions have completed and you have
-  not looked at them yet. Click it to mark them all as seen.
+  not looked at them yet. Click it to mark them all as seen: each one also
+  stops saying **waiting**, as if you had clicked the word on it (see
+  [Dismissing "waiting"](02-sessions.md#dismissing-waiting)), until its next
+  turn finishes.
 
 Under those, your **groups**, in the same order as the list on the left: the
 ones you made first, then any [automatic groups](#automatic-groups). Each
@@ -946,7 +952,8 @@ list has, plus a few things that are about the tab:
   so far, then the two go their own ways. It sits right under Duplicate so
   you can see which is which.
 - **Open changes**, **Pin session** / **Unpin session**, **Mark as seen** (only
-  when the session has finished and you have not looked), and **Move to
+  when the session has finished and you have not looked, or still says
+  **waiting**; it does what clicking the word does), and **Move to
   group** work exactly as they do in the Sessions list.
 - **Pop out to a new window** puts the session in a window of its own. On a
   popped-out tab it says **Return to main window** instead.

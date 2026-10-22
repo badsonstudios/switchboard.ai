@@ -140,6 +140,19 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.128 — unreleased
 
+### Added
+
+- **Click "waiting" to dismiss it.** When a session finishes its turn it says
+  **waiting** on its tab, its card's header, its row in the Sessions list and
+  its pill on the strip, and its group counts it. Click that word in any of
+  those places and the session goes back to normal everywhere at once: no word,
+  a grey ring, one fewer in its group's **N waiting**, and out of **N
+  finished**. Clicking it on a tab also opens the tab. It says **waiting**
+  again when its next turn finishes. **Mark as seen** and the **N finished**
+  button now do the same thing, so there is one kind of "seen". Approvals and
+  questions cannot be dismissed this way, because those sessions really are
+  stuck until you answer. Opening a waiting session does not dismiss it.
+
 ### Fixed
 
 - **Signing in to an MCP server now opens your browser.** In the MCP servers

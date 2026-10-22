@@ -20,6 +20,7 @@ import { attentionPaint, presentStatus, waitPaint } from '../lib/rail-view';
 import { approvalAttrs, approvalHint, NO_APPROVAL, NO_CARDS } from '../lib/approval-watch';
 import { useApprovalWatch } from '../lib/use-approval-watch';
 import { useShownStatus } from '../lib/use-shown-status';
+import { dismissWaiting, isDismissClick } from '../lib/seen';
 import { tint } from '../lib/tint';
 import { sessionSpokenName } from './SessionRow';
 import { AiBadge } from './AiBadge';
@@ -79,6 +80,8 @@ export function StripPill(props: {
   // (in its hue), never by the fill.
   const fill = props.selected ? tint(accent, 12) : props.folded ? 'transparent' : 'var(--rail-card)';
   const edge = props.selected ? accent : 'var(--group-frame)';
+  // a finished turn nobody has dismissed (#1413): `s` is the SHOWN status
+  const dismissable = s.status === 'done';
 
   return (
     <button
@@ -102,7 +105,14 @@ export function StripPill(props: {
       aria-label={props.folded ? t('strip.pillFolded', { name: spoken }) : spoken}
       aria-current={props.selected ? 'true' : undefined}
       title={pulse.active ? approvalHint(t, pulse) : props.folded ? t('strip.pillFoldedHint') : undefined}
-      onClick={props.onFocus}
+      onClick={(e) => {
+        // a click on the "waiting" word dismisses it, and only that (#1413)
+        if (dismissable && isDismissClick(e.target)) {
+          dismissWaiting(s.id);
+          return;
+        }
+        props.onFocus();
+      }}
       onContextMenu={props.onContextMenu}
       {...props.dragProps}
       data-drop-edge={props.dropEdge}
@@ -199,6 +209,10 @@ export function StripPill(props: {
           </span>
           <span
             data-strip-pill-state
+            // the click target that dismisses "waiting" (#1413): a button
+            // cannot hold a button, so the pill's own click reads this
+            data-dismiss-waiting={dismissable ? 'pill' : undefined}
+            title={dismissable ? t('rail.dismissWaitingHint') : undefined}
             style={{
               flexShrink: 0,
               fontFamily: 'var(--font-ui)',

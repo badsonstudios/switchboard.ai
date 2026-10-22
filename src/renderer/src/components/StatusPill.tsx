@@ -27,9 +27,44 @@ import { presentStatus, statusVars } from '../lib/rail-view';
  * The look is in tokens.css; only the two values a stylesheet cannot know
  * statically come from here.
  */
-export function StatusPill(props: { status?: string; label: string }): React.JSX.Element {
+export function StatusPill(props: {
+  status?: string;
+  label: string;
+  /**
+   * A "waiting" the user can dismiss (#1413): the pill becomes a BUTTON, named
+   * by `dismissLabel`, and a click runs this. Only ever passed for `done` — an
+   * approval or a question is not dismissable.
+   */
+  onDismiss?: () => void;
+  /** the dismiss button's accessible name: "Dismiss waiting on <session>" */
+  dismissLabel?: string;
+  /** its tooltip */
+  dismissHint?: string;
+}): React.JSX.Element {
   const { token } = presentStatus(props.status);
   const v = statusVars(token);
+  if (props.onDismiss) {
+    const dismiss = props.onDismiss;
+    return (
+      <button
+        type="button"
+        className="status-pill"
+        data-status={token}
+        data-dismiss-waiting="pill"
+        aria-label={props.dismissLabel}
+        title={props.dismissHint}
+        // the header maximizes on a double-click; a dismiss is not that
+        data-no-maximize
+        onClick={(e) => {
+          e.stopPropagation();
+          dismiss();
+        }}
+        style={{ '--pill-hue': v.hue, '--pill-ink': v.ink } as React.CSSProperties}
+      >
+        {props.label}
+      </button>
+    );
+  }
   return (
     <span
       className="status-pill"

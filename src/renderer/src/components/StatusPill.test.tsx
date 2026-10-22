@@ -79,3 +79,39 @@ describe('the status pill hands the rule the pair it promises', () => {
     expect((await mount('crashed')).textContent).toBe('state');
   });
 });
+
+describe('a "waiting" you can dismiss is a button (#1413)', () => {
+  it('is a named button that dismisses, never bubbles to the header, and keeps the same paint', async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    let dismissed = 0;
+    let bubbled = 0;
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        <div onClick={() => (bubbled += 1)}>
+          <StatusPill
+            status="done"
+            label="waiting"
+            onDismiss={() => (dismissed += 1)}
+            dismissLabel="Dismiss waiting on acme"
+            dismissHint="hint"
+          />
+        </div>
+      );
+    });
+    const pill = host.querySelector<HTMLButtonElement>('button.status-pill')!;
+    expect(pill.getAttribute('aria-label')).toBe('Dismiss waiting on acme');
+    expect(pill.dataset.status).toBe('waiting');
+    expect(pill.hasAttribute('data-no-maximize')).toBe(true);
+    expect(pill.textContent).toBe('waiting');
+    await act(async () => pill.click());
+    expect(dismissed).toBe(1);
+    expect(bubbled).toBe(0);
+  });
+
+  it('is a plain span without a dismiss handler', async () => {
+    expect((await mount('needs-permission')).tagName).toBe('SPAN');
+  });
+});

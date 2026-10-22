@@ -5,7 +5,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { sessionStore } from '../store/session-store';
 import type { EventDto } from '../model/types';
 import {
+  dismissWaiting,
   installSeenWatch,
+  isDismissClick,
   markAllSeen,
   noteBroughtForward,
   markSeen,
@@ -120,6 +122,66 @@ describe('marking as seen', () => {
     ]);
     markAllSeen();
     expect(ack.mock.calls.map((c) => c[0]).sort()).toEqual(['live-a', 'live-c']);
+  });
+});
+
+describe('dismissing "waiting" (#1413): one action for the word, Mark as seen and N finished', () => {
+  beforeEach(() => {
+    sessionStore.setSessions([
+      { id: 'a', title: 'a', folder: 'C:/a', status: 'done' },
+      { id: 'b', title: 'b', folder: 'C:/b', status: 'needs-permission' },
+      { id: 'c', title: 'c', folder: 'C:/c', status: 'done' },
+    ]);
+  });
+  afterEach(() => {
+    sessionStore.setSessions([]);
+  });
+
+  it('acknowledges the finished turn AND dismisses the tint', () => {
+    sessionStore.setEvents([ev(1, 'live-a', 'done')]);
+    dismissWaiting('a');
+    expect(ack.mock.calls).toEqual([['live-a']]);
+    expect(sessionStore.isWaitDismissed('a')).toBe(true);
+    expect(sessionStore.getFinishedCards().has('a')).toBe(false);
+  });
+
+  it('dismisses a waiting session that was already looked at (nothing left to acknowledge)', () => {
+    sessionStore.setEvents([ev(1, 'live-a', 'ready')]);
+    dismissWaiting('a');
+    expect(ack).not.toHaveBeenCalled();
+    expect(sessionStore.isWaitDismissed('a')).toBe(true);
+  });
+
+  it('never dismisses an approval', () => {
+    sessionStore.setEvents([ev(2, 'live-b', 'needs-permission')]);
+    dismissWaiting('b');
+    expect(sessionStore.isWaitDismissed('b')).toBe(false);
+    expect(ack).not.toHaveBeenCalled();
+  });
+
+  it('"N finished" dismisses every finished one', () => {
+    sessionStore.setEvents([ev(1, 'live-a', 'done'), ev(3, 'live-c', 'done')]);
+    markAllSeen();
+    expect(sessionStore.isWaitDismissed('a')).toBe(true);
+    expect(sessionStore.isWaitDismissed('c')).toBe(true);
+    expect(sessionStore.getFinishedCards().size).toBe(0);
+  });
+
+  it('LOOKING is not dismissing: the watch clears the finished count and leaves the word', () => {
+    // Dan's call on #1413: selecting a waiting tab does not clear "waiting"
+    sessionStore.setEvents([ev(1, 'live-a', 'done')]);
+    markSeen('a');
+    expect(ack.mock.calls).toEqual([['live-a']]);
+    expect(sessionStore.isWaitDismissed('a')).toBe(false);
+    expect(sessionStore.canDismissWait('a')).toBe(true);
+  });
+
+  it('knows a click on the word from a click on the row', () => {
+    document.body.innerHTML =
+      '<button id="row"><span id="name">a</span><span id="word" data-dismiss-waiting="row">waiting</span></button>';
+    expect(isDismissClick(document.getElementById('word'))).toBe(true);
+    expect(isDismissClick(document.getElementById('name'))).toBe(false);
+    expect(isDismissClick(null)).toBe(false);
   });
 });
 
