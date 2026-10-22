@@ -392,6 +392,33 @@ filled in gold, and two waiting tabs side by side looked the same.)
 
 ![The strip in the light theme](img/waiting-states-strip-daylight.png)
 
+#### Dismissing "waiting"
+
+When you have seen that a session finished and do not want to answer it yet,
+**click the word "waiting"**: on its tab, on the pill in its card's header, on
+its row in the Sessions list, or on its pill on the strip. The word goes, the
+ring goes back to grey, and the session looks calm everywhere at once. Its
+group's heading drops it (**"3 waiting"** becomes **"2 waiting"**, and the
+clause goes when it was the last one), and so does **N finished**.
+
+- Clicking the word on a **tab** also opens that tab. On a row or a strip pill
+  it only dismisses; click the name to open the session.
+- It lasts until that session's **next** turn finishes. Then it says
+  **waiting** again.
+- **Approval** and **question** cannot be dismissed this way. Those sessions
+  really are stuck until you answer them, so their word is not a button.
+- With the keyboard: the word on the tab and the pill in the card's header are
+  buttons (**Tab** to them, then **Enter**). Anywhere else, open the session's
+  menu (right-click, or **Shift+F10**) and choose **Mark as seen**, which does
+  the same thing.
+- **Opening a waiting session does not dismiss it.** Clicking its tab, going to
+  it with `Ctrl+Space` or typing in it leaves "waiting" where it is, so a
+  session that finished while you were looking at it still tells you so. Only
+  the word, **Mark as seen**, or **N finished** dismisses it.
+- It is kept while you switch tabs or pop a card out and back. "Waiting" itself
+  does not survive closing the app (a session comes back from a restart
+  suspended, not waiting), so there is nothing to keep across a restart.
+
 A session that is **working** says **working** quietly on its tab and its
 ring spins; a **calm** one has no word on its tab. A session that
 has **ended** (Claude Code closed, and did not crash) never says "waiting":
@@ -408,6 +435,7 @@ The Sessions list keeps **two counts**, because they are two different things:
   come back with a button waiting. It is in yellow.
 - **N finished** is for a session that completed its work and that you have
   not looked at yet. Nothing is stuck. It is quieter, in the waiting gold.
+  Dismissing a session's **waiting** takes it out of this count too.
 
 A row in either count is **highlighted**: its name in bold and a thicker
 coloured bar at its left edge. The Sessions list totals them: at its foot when
@@ -421,7 +449,8 @@ the highlighted rows always match.
 heading is tinted in the most urgent state's colour, so a closed group still
 tells you something inside it is waiting.
 
-**A finished session clears when you look at it.** Any of these counts as
+**A finished session leaves N finished when you look at it.** It still says
+**waiting** until you dismiss that (see above). Any of these counts as
 looking:
 
 - you click it in the list, on the strip, or on its tab, or go to it with
@@ -440,7 +469,10 @@ or type in it, or go somewhere else and come back to it.
 
 You can also clear it without going to it: **right-click the session ▸ Mark as
 seen**. And the **N finished** total is a button: click it to mark every
-finished session as seen at once.
+finished session as seen at once. Since version 0.8.128 these do exactly what
+clicking the word **waiting** does: the session leaves the count **and** stops
+saying "waiting" until its next turn finishes. There is one kind of "seen",
+not two.
 
 **A session that needs you never clears by being looked at.** It leaves the
 count when you answer it, and not before: it stays in **N need you** for as

@@ -504,6 +504,25 @@ body {
   padding-block: 2px;
   white-space: nowrap;
 }
+/* A "waiting" you can dismiss (#1413): the same pill, as a button. Nothing
+   about its look changes but the pointer and an underline on hover, so a
+   dismissable pill is the same width and colours as the one it replaced. */
+.status-pill[data-dismiss-waiting] {
+  margin: 0;
+  line-height: inherit;
+  cursor: pointer;
+}
+/* ...and every "waiting" word that dismisses — the pill above, the tab's
+   word, the rail row's and the strip pill's — says so under the pointer */
+[data-dismiss-waiting]:hover {
+  text-decoration: underline;
+}
+/* ...and the two that are buttons of their own (the tab's word, the card
+   header's pill) show the keyboard where it is, in the app's focus ink */
+button[data-dismiss-waiting]:focus-visible {
+  outline: 2px solid var(--status-working-ink);
+  outline-offset: 1px;
+}
 
 /* ---- Turn boundary in the conversation (#640, §5.10) -----------------------
  * A new user prompt starts a new turn, and this is the rule that says so.

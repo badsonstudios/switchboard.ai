@@ -61,7 +61,7 @@ test.describe('the empty workspace (#1166)', () => {
 
     // close the only session: the workspace is empty again and says so
     w.once('dialog', (d) => void d.accept());
-    await w.locator('.dv-tab .identity-tab button').click();
+    await w.locator('.dv-tab .identity-tab button:not([data-dismiss-waiting])').click();
     await expect(empty(w)).toBeVisible({ timeout: 15_000 });
   });
 

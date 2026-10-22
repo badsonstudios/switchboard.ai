@@ -94,7 +94,8 @@ import {
   waitingOnApproval,
 } from '../lib/approval-watch';
 import { useApprovalLookup } from '../lib/use-approval-watch';
-import { markAllSeen, markSeen } from '../lib/seen';
+import { dismissWaiting, markAllSeen } from '../lib/seen';
+import { useWaitDismissed } from '../lib/use-wait-dismissed';
 import { tint } from '../lib/tint';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { useHeldCounts } from '../lib/sibling-inbox';
@@ -283,6 +284,8 @@ export function SessionsRail(props: {
   onReorder: (bucketKey: string, orderedIds: string[]) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
+  // a dismissed "waiting" is calm in every group's roll-up too (#1413)
+  const waitDismissed = useWaitDismissed();
   const [editing, setEditing] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState('');
   const [editingGroup, setEditingGroup] = React.useState<string | null>(null);
@@ -1023,7 +1026,8 @@ export function SessionsRail(props: {
     const rollup = waitRollup(
       opts.members,
       (id) => props.needing.has(id) || (props.finished?.has(id) ?? false),
-      (id) => sessionStore.hasHeldQuestion(id)
+      (id) => sessionStore.hasHeldQuestion(id),
+      waitDismissed
     );
     const lead = rollupLead(rollup);
     const leadToken = lead === undefined ? undefined : lead === 'working' ? 'working' : ROLLUP_TOKEN[lead];
@@ -2115,7 +2119,10 @@ export function SessionsRail(props: {
                 session,
                 groups: props.groups,
                 pinned: props.pinned.has(menu.session.id),
-                finished: props.finished?.has(menu.session.id) ?? false,
+                // ...or a "waiting" to dismiss: the same action since #1413
+                finished:
+                  (props.finished?.has(menu.session.id) ?? false) ||
+                  sessionStore.canDismissWait(menu.session.id),
               },
               {
                 diff: () => {
@@ -2142,7 +2149,7 @@ export function SessionsRail(props: {
                 seen: () => {
                   const id = menu.session.id;
                   closeMenu(true);
-                  markSeen(id);
+                  dismissWaiting(id);
                 },
                 move: (gid, here) => {
                   if (here) {

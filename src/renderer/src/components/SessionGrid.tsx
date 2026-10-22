@@ -45,7 +45,7 @@ import { NameSessionDialog } from './NameSessionDialog';
 import { createPortal } from 'react-dom';
 import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
 import { StripRenameBox } from './StripRenameBox';
-import { markSeen } from '../lib/seen';
+import { dismissWaiting } from '../lib/seen';
 import {
   plainTabMenuItems,
   SessionMenuActions,
@@ -882,7 +882,8 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
         session: { id: cardId, title, status: rec ? rec.status : 'not-started', groupId: rec?.groupId },
         groups: state.groups,
         pinned: sessionStore.isPinned(cardId),
-        finished: sessionStore.getFinishedCards().has(cardId),
+        // ...or a "waiting" to dismiss: the same action since #1413
+        finished: sessionStore.getFinishedCards().has(cardId) || sessionStore.canDismissWait(cardId),
       },
       {
         diff: () => {
@@ -896,7 +897,7 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
         },
         close: closeThisTab,
         seen: () => {
-          markSeen(cardId);
+          dismissWaiting(cardId);
           back();
         },
         move: (gid, here) => {
@@ -1057,7 +1058,38 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
           ) : undefined
         }
       />
-      {tabWord && (
+      {tabWord && tabWord.state === 'waiting' && cardId ? (
+        // WAITING IS A BUTTON (#1413): a click dismisses it, here and on every
+        // other surface, and the click still selects the tab (nothing here
+        // stops the press dockview selects on). Named for what it does, and
+        // reachable by keyboard; the tab's own name is still the session's.
+        // Same look and box as the word below: the stylesheet's field, and
+        // nothing a button adds of its own.
+        <button
+          type="button"
+          data-tab-state={tabWord.state}
+          data-dismiss-waiting="tab"
+          aria-label={t('rail.dismissWaiting', { name: title })}
+          title={t('rail.dismissWaitingHint')}
+          onClick={() => dismissWaiting(cardId)}
+          style={{
+            flexShrink: 0,
+            marginInlineStart: 2,
+            marginBlock: 0,
+            marginInlineEnd: 0,
+            border: 'none',
+            fontFamily: 'var(--font-ui)',
+            fontSize: 9.5,
+            lineHeight: 1,
+            fontWeight: 700,
+            color: tabWord.ink ?? 'inherit',
+            whiteSpace: 'nowrap',
+            cursor: 'pointer',
+          }}
+        >
+          {t(tabWord.key)}
+        </button>
+      ) : tabWord && (
         // The state in a word, after the name (#1351) — never colour alone, and
         // since #1405 the ONLY place a tab says it is waiting. Its `--panel2`
         // field is the stylesheet's (`.identity-tab [data-tab-state]`).
@@ -2931,7 +2963,21 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 {t(`autonomy.${shownMode}`)}
               </span>
             )}
-            <StatusPill status={headerPill.status} label={t(headerPill.labelKey)} />
+            <StatusPill
+              status={headerPill.status}
+              label={t(headerPill.labelKey)}
+              // WAITING IS A BUTTON HERE (#1413): a click dismisses it — the
+              // tint, the word and every count, on every surface at once. Only
+              // a finished turn: `headerPill.status` is the shown one, so an
+              // ended session (its own pill) and a dismissed one (calm) are not
+              {...(headerPill.status === 'done' && cardId
+                ? {
+                    onDismiss: () => dismissWaiting(cardId),
+                    dismissLabel: t('rail.dismissWaiting', { name: headerTitle }),
+                    dismissHint: t('rail.dismissWaitingHint'),
+                  }
+                : {})}
+            />
             {/* §5.8's ladder, one rung down (P2-E9-05). A mouse gesture for the
                 thing the two bindings and the palette also do — the card gives
                 its slot back and becomes a row in the collapsed strip, still
@@ -6245,7 +6291,10 @@ function layoutCards(): LayoutCard[] {
     return {
       cardId: s.id,
       ladder: p.ladder,
-      // the same vocabulary the rail rows, the lamps and the submit policy use
+      // the same vocabulary the rail rows, the lamps and the submit policy use.
+      // The RAW status on purpose: a dismissed "waiting" (#1413) is a mark the
+      // user took off, not a change to what the layout keeps on screen — the
+      // same as a finished turn they have looked at, which also stays `done`
       needsAttention: presentStatus(s.status).needsYou,
       poppedOut: p.poppedOut,
     };

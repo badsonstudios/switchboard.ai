@@ -53,13 +53,13 @@ async function mount(
 
 /** what the ✕ promises it will do */
 function closeTitle(): string {
-  return host.querySelector('button')?.getAttribute('title') ?? '';
+  return host.querySelector<HTMLButtonElement>('button:not([data-dismiss-waiting])')?.getAttribute('title') ?? '';
 }
 
 /** the name on the tab: everything in it that is not the ✕ or the state word */
 function tabText(): string {
   let all = host.textContent ?? '';
-  const btn = host.querySelector('button')?.textContent ?? '';
+  const btn = host.querySelector<HTMLButtonElement>('button:not([data-dismiss-waiting])')?.textContent ?? '';
   // the state's word after the name (#1351) is decoration, not the name
   const word = host.querySelector('[data-tab-state]')?.textContent ?? '';
   if (btn) all = all.replace(btn, '');
@@ -165,7 +165,7 @@ describe('the session tab follows a rename (issue 264)', () => {
     await rename('c1', 'renamed-live');
 
     await act(async () => {
-      host.querySelector('button')!.click();
+      host.querySelector<HTMLButtonElement>('button:not([data-dismiss-waiting])')!.click();
     });
     expect(confirm).toHaveBeenCalledWith(
       'Close "renamed-live"? This ends the session and removes the card.'
@@ -202,7 +202,7 @@ describe('the session tab follows a rename (issue 264)', () => {
     await mount('README.md', { folder: 'C:\\Projects\\acme' }, 'doc-7');
 
     await act(async () => {
-      host.querySelector('button')!.click();
+      host.querySelector<HTMLButtonElement>('button:not([data-dismiss-waiting])')!.click();
     });
     expect(confirm).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
@@ -214,7 +214,7 @@ describe('the session tab follows a rename (issue 264)', () => {
     await mount('Changes — acme', { folder: 'C:\\Projects\\acme' });
 
     await act(async () => {
-      host.querySelector('button')!.click();
+      host.querySelector<HTMLButtonElement>('button:not([data-dismiss-waiting])')!.click();
     });
     expect(confirm).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledTimes(1);
@@ -388,11 +388,41 @@ describe('the session tab says when it is waiting on you (#1351)', () => {
     const said = tab.querySelector<HTMLElement>('[data-tab-state]')!;
     expect(said.textContent).toBe(word);
     expect(said.style.color).toBe(`var(--status-${token}-ink)`);
-    // decoration: the tab's name stays the session's
-    expect(said.getAttribute('aria-hidden')).toBe('true');
+    if (status === 'done') {
+      // #1413: "waiting" is a button that dismisses it, named for that
+      expect(said.tagName).toBe('BUTTON');
+      expect(said.getAttribute('aria-label')).toBe('Dismiss waiting on acme');
+    } else {
+      // decoration: the tab's name stays the session's, and an approval or a
+      // question is not dismissable (#1413)
+      expect(said.tagName).toBe('SPAN');
+      expect(said.getAttribute('aria-hidden')).toBe('true');
+    }
     expect(aiBadge()!.getAttribute('data-ring')).toBe(token);
     expect(aiBadge()!.getAttribute('data-ring-spin')).toBe('false');
     expect(tabText()).toBe('acme');
+  });
+
+  it('a click on "waiting" dismisses it: no word, a calm ring, until the next turn finishes (#1413)', async () => {
+    const tab = await tabFor('done');
+    const said = tab.querySelector<HTMLElement>('[data-dismiss-waiting="tab"]')!;
+    await act(async () => said.click());
+    expect(sessionStore.isWaitDismissed('c1')).toBe(true);
+    expect(tab.dataset.waitState).toBeUndefined();
+    expect(tab.querySelector('[data-tab-state]')).toBeNull();
+    expect(aiBadge()!.getAttribute('data-ring')).toBe('idle');
+    // the next turn: working, then finished again — waiting is back
+    await act(async () => {
+      sessionStore.setSessions([
+        { id: 'c1', title: 'acme', folder: 'C:/a', providerId: 'claude-code', status: 'working' },
+      ]);
+    });
+    await act(async () => {
+      sessionStore.setSessions([
+        { id: 'c1', title: 'acme', folder: 'C:/a', providerId: 'claude-code', status: 'done' },
+      ]);
+    });
+    expect(tab.querySelector('[data-tab-state]')!.textContent).toBe('waiting');
   });
 
   it('a working session says so quietly, unwashed, and its ring spins', async () => {
@@ -475,7 +505,7 @@ describe('closing a tab: the ✕ and a middle-click are one routine (issue 619)'
     expect(close).toHaveBeenCalledTimes(1);
 
     // the ✕ says the same words and does the same thing
-    act(() => host.querySelector('button')!.click());
+    act(() => host.querySelector<HTMLButtonElement>('button:not([data-dismiss-waiting])')!.click());
     expect(confirm).toHaveBeenCalledTimes(2);
     expect(confirm.mock.calls[1][0]).toBe(confirm.mock.calls[0][0]);
     expect(close).toHaveBeenCalledTimes(2);
@@ -499,7 +529,7 @@ describe('closing a tab: the ✕ and a middle-click are one routine (issue 619)'
   it('a middle-click on the ✕ itself closes once, not twice', async () => {
     confirmSays(true);
     await mount('Changes — acme', { folder: 'C:\\Projects\\acme' });
-    mouse('auxclick', 1, host.querySelector('button')!);
+    mouse('auxclick', 1, host.querySelector<HTMLButtonElement>('button:not([data-dismiss-waiting])')!);
     expect(close).toHaveBeenCalledTimes(1);
   });
 
@@ -516,7 +546,7 @@ describe('closing a tab: the ✕ and a middle-click are one routine (issue 619)'
     mouse('auxclick', 1);
     expect(close).not.toHaveBeenCalled();
     // the ✕ in that row still works
-    act(() => host.querySelector('button')!.click());
+    act(() => host.querySelector<HTMLButtonElement>('button:not([data-dismiss-waiting])')!.click());
     expect(close).toHaveBeenCalledTimes(1);
   });
 
