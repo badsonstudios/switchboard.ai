@@ -295,15 +295,35 @@ fails **as you quit**, because there's no time left to retry or to show you
 anything. Check the log (below) for a line from `workspace` saying the save
 failed; relaunching is enough.
 
+**My computer crashed, and afterwards switchboard was missing my last few
+changes.**
+Everything on the [workspace page](07-workspace.md) — your sessions, groups,
+layout and settings, the theme included — is kept in one file, `workspace.json`.
+Switchboard makes sure every save has actually reached the disk before it
+replaces the old file, so a crash, a power cut or a blue screen should leave you
+with the last save, never a damaged one.
+
+As a second line, it also keeps the save *before* that one, as
+**`workspace.json.bak`** in the same folder. If `workspace.json` is ever missing
+or unreadable when switchboard starts, it opens that backup instead, and the
+log has a line from `workspace` saying it restored from the last good backup and
+when that backup was saved. The backup is one save behind, so you may find the
+last thing you changed — a renamed session, a group you just made — needs
+doing again. Everything older than that is back. The damaged file is still kept
+aside, as described below.
+
+This also means deleting `workspace.json` on its own no longer gives you a
+fresh start, because the backup comes back instead. To start from an empty
+workspace on purpose, quit switchboard and move **both** files somewhere else.
+
 **My workspace came back completely empty, and there's a `.corrupt-…` file next
 to it.**
-Everything on the [workspace page](07-workspace.md) is kept in one file,
-`workspace.json`. If switchboard can't read that file at all — it isn't valid
-JSON any more, usually because a write was interrupted or the file was
-hand-edited — it doesn't refuse to start. It copies the unreadable file aside
-under a name stamped with the date and time, like
-**`workspace.json.corrupt-2026-08-08T14-23-05.123Z`**, and opens with an empty
-workspace, which it then saves over the original as you work.
+If switchboard can't read `workspace.json` at all — it isn't valid JSON any
+more, usually because a write was interrupted or the file was hand-edited —
+*and* the backup above is missing or unreadable too, it doesn't refuse to start.
+It copies the unreadable file aside under a name stamped with the date and time,
+like **`workspace.json.corrupt-2026-08-08T14-23-05.123Z`**, and opens with an
+empty workspace, which it then saves over the original as you work.
 
 Nothing announces this in the app — there's no banner. But the log says exactly
 what happened: a line from `workspace` names what it couldn't parse and the file

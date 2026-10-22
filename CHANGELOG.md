@@ -150,6 +150,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   **Readable width** button in the document's header brings it back, and the
   app remembers your choice.
 
+### Fixed
+
+- **A computer crash no longer wipes your workspace.** If Windows went down
+  while switchboard was saving, the next launch could open with no sessions, no
+  groups and default settings, because the file that holds them had never made
+  it to the disk. Saves are now flushed to the disk before they replace the old
+  file. Switchboard also keeps the previous save as a backup and opens that
+  instead of an empty workspace if the main file is ever unreadable. At worst
+  you redo your last change.
+
 ## 0.8.126 — 2026-10-21
 
 ### Added

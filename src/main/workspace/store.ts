@@ -21,6 +21,7 @@ import fs from 'fs';
 import path from 'path';
 import { Rectangle } from 'electron';
 import { LogFields, Logger } from '../log/logger';
+import { writeFileDurable } from '../fs/durable-write';
 import { SessionIdentity } from '../sessions/session-manager';
 import { sanitizeLineage, type ParkedConversation } from '../sessions/lineage';
 import { MAX_AI_SWITCHES, isProviderIdShape, isSaneAiSwitchMark, type AiSwitchMark } from '../../shared/ai-switch';
@@ -645,6 +646,11 @@ export function displayFingerprint(workAreas: Rectangle[]): string {
     .join('|');
 }
 
+/** Where the last good copy of a workspace file is kept (#1410). */
+export function backupPathOf(file: string): string {
+  return `${file}.bak`;
+}
+
 /** A fresh empty state — never the shared `EMPTY`, whose arrays are mutable. */
 function emptyState(): WorkspaceState {
   return {
@@ -674,6 +680,17 @@ export class WorkspaceStore {
    * — and null again the moment the copy lands or is given up on.
    */
   private unsavedPostMortem: PendingPostMortem | null = null;
+  /**
+   * The last workspace bytes this run KNOWS are good — what `load()` read
+   * cleanly, then each body a save wrote. The next save keeps it as the backup
+   * (#1410). Null until something good has been seen: a run that started empty
+   * has nothing worth backing up yet.
+   */
+  private backupBody: string | null = null;
+  /** what the backup file holds, as far as this run wrote it — skips rewriting it */
+  private backupWritten: string | null = null;
+  /** a failed backup write is said once per run, not once per save */
+  private backupWarned = false;
   /** consecutive `save()` attempts that threw; zero the moment one works */
   private saveFailures = 0;
   /** the streak has gone on long enough to be worth a banner (#207) */
@@ -734,301 +751,18 @@ export class WorkspaceStore {
     // below fails, these bytes are the only post-mortem left anywhere (#352).
     // Null when the READ is what failed — then there is nothing to hold.
     let rawBytes: Buffer | null = null;
+    // the backup stands behind the main file again only once this load says so
+    this.backupBody = null;
+    this.backupWritten = null;
+    let restored = false;
     try {
       rawBytes = fs.readFileSync(this.file);
-      const parsed: unknown = JSON.parse(rawBytes.toString('utf8'));
-      // `null`, a bare number, an array: valid JSON, not a workspace. Throwing
-      // here keeps the pre-existing corrupt-file path (back the corpse aside,
-      // start fresh) — reading fields off it would just yield a silent empty
-      // workspace and lose the post-mortem material.
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-        throw new Error('workspace file is not a JSON object');
-      }
-      const obj = parsed as Record<string, unknown>;
-      const fileVersion = detectVersion(obj.version);
-      if (fileVersion > CURRENT_VERSION) {
-        // Written by a NEWER switchboard.ai. Fail-open says boot anyway, so we
-        // read what we recognize — but saving would rewrite their file at THIS
-        // build's version (v2 today) and destroy whatever it cannot see. So:
-        // display it, never write it.
-        this.readOnly = true;
-        fileNotes.push({
-          msg: 'workspace file was written by a newer version of switchboard.ai — loading it read-only; changes made this run will NOT be saved',
-          fields: { fileVersion, supportedVersion: CURRENT_VERSION },
-        });
-      }
-      // Unknown future versions have no migration; fall through to the current
-      // reader and let the sanitizer keep whatever still makes sense. (Nothing
-      // below is reset in the `catch` on purpose: if the sanitizer ever chokes
-      // on a future file, staying read-only is the safe half of the failure.)
-      // #873: one line when the lift actually moved cards off the removed
-      // Terminal transport — and SILENCE otherwise.
-      //
-      // Measured as a DIFFERENCE across the dispatch rather than as a count of
-      // what went in. The first version counted `obj.sessions` before the table
-      // ran, which made the note a claim about the input instead of about the
-      // migration, and it was wrong in three ways that all reach real users:
-      // a v2 file with a hand-edited `'pty'` kept the PTY while being told it
-      // had moved; a file from the FUTURE is `passthrough` + read-only, so the
-      // line contradicted the "will NOT be saved" note pushed just above it;
-      // and a developer running `SWITCHBOARD_TRANSPORT=pty` re-persists `'pty'`
-      // on every spawn, so the line would have fired on every launch, for ever,
-      // about a card that never moved.
-      //
-      // A difference cannot say any of those: the identity entries and
-      // `passthrough` leave the count untouched, so it is zero exactly when
-      // nothing happened. `fileNotes` rather than `note()` because this must be
-      // audible on a file that loaded read-only too — though by construction it
-      // no longer fires on one.
-      // WIDENED BY #952 from "counts `'pty'`" to "counts a kind this host cannot
-      // spawn". The difference is still what makes the note honest, and the
-      // widening is what makes it keep working: v2 files can carry `'pty'`, and
-      // the next unhostable value will not be spelled `pty` either.
-      const countUnhostable = (v: unknown): number =>
-        Array.isArray(v)
-          ? v.filter((x) => {
-              if (!x || typeof x !== 'object') return false;
-              const t = (x as Record<string, unknown>).transport;
-              return t !== undefined && t !== DEFAULT_SESSION_TRANSPORT;
-            }).length
-          : 0;
-      const unhostableBefore = countUnhostable(obj.sessions);
-      const migrated = (MIGRATIONS[fileVersion] ?? passthrough)(obj);
-      const raw = migrated as Partial<WorkspaceState>;
-      const lifted = unhostableBefore - countUnhostable(migrated.sessions);
-      if (lifted > 0) {
-        fileNotes.push({
-          msg: 'sessions were moved off the removed Terminal transport and now follow the Direct default (#873, #952)',
-          fields: { sessions: lifted },
-        });
-      }
-      // YELLOW AND ORANGE MEAN "A SESSION NEEDS YOU" (#1165). Groups and
-      // sessions are saved with their colour, so a workspace from before the
-      // rule carries colours no palette offers any more. They are moved here,
-      // once, as the file is read: a retired colour to its named successor,
-      // anything else in the reserved family to the nearest allowed colour.
-      // Idempotent (a colour that is not reserved comes back as the same
-      // string), so it costs one pass and changes nothing on every launch
-      // after the first. Not `note`d: it is the app changing its own palette,
-      // not a damaged file, and a warning on every upgraded workspace would be
-      // noise about nothing the user did.
-      const accentValues = ACCENTS.map((a) => a.value);
-      const groups = keepSane(raw.groups, isSaneGroup, 'group', note).map((g0) => {
-        const moved = outOfReserved(g0.color, GROUP_PALETTE, RETIRED_GROUP_COLORS);
-        const g = moved === g0.color ? g0 : { ...g0, color: moved };
-        const repaired = repairGroupName(g);
-        // identity compare: the repair hands BACK the same object when the
-        // name was fine, so a new one means it stepped in
-        if (repaired !== g)
-          note('a group in the workspace file had a blank name — using a placeholder', {
-            groupId: g.id,
-            name: PLACEHOLDER_GROUP_NAME,
-          });
-        return repaired;
-      });
-      const groupIds = new Set(groups.map((g) => g.id));
-      // a dangling groupId (group gone, e.g. hand-edited file) degrades to ungrouped
-      const orphaned: string[] = [];
-      const loaded = keepSane(raw.sessions, isSaneSession, 'session', note).map((s0) => {
-        // the session's own colour, off the reserved family (see the groups above)
-        const accent = s0.identity.accentColor;
-        const movedAccent =
-          typeof accent === 'string' ? outOfReserved(accent, accentValues, RETIRED_ACCENTS) : accent;
-        const s =
-          movedAccent === accent
-            ? s0
-            : { ...s0, identity: { ...s0.identity, accentColor: movedAccent } };
-        // Normalized on the way IN, once, so nothing downstream has to defend
-        // against a hand-edited chain (#484). Silent rather than `note`d: an
-        // absent or ragged lineage is the NORMAL state of every card written
-        // before the field existed, and warning about it would fire on every
-        // launch for months. `cededNativeIds` (#539) is the same list of ids in
-        // a different role, so it gets the same sanitizer.
-        const withLineage =
-          s.nativeSessionLineage === undefined && s.cededNativeIds === undefined
-            ? s
-            : {
-                ...s,
-                nativeSessionLineage: sanitizeLineage(s.nativeSessionLineage),
-                cededNativeIds: sanitizeLineage(s.cededNativeIds),
-              };
-        // The per-AI half (#1294), normalized the same way and for the same
-        // reason: every resume after a switch back reads it. Silent, like the
-        // lineage — absence is the normal state of every card that never
-        // switched, and a ragged entry is dropped rather than warned about.
-        const withAis =
-          withLineage.conversations === undefined && withLineage.aiSwitches === undefined
-            ? withLineage
-            : {
-                ...withLineage,
-                conversations: sanitizeParked(withLineage.conversations, withLineage.identity.providerId),
-                aiSwitches: sanitizeAiSwitches(withLineage.aiSwitches),
-              };
-        // Kept settings (#1317): named fields only, or none. Absent is the
-        // normal state of every card written before them, so silent.
-        const withSettings =
-          withAis.conversationSettings === undefined
-            ? withAis
-            : { ...withAis, conversationSettings: sanitizeConversationSettings(withAis.conversationSettings) };
-        if (!withSettings.groupId || groupIds.has(withSettings.groupId)) return withSettings;
-        orphaned.push(withSettings.id);
-        return { ...withSettings, groupId: undefined };
-      });
-      // TWO CARDS, ONE CONVERSATION — untied here, once, at the only moment the
-      // whole card list is in one place (#539). The policy and every reason for
-      // it live in `sessions/untangle.ts`; this is just where it runs.
-      //
-      // Not behind a migration flag: it is idempotent and returns the SAME array
-      // when nothing collided, so on every ordinary launch it costs one pass and
-      // changes nothing. A one-shot flag would instead have to be right about a
-      // state that can recur (a hand-edited file, a restored backup).
-      //
-      // SKIPPED WHILE READ-ONLY, like every other repair on this path: a file
-      // from the future is not damaged, this build simply cannot read all of it,
-      // and rewriting its cards' conversation pointers would act on a reading we
-      // already know is partial.
-      const untangled = this.readOnly
-        ? { cards: loaded, changes: [] as UntangleChange[] }
-        : untangleDuplicateConversations(loaded);
-      const sessions = untangled.cards as typeof loaded;
-      this.untangleChanges = untangled.changes;
-      for (const c of untangled.changes.slice(0, MAX_LISTED_IDS))
-        note(
-          'two cards pointed at the same conversation — one of them has given it up and can be reattached to its own',
-          { cardId: c.cardId, gaveUp: c.nativeSessionId, keptBy: c.keptByCardId }
-        );
-      if (orphaned.length > 0)
-        note(
-          'sessions in the workspace file named a group that is not in it — loading them ungrouped',
-          // bounded like everything else this file writes: one bad `groups`
-          // entry can orphan every session in the workspace
-          { sessionIds: orphaned.slice(0, MAX_LISTED_IDS), count: orphaned.length }
-        );
-
-      const window = sanitizeWindow(raw.window);
-      if (window.repaired.length > 0)
-        note(
-          // the consequence differs: losing the whole record (or the rect)
-          // centres the window, losing only `isMaximized` does not move it
-          window.value?.bounds
-            ? 'part of the saved window state in the workspace file was unusable — using the default for it'
-            : 'the saved window position in the workspace file was unusable — opening centred at the default size',
-          { unusable: window.repaired }
-        );
-
-      const notifications = sanitizeNotifications(raw.notifications);
-      if (notifications.repaired.length > 0)
-        note('notification settings in the workspace file were unusable — using the defaults', {
-          unusable: notifications.repaired,
-        });
-
-      const updates = sanitizeUpdates(raw.updates);
-      if (updates.repaired.length > 0)
-        note('update settings in the workspace file were unusable — using the defaults', {
-          unusable: updates.repaired,
-        });
-
-      // A rule this build cannot read is dropped, not repaired: a half-understood
-      // rule would fire the wrong channel at the wrong moment, which is worse
-      // than not firing (P6 fail-open cuts this way for notifications).
-      const rules = keepSane(raw.rules, isSaneRule, 'rule', note);
-      // A template this build cannot read is dropped for a blunter reason than a
-      // rule is: it names an autonomy and a context amount, and a half-understood
-      // one would dispatch a session with the wrong amount of the author's work
-      // at the wrong autonomy. The built-in three are unaffected — they are code
-      // and are never in this list (#946).
-      const dispatchTemplates = keepSane(
-        raw.dispatchTemplates,
-        isSaneRoleTemplate,
-        'dispatch template',
-        note
-      );
-      // Trimmed on the way IN as well as on the way out: a hand-edited or
-      // older-build file could carry more than the cap, and the digest is not
-      // the place to discover that the workspace file grew unbounded.
-      const suppressed = keepSane(
-        raw.suppressed,
-        isSaneSuppressedEvent,
-        'held notification',
-        note
-      ).slice(-SUPPRESSED_CAP);
-      const health = sanitizeHealth(raw.health);
-      if (health.repaired.length > 0)
-        note('the provider-status setting in the workspace file was unusable — leaving polling on', {
-          unusable: health.repaired,
-        });
-
-      const push = sanitizePush(raw.push);
-      if (push.repaired.length > 0)
-        note('the phone-push settings in the workspace file were unusable — leaving them off', {
-          unusable: push.repaired,
-        });
-
-      if (wrongType(raw, 'autoTrust', 'boolean'))
-        note('the auto-trust setting in the workspace file was not true or false — leaving it on');
-
-      if (wrongType(raw, 'autoLabels', 'boolean'))
-        note('the auto-label setting in the workspace file was not true or false — leaving it on');
-
-      if (wrongType(raw, 'aiLabels', 'boolean'))
-        note('the AI-label setting in the workspace file was not true or false — leaving it on');
-
-      // #923. Audible for the same reason as the three above (#344), but the
-      // sentence ends the other way: this one defaults OFF, so the repair the
-      // user needs told about is that their capture is NOT running.
-      if (wrongType(raw, 'perfCapture', 'boolean'))
-        note(
-          'the detailed performance capture setting in the workspace file was not true or false — leaving it off'
-        );
-
-      this.state = {
-        version: CURRENT_VERSION,
-        sessions,
-        groups,
-        window: window.value,
-        layout: raw.layout ?? null,
-        ui: raw.ui ?? null,
-        notifications: notifications.value,
-        rules,
-        dispatchTemplates,
-        autoTrust: raw.autoTrust !== false, // default on
-        autoLabels: raw.autoLabels !== false, // default on — same shape, same reason
-        // `aiLabels` reads "on unless explicitly off" as of #883 — the owner
-        // reversed #758's opt-in after using it, so a workspace file that
-        // predates the feature (and every fresh install) gets it ON. A file
-        // that says `false` is a choice and is honoured.
-        aiLabels: raw.aiLabels !== false,
-        // Tolerant by design: an unreadable size is one nobody chose, so it
-        // lands on the default rather than on the smallest. See the helper.
-        taskLabelSize: taskLabelSizeOf(raw.taskLabelSize),
-        // ⚠️ THE OPPOSITE SHAPE — `=== true`, not `!== false`. An experiment
-        // must read "off unless explicitly on", so a missing key, a hand-edited
-        // string, or a file written by an older build all land OFF rather than
-        // silently enabling something nobody asked for.
-        experimentalFork: raw.experimentalFork === true,
-        // Same shape, same reason (#923). This one is stricter than an
-        // experiment: tier-2 instrumentation costs main-thread time on the very
-        // path E21 exists to measure, so an unreadable value must never be the
-        // thing that turns it on.
-        perfCapture: raw.perfCapture === true,
-        updates: updates.value,
-        health: health.value,
-        push: push.value,
-        suppressed,
-        // Same all-or-nothing sanitize as everything else here: a record this
-        // build cannot render is dropped rather than repaired, because a notice
-        // with `undefined` in the middle of its sentence is worse than no
-        // notice. Trimmed on the way IN as well as out — a hand-edited file
-        // could carry more than the cap.
-        historyRepairs: keepSane(
-          raw.historyRepairs,
-          isSaneHistoryRepair,
-          'history repair notice',
-          note
-        ).slice(0, MAX_HISTORY_REPAIR_NOTICES),
-      };
+      this.state = this.parseWorkspace(rawBytes, fileNotes, note);
+      // Known good: these are the bytes the next save keeps as the backup (#1410).
+      this.backupBody = rawBytes.toString('utf8');
     } catch (err) {
-      // corrupt/missing: back the corpse aside (post-mortem material), start fresh
+      // corrupt/missing: back the corpse aside (post-mortem material), then try
+      // the last good backup, and only start fresh when that fails too (#1410)
       //
       // This used to be `void err;` — the reason, the fact, and the set-aside
       // path all thrown away (#344). It is the loudest thing this store can do
@@ -1036,23 +770,59 @@ export class WorkspaceStore {
       // factory-fresh) and it was the only failure here with nothing written
       // anywhere. Nothing is surfaced in the UI yet — that posture question is
       // #207's — so the log line is the whole diagnosis.
+      //
+      // THE BACKUP (#1410). On 2026-10-21 a video-driver crash left this file as
+      // 28,581 zero bytes, and starting fresh cost the owner every session,
+      // group and setting he had. The save now flushes before it renames, which
+      // closes that hole; the backup is for the next one nobody has thought of
+      // (a drive that acknowledges a flush it never made, a sector gone bad).
+      // It is read by exactly the same reader as the main file, so a restored
+      // workspace gets every repair a normal load does.
       repairNotes.length = 0; // they described a state this catch just binned
       this.untangleChanges = []; // …and so did these (#539)
-      if (fs.existsSync(this.file)) {
-        const aside = this.setAsideCorruptFile(rawBytes);
-        fileNotes.push({
-          msg: 'workspace file could not be read — starting with an empty workspace; the sessions, groups and layout it held are not restored',
-          fields: {
-            // the stack, not just the message: this catch is also the net for a
-            // sanitizer that chokes on a hand-edited file, and there the frame
-            // IS the diagnosis (a JSON syntax error reads the same either way)
-            error: err instanceof Error && err.stack ? err.stack : errorText(err),
-            ...aside,
+      const present = fs.existsSync(this.file);
+      const aside = present ? this.setAsideCorruptFile(rawBytes) : {};
+      const why = {
+        // the stack, not just the message: this catch is also the net for a
+        // sanitizer that chokes on a hand-edited file, and there the frame
+        // IS the diagnosis (a JSON syntax error reads the same either way)
+        error: err instanceof Error && err.stack ? err.stack : errorText(err),
+        ...aside,
+      };
+      // READ-ONLY DESCRIBES THE FILE ACTUALLY LOADED. A newer-version main file
+      // that choked says nothing about the backup, so the backup is read from a
+      // clean slate (and sets the flag itself if it is from the future too). If
+      // the backup fails as well, the main file's answer is put back — staying
+      // read-only is the safe half of that failure, as it was before #1410 —
+      // and a flag the failed backup raised does not outlive its notes.
+      const mainReadOnly = this.readOnly;
+      this.readOnly = false;
+      const backup = this.readBackup(note);
+      if (!backup.state) this.readOnly = mainReadOnly;
+      if (backup.state) {
+        this.state = backup.state;
+        restored = true;
+        fileNotes.push(
+          {
+            msg: present
+              ? 'workspace file could not be read — restored the sessions, groups and settings from the last good backup'
+              : 'workspace file was missing — restored the sessions, groups and settings from the last good backup',
+            fields: { ...(present ? why : {}), backup: backup.file, backupSavedAt: backup.savedAt },
           },
-        });
+          ...backup.notes
+        );
+      } else {
+        repairNotes.length = 0; // the backup's own repairs, for a state not kept
+        this.untangleChanges = [];
+        if (present)
+          fileNotes.push({
+            msg: 'workspace file could not be read — starting with an empty workspace; the sessions, groups and layout it held are not restored',
+            fields: { ...why, ...(backup.error ? { backup: backup.file, backupError: backup.error } : {}) },
+          });
+        // A file that is simply ABSENT, with no backup either, is first launch,
+        // not a fault: no warn.
+        this.state = emptyState();
       }
-      // A file that is simply ABSENT is first launch, not a fault: no warn.
-      this.state = emptyState();
     }
     // Out here, not where each note was made: a throw INSIDE the try above
     // would have been read as a corrupt file. (`warn` itself cannot throw.)
@@ -1063,7 +833,350 @@ export class WorkspaceStore {
     // the run change — and `saveSoon` is a no-op while read-only, which is the
     // same guard the untangle itself is behind.
     if (this.untangleChanges.length > 0) this.saveSoon();
+    // A restored workspace is written back at once, so the main file is
+    // whole again before anything else can go wrong (#1410).
+    if (restored) this.saveSoon();
     return this.snapshot();
+  }
+
+  /**
+   * Turn the bytes of a workspace file into a state, or throw — the one reader
+   * both the main file and its backup go through (#1410). Notes about the
+   * FILE go in `fileNotes`, repairs to the state through `note`; the caller
+   * decides which survive.
+   */
+  private parseWorkspace(
+    rawBytes: Buffer,
+    fileNotes: LoadNote[],
+    note: (msg: string, fields?: LogFields) => void
+  ): WorkspaceState {
+    const parsed: unknown = JSON.parse(rawBytes.toString('utf8'));
+    // `null`, a bare number, an array: valid JSON, not a workspace. Throwing
+    // here keeps the pre-existing corrupt-file path (back the corpse aside,
+    // start fresh) — reading fields off it would just yield a silent empty
+    // workspace and lose the post-mortem material.
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      throw new Error('workspace file is not a JSON object');
+    }
+    const obj = parsed as Record<string, unknown>;
+    const fileVersion = detectVersion(obj.version);
+    if (fileVersion > CURRENT_VERSION) {
+      // Written by a NEWER switchboard.ai. Fail-open says boot anyway, so we
+      // read what we recognize — but saving would rewrite their file at THIS
+      // build's version (v2 today) and destroy whatever it cannot see. So:
+      // display it, never write it.
+      this.readOnly = true;
+      fileNotes.push({
+        msg: 'workspace file was written by a newer version of switchboard.ai — loading it read-only; changes made this run will NOT be saved',
+        fields: { fileVersion, supportedVersion: CURRENT_VERSION },
+      });
+    }
+    // Unknown future versions have no migration; fall through to the current
+    // reader and let the sanitizer keep whatever still makes sense. (Nothing
+    // below is reset in the `catch` on purpose: if the sanitizer ever chokes
+    // on a future file, staying read-only is the safe half of the failure.)
+    // #873: one line when the lift actually moved cards off the removed
+    // Terminal transport — and SILENCE otherwise.
+    //
+    // Measured as a DIFFERENCE across the dispatch rather than as a count of
+    // what went in. The first version counted `obj.sessions` before the table
+    // ran, which made the note a claim about the input instead of about the
+    // migration, and it was wrong in three ways that all reach real users:
+    // a v2 file with a hand-edited `'pty'` kept the PTY while being told it
+    // had moved; a file from the FUTURE is `passthrough` + read-only, so the
+    // line contradicted the "will NOT be saved" note pushed just above it;
+    // and a developer running `SWITCHBOARD_TRANSPORT=pty` re-persists `'pty'`
+    // on every spawn, so the line would have fired on every launch, for ever,
+    // about a card that never moved.
+    //
+    // A difference cannot say any of those: the identity entries and
+    // `passthrough` leave the count untouched, so it is zero exactly when
+    // nothing happened. `fileNotes` rather than `note()` because this must be
+    // audible on a file that loaded read-only too — though by construction it
+    // no longer fires on one.
+    // WIDENED BY #952 from "counts `'pty'`" to "counts a kind this host cannot
+    // spawn". The difference is still what makes the note honest, and the
+    // widening is what makes it keep working: v2 files can carry `'pty'`, and
+    // the next unhostable value will not be spelled `pty` either.
+    const countUnhostable = (v: unknown): number =>
+      Array.isArray(v)
+        ? v.filter((x) => {
+            if (!x || typeof x !== 'object') return false;
+            const t = (x as Record<string, unknown>).transport;
+            return t !== undefined && t !== DEFAULT_SESSION_TRANSPORT;
+          }).length
+        : 0;
+    const unhostableBefore = countUnhostable(obj.sessions);
+    const migrated = (MIGRATIONS[fileVersion] ?? passthrough)(obj);
+    const raw = migrated as Partial<WorkspaceState>;
+    const lifted = unhostableBefore - countUnhostable(migrated.sessions);
+    if (lifted > 0) {
+      fileNotes.push({
+        msg: 'sessions were moved off the removed Terminal transport and now follow the Direct default (#873, #952)',
+        fields: { sessions: lifted },
+      });
+    }
+    // YELLOW AND ORANGE MEAN "A SESSION NEEDS YOU" (#1165). Groups and
+    // sessions are saved with their colour, so a workspace from before the
+    // rule carries colours no palette offers any more. They are moved here,
+    // once, as the file is read: a retired colour to its named successor,
+    // anything else in the reserved family to the nearest allowed colour.
+    // Idempotent (a colour that is not reserved comes back as the same
+    // string), so it costs one pass and changes nothing on every launch
+    // after the first. Not `note`d: it is the app changing its own palette,
+    // not a damaged file, and a warning on every upgraded workspace would be
+    // noise about nothing the user did.
+    const accentValues = ACCENTS.map((a) => a.value);
+    const groups = keepSane(raw.groups, isSaneGroup, 'group', note).map((g0) => {
+      const moved = outOfReserved(g0.color, GROUP_PALETTE, RETIRED_GROUP_COLORS);
+      const g = moved === g0.color ? g0 : { ...g0, color: moved };
+      const repaired = repairGroupName(g);
+      // identity compare: the repair hands BACK the same object when the
+      // name was fine, so a new one means it stepped in
+      if (repaired !== g)
+        note('a group in the workspace file had a blank name — using a placeholder', {
+          groupId: g.id,
+          name: PLACEHOLDER_GROUP_NAME,
+        });
+      return repaired;
+    });
+    const groupIds = new Set(groups.map((g) => g.id));
+    // a dangling groupId (group gone, e.g. hand-edited file) degrades to ungrouped
+    const orphaned: string[] = [];
+    const loaded = keepSane(raw.sessions, isSaneSession, 'session', note).map((s0) => {
+      // the session's own colour, off the reserved family (see the groups above)
+      const accent = s0.identity.accentColor;
+      const movedAccent =
+        typeof accent === 'string' ? outOfReserved(accent, accentValues, RETIRED_ACCENTS) : accent;
+      const s =
+        movedAccent === accent
+          ? s0
+          : { ...s0, identity: { ...s0.identity, accentColor: movedAccent } };
+      // Normalized on the way IN, once, so nothing downstream has to defend
+      // against a hand-edited chain (#484). Silent rather than `note`d: an
+      // absent or ragged lineage is the NORMAL state of every card written
+      // before the field existed, and warning about it would fire on every
+      // launch for months. `cededNativeIds` (#539) is the same list of ids in
+      // a different role, so it gets the same sanitizer.
+      const withLineage =
+        s.nativeSessionLineage === undefined && s.cededNativeIds === undefined
+          ? s
+          : {
+              ...s,
+              nativeSessionLineage: sanitizeLineage(s.nativeSessionLineage),
+              cededNativeIds: sanitizeLineage(s.cededNativeIds),
+            };
+      // The per-AI half (#1294), normalized the same way and for the same
+      // reason: every resume after a switch back reads it. Silent, like the
+      // lineage — absence is the normal state of every card that never
+      // switched, and a ragged entry is dropped rather than warned about.
+      const withAis =
+        withLineage.conversations === undefined && withLineage.aiSwitches === undefined
+          ? withLineage
+          : {
+              ...withLineage,
+              conversations: sanitizeParked(withLineage.conversations, withLineage.identity.providerId),
+              aiSwitches: sanitizeAiSwitches(withLineage.aiSwitches),
+            };
+      // Kept settings (#1317): named fields only, or none. Absent is the
+      // normal state of every card written before them, so silent.
+      const withSettings =
+        withAis.conversationSettings === undefined
+          ? withAis
+          : { ...withAis, conversationSettings: sanitizeConversationSettings(withAis.conversationSettings) };
+      if (!withSettings.groupId || groupIds.has(withSettings.groupId)) return withSettings;
+      orphaned.push(withSettings.id);
+      return { ...withSettings, groupId: undefined };
+    });
+    // TWO CARDS, ONE CONVERSATION — untied here, once, at the only moment the
+    // whole card list is in one place (#539). The policy and every reason for
+    // it live in `sessions/untangle.ts`; this is just where it runs.
+    //
+    // Not behind a migration flag: it is idempotent and returns the SAME array
+    // when nothing collided, so on every ordinary launch it costs one pass and
+    // changes nothing. A one-shot flag would instead have to be right about a
+    // state that can recur (a hand-edited file, a restored backup).
+    //
+    // SKIPPED WHILE READ-ONLY, like every other repair on this path: a file
+    // from the future is not damaged, this build simply cannot read all of it,
+    // and rewriting its cards' conversation pointers would act on a reading we
+    // already know is partial.
+    const untangled = this.readOnly
+      ? { cards: loaded, changes: [] as UntangleChange[] }
+      : untangleDuplicateConversations(loaded);
+    const sessions = untangled.cards as typeof loaded;
+    this.untangleChanges = untangled.changes;
+    for (const c of untangled.changes.slice(0, MAX_LISTED_IDS))
+      note(
+        'two cards pointed at the same conversation — one of them has given it up and can be reattached to its own',
+        { cardId: c.cardId, gaveUp: c.nativeSessionId, keptBy: c.keptByCardId }
+      );
+    if (orphaned.length > 0)
+      note(
+        'sessions in the workspace file named a group that is not in it — loading them ungrouped',
+        // bounded like everything else this file writes: one bad `groups`
+        // entry can orphan every session in the workspace
+        { sessionIds: orphaned.slice(0, MAX_LISTED_IDS), count: orphaned.length }
+      );
+
+    const window = sanitizeWindow(raw.window);
+    if (window.repaired.length > 0)
+      note(
+        // the consequence differs: losing the whole record (or the rect)
+        // centres the window, losing only `isMaximized` does not move it
+        window.value?.bounds
+          ? 'part of the saved window state in the workspace file was unusable — using the default for it'
+          : 'the saved window position in the workspace file was unusable — opening centred at the default size',
+        { unusable: window.repaired }
+      );
+
+    const notifications = sanitizeNotifications(raw.notifications);
+    if (notifications.repaired.length > 0)
+      note('notification settings in the workspace file were unusable — using the defaults', {
+        unusable: notifications.repaired,
+      });
+
+    const updates = sanitizeUpdates(raw.updates);
+    if (updates.repaired.length > 0)
+      note('update settings in the workspace file were unusable — using the defaults', {
+        unusable: updates.repaired,
+      });
+
+    // A rule this build cannot read is dropped, not repaired: a half-understood
+    // rule would fire the wrong channel at the wrong moment, which is worse
+    // than not firing (P6 fail-open cuts this way for notifications).
+    const rules = keepSane(raw.rules, isSaneRule, 'rule', note);
+    // A template this build cannot read is dropped for a blunter reason than a
+    // rule is: it names an autonomy and a context amount, and a half-understood
+    // one would dispatch a session with the wrong amount of the author's work
+    // at the wrong autonomy. The built-in three are unaffected — they are code
+    // and are never in this list (#946).
+    const dispatchTemplates = keepSane(
+      raw.dispatchTemplates,
+      isSaneRoleTemplate,
+      'dispatch template',
+      note
+    );
+    // Trimmed on the way IN as well as on the way out: a hand-edited or
+    // older-build file could carry more than the cap, and the digest is not
+    // the place to discover that the workspace file grew unbounded.
+    const suppressed = keepSane(
+      raw.suppressed,
+      isSaneSuppressedEvent,
+      'held notification',
+      note
+    ).slice(-SUPPRESSED_CAP);
+    const health = sanitizeHealth(raw.health);
+    if (health.repaired.length > 0)
+      note('the provider-status setting in the workspace file was unusable — leaving polling on', {
+        unusable: health.repaired,
+      });
+
+    const push = sanitizePush(raw.push);
+    if (push.repaired.length > 0)
+      note('the phone-push settings in the workspace file were unusable — leaving them off', {
+        unusable: push.repaired,
+      });
+
+    if (wrongType(raw, 'autoTrust', 'boolean'))
+      note('the auto-trust setting in the workspace file was not true or false — leaving it on');
+
+    if (wrongType(raw, 'autoLabels', 'boolean'))
+      note('the auto-label setting in the workspace file was not true or false — leaving it on');
+
+    if (wrongType(raw, 'aiLabels', 'boolean'))
+      note('the AI-label setting in the workspace file was not true or false — leaving it on');
+
+    // #923. Audible for the same reason as the three above (#344), but the
+    // sentence ends the other way: this one defaults OFF, so the repair the
+    // user needs told about is that their capture is NOT running.
+    if (wrongType(raw, 'perfCapture', 'boolean'))
+      note(
+        'the detailed performance capture setting in the workspace file was not true or false — leaving it off'
+      );
+
+    return {
+      version: CURRENT_VERSION,
+      sessions,
+      groups,
+      window: window.value,
+      layout: raw.layout ?? null,
+      ui: raw.ui ?? null,
+      notifications: notifications.value,
+      rules,
+      dispatchTemplates,
+      autoTrust: raw.autoTrust !== false, // default on
+      autoLabels: raw.autoLabels !== false, // default on — same shape, same reason
+      // `aiLabels` reads "on unless explicitly off" as of #883 — the owner
+      // reversed #758's opt-in after using it, so a workspace file that
+      // predates the feature (and every fresh install) gets it ON. A file
+      // that says `false` is a choice and is honoured.
+      aiLabels: raw.aiLabels !== false,
+      // Tolerant by design: an unreadable size is one nobody chose, so it
+      // lands on the default rather than on the smallest. See the helper.
+      taskLabelSize: taskLabelSizeOf(raw.taskLabelSize),
+      // ⚠️ THE OPPOSITE SHAPE — `=== true`, not `!== false`. An experiment
+      // must read "off unless explicitly on", so a missing key, a hand-edited
+      // string, or a file written by an older build all land OFF rather than
+      // silently enabling something nobody asked for.
+      experimentalFork: raw.experimentalFork === true,
+      // Same shape, same reason (#923). This one is stricter than an
+      // experiment: tier-2 instrumentation costs main-thread time on the very
+      // path E21 exists to measure, so an unreadable value must never be the
+      // thing that turns it on.
+      perfCapture: raw.perfCapture === true,
+      updates: updates.value,
+      health: health.value,
+      push: push.value,
+      suppressed,
+      // Same all-or-nothing sanitize as everything else here: a record this
+      // build cannot render is dropped rather than repaired, because a notice
+      // with `undefined` in the middle of its sentence is worse than no
+      // notice. Trimmed on the way IN as well as out — a hand-edited file
+      // could carry more than the cap.
+      historyRepairs: keepSane(
+        raw.historyRepairs,
+        isSaneHistoryRepair,
+        'history repair notice',
+        note
+      ).slice(0, MAX_HISTORY_REPAIR_NOTICES),
+    };
+  }
+
+  /**
+   * Read `workspace.json.bak` (#1410). `state` is null when there is none or it
+   * cannot be read either; `error` says which. Its file notes are returned
+   * rather than pushed, so a backup that fails halfway leaves nothing behind.
+   */
+  private readBackup(note: (msg: string, fields?: LogFields) => void): {
+    state: WorkspaceState | null;
+    file: string;
+    savedAt?: string;
+    error?: string;
+    notes: LoadNote[];
+  } {
+    const file = backupPathOf(this.file);
+    const notes: LoadNote[] = [];
+    let bytes: Buffer;
+    try {
+      bytes = fs.readFileSync(file);
+    } catch {
+      return { state: null, file, notes }; // no backup: nothing to say
+    }
+    try {
+      const state = this.parseWorkspace(bytes, notes, note);
+      let savedAt: string | undefined;
+      try {
+        savedAt = fs.statSync(file).mtime.toISOString();
+      } catch {
+        /* the age is a nicety; the contents are what was asked for */
+      }
+      // the bytes now standing behind this run's state, as for a normal load
+      this.backupBody = bytes.toString('utf8');
+      return { state, file, savedAt, notes };
+    } catch (err) {
+      return { state: null, file, error: errorText(err), notes: [] };
+    }
   }
 
   /**
@@ -1218,7 +1331,9 @@ export class WorkspaceStore {
     if (fields.setAside) {
       this.unsavedPostMortem = null;
       this.warn(
-        'the damaged workspace file was set aside on a later try — saving the empty workspace over it now',
+        // "the workspace", not "the empty workspace": since #1410 it may be one
+        // restored from the backup
+        'the damaged workspace file was set aside on a later try — saving the workspace over it now',
         fields
       );
       return true;
@@ -1895,13 +2010,46 @@ export class WorkspaceStore {
     // something to the person looking at it.
     if (!this.rescuePostMortem()) return;
     const tmp = `${this.file}.tmp`;
+    const body = JSON.stringify(this.state, null, 2);
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      fs.writeFileSync(tmp, JSON.stringify(this.state, null, 2));
-      fs.renameSync(tmp, this.file);
-      this.saveSucceeded();
+      // flushed before the rename: a system crash must never leave the new
+      // name on a file whose bytes never reached the disk (#1410)
+      writeFileDurable(this.file, tmp, body);
     } catch (err) {
       this.saveFailed(err);
+      return;
+    }
+    this.saveSucceeded();
+    this.keepBackup(body);
+  }
+
+  /**
+   * After a save lands, keep what the file held BEFORE it as
+   * `workspace.json.bak` (#1410) — the copy `load()` falls back to when the
+   * main file cannot be read.
+   *
+   * Only ever bytes this run KNOWS are good: the file `load()` read cleanly, or
+   * a body this store wrote itself. A file that would not load is never
+   * promoted to the backup. Written after the main save, not before, so a
+   * failing disk keeps exactly the failure semantics it had (#207); the backup
+   * is a second line, and its own failure is said once and never retried.
+   */
+  private keepBackup(body: string): void {
+    const previous = this.backupBody;
+    this.backupBody = body;
+    if (previous === null || previous === this.backupWritten) return;
+    const bak = backupPathOf(this.file);
+    try {
+      writeFileDurable(bak, `${bak}.tmp`, previous);
+      this.backupWritten = previous;
+    } catch (err) {
+      if (this.backupWarned) return;
+      this.backupWarned = true;
+      this.warn('could not keep the workspace backup — saving itself is unaffected', {
+        backup: bak,
+        error: errorText(err),
+      });
     }
   }
 

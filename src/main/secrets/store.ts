@@ -38,6 +38,7 @@ import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import type { Logger } from '../log/logger';
+import { writeFileDurable } from '../fs/durable-write';
 
 /**
  * The `safeStorage` shape, as an interface so the store is testable without
@@ -211,8 +212,8 @@ export class SecretStore {
     const tmp = `${this.file}.tmp`;
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
-      fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), { mode: 0o600 });
-      fs.renameSync(tmp, this.file);
+      // flushed before the rename — a system crash must not leave a zeroed file (#1410)
+      writeFileDurable(this.file, tmp, JSON.stringify(payload, null, 2), { mode: 0o600 });
       this.entries = entries;
       return true;
     } catch (err) {

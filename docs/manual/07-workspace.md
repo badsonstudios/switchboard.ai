@@ -1009,11 +1009,13 @@ about: the file is safe, this session's work on it is not.
 gone — it saves again as normal.
 
 If you'd rather stay on the older version and are happy to lose that layout,
-close switchboard and move its `workspace.json` somewhere else — the next launch
-starts fresh, with an empty workspace it *can* save. On Windows it's in
-`%APPDATA%\switchboard`, on macOS `~/Library/Application Support/switchboard`,
-and on Linux `~/.config/switchboard`. Move it, don't delete it: it's the only
-copy of the layout the newer version had.
+close switchboard and move its `workspace.json` **and** `workspace.json.bak`
+somewhere else. Move both, because switchboard opens the backup when the main
+file is missing. The next launch then starts fresh, with an empty workspace it
+*can* save. On Windows they're in `%APPDATA%\switchboard`, on macOS
+`~/Library/Application Support/switchboard`, and on Linux
+`~/.config/switchboard`. Move them, don't delete them: they're the only copies
+of the layout the newer version had.
 
 That's the one case where the file is fine and switchboard won't write it. The
 other direction — the file itself being damaged — is handled without stopping

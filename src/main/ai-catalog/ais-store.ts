@@ -18,6 +18,7 @@ import path from 'path';
 import type { CustomAi } from '../../shared/ais';
 import { errorText } from '../../shared/error-text';
 import { validCustomAi } from './custom-ais';
+import { writeFileDurable, type DurableFs } from '../fs/durable-write';
 
 export const AIS_FILE = 'ais.json';
 const VERSION = 1;
@@ -43,7 +44,7 @@ export class AisStore {
   constructor(
     dir: string,
     private readonly log: AisStoreLog,
-    private readonly fsx: Pick<typeof fs, 'readFileSync' | 'writeFileSync' | 'renameSync' | 'mkdirSync' | 'existsSync'> = fs
+    private readonly fsx: Pick<typeof fs, 'readFileSync' | 'mkdirSync' | 'existsSync'> & DurableFs = fs
   ) {
     this.file = path.join(dir, AIS_FILE);
   }
@@ -138,8 +139,8 @@ export class AisStore {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         this.fsx.mkdirSync(path.dirname(this.file), { recursive: true });
-        this.fsx.writeFileSync(tmp, body);
-        this.fsx.renameSync(tmp, this.file);
+        // flushed before the rename — a system crash must not leave a zeroed file (#1410)
+        writeFileDurable(this.file, tmp, body, undefined, this.fsx);
         return true;
       } catch (err) {
         if (attempt === 2) {
