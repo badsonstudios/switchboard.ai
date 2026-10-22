@@ -79,7 +79,7 @@ test.describe('a drag in the grid does not change a session’s group (#702)', (
     a = await launchApp({ seedFolder: folder, env: DIRECT });
     const w = a.window;
     const looseTitle = path.basename(folder);
-    await expect(w.getByPlaceholder(/Prompt this session/).first()).toBeVisible({ timeout: 25_000 });
+    await expect(w.getByPlaceholder(/^Message .+…$/).first()).toBeVisible({ timeout: 25_000 });
 
     // a persistent group, with one session opened inside it
     await w.getByTitle('Create a persistent group').click();

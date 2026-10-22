@@ -18,7 +18,7 @@ import path from 'path';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
-const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
+const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
 
 // 600 x 900: TALLER than the cap, so the cap is what is being measured
 const MOCK_SVG =

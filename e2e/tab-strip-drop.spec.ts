@@ -97,7 +97,7 @@ test.describe('drop a tab on another group’s tab strip (#620)', () => {
   test('on a tab’s right half it lands after it, on its left half before it, on the empty strip at the end', async () => {
     a = await launchApp({ seedFolder: tempProjectFolder(), env: DIRECT });
     const w = a.window;
-    await expect(w.getByPlaceholder(/Prompt this session/).first()).toBeVisible({ timeout: 25_000 });
+    await expect(w.getByPlaceholder(/^Message .+…$/).first()).toBeVisible({ timeout: 25_000 });
     await addSession(a);
     await addSession(a);
     // three sessions, each in a column of its own
@@ -142,7 +142,7 @@ test.describe('drop a tab on another group’s tab strip (#620)', () => {
   test('on the empty part of a strip it is appended, and the two groups become one', async () => {
     a = await launchApp({ seedFolder: tempProjectFolder(), env: DIRECT });
     const w = a.window;
-    await expect(w.getByPlaceholder(/Prompt this session/).first()).toBeVisible({ timeout: 25_000 });
+    await expect(w.getByPlaceholder(/^Message .+…$/).first()).toBeVisible({ timeout: 25_000 });
     await addSession(a);
     await w.locator('[data-layout-preset="columns2"]').click();
     await expect.poll(async () => (await groups(w)).length, { timeout: 10_000 }).toBe(2);

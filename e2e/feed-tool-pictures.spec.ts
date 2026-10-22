@@ -19,7 +19,7 @@ import { test, expect, Page } from '@playwright/test';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
-const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
+const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
 
 test.describe('pictures a tool returned (#1240)', () => {
   let a: LaunchedApp;

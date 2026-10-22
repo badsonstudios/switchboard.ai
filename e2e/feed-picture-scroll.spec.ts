@@ -28,7 +28,7 @@ import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
 const WINDOW = { x: 0, y: 0, width: 1400, height: 900 };
 const HEIGHTS = [80, 200, 420, 700, 300, 1000];
-const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
+const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
 
 const svg = (h: number): string =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="500" height="${h}" viewBox="0 0 500 ${h}">` +

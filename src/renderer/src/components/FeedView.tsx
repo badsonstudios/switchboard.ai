@@ -7,6 +7,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FEED_VIEW_CAP, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
+import { composerName } from '../lib/card-title';
 import { applyFolds, foldFamily, type FoldKind, type FoldRun } from '../lib/feed-folds';
 import { GutterMark } from './ToolIcon';
 import { promptsOf, recallInto } from '../lib/prompt-history';
@@ -2006,6 +2007,8 @@ export function FeedView(props: {
         // which. `key` makes the hazard structurally impossible for one word.
         key={props.cardId}
         sessionId={props.sessionId}
+        // whose box this is, said in its placeholder (#1405)
+        title={props.title}
         // the durable key the saved draft is filed under (#485)
         cardId={props.cardId}
         // "use again" from the prompt list (#1203)
@@ -2560,6 +2563,7 @@ function withReason(reason: string | null, el: React.JSX.Element): React.JSX.Ele
 function Composer({
   sessionId,
   cardId,
+  title,
   autonomy,
   liveAutonomy,
   model,
@@ -2578,6 +2582,13 @@ function Composer({
    *  prompt list above it. Cleared on unmount. */
   recall?: React.MutableRefObject<((text: string) => void) | null>;
   sessionId: string;
+  /**
+   * The session's name (#1405), said in the placeholder — "Message <name>…" —
+   * so the box you are typing into names the session it sends to. Two waiting
+   * tabs that looked alike sent the owner's words to the wrong one. Absent or
+   * empty: "Message this session…".
+   */
+  title?: string;
   /** durable key for this card's saved draft (#485) â€” the live id churns */
   cardId?: string;
   autonomy?: string;
@@ -4445,13 +4456,17 @@ function Composer({
       <textarea
         ref={box}
         value={draft}
-        // The SAME string as the placeholder, on purpose. The accessible name
-        // fell through to `placeholder` before this item, which works but is a
-        // browser courtesy rather than an authored name — and naming it
-        // anything shorter would DEMOTE "Enter to send, Shift+Enter for a new
-        // line" from the name to a description, which is a thing many users
-        // have switched off. Same words, said deliberately (review, #828).
-        aria-label={t('feedView.composerPlaceholder')}
+        // The name, IN FULL, and the keys (#1405). The placeholder below is
+        // the short "Message <name>…" the owner asked for, cut to fit the box;
+        // the accessible name keeps the whole session name and "Enter to send,
+        // Shift+Enter for a new line" — demoting that hint to a description
+        // would hide it from the many users who switch descriptions off
+        // (review, #828).
+        aria-label={
+          title?.trim()
+            ? t('feedView.composerLabel', { name: title.trim() })
+            : t('feedView.composerLabelUnnamed')
+        }
         // ── the completion relations (#828) ────────────────────────────────
         //
         // NO `role="combobox"`, and this is the decision in this item.
@@ -4576,7 +4591,11 @@ function Composer({
             submit();
           }
         }}
-        placeholder={t('feedView.composerPlaceholder')}
+        placeholder={
+          title?.trim()
+            ? t('feedView.composerPlaceholder', { name: composerName(title) })
+            : t('feedView.composerPlaceholderUnnamed')
+        }
         // `field-sizing: content` and the unconditional `overflow-y` live in
         // the stylesheet rather than in the style prop below (#716). Not because
         // React would refuse to emit them â€” it assigns straight onto

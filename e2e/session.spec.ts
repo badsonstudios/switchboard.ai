@@ -205,10 +205,10 @@ test.describe('a session card', () => {
     // that is not running.
     const header = window.getByTestId('card-header');
     await expect(header).toBeVisible();
-    // #905: the name is the TAB's, right above, and the header no longer
-    // repeats it — the announcer above is what still says it to a reader
+    // the name is on the tab right above AND, since #1405 (reversing #905),
+    // first in the header: the pane says whose it is
     await expect(window.locator('.dv-tab.dv-active-tab')).toContainText(path.basename(gone));
-    await expect(header).not.toContainText(path.basename(gone));
+    await expect(header.getByTestId('card-session-name')).toHaveText(path.basename(gone));
     await expect(header.locator('.status-pill')).toHaveText('not started');
     // Try again and Close are the PANEL's, two centimetres below; a header copy
     // of them would be a second way to do the same thing on the smallest
@@ -275,7 +275,7 @@ test.describe('a session card', () => {
     expect(firstLiveId).toBeTruthy();
 
     // ...and now it DIES, with the code this spec chose
-    const box = window.getByPlaceholder(/Prompt this session/);
+    const box = window.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!exit 3');
     await box.press('Enter');
@@ -414,7 +414,7 @@ test.describe('a session card', () => {
     // the witness is the card being INTERACTIVE — a session that came back
     // suspended or ended covers itself with an overlay and has no composer.
     await expect(window.getByTestId('card-overlay')).toHaveCount(0, { timeout: 15_000 });
-    await expect(window.getByPlaceholder(/Prompt this session/)).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByPlaceholder(/^Message .+…$/)).toBeVisible({ timeout: 15_000 });
   });
 
   test('closing a popout OS window suspends the session (E8-04)', async () => {
@@ -444,7 +444,7 @@ test.describe('a session card', () => {
     // reappearing; with no terminal surface (#873) it is the overlay clearing
     // and the card becoming interactive again.
     await expect(window.getByTestId('card-overlay')).toHaveCount(0, { timeout: 15_000 });
-    await expect(window.getByPlaceholder(/Prompt this session/)).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByPlaceholder(/^Message .+…$/)).toBeVisible({ timeout: 15_000 });
   });
 
   // #292. The test above is that same event arriving properly; this is it going
@@ -509,7 +509,7 @@ test.describe('a session card', () => {
     // coming back, which is the same claim through the surface that survived.
     await window.getByRole('button', { name: 'Resume' }).click();
     await expect(window.getByTestId('card-overlay')).toHaveCount(0, { timeout: 15_000 });
-    await expect(window.getByPlaceholder(/Prompt this session/)).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByPlaceholder(/^Message .+…$/)).toBeVisible({ timeout: 15_000 });
   });
 
   test('a new session opens in the main window, not the active popout (E8-04)', async () => {
@@ -768,9 +768,10 @@ test.describe('a session card', () => {
   // announcing the name it was born with. The header now reads the session
   // store, which is where the rename actually lands.
   //
-  // #905 took the name out of the header — the tab right above it says it, and
-  // the header said it twice. The tab reads the same store (#264), so these
-  // tests follow the NAME to where it is on screen now: the open tab.
+  // #905 took the name out of the header and #1405 put it back, first and bold
+  // (two waiting tabs looked alike and the header could not say whose pane it
+  // was). The tab reads the same store (#264); these tests follow the NAME to
+  // both places it is on screen.
   const cardHeaderIn = (p: Page): Locator => p.getByTestId('card-header').filter({ visible: true });
   const openTabIn = (p: Page): Locator => p.locator('.dv-tabs-container .dv-tab.dv-active-tab');
 
@@ -797,8 +798,8 @@ test.describe('a session card', () => {
       timeout: 10_000,
     });
     await expect(tab.getByText(name, { exact: true })).toHaveCount(0);
-    // and the header, which no longer shows a name, did not grow one back
-    await expect(cardHeaderIn(w)).not.toContainText('renamed-card');
+    // and the header follows it too (#1405)
+    await expect(cardHeaderIn(w).getByTestId('card-session-name')).toHaveText('renamed-card');
   });
 
   // A popout has no rail, so its tab is the only thing in the window that says
@@ -846,8 +847,9 @@ test.describe('a session card', () => {
   // so `''` was a legal title), and the header's name span used to be `nowrap`
   // with no floor, so the OTHER thing a title can be — 120 characters — grew
   // the header past its card and carried the status pill and the window buttons
-  // off the end with it. #905 took the name out of the header, so the second
-  // half now holds that a pathological name cannot reach the header at all.
+  // off the end with it. #1405 put the name back in the header, cut with an
+  // ellipsis, so the second half holds that a pathological name is cut there
+  // rather than pushing the controls out.
   test('a name cannot be erased, and a pathological one never costs the header its controls (#294)', async () => {
     const folder = tempProjectFolder();
     const name = path.basename(folder);
@@ -873,8 +875,11 @@ test.describe('a session card', () => {
     await renameFromRail(w, long);
     await expect(tab).toContainText(long, { timeout: 10_000 });
 
-    // the name is the tab's, and never reaches the header...
-    await expect(header).not.toContainText(long);
+    // the header names it too, cut with an ellipsis (#1405)...
+    const shown = header.getByTestId('card-session-name');
+    await expect(shown).toHaveText(long);
+    await expect(shown).toHaveCSS('text-overflow', 'ellipsis');
+    expect(await shown.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
     // ...so the row still fits inside its own card
     expect(await header.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
 

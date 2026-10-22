@@ -50,7 +50,7 @@ const pill = (w: Page, title: string) =>
   strip(w)
     .locator('[data-strip-pill]')
     .filter({ has: w.locator('[data-strip-pill-title]', { hasText: title }) });
-const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
+const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
 const panes = (w: Page) => w.locator('.dv-groupview');
 /** what a held request puts on its card: the approval bar, or the question */
 const bar = (w: Page, kind: 'approval' | 'question') =>
@@ -284,15 +284,15 @@ for (const kind of ['approval', 'question'] as const) {
       await expect(composer(w).first()).toBeVisible();
       // its own composer: the one in the pane whose tab is this session
       const paneOf = (title: string) => panes(w).filter({ has: w.locator('.dv-tab', { hasText: title }) });
-      await paneOf(left).getByPlaceholder(/Prompt this session/).click();
-      await paneOf(left).getByPlaceholder(/Prompt this session/).fill('!hang');
+      await paneOf(left).getByPlaceholder(/^Message .+…$/).click();
+      await paneOf(left).getByPlaceholder(/^Message .+…$/).fill('!hang');
       await w.keyboard.press('Enter');
       // alone in its pane, so the pane goes with it
       await expect(panes(w)).toHaveCount(1, { timeout: 15_000 });
       await expect.poll(() => rungOf(w, left)).toBe('collapsed');
 
       // be in the middle of typing somewhere else
-      const draft = paneOf(right).getByPlaceholder(/Prompt this session/);
+      const draft = paneOf(right).getByPlaceholder(/^Message .+…$/);
       await draft.click();
       await draft.fill('half a sentence');
       await expect(draft).toBeFocused();
@@ -492,7 +492,7 @@ test.describe('finished work is its own number, in both placements (#1258)', () 
     const { left, right } = made;
     await expect(row(w, left)).toBeVisible({ timeout: 25_000 });
     const paneOf = (title: string) => panes(w).filter({ has: w.locator('.dv-tab', { hasText: title }) });
-    const draft = paneOf(right).getByPlaceholder(/Prompt this session/);
+    const draft = paneOf(right).getByPlaceholder(/^Message .+…$/);
     // resolved BEFORE the typing: the old build cleared the count only for
     // somebody who had used the window in the last two seconds, so anything
     // slow between the keystrokes and the Stop would let it pass by accident
@@ -513,7 +513,7 @@ test.describe('finished work is its own number, in both placements (#1258)', () 
     await staysFor(w, 3000, counted);
 
     // LOOKING at it is what clears it: a click inside that card
-    await paneOf(left).getByPlaceholder(/Prompt this session/).click();
+    await paneOf(left).getByPlaceholder(/^Message .+…$/).click();
     await expect(railFinished).toHaveCount(0, { timeout: 15_000 });
   });
 
@@ -532,12 +532,12 @@ test.describe('finished work is its own number, in both placements (#1258)', () 
     const post = await hookPoster(a, 2);
 
     await setPresentationPolicy(w, 'Collapse on submit');
-    await paneOf(left).getByPlaceholder(/Prompt this session/).click();
-    await paneOf(left).getByPlaceholder(/Prompt this session/).fill('!hang');
+    await paneOf(left).getByPlaceholder(/^Message .+…$/).click();
+    await paneOf(left).getByPlaceholder(/^Message .+…$/).fill('!hang');
     await w.keyboard.press('Enter');
     await expect(panes(w)).toHaveCount(1, { timeout: 15_000 });
 
-    const draft = paneOf(right).getByPlaceholder(/Prompt this session/);
+    const draft = paneOf(right).getByPlaceholder(/^Message .+…$/);
     await draft.click();
     await draft.pressSequentially('busy here');
     await post(left, { hook_event_name: 'Stop' });

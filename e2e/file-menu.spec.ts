@@ -223,7 +223,7 @@ test.describe('the File menu (#569)', () => {
       dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [file] });
     }, doc);
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('half a prompt');
     await expect(box).toBeFocused();
@@ -373,7 +373,7 @@ test.describe('the File menu (#569)', () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('half a prompt');
     await expect(box).toBeFocused();

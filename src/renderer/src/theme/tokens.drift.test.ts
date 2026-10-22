@@ -30,7 +30,7 @@ import { builtinThemes } from './builtin-themes';
 // the status ramp and the var() pair a component paints it with (#221): the
 // pill's ratio is measured for the pair the app really substitutes, not for one
 // spelled out again here
-import { ROLLUP_TOKEN, statusVars, STATUS_TOKENS, WAIT_WASH, type StatusToken } from '../lib/rail-view';
+import { ROLLUP_TOKEN, statusVars, STATUS_TOKENS, WAIT_TOKEN, WAIT_WASH, type StatusToken } from '../lib/rail-view';
 import { hueOf, isReservedColor, RESERVED_HUE_TO } from '../../../shared/reserved-hue';
 // #946: the §5.11 palette's other home. See the drift assertion further down.
 import { ACCENTS } from '../../../shared/accents';
@@ -1771,16 +1771,59 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s: words on the wa
   });
 });
 
+// ── WAITING IS A WORD, NOT A FILL (#1405) ─────────────────────────────────────
+//
+// Two waiting tabs side by side were both washed gold, and the wash hid which
+// one was open: the owner typed into the wrong session. A single session's
+// tab, row and pill no longer wash for waiting; the state is its WORD (and the
+// row's and pill's edge bar), and the fill belongs to selection. So the word
+// now sits on whatever that surface is when it is NOT washed: the bare tab
+// strip (`--panel2`) for an unselected tab, the identity wash for the open
+// one, the bare list and strip surfaces for a row or pill, and a selected
+// row's or pill's accent tint. Every one of those is measured here, in every
+// theme, for every waiting state's ink — and for every accent where an accent
+// is under it.
+const WAIT_INK_TOKENS = [...new Set(Object.values(WAIT_TOKEN))];
+describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s: the waiting word without a wash (#1405)', (id, theme) => {
+  const tokens = resolved(theme);
+  const inkOf = (token: string): string => tokens[`--status-${token}-ink`];
+  // On a tab the word ALWAYS sits on its own `--panel2` field: on an
+  // unselected tab that is the strip's own colour, so it paints nothing; on the
+  // open tab it lifts the word off the identity wash, where the state inks
+  // measured 4.04:1 (nordic, indigo) to 4.40:1 (daylight) — under AA. One field
+  // for both, so a tab is the same width whether it is open or not.
+  it.each(WAIT_INK_TOKENS)('%s: on a tab, its own --panel2 field', (token) => {
+    expect(ratio(inkOf(token), tokens['--panel2']), `${id} ${token} on --panel2`).toBeGreaterThanOrEqual(4.5);
+  });
+  it('the tab strip IS --panel2, so the field is invisible on an unselected tab', () => {
+    const dv = fs.readFileSync(path.join(__dirname, 'dockview-tokens.css'), 'utf8');
+    expect(dv).toMatch(/--dv-tabs-and-actions-container-background-color:\s*var\(--panel2\);/);
+  });
+  it.each(WAIT_INK_TOKENS)('%s: on a row or pill, bare or selected', (token) => {
+    for (const under of ['--rail-card', '--rail-canvas', '--panel', '--panel2']) {
+      expect(ratio(inkOf(token), tokens[under]), `${id} ${token} on ${under}`).toBeGreaterThanOrEqual(4.5);
+      for (const accent of ACCENT_TOKENS) {
+        // the row's 10% and the pill's 12%: the heavier is the harder case
+        const sel = mix(tokens[accent], tokens[under], 0.12);
+        expect(ratio(inkOf(token), sel), `${id} ${token} on ${accent} 12% over ${under}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+});
+
 describe('the waiting wash is painted at the strength this measures (#1351)', () => {
   const read = (rel: string): string => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
-  it('the tab: dockview-tokens.css mixes `--wait-hue` at WAIT_WASH over --panel2', () => {
+  it('the tab: no waiting fill at all (#1405) — the open tab owns the fill', () => {
     const dv = read('theme/dockview-tokens.css');
-    expect(dv).toContain(`background: color-mix(in srgb, var(--wait-hue) ${WAIT_WASH}%, var(--panel2));`);
-    // the washed tab's words are --text, never the unselected tab's --muted
-    expect(dv).toMatch(/\.identity-tab\[data-wait-state\] \{[^}]*color: var\(--text\);/);
+    expect(dv).not.toContain('--wait-hue');
+    expect(dv).not.toMatch(/\[data-wait-state\][^{]*\{[^}]*background/);
   });
-  it.each(['components/SessionRow.tsx', 'components/StripPill.tsx'])('%s tints its hue at WAIT_WASH', (rel) => {
-    expect(read(rel)).toContain('tint(hue, WAIT_WASH)');
+  it("the tab's state word sits on its own --panel2 field (#1405)", () => {
+    const dv = read('theme/dockview-tokens.css').replace(/\r\n/g, '\n');
+    expect(dv).toMatch(/\.identity-tab \[data-tab-state\] \{[^}]*background: var\(--panel2\);/);
+  });
+  it.each(['components/SessionRow.tsx', 'components/StripPill.tsx'])('%s no longer washes for waiting (#1405)', (rel) => {
+    expect(read(rel)).not.toContain('tint(hue, WAIT_WASH)');
   });
   it("the strip's group box washes its summary at WAIT_WASH, over its own card", () => {
     expect(read('components/StripGroupEntry.tsx')).toContain('background: tint(`var(--status-${leadToken})`, WAIT_WASH)');

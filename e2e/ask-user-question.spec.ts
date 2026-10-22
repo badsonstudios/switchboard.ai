@@ -56,7 +56,7 @@ test.describe("the CLI's own questions (#563)", () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!ask');
     await box.press('Enter');
@@ -195,7 +195,7 @@ test.describe("the CLI's own questions (#563)", () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!ask');
     await box.press('Enter');
@@ -250,7 +250,7 @@ test.describe("the CLI's own questions (#563)", () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!ask1');
     await box.press('Enter');
@@ -290,7 +290,7 @@ test.describe("the CLI's own questions (#563)", () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!ask1');
     await box.press('Enter');
@@ -313,7 +313,7 @@ test.describe("the CLI's own questions (#563)", () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!ask1');
     await box.press('Enter');

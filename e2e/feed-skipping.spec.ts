@@ -219,7 +219,7 @@ test.beforeAll(async () => {
   folder = tempProjectFolder();
   a = await launchApp({ seedFolder: folder, env: DIRECT });
   await a.window.getByText(path.basename(folder)).first().waitFor({ timeout: 25_000 });
-  await a.window.getByPlaceholder(/Prompt this session/).first().waitFor({ timeout: 25_000 });
+  await a.window.getByPlaceholder(/^Message .+…$/).first().waitFor({ timeout: 25_000 });
 });
 
 test.afterAll(async () => {

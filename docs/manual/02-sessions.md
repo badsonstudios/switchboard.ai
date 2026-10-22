@@ -177,7 +177,7 @@ Things worth knowing:
   rather than "is it empty?")
 - **No title, no label.** If Claude never names the conversation, the card
   header shows **+ task label**, waiting for you to type one. The session's name
-  is on its tab, just above.
+  is on its tab, and first in the header.
 - **The label belongs to the conversation, so it goes when the conversation
   does.** Run `/clear`, or reopen switchboard to find the conversation gone from
   disk and the session starting fresh, and the card goes back to **+ task
@@ -368,12 +368,17 @@ appears, so you can find it from across the room:
 - **its row** in the Sessions list on the left;
 - **its pill** on the strip, when the sessions are listed across the top.
 
-Each one is **tinted in the state's colour**, with an edge in the same
-colour, the **word** after the session's name, and the ring around its AI's
-icon in that colour too. Approval is orange, question is yellow, and waiting
-is a softer gold, so a session that has simply finished does not shout as
-loudly as one that is stuck. The word is always there, so you never have to
-tell the states apart by colour alone.
+Each one shows the **word** after the session's name, written in the state's
+colour, and the ring around its AI's icon is in that colour too. In the list
+and on the strip, the bar down the row's or pill's edge is in that colour as
+well. Approval is orange, question is yellow, and waiting is a softer gold, so
+a session that has simply finished does not shout as loudly as one that is
+stuck.
+
+**Waiting does not tint the whole tab, row or pill.** The tint is kept for the
+session you have open, so two sessions that are both waiting never look alike:
+the open one is still the shaded one. (Before version 0.8.127 a waiting tab was
+filled in gold, and two waiting tabs side by side looked the same.)
 
 ![Tabs in the dark theme: a calm session, then one waiting for an approval, one with a question, one waiting for its next prompt, and one working](img/waiting-states-tabs-nordic.png)
 
@@ -388,9 +393,9 @@ tell the states apart by colour alone.
 ![The strip in the light theme](img/waiting-states-strip-daylight.png)
 
 A session that is **working** says **working** quietly on its tab and its
-ring spins; a **calm** one has no tint and no word on its tab. A session that
-has **ended** (Claude Code closed, and did not crash) is never tinted and
-never says "waiting": its tab, its row and its pill all say **ended** quietly,
+ring spins; a **calm** one has no word on its tab. A session that
+has **ended** (Claude Code closed, and did not crash) never says "waiting":
+its tab, its row and its pill all say **ended** quietly,
 in grey, the same word as its card's header. A group never counts it as
 waiting.
 

@@ -1,5 +1,6 @@
 // The name a session card goes by — on its tab, in its announcer, in the rail
-// (#250). It was also the card header's name until #905 left that to the tab.
+// (#250). It was also the card header's name until #905 left that to the tab,
+// and is again since #1405, which also put it in the message box.
 
 /**
  * Pick a card's header name from the three sources, most-current first.
@@ -30,4 +31,20 @@ export function cardHeaderTitle(
 
 function basename(folder: string | undefined): string | undefined {
   return folder?.split(/[\\/]/).filter(Boolean).pop() ?? folder;
+}
+
+/** How many characters of a session's name the message box's placeholder
+ *  shows before it cuts to an ellipsis (#1405). */
+export const COMPOSER_NAME_MAX = 40;
+
+/**
+ * The session's name as the message box's placeholder says it (#1405):
+ * "Message <name>…". Cut with an ellipsis past `max` characters, because the
+ * box sizes itself to its content — placeholder included — and a long name
+ * would otherwise wrap it to two lines before anyone typed. Counted in code
+ * points, so a name is never cut through the middle of an emoji.
+ */
+export function composerName(name: string, max = COMPOSER_NAME_MAX): string {
+  const chars = Array.from(name.trim());
+  return chars.length > max ? chars.slice(0, max - 1).join('').trimEnd() + '…' : chars.join('');
 }

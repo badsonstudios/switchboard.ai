@@ -99,7 +99,7 @@ test.describe('a Direct hold raises attention (P2-E18-14)', () => {
     // says is load-bearing
     await expect(w.getByTestId('events-tab')).toHaveAttribute('data-count', '0');
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!perm attention.sh');
     await box.press('Enter');

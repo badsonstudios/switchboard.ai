@@ -120,7 +120,7 @@ test.describe('browser-process accelerators keep their scope (#90)', () => {
 
     await w.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+1`);
     await expect(activeTab(w)).toContainText(first);
-    await w.getByPlaceholder(/Prompt this session/).click();
+    await w.getByPlaceholder(/^Message .+…$/).click();
     await chord(a.app, ' ', ['control']);
     await w.waitForTimeout(500);
     await expect(activeTab(w)).toContainText(first); // never jumped

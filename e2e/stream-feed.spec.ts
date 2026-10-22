@@ -192,7 +192,7 @@ test.describe('the Feed renders a Direct turn (P2-E18-14)', () => {
     await w.keyboard.press('Escape');
     expect((await focusedInfo()).region).toBe(true);
     await tabFromFeedToComposer(w);
-    await expect(w.getByPlaceholder(/Prompt this session/)).toBeFocused();
+    await expect(w.getByPlaceholder(/^Message .+…$/)).toBeFocused();
   });
 
   // The tail pin, on a feed built from the stream. It matters more here than on
@@ -204,7 +204,7 @@ test.describe('the Feed renders a Direct turn (P2-E18-14)', () => {
   test('a long Direct conversation pins to the tail, and a reader is not yanked off it', async () => {
     test.setTimeout(120_000);
     const w = a.window;
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
 
     // ARRANGE — a reader who is AT the tail, said out loud instead of inherited.
     //
@@ -340,7 +340,7 @@ test.describe('Clear conversation on a Direct session', () => {
     a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('SFEED_CLEAR_BEFORE');
     await box.press('Enter');
@@ -401,7 +401,7 @@ test.describe('Clear conversation on a Direct session', () => {
     const first = a;
     const w = first.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('SFEED_RESUMED_HISTORY');
     await box.press('Enter');
@@ -467,7 +467,7 @@ test.describe('Clear and Compact on the composer row (issue 903)', () => {
     a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('SFEED_ROW_CLEAR');
     await box.press('Enter');

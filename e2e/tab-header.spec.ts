@@ -5,7 +5,7 @@
 // the rest by one fill step, and the card header right under it was the colour
 // of the UNSELECTED tabs. Now the open tab and its header share one wash of the
 // session's identity accent, the other tabs are transparent on the strip, and
-// the header no longer repeats the name the tab already shows.
+// (since #1405, reversing #905's call) the header names the session first.
 //
 // tokens.drift.test.ts measures `--text` on every accent's wash in every theme
 // from the token file. This file is the half it cannot see: that the browser
@@ -125,7 +125,7 @@ test.describe('the open tab and its card header (#905)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
-  test('share one identity wash; the other tabs recede; the name leaves the header', async () => {
+  test('share one identity wash; the other tabs recede; the header names the session first', async () => {
     a = await launchApp({ seedFolder: tempProjectFolder() });
     const w = a.window;
     await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
@@ -157,8 +157,9 @@ test.describe('the open tab and its card header (#905)', () => {
     await expect(openTabs(w)).toHaveCSS('font-weight', '700');
     for (const t of await shut.all()) await expect(t).toHaveCSS('font-weight', '500');
 
-    // the name is the tab's; the header no longer repeats it
-    await expect(header(w)).not.toContainText(third);
+    // the header says whose pane this is, bold and first (#1405)
+    await expect(header(w).getByTestId('card-session-name')).toHaveText(third);
+    await expect(header(w).getByTestId('card-session-name')).toHaveCSS('font-weight', '700');
     await expect(header(w).getByTestId('card-task-label')).toHaveText('+ task label');
 
     // Opening a tab must not shove its neighbours: the title reserves its BOLD
@@ -192,7 +193,7 @@ test.describe('the open tab and its card header (#905)', () => {
       await expectAllAA(w, `${theme}, no label`);
     }
 
-    // with a label, which is the header's main text now the name is gone
+    // with a label, after the name
     await header(w).getByTestId('card-task-label').click();
     await header(w).locator('input').fill('tighten the tab strip');
     await header(w).locator('input').press('Enter');

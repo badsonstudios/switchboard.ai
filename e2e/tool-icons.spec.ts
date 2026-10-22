@@ -62,7 +62,7 @@ test.describe('the pictures in the timeline gutter (#1207)', () => {
       env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_FAKE_SCRIPT: scriptFile },
     });
     const w = a.window;
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await expect(box).toBeVisible({ timeout: 25_000 });
     await box.click();
     await box.fill(PROMPT);

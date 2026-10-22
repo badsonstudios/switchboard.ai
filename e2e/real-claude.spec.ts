@@ -95,7 +95,7 @@ test.describe('real claude on the DEFAULT transport (#384, opt-in)', () => {
     // 5s BEFORE the CLI emitted its `init` was still answered normally. The
     // PTY's "keystrokes into a booting TUI go nowhere" problem does not exist
     // on this transport, and a test that waited anyway would hide that.
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('Reply with exactly: REAL_DIRECT_OK and nothing else. No tools.');
     await box.press('Enter');
@@ -189,7 +189,7 @@ test.describe('real claude on the DEFAULT transport (#384, opt-in)', () => {
     };
     expect(cfg.projects?.[folder.replace(/\\/g, '/')]?.hasTrustDialogAccepted ?? false).toBe(false);
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('Reply with exactly: REAL_TRUST_OK and nothing else. No tools.');
     await box.press('Enter');

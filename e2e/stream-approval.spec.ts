@@ -80,7 +80,7 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!perm refused.sh');
     await box.press('Enter');
@@ -125,7 +125,7 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     a = await launchApp({ seedFolder: folder, env: DIRECT });
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
 
     await box.click();
     await box.fill('!permplan PLAN-MARKER-ONE');
@@ -211,7 +211,7 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!perm refused.sh');
     await box.press('Enter');
@@ -550,7 +550,7 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!perm orphaned.sh');
     await box.press('Enter');

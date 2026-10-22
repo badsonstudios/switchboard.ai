@@ -95,7 +95,7 @@ test.describe('MCP calls, web calls and same-file edits fold (#1271)', () => {
     a = first;
     const w1 = first.window;
     await expect(w1.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    const box = w1.getByPlaceholder(/Prompt this session/);
+    const box = w1.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill(PROMPT);
     await box.press('Enter');

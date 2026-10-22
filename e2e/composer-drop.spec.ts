@@ -114,7 +114,7 @@ test.describe('dropping files onto the composer (P2-E10-10)', () => {
     //    wire. Asserting the CONTENTS is what proves the text was NOT base64'd
     //    and that `source.type` was `text`, not `base64`.
     await dropFiles([{ name: 'notes.md', type: 'text/markdown', body: MD_BODY }]);
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('what does this say?');
     await box.press('Enter');
@@ -144,7 +144,7 @@ test.describe('dropping files onto the composer (P2-E10-10)', () => {
     await expect(chips.nth(0)).toHaveAttribute('data-composer-attachment', 'main.ts');
     await expect(chips.nth(1)).toHaveAttribute('data-composer-attachment', 'diagram.png');
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('review these');
     await box.press('Enter');

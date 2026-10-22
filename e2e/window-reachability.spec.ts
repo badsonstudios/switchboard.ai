@@ -33,7 +33,7 @@ function heldIds(w: Page): Promise<string[]> {
 }
 
 async function ask(w: Page, target: string): Promise<void> {
-  const box = w.getByPlaceholder(/Prompt this session/);
+  const box = w.getByPlaceholder(/^Message .+…$/);
   await box.click();
   await box.fill(`!perm ${target}`);
   await box.press('Enter');
@@ -88,7 +88,7 @@ test.describe('a window nobody can see is treated as no window (#1277)', () => {
 
     // Put the prompt in the box FIRST, while the window can still take input,
     // then hide it and send: the request must arrive at a window nobody sees.
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!perm unseen.sh');
     await setMainShown(a, false);
@@ -126,7 +126,7 @@ test.describe('a window nobody can see is treated as no window (#1277)', () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!perm offscreen.sh');
     // Far past the right edge of every display there is.

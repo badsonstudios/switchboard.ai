@@ -149,6 +149,18 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   blocks use the room too. If you preferred the narrow column, the new
   **Readable width** button in the document's header brings it back, and the
   app remembers your choice.
+- **You can always tell which session you are typing into.** When two sessions
+  in one group were both waiting, both tabs turned the same gold and nothing
+  showed which one was open. Now waiting is a word on the tab (**waiting**,
+  **approval**, **question**) and no longer fills it. The open tab always has
+  the strong look: shaded in the colour of the bar under it, with a blue bar
+  along its top. The Sessions list and the strip work the same way: the shading
+  marks the session you have open, and the word and the coloured edge say it
+  is waiting.
+- **The pane and the message box name the session.** The card header now
+  starts with the session's name in bold, before its task label, and the
+  message box says **Message** and the session's name until you type. Long
+  names are cut short with an ellipsis. Popped-out windows show the same.
 
 ### Fixed
 

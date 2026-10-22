@@ -47,7 +47,7 @@ test.describe('Ctrl+= zooms the window (#1114)', () => {
 
     // THE FOCUS SINK the issue asked about: a text box that would happily take
     // the keystroke itself if it were ever offered it.
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await expect(box).toBeFocused();
 

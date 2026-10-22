@@ -176,22 +176,40 @@
 .dv-tab-ghost-drag .identity-tab {
   background: var(--tab-wash, var(--panel));
 }
-/* WAITING ON YOU, ON THE TAB (#1351, treatment A). A session that is waiting
-   for an approval, a question's answer or its next prompt washes its tab in
-   that state's colour — open or not — with an edge in the same colour, and
-   writes the state after its name (IdentityTab). It REPLACES the open tab's
-   identity wash while it lasts: the state is the more urgent of the two facts,
-   and the accent is still on the card's header and frame below it.
-   The strength is `WAIT_WASH` in lib/rail-view.ts, and tokens.drift.test.ts
-   reads it back out of this rule and measures the words on it in all four
-   themes. An unselected tab's words are `--muted`, which nothing measures on a
-   wash, so a washed tab is written in `--text`. An inset shadow rather than a
-   border, so the tab does not change size. */
-.dv-tabs-container > .dv-tab .identity-tab[data-wait-state],
-.dv-tab-ghost-drag .identity-tab[data-wait-state] {
-  background: color-mix(in srgb, var(--wait-hue) 15%, var(--panel2));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wait-hue) 60%, transparent);
-  color: var(--text);
+/* WHICH TAB IS OPEN OUTRANKS WHICH TABS ARE WAITING (#1405, the owner's
+   options A + D). #1351 washed a waiting tab gold, open or not, and the wash
+   REPLACED the open tab's identity wash — so two waiting tabs side by side
+   were the same gold box and nothing said which one the pane below belonged
+   to. The owner typed into the wrong session. Getting the selection wrong
+   sends words to the wrong session; missing a waiting marker only delays a
+   reply.
+
+   So waiting is a WORD now, not a fill: the state's word after the name
+   (IdentityTab, `[data-tab-state]`), in the state's ink. The fill is the open
+   tab's alone, whatever its state: the identity wash above, which is the card
+   header's own colour, plus a bar along its top — the link blue in the
+   focused group, the same blue as that group's frame, and `--muted` in the
+   others. An unselected tab stays transparent and `--muted`.
+
+   `data-wait-state` stays on the element for the specs; no rule here reads
+   it. An inset shadow for the bar, so the tab does not change size. */
+.dv-tabs-container > .dv-tab.dv-active-tab .identity-tab {
+  box-shadow: inset 0 3px 0 var(--muted);
+}
+.dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tab.dv-active-tab .identity-tab {
+  box-shadow: inset 0 3px 0 var(--link);
+}
+/* The tab's state word sits on its own `--panel2` field. On an unselected tab
+   that is the strip's own colour (`--dv-tabs-and-actions-container-background-
+   color` above), so it paints nothing; on the open tab it lifts the word off
+   the identity wash, where the state inks measured under AA for some accents
+   (tokens.drift.test.ts, "the waiting word without a wash"). The same field on
+   both, so a tab is the same width whether it is open or not. */
+.identity-tab [data-tab-state] {
+  background: var(--panel2);
+  padding-inline: 3px;
+  padding-block: 1px;
+  border-radius: 3px;
 }
 /* The overflow dropdown's rows are not in `.dv-tabs-container`, so they keep
    the one weight the chip title used to hard-code before it inherited. */

@@ -169,7 +169,7 @@ test.describe('a popped-out window has what the main window has (#1022)', () => 
     const w = a.window;
     await expect(w.getByText(name).first()).toBeVisible({ timeout: 25_000 });
     // something to have been asked, before the card leaves this window
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('say something short');
     await box.press('Enter');
@@ -199,7 +199,7 @@ test.describe('a popped-out window has what the main window has (#1022)', () => 
     await expect(w.getByText(name).first()).toBeVisible({ timeout: 25_000 });
     // a prompt first: the meter has nothing to show until the session has
     // been asked something, and this test is about the meter being DRAWN right
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('say something short');
     await box.press('Enter');

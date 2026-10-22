@@ -29,7 +29,7 @@ const FAKE_SCRIPT = path.resolve(__dirname, '..', 'out', 'main', 'fake-acp-cli.j
 
 async function send(w: Page, text: string): Promise<void> {
   // the new session's composer: the one on screen (the seeded card's is behind its tab)
-  const box = w.getByPlaceholder(/Prompt this session/).filter({ visible: true }).last();
+  const box = w.getByPlaceholder(/^Message .+…$/).filter({ visible: true }).last();
   await box.click();
   await box.fill(text);
   await box.press('Enter');

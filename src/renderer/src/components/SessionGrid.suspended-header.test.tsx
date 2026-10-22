@@ -200,9 +200,11 @@ describe('a suspended card still has a header', () => {
     );
   });
 
-  it('leaves the name to the tab above it (#905)', async () => {
+  it('names the session in the header again, bold (#1405, reversing #905)', async () => {
     await mountCard();
-    expect(header()!.textContent).not.toContain('acme');
+    const name = header()!.querySelector<HTMLElement>('[data-testid="card-session-name"]');
+    expect(name?.textContent).toBe('acme');
+    expect(name!.style.fontWeight).toBe('700');
   });
 
   it('falls back to the neutral accent before the card list has landed', async () => {

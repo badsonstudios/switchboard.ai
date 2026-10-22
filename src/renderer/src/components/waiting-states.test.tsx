@@ -6,7 +6,9 @@
 //
 // The rule is `lib/rail-view` (`waitState`, `waitPaint`, `waitRollup`), and
 // rail-view.test.ts pins it. This file pins that each surface PAINTS it: the
-// wash in the state's colour, the edge in the same colour, and the word.
+// word in the state's ink and the start bar in its hue — and, since #1405, NO
+// fill: the fill and the edge are selection's, so two waiting sessions side by
+// side still say which one is open. A group's box still washes its summary.
 // The tab's half is in IdentityTab.test.tsx; the ratios are tokens.drift.
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import type React from 'react';
@@ -43,12 +45,12 @@ async function render(node: React.ReactNode): Promise<HTMLElement> {
   return host;
 }
 
-const mountRow = (status: string, needsYou = false): Promise<HTMLElement> =>
+const mountRow = (status: string, needsYou = false, selected = false): Promise<HTMLElement> =>
   render(
     <SessionRow
       session={session(status)}
       needsYou={needsYou}
-      selected={false}
+      selected={selected}
       pinned={false}
       waiting={0}
       depth={undefined}
@@ -63,12 +65,12 @@ const mountRow = (status: string, needsYou = false): Promise<HTMLElement> =>
     />
   ).then((h) => h.querySelector<HTMLElement>('.rail-row')!);
 
-const mountPill = (status: string, needsYou = false): Promise<HTMLElement> =>
+const mountPill = (status: string, needsYou = false, selected = false): Promise<HTMLElement> =>
   render(
     <StripPill
       session={session(status)}
       needsYou={needsYou}
-      selected={false}
+      selected={selected}
       pinned={false}
       waiting={0}
       nested={false}
@@ -103,12 +105,13 @@ const STATES = [
 ] as const;
 
 describe('the row in the left list', () => {
-  it.each(STATES)('%s: washed, an edge in its colour, and the word "%s"', async (status, state, word, _pill, token) => {
+  it.each(STATES)('%s: no fill, an edge bar in its colour, and the word "%s"', async (status, state, word, _pill, token) => {
     // NOT counted: a dismissed ask is still asking, a looked-at finished turn
-    // is still waiting — the wash is the state's, not the count's
+    // is still waiting — the mark is the state's, not the count's
     const r = await mountRow(status, false);
     expect(r.dataset.waitState).toBe(state);
-    expect(r.style.background).toBe(`color-mix(in srgb, var(--status-${token}) ${WAIT_WASH}%, transparent)`);
+    // #1405: waiting is a word, not a fill
+    expect(r.style.background).toBe('transparent');
     const bar = r.querySelector<HTMLElement>('[data-accent-bar]')!;
     expect(bar.style.background).toBe(`var(--status-${token})`);
     const said = r.querySelector<HTMLElement>('[data-rail-state]')!;
@@ -216,11 +219,13 @@ describe('the row in the left list', () => {
 });
 
 describe('the pill on the strip', () => {
-  it.each(STATES)('%s: washed, its edge in its colour, and the word', async (status, state, _list, word, token) => {
+  it.each(STATES)('%s: no fill and no coloured box, a bar in its colour, and the word', async (status, state, _list, word, token) => {
     const p = await mountPill(status);
     expect(p.dataset.waitState).toBe(state);
-    expect(p.style.background).toBe(`color-mix(in srgb, var(--status-${token}) ${WAIT_WASH}%, transparent)`);
-    expect(p.style.border).toContain(`var(--status-${token})`);
+    // #1405: waiting is a word, not a fill or a box
+    expect(p.style.background).toBe('var(--rail-card)');
+    expect(p.style.border).toContain('var(--group-frame)');
+    expect(p.querySelector<HTMLElement>('[data-accent-bar]')!.style.background).toBe(`var(--status-${token})`);
     const said = p.querySelector<HTMLElement>('[data-strip-pill-state]')!;
     expect(said.textContent).toBe(word);
     expect(said.style.color).toBe(`var(--status-${token}-ink)`);
@@ -244,6 +249,30 @@ describe('the pill on the strip', () => {
     const p = await mountPill('idle');
     expect(p.dataset.waitState).toBeUndefined();
     expect(p.style.background).toBe('var(--rail-card)');
+  });
+});
+
+// #1405: the owner typed into the wrong session because two waiting sessions
+// looked the same. Selection owns the fill; every combination stays apart.
+describe('selection outranks waiting (#1405)', () => {
+  const accentOf = (el: HTMLElement): string => el.style.background;
+  it('a row: selected+waiting is filled like selected+calm, and unlike unselected+waiting', async () => {
+    const selWait = accentOf(await mountRow('done', false, true));
+    await act(async () => root!.unmount());
+    const selCalm = accentOf(await mountRow('idle', false, true));
+    await act(async () => root!.unmount());
+    const unselWait = accentOf(await mountRow('done', false, false));
+    expect(selWait).toBe(selCalm);
+    expect(selWait).not.toBe(unselWait);
+    expect(selWait).toContain('var(--faint)'); // the session's accent (none set here)
+  });
+  it('a pill: the selected one has the accent fill and edge, waiting or not', async () => {
+    const p = await mountPill('done', true, true);
+    expect(p.style.background).toBe('color-mix(in srgb, var(--faint) 12%, transparent)');
+    expect(p.style.border).toContain('var(--faint)');
+    // ...and still says it is waiting
+    expect(p.querySelector('[data-strip-pill-state]')!.textContent).toBe('waiting');
+    expect(p.querySelector<HTMLElement>('[data-accent-bar]')!.style.background).toBe('var(--status-waiting)');
   });
 });
 

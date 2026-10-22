@@ -76,7 +76,7 @@ test.describe('composer slash commands (E10-07)', () => {
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.pressSequentially('/');
     // builtin + project command + project skill, with descriptions and badges
@@ -142,7 +142,7 @@ test.describe('composer slash commands (E10-07)', () => {
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.pressSequentially('/hello');
     // The popup is OPEN and offering the exact command we just typed — asserted
@@ -167,7 +167,7 @@ test.describe('composer slash commands (E10-07)', () => {
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.pressSequentially('/hello');
     await expect(w.getByText('Say hello nicely')).toBeVisible({ timeout: 15_000 });
@@ -183,7 +183,7 @@ test.describe('composer slash commands (E10-07)', () => {
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.pressSequentially('look in c:/');
     await expect(w.getByText('/clear', { exact: true })).toHaveCount(0);
@@ -261,7 +261,7 @@ test.describe('composer slash commands (E10-07)', () => {
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.pressSequentially('/alpaca');
     const notice = w.locator('[data-slash-notice]');

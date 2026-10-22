@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { RailSession } from '../model/types';
 import { railDepthIndent } from '../lib/dispatch-lineage';
-import { attentionPaint, presentStatus, waitPaint, WAIT_WASH } from '../lib/rail-view';
+import { attentionPaint, presentStatus, waitPaint } from '../lib/rail-view';
 import { approvalAttrs, approvalHint, approvalLeftWord, NO_APPROVAL, NO_CARDS } from '../lib/approval-watch';
 import { useApprovalWatch } from '../lib/use-approval-watch';
 import { useShownStatus } from '../lib/use-shown-status';
@@ -198,8 +198,8 @@ export function SessionRow(props: {
   // still held, and its word says how long it has left), but the PULSE stays
   // the count's (#1202): it never claims an approval the count has dropped
   const pulse = paint.lit && !paint.finished ? approval : NO_APPROVAL;
-  // #1351: a session WAITING on you is washed in its state's colour whether
-  // or not the count is still on it; `paint.lit` keeps the bar and the bold
+  // #1351: a session WAITING on you says so whether or not the count is still
+  // on it; `paint.lit` keeps the 4px bar and the bold
   const wait = waitPaint(s.status, paint);
   const hue = `var(--status-${paint.token})`;
   const ink = `var(--status-${paint.token}-ink)`;
@@ -209,9 +209,11 @@ export function SessionRow(props: {
   const waiting = props.waiting;
   const depth = props.depth;
   const indent = railDepthIndent(depth);
-  // a waiting session outranks selection: the wash is the signal the whole
-  // panel exists to carry
-  const rowTint = wait.washed ? tint(hue, WAIT_WASH) : selected ? tint(accent, 10) : 'transparent';
+  // SELECTION OWNS THE FILL (#1405). A waiting row used to outrank selection
+  // with a gold wash, so two waiting rows looked the same and the list could
+  // not say which session was open. Waiting is said by the word (in its ink)
+  // and the start bar (in its hue); the tint is the open session's alone.
+  const rowTint = selected ? tint(accent, 10) : 'transparent';
   // the list's word: the longer one where it has one ("waiting for you"), and
   // an approval's time left beside it (#1202's clock, said on the row now)
   const word = t(p.listKey ?? p.shortKey);

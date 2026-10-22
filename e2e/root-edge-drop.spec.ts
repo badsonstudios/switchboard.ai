@@ -82,7 +82,7 @@ async function carryTo(w: Page, x: number, y: number): Promise<void> {
 /** three sessions: two stacked on one side, one full-height on the other */
 async function stackedPlusOne(a: LaunchedApp): Promise<{ w: Page; top: Group; bottom: Group; lone: Group }> {
   const w = a.window;
-  await expect(w.getByPlaceholder(/Prompt this session/).first()).toBeVisible({ timeout: 25_000 });
+  await expect(w.getByPlaceholder(/^Message .+…$/).first()).toBeVisible({ timeout: 25_000 });
   await addSession(a);
   await addSession(a);
   await w.locator('[data-layout-preset="columns2"]').click();

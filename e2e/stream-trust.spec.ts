@@ -104,7 +104,7 @@ test.describe('the trust setting is honest about its reach (#397)', () => {
     // vacuously is `homeWithClaudeConfig`: a real `~/.claude.json` is on disk, so
     // a build that wrote an acceptance COULD, and this reads that it did not.
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('hello direct');
     await box.press('Enter');

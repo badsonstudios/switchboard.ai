@@ -19,7 +19,7 @@ import { test, expect, Page } from '@playwright/test';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
-const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
+const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
 
 test.describe('hostile input at the composer (#499)', () => {
   let a: LaunchedApp;

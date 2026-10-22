@@ -13,21 +13,32 @@ and is covered in [The Files tab](21-files.md).
 When several sessions are docked together, each one has a tab along the top
 with its name on it. **The open tab is shaded in that session's own colour**
 (the same colour as its badge), and so is the bar right under it, the **card
-header**. The two read as one piece. The open tab's name is bold. The other
-tabs have no shading and lighter text.
+header**. The two read as one piece. The open tab also has a **blue bar along
+its top**, and its name is bold. The other tabs have no shading and lighter
+text.
+
+**The open tab looks the same whatever the session is doing.** A session that
+is waiting for you does not change the colour of its tab. It says so in a
+word after its name instead, such as **waiting**, **approval** or
+**question**. So if two sessions are both waiting, you can still tell at a
+glance which one is open: it is the shaded one with the blue bar, and both
+tabs say **waiting**.
 
 If you've split the window into side-by-side groups, each group's open tab is
 shaded, because that's what the group is showing. Only the group you're
-working in has its tab name in bold, and that group also has a blue frame
-around it.
+working in has the blue bar, bold tab text, and a blue frame around it. The
+open tabs in the other groups have a grey bar.
 
-The card header doesn't repeat the session's name, because the tab right above
-it already shows it. The header shows:
+The card header says **whose window this is**. From left to right it shows:
 
 - the session's **badge**, filled in its colour;
-- its **task label**, or **+ task label** if it doesn't have one yet (click it
-  to type one);
+- the session's **name**, in bold. A very long name is cut short with an `…`
+  so the buttons stay put. Hover over it to see the whole name;
+- its **task label** after a dot, or **+ task label** if it doesn't have one
+  yet (click it to type one);
 - its status, and the card's buttons, over on the right.
+
+A popped-out window shows the same header.
 
 Double-click an empty part of the header to maximize the session. Double-click
 again to put the layout back.
@@ -509,7 +520,10 @@ conversations apart rather than guessing and showing you the wrong one.
 
 *The prompt box and the chips under it.*
 
-The box at the bottom sends straight to the real Claude Code session:
+The box at the bottom sends straight to the real Claude Code session. Until you
+type, it says which session that is: **Message Switchboard.ai - for tickets…**.
+A very long name is cut short with an `…`. A screen reader hears the whole
+name, then the keys below.
 
 - **Enter** sends. **Shift+Enter** starts a new line.
 - The box grows to fit what you have written — including long text that wraps
