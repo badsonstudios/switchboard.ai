@@ -3,9 +3,11 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚀 RELEASING: v0.8.127, 2026-10-22 — THE WHOLE 2026-10-21/22 RUN
+> # ✅ RELEASED: v0.8.127, 2026-10-22 (PR #1421, tag on `011a747c`, release run 39824442861) — THE WHOLE 2026-10-21/22 RUN
 >
-> Dan, after the run's report: *"Go ahead and cut a release."* A **regular release, on his word**, as 0.8.126 was (the beta channel stays unproven until he asks for one). Version, lock and dated notes together as before (`0.8.128 — unreleased` is open). On green CI this PR merges, then tag `v0.8.127` is pushed from the merge commit and the release workflow publishes `switchboard-Setup-0.8.127.exe` + sha256 as a normal release marked Latest. Tanner's install gets it too.
+> Dan, after the run's report: *"Go ahead and cut a release."* A **regular release, on his word**, as 0.8.126 was (the beta channel stays unproven until he asks for one). Version, lock and dated notes together as before (`0.8.128 — unreleased` is open). The release PR merged on green CI as `011a747c`, tag `v0.8.127` was pushed from it, and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.127.exe` (105 MB) + `.sha256` as a normal release — `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.127`. Tanner's install gets it too. The six dogfood rows (five from this run + #1410) now read RELEASED.
+>
+> **Dan's next two, filed by him 2026-10-22, looked at but NOT started:** **#1420** Atlassian MCP sign-in opens no browser — root cause found from the reference implementations (the CLI's `mcp_authenticate` success answer carries `authUrl`, `requiresUserAction`, `callbackExpected`; the HOST must open the URL, which the VS Code extension does and we never did — we read `ok: true` and drop the payload; plus the row's name/status overlap in the screenshot); **#1413** click "waiting" to dismiss it (post-#1405 the word is the natural target; one mechanism with Mark as seen). Both wait on Dan's go.
 >
 > **In it:** #1405 (selected tab + session name in header and message box), #1404 (Markdown preview fills the pane), #1390 (announcement voice picker), #1400 (never-started dispatched card after a quit), #1365 (AIs-tab reason codes, bus labels, dead keys), plus #1410 (crash-safe workspace save, from Dan's other session). **None of it is hand-tested** — five dogfood UNTESTED rows from this run (+#1410's). Open follow-ups: #1408, #1416, #1417, #1419. **Nothing in flight. DO NOT CUT ANOTHER unless he asks.**
 
