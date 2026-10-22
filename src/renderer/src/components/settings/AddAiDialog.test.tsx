@@ -286,6 +286,27 @@ describe('Something else', () => {
     expect(button(en.ais.add.addButton).disabled).toBe(true);
   });
 
+  it('a failed Test with a code says its translated sentence, not main\'s English (#1365)', async () => {
+    stub({
+      custom: {
+        test: vi.fn(async () => ({
+          ok: false,
+          error: 'ENGLISH FROM MAIN',
+          errorCode: { code: 'refused-initialize', params: { message: 'bad protocol' } },
+          ms: 0,
+        })),
+        add: vi.fn(),
+        remove: vi.fn(),
+      },
+    });
+    await render();
+    await fill('Mine', 'mine', '');
+    await click(button(en.ais.add.test));
+    const result = document.querySelector<HTMLElement>('[data-ai-custom-result]')!;
+    expect(result.textContent).toContain('✗ it would not start talking to switchboard: bad protocol');
+    expect(result.textContent).not.toContain('ENGLISH FROM MAIN');
+  });
+
   it('an Add that main refuses is shown, and the dialog stays open', async () => {
     stub({
       custom: {

@@ -379,3 +379,68 @@ describe('Remove, Look again, and failing open', () => {
     expect(document.querySelector('[data-ai-add-dialog]')).not.toBeNull();
   });
 });
+
+// #1365: main's reasons arrive as a code beside the English, and the tab says
+// the code's sentence; a code it does not know reads as the English.
+describe('reasons from main, in the user\'s words (#1365)', () => {
+  it('a sign-in failure with a code shows the translated sentence, not the English', async () => {
+    stub({
+      login: vi.fn(async () => ({
+        supported: true,
+        ok: false,
+        reason: 'ENGLISH FROM MAIN',
+        reasonCode: { code: 'no-answer-in-time', params: { seconds: 120 } },
+      })),
+    });
+    await render();
+    await click(button(row('claude-code'), en.ais.logIn));
+    const text = row('claude-code').querySelector('[data-ai-login-message]')!.textContent;
+    expect(text).toBe('The sign-in did not finish: it did not answer within 120 s');
+    expect(text).not.toContain('ENGLISH FROM MAIN');
+  });
+
+  it('"nothing to run from here" is its own whole sentence, named', async () => {
+    stub({
+      login: vi.fn(async () => ({
+        supported: false,
+        reason: 'ENGLISH FROM MAIN',
+        reasonCode: { code: 'signs-in-on-its-own', params: { ai: 'Fake ACP' } },
+      })),
+    });
+    await render();
+    await click(button(row('claude-code'), en.ais.logIn));
+    expect(row('claude-code').querySelector('[data-ai-login-message]')!.textContent).toBe(
+      'Fake ACP signs in on its own; there is nothing to run from here.'
+    );
+  });
+
+  it('an unknown code, or one missing its values, falls back to the English main sent', async () => {
+    const login = vi
+      .fn()
+      .mockResolvedValueOnce({ supported: true, ok: false, reason: 'plain english', reasonCode: { code: 'from-the-future' } })
+      .mockResolvedValueOnce({ supported: true, ok: false, reason: 'plain english', reasonCode: { code: 'sign-in-failed' } });
+    stub({ login });
+    await render();
+    await click(button(row('claude-code'), en.ais.logIn));
+    expect(row('claude-code').querySelector('[data-ai-login-message]')!.textContent).toBe(
+      'The sign-in did not finish: plain english'
+    );
+    await click(button(row('claude-code'), en.ais.logIn));
+    expect(row('claude-code').querySelector('[data-ai-login-message]')!.textContent).toBe(
+      'The sign-in did not finish: plain english'
+    );
+  });
+
+  it('an unknown presence says the coded reason through ais.unknownWhy', async () => {
+    const { push } = stub();
+    await render();
+    const items = ITEMS.map((i) =>
+      i.entry.id === 'slow'
+        ? { ...i, detection: det({ installed: 'unknown', detail: 'ENGLISH FROM MAIN', detailCode: { code: 'check-timed-out', params: { seconds: 5 } } }) }
+        : i
+    );
+    await push({ items, default: { id: 'claude-code', fellBack: false }, detecting: false });
+    expect(row('slow').textContent).toContain('Could not tell whether it is installed: the check did not answer within 5 s');
+    expect(row('slow').textContent).not.toContain('ENGLISH FROM MAIN');
+  });
+});

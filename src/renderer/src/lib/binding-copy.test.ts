@@ -113,7 +113,8 @@ describe('the fail-open line', () => {
     const direct = strings.unboundFallbackDirect;
     expect(direct).toBeTruthy();
     // The exact failure #447 reports: the Terminal tab of a Direct session
-    // holds `terminal.streamTitle` — "No terminal for this session".
+    // held `terminal.streamTitle` — "No terminal for this session" (a key
+    // since deleted with the rest of Direct mode's unused words, #1365).
     expect(direct.toLowerCase()).not.toContain('terminal');
     // ...and it still does the job the line exists for — saying the session
     // itself is fine (fail-open, said out loud).

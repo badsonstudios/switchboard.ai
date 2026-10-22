@@ -49,6 +49,13 @@ describe('codexAdapter', () => {
       /npx not found on PATH/
     );
   });
+
+  it('...and Log in without npx says so as a code the AIs tab translates (#1365)', async () => {
+    vi.stubEnv('PATH', tempDir('sb-codex-nonpx-login-'));
+    const r = await codexAdapter.capabilities!.detect!.login!(new AbortController().signal);
+    expect(r).toMatchObject({ supported: true, ok: false, reasonCode: { code: 'npx-missing' } });
+    expect(r.reason).toMatch(/npx not found on PATH/);
+  });
 });
 
 describe("Codex's detect capability (#1291's runner)", () => {

@@ -231,3 +231,28 @@ describe('DetectionRunner', () => {
     expect(log).toHaveBeenCalledWith('AI detection could not list what to check', { error: 'Error: broken' });
   });
 });
+
+describe('reason codes beside the English (#1365)', () => {
+  it('normalizeAnswer keeps a readable detailCode with its detail, and drops anything else', () => {
+    const code = { code: 'reports-at-session-start' };
+    expect(normalizeAnswer({ installed: true, login: 'unknown', detail: 'why', detailCode: code })).toEqual({
+      installed: true,
+      login: 'unknown',
+      detail: 'why',
+      detailCode: code,
+    });
+    // no English beside it, an unknown code, or values it cannot read: dropped
+    expect(normalizeAnswer({ installed: true, login: 'unknown', detailCode: code })).not.toHaveProperty('detailCode');
+    expect(normalizeAnswer({ installed: true, login: 'unknown', detail: 'why', detailCode: { code: 'nope' } })).not.toHaveProperty('detailCode');
+    expect(normalizeAnswer({ installed: true, login: 'unknown', detail: 'why', detailCode: { code: 'check-failed' } })).not.toHaveProperty('detailCode');
+  });
+
+  it('the runner codes its own answers: a throw, and something unreadable', async () => {
+    const thrown = await runProbe(() => {
+      throw new Error('boom');
+    });
+    expect(thrown).toMatchObject({ detail: 'the check failed: Error: boom', detailCode: { code: 'check-failed', params: { message: 'Error: boom' } } });
+    const junk = await runProbe(() => Promise.resolve('junk' as never));
+    expect(junk).toMatchObject({ installed: 'unknown', detailCode: { code: 'check-unreadable' } });
+  });
+});

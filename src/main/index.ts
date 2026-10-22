@@ -2834,6 +2834,11 @@ app
       // `--no-ext-diff` hardening — which matters most here, because #764
       // points it at a folder another agent controls.
       git: gitService,
+      // #1365: the label on a non-Claude AI's replies in what a sibling reads —
+      // the catalog's name for it (custom AIs included), else the adapter's own
+      aiNameFor: (providerId) =>
+        aiCatalog.list().find((i) => i.providerId === providerId)?.entry.name ??
+        registry.resolve('provider-adapter', providerId)?.manifest.displayName,
     });
     // `send_to_session`'s policy (P2-E11-05). Every dependency is a function
     // for the reason `sessions/delivery.ts` gives, and each one is the thing

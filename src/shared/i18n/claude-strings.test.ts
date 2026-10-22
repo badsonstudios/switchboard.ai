@@ -37,10 +37,6 @@ const ALLOWED: Readonly<Record<string, string>> = {
   // A fact about the fork feature (the `fork` provider capability, which only
   // Claude declares).
   'titlebar.forkHint': 'says forking relies on undocumented Claude Code behaviour, which is true for any reader',
-  // Direct mode: Claude's stream-json transport (no consumer at the time of
-  // writing, kept because it is about Claude either way).
-  'grid.menuTransportHint': "Direct mode is Claude Code's stream-json transport",
-  'terminal.streamBody': "Direct mode is Claude Code's stream-json transport",
   // The autonomy tooltip's Claude half: added only when the AI is Claude
   // (`autonomyTooltip`'s `claude` argument).
   'autonomy.claude.plan': 'shown only when the AI is Claude',

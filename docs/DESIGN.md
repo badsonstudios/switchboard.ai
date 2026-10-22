@@ -3770,6 +3770,24 @@ remaining English is chrome rather than notification — the application menu
 (`app-menu.ts`) and the quit-with-busy-sessions dialog — both reachable only
 with the window in front of you, both out of #471's scope, both still open.
 
+**Added (#1365, 2026-10-22): main's reasons on the AIs tab travel as codes,
+not sentences.** The sign-in, Test and detection answers main gives the AIs
+tab (`acp-probe.ts`, Codex's missing npx, the ACP default detect, the detection
+runner's own "could not tell" answers, the "nothing to run from here" sign-in)
+used to be English, interpolated raw into `ais.loginFailed` / `ais.unknownWhy`
+/ `ais.add.testFailed`. Main does have a `t` (above), and it was not used here
+on purpose: a detection answer is computed once and kept in the snapshot, so a
+sentence translated at probe time would stay in the old language after a
+switch, and the same string goes to the log, which stays English. So main
+sends a code and its values (`shared/ai-reason.ts`: `{ code, params? }`) BESIDE
+the English it always sent (`reasonCode`, `detailCode`, `errorCode`), and the
+renderer says `ais.reason.*` at render time. Fail-open both ways: a code the
+renderer does not know, or one missing a value its sentence needs, reads as
+the English. The AI's own words (an agent's error message, its stderr tail)
+are passed as values and never translated, which is the "we translate our
+chrome, not CLI output" boundary again. Other English that reaches the same
+tab only via a caught exception (`errorText(err)`) is unchanged.
+
 Folded in from the same discovery: `app.setAppUserModelId` is called at boot
 with the installer's `appId`, so Windows files a toast under the app's identity
 rather than Electron's default (`src/shared/app-identity.ts`). That buys
