@@ -587,7 +587,19 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
         templateId: template.id,
       });
     }
-    return { ok: true, dispatchId, folder: resolved.value.folder, templateName: template.name };
+    return {
+      ok: true,
+      dispatchId,
+      folder: resolved.value.folder,
+      templateName: template.name,
+      // #1400: the facts the card keeps in its params, so a card that never
+      // tried to start before a quit can still be refused by name after the
+      // relaunch. The same values the tombstone above would carry; no briefing.
+      aiName: targetEntry.name,
+      templateId: template.id,
+      fromId: resolved.value.id,
+      ...(resolved.value.name ? { fromName: resolved.value.name } : {}),
+    };
   });
 
   /**

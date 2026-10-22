@@ -191,6 +191,13 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   says that Codex runs through npx, which comes with Node.js. An AI's own error
   text is still shown as the AI wrote it.
 
+- **A dispatched card that hadn't started before you quit can no longer start
+  as a plain session on your default AI.** Normally such a card isn't brought
+  back when you reopen switchboard. In the rare case it was, it could start as
+  an ordinary session with no briefing, on the default AI. It now says its
+  briefing is gone, names the AI and the session that sent it, and offers
+  **Dispatch again**, the same as a briefing that ran out of time.
+
 ## 0.8.126 — 2026-10-21
 
 ### Added

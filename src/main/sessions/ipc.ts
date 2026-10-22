@@ -85,6 +85,7 @@ import { HistoryRepair } from './history-repair-log';
 import { planSessionStart } from './start-plan';
 import { MAX_SESSION_TITLE, uniqueSessionTitle } from './session-title';
 import type { SessionNotStarted, SuggestedTitle } from '../../shared/sessions';
+import { dispatchFactsOf } from '../../shared/sessions';
 import { heldNativeIds, recordNativeId, resumeCandidates } from './lineage';
 import { arrivalMark, markArrived, patchMark, pendingArrival, switchCardAi } from './ai-switch';
 import type { FeedBlock } from '../feed/blocks';
@@ -1838,6 +1839,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
          * session and the log says which card lost its briefing.
          */
         dispatchId?: string;
+        /**
+         * The card's own record of its dispatch (#1400): AI, role, sender —
+         * descriptive, never a briefing, and untrusted (`dispatchFactsOf`).
+         * Read only when `dispatchId` is one main never held and the card has
+         * never started; see the refusal below.
+         */
+        dispatchedAs?: unknown;
       }
     ) => {
       // Validate untrusted renderer input (§5.29). REFUSED, not thrown (#347):
@@ -1967,6 +1975,32 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
                 fromId: gone.from,
                 templateId: gone.templateId,
               },
+            };
+            return notStarted;
+          }
+          // ⚠️ AND A DISPATCH MAIN NEVER HELD, ON A CARD THAT NEVER STARTED (#1400).
+          // The case #1378 could not see: dispatch, the card never tries to start
+          // (it sits out of sight), the app is quit within the 15 minutes. After
+          // the relaunch this id was never in this process at all — no briefing,
+          // no tombstone. Such a card has no record, so the layout restore
+          // normally drops its panel before it can ask (`knownCards`, measured
+          // 2026-10-21 in `dispatch.spec.ts`); the panel survives only when that
+          // read is refused and the restore prunes nothing (#650). That one
+          // arrives here, and used to fall open just below into a plain session
+          // on the DEFAULT AI. The card wrote what it was dispatched as into its
+          // own params at dispatch time, so it is refused by the SAME name: the
+          // briefing is gone (briefings do not survive a quit) and the card
+          // offers Dispatch again. A card without those facts was dispatched
+          // before this change, and keeps the old fail-open.
+          const facts =
+            routine || !deps.dispatches ? undefined : dispatchFactsOf(opts.dispatchedAs);
+          if (facts) {
+            log.warn('a dispatched card that never started lost its briefing to a relaunch; refusing rather than starting an unbriefed session', {
+              ...where,
+              templateId: facts.templateId,
+            });
+            const notStarted: SessionNotStarted = {
+              notStarted: { reason: 'briefing-expired', ...facts },
             };
             return notStarted;
           }

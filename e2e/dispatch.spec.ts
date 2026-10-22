@@ -29,9 +29,12 @@ import {
   launchApp,
   LaunchedApp,
   openEventsDrawer,
+  persistedLayout,
   pollAsync,
+  readWorkspaceFile,
   registerTempDir,
   sessionStatuses,
+  writeWorkspaceFile,
 } from './fixtures/app';
 
 /** The file the fixture edits, and the two versions of it. */
@@ -441,5 +444,77 @@ test.describe('dispatching a Code Reviewer (#948, §5.15)', () => {
     expect(
       await w.locator('[data-dispatch-template="builtin:code-reviewer"]').getAttribute('data-selected')
     ).toBe('yes');
+  });
+
+  // ── #1400: A DISPATCHED CARD THAT NEVER STARTED BEFORE A QUIT ─────────────
+  //
+  // A card starts the moment it is on screen, so "never tried to start before
+  // the quit" cannot be driven directly. It is the same saved state as a card
+  // that DID start, minus its session record: the panel params (dispatchId,
+  // dispatchedAs) are in the layout and main has no record of the card. So the
+  // spec dispatches for real, quits, deletes that one record, and relaunches.
+  // The real wiring this pins, which the units cannot: the facts the renderer
+  // wrote into the SAVED LAYOUT survive the quit and carry no briefing, and the
+  // relaunch starts nothing on the card's behalf — measured 2026-10-21, such a
+  // card is pruned from the restored layout, not started plain.
+  test('a dispatched card with no record never starts plain after a relaunch; its saved facts carry no briefing (#1400)', async () => {
+    test.setTimeout(240_000);
+    const folder = tempGitProject();
+    const first = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    a = first;
+    const w = first.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    await pollAsync(async () => {
+      const s = await sessionStatuses(first);
+      return s.size >= 1 && [...s.values()].every((v) => v !== 'suspended');
+    }, 'the author session never came up live', 60_000);
+
+    await w.getByTitle('Session menu').click();
+    await w.getByTestId('card-menu').getByTestId('card-dispatch').click();
+    await expect(dialog(w)).toBeVisible({ timeout: 20_000 });
+    await w.locator('[data-testid="dispatch-go"]').click();
+    await expect(dialog(w)).toBeHidden({ timeout: 20_000 });
+    await pollAsync(
+      async () => (await liveSessions(w)).length >= 2,
+      'the dispatch never produced a second live session',
+      90_000
+    );
+    // let the layout save land with the new panel in it
+    await w.waitForTimeout(2_000);
+    await first.close();
+
+    // THE FACTS ARE IN THE SAVED LAYOUT — the AI, the role, the sender; no briefing
+    const ws = readWorkspaceFile(first.home);
+    const panels = persistedLayout(ws).panels ?? {};
+    const dispatched = Object.values(panels).filter((p) => typeof p.params?.dispatchId === 'string');
+    expect(dispatched, 'the saved layout holds exactly one dispatched card').toHaveLength(1);
+    const params = dispatched[0].params ?? {};
+    const facts = params.dispatchedAs as Record<string, unknown> | undefined;
+    expect(facts?.templateId).toBe('builtin:code-reviewer');
+    expect(typeof facts?.aiName).toBe('string');
+    expect(typeof facts?.fromId).toBe('string');
+    expect(JSON.stringify(params)).not.toContain(MARKER);
+    expect(JSON.stringify(params)).not.toContain('clean-room');
+
+    // ...and the card is made to look as if it never started: no record
+    const cardId = params.cardId as string;
+    const records = ws.sessions ?? [];
+    expect(records.some((r) => r.id === cardId), 'the dispatched card had a record to remove').toBe(true);
+    ws.sessions = records.filter((r) => r.id !== cardId);
+    writeWorkspaceFile(first.home, ws);
+
+    a = await launchApp({ home: first.home, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w2 = a.window;
+    await expect(w2.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    // THE CARD IS NOT RESTORED AT ALL — a session panel with no record behind it
+    // is dropped from the restored layout — and above all nothing starts in its
+    // place: no Code Reviewer session on the default AI, briefed or not. (Main's
+    // named refusal for the facts is for the one restore that keeps such a
+    // panel, when the known-cards read is refused; the units pin that.)
+    await w2.waitForTimeout(3_000);
+    await expect(w2.locator('.dv-tab', { hasText: 'Code Reviewer' })).toHaveCount(0);
+    const live = await liveSessions(w2);
+    expect(live.filter((s) => s.title.includes('Code Reviewer'))).toHaveLength(0);
   });
 });

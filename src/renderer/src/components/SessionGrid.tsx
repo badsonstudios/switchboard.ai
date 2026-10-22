@@ -53,7 +53,7 @@ import {
   sessionTabMenuItems,
 } from '../lib/session-menu';
 import { DispatchDialog, dispatchedTitle } from './DispatchDialog';
-import type { DispatchOptions } from '../../../shared/dispatch-wire';
+import type { DispatchOptions, DispatchPrepared } from '../../../shared/dispatch-wire';
 import { baseName } from '../lib/document-kind';
 import {
   closableDocuments,
@@ -162,6 +162,7 @@ import { parentOf } from '../lib/dispatch-lineage';
 import { type TransportKind } from '../../../shared/transport';
 import type {
   AutonomyMode,
+  DispatchFacts,
   SessionStatus,
   SuggestedTitle,
   SwitchBusyState,
@@ -245,6 +246,19 @@ export interface CardParams {
    * shows the same message on every later mount and never asks main to start.
    */
   dispatchExpired?: BriefingExpired;
+  /**
+   * What this card was dispatched AS (#1400): the AI, the role, the sender —
+   * never the briefing. Written at dispatch time, beside `dispatchId`, and sent
+   * with every `sessions:create`. It matters in one case: the card never tried
+   * to start before the app was quit, and the relaunch's restore kept its panel
+   * anyway (it is normally dropped, having no record; kept only when the
+   * known-cards read is refused, #650). Main never held this `dispatchId`
+   * (briefings live in memory), so without these facts the card fell open into
+   * a plain session on the default AI; with them main refuses it by name,
+   * exactly like #1378's expired briefing, and the overlay offers Dispatch
+   * again.
+   */
+  dispatchedAs?: DispatchFacts;
 }
 
 /** What a card whose dispatch briefing expired knows (#1378) — all descriptive. */
@@ -257,6 +271,27 @@ export interface BriefingExpired {
   fromId?: string;
   /** the role, so Dispatch again opens on it */
   templateId?: string;
+}
+
+/**
+ * The facts a dispatched card keeps about its dispatch (#1400), from main's
+ * prepared answer and the dialog's author. Main's resolved values win; the
+ * dialog's are the fallback for an older main that does not send them.
+ * `undefined` when nothing is known, which leaves the card's old fail-open.
+ */
+export function dispatchFactsFor(
+  prepared: Extract<DispatchPrepared, { ok: true }>,
+  author: { fromId?: string; fromName?: string }
+): DispatchFacts | undefined {
+  const out: DispatchFacts = {};
+  const aiName = prepared.aiName;
+  const fromId = prepared.fromId || author.fromId;
+  const fromName = prepared.fromName || author.fromName;
+  if (aiName) out.aiName = aiName;
+  if (prepared.templateId) out.templateId = prepared.templateId;
+  if (fromId) out.fromId = fromId;
+  if (fromName) out.fromName = fromName;
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 interface Live {
@@ -1884,6 +1919,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         // §5.15's dispatch (P2-E13-03). Opaque, single-use, and fail-open when it
         // no longer resolves — see `CardParams.dispatchId`.
         dispatchId: props.params?.dispatchId,
+        // #1400: what it was dispatched as, for main's refusal after a relaunch
+        ...(props.params?.dispatchedAs ? { dispatchedAs: props.params.dispatchedAs } : {}),
       })
       .then((answer) => {
         // #440: a refused `sessions:create` resolves a truthy brand, so
@@ -4509,6 +4546,8 @@ async function addSessionCardTo(
     /** the briefing main is holding for this card (§5.15, P2-E13-03) — opaque
      *  and single-use; see `CardParams.dispatchId` */
     dispatchId?: string;
+    /** what that dispatch was (#1400) — see `CardParams.dispatchedAs` */
+    dispatchedAs?: DispatchFacts;
     /**
      * Override the card's title.
      *
@@ -4521,7 +4560,7 @@ async function addSessionCardTo(
   } = {}
 ): Promise<string | null> {
   if (!api) return null;
-  const { groupId, into, resumeConversationId, forkFrom, dispatchId } = opts;
+  const { groupId, into, resumeConversationId, forkFrom, dispatchId, dispatchedAs } = opts;
   const title = opts.title ?? folderTitle(folder);
   const cardId = crypto.randomUUID();
   // A persistent-group member clusters with its siblings (E12-02): reuse the
@@ -4574,6 +4613,7 @@ async function addSessionCardTo(
       resumeConversationId,
       forkFrom,
       dispatchId,
+      dispatchedAs,
     } satisfies CardParams,
     // NO `direction` — `within` (the default) is the only target dockview
     // resolves against the reference group itself. Any of the four directions
@@ -8454,6 +8494,9 @@ export function SessionGrid(props: {
                 const childCard = await addSessionCardTo(apiRef.current, prepared.folder, {
                   into: dispatching.into,
                   dispatchId: prepared.dispatchId,
+                  // #1400: the AI, the role and the sender, so the card can still
+                  // be refused by name if the app is quit before it ever starts
+                  dispatchedAs: dispatchFactsFor(prepared, dispatching),
                   // The role, then whose work it is. Passed as the panel TITLE rather
                   // than derived in main because the connecting word is catalogue text
                   // and main has no `t` (§5.21).

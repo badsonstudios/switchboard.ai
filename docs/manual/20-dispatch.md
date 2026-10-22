@@ -336,8 +336,12 @@ session-archive work in a later release.
   again**: the Dispatch box opens from that session with the same role picked,
   and makes a fresh card; then close the old one. (If the session that sent it
   has been closed or suspended, there's no button — dispatch again from wherever that work
-  is now.) A briefing also doesn't survive quitting switchboard, so dispatch
-  and look at the card in the same run.
+  is now.) A briefing also doesn't survive quitting switchboard: a dispatched
+  card that hadn't started yet when you quit (or one showing this message)
+  isn't brought back when you open switchboard again, and nothing is started
+  in its place. Dispatch again from the session that sent it. In the rare case
+  such a card does come back, it shows this same message and the same
+  **Dispatch again** button rather than starting.
 
 ## What doesn't happen yet
 

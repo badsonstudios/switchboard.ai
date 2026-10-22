@@ -163,6 +163,16 @@ export type DispatchPrepared =
       folder: string;
       /** for the card's title, which the renderer builds through `t` */
       templateName: string;
+      /**
+       * What the card writes into its own params so it can still name its
+       * dispatch after a relaunch (#1400, `DispatchFacts`): the AI's name and
+       * the role id, as main resolved them, and the sender. Descriptive only.
+       * Optional so an older main's answer still reads.
+       */
+      aiName?: string;
+      templateId?: string;
+      fromId?: string;
+      fromName?: string;
     }
   | { ok: false; reason: string; reasonKey?: string };
 

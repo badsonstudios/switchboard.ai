@@ -49,6 +49,7 @@ import {
   samePickFolder,
   switchRefusalKey,
   afterSwitchAnswer,
+  dispatchFactsFor,
   type CardParams,
 } from './SessionGrid';
 
@@ -513,6 +514,57 @@ describe('a dispatched card whose briefing expired (#1378)', () => {
     await mountWith();
     expect(host.querySelector('[data-testid="card-dispatch-again"]')).toBeNull();
     expect(overlay().textContent).toContain('Payments API');
+  });
+
+  // #1400: the card that never tried to start before a quit. Main never held its
+  // dispatch id after the relaunch, so the card has to TELL it what it was
+  // dispatched as — and the same refusal then follows.
+  it('#1400: a card sends what it was dispatched as with its start, and the refusal follows', async () => {
+    let sent: Record<string, unknown> | undefined;
+    const bridge = (window as unknown as { switchboard: { sessions: Record<string, unknown> } })
+      .switchboard.sessions;
+    bridge.create = (opts: Record<string, unknown>) => {
+      created += 1;
+      sent = opts;
+      return Promise.resolve(EXPIRED);
+    };
+    const facts = { aiName: 'Codex', fromName: 'Payments API', fromId: 'live-author', templateId: 'builtin:code-reviewer' };
+    await mountWith({ dispatchedAs: facts });
+    expect(sent?.dispatchId).toBe('d-1');
+    expect(sent?.dispatchedAs).toEqual(facts);
+    // ...and nothing a briefing could be in
+    expect(JSON.stringify(sent?.dispatchedAs)).not.toMatch(/brief|context|prompt/i);
+    expect(overlay().textContent).toContain('Codex');
+    expect(buttons()).not.toContain(en.grid.tryAgain);
+    expect(paramWrites[0]).toHaveProperty('dispatchExpired');
+  });
+
+  it('#1400: a card dispatched before the change sends no facts (main keeps its old fail-open)', async () => {
+    let sent: Record<string, unknown> | undefined;
+    const bridge = (window as unknown as { switchboard: { sessions: Record<string, unknown> } })
+      .switchboard.sessions;
+    bridge.create = (opts: Record<string, unknown>) => {
+      created += 1;
+      sent = opts;
+      return Promise.resolve(null);
+    };
+    await mountWith();
+    expect(sent && 'dispatchedAs' in sent).toBe(false);
+  });
+
+  it('#1400: dispatchFactsFor takes the values main resolved, falls back to the dialog author, and is undefined when empty', () => {
+    const base = { ok: true as const, dispatchId: 'd', folder: '/f', templateName: 'Code Reviewer' };
+    expect(
+      dispatchFactsFor(
+        { ...base, aiName: 'Codex', templateId: 'builtin:code-reviewer', fromId: 'live-a', fromName: 'App' },
+        { fromId: 'other', fromName: 'Other' }
+      )
+    ).toEqual({ aiName: 'Codex', templateId: 'builtin:code-reviewer', fromId: 'live-a', fromName: 'App' });
+    expect(dispatchFactsFor(base, { fromId: 'live-b', fromName: 'Billing' })).toEqual({
+      fromId: 'live-b',
+      fromName: 'Billing',
+    });
+    expect(dispatchFactsFor(base, {})).toBeUndefined();
   });
 
   it('the new keys exist, do not name Claude, and say how long a briefing is kept', () => {
