@@ -5,7 +5,7 @@
 // the rail kept its old header text forever. The first case below is the one
 // that was red.
 import { describe, it, expect } from 'vitest';
-import { cardHeaderTitle } from './card-title';
+import { cardHeaderTitle, composerName, COMPOSER_NAME_MAX } from './card-title';
 
 describe('cardHeaderTitle (issue 250)', () => {
   it('prefers the store — the birth-time title is what went stale', () => {
@@ -35,5 +35,25 @@ describe('cardHeaderTitle (issue 250)', () => {
 
   it('is a string even with nothing to say — the header renders it directly', () => {
     expect(cardHeaderTitle(undefined, undefined, undefined)).toBe('');
+  });
+});
+
+describe('composerName (#1405)', () => {
+  it('leaves a short name alone', () => {
+    expect(composerName('Switchboard.ai - for tickets')).toBe('Switchboard.ai - for tickets');
+  });
+  it('cuts a long one to the limit, ellipsis included', () => {
+    const out = composerName('x'.repeat(COMPOSER_NAME_MAX + 10));
+    expect(Array.from(out)).toHaveLength(COMPOSER_NAME_MAX);
+    expect(out.endsWith('…')).toBe(true);
+  });
+  it('keeps a name exactly at the limit whole', () => {
+    expect(composerName('y'.repeat(COMPOSER_NAME_MAX))).toBe('y'.repeat(COMPOSER_NAME_MAX));
+  });
+  it('never cuts through an emoji, and drops the space before the ellipsis', () => {
+    const name = 'a'.repeat(5) + ' ' + String.fromCodePoint(0x1f600).repeat(20);
+    const out = composerName(name, 7);
+    expect(out).toBe('aaaaa…');
+    expect(composerName(String.fromCodePoint(0x1f600).repeat(10), 4)).toBe(String.fromCodePoint(0x1f600).repeat(3) + '…');
   });
 });

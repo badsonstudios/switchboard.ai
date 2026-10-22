@@ -75,7 +75,7 @@ test.describe('the composer draft survives (#485)', () => {
     const { app, window: w } = a;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill(DRAFT);
     await expect(box).toHaveValue(DRAFT);
@@ -92,7 +92,7 @@ test.describe('the composer draft survives (#485)', () => {
     // Green before the fix as well as after (see the header): what this guards
     // is that dockview keeps on MOVING the tree rather than rebuilding it —
     // and if it ever stops, the draft is now durable enough not to care.
-    await expect(popout.getByPlaceholder(/Prompt this session/)).toHaveValue(DRAFT, {
+    await expect(popout.getByPlaceholder(/^Message .+…$/)).toHaveValue(DRAFT, {
       timeout: 20_000,
     });
 
@@ -101,7 +101,7 @@ test.describe('the composer draft survives (#485)', () => {
     // back where it came from.
     await popout.getByTitle('Pop back into the main window').click();
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(1);
-    await expect(w.getByPlaceholder(/Prompt this session/)).toHaveValue(DRAFT, {
+    await expect(w.getByPlaceholder(/^Message .+…$/)).toHaveValue(DRAFT, {
       timeout: 20_000,
     });
   });
@@ -277,7 +277,7 @@ test.describe('the composer draft keeps its attachments too (#546)', () => {
 
 /** the mounted card's prompt box — exactly one, since cards stack as tabs */
 function composer(w: Page): Locator {
-  return w.getByPlaceholder(/Prompt this session/);
+  return w.getByPlaceholder(/^Message .+…$/);
 }
 
 /** bring a card to the front from the rail, which unmounts the one it replaces */

@@ -17,7 +17,7 @@ const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
 const meter = (w: Page) => w.getByTestId('composer-context');
 
 async function prompt(w: Page, text: string): Promise<void> {
-  const box = w.getByPlaceholder(/Prompt this session/);
+  const box = w.getByPlaceholder(/^Message .+…$/);
   await box.click();
   await box.fill(text);
   await box.press('Enter');

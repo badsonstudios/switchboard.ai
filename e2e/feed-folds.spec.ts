@@ -371,7 +371,7 @@ test.describe('a burst of looking around folds into one row (#1130)', () => {
     a = first;
     const w1 = first.window;
     await expect(w1.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    const box = w1.getByPlaceholder(/Prompt this session/);
+    const box = w1.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!failed');
     await box.press('Enter');

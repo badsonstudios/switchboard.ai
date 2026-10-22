@@ -24,7 +24,7 @@ async function addSession(a: LaunchedApp): Promise<void> {
 /** four sessions, all started, in two short rows of a window at the app's minimum */
 async function squeezed(a: LaunchedApp): Promise<Page> {
   const w = a.window;
-  await expect(w.getByPlaceholder(/Prompt this session/).first()).toBeVisible({ timeout: 25_000 });
+  await expect(w.getByPlaceholder(/^Message .+…$/).first()).toBeVisible({ timeout: 25_000 });
   await addSession(a);
   await addSession(a);
   await addSession(a);
@@ -43,7 +43,7 @@ async function squeezed(a: LaunchedApp): Promise<Page> {
     .poll(() => w.evaluate(() => document.documentElement.clientHeight), { timeout: 10_000 })
     .toBeLessThan(600);
   // every session is past "starting": the menu's last entries are locked until then
-  await expect(w.getByPlaceholder(/Prompt this session/)).toHaveCount(4, { timeout: 25_000 });
+  await expect(w.getByPlaceholder(/^Message .+…$/)).toHaveCount(4, { timeout: 25_000 });
   return w;
 }
 

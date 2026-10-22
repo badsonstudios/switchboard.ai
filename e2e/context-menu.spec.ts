@@ -116,7 +116,7 @@ test.describe('right-click edit menus (#526)', () => {
       );
 
     // --- the composer -----------------------------------------------------
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('some words to cut');
     await box.click({ button: 'right' });

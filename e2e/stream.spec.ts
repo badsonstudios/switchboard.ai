@@ -84,7 +84,7 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
       timeout: 25_000,
     });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('hello stream');
     await box.press('Enter');
@@ -112,7 +112,7 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
       timeout: 25_000,
     });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!perm .claude/scripts/coverage.sh');
     await box.press('Enter');
@@ -165,7 +165,7 @@ test.describe('the Feed renders a stream session (P2-E18-08b)', () => {
       timeout: 25_000,
     });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('render me');
     await box.press('Enter');
@@ -210,7 +210,7 @@ test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () 
     // than a race. The CLI emits nothing at spawn (S-11 measured `init`
     // arriving 10-20ms AFTER a send we made ourselves), so a Direct session
     // genuinely has no list until its first prompt.
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.pressSequentially('/');
     await expect(w.getByText('/curated-only', { exact: true })).toBeVisible({ timeout: 15_000 });
@@ -251,7 +251,7 @@ test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () 
       timeout: 25_000,
     });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!commands');
     await box.press('Enter');
@@ -301,7 +301,7 @@ test.describe('the stop button actually stops (#154)', () => {
     // `!hang` starts a turn and never finishes it, which holds a session in
     // `working`. (Stop is also offered while a request is held since #1340;
     // that path is `approval-stays-counted.spec.ts`.)
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!hang');
     await box.press('Enter');
@@ -343,7 +343,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     // `!partial` emits three text deltas and then stops: no `assistant`
     // message, no `result`, no transcript line. The only way this text can be
     // on screen is partial-message rendering.
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!partial');
     await box.press('Enter');
@@ -378,7 +378,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
       timeout: 25_000,
     });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!partial-md');
     await box.press('Enter');
@@ -443,7 +443,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     // confirm a completion, so `/usage` + Enter became `/usage ` and ran
     // nothing. A test that teaches itself the unnatural keystroke cannot catch
     // the natural one failing.
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.pressSequentially('/usage');
     // The popup really is OPEN and offering this exact command — asserted via
@@ -481,7 +481,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
       timeout: 25_000,
     });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('remember this prompt');
     await box.press('Enter');

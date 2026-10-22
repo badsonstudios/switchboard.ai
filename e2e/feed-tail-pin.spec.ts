@@ -87,7 +87,7 @@ let sent = 0;
 const blockFollowed = async (w: Page): Promise<boolean> => {
   sent += 1;
   const name = `TAIL_${sent}_`;
-  const box = w.getByPlaceholder(/Prompt this session/);
+  const box = w.getByPlaceholder(/^Message .+…$/);
   await box.click();
   await box.fill(`!bulk 1 ${name}`);
   await box.press('Enter');
@@ -157,7 +157,7 @@ test.describe('the feed has a way back to the tail — with a conversation (#442
     // then enough prose to overflow several times over. Order matters: the
     // expanders end up at the TOP, so walking to them is a walk away from the
     // tail — which is the situation being measured.
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!tools');
     await box.press('Enter');
@@ -401,7 +401,7 @@ test.describe('the feed has a way back to the tail — with a conversation (#442
     // `tabFromFeedToComposer`, and this is the case that pins the two-stop one
     // down on every machine rather than on whichever one has a small screen.
     await w.keyboard.press('Tab');
-    await expect(w.getByPlaceholder(/Prompt this session/)).toBeFocused();
+    await expect(w.getByPlaceholder(/^Message .+…$/)).toBeFocused();
     // Shift+Tab comes back to it — the other half of the placement claim in
     // `FeedView.tsx`, and how the Enter below gets its target back.
     await w.keyboard.press('Shift+Tab');
@@ -417,7 +417,7 @@ test.describe('the feed has a way back to the tail — with a conversation (#442
     // composer rather than the top of the window.
     await expect(w.locator('[data-feed-region]')).toBeFocused();
     await w.keyboard.press('Tab');
-    await expect(w.getByPlaceholder(/Prompt this session/)).toBeFocused();
+    await expect(w.getByPlaceholder(/^Message .+…$/)).toBeFocused();
   });
 
   // #1111 — round two of #967, and the first round that was REPRODUCED before it

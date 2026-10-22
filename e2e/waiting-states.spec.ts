@@ -12,10 +12,13 @@
 //   !hang        a turn that runs on    → "working", the tab's ring spinning
 //   (nothing)    no turn yet            → "calm", unwashed
 //
-// What it asserts is what a glance reads: the word, the state on the element
-// the stylesheet washes, and that the wash really is painted (a computed
-// background that is not the calm one's). The ratios are tokens.drift's; the
-// state rule is rail-view.test's.
+// What it asserts is what a glance reads: the word, and the state on the
+// element. Since #1405 waiting is a WORD and not a fill — two waiting tabs
+// washed the same gold hid which one was open — so a waiting tab, row or pill
+// is painted exactly like a calm one that is not selected (a computed
+// background equal to the calm one's). Which one is OPEN is
+// e2e/selected-tab.spec.ts. The ratios are tokens.drift's; the state rule is
+// rail-view.test's.
 //
 // With SWITCHBOARD_MANUAL_SHOTS=1 it also writes the three surfaces in nordic
 // and daylight to docs/manual/img — the pictures in the manual and the PR.
@@ -96,15 +99,12 @@ test.describe('waiting on you (#1351)', () => {
     for (const title of [approval, question, waiting]) {
       await expect(row(w, title).locator('[data-rail-state]')).not.toHaveText(/^(done|idle|calm|needs you|needs input)$/);
     }
-    // the wash is painted: three different fills, none of them the calm row's
+    // NO wash (#1405): a waiting row that is not the open one is filled
+    // exactly like the calm one. The newest session (working) is the open one.
     const calmFill = await fill(row(w, calm));
-    const fills = new Set<string>();
     for (const title of [approval, question, waiting]) {
-      const f = await fill(row(w, title));
-      expect(f, `${title}'s row is washed`).not.toBe(calmFill);
-      fills.add(f);
+      expect(await fill(row(w, title)), `${title}'s row is washed`).toBe(calmFill);
     }
-    expect(fills.size, 'each state has its own colour').toBe(3);
 
     // ── the tabs ────────────────────────────────────────────────────────────
     for (const [title, state] of [[approval, 'approval'], [question, 'question'], [waiting, 'waiting']] as const) {
@@ -122,9 +122,10 @@ test.describe('waiting on you (#1351)', () => {
     await expect(tab(w, calm)).not.toHaveAttribute('data-wait-state', /./);
     await expect(tab(w, calm).locator('[data-tab-state]')).toHaveCount(0);
     await expect(tab(w, calm).locator('.ai-badge')).toHaveAttribute('data-ring-spin', 'false');
+    // no wash on a tab either (#1405): the shut waiting tabs are the calm one's colour
     const calmTab = await tab(w, calm).evaluate((el) => getComputedStyle(el).backgroundColor);
     for (const title of [approval, question, waiting]) {
-      expect(await tab(w, title).evaluate((el) => getComputedStyle(el).backgroundColor), title).not.toBe(calmTab);
+      expect(await tab(w, title).evaluate((el) => getComputedStyle(el).backgroundColor), title).toBe(calmTab);
     }
 
     if (SHOTS) {
@@ -169,9 +170,10 @@ test.describe('waiting on you (#1351)', () => {
     }
     await expect(pill(w, working)).not.toHaveAttribute('data-wait-state', /./);
     await expect(pill(w, calm)).not.toHaveAttribute('data-wait-state', /./);
+    // ...nor a pill (#1405): its bar and its word say it, not its fill
     const calmPill = await pill(w, calm).evaluate((el) => getComputedStyle(el).backgroundColor);
     for (const title of [approval, question, waiting]) {
-      expect(await pill(w, title).evaluate((el) => getComputedStyle(el).backgroundColor), title).not.toBe(calmPill);
+      expect(await pill(w, title).evaluate((el) => getComputedStyle(el).backgroundColor), title).toBe(calmPill);
     }
 
     if (SHOTS) {

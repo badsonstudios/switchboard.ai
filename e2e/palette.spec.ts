@@ -181,7 +181,7 @@ test.describe('command palette (E9-02)', () => {
     await expect(w.getByText(path.basename(folderB)).first()).toBeVisible({ timeout: 25_000 });
 
     // start typing in B's composer, then jump to A from the palette
-    const composer = w.getByPlaceholder(/Prompt this session/);
+    const composer = w.getByPlaceholder(/^Message .+…$/);
     await composer.click();
     await w.keyboard.press(`${MOD}+Shift+P`);
     await filter(w).fill(path.basename(folderA));
@@ -205,7 +205,7 @@ test.describe('command palette (E9-02)', () => {
 
     // the composer is a text input — but the palette is the one binding allowed
     // to fire there, because it's the route to everything else
-    const composer = w.getByPlaceholder(/Prompt this session/);
+    const composer = w.getByPlaceholder(/^Message .+…$/);
     await composer.click();
     await w.keyboard.press(`${MOD}+Shift+P`);
     await expect(palette(w)).toBeVisible();

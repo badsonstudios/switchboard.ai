@@ -220,10 +220,11 @@ describe('an ended card still has a header (#606)', () => {
     );
   });
 
-  it('takes the name off the screen but not out of the accessibility tree (#905)', async () => {
+  it('names the session in the header again, bold (#1405, reversing #905)', async () => {
     await mountCard();
-    // the tab above names the session; the header no longer repeats it...
-    expect(header()!.textContent).not.toContain('acme');
+    const name = header()!.querySelector<HTMLElement>('[data-testid="card-session-name"]');
+    expect(name?.textContent).toBe('acme');
+    expect(name!.style.fontWeight).toBe('700');
     // ...and the card's live region still says whose session did not start
     expect(host.querySelector('[data-testid="card-announcer"]')?.textContent).toContain('acme');
   });

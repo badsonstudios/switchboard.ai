@@ -36,7 +36,7 @@ const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 const WINDOW = { x: 0, y: 0, width: 1400, height: 900 };
 
-const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
+const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
 const bar = (w: Page) => w.locator('[data-testid="find-bar"]');
 const count = (w: Page) => w.locator('[data-testid="find-count"]');
 const results = (w: Page) => w.locator('[data-testid="find-results"]');

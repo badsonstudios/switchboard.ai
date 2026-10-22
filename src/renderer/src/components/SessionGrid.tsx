@@ -639,13 +639,10 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
   const needsYou = React.useSyncExternalStore(subscribeStore, () =>
     cardId ? sessionStore.getNeedingCards().has(cardId) : false
   );
-  // WAITING ON YOU, ON THE TAB (#1351). The owner wanted it "in the session:
-  // the session tab (colour or outline, if that session is open/visible)".
-  // The same rule the row and the pill paint from, so a session cannot be
-  // waiting in the list and calm on its tab. The wash itself is the
-  // stylesheet's (`.identity-tab[data-wait-state]`, dockview-tokens.css): the
-  // open tab's fill is painted there already, and an inline background here
-  // would lose to it.
+  // WAITING ON YOU, ON THE TAB (#1351): the same rule the row and the pill
+  // read, so a session cannot be waiting in the list and calm on its tab. It
+  // is said in a WORD since #1405, not a fill: a gold wash on every waiting
+  // tab hid which one was open (dockview-tokens.css has the whole story).
   const wait = cardId ? waitPaint(cardStatus, attentionPaint(cardStatus, needsYou)) : undefined;
   // the word: the state's, for a waiting session; "working" quietly while it
   // works, as the list says it; "ended" quietly once its process has gone
@@ -955,15 +952,12 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
       onMouseDown={(e) => {
         if (e.button === 1) e.preventDefault();
       }}
-      // which of the three waiting states, if any: the stylesheet's wash, and
-      // what a spec asks
-      // (the STATE only: a tab has no count to answer to, and a wash it
-      // could not put a word to would be colour alone)
+      // which of the three waiting states, if any — what a spec asks. Nothing
+      // paints from it since #1405: the word below says it.
       data-wait-state={wait?.state}
       style={
         {
           '--tab-wash': identityWash(accent),
-          ...(wait?.state ? { '--wait-hue': `var(--status-${wait.token})` } : {}),
           paddingInline: 16,
           display: 'flex',
           alignItems: 'center',
@@ -1029,7 +1023,9 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
         }
       />
       {tabWord && (
-        // The state in a word, after the name (#1351) — never colour alone.
+        // The state in a word, after the name (#1351) — never colour alone, and
+        // since #1405 the ONLY place a tab says it is waiting. Its `--panel2`
+        // field is the stylesheet's (`.identity-tab [data-tab-state]`).
         // `aria-hidden` for the reason the badge is decorative here: dockview's
         // `role="tab"` takes its name from its content, and the tab's name is
         // the session's. The card header's pill and the rail row say the state
@@ -2803,11 +2799,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 {headerBadge}
               </span>
             )}
-            {/* NO NAME HERE (#905, the owner's call): the tab right above says
-                it, and the header said it again. It has left the screen, not
-                the accessibility tree: the tab above is in the tree and names
-                the session, the conversation landmark carries the card title,
-                and the card announcer names it whenever it speaks. */}
+            {/* THE NAME, FIRST AND BOLD (#1405, reversing #905's "no name
+                here"): "<name> · <task label>", so the pane under a tab says
+                whose it is. */}
+            <HeaderSessionName name={headerTitle} />
+            {taskLabel && !editingLabel && (
+              <span aria-hidden style={{ flexShrink: 0, color: 'var(--text)', fontSize: 11 }}>
+                {t('grid.headerNameSeparator')}
+              </span>
+            )}
             {editingLabel ? (
               <input
                 autoFocus
@@ -2844,6 +2844,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 title={t('grid.taskLabelHint')}
                 style={{
                   cursor: 'text',
+                  // free to shrink beside the name (#1405), never to push the
+                  // buttons out
+                  minInlineSize: 0,
                   fontSize: 11,
                   lineHeight: 1.35,
                   fontFamily: 'var(--font-ui)',
@@ -3675,8 +3678,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               going away.
 
               The SUSPENDED-APPROPRIATE SUBSET of the live header, and nothing
-              else: identity (accent and badge — §5.11's one identity; the name
-              is the tab's since #905), the
+              else: identity (accent and badge — §5.11's one identity — and the
+              name, back since #1405), the
               state in a word, and the maximize gesture. Deliberately NOT the
               controls: the collapse/pop-out/⋯ buttons act on a running session,
               and the two things this card genuinely offers — Resume and Close —
@@ -3702,6 +3705,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 {headerBadge}
               </span>
             )}
+            <HeaderSessionName name={headerTitle} />
             <span style={{ flex: 1, minInlineSize: 8 }} />
             <StatusPill status="suspended" label={t('status.suspended')} />
           </div>
@@ -3758,6 +3762,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 {headerBadge}
               </span>
             )}
+            <HeaderSessionName name={headerTitle} />
             <span style={{ flex: 1, minInlineSize: 8 }} />
             {pill && <StatusPill status={pill.status} label={t(pill.labelKey)} />}
           </div>
@@ -3821,6 +3826,43 @@ function cheadStyle(accent?: string): React.CSSProperties {
     // status pill, the chips, the prompt) — `--muted` is not AA on the wash.
     background: identityWash(accent),
   };
+}
+
+/**
+ * WHOSE WINDOW THIS IS (#1405): the session's name, bold, first in the header.
+ *
+ * #905 took it out — the tab right above said it — and two waiting tabs that
+ * looked identical then left the owner typing into the wrong session with
+ * nothing below the strip to catch it. The name is back, on all three headers,
+ * so the pane says whose it is wherever you look at it.
+ *
+ * It TRUNCATES, never overflows: at most 40% of the header and free to shrink
+ * to nothing, so a long name gives way to the task label and the buttons on a
+ * narrow card rather than pushing them out (Linux CI's fonts are ~5% wider).
+ * `--text`, because nothing else is AA on the identity wash.
+ */
+function HeaderSessionName(props: { name: string }): React.JSX.Element {
+  return (
+    <span
+      data-testid="card-session-name"
+      title={props.name}
+      style={{
+        flex: '0 1 auto',
+        minInlineSize: 0,
+        maxInlineSize: '40%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        fontSize: 11.5,
+        lineHeight: 1.35,
+        fontWeight: 700,
+        fontFamily: 'var(--font-ui)',
+        color: 'var(--text)',
+      }}
+    >
+      {props.name}
+    </span>
+  );
 }
 
 /** The column a card's header and body share — all three branches that draw a

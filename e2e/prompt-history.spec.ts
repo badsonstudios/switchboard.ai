@@ -16,7 +16,7 @@ import path from 'path';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
-const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
+const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
 const opener = (w: Page) => w.locator('[data-testid="card-history"]').first();
 const dialog = (w: Page) => w.locator('[data-history-dialog]');
 const tab = (w: Page, id: 'conversations' | 'prompts') => w.locator(`[data-history-tab="${id}"]`);

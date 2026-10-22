@@ -77,7 +77,7 @@ test.describe('session history (#836)', () => {
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
     // The session starts a turn that never ends.
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!hang');
     await box.press('Enter');

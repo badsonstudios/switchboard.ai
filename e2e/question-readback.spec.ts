@@ -15,7 +15,7 @@ import { launchApp, LaunchedApp, tempProjectFolder, readWorkspaceFile } from './
 import { FAKE_SESSION_ID } from '../src/main/providers/fake-stream-ids';
 
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
-const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
+const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
 const box = (w: Page) => w.locator('[data-feed-box="question"]');
 
 /** the block says what was asked, what was chosen and what was skipped */

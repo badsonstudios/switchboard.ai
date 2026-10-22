@@ -113,7 +113,7 @@ test.describe('allow-all in Direct mode never hands off to a terminal (#310)', (
       timeout: 25_000,
     });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
 
     // 1. the first gated call is answered by hand — this is what turns allow-all
     //    on, and it is the only bar the user should ever see in this test.
@@ -211,7 +211,7 @@ test.describe('allow-all in Direct mode answers at the server (#319)', () => {
       timeout: 25_000,
     });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
 
     // 1. the first call is answered by hand — this is what turns allow-all on,
     //    and it is the only attention this session is allowed to raise.
@@ -321,7 +321,7 @@ test.describe('a hook Notification cannot fake a permission on Direct (#313)', (
     // with the tab (#873). `SWITCHBOARD_TRANSPORT: 'stream'` above SELECTS the
     // transport rather than observing it, so the claim rests on the spawn
     // rather than on a witness we no longer have.
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     const row = (status: string): string => `nav .rail-row[data-session-status="${status}"]`;
 
     // 1. the nudge. Verbatim the payload the live incident produced: the CLI's

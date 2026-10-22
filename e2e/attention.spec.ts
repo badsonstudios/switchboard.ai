@@ -171,7 +171,7 @@ test.describe('attention queue (E9-03)', () => {
     await w.keyboard.press(`${MOD}+1`);
     await expect(activeTab(w)).toContainText(titles.done);
 
-    const composer = w.getByPlaceholder(/Prompt this session/);
+    const composer = w.getByPlaceholder(/^Message .+…$/);
     await composer.click();
     await w.keyboard.press(`${MOD}+Space`);
     await expect(activeTab(w)).toContainText(titles.done); // did not jump

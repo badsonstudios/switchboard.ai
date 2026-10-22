@@ -1242,7 +1242,7 @@ export async function tabFromFeedToComposer(w: Page): Promise<'direct' | 'past-j
   const landed = await w.evaluate(() => {
     const el = document.activeElement as HTMLElement | null;
     if (el?.hasAttribute('data-feed-jump-latest')) return 'jump';
-    if (el instanceof HTMLTextAreaElement && /Prompt this session/.test(el.placeholder))
+    if (el instanceof HTMLTextAreaElement && /^Message .+…$/.test(el.placeholder))
       return 'composer';
     return `${el?.tagName ?? 'NONE'} "${(el?.textContent ?? '').trim().slice(0, 40)}"`;
   });
@@ -1918,7 +1918,7 @@ export async function launchDirectToolTurn(prefix: string): Promise<DirectToolTu
     // `SWITCHBOARD_FAKE_PROVIDER: 'stream'` above, which is what SELECTS the
     // transport rather than merely observing it, and by the stream-only feed
     // assertion below.
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('!tools');
     await box.press('Enter');

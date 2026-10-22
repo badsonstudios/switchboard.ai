@@ -75,7 +75,7 @@ function stubBridge(): void {
 
 const feedPanel = sessionPanels.find((p) => p.id === 'feed')!;
 
-async function mount(cardId = 'card-b'): Promise<HTMLElement> {
+async function mount(cardId = 'card-b', title = 'Beta'): Promise<HTMLElement> {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);
@@ -83,7 +83,7 @@ async function mount(cardId = 'card-b'): Promise<HTMLElement> {
   const ctx: PanelContext = {
     sessionId: OWN_ID,
     cardId,
-    title: 'Beta',
+    title,
     visible: true,
     dockEpoch: 0,
     theme: 'nordic',
@@ -249,9 +249,34 @@ describe('the textarea carries the completion relations while a list is up (#828
     // "Enter to send, Shift+Enter for a new line" from the name to a
     // description, which many users have switched off. Caught in review; the
     // label is now the same string, said deliberately.
+    //
+    // #1405 split them on purpose: the placeholder is the owner's short
+    // "Message <name>…", and the NAME keeps the session's full name AND the
+    // keys — the property this test exists for.
     const host = await mount();
     const box = boxOf(host);
-    expect(box.getAttribute('aria-label')).toBe(box.placeholder);
+    expect(box.getAttribute('aria-label')).toMatch(/^Message Beta /);
+    expect(box.getAttribute('aria-label')).toMatch(/Shift\+Enter/);
+  });
+
+  it('names the session it sends to in its placeholder (#1405)', async () => {
+    const box = boxOf(await mount());
+    expect(box.placeholder).toBe('Message Beta…');
+  });
+
+  it('cuts a long name with an ellipsis in the placeholder, never in the name (#1405)', async () => {
+    const long = 'Switchboard.ai - for tickets, and a great many more words besides';
+    const box = boxOf(await mount('card-b', long));
+    expect(box.placeholder.startsWith('Message Switchboard.ai - for tickets')).toBe(true);
+    expect(box.placeholder.endsWith('…')).toBe(true);
+    expect(box.placeholder).not.toContain('besides');
+    // the accessible name keeps all of it
+    expect(box.getAttribute('aria-label')).toContain(long);
+  });
+
+  it('says "this session" when the card has no name yet (#1405)', async () => {
+    const box = boxOf(await mount('card-b', ''));
+    expect(box.placeholder).toBe('Message this session…');
     expect(box.getAttribute('aria-label')).toMatch(/Shift\+Enter/);
   });
 

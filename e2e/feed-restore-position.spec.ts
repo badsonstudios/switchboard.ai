@@ -59,7 +59,7 @@ const WINDOW = { x: 0, y: 0, width: 1400, height: 900 };
 const TAIL = 40;
 
 const composer = (w: Page): ReturnType<Page['getByPlaceholder']> =>
-  w.getByPlaceholder(/Prompt this session/);
+  w.getByPlaceholder(/^Message .+…$/);
 
 /**
  * How far one feed is from the bottom of its conversation.

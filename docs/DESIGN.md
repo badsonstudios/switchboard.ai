@@ -1389,6 +1389,33 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
 > state machine calls it a wind-down; the panel still reports the code); an
 > exit mid-turn with a nonzero code is **crashed**, as before. A card restored
 > with no live process reads **suspended**.
+>
+> **Selection outranks waiting; waiting is a word *(amended 2026-10-21, Dan,
+> #1405 — his options A + D from the mockup)*.** This amends the sentence
+> above that reads "The three waiting states are painted the same way on every
+> surface (treatment A): a 15% wash in the state's colour, an edge in it, the
+> word after the name, and the ring in it — never colour alone." On a tab,
+> that wash REPLACED the open tab's identity wash, so two waiting tabs in one group were
+> the same gold box and nothing showed which one the pane below belonged to:
+> Dan typed into the wrong session. His rule: *knowing which tab is selected
+> matters more than knowing which tabs are waiting* — a wrong guess about
+> selection sends text to the wrong session; a missed waiting marker only
+> delays a reply. So a single session's **tab, list row and strip pill no
+> longer wash for waiting**: the state is the word (in its ink) and, on a row
+> or pill, the edge bar in its hue. The fill belongs to selection alone. The
+> open tab keeps the identity wash, which is the card header's colour, and
+> gains a 3px bar along its top: `--link` in the focused group (the same blue
+> as its frame), `--muted` in the others. Unselected tabs stay plain and
+> `--muted`. A tab's state word sits on its own `--panel2` field, invisible on
+> the strip, because on the identity wash the state inks measured under AA
+> for some accents. A GROUP's summary still washes: it speaks for several
+> sessions and is never one of two look-alikes you pick between. **And the
+> pane says whose it is:** the card header (live, suspended and ended alike)
+> starts with the session's name in bold, before the task label — reversing
+> the 2026-09-21 "no name in the header, the tab says it" call (#905) — and the
+> message box's placeholder is **Message <name>…**, with the name cut to 40
+> characters; its accessible name keeps the full name and the Enter /
+> Shift+Enter hint.
 
 - **Auto-minimize on submit** (per-session toggle): submitting a prompt collapses the
   card to a slim status strip; it restores automatically on `Stop` (done) or

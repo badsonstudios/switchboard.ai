@@ -478,7 +478,7 @@ test.describe('manual screenshots (#1082)', () => {
     await setTheme(w, 'nordic');
 
     const newSession = w.getByRole('button', { name: '+ session' });
-    const composer = w.getByPlaceholder(/Prompt this session/);
+    const composer = w.getByPlaceholder(/^Message .+…$/);
     const tabs = w.locator('[data-testid="view-tabs"]');
     const autonomy = w.locator('[data-testid="composer-autonomy"]');
 
@@ -620,7 +620,7 @@ test.describe('manual screenshots (#1082)', () => {
     await expect(w.getByText('acme-storefront').first()).toBeVisible({ timeout: 25_000 });
     await setTheme(w, 'nordic');
 
-    const composer = w.getByPlaceholder(/Prompt this session/);
+    const composer = w.getByPlaceholder(/^Message .+…$/);
     await composer.click();
     await composer.fill(PROMPT_FEATURE);
     await composer.press('Enter');
@@ -744,7 +744,7 @@ test.describe('manual screenshots (#1082)', () => {
     const w = await staged(a, 'acme-storefront');
 
     const newSession = w.getByRole('button', { name: '+ session' });
-    const composer = w.getByPlaceholder(/Prompt this session/);
+    const composer = w.getByPlaceholder(/^Message .+…$/);
     const tabs = w.locator('[data-testid="view-tabs"]');
 
     // ── slash commands — BEFORE the first turn, while the list is the app's own
@@ -1019,7 +1019,7 @@ test.describe('manual screenshots (#1082)', () => {
       await a.window.keyboard.press('Escape');
       await expect(box).toHaveCount(0);
       const w = await staged(a, 'acme-storefront');
-      const composer = w.getByPlaceholder(/Prompt this session/);
+      const composer = w.getByPlaceholder(/^Message .+…$/);
       await composer.click();
       await composer.fill(PROMPT_FEATURE);
       await composer.press('Enter');
@@ -1070,7 +1070,7 @@ test.describe('manual screenshots (#1082)', () => {
         },
       });
       const w = await staged(a, 'acme-storefront');
-      const composer = w.getByPlaceholder(/Prompt this session/);
+      const composer = w.getByPlaceholder(/^Message .+…$/);
       await composer.click();
       await composer.fill(PROMPT_FEATURE);
       await composer.press('Enter');
@@ -1145,7 +1145,7 @@ test.describe('manual screenshots (#1082)', () => {
     // "needs you" orange, and Gemini's blue inside the working blue. Codex idles.
     const send = async (title: string, text: string): Promise<void> => {
       await w.locator('.dv-tab', { hasText: title }).first().click();
-      const box = w.getByPlaceholder(/Prompt this session/).first();
+      const box = w.getByPlaceholder(/^Message .+…$/).first();
       await box.click();
       await box.fill(text);
       await box.press('Enter');

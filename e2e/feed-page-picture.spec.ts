@@ -29,7 +29,7 @@ import { pathToFileURL } from 'url';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
-const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
+const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
 
 const WHITE_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" fill="#ffffff"/></svg>';

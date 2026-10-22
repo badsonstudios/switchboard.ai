@@ -22,7 +22,7 @@ import { tempProjectFolder, teardown } from './fixtures/stream-session';
 test.afterAll(async () => teardown());
 
 async function send(w: Page, text: string): Promise<void> {
-  const box = w.getByPlaceholder(/Prompt this session/);
+  const box = w.getByPlaceholder(/^Message .+…$/);
   await box.click();
   await box.fill(text);
   await box.press('Enter');

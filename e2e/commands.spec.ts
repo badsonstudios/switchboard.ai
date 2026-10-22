@@ -73,7 +73,7 @@ test.describe('keyboard commands (E9-01)', () => {
     await expect(activeTab(w)).toContainText(first);
 
     // by placeholder: a bare 'textarea' also matches xterm's hidden helper input
-    const composer = w.getByPlaceholder(/Prompt this session/);
+    const composer = w.getByPlaceholder(/^Message .+…$/);
     await composer.click();
     await w.keyboard.type('1 2 3');
     await expect(composer).toHaveValue('1 2 3'); // the digits went to the composer

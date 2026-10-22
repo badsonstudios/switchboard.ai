@@ -108,7 +108,7 @@ test.describe('pasting an image into the composer (P2-E10-09)', () => {
     //    wire. The length is the base64 we pasted, so this fails if anything in
     //    the chain re-encoded, truncated, or added a `data:` prefix.
     await pasteImage();
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('what colour is this?');
     await box.press('Enter');
@@ -144,7 +144,7 @@ test.describe('pasting an image into the composer (P2-E10-09)', () => {
 
   test('a clipboard with text AND an image keeps both', async () => {
     const w = a.window;
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('typed ');
 
@@ -165,7 +165,7 @@ test.describe('pasting an image into the composer (P2-E10-09)', () => {
   // notices the feature above.
   test('a plain-text paste is untouched', async () => {
     const w = a.window;
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('before');
 

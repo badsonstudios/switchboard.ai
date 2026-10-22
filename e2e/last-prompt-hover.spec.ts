@@ -13,7 +13,7 @@ const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
 const popup = (w: Page) => w.getByTestId('last-prompt-hover');
 
 async function prompt(w: Page, text: string): Promise<void> {
-  const box = w.getByPlaceholder(/Prompt this session/);
+  const box = w.getByPlaceholder(/^Message .+…$/);
   await box.click();
   await box.fill(text);
   await box.press('Enter');
@@ -34,7 +34,7 @@ test.describe('hover a session to see its last prompt (#631)', () => {
     const row = w.locator('nav [data-last-prompt-for]').first();
     await expect(row).toBeVisible({ timeout: 25_000 });
     // the session has to be running before there is anything true to say
-    await expect(w.getByPlaceholder(/Prompt this session/)).toBeVisible({ timeout: 25_000 });
+    await expect(w.getByPlaceholder(/^Message .+…$/)).toBeVisible({ timeout: 25_000 });
 
     // FRESH: running, and never asked anything
     await row.hover();

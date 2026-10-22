@@ -496,7 +496,7 @@ test.describe('Feed view (E12-06)', () => {
     await w.keyboard.press('Escape');
     expect((await focused()).region).toBe(true);
     await tabFromFeedToComposer(w);
-    await expect(w.getByPlaceholder(/Prompt this session/)).toBeFocused();
+    await expect(w.getByPlaceholder(/^Message .+…$/)).toBeFocused();
   });
 
   // #196. #174 named the conversation landmark and gave every card the same
@@ -813,7 +813,7 @@ test.describe('Feed view (E12-06)', () => {
     /** MIN_FEED_PX in FeedView.tsx — the conversation's floor */
     const MIN_FEED = 60;
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     const chip = w.getByTestId('composer-autonomy');
     const feed = w.locator('[data-feed-region]').first();
     /** height, inner overflow and one rendered line — as the engine has them */
@@ -967,7 +967,7 @@ test.describe('Feed view (E12-06)', () => {
     // its floor, which states the precondition as code instead of as arithmetic in a
     // comment that goes stale. If no height in the range reaches it, the test says so
     // rather than asserting something that would mean nothing.
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     const chip = w.getByTestId('composer-autonomy');
     const feed = w.locator('[data-feed-region]').first();
     const boxHeight = (): Promise<number> =>

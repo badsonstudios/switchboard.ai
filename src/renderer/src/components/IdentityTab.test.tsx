@@ -379,10 +379,12 @@ describe('the session tab says when it is waiting on you (#1351)', () => {
     ['needs-permission', 'approval', 'needs-permission'],
     ['needs-input', 'question', 'needs-input'],
     ['done', 'waiting', 'waiting'],
-  ])('a %s session: washed, its word after the name, its ring in the colour', async (status, word, token) => {
+  ])('a %s session: no wash (#1405), its word after the name, its ring in the colour', async (status, word, token) => {
     const tab = await tabFor(status);
     expect(tab.dataset.waitState).toBe(status === 'done' ? 'waiting' : word);
-    expect(tab.style.getPropertyValue('--wait-hue')).toBe(`var(--status-${token})`);
+    // waiting is a word, not a fill: nothing on the tab carries a waiting hue
+    expect(tab.style.getPropertyValue('--wait-hue')).toBe('');
+    expect(tab.getAttribute('style')).not.toContain('--status-');
     const said = tab.querySelector<HTMLElement>('[data-tab-state]')!;
     expect(said.textContent).toBe(word);
     expect(said.style.color).toBe(`var(--status-${token}-ink)`);

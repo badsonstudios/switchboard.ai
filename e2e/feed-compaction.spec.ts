@@ -24,7 +24,7 @@ import { test, expect, Page } from '@playwright/test';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
-const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
+const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
 const SUMMARY = 'This session is being continued from a previous conversation';
 const DIVIDER = 'Conversation compacted — 33k → 4.8k tokens (you asked)';
 const divider = (w: Page) => w.locator('[data-feed-block="compaction"]');

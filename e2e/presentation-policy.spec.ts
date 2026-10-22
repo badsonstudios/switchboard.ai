@@ -46,7 +46,7 @@ const tabs = (w: Page) => w.locator('.dv-tabs-container .dv-tab');
 // names are kept so the bodies below read as they always have.
 const strip = (w: Page) => w.locator('nav .rail-row[data-folded="true"]');
 const stripRow = (w: Page, title: string) => strip(w).filter({ hasText: title });
-const composer = (w: Page) => w.getByPlaceholder(/Prompt this session/);
+const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
 const policyChip = (w: Page) => w.getByTestId('presentation-policy');
 /** the line above the cards that says a card was put away, and why (#1210) */
 const notice = (w: Page) => w.getByTestId('submit-notice');

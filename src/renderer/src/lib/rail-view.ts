@@ -351,11 +351,20 @@ export function attentionPaint(
 //
 // THIS IS THE STATE, NOT THE COUNT. `attentionPaint` still decides who is LIT
 // (the 4px bar, the bold name, `data-needs-you`), from the count's own set, so
-// "N need you" is still exactly N lit rows. What this decides is the WASH and
+// "N need you" is still exactly N lit rows. What this decides is the MARK and
 // the WORD every waiting session wears whether or not anything is counting it:
 // a dismissed approval is still held, and a looked-at finished session is
 // still waiting for its next prompt. Never colour-only: every surface that
-// washes also writes the word.
+// marks also writes the word.
+//
+// A SINGLE SESSION IS NOT WASHED FOR WAITING ANY MORE (#1405). Its tab, row
+// and pill used to be filled in the state's colour, and that fill outranked
+// selection — two waiting tabs were the same gold box, and the owner typed
+// into the wrong session. The fill is selection's now; waiting is the word, in
+// its ink, and (on a row or pill) the start bar in its hue. `washed` below
+// still says "wear the state's colour" — the bar's, not a fill's. Only a
+// GROUP's summary still washes, at `WAIT_WASH`: it speaks for several
+// sessions and is never one of two look-alikes you pick between.
 
 export type WaitState = 'approval' | 'question' | 'waiting';
 
@@ -394,10 +403,10 @@ export const WAIT_TOKEN: Readonly<Record<WaitState, StatusToken>> = {
 
 /**
  * How strong the wash is, in percent of the state's hue over the surface
- * behind it. ONE number for the tab, the row, the pill and a group's summary,
- * and `tokens.drift.test.ts` imports it: the words written on the wash are
- * measured at exactly this strength. 15 rather than the mockup's 16: at 16 the
- * "question" ink on nordic measured 4.46:1, under AA.
+ * behind it — a GROUP's summary only since #1405 (the tab, the row and the
+ * pill no longer wash), and `tokens.drift.test.ts` imports it: the words
+ * written on the wash are measured at exactly this strength. 15 rather than
+ * the mockup's 16: at 16 the "question" ink on nordic measured 4.46:1, under AA.
  */
 export const WAIT_WASH = 15;
 
@@ -405,9 +414,9 @@ export const WAIT_WASH = 15;
 export interface WaitPaint {
   /** the waiting state, if it is in one */
   state: WaitState | undefined;
-  /** wear the wash and the coloured edge */
+  /** wear the state's colour: a row's or pill's start bar (#1405: no fill) */
   washed: boolean;
-  /** the ramp to paint the wash, the edge, the ring and the word in */
+  /** the ramp to paint the bar, the ring and the word in */
   token: StatusToken;
 }
 

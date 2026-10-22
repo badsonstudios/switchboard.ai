@@ -16,7 +16,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailSession } from '../model/types';
-import { attentionPaint, presentStatus, waitPaint, WAIT_WASH } from '../lib/rail-view';
+import { attentionPaint, presentStatus, waitPaint } from '../lib/rail-view';
 import { approvalAttrs, approvalHint, NO_APPROVAL, NO_CARDS } from '../lib/approval-watch';
 import { useApprovalWatch } from '../lib/use-approval-watch';
 import { useShownStatus } from '../lib/use-shown-status';
@@ -65,23 +65,20 @@ export function StripPill(props: {
   // still held, and its word says how long it has left), but the PULSE stays
   // the count's (#1202): it never claims an approval the count has dropped
   const pulse = paint.lit && !paint.finished ? approval : NO_APPROVAL;
-  // #1351: washed for its STATE — approval, question, waiting — whether or not
-  // the count is still on it. `paint.lit` keeps the bar and the bold name.
+  // #1351: its STATE — approval, question, waiting — whether or not the count
+  // is still on it. `paint.lit` keeps the 4px bar and the bold name.
   const wait = waitPaint(s.status, paint);
   const hue = `var(--status-${paint.token})`;
   const ink = `var(--status-${paint.token}-ink)`;
   const accent = s.accent ?? 'var(--faint)';
   const spoken = sessionSpokenName(t, s, props.pinned, props.waiting);
-  // a waiting session outranks selection, and outranks being folded away: a
-  // pill that is waiting on you is washed whether its card is on screen or not
-  const fill = wait.washed
-    ? tint(hue, WAIT_WASH)
-    : props.selected
-      ? tint(accent, 12)
-      : props.folded
-        ? 'transparent'
-        : 'var(--rail-card)';
-  const edge = wait.washed ? hue : props.selected ? accent : 'var(--group-frame)';
+  // SELECTION OWNS THE FILL AND THE EDGE (#1405). #1351 let a waiting session
+  // outrank selection here, so two waiting pills were the same gold and the
+  // strip could not say which one you had open — the tab strip's defect, and
+  // the same fix: waiting is said by the WORD (in its ink) and the start bar
+  // (in its hue), never by the fill.
+  const fill = props.selected ? tint(accent, 12) : props.folded ? 'transparent' : 'var(--rail-card)';
+  const edge = props.selected ? accent : 'var(--group-frame)';
 
   return (
     <button

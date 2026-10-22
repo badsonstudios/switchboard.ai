@@ -57,7 +57,7 @@ test.describe('a Direct conversation survives an app relaunch (#404)', () => {
     });
 
     // one full turn, so the pump has seen a system:init
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('hello from before the relaunch');
     await box.press('Enter');
@@ -82,7 +82,7 @@ test.describe('a Direct conversation survives an app relaunch (#404)', () => {
       timeout: 25_000,
     });
 
-    const box2 = w2.getByPlaceholder(/Prompt this session/);
+    const box2 = w2.getByPlaceholder(/^Message .+…$/);
     await box2.click();
     await box2.fill('same conversation?');
     await box2.press('Enter');
@@ -123,7 +123,7 @@ test.describe('a resumed Direct session replays its history (#395)', () => {
     const w = first.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('remember this turn');
     await box.press('Enter');
@@ -156,7 +156,7 @@ test.describe('a resumed Direct session replays its history (#395)', () => {
     // ...and now the seam. The next turn appends BELOW the replayed history:
     // the fake's RESUMED-FROM marker proves the flag really went out, and the
     // block order proves nothing was duplicated or lost at the join.
-    const box2 = w2.getByPlaceholder(/Prompt this session/);
+    const box2 = w2.getByPlaceholder(/^Message .+…$/);
     await box2.click();
     await box2.fill('and one more turn');
     await box2.press('Enter');
@@ -177,7 +177,7 @@ test.describe('a resumed Direct session replays its history (#395)', () => {
     const w = first.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
-    const box = w.getByPlaceholder(/Prompt this session/);
+    const box = w.getByPlaceholder(/^Message .+…$/);
     await box.click();
     await box.fill('this history is about to be deleted');
     await box.press('Enter');
@@ -231,7 +231,7 @@ test.describe('a resumed Direct session replays its history (#395)', () => {
     await expect(w2.getByText('this history is about to be deleted', { exact: true })).toHaveCount(0);
 
     // the card is alive and takes a prompt; there is simply no history to show
-    const box2 = w2.getByPlaceholder(/Prompt this session/);
+    const box2 = w2.getByPlaceholder(/^Message .+…$/);
     await box2.click();
     await box2.fill('still works');
     await box2.press('Enter');
