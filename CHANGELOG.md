@@ -140,6 +140,24 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.128 — unreleased
 
+### Fixed
+
+- **Signing in to an MCP server now opens your browser.** In the MCP servers
+  panel, **Sign in** on a server such as Atlassian was accepted by Claude Code,
+  but no browser opened, so there was no way to finish. Claude Code hands back
+  the page to sign in on and expects the app to open it, and switchboard was
+  ignoring that page. It now opens it in your usual browser and says so: *a
+  browser window was opened, finish signing in there*. If the server is already
+  signed in, or Claude Code gives no page, or your computer won't open a
+  browser, the panel says that instead. The sign-in page is never written to
+  the log, and neither is the server's name.
+
+- **A long MCP server name no longer hides its status.** In the MCP servers
+  panel, a long name such as `plugin:atlassian:atlassian` ran underneath the
+  status word next to it (*connecting…*), so the two were painted on top of each
+  other. The name now ends in "…" when there isn't room, the status sits after
+  it, and hovering the name shows it in full.
+
 ## 0.8.127 — 2026-10-22
 
 ### Added

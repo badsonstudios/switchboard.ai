@@ -14,7 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { FakeScriptedTurn, FakeStreamProtocol } from './fake-stream-protocol';
+import { FakeMcpScript, FakeScriptedTurn, FakeStreamProtocol } from './fake-stream-protocol';
 import { claimFakeSessionId } from './fake-stream-ids';
 import { asDisplayString } from '../../shared/display-string';
 import { slugForCwd } from '../transcripts/paths';
@@ -109,6 +109,19 @@ const proto = new FakeStreamProtocol(
       try {
         const all = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, FakeScriptedTurn>;
         return Object.prototype.hasOwnProperty.call(all, prompt) ? all[prompt] : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    // Scripted MCP answers (#1420): `SWITCHBOARD_FAKE_MCP` names a JSON
+    // `FakeMcpScript`. Opt-in and fail-open like the script above — no file, or
+    // a bad one, is no MCP script, and the verbs stay unsupported as before.
+    mcp: () => {
+      const file = process.env.SWITCHBOARD_FAKE_MCP;
+      if (!file) return undefined;
+      try {
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as FakeMcpScript;
+        return Array.isArray(parsed?.status) ? parsed : undefined;
       } catch {
         return undefined;
       }

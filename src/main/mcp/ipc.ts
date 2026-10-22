@@ -48,6 +48,7 @@ import { IpcBroker } from '../ipc/broker';
 import { Logger } from '../log/logger';
 import { samePath } from '../project-key';
 import { readMcpStatus } from './status';
+import { carryOutSignIn } from './sign-in';
 import { enrichRuntime, notLoaded } from './merge';
 import { validateAdd, validateRemoveName, validateScope } from '../../shared/mcp-args';
 import type { McpManagerCapability } from '../extensibility/contributions';
@@ -136,6 +137,15 @@ export interface McpIpcDeps {
    * weaker gate here could only ever disagree with the real one.
    */
   mcpAuthenticate?: (liveId: string, name: unknown) => Promise<ControlVerdict>;
+  /**
+   * Open a sign-in address in the user's browser (#1420) — `shell.openExternal`
+   * in the app, looked up when it is CALLED so an e2e can replace it.
+   *
+   * Claude Code does not open the browser in the transport we host; its
+   * `mcp_authenticate` answer carries an `authUrl` and the host opens it (see
+   * `sign-in.ts`). Absent = nothing can be opened, and the pane says so.
+   */
+  openExternal?: (url: string) => Promise<void>;
   /** Forget one server's stored credentials — the way out of a wedged flow. */
   mcpClearAuth?: (liveId: string, name: unknown) => Promise<ControlVerdict>;
 }
@@ -527,7 +537,21 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
       if (!deps.mcpAuthenticate) {
         return { ok: false, reason: 'not-stream', message: 'this session has no control channel' };
       }
-      return deps.mcpAuthenticate(gate.id, name);
+      const verdict = await deps.mcpAuthenticate(gate.id, name);
+      if (!verdict.ok) return verdict;
+      // THE HOST OPENS THE BROWSER (#1420), not the CLI. The answer that goes
+      // back is the OUTCOME alone: the address stays in main, and is never
+      // logged — nor is the server name, in any line (Dan's privacy rule; log
+      // lines carry timestamps). `ipc.test.ts` pins it.
+      const open = deps.openExternal;
+      const signIn = await carryOutSignIn(
+        verdict.response,
+        open ? (url) => open(url) : () => Promise.reject(new Error('no browser seam'))
+      );
+      if (signIn === 'open-failed') {
+        log.warn('mcp sign-in: the browser could not be opened', { sessionId: gate.id });
+      }
+      return { ok: true, response: { signIn } };
     }
   );
 

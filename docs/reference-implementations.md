@@ -377,11 +377,29 @@ So **auth is remote-only** — the control belongs on http/sse rows, not every
 row. Unlike `mcp_toggle`, the missing-argument case is properly refused; do not
 generalise that, validate anyway.
 
-⚠️ **THE OAUTH SUCCESS PATH IS UNMEASURED AND UNMEASURABLE HERE.** No claude.ai
-connector exists on the dev machine, so what `mcp_authenticate` returns when it
-really starts a flow — whether a browser opens, what `mcp_oauth_callback_url` is
-for, how a row leaves `needs-auth` — is unknown. **Do not infer it from the
-refusals above.** Treat an unrecognised answer as "we do not know".
+**THE OAUTH SUCCESS PATH, READ OFF THE CODE (#1420, 2026-10-22).** This section
+used to say it was unknown. It was still unmeasured live (no connector here),
+but both reference sources state it, and the real answer is the bug #1420 was:
+**the CLI does not open a browser in stream-json. It hands the host a URL.**
+
+```
+PATH CLI 2.1.288, mcp_authenticate handler:
+  tt(D,{authUrl:qt,requiresUserAction:!0,callbackExpected:!0,redirectScheme:rt,
+        state:rr,...rt==="localhost"&&{callbackPort:bt}})
+  else tt(D,{requiresUserAction:!1,callbackExpected:!1})          // nothing to do
+  claudeai-proxy: tt(D,{authUrl:Pe,requiresUserAction:!0,callbackExpected:!1})
+                  // Pe = zye(...): the CLI builds the claude.ai start-auth URL itself
+VS Code extension 2.1.289, authenticateMcpServer:
+  let W=await Q.query.mcpAuthenticate(J);if(W.error)throw Error(W.error);
+  if(W.authUrl)try{await this.openURL(W.authUrl)}catch(G){...}
+```
+
+The CLI runs the OAuth callback listener itself and answers as soon as the URL
+exists (it races the URL against the flow), not when the user finishes.
+`mcp_oauth_callback_url` is for a host that cannot receive the callback: "No
+OAuth flow in progress … call mcp_authenticate first", then "retry with the full
+redirect URL". A desktop host does not need it. Our handling:
+`src/main/mcp/sign-in.ts`.
 
 ⚠️ **STILL UNMEASURED:** whether `mcp_toggle` works on a **claude.ai connector**
 or a plugin-supplied server. This machine has neither. The pane offers the

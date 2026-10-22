@@ -529,3 +529,19 @@ export type McpReconnectResult =
   | { outcome: 'no-session' }
   /** the folder gate said no, or the id was not a string */
   | { outcome: 'refused' };
+
+/**
+ * What happened when a sign-in was started (#1420) — carried on a successful
+ * `mcp:authenticate` verdict as `response.signIn`, and nothing else is.
+ *
+ * Claude Code does not open the browser itself in the transport we host: its
+ * `mcp_authenticate` answer carries an `authUrl` and the HOST opens it. Main
+ * does that (`main/mcp/sign-in.ts`) and tells the pane only the outcome. The
+ * address itself never reaches the renderer.
+ *
+ *  - `opened`             a browser window was opened at the CLI's address
+ *  - `already-signed-in`  the CLI said no user action is needed
+ *  - `no-url`             the CLI accepted, but gave no address we may open
+ *  - `open-failed`        there was an address, and the OS would not open it
+ */
+export type McpSignInOutcome = 'opened' | 'already-signed-in' | 'no-url' | 'open-failed';

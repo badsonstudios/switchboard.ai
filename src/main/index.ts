@@ -1524,6 +1524,10 @@ app
       // missed because they invented verb names instead of reading the list
       // that was already recorded.
       mcpAuthenticate: (liveId, name) => manager.mcpAuthenticate(liveId, name),
+      // #1420: Claude Code hands the sign-in address back; the HOST opens it.
+      // Looked up per call (not `shell.openExternal` captured here) so an e2e
+      // can replace it, the way `feed.spec.ts` does for links.
+      openExternal: (url) => shell.openExternal(url),
       mcpClearAuth: (liveId, name) => manager.mcpClearAuth(liveId, name),
     });
     registerBuiltinContributions();

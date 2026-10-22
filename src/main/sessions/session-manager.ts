@@ -219,9 +219,10 @@ export class SessionManager {
   /**
    * Start the OAuth flow for one MCP server (#734).
    *
-   * ⚠️ **`ok: true` HERE DOES NOT MEAN "SIGNED IN".** Only Claude's refusals
-   * are measured, so this reports the verdict and nothing more; the sentence
-   * the user reads is deliberately non-committal (`mcp.signInStarted`).
+   * ⚠️ **`ok: true` HERE DOES NOT MEAN "SIGNED IN".** It means a flow was
+   * started; the answer carries the `authUrl` the user must visit, and the MCP
+   * IPC layer opens it (`mcp/sign-in.ts`, #1420). This reports the verdict and
+   * nothing more.
    * REMOTE-ONLY, by the CLI's own rule: a stdio server is refused by TYPE, and
    * the refusal is passed through.
    */

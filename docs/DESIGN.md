@@ -3461,6 +3461,24 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
     subcommand, but there is a verb, and the pane now uses it. Approval remains
     separate: `enabledMcpjsonServers` is a different mechanism and `mcp_toggle`
     has NOT been measured against an unapproved server.
+
+    **SIGN-IN: THE HOST OPENS THE BROWSER, NOT THE CLI (#734, corrected in
+    #1420).** #734 added Sign in / Sign out on remote rows over `mcp_authenticate`
+    / `mcp_clear_auth`, built against the measured refusals only, and assumed
+    Claude Code would open a browser itself. It does not, in the stream-json
+    transport we host. The success answer is `{ authUrl, requiresUserAction,
+    callbackExpected, redirectScheme, state, callbackPort? }` and the HOST is
+    expected to open `authUrl` (PATH CLI 2.1.288; the VS Code extension 2.1.289
+    does exactly that). The CLI runs the OAuth flow and its callback listener;
+    for a claude.ai connector it builds the connector's start-auth address
+    itself. So main opens `authUrl` with `shell.openExternal` (http/https only),
+    and tells the pane only the outcome: opened, already signed in
+    (`requiresUserAction: false`), no address given, or the OS would not open
+    it. The address never reaches the renderer and is never logged, and neither
+    is the server name (log lines carry timestamps; Dan's rule). `ok: true`
+    still does not mean "signed in": the row's own status says that.
+    `mcp_oauth_callback_url` is for a host that cannot receive the callback, and
+    is not used. Recipes: `docs/reference-implementations.md` §1.2.2.
   - **The picker commands do NOT dead-end after all — we had never learned to
     ask (#721).** §5.17 treated `/model`, `/permissions` and friends as
     unreachable in Direct mode because they open a TUI picker and a Direct

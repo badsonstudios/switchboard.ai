@@ -36,6 +36,10 @@ interface HarnessOpts {
   status?: (liveId: string) => Promise<ControlVerdict>;
   /** wire the two auth verbs (#734), or omit for the no-control-channel case */
   auth?: boolean;
+  /** what `mcp_authenticate` answers when `auth` is on (#1420); `{}` if omitted */
+  authAnswer?: ControlVerdict;
+  /** the browser seam (#1420); omitted = none wired */
+  openExternal?: (url: string) => Promise<void>;
   /**
    * The folder's MCP manager (#1288). Absent = Claude's real one, which is what
    * every test here was written against; `null` = an AI that declares none.
@@ -46,6 +50,10 @@ interface HarnessOpts {
 function harness(folders: string[], opts: HarnessOpts = {}) {
   const handlers = new Map<string, Handler>();
   const warnings: Array<{ msg: string; fields?: LogFields }> = [];
+  /** EVERY line at every level, as text — the privacy test reads this (#1420) */
+  const logged: string[] = [];
+  const line = (level: string) => (msg: string, fields?: LogFields) =>
+    logged.push(`${level} ${msg} ${JSON.stringify(fields ?? {})}`);
   const typed: Array<{ liveId: string; data: string }> = [];
   /** what actually reached the session layer — the assertion that the gate let
    *  something THROUGH, which a refusal test on its own cannot make (#734) */
@@ -56,12 +64,14 @@ function harness(folders: string[], opts: HarnessOpts = {}) {
       handlers.set(channel, fn);
     },
   } as unknown as IpcBroker;
-  const noop = (): void => {};
   const log: Logger = {
-    debug: noop,
-    info: noop,
-    warn: (msg: string, fields?: LogFields) => warnings.push({ msg, fields }),
-    error: noop,
+    debug: line('debug'),
+    info: line('info'),
+    warn: (msg: string, fields?: LogFields) => {
+      warnings.push({ msg, fields });
+      line('warn')(msg, fields);
+    },
+    error: line('error'),
     child: () => log,
   };
   registerMcpIpc({
@@ -78,7 +88,7 @@ function harness(folders: string[], opts: HarnessOpts = {}) {
       ? {
           mcpAuthenticate: async (liveId: string, name: unknown) => {
             authed.push({ verb: 'authenticate', liveId, name });
-            return { ok: true, response: {} };
+            return opts.authAnswer ?? { ok: true, response: {} };
           },
           mcpClearAuth: async (liveId: string, name: unknown) => {
             authed.push({ verb: 'clearAuth', liveId, name });
@@ -86,8 +96,10 @@ function harness(folders: string[], opts: HarnessOpts = {}) {
           },
         }
       : {}),
+    ...(opts.openExternal ? { openExternal: opts.openExternal } : {}),
   });
   return {
+    logged,
     warnings,
     typed,
     authed,
@@ -712,6 +724,122 @@ describe('mcp:authenticate / mcp:clearAuth — signing in and out (#734)', () =>
     const h = harness(['/ok'], { ...live, auth: true });
     await h.call(channel, '/ok', 's1', 42);
     expect(h.authed).toEqual([{ verb, liveId: 's1', name: 42 }]);
+  });
+});
+
+describe('mcp:authenticate — the HOST opens the browser (#1420)', () => {
+  // Claude Code does not open a browser in the transport we host: its
+  // `mcp_authenticate` success answer carries `authUrl` and the host opens it.
+  // Shape read off the PATH CLI 2.1.288 and the VS Code extension 2.1.289 —
+  // see `sign-in.ts`. #734 dropped the payload, so nothing ever opened.
+  const live = { sessions: { s1: { folder: '/ok' } } };
+  const URL_ = 'https://auth.example.test/authorize?client_id=c&state=SECRET-STATE';
+  const CLI_ANSWER: ControlVerdict = {
+    ok: true,
+    response: {
+      authUrl: URL_,
+      requiresUserAction: true,
+      callbackExpected: true,
+      redirectScheme: 'localhost',
+      state: 'SECRET-STATE',
+      callbackPort: 53682,
+    },
+  };
+
+  function opener(fail = false) {
+    const opened: string[] = [];
+    const fn = (url: string): Promise<void> => {
+      opened.push(url);
+      return fail ? Promise.reject(new Error(`no handler for ${url}`)) : Promise.resolve();
+    };
+    return { opened, fn };
+  }
+
+  it('opens the authUrl exactly once, and the answer carries the OUTCOME, never the address', async () => {
+    const o = opener();
+    const h = harness(['/ok'], { ...live, auth: true, authAnswer: CLI_ANSWER, openExternal: o.fn });
+    const res = await h.call('mcp:authenticate', '/ok', 's1', 'plugin:atlassian:atlassian');
+    expect(o.opened).toEqual([URL_]);
+    expect(res).toEqual({ ok: true, response: { signIn: 'opened' } });
+    expect(JSON.stringify(res)).not.toContain('SECRET-STATE');
+  });
+
+  it('`requiresUserAction: false` is already signed in — no browser', async () => {
+    const o = opener();
+    const h = harness(['/ok'], {
+      ...live,
+      auth: true,
+      authAnswer: { ok: true, response: { requiresUserAction: false, callbackExpected: false } },
+      openExternal: o.fn,
+    });
+    expect(await h.call('mcp:authenticate', '/ok', 's1', 'Slack')).toEqual({
+      ok: true,
+      response: { signIn: 'already-signed-in' },
+    });
+    expect(o.opened).toEqual([]);
+  });
+
+  it.each([
+    ['no authUrl at all', {}],
+    ['a non-string authUrl', { authUrl: 42, requiresUserAction: true }],
+    ['a file: authUrl', { authUrl: 'file:///C:/Windows/System32/calc.exe' }],
+    ['a javascript: authUrl', { authUrl: 'javascript:alert(1)' }],
+    ['an unparseable authUrl', { authUrl: 'not a url' }],
+  ])('%s opens nothing and says `no-url`', async (_label, response) => {
+    const o = opener();
+    const h = harness(['/ok'], { ...live, auth: true, authAnswer: { ok: true, response }, openExternal: o.fn });
+    expect(await h.call('mcp:authenticate', '/ok', 's1', 'Slack')).toEqual({
+      ok: true,
+      response: { signIn: 'no-url' },
+    });
+    expect(o.opened).toEqual([]);
+  });
+
+  it('a refusal passes through untouched and opens nothing', async () => {
+    const o = opener();
+    const refusal: ControlVerdict = {
+      ok: false,
+      reason: 'refused',
+      message: 'Server type "stdio" does not support OAuth authentication',
+    };
+    const h = harness(['/ok'], { ...live, auth: true, authAnswer: refusal, openExternal: o.fn });
+    expect(await h.call('mcp:authenticate', '/ok', 's1', 'Slack')).toEqual(refusal);
+    expect(o.opened).toEqual([]);
+  });
+
+  it('an OS that will not open it is `open-failed`, resolved rather than thrown', async () => {
+    const o = opener(true);
+    const h = harness(['/ok'], { ...live, auth: true, authAnswer: CLI_ANSWER, openExternal: o.fn });
+    expect(await h.call('mcp:authenticate', '/ok', 's1', 'Slack')).toEqual({
+      ok: true,
+      response: { signIn: 'open-failed' },
+    });
+  });
+
+  it('with no browser seam wired, it is `open-failed`, not a rejection', async () => {
+    const h = harness(['/ok'], { ...live, auth: true, authAnswer: CLI_ANSWER });
+    expect(await h.call('mcp:authenticate', '/ok', 's1', 'Slack')).toEqual({
+      ok: true,
+      response: { signIn: 'open-failed' },
+    });
+  });
+
+  // ⚠️ DAN'S PRIVACY RULE, PINNED. The app log is a file users attach to bug
+  // reports, and every line carries a timestamp: the auth URL must never be in
+  // it, and neither may the server name ("who signed in to what, when"). The
+  // failing opener puts the URL in its error MESSAGE on purpose — the trap a
+  // `{ error: errorText(err) }` field would fall into.
+  it.each([
+    ['opened', false],
+    ['open-failed', true],
+  ])('logs neither the address nor the server name (%s)', async (_label, fail) => {
+    const o = opener(fail);
+    const h = harness(['/ok'], { ...live, auth: true, authAnswer: CLI_ANSWER, openExternal: o.fn });
+    await h.call('mcp:authenticate', '/ok', 's1', 'plugin:atlassian:atlassian');
+    const all = h.logged.join(' | ');
+    expect(all).not.toContain('auth.example.test');
+    expect(all).not.toContain('SECRET-STATE');
+    expect(all).not.toContain('atlassian');
   });
 });
 
