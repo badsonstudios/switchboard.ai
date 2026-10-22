@@ -108,6 +108,103 @@ export function browserAudio(): () => AudioContextLike | null {
   };
 }
 
+// ── which voice (#1390) ──────────────────────────────────────────────────────
+//
+// Settings ▸ Notifications lets the user pick one of the OS's own voices. The
+// choice is stored by main (`NotificationPrefs.speakVoice`, the voice's
+// `voiceURI`) and handed to this module at boot and on every change, so the
+// cue main pushes and the dialog's Preview go through the SAME lookup below.
+//
+// THE FAIL-OPEN LADDER. A stored voice can stop existing at any time — it was
+// uninstalled, the workspace moved to another machine, the OS renamed it. The
+// answer is never an error and never a skipped announcement:
+//
+//   1. the chosen voice, matched on `voiceURI`, then on `name`;
+//   2. not there → the OS default (an utterance with no voice set), logged at
+//      info ONCE per stored value, so a missing voice is findable in the log
+//      without a line per event;
+//   3. no speech at all on this machine → `false`, which is what already sends
+//      main its plain beep (Linux without speech-dispatcher).
+//
+// `getVoices()` answers an EMPTY list in Chromium until the voices have loaded
+// (`voiceschanged`), and on some machines it stays empty for good. Both read
+// as rung 2 — the default voice still speaks — and `listVoices` primes the
+// load at boot so the first real announcement is not the one that finds out.
+
+/** The slice of a `SpeechSynthesisVoice` the picker and the lookup need. */
+export interface VoiceLike {
+  name: string;
+  voiceURI: string;
+  lang?: string;
+  default?: boolean;
+  localService?: boolean;
+}
+
+/** The chosen voice's `voiceURI`, or `null` for the OS default. Module-level
+ *  for the reason `muted` is: it must hold whatever order things mount in. */
+let voicePref: string | null = null;
+/** the stored value whose fallback has already been logged */
+let loggedFallbackFor: string | null = null;
+
+export function setVoicePreference(value: string | null | undefined): void {
+  const next = typeof value === 'string' && value.length > 0 ? value : null;
+  if (next !== voicePref) loggedFallbackFor = null;
+  voicePref = next;
+}
+
+export function voicePreference(): string | null {
+  return voicePref;
+}
+
+/**
+ * Rung 1 of the ladder, as a pure function: the voice whose `voiceURI` is
+ * `pref`, else the one whose `name` is, else `null` (= use the default).
+ */
+export function chooseVoice<V extends VoiceLike>(voices: readonly V[], pref: string | null): V | null {
+  if (!pref) return null;
+  return voices.find((v) => v.voiceURI === pref) ?? voices.find((v) => v.name === pref) ?? null;
+}
+
+type SynthLike = Pick<SpeechSynthesis, 'pending' | 'speak'> & {
+  getVoices?: () => SpeechSynthesisVoice[];
+  addEventListener?: (type: string, cb: () => void) => void;
+  removeEventListener?: (type: string, cb: () => void) => void;
+};
+
+function synthesis(): SynthLike | undefined {
+  return (globalThis as { speechSynthesis?: SynthLike }).speechSynthesis;
+}
+
+/** The OS's voices, as far as Chromium has loaded them. Never throws; an
+ *  empty list is an ordinary answer (see above). Calling it also starts the
+ *  load, which is why App calls it once at boot. */
+export function listVoices(): VoiceLike[] {
+  try {
+    const list = synthesis()?.getVoices?.();
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Call `cb` whenever the voice list changes (it arrives late in Chromium).
+ *  Returns the unsubscribe; a no-op where the event does not exist. */
+export function onVoicesChanged(cb: () => void): () => void {
+  const synth = synthesis();
+  try {
+    synth?.addEventListener?.('voiceschanged', cb);
+  } catch {
+    return () => {};
+  }
+  return () => {
+    try {
+      synth?.removeEventListener?.('voiceschanged', cb);
+    } catch {
+      /* best-effort */
+    }
+  };
+}
+
 /**
  * The default voice.
  *
@@ -116,16 +213,43 @@ export function browserAudio(): () => AudioContextLike | null {
  * events while the user is at lunch would become eight sentences read to an
  * empty room, minutes apart from the things they describe. One in flight plus
  * one waiting is the most that can still be current by the time it is said.
+ *
+ * `log` is where rung 2 of the ladder is reported; the renderer's console is
+ * copied into the app log at info by main (`main/index.ts`, `console-message`).
  */
-export function browserSpeech(): (text: string) => boolean {
+export function browserSpeech(
+  log: (message: string) => void = (m) => console.info(m)
+): (text: string) => boolean {
   return (text: string): boolean => {
-    const synth = (globalThis as { speechSynthesis?: SpeechSynthesis }).speechSynthesis;
+    const synth = synthesis();
     const Utterance = (
       globalThis as { SpeechSynthesisUtterance?: new (t: string) => SpeechSynthesisUtterance }
     ).SpeechSynthesisUtterance;
     if (!synth || !Utterance) return false;
     if (synth.pending) return false;
-    synth.speak(new Utterance(text));
+    const utterance = new Utterance(text);
+    const pref = voicePref;
+    if (pref) {
+      const voices = listVoices();
+      const voice = chooseVoice(voices, pref);
+      let used = false;
+      if (voice) {
+        try {
+          utterance.voice = voice as SpeechSynthesisVoice;
+          used = true;
+        } catch {
+          /* a voice the engine will not take is a missing voice: rung 2 */
+        }
+      }
+      if (!used && loggedFallbackFor !== pref) {
+        loggedFallbackFor = pref;
+        log(
+          `[announcer] the chosen voice "${pref}" is not available ` +
+            `(${voices.length} voice(s) on this machine); speaking in the system default`
+        );
+      }
+    }
+    synth.speak(utterance);
     return true;
   };
 }

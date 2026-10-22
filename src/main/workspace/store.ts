@@ -2477,6 +2477,12 @@ function badFields(o: object, keys: readonly [string, 'string' | 'boolean'][]): 
   return keys.filter(([k, t]) => wrongType(o, k, t)).map(([k]) => k);
 }
 
+/** A storable `speakVoice` (#1390): a non-empty string no longer than any real
+ *  voice URI. Anything else is dropped and the OS default speaks. */
+function isVoiceName(v: unknown): v is string {
+  return typeof v === 'string' && v.trim().length > 0 && v.length <= 512;
+}
+
 function sanitizeNotifications(n: unknown): Repaired<NotificationPrefs> {
   // A whole block that is not an object (an ARRAY is not one either) loses
   // every setting in it at once, so it is named as one repair rather than
@@ -2494,6 +2500,9 @@ function sanitizeNotifications(n: unknown): Repaired<NotificationPrefs> {
       // default ON (#1267): absent is a file from before the field, and the
       // owner chose ON for everyone, existing workspaces included
       needsYouSound: x.needsYouSound !== false,
+      // #1390: a voice name is free text from the OS, so the only test is
+      // "a non-empty string of a sane length"; absent is the OS default
+      ...(isVoiceName(x.speakVoice) ? { speakVoice: x.speakVoice } : {}),
       // The window is all-or-nothing (P2-E14-05b), and the test is the SAME one
       // the dialog and the evaluator use: both ends present, both parseable,
       // and not equal. Half a window is not a window — a `quietEnd` sitting
@@ -2510,6 +2519,7 @@ function sanitizeNotifications(n: unknown): Repaired<NotificationPrefs> {
         ['sounds', 'boolean'],
         ['speak', 'boolean'],
         ['needsYouSound', 'boolean'],
+        ['speakVoice', 'string'],
         ['quietStart', 'string'],
         ['quietEnd', 'string'],
       ]),
@@ -2524,6 +2534,8 @@ function sanitizeNotifications(n: unknown): Repaired<NotificationPrefs> {
       ...(usable
         ? []
         : (['quietStart', 'quietEnd'] as const).filter((k) => typeof x[k] === 'string')),
+      // a voice that IS a string but not a usable one (empty, absurdly long)
+      ...(typeof x.speakVoice === 'string' && !isVoiceName(x.speakVoice) ? ['speakVoice'] : []),
     ],
   };
 }

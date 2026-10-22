@@ -11,7 +11,10 @@ import {
   GainLike,
   OscillatorLike,
   browserSpeech,
+  chooseVoice,
   createAnnouncer,
+  listVoices,
+  setVoicePreference,
   installAnnouncer,
   setAudioMuted,
   scheduleCue,
@@ -247,6 +250,98 @@ describe('the real voice refuses a backlog', () => {
   it('answers false on a machine with no voice at all', () => {
     // Linux without speech-dispatcher. `false` is what sends main its beep.
     expect(browserSpeech()('anything')).toBe(false);
+  });
+});
+
+// #1390: the chosen voice, and the fail-open ladder under it. No real OS voice
+// anywhere: the list below is made up, and CI under xvfb has none at all.
+describe('the chosen voice (#1390)', () => {
+  const zira = { name: 'Zira', voiceURI: 'Microsoft Zira', lang: 'en-US' };
+  const david = { name: 'David', voiceURI: 'Microsoft David', lang: 'en-US' };
+  const install = (voices: unknown[] | undefined) => {
+    const said: Array<{ text: string; voice: unknown }> = [];
+    const g = globalThis as unknown as Record<string, unknown>;
+    g.speechSynthesis = {
+      pending: false,
+      speaking: false,
+      speak: (u: { text: string; voice: unknown }) => said.push({ text: u.text, voice: u.voice }),
+      ...(voices ? { getVoices: () => voices } : {}),
+    };
+    g.SpeechSynthesisUtterance = class {
+      voice: unknown = null;
+      constructor(public text: string) {}
+    };
+    return said;
+  };
+  afterEach(() => {
+    const g = globalThis as unknown as Record<string, unknown>;
+    delete g.speechSynthesis;
+    delete g.SpeechSynthesisUtterance;
+    setVoicePreference(null);
+  });
+
+  it('matches on voiceURI first, then on name, else nothing', () => {
+    expect(chooseVoice([zira, david], 'Microsoft David')).toBe(david);
+    expect(chooseVoice([zira, david], 'Zira')).toBe(zira);
+    expect(chooseVoice([zira, david], 'Gone')).toBeNull();
+    expect(chooseVoice([zira, david], null)).toBeNull();
+    expect(chooseVoice([], 'Zira')).toBeNull();
+  });
+
+  it('speaks in the chosen voice', () => {
+    const said = install([zira, david]);
+    setVoicePreference('Microsoft David');
+    expect(browserSpeech()('Trading app is done')).toBe(true);
+    expect(said).toEqual([{ text: 'Trading app is done', voice: david }]);
+  });
+
+  it('no choice leaves the voice unset, which is the OS default', () => {
+    const said = install([zira, david]);
+    setVoicePreference('');
+    expect(browserSpeech()('hello')).toBe(true);
+    expect(said[0].voice).toBeNull();
+  });
+
+  it('a chosen voice that is gone falls back to the default, still speaks, and logs once at info', () => {
+    const said = install([zira]);
+    const log = vi.fn();
+    setVoicePreference('Microsoft David');
+    const speak = browserSpeech(log);
+    expect(speak('one')).toBe(true);
+    expect(speak('two')).toBe(true);
+    expect(said.map((s) => s.voice)).toEqual([null, null]);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toContain('Microsoft David');
+    // choosing again re-arms the one log line for the new value
+    setVoicePreference('Also gone');
+    speak('three');
+    expect(log).toHaveBeenCalledTimes(2);
+  });
+
+  it('an engine with no voice list at all (or an empty one) still speaks in the default', () => {
+    setVoicePreference('Microsoft David');
+    const none = install(undefined);
+    expect(browserSpeech(() => {})('a')).toBe(true);
+    expect(none[0].voice).toBeNull();
+    const empty = install([]);
+    expect(browserSpeech(() => {})('b')).toBe(true);
+    expect(empty[0].voice).toBeNull();
+  });
+
+  it('a voice list that throws reads as empty, never as an error', () => {
+    const g = globalThis as unknown as Record<string, unknown>;
+    install([]);
+    (g.speechSynthesis as Record<string, unknown>).getVoices = () => {
+      throw new Error('boom');
+    };
+    expect(listVoices()).toEqual([]);
+    setVoicePreference('Zira');
+    expect(browserSpeech(() => {})('c')).toBe(true);
+  });
+
+  it('no speech on the machine at all is still `false` (the beep rung)', () => {
+    setVoicePreference('Zira');
+    expect(browserSpeech(() => {})('d')).toBe(false);
   });
 });
 
