@@ -435,6 +435,39 @@ export interface NotStartedBriefingExpired {
 
 const optString = (v: unknown): boolean => v === undefined || typeof v === 'string';
 
+/**
+ * What a dispatched card knows about its own dispatch (#1400): the AI it was
+ * sent to, the role, and who sent it. DESCRIPTIVE ONLY, never the briefing.
+ *
+ * Written into the card's panel params at dispatch time and sent with
+ * `sessions:create`, because main keeps a briefing (and #1378's tombstone for
+ * an expired one) only in memory. Dispatch, quit before the card ever tried to
+ * start, relaunch: main never held that id, and without these facts the card
+ * fell open into a plain session on the DEFAULT AI. With them, main refuses
+ * it with the same named `briefing-expired` answer #1378 gives.
+ */
+export type DispatchFacts = Omit<NotStartedBriefingExpired, 'reason'>;
+
+/** Longest a descriptive dispatch fact may be: a name or an id, never a text. */
+const MAX_DISPATCH_FACT = 300;
+
+/**
+ * `DispatchFacts` from untrusted input (§5.29): each field kept only if it is a
+ * non-empty string of a sane length. `undefined` for anything that is not an
+ * object or keeps no field at all, so a card dispatched before #1400 (no
+ * facts) keeps its old fail-open start.
+ */
+export function dispatchFactsOf(v: unknown): DispatchFacts | undefined {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return undefined;
+  const r = v as Record<string, unknown>;
+  const out: DispatchFacts = {};
+  for (const k of ['aiName', 'fromName', 'fromId', 'templateId'] as const) {
+    const x = r[k];
+    if (typeof x === 'string' && x.trim() !== '' && x.length <= MAX_DISPATCH_FACT) out[k] = x;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /** Is this `sessions:create` answer a named refusal rather than a record? */
 export function isSessionNotStarted(v: unknown): v is SessionNotStarted {
   if (typeof v !== 'object' || v === null) return false;

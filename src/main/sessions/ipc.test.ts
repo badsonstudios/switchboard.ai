@@ -6075,6 +6075,59 @@ describe('sessions:create carrying a dispatch (P2-E13-03, §5.15)', () => {
     expect(answer).not.toBeNull();
   });
 
+  // ── #1400: A DISPATCH MAIN NEVER HELD, ON A CARD THAT NEVER STARTED ────────
+  // Dispatch, the card never tries to start, quit within 15 minutes, relaunch:
+  // this process never held the id (no briefing, no tombstone). The card sends
+  // what it was dispatched as, and is refused by the same name.
+  const facts = { aiName: 'Codex', fromName: 'App', fromId: 'live-author', templateId: 'mine-1' };
+
+  it('#1400: after a relaunch, a never-started card with its dispatch facts is refused by name — not the default AI', async () => {
+    const h = harness(undefined, dir); // the registry holds nothing: a fresh process
+    const answer = await create(h, { dispatchedAs: facts });
+    expect(answer).toEqual({ notStarted: { reason: 'briefing-expired', ...facts } });
+    expect(isSessionNotStarted(answer)).toBe(true);
+    expect(h.created).toHaveLength(0);
+    expect(h.upserted).toHaveLength(0);
+    expect(h.submitted).toEqual([]);
+    expect(h.warn).toHaveBeenCalledWith(stringContaining('lost its briefing to a relaunch'), expect.anything());
+    expect(h.warn).not.toHaveBeenCalledWith(stringContaining('starting an ordinary session'), expect.anything());
+  });
+
+  it('#1400: the facts are untrusted — junk fields are dropped, and all-junk falls back to the old fail-open', async () => {
+    const h = harness(undefined, dir);
+    const partly = (await create(h, {
+      dispatchedAs: { aiName: 'Codex', fromName: 42, templateId: 'x'.repeat(5000), extra: 'no' },
+    })) as { notStarted: Record<string, unknown> };
+    expect(partly.notStarted).toEqual({ reason: 'briefing-expired', aiName: 'Codex' });
+
+    const h2 = harness(undefined, dir);
+    const junk = await create(h2, { dispatchedAs: { aiName: 7 } });
+    expect(isSessionNotStarted(junk)).toBe(false);
+    expect(junk).not.toBeNull();
+    expect(h2.warn).toHaveBeenCalledWith(stringContaining('dispatch briefing was not available'), expect.anything());
+  });
+
+  it('#1400: a card that already STARTED keeps starting after a relaunch, facts or not', async () => {
+    const h = harness(undefined, dir, { prior: priorCard({ folder: dir }) });
+    const answer = await create(h, { dispatchedAs: facts });
+    expect(isSessionNotStarted(answer)).toBe(false);
+    expect(answer).not.toBeNull();
+  });
+
+  it('#1400: a dispatch main DOES hold starts briefed, as before — the facts change nothing', async () => {
+    const h = harness(undefined, dir, { dispatch: pending() });
+    const answer = await create(h, { dispatchedAs: facts });
+    expect(isSessionNotStarted(answer)).toBe(false);
+    expect(h.created).toHaveLength(1);
+    expect(h.spent).toEqual([DISPATCH_ID]);
+  });
+
+  it('#1400: a tombstone still wins over the card facts (main knows better)', async () => {
+    const h = harness(undefined, dir, { expired: gone({ providerName: 'Local Llama' }) });
+    const answer = (await create(h, { dispatchedAs: facts })) as { notStarted: Record<string, unknown> };
+    expect(answer.notStarted.aiName).toBe('Local Llama');
+  });
+
   it('refuses a dispatchId that is not a string (§5.29)', async () => {
     const h = harness(undefined, dir, { dispatch: pending() });
     // THE REFUSAL ITSELF, not merely "nothing was created" — which would also be

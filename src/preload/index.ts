@@ -38,6 +38,7 @@ import type {
 } from '../shared/update';
 import type {
   AutonomyMode,
+  DispatchFacts,
   SessionCardWire,
   SwitchConversationResult,
   SessionNotStarted,
@@ -358,6 +359,12 @@ const api = {
        * ordinary session rather than refusing to start at all.
        */
       dispatchId?: string;
+      /**
+       * What this card knows about its dispatch (#1400) — the AI, the role,
+       * the sender; never the briefing. Main uses it only for a FIRST start
+       * whose `dispatchId` it never held (a relaunch), to refuse by name.
+       */
+      dispatchedAs?: DispatchFacts;
       /**
        * Open this card as a FORK of another session's conversation (§5.5
        * Level 3, P2-E11-12) — it starts carrying that conversation's whole

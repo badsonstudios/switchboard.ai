@@ -2719,9 +2719,35 @@ transfer + role templates, all already in the design.
 > card says the briefing expired, offers **Dispatch again** from the sending session
 > on the same role, and has no Try again. It writes the fact into its own panel
 > params, so after a relaunch (when main no longer remembers) it still does not
-> start. The fail-open above is unchanged for the case it was written for: a handle
+> start. ~~The fail-open above is unchanged for the case it was written for: a handle
 > main never held, i.e. a dispatched card that had not yet tried to start when the
-> app was quit.
+> app was quit.~~
+>
+> **⚠️ AMENDED AGAIN (#1400, 2026-10-22): that last gap is closed, and it was
+> narrower than it read.** It amends the sentence struck through above: *"The
+> fail-open above is unchanged for the case it was written for: a handle main never
+> held, i.e. a dispatched card that had not yet tried to start when the app was
+> quit."* Measured while closing it (`dispatch.spec.ts`): such a card has no
+> session record, and the layout restore drops every session panel with no record
+> behind it (`sessions:knownCards`), so after a relaunch it is normally **not
+> restored at all** and nothing starts on its behalf. The same holds for #1378's
+> refused card, which also never gets a record: its `dispatchExpired` param is what
+> keeps it refusing across a remount or Try again within a run, and after a quit
+> it is simply not brought back. The panel survives a relaunch only when the
+> known-cards read is refused and the restore prunes nothing (#650), and that one
+> used to fall open into a plain session on the default AI. It no longer can: the
+> renderer writes what the card was dispatched AS into its panel params at
+> dispatch time (`CardParams.dispatchedAs`: the AI's name, the role id, the
+> sender's id and name, from `dispatch:prepare`'s answer; never the briefing) and
+> sends it with `sessions:create`. A FIRST start (no record) whose handle main
+> never held and has no tombstone for, carrying those facts, is refused with the
+> same `briefing-expired` answer, so the card shows the same message and
+> **Dispatch again**. The facts are untrusted renderer input (`dispatchFactsOf`:
+> strings only, bounded, unknown keys dropped). What still falls open, by design:
+> a card with a record (it ran, and was briefed then), and a card dispatched by a
+> build from before this change (no facts in its params). Bringing a never-started
+> dispatched card BACK after a relaunch, so it can say its briefing is gone, would
+> need main to keep a record for a card that never started; not done.
 >
 > **What the gesture refuses rather than half-doing:** a dispatch with no
 > typed-message transport is refused **before** the spawn, because `submitPrompt`

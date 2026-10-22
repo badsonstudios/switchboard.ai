@@ -467,6 +467,24 @@ describe('expired briefings (#1378)', () => {
     expect(h.registry.expired(dispatchId)).toBeUndefined();
   });
 
+  // #1400: the card keeps these in its params, so a card that never tried to
+  // start before a quit can still be refused by name after the relaunch
+  it('the prepared answer carries the AI name, the role and the sender — never the briefing', async () => {
+    const two = [
+      { id: 'claude-code', name: 'Claude Code' },
+      { id: 'codex', name: 'Codex' },
+    ];
+    const h = harness({ providers: two });
+    const answer = await prepared(h, { from: AUTHOR, templateId: REVIEWER_ID, targetProviderId: 'codex' });
+    expect(answer).toMatchObject({
+      aiName: 'Codex',
+      templateId: REVIEWER_ID,
+      fromId: AUTHOR,
+      fromName: 'TradingApp',
+    });
+    expect(JSON.stringify(answer)).not.toContain('const a = 2');
+  });
+
   it('once past its TTL it says WHICH AI, WHICH role and WHO sent it — and keeps saying so', async () => {
     const two = [
       { id: 'claude-code', name: 'Claude Code' },
