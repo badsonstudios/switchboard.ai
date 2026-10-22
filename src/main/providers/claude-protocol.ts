@@ -476,32 +476,44 @@ export function mcpReconnectRequest(
 /**
  * `mcp_authenticate` — start the OAuth flow for one remote server (#734).
  *
- * ⚠️ **ONLY THE REFUSALS ARE MEASURED. THE SUCCESS PATH IS NOT, AND CANNOT BE
- * FROM THIS MACHINE.** Measured 2026-08-30
- * (`spike/probes/721/probe-mcp-auth.mjs`, throwaway server):
+ * **THE SUCCESS ANSWER CARRIES A URL, AND THE HOST OPENS IT (#1420).** Claude
+ * Code does NOT open a browser for this verb in the transport we host. It starts
+ * the flow, runs the OAuth callback listener itself, and answers with the
+ * address the user must visit. #734 shipped reading `ok: true` and dropping
+ * that payload, so a sign-in the CLI had accepted never reached a browser.
+ * That is #1420. Read 2026-10-22 off both reference sources:
+ *
+ *   PATH CLI 2.1.288, the handler:
+ *     success  {authUrl, requiresUserAction:true, callbackExpected:true,
+ *               redirectScheme, state, callbackPort?}   (callbackPort only for
+ *               the `localhost` redirect scheme)
+ *     no URL   {requiresUserAction:false, callbackExpected:false}
+ *     claude.ai connector (`claudeai-proxy`): the CLI builds the connector's
+ *              start-auth address ITSELF and answers {authUrl,
+ *              requiresUserAction:true, callbackExpected:false}
+ *   VS Code extension 2.1.289, `authenticateMcpServer`:
+ *     `if(W.authUrl)try{await this.openURL(W.authUrl)}` (the host opens it)
+ *
+ * What the host does with it lives in `main/mcp/sign-in.ts` (opened from main
+ * with `shell.openExternal`, http(s) only, never logged). Callers must still not
+ * read `ok: true` as "signed in": it means "a flow was started", and the user
+ * finishes it in the browser.
+ *
+ * The refusals, measured 2026-08-30 (`spike/probes/721/probe-mcp-auth.mjs`):
  *
  *     {}                             -> error "Server not found: undefined"
  *     {serverName:"__nope__"}        -> error "Server not found: __nope__"
  *     {serverName:<a stdio server>}  -> error 'Server type "stdio" does not
  *                                              support OAuth authentication'
  *
- * There is no claude.ai connector on the dev machine, so what this answers when
- * it really starts a flow — whether a browser opens, what the payload carries,
- * how the row leaves `needs-auth` — is **unknown**. Callers must not read
- * `ok: true` as "signed in"; the renderer says "if a browser opens, finish
- * there" for exactly this reason. Do not infer the success shape from the
- * refusal shapes.
- *
- * ⚠️ **AND THE TEN-SECOND CHANNEL TIMEOUT MAY NOT SURVIVE CONTACT WITH A REAL
- * FLOW.** `CONTROL_TIMEOUT_MS` is 10s (`claude-control-channel.ts`) and
- * every other verb here answers in milliseconds — but if the CLI's
- * implementation blocks until the browser round trip finishes, a genuine
- * sign-in times out every time while working perfectly. UNMEASURED, like the
- * rest of the success path. It is not treated as a failure downstream: the pane
- * has a verb-specific sentence for `timed-out` on this channel, and keeps
- * watching the row rather than concluding anything. Raising the global timeout
- * was declined — it protects every other control request, and one verb's
- * unknown is not a reason to make the whole channel slower to give up.
+ * THE TEN-SECOND CHANNEL TIMEOUT. `CONTROL_TIMEOUT_MS` is 10s
+ * (`claude-control-channel.ts`). The CLI answers once the authorisation server
+ * has produced the URL, not when the browser round trip ends (it races the URL
+ * against the flow), so a healthy sign-in answers well inside that. A slow
+ * authorisation server can still miss it, and the pane keeps a verb-specific
+ * `timed-out` sentence and keeps watching the row rather than concluding
+ * anything. Raising the global timeout was declined: it protects every other
+ * control request.
  *
  * NOTE THE MISSING-ARGUMENT CASE IS PROPERLY REFUSED here, unlike `mcp_toggle`,
  * which reads an absent `enabled` as "disable" and answers success. That is a
@@ -509,11 +521,10 @@ export function mcpReconnectRequest(
  * validated before the wire, because the next verb may be the other kind and
  * discovering which is what the toggle hazard cost us.
  *
- * `mcp_oauth_callback_url` EXISTS AND IS DELIBERATELY NOT BUILT. It answers "No
- * active OAuth flow for server: <name>" outside a flow, and we have never seen
- * a live one — so we have no measured idea what it is for. Inventing a use for
- * an unmeasured verb is precisely the habit that let this whole feature go
- * missing for two PRs and a release.
+ * `mcp_oauth_callback_url` EXISTS AND IS DELIBERATELY NOT BUILT. It is for a
+ * host that cannot receive the OAuth callback itself and pastes the redirect
+ * back ("call mcp_authenticate first", in the CLI). The CLI on a desktop runs
+ * its own localhost listener, so a desktop host does not need it.
  */
 export function mcpAuthenticateRequest(
   requestId: string,

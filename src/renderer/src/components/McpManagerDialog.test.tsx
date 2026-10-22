@@ -209,7 +209,8 @@ beforeEach(() => {
   resetAnswer = { ok: true };
   reconnectAnswer = { outcome: 'typed' };
   toggleAnswer = { ok: true, response: {} };
-  authAnswer = { ok: true, response: {} };
+  // what main answers once it has opened the browser (#1420)
+  authAnswer = { ok: true, response: { signIn: 'opened' } };
   clearAuthAnswer = { ok: true, response: {} };
   reconnectServerAnswer = () => ({ ok: true, response: {} });
   listAnswer = (folder) => ({ folder, servers: [], unreadable: [] });
@@ -1297,6 +1298,49 @@ describe('turning a server off and on (#729 PR 2)', () => {
   });
 });
 
+describe('a long server name never runs under the status word (#1420)', () => {
+  // Dan's screenshot: the red "connecting" painted ON TOP OF
+  // `plugin:atlassian:atlassian`. A name with no spaces cannot wrap, and the
+  // name line had no clip, so it overflowed its (shrinkable) flex cell. jsdom
+  // has no layout, so this pins the STRUCTURE that makes overlap impossible:
+  // the name clips with an ellipsis and carries its full text as a title, and
+  // the status word is a separate, non-shrinking cell AFTER it.
+  const LONG = 'plugin:atlassian:atlassian-with-a-much-longer-namespaced-suffix';
+
+  function check(row: HTMLElement): void {
+    const name = row.querySelector<HTMLElement>('[data-mcp-name]');
+    expect(name).not.toBeNull();
+    expect(name!.title).toBe(LONG);
+    expect(name!.style.overflow).toBe('hidden');
+    expect(name!.style.textOverflow).toBe('ellipsis');
+    expect(name!.style.whiteSpace).toBe('nowrap');
+    // the cell holding the name may shrink below its content…
+    const cell = name!.parentElement!;
+    expect(cell.style.minInlineSize === '0' || cell.style.minInlineSize === '0px').toBe(true);
+    // …and the status word is the NEXT cell in the row, which may not shrink
+    const status = cell.nextElementSibling as HTMLElement;
+    expect(status.parentElement).toBe(row);
+    expect(status.style.flexShrink).toBe('0');
+  }
+
+  it('on a live row', async () => {
+    useStatus(ok([runtimeServer({ name: LONG, scope: 'dynamic', status: 'pending', transport: 'unknown' })]));
+    await mount();
+    const row = rows().find((r) => r.dataset.mcpServer === LONG)!;
+    expect(row).toBeDefined();
+    check(row);
+    expect(row.textContent).toContain('connecting');
+  });
+
+  it('on a configured row', async () => {
+    listAnswer = (folder) => ({ folder, servers: [server({ name: LONG })], unreadable: [] });
+    await mount('C:/p/acme', null);
+    const row = rows().find((r) => r.dataset.mcpServer === LONG)!;
+    expect(row).toBeDefined();
+    check(row);
+  });
+});
+
 describe('signing in and out of a connector (#734)', () => {
   it('a row that needs signing in finally offers a way to do it', async () => {
     // THE BUG THIS TICKET IS. #729 PR 2 shipped this exact row state — the
@@ -1323,18 +1367,47 @@ describe('signing in and out of a connector (#734)', () => {
     ]);
   });
 
-  it('does NOT claim the user is signed in — the success payload is unmeasured', async () => {
-    // ⚠️ THE FAIL-OPEN RULE, AND THE MOST IMPORTANT ASSERTION IN THIS BLOCK.
-    // `mcp_authenticate`'s success answer has never been observed: there is no
-    // claude.ai connector on the build machine, so only its refusals are
-    // measured. Rendering `ok: true` as "Signed in." would be the app inventing
-    // an outcome it cannot see — §4 rules that out, and the row's own status is
-    // what gets to say whether it worked.
+  it('says a browser WAS opened, and still does NOT claim the user is signed in (#1420)', async () => {
+    // ⚠️ THE FAIL-OPEN RULE. Main opened the browser at the address Claude Code
+    // handed back (#1420) — that is the START of the flow, not its end. The
+    // human finishes it there, and the row's own status is what gets to say
+    // whether it worked.
     useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'unknown' })]));
     await mount();
     await click(button('Sign in'));
-    expect(text()).not.toContain('Signed in');
-    expect(text()).toContain('If a browser window opens');
+    expect(text()).not.toContain('Signed in.');
+    expect(text()).toContain('a browser window was opened');
+    expect(text()).not.toContain('If a browser window opens');
+  });
+
+  it('already signed in: says so, and says no browser was needed (#1420)', async () => {
+    useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
+    authAnswer = { ok: true, response: { signIn: 'already-signed-in' } };
+    await mount();
+    await click(button('Sign in'));
+    expect(text()).toContain('is already signed in');
+    expect(text()).not.toContain('a browser window was opened');
+  });
+
+  it.each([
+    ['no-url', { signIn: 'no-url' }],
+    // an answer without the outcome reads the same way: never claim a browser
+    ['no outcome at all', {}],
+  ])('%s: says plainly that no browser was opened (#1420)', async (_label, response) => {
+    useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
+    authAnswer = { ok: true, response };
+    await mount();
+    await click(button('Sign in'));
+    expect(text()).toContain('gave no web address to open');
+    expect(text()).not.toContain('a browser window was opened');
+  });
+
+  it('open-failed: says the computer would not open a browser (#1420)', async () => {
+    useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
+    authAnswer = { ok: true, response: { signIn: 'open-failed' } };
+    await mount();
+    await click(button('Sign in'));
+    expect(text()).toContain('would not open a browser');
   });
 
   it('offers sign-out, and claims only that it ASKED', async () => {

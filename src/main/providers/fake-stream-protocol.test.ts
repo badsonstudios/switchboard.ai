@@ -1644,3 +1644,30 @@ describe('an interrupt takes back what is held, in the measured order (#1268)', 
     expect(out).toEqual([]);
   });
 });
+
+describe('scripted MCP answers (#1420)', () => {
+  const ask = (p: FakeStreamProtocol, request: Record<string, unknown>): void =>
+    p.handle({ type: 'control_request', request_id: 'r1', request });
+
+  it('without a script, both verbs stay unsupported — no other spec sees a change', () => {
+    ask(proto, { subtype: 'mcp_status' });
+    ask(proto, { subtype: 'mcp_authenticate', serverName: 'x' });
+    expect(out.map((m) => (m.response as { subtype?: unknown }).subtype)).toEqual(['error', 'error']);
+  });
+
+  it('with one, answers mcp_status and mcp_authenticate in the real shapes', () => {
+    const authAnswer = { authUrl: 'https://auth.test/a', requiresUserAction: true, callbackExpected: true };
+    const status = [{ name: 'remote', status: 'needs-auth', scope: 'local', config: { type: 'http', url: 'https://r.test/mcp' } }];
+    const p = new FakeStreamProtocol({ ...host, mcp: () => ({ status, authenticate: { remote: authAnswer } }) }, (m) =>
+      out.push(m)
+    );
+    ask(p, { subtype: 'mcp_status' });
+    ask(p, { subtype: 'mcp_authenticate', serverName: 'remote' });
+    ask(p, { subtype: 'mcp_authenticate', serverName: 'other' });
+    expect(out.map((m) => m.response)).toEqual([
+      { subtype: 'success', request_id: 'r1', response: { mcpServers: status } },
+      { subtype: 'success', request_id: 'r1', response: authAnswer },
+      { subtype: 'error', request_id: 'r1', error: 'Server not found: other' },
+    ]);
+  });
+});

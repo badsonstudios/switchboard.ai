@@ -184,6 +184,26 @@ export function fakeFlatPng(width: number, height: number): string {
  * sentence to an ordinary-looking turn, built from the same emitters the verbs
  * use — so the wire shapes stay the measured ones and only the words change.
  */
+/**
+ * What the fake's MCP control verbs answer (#1420), from the file named by
+ * `SWITCHBOARD_FAKE_MCP`. OPT-IN, like `SWITCHBOARD_FAKE_SCRIPT`.
+ *
+ * SHAPES ARE THE REAL CLI'S, not invented: `mcp_status`'s `{ mcpServers: [{
+ * name, status, scope, config }] }` was measured in #729, and
+ * `mcp_authenticate`'s success `{ authUrl, requiresUserAction,
+ * callbackExpected, redirectScheme, state, callbackPort? }` was read off the
+ * PATH CLI 2.1.288 (quoted in `main/mcp/sign-in.ts`). The fake does not invent
+ * the CONTENT either: the spec writes the answer it wants, so the claim under
+ * test is only that the host does the right thing with it.
+ */
+export interface FakeMcpScript {
+  /** the `mcpServers` array `mcp_status` answers with */
+  status: Array<Record<string, unknown>>;
+  /** per server name: the success `response` body `mcp_authenticate` answers.
+   *  A name with no entry is refused with the CLI's own sentence. */
+  authenticate?: Record<string, Record<string, unknown>>;
+}
+
 export interface FakeScriptedTurn {
   /** prose before anything else, as its own assistant message */
   say?: string;
@@ -234,6 +254,13 @@ export interface FakeStreamHost {
    * (every unit test) simply records the call.
    */
   fireHook?(payload: Record<string, unknown>): void;
+  /**
+   * A scripted MCP inventory and sign-in answers (#1420), or `undefined` for
+   * none — in which case `mcp_status` and `mcp_authenticate` are refused as
+   * unsupported, exactly as before, and no spec that did not ask sees a change.
+   * See `FakeMcpScript`.
+   */
+  mcp?(): FakeMcpScript | undefined;
   /**
    * Claim ANOTHER conversation id, for the one thing that mints one mid-session
    * (#752): `/clear`.
@@ -1425,6 +1452,28 @@ export class FakeStreamProtocol {
       this.emit({
         type: 'control_response',
         response: { subtype: 'success', request_id: requestId },
+      });
+      return;
+    }
+    // ── MCP, scripted (#1420) ────────────────────────────────────────────────
+    // Only when the spec asked for it; otherwise these fall to the
+    // unsupported branch below, which is where they always went.
+    const mcp = this.host.mcp?.();
+    if (mcp && req?.subtype === 'mcp_status') {
+      this.emit({
+        type: 'control_response',
+        response: { subtype: 'success', request_id: requestId, response: { mcpServers: mcp.status } },
+      });
+      return;
+    }
+    if (mcp && req?.subtype === 'mcp_authenticate') {
+      const name = asDisplayString((req as { serverName?: unknown }).serverName);
+      const answer = mcp.authenticate?.[name];
+      this.emit({
+        type: 'control_response',
+        response: answer
+          ? { subtype: 'success', request_id: requestId, response: answer }
+          : { subtype: 'error', request_id: requestId, error: `Server not found: ${name}` },
       });
       return;
     }

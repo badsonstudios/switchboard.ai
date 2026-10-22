@@ -199,10 +199,21 @@ from your claude.ai account are the usual case, and a row that's waiting says
 **needs sign-in**.
 
 Those rows have a **Sign in** button. Clicking it asks Claude Code to start the
-sign-in; if a browser window opens, finish there. The panel doesn't claim you're
-signed in — it tells you the request went through, and the row's own state
-changes when it really works. Give it a moment and the status column will catch
-up.
+sign-in. Claude Code answers with the web page you need to sign in on, and
+switchboard opens that page in your usual browser. The panel then says **a
+browser window was opened — finish signing in there**. Sign in on that page, then
+come back. The panel doesn't claim you're signed in: the row's own state changes
+when it really works, and the panel keeps checking for about a minute.
+
+A few other answers are possible, and the panel says which one you got:
+
+- **Already signed in.** Claude Code didn't need a browser for that server.
+- **No web address to open.** Claude Code accepted the request but didn't say
+  where to sign in, so nothing opened. Try again in a moment.
+- **Your computer wouldn't open a browser.** Check that you have a default
+  browser set, then try again.
+- **Claude Code hasn't answered yet.** It gets ten seconds to hand back the
+  sign-in page. If nothing opened, try again.
 
 **Sign out** does the opposite: it makes Claude Code forget your sign-in for
 that server. Use it if a sign-in got stuck halfway and you want to start again,
@@ -216,11 +227,10 @@ is — some servers don't say — the buttons are offered anyway, and Claude Cod
 own refusal is shown if it turns out not to apply. That's on purpose: hiding a
 control we're unsure about would hide it from the connectors that need it most.
 
-**Worth knowing:** this part is new and has been built against how Claude Code
-*refuses* these requests, which we could test, rather than how it completes them,
-which we couldn't — there was no account connector on the machine it was written
-on. If a sign-in behaves oddly, that's worth reporting rather than working
-around.
+**Worth knowing:** the address you sign in on is never written to
+switchboard's log, and neither is the server's name. A sign-in that behaves
+oddly is still worth reporting: the full sign-in round trip has not yet been
+tried against a real account connector.
 
 ## Turning a server off
 

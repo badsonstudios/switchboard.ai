@@ -175,7 +175,8 @@ export function createClaudeControls(session: ControlSession): SessionControls {
       toggle: (serverName, enabled) =>
         ask((requestId) => mcpToggleRequest(requestId, serverName, enabled)),
       reconnect: (serverName) => ask((requestId) => mcpReconnectRequest(requestId, serverName)),
-      // ⚠️ `ok: true` does not mean "signed in" — only the refusals are measured.
+      // ⚠️ `ok: true` does not mean "signed in": it carries the `authUrl` the
+      // HOST must open (#1420, `mcp/sign-in.ts`).
       authenticate: (serverName) => ask((requestId) => mcpAuthenticateRequest(requestId, serverName)),
       clearAuth: (serverName) => ask((requestId) => mcpClearAuthRequest(requestId, serverName)),
     },

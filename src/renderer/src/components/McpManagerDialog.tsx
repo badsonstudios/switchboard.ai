@@ -89,6 +89,7 @@ import type {
   McpRuntimeStatus,
   McpScope,
   McpServerWire,
+  McpSignInOutcome,
   McpStatusWire,
 } from '../../../shared/mcp';
 import type { ControlVerdict } from '../../../shared/control';
@@ -247,9 +248,10 @@ export function runtimeStatus(server: McpRuntimeServer): {
  * this feature exists for meant a Sign out button on nearly all of them — most
  * having nothing to sign out of. Found in review.
  *
- * What it IS for: the success path of `mcp_authenticate` **cannot be exercised
- * on the machine this was written on**, so the first real attempt happens on a
- * user's laptop. If it half-completes, sign-out-then-in is the only recovery
+ * What it IS for: the success path of `mcp_authenticate` **could not be
+ * exercised on the machine this was written on** (and when it first was, in
+ * #1420, it turned out the host must open the browser itself). If a flow
+ * half-completes, sign-out-then-in is the only recovery
  * that does not involve the CLI's credential store by hand — and there is
  * nobody upstream of the user to discover that for them.
  *
@@ -293,6 +295,46 @@ export function authControls(server: McpRuntimeServer): { signIn: boolean; signO
       return none;
   }
 }
+
+/**
+ * A row's name line (#1420).
+ *
+ * ⚠️ **CLIPPED, BECAUSE A NAME CAN BE ONE UNBREAKABLE WORD.** Plugin servers
+ * are namespaced (`plugin:atlassian:atlassian`), and a string with no spaces
+ * cannot wrap. Without `overflow: hidden` it overflowed its flex cell
+ * (`minInlineSize: 0` lets the cell shrink, not the text) and was painted
+ * UNDER the status word beside it: the red "connecting" sat on top of the name
+ * in Dan's screenshot. The full name is the row's `title`.
+ */
+const NAME_LINE: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 600,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
+
+/**
+ * What a successful sign-in did (#1420), off `response.signIn`.
+ *
+ * Main opens the browser and answers only the outcome (`main/mcp/sign-in.ts`).
+ * An answer without a recognised outcome reads as `no-url`: the one reading
+ * that never claims a browser opened when we cannot show that one did.
+ */
+export function signInOutcomeOf(verdict: ControlVerdict | undefined): McpSignInOutcome {
+  if (!verdict?.ok) return 'no-url';
+  const v = verdict.response.signIn;
+  return v === 'opened' || v === 'already-signed-in' || v === 'open-failed' ? v : 'no-url';
+}
+
+/** The pane's sentence for each outcome. `opened` keeps the `signInStarted`
+ *  key: it is the same moment, now with a browser that really opened. */
+const SIGN_IN_SENTENCE: Record<McpSignInOutcome, string> = {
+  opened: 'mcp.signInStarted',
+  'already-signed-in': 'mcp.signInAlready',
+  'no-url': 'mcp.signInNoUrl',
+  'open-failed': 'mcp.signInOpenFailed',
+};
 
 /** The status word once approval has had its say — split out so `runtimeStatus`
  *  reads as the precedence rule it is. */
@@ -1157,22 +1199,23 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
   };
 
   /**
-   * Start a server's OAuth sign-in (#734).
+   * Start a server's OAuth sign-in (#734, #1420).
    *
-   * ⚠️ **SUCCESS IS NOT REPORTED AS "SIGNED IN", AND THAT IS THE WHOLE CARE IN
-   * THIS FUNCTION.** The success payload of `mcp_authenticate` has never been
-   * observed — there is no claude.ai connector on the machine this was built on,
-   * so only its refusals are measured. Saying "Signed in." on an `ok: true` we
-   * do not understand would be the app inventing an outcome, which is the one
-   * thing §4 rules out. The sentence says the request was accepted and tells the
-   * user where to look, which is true whatever the CLI actually did.
+   * **CLAUDE CODE DOES NOT OPEN THE BROWSER; MAIN DOES (#1420).** In the
+   * transport we host, `mcp_authenticate` answers with an `authUrl` and the host
+   * is expected to open it. #734 read `ok: true` and dropped that payload, so a
+   * sign-in Claude Code had accepted never reached a browser. Main now opens
+   * the address (`main/mcp/sign-in.ts`) and answers only WHAT HAPPENED, as
+   * `response.signIn`; the address itself never comes this far. The sentence
+   * is picked from that outcome.
    *
-   * The status watch afterwards is what turns a real sign-in into a visible one:
-   * if the row leaves `needs-auth`, the list says so on its own rather than
-   * because we claimed it. **The window is opened BEFORE the call**, not after
-   * it — `controlMutate` bumps `generation`, which re-enters the status effect,
-   * and a ref set after the await would race that re-entry. Starting the clock a
-   * few milliseconds early costs nothing against a sixty-second window.
+   * ⚠️ **STILL NOT "SIGNED IN".** A browser opening is the start of the flow,
+   * not its end: the human finishes it there, and the row's own status is what
+   * says it worked. The status watch afterwards is what turns a real sign-in
+   * into a visible one. **The window is opened BEFORE the call**, not after it
+   * — `controlMutate` bumps `generation`, which re-enters the status effect, and
+   * a ref set after the await would race that re-entry. Starting the clock a few
+   * milliseconds early costs nothing against a sixty-second window.
    */
   const doAuthenticate = async (s: McpRuntimeServer): Promise<void> => {
     if (!folder || !props.liveId) {
@@ -1181,9 +1224,18 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
     }
     const liveId = props.liveId;
     authWatchUntil.current = Date.now() + AUTH_WATCH_MS;
+    let answer: ControlVerdict | undefined;
     const problem = await controlMutate(
       { kind: 'authenticate', key: `${s.scope}:${s.name}` },
-      () => window.switchboard?.mcp?.authenticate?.(folder, liveId, s.name),
+      () => {
+        const pending = window.switchboard?.mcp?.authenticate?.(folder, liveId, s.name);
+        // Laundered HERE, at the boundary (#346): a refused call resolves an
+        // IpcRefusal, and `controlMutate` reads `undefined` as refused anyway.
+        return pending?.then((v) => {
+          answer = answered(v);
+          return answer;
+        });
+      },
       // The ten-second channel timeout against a human in a browser — see
       // `controlFailure`. A generic "busy or stuck" here would report a flow
       // that is going fine as a fault.
@@ -1202,12 +1254,19 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
     // prose rather than the verdict; the alternative was widening its return
     // type for one caller.
     const timedOut = problem === t('mcp.signInTimedOut');
-    if (problem && !timedOut) authWatchUntil.current = 0;
-    setNotice(
-      problem
-        ? { bad: true, text: problem }
-        : { bad: false, text: t('mcp.signInStarted', { name: s.name }) }
-    );
+    if (problem) {
+      if (!timedOut) authWatchUntil.current = 0;
+      setNotice({ bad: true, text: problem });
+      return;
+    }
+    const outcome = signInOutcomeOf(answer);
+    // NOTHING THE USER CAN FINISH: no address, or the OS would not open it.
+    // Same argument as a refusal — there is no flow on this side to watch for.
+    if (outcome === 'no-url' || outcome === 'open-failed') authWatchUntil.current = 0;
+    setNotice({
+      bad: outcome === 'no-url' || outcome === 'open-failed',
+      text: t(SIGN_IN_SENTENCE[outcome], { name: s.name }),
+    });
   };
 
   /**
@@ -1399,7 +1458,9 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
           }}
         />
         <div style={{ minInlineSize: 0, flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 600 }}>{s.name}</div>
+          <div data-mcp-name title={s.name} style={NAME_LINE}>
+            {s.name}
+          </div>
           {/* the command or the endpoint — never the credentials */}
           <div
             style={{
@@ -1506,7 +1567,11 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
           }}
         />
         <div style={{ minInlineSize: 0, flex: 1 }}>
-          <div style={{ fontSize: 12, fontWeight: 600 }}>
+          <div
+            data-mcp-name
+            title={s.version ? `${s.name} ${s.version}` : s.name}
+            style={NAME_LINE}
+          >
             {s.name}
             {/* The server's own version, once it has connected. Absent for the
                 whole pending window — see `McpRuntimeStatus`. */}
