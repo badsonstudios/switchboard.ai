@@ -3,9 +3,9 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚀 RELEASING: v0.8.128, 2026-10-23 — THE WHOLE 2026-10-22 RUN
+> # ✅ RELEASED: v0.8.128, 2026-10-23 (PR #1428, tag on `a2cd8ae9`, release run 39963262747) — THE WHOLE 2026-10-22 RUN
 >
-> Dan, after the run's report: *"Great, go ahead and cut a release."* A **regular release, on his word**, as 0.8.127 was (the beta channel stays unproven until he asks for one). Version, lock and dated notes together as before (`0.8.129 — unreleased` is open). On green CI this PR merges, then tag `v0.8.128` is pushed from the merge commit and the release workflow publishes `switchboard-Setup-0.8.128.exe` + sha256 as a normal release marked Latest. Tanner's install gets it too.
+> Dan, after the run's report: *"Great, go ahead and cut a release."* A **regular release, on his word**, as 0.8.127 was (the beta channel stays unproven until he asks for one). Version, lock and dated notes together as before (`0.8.129 — unreleased` is open). The release PR merged on green CI as `a2cd8ae9`, tag `v0.8.128` was pushed from it, and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.128.exe` + `.sha256` as a normal release — `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.128`. Tanner's install gets it too. The two dogfood rows now read RELEASED.
 >
 > **In it:** #1420 (MCP sign-in opens the browser; long server name no longer under its status word), #1413 (click "waiting" to dismiss it; one kind of seen). **Neither is hand-tested** — two dogfood UNTESTED rows; #1420's waits for Atlassian's outage to end. Open follow-ups: #1425, #1427 (both Dan's call). **Nothing in flight. DO NOT CUT ANOTHER unless he asks.**
 
