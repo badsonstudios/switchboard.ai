@@ -1,6 +1,6 @@
 {
   "name": "switchboard",
-  "version": "0.8.127",
+  "version": "0.8.128",
   "private": true,
   "description": "switchboard.ai — an IDE for AI sessions: one window, many agents",
   "author": "badsonstudios",
