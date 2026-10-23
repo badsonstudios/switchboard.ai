@@ -263,7 +263,7 @@
     "headerNameSeparator": "·",
     "taskLabelHint": "Click to set a task label for this session",
     "contextChip": "context",
-    "contextChipHint": "Drag this onto another session's prompt box to hand that session this one's context",
+    "contextChipHint": "Hand this session's context to another session: drag this onto its prompt box, or click (or press Enter) to pick one",
     "plan": "✓ {done}/{total}",
     "planTitle": "Plan progress (TodoWrite steps completed)",
     "popOut": "Pop out into its own window",
@@ -354,6 +354,12 @@
     "note": "Nothing is sent. What you choose waits in the other session's prompt box until you press Enter there.",
     "cancel": "Cancel",
     "ok": "Add to prompt box"
+  },
+  "contextHandoff": {
+    "title": "Hand {from}'s context to…",
+    "hint": "Pick the session to hand it to. You choose how much on the next step, and nothing is sent until you press Enter in that session.",
+    "none": "There is no other session open to hand it to.",
+    "cancel": "Cancel"
   },
   "sessionHistory": {
     "open": "History: previous conversations, and the prompts you sent in this one",
@@ -1423,6 +1429,7 @@
     "closeSession": "Close session",
     "closeAllSessions": "Close all sessions (keeps pinned ones)",
     "dispatch": "Dispatch this session's work to {name}…",
+    "handContext": "Hand this session's context to…",
     "closeAllDocuments": "Close all documents (keeps popped-out ones)",
     "togglePin": "Pin / unpin session",
     "reorderUp": "Move session up in its group",
@@ -1482,7 +1489,8 @@
       "inOwnWindow": "That shortcut arranges the main window, and this session is in a window of its own",
       "noFindTarget": "Nothing that can be searched is focused — click a session, a document or a single diff",
       "emptyQueue": "Nothing is waiting on you",
-      "noActiveGroup": "The focused session is not in a group"
+      "noActiveGroup": "The focused session is not in a group",
+      "noHandoff": "Needs a running session focused, and another session to hand its context to"
     },
     "policy": {
       "always-visible": "On submit: keep every session visible",

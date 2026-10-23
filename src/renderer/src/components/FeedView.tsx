@@ -88,6 +88,7 @@ import {
   useSendInFlight,
   withForwarded,
 } from '../lib/sibling-inbox';
+import { subscribeHandoff, takeHandoff } from '../lib/context-handoff';
 import { ModelQuickMenu } from './ModelQuickMenu';
 import { EffortChip } from './EffortChip';
 import { AiSwitchChip } from './AiSwitchChip';
@@ -3214,6 +3215,33 @@ function Composer({
       }
     );
   };
+
+  /**
+   * A hand-off PICKED rather than dropped (#851): the context chip's picker or
+   * the palette's "Hand this session's context to…" chose THIS card.
+   *
+   * It goes through `onContextDrop` — the very function a drop calls — so the
+   * self-drop refusal, the one-at-a-time guard, the offer, the dialog and every
+   * notice are the drop's own (§5.32's fifth rule: the keyboard route calls the
+   * SAME state change, never a parallel path that can drift). Taken on mount as
+   * well as on notify, because the grid may have had to mount this composer to
+   * answer it; see `lib/context-handoff.ts`.
+   */
+  const onContextDropRef = React.useRef(onContextDrop);
+  onContextDropRef.current = onContextDrop;
+  React.useEffect(() => {
+    const take = (): void => {
+      const fromId = takeHandoff(cardId);
+      if (!fromId) return;
+      // The caret goes to THIS prompt box first, so it is what the dialog
+      // gives focus back to on Cancel — the picker's button is gone by now, and
+      // without this focus would fall to <body> (§5.32: restore focus after).
+      box.current?.focus();
+      onContextDropRef.current(fromId);
+    };
+    take();
+    return subscribeHandoff(take);
+  }, [cardId]);
 
   /**
    * OK in the dialog: park the chosen text in THIS card's composer.

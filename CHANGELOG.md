@@ -140,6 +140,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.129 — unreleased
 
+### Added
+
+- **Hand a session's context over without dragging.** The **context** chip in
+  a session's header used to work only by dragging it onto another session's
+  prompt box. Now you can also click it, or Tab to it and press Enter or Space.
+  A short list of the other running sessions appears; pick one and that session
+  comes to the front with the usual "how much to hand over" question. The
+  command palette has the same thing as **Hand this session's context to…**.
+  Dragging still works as before.
+
 ### Internal
 
 - **AI-written task labels are ready for AIs other than Claude.** To write a

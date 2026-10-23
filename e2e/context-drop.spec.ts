@@ -199,3 +199,113 @@ test.describe('dropping a context chip on another session (#799)', () => {
     await expect(held).toHaveCount(0, { timeout: 15_000 });
   });
 });
+
+// #851: the same hand-off WITHOUT a drag — the chip as a button, the picker it
+// opens, and the palette command — plus a REAL pointer drag from the chip, now
+// that the chip is a `<button draggable>` rather than a span.
+test.describe('handing context over from the keyboard (#851)', () => {
+  let a: LaunchedApp;
+
+  test.afterEach(async () => {
+    await a?.cleanup();
+  });
+
+  const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+  const chip = (w: Page) => w.locator('[data-testid="card-context-chip"]').first();
+  const picker = (w: Page) => w.locator('[data-testid="context-handoff-picker"]');
+  const dialog = (w: Page) => w.locator('[data-testid="context-drop"]');
+
+  /** two live sessions; the second (on screen) is `beta` */
+  async function twoLive(): Promise<{ w: Page; alpha: string; beta: string; betaId: string }> {
+    const folderA = tempProjectFolder();
+    const folderB = tempProjectFolder();
+    a = await launchApp({ seedFolder: folderA, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    const alpha = path.basename(folderA);
+    const beta = path.basename(folderB);
+    await expect(w.getByText(alpha).first()).toBeVisible({ timeout: 25_000 });
+    await a.app.evaluate(({ dialog: d }, dir) => {
+      d.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
+    }, folderB);
+    await w.getByRole('button', { name: '+ session' }).click();
+    await expect(w.getByText(beta).first()).toBeVisible({ timeout: 25_000 });
+    await pollAsync(async () => {
+      const s = await sessionStatuses(a);
+      return s.size >= 2 && [...s.values()].every((v) => v !== 'suspended');
+    }, 'both sessions never came up live — a package is resolved by LIVE id', 60_000);
+    const rows = (await w.evaluate(() => window.switchboard.sessions.list())) as Array<{
+      id: string;
+      identity: { title: string };
+    }>;
+    const betaId = rows.find((r) => r.identity.title === beta)?.id;
+    expect(betaId).toBeTruthy();
+    await expect(chip(w)).toBeVisible({ timeout: 15_000 });
+    return { w, alpha, beta, betaId: betaId! };
+  }
+
+  test('the chip is a button: Enter opens the picker, a pick opens the drop dialog in the OTHER session', async () => {
+    test.setTimeout(180_000);
+    const { w, alpha, beta } = await twoLive();
+
+    // Escape first: the picker gives focus back to the chip and picks nothing
+    await chip(w).focus();
+    await w.keyboard.press('Enter');
+    await expect(picker(w)).toBeVisible();
+    await w.keyboard.press('Escape');
+    await expect(picker(w)).toBeHidden();
+    await expect(chip(w)).toBeFocused();
+
+    // Space opens it too — it is a real button
+    await w.keyboard.press('Space');
+    await expect(picker(w)).toBeVisible();
+    // the only other session is offered, the session itself is not
+    await expect(picker(w).locator('[data-handoff-target]')).toHaveCount(1);
+    await expect(picker(w).locator('[data-handoff-target]')).toContainText(alpha);
+    await expect(picker(w).locator('[data-handoff-target]').first()).toBeFocused();
+    await w.keyboard.press('Enter');
+    await expect(picker(w)).toBeHidden();
+
+    // …and ALPHA's composer — a background tab a moment ago — answers it with
+    // the drop's own dialog, about BETA
+    await expect(dialog(w)).toBeVisible({ timeout: 20_000 });
+    await expect(dialog(w)).toContainText(beta);
+    await expect(w.locator('[data-context-option="package"]')).toHaveAttribute('data-selected', 'yes');
+    await w.locator('[data-context-ok]').click();
+    await expect(dialog(w)).toBeHidden();
+    const held = w.locator('[data-sibling-message][data-sibling-kind="context"]');
+    await expect(held).toHaveCount(1, { timeout: 15_000 });
+    await expect(held).toContainText(`Context from "${beta}" (session)`);
+  });
+
+  test('the palette command opens the same picker', async () => {
+    test.setTimeout(180_000);
+    const { w, alpha } = await twoLive();
+    // focus a session card, so the palette has one to act on
+    await w.locator('[data-composer-dropzone] textarea').first().click();
+    await w.keyboard.press(`${MOD}+Shift+P`);
+    await w.getByPlaceholder('Type a command or a session name…').fill("Hand this session's context");
+    await expect(w.locator('[data-palette-row="session.handContext"]')).toHaveAttribute('aria-disabled', 'false');
+    await w.keyboard.press('Enter');
+    await expect(picker(w)).toBeVisible();
+    await expect(picker(w).locator('[data-handoff-target]')).toContainText(alpha);
+    await w.keyboard.press('Enter');
+    await expect(dialog(w)).toBeVisible({ timeout: 20_000 });
+    await w.locator('[data-context-cancel]').click();
+    await expect(dialog(w)).toBeHidden();
+  });
+
+  test('a REAL pointer drag still starts from the button chip and lands on a composer', async () => {
+    // `draggable` on a `button` was the worry #799's comment named. This is the
+    // measurement: Playwright's drag in Chromium is a native HTML5 drag, so a
+    // chip that no longer dragged would never reach the composer's drop handler.
+    // The composer on screen is the chip's OWN session, so the drop is refused
+    // out loud — which is the drop handler running, on a real drag.
+    test.setTimeout(180_000);
+    const { w } = await twoLive();
+    await chip(w).dragTo(w.locator('[data-composer-dropzone]'));
+    await expect(w.locator('[data-composer-attach-notice]')).toContainText('own context', { timeout: 10_000 });
+    // a drag is not a click: give a stray click time to have opened it
+    await w.waitForTimeout(500);
+    await expect(picker(w)).toHaveCount(0);
+  });
+});

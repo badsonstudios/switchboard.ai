@@ -37,6 +37,7 @@ import { buildContributedCommands } from './extensibility/commands';
 import { bindingFor, dispatch, dispatchAccelerator, formatBinding, Platform } from './lib/commands';
 import { focusedElementIn } from './lib/focus-target';
 import { sessionStore } from './store/session-store';
+import { handoffTargets, openHandoffPicker } from './lib/context-handoff';
 import { CommandPalette } from './components/CommandPalette';
 import { AboutPanel } from './components/AboutPanel';
 import { PerfSummaryPanel } from './components/PerfSummaryPanel';
@@ -2153,6 +2154,13 @@ export function App(): React.JSX.Element {
           // the one staleness this accepts.
           dispatchTemplates,
           dispatchFrom: (templateId) => grid.current?.dispatchFrom(templateId),
+          // §5.5's hand-off from the keyboard (#851): the chip's own picker, opened
+          // on the focused card, which renders it
+          handContext: (cardId) => openHandoffPicker(cardId),
+          // a running source, and someone the picker would actually offer
+          canHandContext: (cardId) =>
+            !!sessionStore.getState().sessions.find((s) => s.id === cardId)?.liveId &&
+            handoffTargets(sessionStore.getRailOrder().flat, cardId).length > 0,
       }),
     [
       dispatchTemplates,
