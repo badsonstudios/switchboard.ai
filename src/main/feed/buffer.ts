@@ -15,6 +15,7 @@
 import { BLOCK_CAP, BlockOrigin, DerivedBlock, FeedBlock, originOf, stamp } from './blocks';
 import type { PictureData } from './picture-data';
 import { feedPictures, type FeedPictureStore } from './pictures';
+import { compactionSummaries, type CompactionSummaryStore } from './compaction-summaries';
 
 /**
  * The longest gap between two blocks that can still be read as "how long it
@@ -64,12 +65,19 @@ export class FeedBuffer {
   private readonly awaitingResult = new Map<string, FeedBlock>();
   /** see `silently` */
   private muted = false;
+  /**
+   * The compaction divider just pushed, still owed the CLI's summary (#1374,
+   * `attachCompactionSummary`). Any later push clears it.
+   */
+  private awaitingSummary: FeedBlock | undefined;
 
   constructor(
     private readonly emit: (b: FeedBlock) => void,
     private readonly cap = BLOCK_CAP,
     /** where a message's pictures are kept (#1240); the app's one store */
-    private readonly pictures: FeedPictureStore = feedPictures
+    private readonly pictures: FeedPictureStore = feedPictures,
+    /** where compaction summaries are kept (#1374); the app's one store */
+    private readonly summaries: CompactionSummaryStore = compactionSummaries
   ) {}
 
   /**
@@ -170,6 +178,7 @@ export class FeedBuffer {
     const block = stamp(b, ++this.seq, origin);
     if (pictures && pictures.length > 0) block.pictures = this.pictures.keep(this, pictures);
     this.items.push(block);
+    this.awaitingSummary = block.kind === 'compaction' ? block : undefined;
     if (this.items.length > this.cap) {
       // A block past the cap takes its pictures with it (#1240). Nothing can
       // show them again, and left in the store they would be NEWER than
@@ -177,6 +186,7 @@ export class FeedBuffer {
       for (const gone of this.items.splice(0, this.items.length - this.cap)) {
         if (gone.pictures) this.pictures.drop(gone.pictures);
         if (gone.tool?.pictures) this.pictures.drop(gone.tool.pictures);
+        if (gone.compaction?.summaryId) this.summaries.drop(gone.compaction.summaryId);
       }
     }
     this.fire(block);
@@ -259,6 +269,40 @@ export class FeedBuffer {
     return true;
   }
 
+  /**
+   * Give the compaction divider just pushed the CLI's summary of everything
+   * above it (#1374). Returns true if it landed.
+   *
+   * KEYED BY POSITION, because that is what the CLI's frames give us. Measured
+   * (`spike/findings/1026-not-for-the-live-view.md` §3, and a census of every
+   * transcript on this machine for #1374): the summary is the next message
+   * after its `compact_boundary` — directly after it on the stream, and after
+   * only `attachment` lines in a transcript, none of which become a block. So
+   * the rule is "the divider this buffer pushed LAST, if it has no summary
+   * yet". Anything pushed in between breaks the pairing, and a summary that
+   * finds no divider waiting attaches to nothing: no button is a smaller wrong
+   * than another compaction's summary under this one.
+   *
+   * AND FROM THE SAME PLACE. `origin` is where the summary's line came from,
+   * as for `push`: a subagent's summary never lands on the session's divider
+   * (or another subagent's), even where one buffer interleaves their files.
+   *
+   * The TEXT stays in main (`compaction-summaries.ts`); the divider is re-emitted
+   * with a handle, which is what puts "Show summary" on it.
+   */
+  attachCompactionSummary(text: string, origin: BlockOrigin = { sidechain: false }): boolean {
+    const target = this.awaitingSummary;
+    // somebody else's summary leaves the divider waiting for its own
+    if (target && (target.sidechain !== origin.sidechain || target.agentId !== origin.agentId)) return false;
+    this.awaitingSummary = undefined;
+    if (!target?.compaction || target.compaction.summaryId !== undefined || text === '') return false;
+    const summaryId = this.summaries.keep(this, text);
+    if (summaryId === undefined) return false;
+    target.compaction = { ...target.compaction, summaryId };
+    this.update(target);
+    return true;
+  }
+
   /** Everything currently held, for a panel that is mounting (backlog replay). */
   list(): FeedBlock[] {
     return [...this.items];
@@ -280,8 +324,11 @@ export class FeedBuffer {
     this.items.length = 0;
     this.seq = 0;
     this.awaitingResult.clear();
-    // the old conversation's pictures go with its blocks (#1240)
+    this.awaitingSummary = undefined;
+    // the old conversation's pictures go with its blocks (#1240), and its
+    // compaction summaries (#1374)
     this.pictures.dropOwner(this);
+    this.summaries.dropOwner(this);
   }
 
   /**
@@ -291,5 +338,6 @@ export class FeedBuffer {
   dispose(): void {
     this.disown();
     this.pictures.dropOwner(this);
+    this.summaries.dropOwner(this);
   }
 }

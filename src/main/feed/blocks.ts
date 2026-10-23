@@ -150,7 +150,8 @@ export interface FeedBlock {
   /**
    * `compaction`: the conversation was compacted here (#1259) — by the user, or
    * by the CLI on its own. From the CLI's `compact_boundary` frame, never
-   * inferred; see `shared/compaction.ts`. The summary is not on the block.
+   * inferred; see `shared/compaction.ts`. The summary is not on the block:
+   * only a handle to it, once it arrives (#1374, `summaryId`).
    */
   compaction?: CompactionMark;
   notice?: {
@@ -651,6 +652,46 @@ function isNotForTheLiveView(entry: Record<string, unknown>): boolean {
   if (entry.isVisibleInTranscriptOnly === true || entry.is_visible_in_transcript_only === true) return true;
   if (entry.isCompactSummary === true || entry.is_compact_summary === true) return true;
   return entry.type === 'user' && entry.isSynthetic === true;
+}
+
+/**
+ * The text of a compaction's SUMMARY, when this entry is one (#1374) — or null.
+ *
+ * NOT A DERIVATION, and that is the point: `deriveIntents` still drops this
+ * entry (#1026, `isNotForTheLiveView`), so it never becomes a block. This only
+ * lets a caller keep the CLI's own words beside the divider the boundary drew
+ * (`FeedBuffer.attachCompactionSummary`), for the user to open on request.
+ *
+ * BOTH SPELLINGS, for `isNotForTheLiveView`'s reason: the transcript marks it
+ * `isCompactSummary` (camel; the snake twin is the declared wire field), the
+ * stream marks it only `isSynthetic` on a `user` frame. `isSynthetic` is ALSO
+ * the wire's spelling of `isMeta`, so this alone cannot tell a summary from
+ * other loop-written text — which is why the buffer attaches it ONLY to a
+ * divider pushed immediately before, and never on its own say-so. An explicit
+ * `isMeta` / `is_meta` is refused outright.
+ *
+ * The text is the CLI's, verbatim: a string, or the text items of an array
+ * joined by blank lines. Nothing is synthesised; no text is no summary.
+ */
+export function compactionSummaryText(entry: Record<string, unknown>): string | null {
+  if (entry.type !== 'user') return null;
+  if (entry.isMeta === true || entry.is_meta === true) return null;
+  const flagged =
+    entry.isCompactSummary === true || entry.is_compact_summary === true || entry.isSynthetic === true;
+  if (!flagged) return null;
+  const content = (entry.message as { content?: unknown } | undefined)?.content;
+  let text = '';
+  if (typeof content === 'string') text = content;
+  else if (Array.isArray(content)) {
+    text = content
+      .flatMap((c) =>
+        c && typeof c === 'object' && (c as { type?: unknown }).type === 'text' && typeof (c as { text?: unknown }).text === 'string'
+          ? [(c as { text: string }).text]
+          : []
+      )
+      .join('\n\n');
+  }
+  return text.trim() === '' ? null : text;
 }
 
 /**

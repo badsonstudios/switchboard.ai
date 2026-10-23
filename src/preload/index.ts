@@ -48,6 +48,7 @@ import type {
   SuggestedTitle,
 } from '../shared/sessions';
 import type { BriefingTextResult, SwitchAiResult } from '../shared/ai-switch';
+import type { CompactionSummaryResult } from '../shared/compaction';
 import type {
   ReportDraft,
   ReportResult,
@@ -1620,6 +1621,13 @@ const api = {
      * its block carries. Resolves false when the picture is no longer held.
      */
     openPicture: (id: string): Promise<boolean> => ipcRenderer.invoke('feed:openPicture', id),
+    /**
+     * The CLI's own summary behind a compaction divider (#1374), by the handle
+     * the divider carries (`CompactionMark.summaryId`). Asked only when the
+     * user opens it; `{ok: false}` when main no longer holds it.
+     */
+    compactionSummary: (id: string): Promise<CompactionSummaryResult> =>
+      ipcRenderer.invoke('feed:compactionSummary', id),
     /**
      * The last thing the user asked this session (#631), for the hover on its
      * tab, row or pill: `{text, cut, attachmentOnly}`, with `text: null` when

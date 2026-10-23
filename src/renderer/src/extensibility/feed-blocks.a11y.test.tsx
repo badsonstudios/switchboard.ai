@@ -56,6 +56,8 @@ const todos = block({ kind: 'todos', todos: [{ content: 'step one', status: 'com
 const thinking = block({ kind: 'thinking', text: 'pondering', durationMs: 3000 });
 const command = block({ kind: 'user', text: '<command-name>/usage</command-name>\nboilerplate' });
 const shortPrompt = block({ kind: 'user', text: 'do the thing' });
+const compactionWithSummary = block({ kind: 'compaction', compaction: { trigger: 'auto', summaryId: 'h-1' } });
+const compactionBare = block({ kind: 'compaction', compaction: { trigger: 'auto' } });
 // a question read back (#1201): its title line opens the raw call
 const question = block({
   kind: 'tool',
@@ -93,6 +95,9 @@ describe('every expander in the feed is a real button', () => {
     ['thinking', thinking, 1],
     ['question read back', question, 1],
     ['collapsed command prompt', command, 1],
+    // #1374: a compaction divider whose summary main kept
+    ['compaction divider with a summary', compactionWithSummary, 1],
+    ['compaction divider with no summary', compactionBare, 0],
     // nothing to expand -> nothing that claims it can
     ['tool row with no detail', bareTool, 0],
     ['todos checklist', todos, 0],

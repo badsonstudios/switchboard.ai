@@ -79,3 +79,86 @@ describe('the compaction divider (#1259)', () => {
     expect(blockVisible(sub, 'firehose')).toBe(true);
   });
 });
+
+// #1374: the CLI's own summary, on request. Main keeps the text and the mark
+// carries only a handle; the divider asks for it when the button is pressed.
+describe('"Show summary" on the compaction divider (#1374)', () => {
+  type Bridge = { transcripts: { compactionSummary: (id: string) => Promise<unknown> } };
+  const asked: string[] = [];
+  const bridge = (answer: (id: string) => Promise<unknown>): void => {
+    asked.length = 0;
+    (window as unknown as { switchboard: Bridge }).switchboard = {
+      transcripts: {
+        compactionSummary: (id: string) => {
+          asked.push(id);
+          return answer(id);
+        },
+      },
+    };
+  };
+  const button = (host: HTMLElement): HTMLButtonElement | null =>
+    host.querySelector<HTMLButtonElement>('[data-compaction-divider] button');
+  const flush = async (): Promise<void> => {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+
+  it('is not offered when main kept no summary for this divider', () => {
+    bridge(() => Promise.resolve({ ok: false }));
+    const host = draw(block({ trigger: 'manual' }));
+    expect(button(host)).toBeNull();
+    expect(asked).toEqual([]);
+  });
+
+  it('is collapsed by default and asks main for nothing until pressed', () => {
+    bridge(() => Promise.resolve({ ok: true, text: 'unused' }));
+    const host = draw(block({ trigger: 'auto', summaryId: 'h-1' }));
+    expect(button(host)?.textContent).toBe('Show summary');
+    expect(button(host)?.getAttribute('aria-expanded')).toBe('false');
+    // a feed expander like the rest (#174): the arrow keys reach it, Tab does not
+    expect(button(host)?.hasAttribute('data-feed-expander')).toBe(true);
+    expect(button(host)?.getAttribute('tabindex')).toBe('-1');
+    expect(button(host)?.getAttribute('title')).toMatch(/word for word/);
+    expect(host.querySelector('[data-compaction-summary]')).toBeNull();
+    expect(asked).toEqual([]);
+  });
+
+  it('shows the CLI text verbatim under the rule, by the handle, and hides it again', async () => {
+    const TEXT = 'This session is being continued from a previous conversation.\n\n1. Primary Request:\n   keep   spacing';
+    bridge(() => Promise.resolve({ ok: true, text: TEXT }));
+    const host = draw(block({ trigger: 'manual', summaryId: 'h-2' }));
+    act(() => {
+      button(host)!.click();
+    });
+    await flush();
+    expect(asked).toEqual(['h-2']);
+    const btn = button(host)!;
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(btn.textContent).toBe('Hide summary');
+    const region = host.querySelector('[data-compaction-summary]') as HTMLElement;
+    expect(region.getAttribute('role')).toBe('region');
+    expect(btn.getAttribute('aria-controls')).toBe(region.id);
+    expect(host.querySelector('[data-compaction-summary-text]')?.textContent).toBe(TEXT);
+    act(() => {
+      button(host)!.click();
+    });
+    expect(host.querySelector('[data-compaction-summary]')).toBeNull();
+    expect(button(host)?.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('says "no longer available" when main no longer holds it, or the call fails', async () => {
+    for (const answer of [() => Promise.resolve({ ok: false }), () => Promise.reject(new Error('gone'))]) {
+      document.body.innerHTML = '';
+      bridge(answer);
+      const host = draw(block({ summaryId: 'h-3' }));
+      act(() => {
+        button(host)!.click();
+      });
+      await flush();
+      expect(host.querySelector('[data-compaction-summary-gone]')?.textContent).toMatch(/no longer available/);
+      expect(host.querySelector('[data-compaction-summary-text]')).toBeNull();
+    }
+  });
+});

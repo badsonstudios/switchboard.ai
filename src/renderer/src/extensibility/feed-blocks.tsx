@@ -82,6 +82,7 @@ export function FeedExpander({
   open,
   onToggle,
   controls,
+  title,
   style,
   children,
 }: {
@@ -89,6 +90,8 @@ export function FeedExpander({
   onToggle: () => void;
   /** id(s) of the element(s) this shows and hides; omit while none is rendered */
   controls?: string;
+  /** the hover, when the label alone does not say enough */
+  title?: string;
   style?: React.CSSProperties;
   children: React.ReactNode;
 }): React.JSX.Element {
@@ -103,6 +106,7 @@ export function FeedExpander({
       // there is nothing, which is worse than saying nothing at all. The caller
       // decides, because only it knows whether its region renders when shut.
       aria-controls={controls}
+      title={title}
       tabIndex={-1}
       onClick={onToggle}
       style={{
@@ -774,13 +778,42 @@ function AiSwitchDivider({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
 /**
  * Where the conversation was compacted (#1259): a rule across it, in the
  * "conversation cleared" marker's look. Above it the AI now has only a
- * summary; the hover says so. The summary itself is not offered (#1026: it is
- * the CLI's working note, and its own live view hides it too).
+ * summary; the hover says so.
+ *
+ * THE SUMMARY ITSELF, ON REQUEST (#1374). It is never drawn into the
+ * conversation (#1026: the CLI's own live view hides it, and as a block it
+ * read as a prompt the user typed). When main kept one for this divider the
+ * mark carries a handle, and "Show summary" asks for the text by it and shows
+ * it under the rule, verbatim, in a `<pre>`: what the reader came to see is
+ * what the AI now remembers, word for word. Collapsed by default; a plain
+ * button, so Tab and Enter reach it in a popout exactly as in the main window.
  */
 function CompactionDivider({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
   const copy = compactionCopy(b.compaction);
   const text = t(copy.key, copy.vars);
+  const summaryId = b.compaction?.summaryId;
+  const [open, setOpen] = React.useState(false);
+  const [summary, setSummary] = React.useState<CompactionSummaryState>({ state: 'loading' });
+  const regionId = React.useId();
+
+  React.useEffect(() => {
+    if (!open || !summaryId) return;
+    let live = true;
+    setSummary({ state: 'loading' });
+    // a missing bridge, a refusal, a rejection: all "no longer available"
+    const call = window.switchboard?.transcripts?.compactionSummary?.(summaryId);
+    Promise.resolve(call)
+      .then((r) => {
+        if (!live) return;
+        setSummary(r && r.ok === true && typeof r.text === 'string' ? { state: 'text', text: r.text } : { state: 'gone' });
+      })
+      .catch(() => live && setSummary({ state: 'gone' }));
+    return () => {
+      live = false;
+    };
+  }, [open, summaryId]);
+
   return (
     <div data-compaction-divider data-trigger={b.compaction?.trigger ?? 'unknown'}>
       <div
@@ -799,11 +832,72 @@ function CompactionDivider({ b }: { b: FeedBlockDto }): React.JSX.Element {
         <span role="separator" aria-label={text} title={t('feedView.compaction.hint')} data-compaction-label>
           <span aria-hidden>{text}</span>
         </span>
+        {summaryId && (
+          // A feed expander like every other (#174): reached with the arrow
+          // keys inside the conversation, not a Tab stop of its own, so a long
+          // session's dividers never stand between the user and the composer.
+          <FeedExpander
+            open={open}
+            onToggle={() => setOpen(!open)}
+            controls={open ? regionId : undefined}
+            title={t('feedView.compaction.summaryHint')}
+            style={{ flex: 'none', color: 'var(--text)', textDecoration: 'underline' }}
+          >
+            {open ? t('feedView.compaction.hideSummary') : t('feedView.compaction.showSummary')}
+          </FeedExpander>
+        )}
         <span aria-hidden style={{ flex: 1, borderBlockStart: '1px solid var(--border)' }} />
       </div>
+      {open && summaryId && (
+        <div
+          id={regionId}
+          role="region"
+          aria-label={t('feedView.compaction.summaryLabel')}
+          data-compaction-summary
+          style={{
+            marginInline: 10,
+            marginBlockEnd: 10,
+            maxBlockSize: 320,
+            overflow: 'auto',
+            padding: '8px 10px',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            background: 'var(--panel2)',
+          }}
+        >
+          {summary.state === 'loading' && (
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-ui)' }}>
+              {t('feedView.compaction.summaryLoading')}
+            </div>
+          )}
+          {summary.state === 'gone' && (
+            <div data-compaction-summary-gone style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-ui)' }}>
+              {t('feedView.compaction.summaryGone')}
+            </div>
+          )}
+          {summary.state === 'text' && (
+            <pre
+              data-compaction-summary-text
+              style={{
+                margin: 0,
+                fontSize: 11,
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                userSelect: 'text',
+              }}
+            >
+              {summary.text}
+            </pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
+type CompactionSummaryState = { state: 'loading' } | { state: 'text'; text: string } | { state: 'gone' };
 
 function NoticeBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();

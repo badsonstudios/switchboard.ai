@@ -70,6 +70,7 @@ import {
   FeedBlock,
   HydrateOptions,
   TEXT_CAP,
+  compactionSummaryText,
   deriveIntents,
 } from './blocks';
 import { compactionMark } from '../../shared/compaction';
@@ -240,6 +241,16 @@ export class StreamFeed {
     // arrival. The panel reads the backlog when it mounts. See `FeedBuffer`.
     s.buffer.silently(() => {
       for (const e of entries) {
+        // A compaction's summary is no block (#1026) but is kept beside the
+        // divider the line before it drew, so a resumed card can still open it
+        // (#1374). The transcript's spelling: `isCompactSummary`. FIRST, before
+        // any marker is placed: a marker pushed between the two would break
+        // the pairing.
+        const summary = compactionSummaryText(e);
+        if (summary !== null) {
+          s.buffer.attachCompactionSummary(summary, opts.origins?.get(e) ?? { sidechain: e.isSidechain === true });
+          continue;
+        }
         const stamped = typeof e.timestamp === 'string' ? Date.parse(e.timestamp) : NaN;
         if (Number.isFinite(stamped)) placeMarkersBefore(stamped);
         // The SAME derivation the transcript watcher runs (`blocks.ts`), so a
@@ -386,6 +397,13 @@ export class StreamFeed {
         }
         return true;
       }
+    }
+    // a subagent's own compaction summary, beside ITS divider (#1374), as
+    // `hydrate` does for the same line after a restart
+    const summary = compactionSummaryText(entry);
+    if (summary !== null) {
+      s.buffer.attachCompactionSummary(summary, origin);
+      return true;
     }
     for (const intent of deriveIntents(entry, DISPLAY_CAPS, this.ctx(sessionId))) {
       if (intent.t === 'tool-result') {
@@ -710,6 +728,11 @@ export class StreamFeed {
     // kind, which is right for a model's reply and wrong for a message no model
     // produced — it would replace text the user has already read.
     const unstreamed = isAssistant && ev.unstreamed;
+    // The CLI's summary of what it just compacted (#1374): beside the divider
+    // that came just before it, never a block of its own. Before the derive, as
+    // `hydrate` and the watcher do it, so a block this message made could never
+    // come between the two.
+    if (ev.compactionSummary !== undefined) s.buffer.attachCompactionSummary(ev.compactionSummary);
     let intents: BlockIntent[];
     try {
       intents = ev.derive(DISPLAY_CAPS, this.ctx(sessionId));

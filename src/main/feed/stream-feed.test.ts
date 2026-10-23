@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ClaudeFedFeed } from './fixtures/claude-fed-feed';
 import { STREAM_COALESCE_MS } from './buffer';
+import { compactionSummaries } from './compaction-summaries';
 import { FeedBlock } from './blocks';
 import {
   LOCAL_COMMAND_TEXT,
@@ -1267,6 +1268,65 @@ describe('a compaction on the stream (#1026)', () => {
     expect(resets).toEqual([]);
   });
 
+  // #1374: the summary is still no block, but it is kept BESIDE the divider,
+  // in main, for the user to open. The block carries a handle, never the text.
+  it('keeps the summary beside the divider, by handle, verbatim (#1374)', () => {
+    feed.offer(SID, userFrame('first question', { isReplay: true }));
+    for (const frame of compaction()) feed.offer(SID, frame);
+    const divider = feed.blocks(SID).find((b) => b.kind === 'compaction')!;
+    const id = divider.compaction?.summaryId;
+    expect(typeof id).toBe('string');
+    expect(compactionSummaries.get(id!)).toBe(SUMMARY);
+    expect(JSON.stringify(feed.blocks(SID))).not.toContain('continued from a previous conversation');
+  });
+
+  it('a synthetic message with no divider just before it attaches to nothing (#1374)', () => {
+    // a boundary whose summary never came, then a turn, then a synthetic frame:
+    // the turn broke the pairing, so the divider gets no button
+    feed.offer(SID, system('compact_boundary', { compact_metadata: { trigger: 'auto' } }));
+    feed.offer(SID, userFrame('next question', { isReplay: true }));
+    feed.offer(SID, userFrame('another synthetic', { isReplay: false, isSynthetic: true }));
+    expect(kinds()).toEqual(['compaction', 'user']);
+    expect(feed.blocks(SID)[0].compaction?.summaryId).toBeUndefined();
+  });
+
+  it('after a restart, an AI-switch marker stamped between the boundary and its summary does not cost the summary (#1374)', () => {
+    const at = (iso: string, more: Record<string, unknown>): Record<string, unknown> => ({
+      sessionId: CONV,
+      timestamp: iso,
+      isSidechain: false,
+      ...more,
+    });
+    feed.hydrate(
+      SID,
+      [
+        at('2026-10-18T10:00:00.000Z', { type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'auto' } }),
+        at('2026-10-18T10:00:00.010Z', { type: 'user', isCompactSummary: true, message: { role: 'user', content: SUMMARY } }),
+        at('2026-10-18T10:00:01.000Z', { type: 'user', message: { role: 'user', content: 'after' } }),
+      ],
+      {
+        markers: [
+          {
+            at: Date.parse('2026-10-18T10:00:00.005Z'),
+            block: {
+              kind: 'ai-switch',
+              aiSwitch: {
+                kind: 'ai-switch',
+                id: 'm-1',
+                from: { providerId: 'codex', name: 'Codex' },
+                to: { providerId: 'claude-code', name: 'Claude Code' },
+                at: '2026-10-18T10:00:00.005Z',
+                briefed: false,
+              },
+            },
+          },
+        ],
+      }
+    );
+    const divider = feed.blocks(SID).find((b) => b.kind === 'compaction')!;
+    expect(compactionSummaries.get(divider.compaction!.summaryId!)).toBe(SUMMARY);
+  });
+
   it('a compaction as the very first thing a session does leaves only its divider', () => {
     for (const frame of compaction()) feed.offer(SID, frame);
     expect(kinds()).toEqual(['compaction']);
@@ -1313,7 +1373,10 @@ describe('a compaction on the stream (#1026)', () => {
       line({ type: 'user', message: { role: 'user', content: 'second question' } }),
     ]);
     expect(kinds()).toEqual(['user', 'assistant', 'compaction', 'user']);
-    expect(feed.blocks(SID)[2].compaction).toEqual({ trigger: 'manual', preTokens: 32516, postTokens: 4760 });
+    const { summaryId, ...mark } = feed.blocks(SID)[2].compaction!;
+    expect(mark).toEqual({ trigger: 'manual', preTokens: 32516, postTokens: 4760 });
+    // #1374: and the summary can still be opened after the restart
+    expect(compactionSummaries.get(summaryId!)).toBe(SUMMARY);
   });
 });
 

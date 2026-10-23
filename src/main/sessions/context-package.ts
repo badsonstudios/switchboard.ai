@@ -660,7 +660,13 @@ export function materialFromBlocks(blocks: readonly FeedBlock[]): PackageMateria
     touch.lastSeen = seen++;
     if (!existing) files.set(path, touch);
   }
-  return { blocks, files, compacted: false };
+  // A COMPACTION DIVIDER IS THE SAME EVIDENCE `materialFromEntries` reads off
+  // a dropped summary (#1374): the conversation runs back further than these
+  // blocks, so the package must not say it covers the whole of it. Positive
+  // evidence, never inferred from emptiness. Hard-coded `false` until #1259
+  // gave the Feed a compaction block to see.
+  const compacted = blocks.some((b) => b.kind === 'compaction');
+  return { blocks, files, compacted };
 }
 
 /** Everything `buildPackageFrom` needs: the normalised material and the read's reach. */

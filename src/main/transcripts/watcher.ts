@@ -14,7 +14,7 @@ import path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { Logger } from '../log/logger';
 import { BindingDiagnostics, BindingState, type ResetCause } from '../../shared/transcripts';
-import { BlockOrigin, DISPLAY_CAPS, FeedBlock, deriveIntents, touchedPath } from '../feed/blocks';
+import { BlockOrigin, DISPLAY_CAPS, FeedBlock, compactionSummaryText, deriveIntents, touchedPath } from '../feed/blocks';
 import type { ContextRefs } from '../feed/context-refs';
 import { agentOriginFor } from '../feed/agent-attribution';
 import { FeedBuffer } from '../feed/buffer';
@@ -2189,6 +2189,13 @@ export class TranscriptWatcher {
     const origin: BlockOrigin = { sidechain, ...agentOriginFor(e, sidechain, full) };
     const refs = this.opts.contextRefs;
     const ctx = refs === undefined ? {} : { isMintedRef: refs.guardFor(w.sessionId) };
+    // a compaction's summary: no block (#1026), but kept beside its divider
+    // for the user to open (#1374), from the same file only
+    const summary = compactionSummaryText(e);
+    if (summary !== null) {
+      w.feed.attachCompactionSummary(summary, origin);
+      return;
+    }
     for (const intent of deriveIntents(e, DISPLAY_CAPS, ctx)) {
       if (intent.t === 'tool-result') {
         w.feed.attachResult(intent.toolUseId, intent.out, intent.failed === true, intent.pictures);

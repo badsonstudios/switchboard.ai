@@ -149,9 +149,29 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   comes to the front with the usual "how much to hand over" question. The
   command palette has the same thing as **Hand this session's context to…**.
   Dragging still works as before.
+- **Read Claude's summary from the "Conversation compacted" line.** When a
+  conversation is compacted, the line that marks the spot now has a
+  **Show summary** button. Press it (or reach it with the arrow keys inside the
+  conversation and press Enter) to read
+  Claude Code's own summary of everything above the line, word for word: it is
+  all Claude remembers of that part now. **Hide summary** folds it away. It
+  stays folded until you ask, works in a popped-out window, and is still there
+  after you reopen the app.
+
+### Fixed
+
+- **A review that Claude compacted halfway through now arrives whole.** If
+  Claude Code compacted a reviewer's conversation on its own in the middle of
+  its final answer, only the part after the "Conversation compacted" line was
+  sent back as the review. Both halves now come back as one.
 
 ### Internal
 
+- **Briefings notice a compaction whatever AI it happened in.** When a card is
+  switched away from an AI whose conversation the app holds only as its own
+  record, the briefing now says it covers recent history only if that
+  conversation was compacted, as it already did for Claude Code. Nothing
+  changes today: Claude Code is the only AI that reports compacting.
 - **AI-written task labels are ready for AIs other than Claude.** To write a
   card's label, switchboard shows a small model the end of the conversation,
   and it marked every reply as Claude's whatever AI wrote it. Replies are now

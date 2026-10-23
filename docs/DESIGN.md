@@ -1855,6 +1855,17 @@ Each session offers two synchronized views of the same underlying session:
   `/` pops a slash-command autocomplete — CLI built-ins + the §5.19
   registry's skills/commands — owner request 2026-07-22). In-app
   approvals (§5.16) render inline here as a review bar.
+  *(2026-10-23, #1374 — **the compaction divider (#1259) offers the CLI's
+  summary on request.** The divider marks where the CLI compacted, from its
+  `compact_boundary` frame; the summary that follows the boundary is still
+  never a Feed block (#1026: the CLI's own live view hides it, and as a block
+  it read as a prompt). It is kept in main beside the divider, keyed by
+  position (the next summary message after the boundary, with no block in
+  between: measured on the stream and over every transcript on this machine),
+  and the block carries only a handle. **Show summary** fetches the text by
+  that handle over `feed:compactionSummary` and shows it verbatim, collapsed
+  by default. On the block it would be 3k–21k characters cloned on every
+  re-emit, for a thing rarely opened.)*
 - **Terminal** (xterm.js + PTY): the real CLI — always present as the
   **LAST tab** (owner reversal 2026-07-22: one day of dogfooding showed
   hide-by-default was friction, not calm — "I like having a terminal").
@@ -2915,6 +2926,16 @@ transfer + role templates, all already in the design.
 > block per content item; `thinking` is transparent to the walk and a `tool`,
 > `user`, `todos` or `notice` block ends it. No file watcher: #948 already
 > established that a plan-mode write is redirected into `~/.claude/plans/`.
+>
+> *(2026-10-23, #1374 — **a compaction divider is transparent too, like
+> `thinking`.** Once the Feed drew a block where the CLI compacts (#1259), an
+> automatic compaction in the middle of a reviewer's final reply split the
+> collected report at the divider and kept only the half below it. Decided:
+> JOIN. Both halves are the model talking to the author; the divider is the
+> app's mark, not reply content, and before #1259 nothing stood between them. A
+> compaction after a `tool` call still ends the run, at the tool. Flip if a
+> real-CLI capture shows the continuation restarting the reply rather than
+> continuing it.)*
 >
 > **⚠️ AND THE PARAGRAPH ABOVE IS WRONG ABOUT ONE THING — "3 findings" CANNOT BE
 > PRODUCED HONESTLY.** Four runs of one prompt on one diff enumerated four
