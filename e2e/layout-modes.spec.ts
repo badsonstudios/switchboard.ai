@@ -23,6 +23,7 @@ import {
   skipPopoutOnLinux,
   permissionHolder,
   rungOf,
+  streamPrompter,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -161,6 +162,60 @@ test.describe('layout modes (E9-07)', () => {
     await expect(tabs(w).filter({ hasText: third })).toHaveCount(1);
     await expect(tabs(w)).toHaveCount(2);
     expect(await liveCount(w)).toBe(3);
+  });
+
+  // #1427: since #1413 a dismissed "waiting" reads calm on every surface, and
+  // the layout rules read the same derived value — so queue mode stops holding
+  // the session up, focus mode stops sparing it, and the NEXT finished turn
+  // holds it up again. Driven by the fake stream CLI: `hello` is a turn that
+  // finishes, exactly as dismiss-waiting.spec drives it.
+  test('a dismissed "waiting" lets go in queue and focus mode; the next finished turn holds it up again (#1427)', async () => {
+    test.setTimeout(240_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    const first = path.basename(folder);
+    await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
+    const second = await addSession(a);
+    await expect(tabs(w)).toHaveCount(2);
+    const railRow = (title: string) => rail(w).locator('.rail-row').filter({ hasText: title });
+    const prompt = streamPrompter(a);
+
+    await row(w, first).click();
+    await expect(w.locator('.dv-active-tab')).toContainText(first);
+    await palette(w, 'Layout: Queue — only the sessions that need you');
+    await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
+    await expect(stripRow(w, second)).toBeVisible();
+
+    // its turn finishes: "waiting", and queue mode holds it up
+    await prompt(second, 'hello');
+    await expect(railRow(second)).toHaveAttribute('data-wait-state', 'waiting', { timeout: 30_000 });
+    await expect(tabs(w)).toHaveCount(2, { timeout: 25_000 });
+
+    // dismissed on its row (the word only: it does not open the session), and
+    // queue mode lets it go like any calm session
+    await railRow(second).locator('[data-dismiss-waiting="row"]').click();
+    await expect(railRow(second)).not.toHaveAttribute('data-wait-state', /./);
+    await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
+    await expect(tabs(w).first()).toContainText(first);
+    await expect(stripRow(w, second)).toBeVisible();
+
+    // the next turn that finishes is "waiting" again, and held up again
+    await prompt(second, 'hello');
+    await expect(railRow(second)).toHaveAttribute('data-wait-state', 'waiting', { timeout: 30_000 });
+    await expect(tabs(w)).toHaveCount(2, { timeout: 25_000 });
+
+    // focus mode folds everything but the card you are in, and spares a
+    // session that needs you — until its "waiting" is dismissed
+    await palette(w, 'Layout: Focus — one big card, the rest folded away');
+    await expect(modeChip(w)).toContainText('Focus');
+    await w.waitForTimeout(500); // let a stray sweep fold it before we believe it is spared
+    await expect(tabs(w)).toHaveCount(2);
+    await railRow(second).locator('[data-dismiss-waiting="row"]').click();
+    await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
+    await expect(tabs(w).first()).toContainText(first);
+    await expect(stripRow(w, second)).toBeVisible();
+    expect(await liveCount(w)).toBe(2);
   });
 
   test('the mode survives a relaunch, and the chip says which one you are on', async () => {

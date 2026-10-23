@@ -176,6 +176,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   Rendered, Source, Outline and Readable width. The menu works with the
   keyboard too.
 
+### Changed
+
+- **Dismissing "waiting" also lets the Focus and Queue layouts fold the
+  session away.** Clicking the word **waiting** already made a finished
+  session look calm everywhere, but the Queue layout still kept its card on
+  screen as one that needed you, and Focus would not fold it. Now a dismissed
+  session is calm to the layouts too: in Queue its card folds away like any
+  calm session's, and in Focus it folds with the rest. When its next turn
+  finishes it says **waiting** again and comes back.
+
 ### Internal
 
 - **Briefings notice a compaction whatever AI it happened in.** When a card is
