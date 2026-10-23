@@ -3,6 +3,55 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔄 ORCHESTRATION RUN — 2026-10-23 ~15:20 EDT → in flight: EIGHT ISSUES IN DAN'S ORDER (#1419 #824 #1408 #851 #1374 #1425 #1427 #1417), TWO WORKERS, MERGE ON GREEN CI, NO RELEASE
+>
+> **Single-writer rule:** this file is written ONLY by the orchestrator session.
+> Workers never touch it; their inputs are the handoff files in
+> `.claude/work_files/orchestrator/<issue#>.md` (git-ignored, main checkout).
+> Resume from this block if the orchestrator session dies.
+>
+> **Dan's instruction:** `/orchestrate 1419 1408 824 851 1374 1425 1427 1417` — his
+> order, **two workers**, **the orchestrator merges every PR on green CI** (as
+> 2026-10-17/18/20/21/22; nothing queues for Dan). **Do NOT cut a release** —
+> v0.8.128 IS released (PR #1428, tag on `a2cd8ae9`) and Dan has it; `0.8.129 —
+> unreleased` is the open CHANGELOG section. Decisions already made: **#1425** = do
+> BOTH (a per-verb 30 s timeout for `mcp_authenticate` only, AND reword
+> `signInTimedOut` honestly; firm up the `status.ts` needs-auth comment with the
+> grep). **#1427** = YES, dismissing releases the session from the attention-driven
+> layout rules too (`layoutCards` / `cardWaitsOnHuman` read `shownStatus`, the
+> derived value every other surface uses; check the queue-layout and idle-collapse
+> e2e specs). **#1417** = a toast on relaunch ("a dispatch to <AI> from <sender> was
+> lost before it started"), no stub record. **Pairing:** #1419 + #824 first (small,
+> nothing shared); then #1408 (document viewer header) + #851 (context chip,
+> palette); then #1374 (compaction, Feed + divider) + #1427 (session-store,
+> SessionGrid); then #1425 (main MCP + pane strings) + #1417 (dispatch restore +
+> toast). Per item: plan comment on the issue, full gate (lint, typecheck, unit,
+> e2e under the lock with in-turn polling), Opus self-review on the triple-dot
+> diff, manual page where user-facing, CHANGELOG under 0.8.129, dogfood UNTESTED
+> row, draft PR, handoff file. Known flakes a worker may re-run alone: #1320,
+> #1367, #1369, #1394, #1399, #1416; 5 s unit timeouts under load = #651. Rules
+> kept: NEVER arm ScheduleWakeup while a worker runs (ANY interrupt kills them);
+> workers WIP-commit; auto-merge is disabled, watch the run id with `--interval
+> 60` and merge by hand; adjacent CHANGELOG/dogfood conflicts at update-branch are
+> resolved docs-only by hand in an idle worktree, both kept; a job whose every step
+> is green but stays "in_progress" is a stuck GitHub record (`gh run rerun --job`,
+> poll attempt 2's NEW job id, never `--admin`); a worker whose first command was
+> declined on an unanswered permission prompt gets a "resume" message, not a
+> relaunch.
+>
+> | Order | Issue | Worktree / branch | State |
+> |---|---|---|---|
+> | 1 | #1419 title auto-labeler excerpt says "Claude:" for every AI (`sessions/ipc.ts` `renderBlock` → `aiNameFor`) | `sb-wt-1` / `feature/1419-autolabel-ai-name` | **DISPATCHED 15:20 EDT** (Opus worker) |
+> | 2 | #824 drift detector: `sessionKind` envelope key declared nowhere (flat root ignored list + envelope test; re-verify against CLI 2.1.288) | `sb-wt-2` / `feature/824-sessionkind-envelope-key` | **DISPATCHED 15:20 EDT** (Opus worker) |
+> | 3 | #1408 document header overflows a narrow pane (348/476 px) — fold like the diff toolbar; Readable-width palette entry folded in | — | queued (wave 2, with #851) |
+> | 4 | #851 context chip is drag-only — palette command + keyboard path into the same `ContextDropDialog` | — | queued (wave 2, with #1408) |
+> | 5 | #1374 after #1259: divider opens the compaction summary on request; `materialFromBlocks` `compacted` honest; mid-reply auto-compaction split decided | — | queued (wave 3, with #1427) |
+> | 6 | #1427 layout modes read `shownStatus` so a dismissed "waiting" session can collapse / leave the queue view (Dan: YES) | — | queued (wave 3, with #1374) |
+> | 7 | #1425 MCP sign-in: per-verb 30 s timeout for `mcp_authenticate` + honest `signInTimedOut` + measured needs-auth comment (Dan: BOTH) | — | queued (wave 4, with #1417) |
+> | 8 | #1417 never-started dispatched card vanishes silently on relaunch → toast "a dispatch to <AI> from <sender> was lost before it started", no stub record (Dan's shape) | — | queued (wave 4, with #1425) |
+>
+> **Merge log:** this block (docs PR) · — . **Worktree pool at start:** `sb-wt-1/2` on the wave-1 branches, `sb-wt-3` detached at `31e360f0` clean, `sb-docs` on this docs branch; all `npm ci` current (`sb-docs` has no `node_modules`). **Open PRs at start:** none. **e2e lock at start:** free.
+
 > # ✅ RELEASED: v0.8.128, 2026-10-23 (PR #1428, tag on `a2cd8ae9`, release run 39963262747) — THE WHOLE 2026-10-22 RUN
 >
 > Dan, after the run's report: *"Great, go ahead and cut a release."* A **regular release, on his word**, as 0.8.127 was (the beta channel stays unproven until he asks for one). Version, lock and dated notes together as before (`0.8.129 — unreleased` is open). The release PR merged on green CI as `a2cd8ae9`, tag `v0.8.128` was pushed from it, and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.128.exe` + `.sha256` as a normal release — `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.128`. Tanner's install gets it too. The two dogfood rows now read RELEASED.
