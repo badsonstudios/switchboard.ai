@@ -2825,6 +2825,13 @@ app
     // than here precisely because this file has no tests (#763 review: every
     // mutation of an inline mapping survived the suite).
     const busLog = createLogger(sink, 'bus');
+    // #1365: the label on a non-Claude AI's replies in what a sibling reads —
+    // the catalog's name for it (custom AIs included), else the adapter's own.
+    // ONE function since #1419, handed to the AI label excerpt as well, so the
+    // two readers of a conversation cannot name the same AI differently.
+    const aiNameFor = (providerId: string): string | undefined =>
+      aiCatalog.list().find((i) => i.providerId === providerId)?.entry.name ??
+      registry.resolve('provider-adapter', providerId)?.manifest.displayName;
     // A named const since #765, because `SiblingDelivery` resolves session
     // references through the SAME instance the read tools use — so `@Beta`
     // means one session whether you are reading it or writing to it.
@@ -2838,11 +2845,7 @@ app
       // `--no-ext-diff` hardening — which matters most here, because #764
       // points it at a folder another agent controls.
       git: gitService,
-      // #1365: the label on a non-Claude AI's replies in what a sibling reads —
-      // the catalog's name for it (custom AIs included), else the adapter's own
-      aiNameFor: (providerId) =>
-        aiCatalog.list().find((i) => i.providerId === providerId)?.entry.name ??
-        registry.resolve('provider-adapter', providerId)?.manifest.displayName,
+      aiNameFor,
     });
     // `send_to_session`'s policy (P2-E11-05). Every dependency is a function
     // for the reason `sessions/delivery.ts` gives, and each one is the thing
@@ -3406,6 +3409,9 @@ app
           return labels ? (req: Parameters<typeof labels.run>[0]) => labels.run(req, { log: aiLabelLog }) : undefined;
         };
       })(),
+      // #1419: the excerpt the labeler reads names the AI's replies the way
+      // `get_session_output` does — the same function, not a copy of it.
+      aiNameFor,
       // §5.5 Level 3 (P2-E11-12). A thunk, not a snapshot: the flag can be
       // turned off while cards are open, and the next fork request must see
       // that rather than a value read at wiring time.
