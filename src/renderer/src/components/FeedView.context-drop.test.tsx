@@ -27,6 +27,12 @@ import {
 } from '../lib/sibling-inbox';
 import { SIBLING_INBOX_CAP } from '../../../shared/sibling-message';
 import { CONTEXT_DND_TYPE, type ContextOffer } from '../../../shared/context-drop';
+import {
+  HANDOFF_TTL_MS,
+  pendingHandoff,
+  requestHandoff,
+  resetHandoffForTests,
+} from '../lib/context-handoff';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -207,6 +213,8 @@ beforeEach(async () => {
   // which is what makes a held block survive a remount, and exactly what would
   // carry one test's context block into the next.
   resetInboxCacheForTests();
+  // module-level too, for the same reason (#851)
+  resetHandoffForTests();
 });
 
 afterEach(async () => {
@@ -445,5 +453,85 @@ describe('what the user’s Enter then sends', () => {
     await pressEnter(host); // no `age()`
     expect(submitted).toEqual([]);
     expect(heldMessages('card-1')).toHaveLength(1);
+  });
+});
+
+// #851: the keyboard and palette routes pick a target instead of dropping on
+// it. What must hold is that the composer then does EXACTLY what a drop does —
+// the same call to main, the same dialog, the same refusals — because it calls
+// the same function. These drive the request the picker makes and nothing else.
+describe('a hand-off PICKED rather than dropped (#851)', () => {
+  it('a request made BEFORE the composer exists is answered when it mounts', async () => {
+    // the common case: the target was a background tab, or on another view,
+    // and the grid had to bring its composer up
+    requestHandoff('card-1', 'live-2');
+    const host = await mount();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(asked).toEqual(['live-2']);
+    expect(dialog(host)).not.toBeNull();
+    // taken, so a remount cannot open it twice
+    expect(pendingHandoff()).toBeNull();
+  });
+
+  it('a request made while the composer is up opens the dialog at once', async () => {
+    const host = await mount();
+    // the caret goes to THIS prompt box before the dialog opens, so Cancel
+    // gives focus back there rather than to <body> — the picker's button,
+    // which had it, is gone by now
+    const focused: Element[] = [];
+    boxOf(host).addEventListener('focus', () => focused.push(boxOf(host)));
+    await act(async () => {
+      requestHandoff('card-1', 'live-2');
+    });
+    expect(focused).toHaveLength(1);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(asked).toEqual(['live-2']);
+    expect(dialog(host)).not.toBeNull();
+  });
+
+  it('leaves a request for ANOTHER card alone', async () => {
+    const host = await mount();
+    await act(async () => {
+      requestHandoff('card-9', 'live-2');
+    });
+    expect(asked).toEqual([]);
+    expect(dialog(host)).toBeNull();
+    expect(pendingHandoff()?.target).toBe('card-9');
+  });
+
+  it('refuses itself out loud — the drop’s own refusal, because it is the drop’s own call', async () => {
+    const host = await mount();
+    await act(async () => {
+      requestHandoff('card-1', 'live-1');
+    });
+    expect(asked).toEqual([]);
+    expect(dialog(host)).toBeNull();
+    expect(notice(host)).toContain('own context');
+  });
+
+  it('⚠️ an EXPIRED request opens nothing — a dialog must not ambush someone later', async () => {
+    requestHandoff('card-1', 'live-2');
+    clock += HANDOFF_TTL_MS + 1;
+    const host = await mount();
+    expect(asked).toEqual([]);
+    expect(dialog(host)).toBeNull();
+  });
+
+  it('OK from a picked hand-off parks the block exactly as a drop does', async () => {
+    const host = await mount();
+    await act(async () => {
+      requestHandoff('card-1', 'live-2');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await click(host.querySelector('[data-context-ok]')!);
+    expect(heldMessages('card-1')).toHaveLength(1);
+    expect(heldMessages('card-1')[0].kind).toBe('context');
+    expect(submitted).toEqual([]);
   });
 });

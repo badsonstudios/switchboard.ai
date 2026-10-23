@@ -54,6 +54,8 @@ function noopDeps(): CommandDeps {
     openMcpManager: () => {},
     dispatchTemplates: [],
     dispatchFrom: () => {},
+    handContext: () => {},
+    canHandContext: () => false,
   };
 }
 

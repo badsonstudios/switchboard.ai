@@ -1111,6 +1111,32 @@ launch. Control and invisible characters are **stripped in main** rather than
 refused — the refusal exists to teach a sending agent to send plain text, and
 here there is no such agent.
 
+**As built (#851, 2026-10-23) — the gesture is no longer drag-only.** #799 shipped
+the chip as a `<span draggable>`, so the one step that STARTS a hand-off failed
+§5.32's fifth rule ("a drag is never the only way to do something") while every
+step after it was keyboard-operable. The chip is now a real `<button draggable>`:
+click, Enter or Space opens a *Hand this session's context to…* picker listing
+every other RUNNING session in rail order, and the palette's unbound `session.handContext`
+opens the same picker on the focused card. The drag is unchanged and still the
+mouse's shortcut. Three decisions worth finding again:
+
+- **The keyboard route calls the drop's own function.** A pick records `{target
+  card, source live id}` (`lib/context-handoff.ts`), and the target's composer
+  hands that id to the same `onContextDrop` a drop calls. So the offer, the
+  dialog, the self refusal and the one-at-a-time guard cannot drift, and
+  `ContextDropDialog` did not change. What the drop cannot reach is absent from
+  the picker: the source (refused out loud), and every suspended, never-started,
+  ended or crashed card (no composer, or one under the ended overlay).
+- **A pick has to make the composer exist.** A drop can only land on what is on
+  screen, but a picked target may be a background tab (only a group's active tab
+  is rendered), on its Changes view, or hidden. So the grid switches the target
+  to its Session view and focuses it. The composer takes the request when it
+  mounts, and the request expires after a few seconds so it cannot open a
+  dialog on someone later.
+- **One palette entry, not one per target.** Dispatch gets one entry per
+  template; this list would be every open session, and the palette already has
+  a "Go to" row for each. The entry opens the picker instead.
+
 **As built (P2-E11-11, #800) — the agent-pulled variant, and the vocabulary it did
 NOT invent.** `get_session_context(session, detail_level)` ships as the bullet above
 describes it, and the interesting decision is what it reuses. `detail_level` is

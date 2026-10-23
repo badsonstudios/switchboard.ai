@@ -64,6 +64,8 @@ function deps(): CommandDeps & DepMocks {
     openMcpManager: vi.fn(),
     dispatchTemplates: [],
     dispatchFrom: vi.fn(),
+    handContext: vi.fn(),
+    canHandContext: vi.fn(() => true),
   };
 }
 
@@ -678,6 +680,38 @@ describe('seed command set (E9-01)', () => {
 // §5.15 writes the gesture as "Dispatch → <template>", so the palette gets one
 // entry per template rather than one entry that then asks — E9-06's rule that a
 // palette entry has to say what pressing Enter will do.
+describe('handing a session’s context to another, from the palette (#851)', () => {
+  it('opens the chip’s own picker on the FOCUSED session', () => {
+    const d = deps();
+    const cmd = byId(buildCommands(d), 'session.handContext');
+    expect(cmd.enabled?.(ctxWith(['a', 'b'], 'b'))).toBe(true);
+    cmd.run(ctxWith(['a', 'b'], 'b'));
+    expect(d.handContext).toHaveBeenCalledWith('b');
+  });
+
+  it('is greyed, with a reason, when there is nothing to hand or no one to hand it to', () => {
+    const d = deps();
+    const cmd = byId(buildCommands(d), 'session.handContext');
+    // no session focused
+    expect(cmd.enabled?.(ctxWith(['a', 'b']))).toBe(false);
+    // focused, but not running (a package is resolved by LIVE id) or nobody to
+    // hand it to — the dep answers both, since the context carries no liveness
+    (d.canHandContext as ReturnType<typeof vi.fn>).mockReturnValue(false);
+    expect(cmd.enabled?.(ctxWith(['a', 'b'], 'a'))).toBe(false);
+    expect(d.canHandContext).toHaveBeenCalledWith('a');
+    expect(cmd.disabledReasonKey).toBe('commands.disabled.noHandoff');
+    expect(en.commands.disabled.noHandoff).toBeTruthy();
+  });
+
+  it('is an unbound Session command, filed and worded for the palette', () => {
+    const cmd = byId(buildCommands(deps()), 'session.handContext');
+    expect(cmd.binding).toBeUndefined();
+    expect(cmd.scope).toBe('app');
+    expect(cmd.categoryKey).toBe('commands.category.session');
+    expect(en.commands.handContext).toBe("Hand this session's context to…");
+  });
+});
+
 describe('dispatch entries (P2-E13-03)', () => {
   const withTemplates = (): ReturnType<typeof deps> => {
     const d = deps();

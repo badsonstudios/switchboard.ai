@@ -41,6 +41,7 @@ import {
 } from './StandingGrants';
 import { DocumentViewer, documentReopened } from './DocumentViewer';
 import { SessionHistoryDialog } from './SessionHistoryDialog';
+import { ContextHandoffPicker } from './ContextHandoffPicker';
 import { NameSessionDialog } from './NameSessionDialog';
 import { createPortal } from 'react-dom';
 import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
@@ -136,6 +137,15 @@ import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
 import { AiBadge } from './AiBadge';
 import { CONTEXT_DND_TYPE } from '../../../shared/context-drop';
+import {
+  closeHandoffPicker,
+  handoffTargets,
+  openHandoffPicker,
+  requestHandoff,
+  subscribeHandoff,
+  takeLatestHandoff,
+  useHandoffPickerOpen,
+} from '../lib/context-handoff';
 import type { Ladder } from '../lib/presentation';
 import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../lib/popout-windows';
 import { strandedByGroup } from '../lib/popout-rescue';
@@ -1321,6 +1331,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   };
 
   const cardId = props.params?.cardId;
+  // §5.5's "Hand this session's context to…" picker (#851), open over THIS
+  // card. In a module store rather than component state because the palette
+  // command opens it too, from outside the card; see `lib/context-handoff.ts`.
+  const handoffOpen = useHandoffPickerOpen(cardId);
+  const contextChip = React.useRef<HTMLButtonElement | null>(null);
   // PRESENTATION STATE LIVES IN THE STORE (P2-E15-08, AR-P1-5), not here.
   //
   // The view tab, the popped-out flag and the suspended flag all have to
@@ -3005,11 +3020,19 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 header's double-click maximizes, and starting a drag from a
                 child that also swallows clicks must not fold the workspace.
 
-                A SPAN, not a button. It is a drag handle, not a control that
-                does something when pressed — and `draggable` on a `button` is
-                the pairing that fights the native press-and-hold behaviour. The
-                label says what it is for, and the manual says the rest. */}
-            <span
+                A REAL BUTTON SINCE #851, and still the drag handle. It was a
+                span, on the reasoning that it was a handle rather than a
+                control — which left dragging as the ONLY way to start the
+                gesture, against §5.32's fifth rule. Now a click, Enter or Space
+                opens the "Hand this session's context to…" picker, and the drag
+                is the mouse's shortcut past it. `draggable` on a `button` was
+                the worry the old comment named; in Electron's Chromium it
+                drags, and `context-drop.spec` performs a real pointer drag from
+                this element so that stays a measured fact. The header is a
+                role-less `div`, so this is not a control inside a control. */}
+            <button
+              ref={contextChip}
+              type="button"
               data-testid="card-context-chip"
               data-no-maximize
               draggable
@@ -3024,6 +3047,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 // `move` cursor over the target would promise otherwise.
                 e.dataTransfer.effectAllowed = 'copy';
               }}
+              onClick={() => {
+                if (cardId) openHandoffPicker(cardId);
+              }}
+              aria-haspopup="dialog"
               title={t('grid.contextChipHint')}
               aria-label={t('grid.contextChipHint')}
               style={{
@@ -3037,10 +3064,26 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 paddingBlock: 1,
                 cursor: 'grab',
                 flexShrink: 0,
+                lineHeight: 'inherit',
               }}
             >
               {t('grid.contextChip')}
-            </span>
+            </button>
+            {handoffOpen && cardId && (
+              <ContextHandoffPicker
+                fromName={headerTitle}
+                // Read when it opens, in RAIL order: the order the user already
+                // knows the sessions in, and the order Ctrl+1..9 counts.
+                targets={handoffTargets(sessionStore.getRailOrder().flat, cardId).map((s) => ({
+                  id: s.id,
+                  title: s.title,
+                  folder: s.folder,
+                }))}
+                onCancel={closeHandoffPicker}
+                onChoose={(target) => requestHandoff(target, live.id)}
+                fallbackFocus={() => contextChip.current}
+              />
+            )}
             <button
               data-testid="card-history"
               data-no-maximize
@@ -7312,6 +7355,57 @@ export function SessionGrid(props: {
   );
 
   /**
+   * Bring a card in front of the user — the body of `focusSession`, by CARD id.
+   *
+   * Answers true when it raised a DIFFERENT window (a popped-out card): the
+   * popout keyboard bridge must not then pull the main window in front of it.
+   */
+  const focusCardPanel = useCallback(
+    (cardId: string, opts?: { raiseWindow?: boolean }): boolean => {
+      const panel = apiRef.current?.getPanel(`session-${cardId}`);
+      // §5.8: "reveal triggers: ... user click anywhere (sidebar, event,
+      // lamp)". Every one of those paths lands here, so a hidden card comes
+      // back rather than the click doing nothing.
+      if (!panel) {
+        void revealCard(cardId);
+        return false;
+      }
+      panel.focus();
+      // a popped-out card is in another OS window — focusing the panel alone
+      // leaves it buried behind this one, so raise its window too (E9-01)
+      const loc = panel.group.api.location;
+      if (loc.type !== 'popout') return false;
+      if (opts?.raiseWindow !== false) raisePopoutWindow(panel, loc.getWindow());
+      return true;
+    },
+    [revealCard]
+  );
+
+  /**
+   * §5.5's hand-off from the keyboard (#851): a target was picked, so bring
+   * its PROMPT BOX forward — the Session view, on a card in front of the user.
+   *
+   * The drop never needed this, because you can only drop on what you can see.
+   * A picked target may be a background tab (only the active tab of a group is
+   * rendered), on its Changes view (no composer at all), or hidden — and the
+   * composer is what answers the request (`FeedView` takes it on mount). So
+   * this is the half that makes the composer exist; nothing is offered here.
+   */
+  React.useEffect(() => {
+    return subscribeHandoff(() => {
+      const req = takeLatestHandoff();
+      if (!req) return;
+      if (sessionStore.getPresentation(req.target).view !== DEFAULT_PANEL_ID) {
+        sessionStore.setPresentation(req.target, { view: DEFAULT_PANEL_ID });
+      }
+      // From a popped-out source the target is usually in THIS window, which
+      // is behind the popout the user picked in; focusing a panel does not
+      // raise its window, so raise it — the dialog opens here.
+      if (!focusCardPanel(req.target) && !document.hasFocus()) window.focus();
+    });
+  }, [focusCardPanel]);
+
+  /**
    * End one session and forget every record keyed by its card — WITHOUT asking.
    *
    * The confirm belongs to the GESTURE, not to this: `closeCard` asks about one
@@ -7634,26 +7728,7 @@ export function SessionGrid(props: {
       applyPreset: (preset) => arrangeWorkspace(apiRef.current, preset),
       equalize: () => (layoutSweepPort.ready() ? equalizeGrid(apiRef.current) : false),
       applyLayout: (trigger) => applyLayout(apiRef.current, trigger),
-      focusSession: (liveId, opts) => {
-        const cardId = sessionStore.cardIdForLive(liveId);
-        const panel = apiRef.current?.getPanel(`session-${cardId}`);
-        // §5.8: "reveal triggers: ... user click anywhere (sidebar, event,
-        // lamp)". Every one of those paths lands here, so a hidden card comes
-        // back rather than the click doing nothing.
-        if (!panel) {
-          void revealCard(cardId);
-          return false;
-        }
-        panel.focus();
-        // a popped-out card is in another OS window — focusing the panel alone
-        // leaves it buried behind this one, so raise its window too (E9-01)
-        const loc = panel.group.api.location;
-        if (loc.type !== 'popout') return false;
-        if (opts?.raiseWindow !== false) raisePopoutWindow(panel, loc.getWindow());
-        // tells the caller we raised a DIFFERENT window: the popout keyboard
-        // bridge must not then pull the main window in front of it
-        return true;
-      },
+      focusSession: (liveId, opts) => focusCardPanel(sessionStore.cardIdForLive(liveId), opts),
       activeCardId: () => {
         const panel = apiRef.current?.activePanel;
         // a popped-out card lives in ANOTHER OS window; commands typed in this
@@ -7916,7 +7991,7 @@ export function SessionGrid(props: {
         openAllChangesPanel(apiRef.current, cardId, folder, props.colorScheme, title),
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
-  }, [props.controller, addSessionCard, newSessionInFolder, newSession, newSessionInGrid, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
+  }, [props.controller, addSessionCard, newSessionInFolder, newSession, newSessionInGrid, hideCard, revealCard, focusCardPanel, setLadder, stepLadder, props.colorScheme, t]);
 
   // Dockview learns the light/dark verdict in onReady, which runs ONCE — so a
   // theme switch after mount left it on the scheme the app booted with. Every

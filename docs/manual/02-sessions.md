@@ -838,6 +838,24 @@ needs to carry on** is another. That's what the **context** chip is for.
 Every running session has one, in its header next to the status. Drag it onto
 another session's prompt box and let go.
 
+**You don't have to drag.** There are two other ways to start the same thing,
+and they end in the same place:
+
+- **Click the chip** — or Tab to it and press **Enter** or **Space**. A small
+  list opens: *Hand this session's context to…*, with every other running
+  session in the order the sessions list shows them. Sessions that are paused,
+  never started or have ended aren't listed: they have no prompt box to put it
+  in. Pick one with the mouse, or with the arrow keys and **Enter**. **Esc**
+  closes it without doing anything.
+- **From the command palette.** Press **`Ctrl+Shift+P`** and type *hand*, then
+  choose **Hand this session's context to…**. It works on the session you're
+  in, and opens the same list. It's greyed out if that session isn't running
+  (there's nothing to hand over yet) or if no other session is running.
+
+When you pick a session, the app switches to it — bringing it to the front if
+it was behind another tab, and back to its conversation view if it was showing
+something else — and the same question a drop asks appears there.
+
 You'll be asked what to hand over, with a rough size beside each choice:
 
 - **Last response** — the last thing that session said, and the last thing it

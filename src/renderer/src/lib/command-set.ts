@@ -136,6 +136,17 @@ export interface CommandDeps {
   dispatchTemplates: ReadonlyArray<{ id: string; name: string }>;
   /** open the dispatch dialog on the ACTIVE session, with this role preselected */
   dispatchFrom: (templateId: string) => void;
+  /**
+   * §5.5's hand-off, from the keyboard (#851): open the "Hand this session's
+   * context to…" picker on this card — the same picker its context chip opens.
+   */
+  handContext: (cardId: string) => void;
+  /**
+   * Can this card START a hand-off right now: it has a live session (a package
+   * is resolved by LIVE id, which is why the chip only exists on a live card)
+   * and there is another session to receive it. Asked at palette-open time.
+   */
+  canHandContext: (cardId: string) => boolean;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
@@ -537,6 +548,33 @@ export function buildCommands(deps: CommandDeps): Command[] {
         run: () => deps.dispatchFrom(template.id),
       })
     ),
+    // ── §5.5's CONTEXT HAND-OFF, without the drag (#851) ──────────────────
+    //
+    // The chip in the card header is the mouse's way to start it; this is the
+    // palette's. ONE entry that opens a picker, not one entry per target as
+    // Dispatch has: Dispatch's list is a handful of templates, while this one
+    // is every other open session — and the palette already carries a "Go to"
+    // row per session, so a second per-session set would double the list for
+    // a gesture made a few times a day. The picker is the chip's own, so the two
+    // routes cannot drift (§5.32's fifth rule).
+    //
+    // Unbound, for Dispatch's reason: it ends in another session's prompt box,
+    // and that is deliberate rather than a chord. ACTIVE card only, like every
+    // card-scoped command the palette runs (the palette opens in the main
+    // window; a popped-out card's chip is its route).
+    {
+      id: 'session.handContext',
+      titleKey: 'commands.handContext',
+      categoryKey: CATEGORY_SESSION,
+      scope: 'app',
+      // the dep answers both halves — a running source, and a target the
+      // picker would offer — because the palette's context carries no liveness
+      enabled: (ctx) => ctx.activeCardId !== null && deps.canHandContext(ctx.activeCardId),
+      disabledReasonKey: 'commands.disabled.noHandoff',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.handContext(ctx.activeCardId);
+      },
+    },
     // ── §5.8's presentation ladder (E9-05) ────────────────────────────────
     //
     // Two BINDINGS that step, and four palette entries that jump straight to a
