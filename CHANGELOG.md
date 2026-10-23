@@ -140,6 +140,15 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.129 — unreleased
 
+### Internal
+
+- **AI-written task labels are ready for AIs other than Claude.** To write a
+  card's label, switchboard shows a small model the end of the conversation,
+  and it marked every reply as Claude's whatever AI wrote it. Replies are now
+  marked with that AI's own name, the same name another session sees when it
+  reads this one. Nothing changes today: only Claude writes these labels, and
+  Claude's replies still read as Claude's.
+
 ## 0.8.128 — 2026-10-23
 
 ### Added

@@ -107,6 +107,10 @@ function harness(
      * that throws plays a broken capability lookup.
      */
     labelerFor?: (providerId: string) => boolean;
+    /** the catalog name lookup (#1419); absent = the dep is not wired */
+    aiNameFor?: (providerId: string) => string | undefined;
+    /** the provider the LIVE record reports (#1419); absent = `generic` */
+    liveProviderId?: string;
     /** the labeler THROWS instead of resolving — contributor code breaking its promise */
     oneShotThrows?: boolean;
     /** transcript size the watcher reports, for the staleness gates (#758) */
@@ -275,7 +279,7 @@ function harness(
 
   const record = {
     id: 'live-1',
-    identity: { title: 't', folder, providerId: 'generic' },
+    identity: { title: 't', folder, providerId: opts.liveProviderId ?? 'generic' },
     status: opts.status ?? 'starting',
     createdAt: '',
     exitCode: null,
@@ -644,6 +648,7 @@ function harness(
     //
     // Per provider since #1288: `labelersAskedFor` records which AI was asked,
     // and `opts.labelerFor` decides which ones have a labeler at all.
+    aiNameFor: opts.aiNameFor,
     labelerFor: (providerId: string) => {
       labelersAskedFor.push(providerId);
       if (opts.labelerFor && !opts.labelerFor(providerId)) return undefined;
@@ -5049,6 +5054,61 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
         'ai label skipped: could not ask the provider for a labeler',
         expect.objectContaining({ providerId: 'generic' })
       );
+    });
+  });
+
+  describe('the excerpt names the AI that wrote the replies (#1419)', () => {
+    const namesAsked: string[] = [];
+    const catalog = (providerId: string): string | undefined => {
+      namesAsked.push(providerId);
+      return ({ codex: 'Codex', 'claude-code': 'Claude Code' } as Record<string, string>)[providerId];
+    };
+    beforeEach(() => {
+      namesAsked.length = 0;
+    });
+
+    it('a non-Claude session’s replies reach the labeler under ITS name, not Claude’s', () => {
+      const h = streamSession({ aiLabels: true, liveProviderId: 'codex', aiNameFor: catalog });
+      h.fireStatus('live-1', 'done');
+      expect(h.oneShotCalls).toHaveLength(1);
+      expect(h.oneShotCalls[0].prompt).toContain('Codex: wiring the parser to the bus');
+      expect(h.oneShotCalls[0].prompt).not.toContain('Claude: wiring');
+      // asked about the LIVE record's AI — the same one the labeler was chosen by
+      expect(namesAsked).toEqual(['codex']);
+      expect(h.labelersAskedFor).toEqual(['codex']);
+    });
+
+    it('a Claude session stays `Claude:` byte-for-byte, even though the catalog calls it "Claude Code"', () => {
+      const h = streamSession({ aiLabels: true, liveProviderId: 'claude-code', aiNameFor: catalog });
+      h.fireStatus('live-1', 'done');
+      expect(h.oneShotCalls[0].prompt).toContain('Claude: wiring the parser to the bus');
+      expect(h.oneShotCalls[0].prompt).not.toContain('Claude Code:');
+    });
+
+    it('an AI nobody can name stays `Claude:`', () => {
+      const h = streamSession({ aiLabels: true, liveProviderId: 'custom:mystery', aiNameFor: catalog });
+      h.fireStatus('live-1', 'done');
+      expect(h.oneShotCalls[0].prompt).toContain('Claude: wiring the parser to the bus');
+    });
+
+    it('a wiring without the lookup stays `Claude:`', () => {
+      const h = streamSession({ aiLabels: true, liveProviderId: 'codex' });
+      h.fireStatus('live-1', 'done');
+      expect(h.oneShotCalls[0].prompt).toContain('Claude: wiring the parser to the bus');
+    });
+
+    it('a lookup that THROWS costs the name, never the label', async () => {
+      const h = streamSession({
+        aiLabels: true,
+        liveProviderId: 'codex',
+        aiNameFor: () => {
+          throw new Error('catalog exploded');
+        },
+      });
+      expect(() => h.fireStatus('live-1', 'done')).not.toThrow();
+      expect(h.oneShotCalls).toHaveLength(1);
+      expect(h.oneShotCalls[0].prompt).toContain('Claude: wiring the parser to the bus');
+      await vi.waitFor(() => expect(stored(h).taskLabel).toBe('Wire up the parser'));
     });
   });
 

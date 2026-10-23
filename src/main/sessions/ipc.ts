@@ -77,7 +77,7 @@ import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { ACCENTS, RETIRED_ACCENTS } from '../../shared/accents';
 import { outOfReserved } from '../../shared/reserved-hue';
-import { summariesFrom } from './queries';
+import { assistantLabelFor, summariesFrom } from './queries';
 import type { ContextOffer } from '../../shared/context-drop';
 import type { MentionPrompt } from '../../shared/mention-prompt';
 import { EventFeed } from '../events/feed';
@@ -118,7 +118,7 @@ import type { OneShotRequest, OneShotResult } from '../extensibility/contributio
 import { priceUsage } from '../usage/price';
 import { EventUsageLedger } from '../usage/event-usage';
 import type { UsageReport } from '../../shared/usage-report';
-import { renderBlock } from './transcript-blocks';
+import { renderBlockAs } from './transcript-blocks';
 // #877: the size vocabulary, shared so main's guard and the dialog's options
 // cannot drift apart.
 import {
@@ -220,6 +220,14 @@ export interface SessionIpcDeps {
    * not exist.
    */
   labelerFor?: (providerId: string) => ((req: OneShotRequest) => Promise<OneShotResult>) | undefined;
+  /**
+   * The display name of the AI a provider id runs (#1419) — the SAME function
+   * `SessionQueries` gets (#1365), so the labeler's excerpt and a sibling's
+   * `get_session_output` name a Codex reply identically. Optional, and
+   * `undefined` (or throwing) means the replies stay `Claude:`, the text before
+   * either change, rather than a raw provider id.
+   */
+  aiNameFor?: (providerId: string) => string | undefined;
   /**
    * §5.5 Level 3 — fork adoption, experimental and OFF by default (P2-E11-12).
    *
@@ -898,17 +906,22 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   };
 
   /**
-   * The labeler for the AI this live session runs on — the LIVE record's
-   * provider, which is what the session actually started on, falling back to
-   * the card's. `undefined` (no AI labels for it) when that AI offers none, or
-   * when asking threw: a broken capability costs the label, nothing else.
+   * The AI this live session runs on — the LIVE record's provider, which is
+   * what the session actually started on, falling back to the card's. One
+   * answer for both the labeler and the name on the excerpt's replies (#1419).
+   */
+  const labelProviderOf = (liveId: string, card: PersistedSession): string =>
+    manager.get(liveId)?.identity.providerId || card.identity.providerId;
+
+  /**
+   * The labeler for that AI. `undefined` (no AI labels for it) when that AI
+   * offers none, or when asking threw: a broken capability costs the label,
+   * nothing else.
    */
   const labelerOf = (
-    liveId: string,
-    card: PersistedSession
+    providerId: string
   ): ((req: OneShotRequest) => Promise<OneShotResult>) | undefined => {
     if (!deps.labelerFor) return undefined;
-    const providerId = manager.get(liveId)?.identity.providerId || card.identity.providerId;
     try {
       return deps.labelerFor(providerId);
     } catch (err) {
@@ -928,7 +941,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     if (!card) return;
     // Asked BEFORE any throttle state is touched, so an AI with no labeler
     // never looks to `shouldRelabel` like a run that is out or just happened.
-    const runOneShot = labelerOf(liveId, card);
+    const providerId = labelProviderOf(liveId, card);
+    const runOneShot = labelerOf(providerId);
     if (!runOneShot) return;
 
     const snap = transcripts.snapshot(liveId);
@@ -959,7 +973,21 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // `transport` at its `pty` default.
     const blocks =
       isStream(liveId) && deps.streamFeed ? deps.streamFeed.blocks(liveId) : transcripts.blocks(liveId);
-    const excerpt = buildExcerpt(blocks.map(renderBlock));
+    // The replies under the AI's OWN name (#1419), from the same provider the
+    // labeler was chosen by: a Codex session's excerpt saying `Claude:` would
+    // tell the labeler the wrong AI did the work. Latent while Claude is the
+    // only AI with a `labels` capability, and fixed before the second one
+    // arrives rather than after. Claude's — and an AI nobody can
+    // name — stay `Claude:` byte-for-byte; a name lookup that throws costs the
+    // name, never the label.
+    let aiName: string | undefined;
+    try {
+      aiName = deps.aiNameFor?.(providerId);
+    } catch {
+      aiName = undefined;
+    }
+    const speaker = assistantLabelFor(providerId, aiName);
+    const excerpt = buildExcerpt(blocks.map((b) => renderBlockAs(b, speaker)));
     if (!excerpt) {
       // The one branch that used to be silent, and the reason that defect could
       // have shipped: "decided to run, then did nothing" must leave a trace.
