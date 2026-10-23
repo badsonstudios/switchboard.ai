@@ -233,6 +233,31 @@ the pane.
   is already about 78 characters wide or less and the button would do almost
   nothing. Your choice still applies there; widen the pane and the button comes
   back.
+- **It is in the command list too.** Press `Ctrl+Shift+P` and type "readable":
+  **Turn the document's readable width on or off** does the same thing as the
+  button, in a pane of any width. It is greyed there, with the reason, when no
+  open document is showing its rendered view.
+
+### In a narrow pane: the "…" button
+
+When the pane is too narrow for the whole header, some of its buttons move into
+a **…** button near the right-hand end (just before **⤢**), instead of being
+pushed off the edge.
+
+1. **Open externally** and **Reveal in folder** go first.
+2. If that is still not enough, **Rendered**, **Source**, **Outline** and
+   **Readable width** go too.
+
+Click **…** to get them back as a menu. It works from the keyboard as well:
+Tab to **…**, press Enter, use the arrow keys, press Enter to choose. Escape
+closes the menu, and after choosing, the keyboard focus goes back to **…**.
+Back, Forward, the file name and **⤢** always stay on the header. Widen the
+pane and the buttons come back out of the menu.
+
+Outline and Readable width only appear in the menu at the widths where their
+buttons would have been on the header (see above). If the file name is very
+long and the pane very narrow, the name is cut short with **…** as a last
+resort; hover it to see the whole path.
 
 ## It follows the file
 
@@ -290,7 +315,8 @@ get a small card naming the file, its type and its size, with two buttons:
 - **Reveal in folder** shows it in Explorer / Finder / your file manager.
 
 Those two buttons are in the header of *every* document too, so getting a file
-into your own tools is always one click away.
+into your own tools is always one click away (in a narrow pane, they are in the
+header's **…** menu).
 
 ## When a document stops following its file
 

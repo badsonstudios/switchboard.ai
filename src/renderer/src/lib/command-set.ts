@@ -80,6 +80,8 @@ export interface CommandDeps {
   toggleDiffLayout: () => void;
   /** flip the document viewer's outline, for every open viewer (#1017) */
   toggleDocumentOutline: () => void;
+  /** flip the document viewer's Readable width, for every open viewer (#1408) */
+  toggleDocumentMeasure: () => void;
   /** jump to the next session waiting on a human (E9-03 attention queue) */
   jumpToNextAttention: () => void;
   /** show the build identity — version, commit, branch, build age (E15-15) */
@@ -1081,6 +1083,21 @@ export function buildCommands(deps: CommandDeps): Command[] {
       enabled: (ctx: CommandContext) => ctx.documentOutlineOffered === true,
       disabledReasonKey: 'commands.disabled.noOutline',
       run: () => deps.toggleDocumentOutline(),
+    },
+    {
+      // The viewer's Readable width switch (#1408, the other follow-up #1404's
+      // worker reported), for the Outline entry's reason above. It matters
+      // more here: the chip is hidden in a pane under 600px and folds into
+      // the header's "…" in a narrow one, so this is the route that does not
+      // depend on the pane's width. Greyed by the chip's own rule: no open
+      // document is showing rendered prose.
+      id: 'view.documentMeasure',
+      titleKey: 'commands.toggleDocumentMeasure',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app',
+      enabled: (ctx: CommandContext) => ctx.documentMeasureOffered === true,
+      disabledReasonKey: 'commands.disabled.noReadableWidth',
+      run: () => deps.toggleDocumentMeasure(),
     },
     {
       // The keyboard route to the build identity (E15-15). Palette-only and no

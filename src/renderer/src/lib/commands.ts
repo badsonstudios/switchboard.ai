@@ -85,6 +85,8 @@ export interface CommandContext {
    * other document answers here.
    */
   documentOutlineOffered?: boolean;
+  /** Is any open document showing rendered prose — the Readable width chip's rule (#1408)? */
+  documentMeasureOffered?: boolean;
   /**
    * How many §5.30 documents a bulk close would actually take right now (#543).
    *

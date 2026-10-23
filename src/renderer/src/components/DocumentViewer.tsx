@@ -56,9 +56,17 @@ import {
 } from '../lib/document-outline';
 import {
   getDocumentMeasure,
+  setMeasureOffered,
   subscribeDocumentMeasure,
   toggleDocumentMeasure,
 } from '../lib/document-measure';
+import { foldedGroups, toolbarNeed } from '../lib/diff-toolbar-fit';
+import {
+  chipHiddenAt,
+  MEASURE_CHIP_MAX_HIDDEN_PX,
+  OUTLINE_CHIP_MAX_HIDDEN_PX,
+} from '../lib/document-header-fit';
+import { RailGroupMenu, type RailGroupMenuItem } from './RailGroupMenu';
 import { findBarState, findQuery } from '../lib/find-bar-state';
 import { findSurfaceKey, publishFindSurface, type DocumentFindSurface } from '../lib/find-surfaces';
 import { openMonacoFind, type FindableEditor } from '../lib/monaco-find';
@@ -68,6 +76,12 @@ import { subscribeDocumentLine, takeDocumentLine } from '../lib/document-reveal'
 import { sessionStore } from '../store/session-store';
 
 const DocumentSource = React.lazy(() => import('./DocumentSource'));
+
+/** Which of the Outline / Readable width chips the pane is wide enough for (#1408). */
+type ChipsShown = 'none' | 'outline' | 'both';
+
+/** "…" before it has ever been on screen to measure (one glyph and padding). */
+const MORE_FALLBACK_PX = 26;
 
 /**
  * Find a heading by id.
@@ -994,9 +1008,18 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   const toggleOutline = (): void => {
     const nav = outlineRef.current;
     const active = nav?.ownerDocument?.activeElement ?? null;
-    if (nav && active && nav.contains(active)) outlineToggleRef.current?.focus();
+    // the chip, or "…" when the chip is folded into it (#1408)
+    if (nav && active && nav.contains(active)) (outlineToggleRef.current ?? moreRef.current)?.focus();
     toggleDocumentOutline();
   };
+
+  // the palette's Readable width entry is enabled while any viewer is showing
+  // rendered prose — the chip's own rule (#1408)
+  const measureKey = React.useId();
+  React.useEffect(() => {
+    setMeasureOffered(measureKey, showRendered);
+    return () => setMeasureOffered(measureKey, false);
+  }, [measureKey, showRendered]);
 
   // §5.24's lineage convention: the accent is a TINT on the surface (a rule
   // down its leading edge, exactly as a card header wears it), never the ink —
@@ -1007,14 +1030,197 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     ? ({ ['--doc-accent' as string]: attribution.accent } as React.CSSProperties)
     : undefined;
 
+  // --- folding the header into "…" in a narrow pane (#1408) -----------------
+  // The rule is the diff toolbar's (`lib/diff-toolbar-fit`); the groups and
+  // their order are `lib/document-header-fit`'s. The component only MEASURES,
+  // and remembers each group's width from the last time it was on screen,
+  // because a folded group cannot be measured and the rule needs to know
+  // whether unfolding it would fit.
+  const headerRef = React.useRef<HTMLDivElement | null>(null);
+  const navRef = React.useRef<HTMLDivElement | null>(null);
+  const nameRef = React.useRef<HTMLSpanElement | null>(null);
+  const attributionRef = React.useRef<HTMLSpanElement | null>(null);
+  const encodingRef = React.useRef<HTMLSpanElement | null>(null);
+  const viewGroupRef = React.useRef<HTMLSpanElement | null>(null);
+  const fileGroupRef = React.useRef<HTMLSpanElement | null>(null);
+  const popRef = React.useRef<HTMLButtonElement | null>(null);
+  const moreRef = React.useRef<HTMLButtonElement | null>(null);
+  // The view controls' width is remembered PER THRESHOLD BAND (found in
+  // review): the Outline and Readable width chips inside the group come and go
+  // with the pane's width, so one remembered number measured above 420px would
+  // keep the group folded below it, where it is 50-odd px narrower.
+  const groupWidths = React.useRef({
+    file: 0,
+    view: { none: 0, outline: 0, both: 0 },
+    more: 0,
+  });
+  const [folded, setFolded] = React.useState(0);
+  // Even everything folded does not fit (a very long file name): the name
+  // gives way, which is the only way left to keep pop-out inside the pane.
+  const [tight, setTight] = React.useState(false);
+  // The pane's width, ROUNDED TO THE TWO THRESHOLDS THAT MATTER: whether the
+  // Outline and Readable width chips would be on the row at all. A folded chip
+  // is in a menu outside the container its CSS asks about, so the menu asks in
+  // numbers — and a coarse value means a resize re-renders nothing.
+  const [chipsShown, setChipsShown] = React.useState<ChipsShown>('both');
+  const measureHeader = React.useCallback((): void => {
+    const bar = headerRef.current;
+    const view = bar?.ownerDocument.defaultView;
+    if (!bar || !view) return;
+    const cs = view.getComputedStyle(bar);
+    const px = (v: string): number => Number.parseFloat(v) || 0;
+    const w = (el: HTMLElement | null): number => (el ? el.getBoundingClientRect().width : 0);
+    // A hidden dockview tab observes 0×0: not a measurement, and remembering
+    // its zeros would tell the rule a folded group costs nothing to unfold.
+    if (!(bar.clientWidth > 0)) return;
+    const pane = bar.getBoundingClientRect().width;
+    const band: ChipsShown = chipHiddenAt(pane, OUTLINE_CHIP_MAX_HIDDEN_PX)
+      ? 'none'
+      : chipHiddenAt(pane, MEASURE_CHIP_MAX_HIDDEN_PX)
+        ? 'outline'
+        : 'both';
+    const widths = groupWidths.current;
+    if (fileGroupRef.current) widths.file = w(fileGroupRef.current);
+    if (viewGroupRef.current) widths.view[band] = w(viewGroupRef.current);
+    // Never measured in this band: 0, which lets the rule unfold the group so
+    // the next pass can measure it. That pass is this same layout effect,
+    // re-run synchronously before paint, so a wrong guess folds back unseen
+    // — where guessing the widest band's width could keep it folded for good.
+    const viewWidth = widths.view[band];
+    if (moreRef.current) widths.more = w(moreRef.current);
+    // The name's WANTED width, not its box: once `tight` lets it truncate its
+    // box is whatever was left, and deciding from that would un-tighten it,
+    // overflow, and tighten it again on every frame.
+    const name = nameRef.current;
+    const nameWidth = name ? Math.max(w(name), name.scrollWidth) : 0;
+    const present = [attributionRef.current, encodingRef.current, popRef.current].filter(
+      (el): el is HTMLSpanElement | HTMLButtonElement => el !== null
+    );
+    const input = {
+      room: bar.clientWidth - px(cs.paddingInlineStart) - px(cs.paddingInlineEnd),
+      fixed: w(navRef.current) + nameWidth + present.reduce((n, el) => n + w(el), 0),
+      // nav, name, the spacer, and whichever of chip / encoding / pop-out exist
+      fixedCount: 3 + present.length,
+      groups: [widths.file, viewWidth],
+      more: widths.more || MORE_FALLBACK_PX,
+      gap: px(cs.columnGap),
+      // the folder: it shrinks to nothing before a button folds (see the lib)
+      pathMin: 0,
+    };
+    const next = foldedGroups(input);
+    if (next === null) return;
+    setFolded(next);
+    setTight(next === input.groups.length && toolbarNeed(input, next) > input.room);
+    setChipsShown(band);
+  }, []);
+  // Every render: a chip appearing, the name changing on navigation, a pressed
+  // toggle going bold — all change widths without changing the header's box,
+  // so a ResizeObserver alone would miss them. Cheap, and the setters bail on
+  // an equal value.
+  React.useLayoutEffect(() => {
+    measureHeader();
+  });
+  React.useEffect(() => {
+    const bar = headerRef.current;
+    if (!bar || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => measureHeader());
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [measureHeader]);
+
+  const [menuAt, setMenuAt] = React.useState<{ x: number; y: number } | null>(null);
+  const closeMenu = React.useCallback((restoreFocus: boolean): void => {
+    setMenuAt(null);
+    if (restoreFocus) moreRef.current?.focus();
+  }, []);
+  // Unfolding while the menu is open would leave it listing the wrong things.
+  React.useEffect(() => {
+    if (folded === 0) setMenuAt(null);
+  }, [folded]);
+  // The menu hands focus placement to its caller: back to "…", or a keyboard
+  // user who pressed Enter on an item is left on <body> (the diff toolbar's
+  // review finding, #1384).
+  const fromMenu =
+    (run: () => void): (() => void) =>
+    () => {
+      run();
+      // ...or, if what it did unfolded the header, its first live button
+      (moreRef.current ?? headerRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)'))?.focus();
+    };
+  const menuItems: RailGroupMenuItem[] = [];
+  if (folded >= 2) {
+    // in the order they stand on the row: the view controls, then the files'
+    menuItems.push(
+      {
+        id: 'rendered',
+        label: t('document.rendered'),
+        can: canRender && !isCard,
+        checked: mode === 'rendered',
+        run: fromMenu(() => switchMode('rendered')),
+      },
+      {
+        id: 'source',
+        label: t('document.source'),
+        can: !isCard,
+        checked: mode === 'source',
+        run: fromMenu(() => switchMode('source')),
+      }
+    );
+    // Only where the chip itself would be on the row: below its threshold the
+    // CSS has decided there is no room for what it controls (#1010, #1404).
+    if (chipsShown !== 'none') {
+      menuItems.push({
+        id: 'outline',
+        label: t('document.outline'),
+        can: outlineOffered,
+        checked: outlineShown,
+        toggle: true,
+        divider: true,
+        run: fromMenu(() => toggleDocumentOutline()),
+      });
+    }
+    if (chipsShown === 'both') {
+      menuItems.push({
+        id: 'readable-width',
+        label: t('document.readableWidth'),
+        can: showRendered,
+        checked: measure === 'readable',
+        toggle: true,
+        run: fromMenu(() => void toggleDocumentMeasure()),
+      });
+    }
+  }
+  if (folded >= 1) {
+    menuItems.push(
+      {
+        id: 'open-externally',
+        label: t('document.openExternally'),
+        can: true,
+        divider: folded >= 2,
+        run: fromMenu(() => void files()?.openPath?.(current)),
+      },
+      {
+        id: 'reveal-in-folder',
+        label: t('document.revealInFolder'),
+        can: true,
+        run: fromMenu(() => void files()?.reveal?.(current)),
+      }
+    );
+  }
+
   return (
     <div
       className={`doc-viewer${attribution ? ' doc-attributed' : ''}`}
       style={rootStyle}
       data-testid="document-viewer"
     >
-      <div className="doc-header">
-        <div className="doc-nav">
+      <div
+        ref={headerRef}
+        className="doc-header"
+        data-folded={folded}
+        data-tight={tight ? 'true' : undefined}
+      >
+        <div ref={navRef} className="doc-nav">
           <button
             type="button"
             className="doc-btn"
@@ -1037,7 +1243,7 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
           </button>
         </div>
         {/* the full path on hover, per §5.30's header list */}
-        <span className="doc-name" title={current} data-testid="doc-name">
+        <span ref={nameRef} className="doc-name" title={current} data-testid="doc-name">
           {baseName(current)}
         </span>
         <span className="doc-dir" title={current}>
@@ -1049,6 +1255,7 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
           // nothing else. `role="note"` because the chip has to carry its own
           // accessible name — "↳ api-work" read aloud is a rune and a word.
           <span
+            ref={attributionRef}
             className="doc-attribution"
             data-testid="doc-attribution"
             role="note"
@@ -1059,97 +1266,130 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
           </span>
         ) : null}
         {encoding && encoding !== 'utf-8' ? (
-          <span className="doc-chip" data-testid="doc-encoding">
+          <span ref={encodingRef} className="doc-chip" data-testid="doc-encoding">
             {t('document.encodingNote', { encoding: encoding as FileTextEncoding })}
           </span>
         ) : null}
         <span className="doc-header-gap" />
-        <div className="doc-modes" role="group" aria-label={t('document.toggleLabel')}>
+        {/* The two groups that fold into "…" in a narrow pane (#1408), the
+            file actions first and these second — `lib/document-header-fit`.
+            A group is on the row whole or in the menu, never half of each. */}
+        {folded < 2 ? (
+          <span ref={viewGroupRef} className="doc-group">
+            <div className="doc-modes" role="group" aria-label={t('document.toggleLabel')}>
+              <button
+                type="button"
+                className="doc-btn"
+                aria-pressed={mode === 'rendered'}
+                // Greyed, never hidden (§5.8): a `.ts` has no rendered view, and
+                // saying so is more use than a toggle that silently isn't there.
+                disabled={!canRender || isCard}
+                title={canRender ? undefined : t('document.renderedOnlyForMarkdown')}
+                onClick={() => switchMode('rendered')}
+              >
+                {t('document.rendered')}
+              </button>
+              <button
+                type="button"
+                className="doc-btn"
+                aria-pressed={mode === 'source'}
+                disabled={isCard}
+                onClick={() => switchMode('source')}
+              >
+                {t('document.source')}
+              </button>
+            </div>
+            {/* The outline's off switch (#1010, §5.30). BESIDE the mode pair and
+                not inside it: Rendered|Source are two spellings of one question and
+                share a `role="group"`, while this is an independent on/off and
+                would muddy that group's name. A PRESSED TOGGLE rather than a label
+                flipping between "Hide outline" and "Show outline" — the chip then
+                names the thing it controls in both states, and the verb lives in
+                the tooltip where the owner's own words can stay. Greyed, never
+                hidden, when there is nothing to hide (§5.8). */}
+            <button
+              type="button"
+              ref={outlineToggleRef}
+              className="doc-btn doc-outline-toggle"
+              data-testid="doc-outline-toggle"
+              aria-pressed={outlineShown}
+              disabled={!outlineOffered}
+              title={
+                !outlineOffered
+                  ? t('document.outlineUnavailable')
+                  : outlineShown
+                    ? t('document.hideOutline')
+                    : t('document.showOutline')
+              }
+              onClick={toggleOutline}
+            >
+              {t('document.outline')}
+            </button>
+            {/* The reading-width switch (#1404, §5.30). The same pressed-toggle
+                shape as Outline beside it: the chip names the thing in both states
+                and the tooltip carries the verb. Greyed outside the rendered view,
+                where there is no prose for it to measure (§5.8). */}
+            <button
+              type="button"
+              className="doc-btn doc-measure-toggle"
+              data-testid="doc-measure-toggle"
+              aria-pressed={measure === 'readable'}
+              disabled={!showRendered}
+              title={
+                !showRendered
+                  ? t('document.readableWidthUnavailable')
+                  : measure === 'readable'
+                    ? t('document.fillPaneWidth')
+                    : t('document.useReadableWidth')
+              }
+              onClick={() => void toggleDocumentMeasure()}
+            >
+              {t('document.readableWidth')}
+            </button>
+          </span>
+        ) : null}
+        {folded < 1 ? (
+          <span ref={fileGroupRef} className="doc-group">
+            <button
+              type="button"
+              className="doc-btn"
+              title={t('document.openExternally')}
+              onClick={() => void files()?.openPath?.(current)}
+            >
+              {t('document.openExternally')}
+            </button>
+            <button
+              type="button"
+              className="doc-btn"
+              title={t('document.revealInFolder')}
+              onClick={() => void files()?.reveal?.(current)}
+            >
+              {t('document.revealInFolder')}
+            </button>
+          </span>
+        ) : null}
+        {folded > 0 ? (
           <button
+            ref={moreRef}
             type="button"
-            className="doc-btn"
-            aria-pressed={mode === 'rendered'}
-            // Greyed, never hidden (§5.8): a `.ts` has no rendered view, and
-            // saying so is more use than a toggle that silently isn't there.
-            disabled={!canRender || isCard}
-            title={canRender ? undefined : t('document.renderedOnlyForMarkdown')}
-            onClick={() => switchMode('rendered')}
+            className="doc-btn doc-more"
+            data-testid="doc-more"
+            title={t('document.more')}
+            aria-label={t('document.more')}
+            aria-haspopup="menu"
+            aria-expanded={menuAt !== null}
+            // the menu closes itself on any pointerdown in its window; without
+            // this the press that opened it would be the press that shut it
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              if (menuAt) return closeMenu(false);
+              const r = e.currentTarget.getBoundingClientRect();
+              setMenuAt({ x: r.left, y: r.bottom });
+            }}
           >
-            {t('document.rendered')}
+            {t('document.moreIcon')}
           </button>
-          <button
-            type="button"
-            className="doc-btn"
-            aria-pressed={mode === 'source'}
-            disabled={isCard}
-            onClick={() => switchMode('source')}
-          >
-            {t('document.source')}
-          </button>
-        </div>
-        {/* The outline's off switch (#1010, §5.30). BESIDE the mode pair and
-            not inside it: Rendered|Source are two spellings of one question and
-            share a `role="group"`, while this is an independent on/off and
-            would muddy that group's name. A PRESSED TOGGLE rather than a label
-            flipping between "Hide outline" and "Show outline" — the chip then
-            names the thing it controls in both states, and the verb lives in
-            the tooltip where the owner's own words can stay. Greyed, never
-            hidden, when there is nothing to hide (§5.8). */}
-        <button
-          type="button"
-          ref={outlineToggleRef}
-          className="doc-btn doc-outline-toggle"
-          data-testid="doc-outline-toggle"
-          aria-pressed={outlineShown}
-          disabled={!outlineOffered}
-          title={
-            !outlineOffered
-              ? t('document.outlineUnavailable')
-              : outlineShown
-                ? t('document.hideOutline')
-                : t('document.showOutline')
-          }
-          onClick={toggleOutline}
-        >
-          {t('document.outline')}
-        </button>
-        {/* The reading-width switch (#1404, §5.30). The same pressed-toggle
-            shape as Outline beside it: the chip names the thing in both states
-            and the tooltip carries the verb. Greyed outside the rendered view,
-            where there is no prose for it to measure (§5.8). */}
-        <button
-          type="button"
-          className="doc-btn doc-measure-toggle"
-          data-testid="doc-measure-toggle"
-          aria-pressed={measure === 'readable'}
-          disabled={!showRendered}
-          title={
-            !showRendered
-              ? t('document.readableWidthUnavailable')
-              : measure === 'readable'
-                ? t('document.fillPaneWidth')
-                : t('document.useReadableWidth')
-          }
-          onClick={() => void toggleDocumentMeasure()}
-        >
-          {t('document.readableWidth')}
-        </button>
-        <button
-          type="button"
-          className="doc-btn"
-          title={t('document.openExternally')}
-          onClick={() => void files()?.openPath?.(current)}
-        >
-          {t('document.openExternally')}
-        </button>
-        <button
-          type="button"
-          className="doc-btn"
-          title={t('document.revealInFolder')}
-          onClick={() => void files()?.reveal?.(current)}
-        >
-          {t('document.revealInFolder')}
-        </button>
+        ) : null}
         {props.onPopoutToggle ? (
           // ONE control for both directions, like the card's (E8-04): pop out
           // and dock back are the same toggle, and two buttons that are never
@@ -1158,6 +1398,7 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
           // specs reach for that string by title, and a second match would make
           // them ambiguous rather than wrong, which is the harder failure.
           <button
+            ref={popRef}
             type="button"
             className="doc-btn doc-popout"
             data-testid="doc-popout"
@@ -1170,6 +1411,16 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
           </button>
         ) : null}
       </div>
+      {menuAt && menuItems.length > 0 ? (
+        <RailGroupMenu
+          x={menuAt.x}
+          y={menuAt.y}
+          label={t('document.more')}
+          items={menuItems}
+          onClose={closeMenu}
+          testId="doc-menu"
+        />
+      ) : null}
 
       {/* The file went away while it was open (P2-E16-04). A STRIP over the
           document, not in place of it: what you were reading is still the last

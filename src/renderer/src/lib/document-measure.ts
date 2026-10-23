@@ -66,3 +66,29 @@ export function subscribeDocumentMeasure(fn: () => void): () => void {
     listeners.delete(fn);
   };
 }
+
+// ── WHO HAS PROSE TO MEASURE (#1408) ─────────────────────────────────────────
+//
+// `lib/document-outline`'s registry, for the same reason: the toolbar chip is
+// greyed outside the rendered view (there is no prose for a reading width to
+// cap), and the command palette's entry for the same switch is not inside any
+// viewer. Each viewer says here whether it is showing rendered prose, and the
+// command is enabled while any does.
+
+const offering = new Set<string>();
+
+/** A viewer says whether it is showing rendered prose. `key` is the viewer's own. */
+export function setMeasureOffered(key: string, offered: boolean): void {
+  if (offered) offering.add(key);
+  else offering.delete(key);
+}
+
+/** Does any open document have prose the switch would visibly change? */
+export function isMeasureOffered(): boolean {
+  return offering.size > 0;
+}
+
+/** The tests' reset, and nothing else's. */
+export function resetMeasureOfferedForTest(): void {
+  offering.clear();
+}
