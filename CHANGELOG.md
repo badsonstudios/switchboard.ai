@@ -148,6 +148,10 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   marked with that AI's own name, the same name another session sees when it
   reads this one. Nothing changes today: only Claude writes these labels, and
   Claude's replies still read as Claude's.
+- **A background Claude Code session will not trip a false format warning.**
+  Sessions started with `claude --bg` mark every transcript line with the kind
+  of session they are; the app's check for transcript format changes now knows
+  that mark, so it will not log it as unexpected. Nothing changes on screen.
 
 ## 0.8.128 — 2026-10-23
 

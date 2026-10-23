@@ -6,7 +6,7 @@
 // detector that quarantines a line it does not fully understand has replaced a
 // silent schema break with a loud data-loss bug.
 import { describe, it, expect, vi } from 'vitest';
-import { readFileSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import path from 'path';
 import { DriftDetector, unknownKeys } from './drift';
 import { KNOWN_LINE_TYPES, TRANSCRIPT_SCHEMA, TYPE_SCOPED_ROOT_KEYS } from './schema';
@@ -498,7 +498,7 @@ describe('the schema itself', () => {
     expect(unknownKeys({ type: 42, sessionId: 's', customTitle: 'x' })).toEqual(['customTitle']);
   });
 
-  describe('team-session envelope keys (#812)', () => {
+  describe('envelope keys: team session (#812), background session (#824)', () => {
     // The CLI's generic append builds EVERY line as an envelope around the typed
     // entry — PATH binary 2.1.270, verbatim: `{parentUuid, logicalParentUuid,
     // isSidechain, teamName: d?.teamName, agentName: d?.agentName, promptId,
@@ -510,21 +510,29 @@ describe('the schema itself', () => {
     // is about these two keys only: `agentId` is also on the envelope but stays
     // scoped per #788, so a teammate line of another type carrying it would
     // still report — that documented gap is not this item's.)
+    //
+    // #824 adds `sessionKind`, from the identity block the same append spreads
+    // AFTER the entry — PATH binary 2.1.288: `...entry, ...Jqn(Re)` with
+    // `Jqn(e) = {sessionKind:KF(), userType, entrypoint, cwd, sessionId:e,
+    // version}`, and `KF()` = `CLAUDE_CODE_SESSION_KIND` when it is `bg` /
+    // `daemon` / `daemon-worker`. A `claude --bg` session gets `bg`.
     const envelopeLine = (type: string, extra = '') =>
       JSON.parse(
         `{"parentUuid":"u-0","logicalParentUuid":null,"isSidechain":false,` +
           `"teamName":"team-alpha","agentName":"researcher","promptId":"p-1",` +
-          `"type":"${type}","uuid":"u-1","sessionId":"s-1","cwd":"C:/tmp/x",` +
-          `"timestamp":"2026-09-15T10:00:00.000Z","version":"2.1.270",` +
-          `"userType":"external","gitBranch":"main"${extra}}`
+          `"type":"${type}","uuid":"u-1","sessionKind":"bg","userType":"external",` +
+          `"entrypoint":"cli","cwd":"C:/tmp/x","sessionId":"s-1",` +
+          `"timestamp":"2026-09-15T10:00:00.000Z","version":"2.1.288",` +
+          `"gitBranch":"main"${extra}}`
       ) as Record<string, unknown>;
 
     const witness = (line: Record<string, unknown>) => {
-      expect(Object.prototype.hasOwnProperty.call(line, 'teamName'), 'teamName parsed onto the line').toBe(true);
-      expect(Object.prototype.hasOwnProperty.call(line, 'agentName'), 'agentName parsed onto the line').toBe(true);
+      for (const key of ['teamName', 'agentName', 'sessionKind']) {
+        expect(Object.prototype.hasOwnProperty.call(line, key), `${key} parsed onto the line`).toBe(true);
+      }
     };
 
-    it('reports neither key on ANY declared line type — the envelope contract, not a sample', () => {
+    it('reports none of the envelope keys on ANY declared line type — the contract, not a sample', () => {
       // Every type, not a hand-picked few (review, #812): a sample of types lets
       // a future edit scope the keys to exactly that sample and stay green,
       // which is what #788 did to `agentId` after measuring. Types with a scoped
@@ -541,6 +549,23 @@ describe('the schema itself', () => {
       witness(line);
       expect(unknownKeys(line)).toEqual(['teamRosterV2']);
     });
+
+    it('nothing in src/ reads `sessionKind` — flat is only safe unread (#824)', () => {
+      // A flat key's rename is silent, which costs nothing ONLY while nothing
+      // consumes it. Issue 812 pins that for `agentName` at its one tempting
+      // consumer (`agent-attribution.test.ts`); `sessionKind` has no tempting
+      // consumer, so the pin is a source scan: the schema may name it, and
+      // nothing else outside a test may. If this fails because you now read the
+      // key, move it to a `TYPE_SCOPED_ROOT_KEYS` entry (or `consumed`) first.
+      // If it fails because an UNRELATED identifier of ours took the name, rename
+      // ours — sharing a name with a CLI key is exactly the confusion to avoid.
+      const srcRoot = path.join(__dirname, '..', '..');
+      const named = readdirSync(srcRoot, { recursive: true, encoding: 'utf8' })
+        .map((rel) => rel.split(path.sep).join('/'))
+        .filter((rel) => /\.(ts|tsx|js|mjs|cjs)$/.test(rel) && !/\.(test\.tsx?|d\.ts)$/.test(rel))
+        .filter((rel) => readFileSync(path.join(srcRoot, rel), 'utf8').includes('sessionKind'));
+      expect(named).toEqual(['main/transcripts/schema.ts']);
+    }, 15_000); // ~1,100 synchronous reads; the 5 s default is tight under a parallel run
   });
 
   it('every type-scoped key is scoped to a DECLARED line type, and is not also flat', () => {

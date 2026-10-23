@@ -72,9 +72,10 @@
 // below). If it turns up on another type, that is genuinely news and we want the
 // warning. (One exception, and it is not a relaxation of the rule: a key the
 // CLI writes on the ENVELOPE of every line is legal on every type by contract,
-// so it is flat — #812's `teamName` / `agentName`, see their note in the root
-// `ignored` list.) The 25 keys the corpus DID measure stay in the flat list — their
-// presence is not news anywhere, which is the whole reason they are ignored.
+// so it is flat — #812's `teamName` / `agentName` and #824's `sessionKind`, see
+// their notes in the root `ignored` list.) The 25 keys the corpus DID measure
+// stay in the flat list — their presence is not news anywhere, which is the
+// whole reason they are ignored.
 //
 // The legacy 69 keys from 2026-07-31 are also still flat. Re-partitioning those
 // means re-measuring which type each belongs to, which is a bigger job than
@@ -315,15 +316,15 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       'isMeta', // CLI-internal lines are not conversation
       'message',
     ],
-    // 84 keys. Grouped only for readability — order is not meaning. 69 were
+    // 85 keys. Grouped only for readability — order is not meaning. 69 were
     // measured 2026-07-31; the other 25 were added 2026-09-12 (#779) and were
     // each MEASURED over 244,916 lines; ten of those 25 left again in #787, and
     // `agentId` + `attributionAgent` in #788, all for `TYPE_SCOPED_ROOT_KEYS`,
-    // when we started reading them; and two joined in #812 (69 + 25 − 10 − 2 + 2
-    // = 84). Keys named by the CLI's reducer but never seen are in
-    // `TYPE_SCOPED_ROOT_KEYS`, not here — with ONE deliberate exception: those
-    // two team-session ENVELOPE keys, which are flat because the CLI writes them
-    // on every line type (see their note below).
+    // when we started reading them; two joined in #812 and one in #824 (69 + 25
+    // − 10 − 2 + 2 + 1 = 85). Keys named by the CLI but never seen are in
+    // `TYPE_SCOPED_ROOT_KEYS`, not here — with ONE deliberate exception: the
+    // three ENVELOPE keys (`teamName`, `agentName`, `sessionKind`), which are
+    // flat because the CLI writes them on every line type (see their notes below).
     //
     // THIS COUNT IS CHECKED AGAINST THIS LIST BY A TEST, because it had already
     // rotted: the comment here read "68 keys, measured" while the list held 69.
@@ -379,6 +380,24 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       'userType',
       'origin',
       'effort', // reasoning effort the turn ran at
+      // BACKGROUND-SESSION ENVELOPE KEY (#824). Flat for the same reason as the
+      // team keys above, checked rather than inherited. PATH binary 2.1.288,
+      // read verbatim: the generic append ends `…agentId:r, ...entry,
+      // ...Jqn(Re), version, gitBranch, slug}` where
+      // `Jqn(e) = {sessionKind:KF(), userType, entrypoint, cwd, sessionId:e,
+      // version}` — the identity block whose other five keys are already in
+      // the root contract (`cwd` / `sessionId` consumed, the rest here) — and `KF()` returns `CLAUDE_CODE_SESSION_KIND` when it
+      // is `bg` / `daemon` / `daemon-worker`, else `undefined` (dropped by
+      // JSON). The background spawner sets it to `bg` (two env literals, both
+      // `"bg"`). So a `claude --bg` session stamps it on every line of every type.
+      //
+      // Measured 2026-10-23 (`spike/probes/812/`): 0 lines across 360,600 /
+      // 3,680 transcripts — switchboard never spawns `--bg`. Latent.
+      //
+      // Flat is safe ONLY while nothing reads it. Pinned, not assumed:
+      // `drift.test.ts` fails if any non-test file under `src/` other than this
+      // one names the key. If you ever consume it, scope it first.
+      'sessionKind',
       'slug',
       'source',
       'trigger',
