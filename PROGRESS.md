@@ -3,7 +3,13 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ ORCHESTRATION RUN — 2026-10-22 ~15:20 → ~17:40 EDT: BOTH MERGED (#1420 #1413, Dan's order, two workers), NOTHING IN FLIGHT, NOT RELEASED
+> # 🚀 RELEASING: v0.8.128, 2026-10-23 — THE WHOLE 2026-10-22 RUN
+>
+> Dan, after the run's report: *"Great, go ahead and cut a release."* A **regular release, on his word**, as 0.8.127 was (the beta channel stays unproven until he asks for one). Version, lock and dated notes together as before (`0.8.129 — unreleased` is open). On green CI this PR merges, then tag `v0.8.128` is pushed from the merge commit and the release workflow publishes `switchboard-Setup-0.8.128.exe` + sha256 as a normal release marked Latest. Tanner's install gets it too.
+>
+> **In it:** #1420 (MCP sign-in opens the browser; long server name no longer under its status word), #1413 (click "waiting" to dismiss it; one kind of seen). **Neither is hand-tested** — two dogfood UNTESTED rows; #1420's waits for Atlassian's outage to end. Open follow-ups: #1425, #1427 (both Dan's call). **Nothing in flight. DO NOT CUT ANOTHER unless he asks.**
+
+> # ✅ ORCHESTRATION RUN — 2026-10-22 ~15:20 → ~17:40 EDT: BOTH MERGED (#1420 #1413, Dan's order, two workers), NOTHING IN FLIGHT, RELEASED AS v0.8.128 (block above)
 >
 > **Outcome:** two PRs merged on green CI (4/4 jobs each), two issues closed, two follow-ups filed (#1425 sign-in late-answer drop + wording, Dan's call; #1427 layout modes vs a dismissed session, Dan's call). **Neither is hand-tested** — two dogfood UNTESTED rows, and #1420's reads "RE-TEST WHEN ATLASSIAN IS BACK" (their sign-in was down all day; the proof is unit tests on the measured answer shape + a fake-CLI e2e on the open-external call). **Not released: `0.8.128 — unreleased` holds both; DO NOT CUT unless Dan asks.** Main checkout `out/` rebuilt at `1ef469d0` for the About-stamp check. The run's first launch died on an unanswered permission prompt (Dan away ~5 min); both workers resumed on clean branches and lost nothing. Two docs hand-rebases (worker: dogfood vs #1422; orchestrator in `sb-wt-2`: CHANGELOG + dogfood after #1424, both kept) — the normal cost of two PRs open at once.
 >
