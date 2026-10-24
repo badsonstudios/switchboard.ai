@@ -3,6 +3,7 @@ import {
   sanitizePopoutLayout,
   boxOnAnyDisplay,
   isDerivedPanelId,
+  lostDispatches,
   prunePopoutGroups,
 } from './layout';
 
@@ -285,5 +286,97 @@ describe('prunePopoutGroups (#494)', () => {
       (prunePopoutGroups({ popoutGroups: [{ url: 'x' }] }, willBePruned) as { popoutGroups: [] })
         .popoutGroups
     ).toEqual([]);
+  });
+});
+
+describe('lostDispatches (#1417)', () => {
+  // The restore's own shape of verdict: a session panel whose card has no
+  // record goes. `known === null` is the refused known-cards read (#650).
+  const verdict =
+    (known: Set<string> | null) =>
+    (id: string): boolean => {
+      const s = /^session-(.+)$/.exec(id);
+      return isDerivedPanelId(id) || (!!s && known !== null && !known.has(s[1]));
+    };
+  const facts = { aiName: 'Codex', fromName: 'Switchboard.ai', fromId: 'author', templateId: 't1' };
+  const layout = (): Record<string, unknown> => ({
+    grid: {
+      root: {
+        type: 'branch',
+        data: [
+          { type: 'leaf', data: { id: '1', views: ['session-author', 'session-lost', 'session-plain'] } },
+        ],
+      },
+    },
+    panels: {
+      'session-author': { id: 'session-author', params: { cardId: 'author' } },
+      'session-lost': {
+        id: 'session-lost',
+        params: { cardId: 'lost', dispatchId: 'd1', dispatchedAs: facts, briefing: 'SECRET' },
+      },
+      'session-plain': { id: 'session-plain', params: { cardId: 'plain' } },
+      // an orphan definition no group shows: it was not on screen, so not lost
+      'session-orphan': { id: 'session-orphan', params: { cardId: 'orphan', dispatchedAs: facts } },
+    },
+    popoutGroups: [
+      {
+        data: { id: '9', views: ['session-popped'] },
+      },
+    ],
+  });
+  const withPopped = (): Record<string, unknown> => {
+    const l = layout();
+    (l.panels as Record<string, unknown>)['session-popped'] = {
+      id: 'session-popped',
+      params: { cardId: 'popped', dispatchedAs: { aiName: 'Claude Code' } },
+    };
+    return l;
+  };
+
+  it('names the dispatched card the restore drops — AI and sender, nothing else', () => {
+    const out = lostDispatches(layout(), verdict(new Set(['author'])));
+    expect(out).toEqual([{ cardId: 'lost', aiName: 'Codex', fromName: 'Switchboard.ai' }]);
+    expect(JSON.stringify(out)).not.toContain('SECRET');
+  });
+
+  it('says nothing about a dropped card that was not a dispatch', () => {
+    const out = lostDispatches(layout(), verdict(new Set(['author', 'lost'])));
+    expect(out).toEqual([]);
+  });
+
+  it('says nothing about a dispatched card that is coming back', () => {
+    expect(lostDispatches(layout(), verdict(new Set(['author', 'lost', 'plain'])))).toEqual([]);
+  });
+
+  it('says NOTHING when the known-cards read was refused — that prunes nothing', () => {
+    expect(lostDispatches(withPopped(), verdict(null))).toEqual([]);
+  });
+
+  it('finds one in a popped-out window too, with only the facts it has', () => {
+    const out = lostDispatches(withPopped(), verdict(new Set(['author', 'lost'])));
+    expect(out).toEqual([{ cardId: 'popped', aiName: 'Claude Code' }]);
+  });
+
+  it('finds one inside a popout window that holds a nested grid', () => {
+    const l = withPopped();
+    l.popoutGroups = [
+      {
+        data: { id: '9', views: [] },
+        grid: { root: { type: 'branch', data: [{ type: 'leaf', data: { id: '9', views: ['session-popped'] } }] } },
+      },
+    ];
+    expect(lostDispatches(l, verdict(new Set(['author', 'lost'])))).toEqual([
+      { cardId: 'popped', aiName: 'Claude Code' },
+    ]);
+  });
+
+  it('ignores facts that are not facts, and layouts that are not layouts', () => {
+    const l = layout();
+    (l.panels as Record<string, { params: Record<string, unknown> }>)['session-lost'].params.dispatchedAs =
+      'nope';
+    expect(lostDispatches(l, verdict(new Set(['author'])))).toEqual([]);
+    expect(lostDispatches(null, verdict(new Set()))).toEqual([]);
+    expect(lostDispatches('nope', verdict(new Set()))).toEqual([]);
+    expect(lostDispatches({ grid: { root: { type: 'leaf', data: { views: ['session-x'] } } } }, verdict(new Set()))).toEqual([]);
   });
 });

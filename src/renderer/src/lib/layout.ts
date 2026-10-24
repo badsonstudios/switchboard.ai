@@ -10,6 +10,8 @@
 //     about to prune, nor at all if that leaves it empty — see
 //     `prunePopoutGroups` (#494).
 
+import { dispatchFactsOf } from '../../../shared/sessions';
+
 export interface Box {
   left: number;
   top: number;
@@ -275,6 +277,76 @@ export function prunePopoutGroups(
   // someone else's null check.
   if (typeof l.activeGroup === 'string' && droppedGroupIds.has(l.activeGroup)) delete l.activeGroup;
   return l;
+}
+
+/** A dispatched card the restore dropped before it ever started (#1417). */
+export interface LostDispatch {
+  cardId: string;
+  /** the AI it was dispatched to, when the card's saved facts name it */
+  aiName?: string;
+  /** the session that sent it, when the card's saved facts name it */
+  fromName?: string;
+}
+
+/**
+ * The dispatched cards this restore is about to drop (#1417).
+ *
+ * A dispatched card that never started before a quit has no session record, so
+ * the restore prunes it like any other recordless card — and nothing said so.
+ * This finds them so the user can be told, from the facts #1400 already writes
+ * into the card's panel params (`dispatchedAs`: the AI and the sender's name,
+ * never the briefing).
+ *
+ * `willBePruned` is the restore's OWN verdict, not a copy of it: a refused
+ * known-cards read prunes nothing, so it reports nothing. Only panels a group
+ * actually shows are considered — an orphan definition in `panels` was not on
+ * screen last time, so it was not a card anyone lost. Pure; reads the layout
+ * as it arrived, before `prunePopoutGroups` takes the condemned ids out of it.
+ *
+ * "No record" stands in for "never started": `dispatchedAs` stays in a card's
+ * params for its whole life, so a dispatched card that lost its record some
+ * other way would be named too. Every path that drops a record today also
+ * closes the card's panel, so the stand-in holds; a new one should say so here.
+ */
+export function lostDispatches(
+  layout: unknown,
+  willBePruned: (panelId: string) => boolean
+): LostDispatch[] {
+  if (!layout || typeof layout !== 'object') return [];
+  const l = layout as Layout & { grid?: SerializedNode; panels?: unknown };
+  const panels = l.panels && typeof l.panels === 'object' ? (l.panels as Record<string, unknown>) : {};
+  const groups = leafGroups(l.grid?.root);
+  if (Array.isArray(l.popoutGroups)) {
+    for (const p of l.popoutGroups) {
+      const nested = (p as { grid?: SerializedNode }).grid;
+      if (nested) leafGroups(nested.root, groups);
+      else if (p.data && typeof p.data === 'object') groups.push(p.data as SerializedGroup);
+    }
+  }
+  const out: LostDispatch[] = [];
+  const seen = new Set<string>();
+  for (const g of groups) {
+    for (const v of Array.isArray(g.views) ? g.views : []) {
+      if (typeof v !== 'string' || seen.has(v)) continue;
+      seen.add(v);
+      const m = /^session-(.+)$/.exec(v);
+      if (!m || !willBePruned(v)) continue;
+      const panel = panels[v];
+      const params =
+        panel && typeof panel === 'object' ? (panel as { params?: unknown }).params : undefined;
+      const facts =
+        params && typeof params === 'object'
+          ? dispatchFactsOf((params as { dispatchedAs?: unknown }).dispatchedAs)
+          : undefined;
+      if (!facts) continue;
+      out.push({
+        cardId: m[1],
+        ...(facts.aiName ? { aiName: facts.aiName } : {}),
+        ...(facts.fromName ? { fromName: facts.fromName } : {}),
+      });
+    }
+  }
+  return out;
 }
 
 /** Rewrite popout urls to the current origin and rescue off-display positions.

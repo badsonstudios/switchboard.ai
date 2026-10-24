@@ -2834,6 +2834,25 @@ transfer + role templates, all already in the design.
 > dispatched card BACK after a relaunch, so it can say its briefing is gone, would
 > need main to keep a record for a card that never started; not done.
 >
+> **⚠️ AMENDED (#1417, 2026-10-24): the drop is now SAID, though the card still
+> does not come back.** It amends *"Bringing a never-started dispatched card BACK
+> after a relaunch, so it can say its briefing is gone, would need main to keep a
+> record for a card that never started; not done."* Dan chose the cheap shape
+> over a stub record: the restore reads the saved layout with its own prune
+> verdict (`lostDispatches` in `lib/layout.ts`), and every `session-` panel it
+> drops whose params carry `dispatchedAs` becomes one row in the Events drawer's
+> notice slot: *"A dispatch to <AI> from "<sender>" was lost before it started."*
+> (less when a fact is missing, never invented). It is the slot's sixth tenant,
+> beside #539's history repairs, because the app has no in-app toast: its only
+> toasts are OS notifications raised by the rule engine for session events, and
+> this is not a session event. Dismiss-only (**Got it**), held in renderer memory,
+> never persisted: it says its piece once per relaunch. A refused known-cards
+> read prunes nothing and so reports nothing. Not done: a **Dispatch again**
+> button on the row (it would need the sender found live and #1378's dialog path
+> wired from the drawer); a card from a build before #1400 (no facts) is still
+> dropped without a word; and a restore that THROWS drops every card with only
+> its `[layout] restore failed` log line, dispatched or not.
+>
 > **What the gesture refuses rather than half-doing:** a dispatch with no
 > typed-message transport is refused **before** the spawn, because `submitPrompt`
 > needs a stream handle and a live card wearing a role with no instruction in it

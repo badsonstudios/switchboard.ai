@@ -89,6 +89,12 @@ describe('the notice marker speaks for all five tenants', () => {
     expect(liveNotices({ historyRepairs: [{ id: 'r1' }] })).toBe(1);
   });
 
+  it('is raised by a lost dispatch (#1417), one tenant however many', () => {
+    expect(liveNotices({ lostDispatches: [{ cardId: 'c1' }] })).toBe(1);
+    expect(liveNotices({ lostDispatches: [{ cardId: 'c1' }, { cardId: 'c2' }] })).toBe(1);
+    expect(liveNotices({ lostDispatches: [] })).toBe(0);
+  });
+
   it('is raised by the missed-events digest (P2-E14-05c)', () => {
     expect(liveNotices({ digest: { total: 1 } })).toBe(1);
   });
@@ -104,9 +110,10 @@ describe('the notice marker speaks for all five tenants', () => {
         reconnectOffer: true,
         incidents: [{ id: 'i1' }, { id: 'i2' }],
         historyRepairs: [{ id: 'r1' }, { id: 'r2' }],
+        lostDispatches: [{ cardId: 'c1' }],
         digest: { total: 12 },
       })
-    ).toBe(5); // five TENANTS, not eighteen notices — a slot's rows are one card
+    ).toBe(6); // six TENANTS, not nineteen notices — a slot's rows are one card
   });
 
   it('stays down for the empty shapes each tenant actually sends', () => {
