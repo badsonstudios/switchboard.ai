@@ -3,9 +3,9 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ RELEASED: v0.8.129, 2026-10-24 (this PR; tag pushed from its merge commit) — THE WHOLE 2026-10-23/24 RUN
+> # ✅ RELEASED: v0.8.129, 2026-10-24 (PR #1446, tag on `e9eb1ebc`, release run 40136443023) — THE WHOLE 2026-10-23/24 RUN
 >
-> Dan, after the run's report: *"Go ahead and create a release."* A **regular release, on his word**, as 0.8.128 was (the beta channel stays unproven until he asks for one). Version, lock and dated notes together as before (`0.8.130 — unreleased` is open). Once this PR merges on green CI, tag `v0.8.129` is pushed from the merge commit and the release workflow (build + publish) publishes `switchboard-Setup-0.8.129.exe` + `.sha256` as a normal release; the follow-up docs PR records the run id and flips the six dogfood rows to RELEASED. Tanner's install gets it too.
+> Dan, after the run's report: *"Go ahead and create a release."* A **regular release, on his word**, as 0.8.128 was (the beta channel stays unproven until he asks for one). Version, lock and dated notes together as before (`0.8.130 — unreleased` is open). The release PR merged on green CI as `e9eb1ebc`, tag `v0.8.129` was pushed from it, and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.129.exe` (105 MB) + `.sha256` as a normal release — `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.129` (published 22:06Z). Tanner's install gets it too. The six dogfood rows now read RELEASED (this docs PR).
 >
 > **In it:** #1408 (document header folds into "…", Readable width in the palette), #851 (context chip by click / keyboard / palette), #1374 (Show summary on the compaction divider; a compaction-split review arrives whole), #1427 (dismissed "waiting" releases queue/focus layout), #1425 (30 s sign-in timeout, honest sentence), #1417 (lost dispatch announced in the Events drawer), plus internal #1419 and #824. **None of it is hand-tested** — six dogfood UNTESTED rows. Open follow-ups: #1437, #1439, #1440, #1444. **Nothing in flight. DO NOT CUT ANOTHER unless he asks.**
 
