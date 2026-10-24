@@ -66,10 +66,18 @@ function scopeOf(raw: unknown): McpRuntimeScope {
  * session, and collapsing it would make the pane say "we do not know" about
  * something the CLI told us plainly.
  *
- * `needs-auth` is mapped speculatively — a claude.ai connector that has not been
- * authorised is the obvious candidate for a fourth word, and this machine has no
- * connector to produce one. UNMEASURED, and it costs nothing to be wrong about:
- * an unrecognised string lands on `unknown`, which is the honest default.
+ * `needs-auth` IS READ OFF THE BINARY (#1425), no longer a guess. On the PATH
+ * CLI 2.1.288 (`grep -a -o` on `claude.exe`): `"needs-auth"` occurs 81 times;
+ * the `mcp_status` answer's own zod schema is
+ * `status:j(["connected","failed","needs-auth","pending","disabled"])
+ * .describe("Current connection status")`; the answer is built as
+ * `status:OVe(r.type)` with `function OVe(r){return r==="cached"?"pending":r}`,
+ * so a client's `type` reaches the wire as-is; and a server whose auth
+ * discovery failed is given `type:"needs-auth"`. What that does NOT prove: that
+ * a live connector has been watched reporting it here — this machine has none.
+ * `needs_auth` (underscore) stays accepted: the binary spells it that way in
+ * other, non-`mcp_status` vocabularies, and an extra case costs nothing. An
+ * unrecognised string still lands on `unknown`, which is the honest default.
  */
 function statusOf(raw: unknown): McpRuntimeStatus {
   switch (raw) {

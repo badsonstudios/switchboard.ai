@@ -202,6 +202,14 @@ export interface FakeMcpScript {
   /** per server name: the success `response` body `mcp_authenticate` answers.
    *  A name with no entry is refused with the CLI's own sentence. */
   authenticate?: Record<string, Record<string, unknown>>;
+  /**
+   * Answer `mcp_authenticate` this many milliseconds LATE (#1425) — the slow
+   * authorisation server, whose answer the global ten-second control timeout
+   * used to drop. Absent or not a positive number: answered at once, as before.
+   * The timer is never cleared: a session that ends first leaves the fake
+   * process alive until it fires, which only a spec that asks for it can see.
+   */
+  authenticateDelayMs?: number;
 }
 
 export interface FakeScriptedTurn {
@@ -1469,12 +1477,16 @@ export class FakeStreamProtocol {
     if (mcp && req?.subtype === 'mcp_authenticate') {
       const name = asDisplayString((req as { serverName?: unknown }).serverName);
       const answer = mcp.authenticate?.[name];
-      this.emit({
-        type: 'control_response',
-        response: answer
-          ? { subtype: 'success', request_id: requestId, response: answer }
-          : { subtype: 'error', request_id: requestId, error: `Server not found: ${name}` },
-      });
+      const reply = (): void =>
+        this.emit({
+          type: 'control_response',
+          response: answer
+            ? { subtype: 'success', request_id: requestId, response: answer }
+            : { subtype: 'error', request_id: requestId, error: `Server not found: ${name}` },
+        });
+      const delay = mcp.authenticateDelayMs;
+      if (typeof delay === 'number' && Number.isFinite(delay) && delay > 0) setTimeout(reply, delay);
+      else reply();
       return;
     }
     // An unknown verb fails CLEAN and leaves the session alive — measured

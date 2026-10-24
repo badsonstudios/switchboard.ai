@@ -71,8 +71,39 @@ export interface ControlPort {
  * control response. Anything approaching this bound is a session that has
  * stopped answering, and the number is large enough that nobody is tempted to
  * "fix" a flaky consumer by raising it.
+ *
+ * ONE VERB IS THE EXCEPTION, and it is an exception about the NETWORK, not the
+ * session: see `MCP_AUTHENTICATE_TIMEOUT_MS`. Everything else keeps this.
  */
 export const CONTROL_TIMEOUT_MS = 10_000;
+
+/**
+ * How long `mcp_authenticate` alone gets (#1425).
+ *
+ * THE ONE CONTROL VERB WHOSE ANSWER WAITS ON SOMEBODY ELSE'S SERVER. The CLI
+ * answers once the server's authorisation side has produced a sign-in address
+ * (discovery plus client registration — round trips to the internet), and
+ * since #1420 the HOST opens the browser FROM that answer. So a slow
+ * authorisation server is not a session that stopped answering: it is a
+ * sign-in that would have worked, and under the global ten seconds its answer
+ * arrived after we had given up and was dropped (`ingest`), with no browser
+ * ever opening.
+ *
+ * Thirty seconds, not "as long as it takes": past this the user has been
+ * looking at "Working…" for half a minute and a retry is the better offer.
+ * Passed per request by `claude-controls.ts`; nothing else uses it.
+ */
+export const MCP_AUTHENTICATE_TIMEOUT_MS = 30_000;
+
+/** Per-request options for `ControlChannel.request`. */
+export interface ControlRequestOptions {
+  /**
+   * This request's timeout, overriding the channel's for this one request
+   * only. For a verb whose answer legitimately waits on the network — today
+   * only `mcp_authenticate` (`MCP_AUTHENTICATE_TIMEOUT_MS`).
+   */
+  timeoutMs?: number;
+}
 
 interface Pending {
   sessionId: string;
@@ -114,10 +145,14 @@ export class ControlChannel {
    * validation. A builder that returns `null` has refused the arguments, and
    * nothing is written — that is the `invalid` verdict, and it is how the
    * measured `set_model`-with-no-field silent no-op is made impossible.
+   *
+   * `opts.timeoutMs` overrides the channel's timeout for THIS request only
+   * (#1425); a reply after it is dropped exactly like one after the default.
    */
   request(
     sessionId: string,
-    build: (requestId: string) => StreamControlRequest | null
+    build: (requestId: string) => StreamControlRequest | null,
+    opts: ControlRequestOptions = {}
   ): Promise<ControlVerdict> {
     const requestId = `sb-${++ControlChannel.seq}`;
     // GUARDED, because this function's contract is that it resolves a verdict
@@ -169,7 +204,7 @@ export class ControlChannel {
             reason: 'timed-out',
             message: 'the session did not answer',
           }),
-        this.timeoutMs
+        opts.timeoutMs ?? this.timeoutMs
       );
       // `unref` so a pending control request can never be the reason the main
       // process refuses to exit. Node-only and absent under some test timers,

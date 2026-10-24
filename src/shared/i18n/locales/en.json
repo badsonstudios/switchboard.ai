@@ -1813,7 +1813,7 @@
     "signInNoUrl": "Claude Code accepted the sign-in for {name} but gave no web address to open, so no browser window was opened. Try again in a moment.",
     "signInOpenFailed": "Claude Code gave a sign-in address for {name}, but your computer would not open a browser for it. Check that a default browser is set, then try again.",
     "signedOut": "Claude Code has been asked to forget your sign-in for {name}. It will need signing in again before it works.",
-    "signInTimedOut": "Claude Code hasn't answered yet. If a browser window opened, finish signing in there — this list keeps checking. If nothing opened, try again.",
+    "signInTimedOut": "Claude Code took too long to hand back a sign-in page (it gets about 30 seconds), so no browser window was opened. Try again.",
     "reconnectServerTitle": "Reconnect {name} in this session",
     "reconnectedServer": "Reconnected {name}.",
     "loadNow": "Load it now",
