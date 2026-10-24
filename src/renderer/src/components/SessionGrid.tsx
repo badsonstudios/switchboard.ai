@@ -130,7 +130,7 @@ import {
   withMode,
   withoutMaximized,
 } from '../lib/layout-mode';
-import { attentionPaint, presentStatus, tabWordFor, waitPaint } from '../lib/rail-view';
+import { attentionPaint, presentStatus, shownStatus as derivedStatus, tabWordFor, waitPaint } from '../lib/rail-view';
 import { useShownStatus } from '../lib/use-shown-status';
 import { tabStripAction } from '../lib/tabstrip-keys';
 import { cardHeaderTitle } from '../lib/card-title';
@@ -6102,6 +6102,22 @@ function removePanelKeepingSlot(api: DockviewApi, cardId: string, rung: Ladder):
 }
 
 /**
+ * Does this card's STATUS say it needs a person, as every surface paints it?
+ *
+ * Through `shownStatus`, the derived value the tab, the header pill, the rail
+ * row and the strip pill read (#1413): a finished turn whose "waiting" the user
+ * dismissed is calm there, so it is calm to the layout rules too (#1427, Dan's
+ * call) — queue mode stops holding it up and auto-minimize may fold it. The
+ * entry is dropped when that turn is over, so the next finished turn holds the
+ * card on screen again.
+ */
+function cardShowsNeedsYou(cardId: string, status: string | undefined): boolean {
+  return presentStatus(
+    derivedStatus(status, sessionStore.hasHeldQuestion(cardId), sessionStore.isWaitDismissed(cardId))
+  ).needsYou;
+}
+
+/**
  * Is this card waiting on a person RIGHT NOW (#1258)?
  *
  * `submitTarget`'s fourth rule is "the one card that needs a human is the one
@@ -6121,7 +6137,7 @@ function removePanelKeepingSlot(api: DockviewApi, cardId: string, rung: Ladder):
  */
 function cardWaitsOnHuman(cardId: string): boolean {
   const state = sessionStore.getState();
-  if (presentStatus(state.sessions.find((s) => s.id === cardId)?.status).needsYou) return true;
+  if (cardShowsNeedsYou(cardId, state.sessions.find((s) => s.id === cardId)?.status)) return true;
   const mine = (liveId: string): boolean => sessionStore.cardIdForLive(liveId) === cardId;
   if (state.pendingPermissions.some((p) => mine(p.sessionId))) return true;
   return state.events.some(
@@ -6334,11 +6350,10 @@ function layoutCards(): LayoutCard[] {
     return {
       cardId: s.id,
       ladder: p.ladder,
-      // the same vocabulary the rail rows, the lamps and the submit policy use.
-      // The RAW status on purpose: a dismissed "waiting" (#1413) is a mark the
-      // user took off, not a change to what the layout keeps on screen — the
-      // same as a finished turn they have looked at, which also stays `done`
-      needsAttention: presentStatus(s.status).needsYou,
+      // the same vocabulary the rail rows, the lamps and the submit policy use,
+      // read through `shownStatus` like them: a dismissed "waiting" no longer
+      // holds the card on screen (#1427)
+      needsAttention: cardShowsNeedsYou(s.id, s.status),
       poppedOut: p.poppedOut,
     };
   });

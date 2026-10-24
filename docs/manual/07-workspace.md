@@ -590,7 +590,9 @@ keeps working exactly as it does in Grid.
 keep a card, so with seven or eight agents running you're looking at your to-do
 list rather than a wall of tiles. A session's card appears the moment it asks
 permission, asks a question, or finishes — and folds away again once you've dealt
-with it and moved on.
+with it and moved on. A finished session you don't want to answer yet can be let
+go without opening it: [dismiss its **waiting**](02-sessions.md#dismissing-waiting)
+and its card folds away like any calm session's, until its next turn finishes.
 
 ### Changing it
 
@@ -611,7 +613,9 @@ the way you left it.
 Three kinds of session are never folded away, whatever the mode:
 
 - **A session that needs you.** If it's holding a permission, has asked a
-  question or has finished and you haven't looked yet, it keeps its card. This is
+  question or has finished and still says **waiting**, it keeps its card. Once
+  you dismiss its **waiting**, a finished session is calm here too, and a
+  layout may fold it away. This is
   the same promise the rest of this page makes — a session that needs you always
   comes back — and a layout mode isn't allowed to break it.
 - **The session you're in.** Even in Queue, the card you're actually looking at

@@ -263,6 +263,9 @@ export function App(): React.JSX.Element {
   // keyboard numbers from them, and one derivation means they cannot disagree
   const sessions = useSyncExternalStore(subscribeStore, () => sessionStore.getState().sessions);
   const groups = useSyncExternalStore(subscribeStore, () => sessionStore.getState().groups);
+  // dismissed "waiting" (#1413): only the layout effect reads it (#1427). A new
+  // map identity on every dismissal and every prune, never on a no-op set.
+  const waitDismissed = useSyncExternalStore(subscribeStore, () => sessionStore.getState().waitDismissed);
   const [palette, setPalette] = useState<string[]>([]);
   const [notifEnabled, setNotifEnabled] = useState(true);
   // Per-session cues and spoken announcements (P2-E14-05a, §5.9). Both start
@@ -1817,9 +1820,13 @@ export function App(): React.JSX.Element {
   // plan is "every session gets a card", so a standing grid sweep would
   // re-expand every card the user collapsed by hand on the next status change.
   // Grid is applied when you switch INTO it and never again.
+  //
+  // ...and a dismissed "waiting" (#1427): queue mode holds up a finished
+  // session only until its word is dismissed, and the dismissal changes the
+  // store's `waitDismissed`, not the sessions list.
   useEffect(() => {
     grid.current?.applyLayout('react');
-  }, [layout, sessions, activeCard]);
+  }, [layout, sessions, activeCard, waitDismissed]);
 
   // ── keyboard commands (E9-01) ────────────────────────────────────────────
   // One document-level listener owns every binding; lib/commands decides

@@ -295,6 +295,76 @@ describe('layoutSweepPort.plan — computed over the store', () => {
     ]);
   });
 
+  // #1427 (Dan's call on it): a dismissed "waiting" is calm on every surface
+  // since #1413, and the layout rules read the same derived value, so queue
+  // mode stops holding the card up and focus mode may fold it.
+  it('queue mode lets go of a finished session once its "waiting" is dismissed (#1427)', () => {
+    seed([
+      { id: 'a', status: 'done' },
+      { id: 'b', status: 'working' },
+    ]);
+    place('a', 'expanded');
+    place('b', 'expanded');
+    sessionStore.setActiveCard('b');
+    sessionStore.setLayout(withMode('queue'));
+    // held up while it says "waiting"...
+    expect(layoutSweepPort.plan(sweep({ trigger: 'react' }))).toEqual([]);
+    // ...and folded like a calm session once it does not
+    expect(sessionStore.dismissWait('a')).toBe(true);
+    expect(layoutSweepPort.plan(sweep({ trigger: 'react' }))).toEqual([
+      { cardId: 'a', rung: 'collapsed' },
+    ]);
+    // a folded dismissed card is not brought back by a queue switch either
+    place('a', 'collapsed');
+    expect(layoutSweepPort.plan(sweep({ trigger: 'switch' }))).toEqual([]);
+  });
+
+  it('the next turn re-arms it: a new `done` is held up again (#1427)', () => {
+    seed([{ id: 'a', status: 'done' }, { id: 'b', status: 'working' }]);
+    place('a', 'collapsed');
+    place('b', 'expanded');
+    sessionStore.setActiveCard('b');
+    sessionStore.setLayout(withMode('queue'));
+    sessionStore.dismissWait('a');
+    expect(layoutSweepPort.plan(sweep({ trigger: 'react' }))).toEqual([]);
+    // it takes a prompt (the dismissal is pruned), then finishes again
+    seed([{ id: 'a', status: 'working' }, { id: 'b', status: 'working' }]);
+    seed([{ id: 'a', status: 'done' }, { id: 'b', status: 'working' }]);
+    expect(sessionStore.isWaitDismissed('a')).toBe(false);
+    expect(layoutSweepPort.plan(sweep({ trigger: 'react' }))).toEqual([
+      { cardId: 'a', rung: 'expanded' },
+    ]);
+  });
+
+  it('focus mode no longer spares a dismissed finished session (#1427)', () => {
+    seed([
+      { id: 'a', status: 'done' },
+      { id: 'b', status: 'working' },
+    ]);
+    place('a', 'expanded');
+    place('b', 'expanded');
+    sessionStore.setActiveCard('b');
+    sessionStore.setLayout(withMode('focus'));
+    expect(layoutSweepPort.plan(sweep({ trigger: 'react' }))).toEqual([]);
+    sessionStore.dismissWait('a');
+    expect(layoutSweepPort.plan(sweep({ trigger: 'react' }))).toEqual([
+      { cardId: 'a', rung: 'collapsed' },
+    ]);
+  });
+
+  it('an approval is never released: only `done` is dismissable (#1427)', () => {
+    seed([
+      { id: 'a', status: 'needs-permission' },
+      { id: 'b', status: 'working' },
+    ]);
+    place('a', 'expanded');
+    place('b', 'expanded');
+    sessionStore.setActiveCard('b');
+    sessionStore.setLayout(withMode('queue'));
+    expect(sessionStore.dismissWait('a')).toBe(false);
+    expect(layoutSweepPort.plan(sweep({ trigger: 'react' }))).toEqual([]);
+  });
+
   it('spares a popped-out card: its rung change would close an OS window', () => {
     seed([{ id: 'a' }, { id: 'b' }]);
     place('a', 'expanded', true);
@@ -490,6 +560,37 @@ describe('the ladder breadcrumb (#813)', () => {
     expect(closeCard).toHaveBeenCalledWith('a');
     // a witness from the list itself: the maximize held for it is gone
     expect(sessionStore.getLayout().maximized).toBeNull();
+  });
+});
+
+// `cardWaitsOnHuman` reads the same derived value as the layout modes, so the
+// submit policy and queue mode cannot disagree about one card. This pins THAT
+// reading of the card as it stands; it is not a claim about what the status is
+// at the moment a real prompt is sent (the policy runs before main reports the
+// new turn, so a follow-up prompt usually still sees the old `done`).
+describe('auto-minimize on submit reads the dismissed "waiting" (#1427)', () => {
+  const bare = { getPanel: () => undefined } as never;
+  let log: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    sessionStore.initPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
+    seed([{ id: 'a', status: 'done' }]);
+    place('a', 'expanded');
+  });
+  afterEach(() => {
+    log.mockRestore();
+    sessionStore.initPolicies(DEFAULT_BOOK);
+  });
+
+  it('spares a card still saying "waiting"', () => {
+    expect(applySubmitPolicy(bare, 'a')).toBeNull();
+    expect(sessionStore.getPresentation('a').ladder).toBe('expanded');
+  });
+
+  it('folds it once the word is dismissed, like any calm card', () => {
+    sessionStore.dismissWait('a');
+    expect(applySubmitPolicy(bare, 'a')).toBe('collapsed');
+    expect(sessionStore.getPresentation('a').ladder).toBe('collapsed');
   });
 });
 

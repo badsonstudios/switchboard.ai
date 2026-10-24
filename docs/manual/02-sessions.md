@@ -405,6 +405,9 @@ clause goes when it was the last one), and so does **N finished**.
   it only dismisses; click the name to open the session.
 - It lasts until that session's **next** turn finishes. Then it says
   **waiting** again.
+- The **Focus** and **Queue** layouts let it go too: a dismissed session is no
+  longer kept on screen as one that needs you, so it can fold away like any
+  calm session (see [Arranging the whole workspace](07-workspace.md#arranging-the-whole-workspace)).
 - **Approval** and **question** cannot be dismissed this way. Those sessions
   really are stuck until you answer them, so their word is not a button.
 - With the keyboard: the word on the tab and the pill in the card's header are

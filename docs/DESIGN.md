@@ -1479,6 +1479,17 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
 > restart (a relaunched card is `suspended`, and the feed is in main's
 > memory), and a dismissal survives tab switches and popouts because a popout
 > is a second document of the same renderer and store.
+>
+> **The layout rules read the same derived value *(amended 2026-10-23, Dan,
+> #1427)*.** The amendment above made a dismissed `done` calm on every
+> surface, but the layout modes still read the raw status: queue mode kept a
+> dismissed session expanded, focus mode's "never fold a session that needs
+> you" exemption spared it. Dan's call: dismissing releases it from those
+> rules too. `layoutCards` reads `shownStatus` like every other surface, and
+> the reactive layout pass re-runs on a dismissal; `cardWaitsOnHuman`, the
+> submit policy's "needs a human" test, reads the same value so the two
+> cannot disagree. The next finished turn re-arms it, so the card is held up
+> again.
 
 - **Auto-minimize on submit** (per-session toggle): submitting a prompt collapses the
   card to a slim status strip; it restores automatically on `Stop` (done) or
