@@ -294,6 +294,9 @@ export const CHANNEL_CAPABILITIES = {
   // a picture from the conversation, by the handle main minted for it (#1240):
   // main writes its own copy and hands THAT to the system's viewer
   'feed:openPicture': 'shell.openPath',
+  // the CLI's summary behind a compaction divider, by the handle main minted
+  // for it (#1374): conversation text, read-only
+  'feed:compactionSummary': 'transcripts.read',
   'fs:reveal': 'shell.openPath',
   // Follow the file a viewer has open, so it re-renders when an agent rewrites
   // it (P2-E16-04). `fs.read` and not a capability of its own: it is answered by

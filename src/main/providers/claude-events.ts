@@ -36,7 +36,7 @@
 // reading it as "the session started" would reset the session on every turn.
 // Readiness comes from the spawn succeeding, which is the pump's, not ours.
 // ---------------------------------------------------------------------------
-import { deriveIntents } from '../feed/blocks';
+import { compactionSummaryText, deriveIntents } from '../feed/blocks';
 import { asDisplayString } from '../../shared/display-string';
 import type { CliCommand } from '../../shared/slash-commands';
 import { autonomyFromPermissionMode } from './claude-modes';
@@ -258,12 +258,18 @@ function streamEventContent(m: Record<string, unknown>): EngineEvent[] {
 function messageEvent(role: 'assistant' | 'user', m: Record<string, unknown>): EngineEvent[] {
   if (m.parent_tool_use_id != null) return [];
   const entry = { ...m, timestamp: new Date().toISOString() };
+  // A compaction's summary (#1374): measured on the stream as the `user` frame
+  // straight after `system:compact_boundary`, flagged only `isSynthetic`
+  // (`spike/findings/1026-not-for-the-live-view.md` §3). Carried beside the
+  // message, not derived: whether it belongs to a divider is the Feed's call.
+  const summary = role === 'user' ? compactionSummaryText(m) : null;
   return [
     {
       type: 'message',
       role,
       unstreamed: role === 'assistant' && wasNeverStreamed(m),
       derive: (caps, ctx) => deriveIntents(entry, caps, ctx),
+      ...(summary === null ? {} : { compactionSummary: summary }),
     },
   ];
 }

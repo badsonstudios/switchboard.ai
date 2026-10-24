@@ -155,6 +155,13 @@ export interface DispatchResultsDeps {
  *    thinking precedes the text it produced, so a trailing one is not a
  *    separator; and thinking is not the report either way, which is why it is
  *    skipped rather than collected;
+ *  * so is a `compaction` divider (#1374, decided: JOIN). When the CLI
+ *    compacts on its own in the middle of the reviewer's final reply, the
+ *    divider lands between two halves of one report, and both halves are the
+ *    model talking to the author; the divider is the app's mark, not reply
+ *    content. Until #1259 drew it there was nothing between them, so joining
+ *    keeps what a report was before the divider existed. A compaction after a
+ *    TOOL call still ends the run, at the tool, as it always did;
  *  * `tool`, `user`, `todos` and `notice` END the run. Each is something other
  *    than the model talking to the author: a tool call is the work, a `user`
  *    turn is a person or the harness interrupting, and a `notice` is the CLI
@@ -179,7 +186,7 @@ export function finalReport(blocks: readonly FeedBlock[]): {
     // because the author would act on it. Skipped rather than treated as a break:
     // it is not the model addressing the author either way.
     if (b.sidechain === true) continue;
-    if (b.kind === 'thinking') continue;
+    if (b.kind === 'thinking' || b.kind === 'compaction') continue;
     if (b.kind !== 'assistant') break;
     const text = (b.text ?? '').trim();
     // An `assistant` block with no text cannot end the run — it is not a

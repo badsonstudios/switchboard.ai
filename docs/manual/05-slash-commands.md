@@ -124,6 +124,18 @@ There are two shortcuts for this, and they do exactly the same thing:
   *Conversation compacted*. It stays after you quit and reopen the app, and
   it shows at every verbosity setting (quiet, normal and firehose).
 
+  **Reading the summary.** If you want to see what Claude now remembers of the
+  conversation above the line, press **Show summary** on the divider. From the
+  keyboard: Tab into the conversation, use the arrow keys to reach
+  **Show summary**, and press Enter. Claude Code's summary opens just under the divider,
+  word for word as Claude Code wrote it, in a box you can scroll and copy from.
+  **Hide summary** folds it away again. It works the same in a popped-out
+  window and after you reopen the app. If the divider has no **Show summary**,
+  Claude Code didn't hand one over for that compaction. If it says the summary
+  is no longer available, the app has let go of it to save memory (this only
+  happens after a great many compactions); it is still in the saved
+  conversation, and reopening the app brings it back.
+
 You'll find both on the row just under the prompt box, beside the autonomy and
 model chips, as **Compact** and **Clear** — and in the **⋯** menu in the card
 header under their full names. **Clear** asks you to confirm either way; on the

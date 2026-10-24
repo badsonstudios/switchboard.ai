@@ -91,6 +91,25 @@ describe('finalReport — the extraction the probe chose (P2-E13-05)', () => {
     expect(r.text).toBe('the findings');
   });
 
+  // #1374, decided JOIN: the CLI compacting on its own in the middle of the
+  // final reply drops a divider between two halves of one report. Both halves
+  // are the model talking to the author; the divider is the app's mark.
+  it('joins a reply split by an auto-compaction divider into one report', () => {
+    const r = finalReport([
+      block('tool'),
+      block('assistant', 'first half'),
+      { ...block('compaction'), compaction: { trigger: 'auto', preTokens: 160_000, postTokens: 9_000 } },
+      block('assistant', 'second half'),
+    ]);
+    expect(r.text).toBe(['first half', 'second half'].join(String.fromCharCode(10, 10)));
+    expect(r.text).not.toContain('compact');
+  });
+
+  it('a compaction after a TOOL call still ends the run at the tool', () => {
+    const r = finalReport([block('assistant', 'older'), block('tool'), block('compaction'), block('assistant', 'newest')]);
+    expect(r.text).toBe('newest');
+  });
+
   it.each(['tool', 'user', 'todos', 'notice'] as const)('a %s block ENDS the run', (kind) => {
     const r = finalReport([block('assistant', 'older'), block(kind), block('assistant', 'newest')]);
     expect(r.text).toBe('newest');

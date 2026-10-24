@@ -30,8 +30,10 @@ import {
   SNIPPET_CHAR_CAP,
   STATE_CHAR_CAP,
   buildContextPackage,
+  buildPackageFrom,
   estimateTokens,
   isCompactSummaryEntry,
+  materialFromBlocks,
   renderPackage,
   type ContextPackage,
   type SectionId,
@@ -46,6 +48,7 @@ import {
 } from './queries';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { HISTORY_MAX_LINES } from '../feed/history';
+import type { FeedBlock } from '../feed/blocks';
 import { SESSION_TRANSCRIPT, transcriptLines } from '../transcripts/fixtures/session-transcript';
 
 let dir: string;
@@ -1284,5 +1287,33 @@ describe('reading the transcript (SessionQueries.sessionContext)', () => {
     // the tail budget, the "one small extra read" argument would be gone and
     // every package would pay twice.
     expect(PACKAGE_HEAD_BYTES).toBeLessThan(PACKAGE_TAIL_BYTES / 4);
+  });
+});
+
+// #1374: a Feed-block source (an AI that writes no transcript we read) used to
+// say `compacted: false` whatever its blocks held. Since #1259 the Feed draws a
+// compaction as a block, which is the same positive evidence the transcript
+// path reads off a dropped summary.
+describe('materialFromBlocks reports a compaction honestly (#1374)', () => {
+  const blk = (seq: number, kind: FeedBlock['kind'], text?: string): FeedBlock =>
+    ({ seq, kind, sidechain: false, ...(text === undefined ? {} : { text }) });
+
+  it('a compaction divider among the blocks is `compacted`, and the package says it covers recent history only', () => {
+    const blocks = [
+      blk(1, 'assistant', 'Earlier work.'),
+      { ...blk(2, 'compaction'), compaction: { trigger: 'auto' as const } },
+      blk(3, 'assistant', 'Carrying on.'),
+    ];
+    const material = materialFromBlocks(blocks);
+    expect(material.compacted).toBe(true);
+    const pkg = buildPackageFrom({ session: session(), material, cut: false });
+    expect(pkg.coverage).toBe('recent');
+    expect(renderPackage(pkg)).toContain('older history not included here');
+  });
+
+  it('no compaction block: not compacted, and the whole conversation (the control)', () => {
+    const material = materialFromBlocks([blk(1, 'user', 'go'), blk(2, 'assistant', 'done')]);
+    expect(material.compacted).toBe(false);
+    expect(buildPackageFrom({ session: session(), material, cut: false }).coverage).toBe('whole');
   });
 });

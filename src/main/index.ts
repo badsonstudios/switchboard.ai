@@ -67,6 +67,7 @@ import { registerFsIpc } from './fs/ipc';
 import { registerDocImageProtocol } from './fs/doc-image';
 import { createPageShots, electronPageRenderer } from './fs/page-snapshot';
 import { feedPictures } from './feed/pictures';
+import { compactionSummaries, compactionSummaryAnswer } from './feed/compaction-summaries';
 import { createFeedPictureAnswer, emptyFeedPictureDir, openFeedPicture } from './feed/picture-serve';
 import { FEED_THUMB_HEIGHT, FEED_THUMB_WIDTH } from '../shared/feed-picture';
 import { bundledManualDir } from './fs/manual-dir';
@@ -3203,6 +3204,8 @@ app
         log: fsLog,
       })
     );
+    // the CLI's summary behind a compaction divider, on request (#1374)
+    broker.handle('feed:compactionSummary', (_e, id: unknown) => compactionSummaryAnswer(compactionSummaries, id));
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     broker.handle('notifications:setPrefs', (_e, p: Partial<NotificationPrefs>) => {
       workspace.setNotificationPrefs(p);

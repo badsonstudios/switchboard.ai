@@ -64,6 +64,41 @@ async function expectDividerBetweenThePrompts(w: Page): Promise<void> {
   expect(at).toBeLessThan(users[1]);
 }
 
+/** What has the keyboard focus right now, by its words. */
+const focusedText = (w: Page): Promise<string> => w.evaluate(() => (document.activeElement?.textContent ?? '').trim());
+
+/**
+ * #1374: the summary is not IN the conversation, but the divider can open it.
+ * Collapsed until asked; then the CLI's own text, verbatim; then collapsed again.
+ * `how` is the mouse live and the keyboard after the restart, so both routes run.
+ *
+ * The keyboard route is the conversation's own (#174): the conversation is ONE
+ * Tab stop and the arrow keys walk the controls inside it, so the button is
+ * reached with ArrowDown from the region, never with a Tab of its own.
+ */
+async function openAndCloseTheSummary(w: Page, how: 'click' | 'keyboard'): Promise<void> {
+  const show = divider(w).getByRole('button', { name: 'Show summary' });
+  await expect(show).toHaveAttribute('aria-expanded', 'false');
+  // not a Tab stop of its own
+  await expect(show).toHaveAttribute('tabindex', '-1');
+  if (how === 'click') await show.click();
+  else {
+    await w.locator('[data-feed-region]').first().focus();
+    for (let i = 0; i < 10 && (await focusedText(w)) !== 'Show summary'; i++) await w.keyboard.press('ArrowDown');
+    expect(await focusedText(w)).toBe('Show summary');
+    await w.keyboard.press('Enter');
+  }
+  const region = divider(w).getByRole('region', { name: "The AI's summary of the conversation above" });
+  await expect(region.getByText('FAKE-COMPACT-SUMMARY')).toBeVisible({ timeout: 10_000 });
+  await expect(region.getByText(SUMMARY)).toBeVisible();
+  const hide = divider(w).getByRole('button', { name: 'Hide summary' });
+  await expect(hide).toHaveAttribute('aria-expanded', 'true');
+  if (how === 'click') await hide.click();
+  else await w.keyboard.press('Enter');
+  await expect(region).toHaveCount(0);
+  await expect(w.locator('[data-feed-region]').getByText('FAKE-COMPACT-SUMMARY')).toHaveCount(0);
+}
+
 async function say(w: Page, text: string): Promise<void> {
   await composer(w).click();
   await composer(w).fill(text);
@@ -105,6 +140,8 @@ test.describe('a compaction summary is not shown as a prompt (#1026)', () => {
     await expect(w.getByText('FAKE-REPLY: BEFORE the compaction')).toBeVisible();
     // #1259: and WHERE it happened is marked
     await expectDividerBetweenThePrompts(w);
+    // #1374: and the summary can be opened from it, on request
+    await openAndCloseTheSummary(w, 'click');
 
     // ── AFTER A RESTART ─────────────────────────────────────────────────────
     // the conversation is replayed from the file, where the flags are different
@@ -118,6 +155,8 @@ test.describe('a compaction summary is not shown as a prompt (#1026)', () => {
     await expect(w.locator('[data-feed-region]').getByText('FAKE-COMPACT-SUMMARY')).toHaveCount(0);
     // #1259: the same divider, in the same place, read back from the file
     await expectDividerBetweenThePrompts(w);
+    // #1374: and its summary, read back from the file too, by keyboard this time
+    await openAndCloseTheSummary(w, 'keyboard');
   });
 
   // The other door (#1259's "by the Compact button"): the composer row's own

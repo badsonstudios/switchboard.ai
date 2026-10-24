@@ -141,6 +141,14 @@ export interface MessageEvent {
   role: 'assistant' | 'user';
   unstreamed: boolean;
   derive(caps: DerivationCaps, ctx: DerivationContext): BlockIntent[];
+  /**
+   * The engine's own SUMMARY of the conversation it just compacted, when this
+   * message is that summary (#1374) — verbatim, never synthesised. Not content:
+   * `derive` gives it no block (#1026). The Feed keeps it beside the
+   * compaction divider that came just before it, for the user to open on
+   * request. Absent on every other message, and from an engine that sends none.
+   */
+  compactionSummary?: string;
 }
 
 /**

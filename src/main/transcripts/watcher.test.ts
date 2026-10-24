@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import type { BlockOrigin } from '../feed/blocks';
+import { compactionSummaries } from '../feed/compaction-summaries';
 import { TranscriptWatcher, slugForCwd, conversationExists } from './watcher';
 import { LogSink, createLogger } from '../log/logger';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
@@ -763,7 +764,10 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
     await sleep(150);
     const blocks = watcher.blocks('s1');
     expect(blocks.map((b) => b.kind)).toEqual(['user', 'compaction', 'user']);
-    expect(blocks[1].compaction).toEqual({ trigger: 'auto', preTokens: 969261, postTokens: 21286 });
+    const { summaryId, ...mark } = blocks[1].compaction!;
+    expect(mark).toEqual({ trigger: 'auto', preTokens: 969261, postTokens: 21286 });
+    // #1374: the summary is kept beside the divider, for the user to open
+    expect(compactionSummaries.get(summaryId!)).toBe('This session is being continued from a previous conversation…');
   });
 
   // A stream session's Feed is built from typed messages (P2-E18-10). The

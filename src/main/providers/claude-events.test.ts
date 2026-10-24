@@ -46,6 +46,27 @@ describe('system frames', () => {
     ]);
   });
 
+  // #1374: the summary that follows a compact_boundary is carried BESIDE its
+  // message (which still derives to nothing, #1026), for the Feed to keep.
+  it('a synthetic user frame carries its text as a compaction summary; a typed one does not', () => {
+    const [summary] = translateClaudeFrame({
+      type: 'user',
+      message: { role: 'user', content: 'This session is being continued…' },
+      parent_tool_use_id: null,
+      isReplay: false,
+      isSynthetic: true,
+    })!;
+    expect(summary).toMatchObject({ type: 'message', role: 'user', compactionSummary: 'This session is being continued…' });
+    expect((summary as MessageEvent).derive(DISPLAY_CAPS, {})).toEqual([]);
+    const [typed] = translateClaudeFrame({
+      type: 'user',
+      message: { role: 'user', content: 'hello' },
+      parent_tool_use_id: null,
+      isReplay: true,
+    })!;
+    expect(typed).not.toHaveProperty('compactionSummary');
+  });
+
   it('other system subtypes are understood and silent', () => {
     for (const subtype of ['status', 'commands_changed', 'post_turn_summary', 'local_command']) {
       expect(translateClaudeFrame({ type: 'system', subtype })).toEqual([]);

@@ -4,8 +4,10 @@
 // own when the context window fills) everything above that point survives in
 // the model's memory only as a summary. The CLI marks the spot with a frame
 // built for exactly that, and the Feed draws it as a divider, the way a
-// `/clear` gets one. The summary itself is NOT shown (#1026: it is the CLI's
-// own working note, and its live view hides it too).
+// `/clear` gets one. The summary itself is NOT drawn into the conversation
+// (#1026: it is the CLI's own working note, and its live view hides it too).
+// Since #1374 it can be OPENED from the divider, on request: kept beside the
+// block in main, never part of the Feed's derivation (`summaryId` below).
 //
 // HOST, DON'T REIMPLEMENT: the CLI decides when to compact. This mark is only
 // ever made from its frame, never inferred.
@@ -34,7 +36,19 @@ export interface CompactionMark {
   preTokens?: number;
   /** context tokens after it */
   postTokens?: number;
+  /**
+   * The HOST'S handle on the CLI's own summary of everything above the divider
+   * (#1374), when one arrived and is still held. Never the text: that stays in
+   * main (`feed/compaction-summaries.ts`) and the page asks for it by this
+   * handle, through `feed:compactionSummary`, only when the user opens it.
+   * Absent = no "Show summary" on the divider. Set by the Feed buffer, never by
+   * `compactionMark` — the CLI's frame does not carry it.
+   */
+  summaryId?: string;
 }
+
+/** What `feed:compactionSummary` answers (#1374): the CLI's text, or "not held". */
+export type CompactionSummaryResult = { ok: true; text: string } | { ok: false };
 
 /** A token count from another process: a finite, non-negative number, or nothing. */
 function count(n: unknown): number | undefined {
