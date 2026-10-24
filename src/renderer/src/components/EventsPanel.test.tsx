@@ -23,6 +23,7 @@ import type { EventsFilter } from '../lib/events-v2';
 import { V2 } from './events-panel-test-props';
 import type { SuppressedEvent } from '../../../shared/suppressed';
 import { buildDigest, DIGEST_ROWS } from '../lib/digest';
+import type { LostDispatch } from '../lib/layout';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -221,6 +222,91 @@ describe('the history-repair notice (#539)', () => {
   it('shows nothing for an empty list', async () => {
     await show([]);
     expect(host.querySelector('[data-events-notice="history-repair"]')).toBeNull();
+    expect(host.textContent).toContain(en.events.empty);
+  });
+});
+
+describe('the lost-dispatch notice (#1417)', () => {
+  const onDismiss = vi.fn();
+
+  async function show(lost: LostDispatch[]): Promise<void> {
+    await act(async () => {
+      root!.render(
+        <EventsPanel
+          sessions={[]}
+          events={[]}
+          queueEvents={[]}
+          visited={new Set<number>()}
+          onFocus={() => {}}
+          onVisit={() => {}}
+          queueBinding="Ctrl+Space"
+          {...V2}
+          lostDispatches={lost}
+          onDismissLostDispatch={onDismiss}
+        />
+      );
+    });
+  }
+
+  const rows = (): HTMLElement[] => [...host.querySelectorAll<HTMLElement>('[data-lost-dispatch]')];
+
+  beforeEach(() => onDismiss.mockReset());
+
+  it('names the AI and the session that sent it, in the words decided for it', async () => {
+    await show([{ cardId: 'c1', aiName: 'Codex', fromName: 'Switchboard.ai' }]);
+    expect(host.querySelector('[data-events-notice="lost-dispatch"]')).not.toBeNull();
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0].textContent).toContain(
+      'A dispatch to Codex from “Switchboard.ai” was lost before it started.'
+    );
+  });
+
+  it('one line per lost card', async () => {
+    await show([
+      { cardId: 'c1', aiName: 'Codex', fromName: 'A' },
+      { cardId: 'c2', aiName: 'Claude Code', fromName: 'B' },
+    ]);
+    expect(rows().map((r) => r.getAttribute('data-lost-dispatch'))).toEqual(['c1', 'c2']);
+  });
+
+  it('says less, never something invented, when a fact is missing', async () => {
+    await show([
+      { cardId: 'c1', aiName: 'Codex' },
+      { cardId: 'c2', fromName: 'B' },
+      { cardId: 'c3' },
+    ]);
+    const text = rows().map((r) => r.querySelector('span')!.textContent);
+    expect(text).toEqual([
+      'A dispatch to Codex was lost before it started.',
+      'A dispatch from “B” was lost before it started.',
+      'A dispatch was lost before it started.',
+    ]);
+  });
+
+  it('announces itself — it is already true when the window mounts', async () => {
+    await show([{ cardId: 'c1', aiName: 'Codex', fromName: 'A' }]);
+    const live = host.querySelector('[data-events-notice="lost-dispatch"] [role="status"]');
+    expect(live!.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('is dismiss-only, one row at a time, each button named for its row', async () => {
+    await show([
+      { cardId: 'c1', aiName: 'Codex', fromName: 'A' },
+      { cardId: 'c2', aiName: 'Codex', fromName: 'B' },
+    ]);
+    // one control per row and it is Got it — no action rides on this notice
+    for (const r of rows()) expect(r.querySelectorAll('button')).toHaveLength(1);
+    const names = rows().map((r) => r.querySelector('button')!.getAttribute('aria-label'));
+    expect(new Set(names).size).toBe(2);
+    await click(rows()[1].querySelector('button')!);
+    expect(onDismiss).toHaveBeenCalledWith('c2');
+  });
+
+  it('keeps the panel from claiming to be empty while it is up, and shows nothing for none', async () => {
+    await show([{ cardId: 'c1' }]);
+    expect(host.textContent).not.toContain(en.events.empty);
+    await show([]);
+    expect(host.querySelector('[data-events-notice="lost-dispatch"]')).toBeNull();
     expect(host.textContent).toContain(en.events.empty);
   });
 });

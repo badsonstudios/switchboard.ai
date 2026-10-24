@@ -31,7 +31,7 @@ import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { holdSiblingMessage } from './lib/sibling-hold';
 import { DEFAULT_AUTONOMY, nextAutonomy } from './lib/autonomy';
 import { initPresentation } from './lib/presentation-boot';
-import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
+import { boxOnAnyDisplay, type LostDispatch, RescuedPopout } from './lib/layout';
 import { rendererRegistry } from './extensibility/registry-instance';
 import { buildContributedCommands } from './extensibility/commands';
 import { bindingFor, dispatch, dispatchAccelerator, formatBinding, Platform } from './lib/commands';
@@ -1561,6 +1561,13 @@ export function App(): React.JSX.Element {
     );
     return () => off?.();
   }, []);
+
+  // DISPATCHES LOST BEFORE THEY STARTED (#1417) — a dispatched card that never
+  // started before the quit has no record, so this launch's restore dropped it.
+  // The grid reports them once; this is the only place they are kept. Nothing
+  // is written down, by decision: the notice is for THIS relaunch, and "Got
+  // it" is the whole of its life.
+  const [lostDispatches, setLostDispatches] = useState<LostDispatch[]>([]);
 
   // WHAT QUIET HOURS HELD WHILE NOBODY WAS TOLD (P2-E14-05c) — the missed-events
   // digest, read from the durable list #482 writes.
@@ -3153,6 +3160,7 @@ export function App(): React.JSX.Element {
           controller={grid}
           // a tab's right-click menu (#1281): the lists' own gestures
           sessionMenu={{ rename: renameCard, diff: openChanges, moveToGroup, togglePin }}
+          onDispatchesLost={setLostDispatches}
         />
         {/* Shape B: the panel's content, in an overlay drawer that is shut by
             default. It is the LAST child of the workspace row and out of flow,
@@ -3198,6 +3206,10 @@ export function App(): React.JSX.Element {
             bridge.sessions?.dismissHistoryRepair?.(id);
             setHistoryRepairs((prev) => prev.filter((n) => n.id !== id));
           }}
+          lostDispatches={lostDispatches}
+          onDismissLostDispatch={(cardId) =>
+            setLostDispatches((prev) => prev.filter((d) => d.cardId !== cardId))
+          }
           digest={digest}
           onClearDigest={clearDigest}
         />

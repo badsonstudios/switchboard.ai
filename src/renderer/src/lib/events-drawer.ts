@@ -24,7 +24,7 @@
 import { AttentionEvent, attentionQueue } from './queue';
 
 /**
- * The notice slot's FIVE tenants (the #425 coordination note), as the badge
+ * The notice slot's SIX tenants (the #425 coordination note), as the badge
  * sees them — which is only whether each is up.
  *
  * Spelled out as named fields rather than a count the caller adds up:
@@ -42,6 +42,8 @@ export interface DrawerNotices {
   incidents?: readonly unknown[];
   /** #539's "we changed which conversation this card is in" notices */
   historyRepairs?: readonly unknown[];
+  /** #1417's "a dispatch was lost before it started" rows, from this restore */
+  lostDispatches?: readonly unknown[];
   /**
    * P2-E14-05c's missed-events digest — what quiet hours held.
    *
@@ -62,7 +64,7 @@ export interface DrawerBadge {
    * on the list — which is what the tab is tinted with.
    */
   hottest: AttentionEvent['kind'] | null;
-  /** how many of the five notice tenants are up right now */
+  /** how many of the six notice tenants are up right now */
   notices: number;
 }
 
@@ -79,6 +81,8 @@ export function liveNotices(n: DrawerNotices): number {
     // ONE, however many cards were repaired: the tenant is the slot's occupant,
     // not its rows — the same reading `incidents` already gets.
     (n.historyRepairs?.length ? 1 : 0) +
+    // one slot however many dispatches were lost, for the same reason
+    (n.lostDispatches?.length ? 1 : 0) +
     // and the same again for a digest of forty held notifications: one slot is
     // occupied, and the forty are the digest's own summary line to make.
     (n.digest?.total ? 1 : 0)

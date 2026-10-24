@@ -26,6 +26,7 @@
 import { errorText } from '../../../shared/error-text';
 import type { HistoryRepairNotice } from '../../../shared/history-repair';
 import type { Digest } from '../lib/digest';
+import type { LostDispatch } from '../lib/layout';
 import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
 import { DenyFeedbackField } from './DenyFeedback';
 import type { AskQuestion } from '../../../shared/ask-user-question';
@@ -202,6 +203,20 @@ export interface EventsPanelProps {
   /** the notice's one control: I have read this. */
   onDismissHistoryRepair?: (id: string) => void;
   /**
+   * Dispatches this relaunch dropped because they never started (#1417): a
+   * dispatched card with no session record is pruned by the restore, and
+   * nobody — least of all the session that sent it — was told.
+   *
+   * The SIXTH tenant of this slot, beside the history repairs and for their
+   * reason: it is something the app did to a card while nobody was watching,
+   * finished news rather than a live condition, so it is dismiss-only. Unlike
+   * them it is not kept anywhere — it is about this launch's restore, so it
+   * says its piece once and is gone at the next relaunch either way.
+   */
+  lostDispatches?: readonly LostDispatch[];
+  /** the notice's one control, per row: I have read this. */
+  onDismissLostDispatch?: (cardId: string) => void;
+  /**
    * The missed-events digest (P2-E14-05c) — what quiet hours held while nobody
    * was told, already ordered and summarised by `lib/digest.ts`.
    *
@@ -244,6 +259,19 @@ export interface EventsPanelProps {
   onFilterChange: (filter: EventsFilter) => void;
   /** the rail's order, as card ids — what "By session" sorts by */
   railOrder: readonly string[];
+}
+
+/**
+ * One lost dispatch, in words (#1417). Names the AI and the sender when the
+ * card's saved facts do, and says less — never something invented — when a
+ * fact is missing (a card dispatched by an older build, or one whose sender
+ * had no name). Exported for the unit test.
+ */
+export function lostDispatchLine(t: TFunction, d: LostDispatch): string {
+  if (d.aiName && d.fromName) return t('events.lostDispatch.full', { ai: d.aiName, from: d.fromName });
+  if (d.aiName) return t('events.lostDispatch.toAi', { ai: d.aiName });
+  if (d.fromName) return t('events.lostDispatch.fromSender', { from: d.fromName });
+  return t('events.lostDispatch.bare');
 }
 
 export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
@@ -626,6 +654,62 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
           </div>
         </div>
       )}
+      {!!props.lostDispatches?.length && (
+        <div
+          data-events-notice="lost-dispatch"
+          style={{
+            background: 'var(--panel2)',
+            // `--border` weight, like the history-repair notice above: news about
+            // something already over, not a thing waiting on the user.
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-chip)',
+            padding: '7px 9px',
+            marginBlockEnd: 6,
+            fontSize: 11,
+          }}
+        >
+          <div
+            // #314's pair: decided during the restore, so already true by the
+            // time anyone could look — there is no later event to announce it by.
+            role="status"
+            aria-live="polite"
+            style={{ color: 'var(--text)' }}
+          >
+            {props.lostDispatches.map((d) => {
+              const line = lostDispatchLine(t, d);
+              return (
+                <div
+                  key={d.cardId}
+                  data-lost-dispatch={d.cardId}
+                  style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBlockEnd: 4 }}
+                >
+                  <span style={{ flex: 1, minInlineSize: 0 }}>{line}</span>
+                  <button
+                    className="events-btn"
+                    onClick={() => props.onDismissLostDispatch?.(d.cardId)}
+                    // named per ROW (§5.32): several lost dispatches would
+                    // otherwise be several buttons all called "Got it"
+                    aria-label={t('events.lostDispatch.dismiss', { line })}
+                    style={{
+                      background: 'transparent',
+                      color: 'var(--muted)',
+                      border: '1px solid var(--control-edge)',
+                      borderRadius: 'var(--radius-chip)',
+                      padding: '2px 10px',
+                      cursor: 'pointer',
+                      fontSize: 11,
+                      fontFamily: 'var(--font-ui)',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {t('events.gotIt')}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       {!!props.digest?.total && (
         <div
           data-events-notice="digest"
@@ -785,6 +869,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
         !props.updateNotice &&
         !props.incidents?.length &&
         !props.historyRepairs?.length &&
+        !props.lostDispatches?.length &&
         !props.digest?.total && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('events.empty')}</div>
       )}

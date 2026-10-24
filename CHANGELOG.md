@@ -183,6 +183,12 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   just before **⤢**: Open externally and Reveal in folder first, then
   Rendered, Source, Outline and Readable width. The menu works with the
   keyboard too.
+- **You are told when a dispatch was lost to a quit.** A dispatched card that
+  had not started yet when you quit switchboard is not brought back when you
+  open it again, and until now nothing said so. Now the **Events** drawer shows
+  one line per lost card, naming the AI it was for and the session that sent
+  it: "A dispatch to Codex from "my-project" was lost before it started."
+  **Got it** clears it. Dispatch again from that session to redo it.
 
 ### Changed
 

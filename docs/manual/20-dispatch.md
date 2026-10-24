@@ -339,7 +339,11 @@ session-archive work in a later release.
   is now.) A briefing also doesn't survive quitting switchboard: a dispatched
   card that hadn't started yet when you quit (or one showing this message)
   isn't brought back when you open switchboard again, and nothing is started
-  in its place. Dispatch again from the session that sent it. In the rare case
+  in its place. You are told when that happens: open the **Events** drawer
+  (its tab shows a notice marker) and there is one line per lost card, *"A
+  dispatch to <AI> from "<session>" was lost before it started."* Press
+  **Got it** to clear the line; it is only shown for that one relaunch.
+  Dispatch again from the session that sent it. In the rare case
   such a card does come back, it shows this same message and the same
   **Dispatch again** button rather than starting.
 
