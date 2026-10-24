@@ -4355,7 +4355,10 @@ attention queue, or any bulk session operation.
 - **Read-only, permanently.** PHILOSOPHY §5 already rejected a built-in editor
   by name ("Monaco stays read-only + diff-only"), and this is that precedent
   applied rather than a limitation to fix later. The escape hatch — **Open in
-  default app** / **Reveal in folder** — is always in the header. Edit-in-place
+  default app** / **Reveal in folder** — is always in the header *(amended
+  2026-10-23, #1408: in a pane too narrow for the whole header row, they are
+  the first controls to fold into the header's "…" menu — still in the header,
+  one click further in — and the view controls fold second)*. Edit-in-place
   would be a philosophy amendment first and a feature second.
 - **Lives anywhere a group lives.** A viewer is a Dockview panel, so tabbing,
   splitting, popping out to another monitor, geometry persistence, and

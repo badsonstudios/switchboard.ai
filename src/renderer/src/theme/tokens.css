@@ -1473,6 +1473,31 @@ mark[data-feed-match-current] {
 .doc-header-gap {
   flex: 1;
 }
+/* The header's two foldable groups (#1408): the view controls and the file
+   actions, which fold into "…" in a narrow pane (`lib/document-header-fit`).
+   The diff toolbar's `.diff-group` rule for the same reason — a group never
+   shrinks and never wraps; it is on the row whole or in the menu. The gap is
+   the header's own, so wrapping the buttons moved none of them. */
+.doc-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+/* ...and when even everything folded does not fit — a long file name in a
+   very narrow pane — the NAME gives way, last: the folder is emptied first
+   (its shrink weight dwarfs the name's, and it has no floor), then the name
+   truncates at its end. Without this the name never shrank and pushed pop-out
+   past the edge. Only in this state, so an ordinary pane never shows a name
+   cut short while there was folder left to give. */
+.doc-header[data-tight='true'] .doc-name {
+  min-inline-size: 2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-header[data-tight='true'] .doc-dir {
+  flex-shrink: 1000;
+}
 .doc-modes {
   display: flex;
 }
@@ -1563,6 +1588,11 @@ mark[data-feed-match-current] {
   border-radius: 4px;
   padding: 0 5px;
   color: var(--muted);
+  /* one line, whole (#1408): the header is a single row the fold measures,
+     and a wrapped note would make it taller under a find bar placed at a
+     fixed inset below it */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 /* §5.24 lineage (P2-E16-03): a viewer opened from a card wears that session's
  * accent as a RULE down its leading edge and names it in a chip. The accent is
@@ -1587,6 +1617,11 @@ mark[data-feed-match-current] {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Never squeezed by the row (#1408, found in review): with the default
+     shrink the chip and the folder gave way TOGETHER, so the chip was a
+     sliver before a single button folded into "…". Its own 22ch cap is the
+     only truncation it takes; the fold makes the room. */
+  flex-shrink: 0;
   box-shadow: inset 2px 0 0 0 var(--doc-accent, var(--faint));
 }
 .doc-notice {

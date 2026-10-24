@@ -5,7 +5,10 @@ import {
   DEFAULT_DOCUMENT_MEASURE,
   DOCUMENT_MEASURE_KEY,
   getDocumentMeasure,
+  isMeasureOffered,
   parseDocumentMeasure,
+  resetMeasureOfferedForTest,
+  setMeasureOffered,
   setDocumentMeasure,
   subscribeDocumentMeasure,
   toggleDocumentMeasure,
@@ -96,5 +99,20 @@ describe('the preference itself', () => {
     expect(good).toHaveBeenCalledTimes(1);
     offBad();
     offGood();
+  });
+});
+
+describe('who has prose to measure (#1408)', () => {
+  beforeEach(() => resetMeasureOfferedForTest());
+
+  it('is offered while any viewer says so, and not once the last one stops', () => {
+    expect(isMeasureOffered()).toBe(false);
+    setMeasureOffered('a', true);
+    setMeasureOffered('b', true);
+    expect(isMeasureOffered()).toBe(true);
+    setMeasureOffered('a', false);
+    expect(isMeasureOffered()).toBe(true);
+    setMeasureOffered('b', false);
+    expect(isMeasureOffered()).toBe(false);
   });
 });

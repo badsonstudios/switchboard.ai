@@ -30,7 +30,11 @@ import {
 } from '../lib/find-surfaces';
 import { openFindBar, resetFindBarState, setFindTerm } from '../lib/find-bar-state';
 import { setDocumentOutline } from '../lib/document-outline';
-import { setDocumentMeasure } from '../lib/document-measure';
+import {
+  isMeasureOffered,
+  resetMeasureOfferedForTest,
+  setDocumentMeasure,
+} from '../lib/document-measure';
 import { sessionStore } from '../store/session-store';
 import { requestDocumentLine, resetDocumentLines } from '../lib/document-reveal';
 
@@ -782,6 +786,188 @@ describe('the reading width (#1404)', () => {
     answer = () => ok('', { binary: true, size: 148_000, encoding: undefined });
     await mount('/p/spec.pdf');
     expect(measureToggle().disabled).toBe(true);
+  });
+
+  it('tells the command palette when it has prose to measure (#1408)', async () => {
+    resetMeasureOfferedForTest();
+    answer = () => ok('# A\n\ntext\n');
+    await mount('/p/NOTES.md');
+    expect(isMeasureOffered()).toBe(true);
+    await click(buttonByText('Source'));
+    expect(isMeasureOffered()).toBe(false);
+    await click(buttonByText('Rendered'));
+    expect(isMeasureOffered()).toBe(true);
+    await act(async () => root!.unmount());
+    root = null;
+    expect(isMeasureOffered()).toBe(false);
+  });
+});
+
+// --- folding the header into "…" in a narrow pane (#1408) -------------------
+//
+// jsdom has no layout, so every box is 0×0 — which the rule reads as "not a
+// measurement" and folds nothing (every other test in this file is that case).
+// Here the boxes are STUBBED, by class, so the decision can be driven: the rule
+// itself is `diff-toolbar-fit.test.ts`'s, and what this owns is that the viewer
+// measures the right things, folds the right groups in the right order, and
+// that a folded control is still reachable — and still says what it is.
+describe('the header folds into "…" in a narrow pane (#1408)', () => {
+  /** The stubbed widths. `pane` is the header's; the rest are the parts'. */
+  let box = { pane: 0, name: 60 };
+  const WIDTHS: Array<[string, number]> = [
+    ['.doc-nav', 40],
+    ['.doc-more', 26],
+    ['.doc-popout', 22],
+  ];
+  const widthOf = (el: Element): number => {
+    if (el.classList.contains('doc-header')) return box.pane;
+    if (el.classList.contains('doc-name')) return box.name;
+    if (el.classList.contains('doc-group')) {
+      // the view controls and the file actions, told apart by what they hold
+      return el.querySelector('.doc-modes') ? 200 : 190;
+    }
+    for (const [sel, w] of WIDTHS) if (el.matches(sel)) return w;
+    return 0;
+  };
+  const restore: Array<() => void> = [];
+
+  beforeEach(() => {
+    box = { pane: 0, name: 60 };
+    setDocumentOutline(true);
+    setDocumentMeasure('full');
+    const rect = vi
+      .spyOn(Element.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: Element) {
+        const width = widthOf(this);
+        return { width, height: 20, top: 0, left: 0, right: width, bottom: 20, x: 0, y: 0 } as DOMRect;
+      });
+    restore.push(() => rect.mockRestore());
+    for (const prop of ['clientWidth', 'scrollWidth'] as const) {
+      Object.defineProperty(HTMLElement.prototype, prop, {
+        configurable: true,
+        get(this: HTMLElement) {
+          return widthOf(this);
+        },
+      });
+      restore.push(() => {
+        delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
+      });
+    }
+  });
+
+  afterEach(() => {
+    while (restore.length) restore.pop()!();
+  });
+
+  const HEADINGS = '# A\n\n## B\n\n## C\n\ntext\n';
+  /** Re-render at a pane width: the layout effect measures on every render. */
+  const at = async (pane: number, name = 60): Promise<void> => {
+    box = { pane, name };
+    await mount('/p/DESIGN.md');
+  };
+  const more = (): HTMLButtonElement | null => q('[data-testid="doc-more"]') as HTMLButtonElement | null;
+  const menuItem = (id: string): HTMLElement | null =>
+    document.querySelector(`[data-testid="doc-menu"] [data-group-menu-item="${id}"]`);
+  const menuIds = (): string[] =>
+    [...document.querySelectorAll('[data-testid="doc-menu"] [data-group-menu-item]')].map(
+      (el) => el.getAttribute('data-group-menu-item') ?? ''
+    );
+
+  // nav 40 + name 60, view controls 200, file actions 190, "…" 26, slack 8:
+  // everything needs 498, the view controls alone 326, nothing folded 126.
+
+  it('folds nothing in a roomy pane', async () => {
+    answer = () => ok(HEADINGS);
+    await at(800);
+    expect(more()).toBeNull();
+    expect(buttonByText('Reveal in folder')).toBeDefined();
+    expect(buttonByText('Source')).toBeDefined();
+  });
+
+  it('folds the file actions FIRST, and they still work from the menu', async () => {
+    answer = () => ok(HEADINGS);
+    await at(400);
+    expect(buttonByText('Reveal in folder')).toBeUndefined();
+    expect(buttonByText('Open externally')).toBeUndefined();
+    // the view controls are still on the row
+    expect(buttonByText('Source')).toBeDefined();
+    const button = more()!;
+    expect(button.getAttribute('aria-label')).toBe('More document options');
+    expect(button.getAttribute('aria-haspopup')).toBe('menu');
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+
+    await click(button);
+    expect(more()!.getAttribute('aria-expanded')).toBe('true');
+    expect(menuIds()).toEqual(['open-externally', 'reveal-in-folder']);
+    await click(menuItem('reveal-in-folder'));
+    expect(calls).toEqual([{ what: 'reveal', arg: '/p/DESIGN.md' }]);
+    // focus goes back to "…", not to <body>
+    expect(document.activeElement).toBe(more());
+  });
+
+  it('folds the view controls SECOND, as a radio pair that still switches the view', async () => {
+    answer = () => ok(HEADINGS);
+    await at(200);
+    expect(buttonByText('Source')).toBeUndefined();
+    expect(q('.doc-group')).toBeNull();
+    await click(more());
+    // a 200px pane is under both chips' thresholds, so neither is offered
+    expect(menuIds()).toEqual(['rendered', 'source', 'open-externally', 'reveal-in-folder']);
+    expect(menuItem('rendered')!.getAttribute('role')).toBe('menuitemradio');
+    expect(menuItem('rendered')!.getAttribute('aria-checked')).toBe('true');
+    await click(menuItem('source'));
+    expect(sourceProps.length).toBeGreaterThan(0);
+    expect(document.activeElement).toBe(more());
+    await click(more());
+    expect(menuItem('source')!.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('offers Outline and Readable width only where their chips would be on the row', async () => {
+    answer = () => ok(HEADINGS);
+    // a long name folds everything in a pane wide enough for the Outline chip
+    await at(500, 300);
+    await click(more());
+    expect(menuIds()).toEqual(['rendered', 'source', 'outline', 'open-externally', 'reveal-in-folder']);
+    const outline = menuItem('outline')!;
+    expect(outline.getAttribute('role')).toBe('menuitemcheckbox');
+    expect(outline.getAttribute('aria-checked')).toBe('true');
+    await click(outline);
+    expect(q('.doc-outline')).toBeNull();
+
+    // ...and past 600px, Readable width too
+    await at(700, 500);
+    await click(more());
+    expect(menuIds()).toContain('readable-width');
+    await click(menuItem('readable-width'));
+    expect(q('[data-testid="doc-rendered"]')!.getAttribute('data-measure')).toBe('readable');
+  });
+
+  it('a folded control that cannot act is greyed in the menu, never dropped', async () => {
+    answer = () => ok('# only one heading\n');
+    await at(700, 500);
+    await click(more());
+    // too few headings for an outline: there, but disabled — as the chip is
+    expect(menuItem('outline')!.getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('lets the name give way only when even everything folded does not fit', async () => {
+    answer = () => ok(HEADINGS);
+    await at(200);
+    expect(q('.doc-header')!.getAttribute('data-tight')).toBeNull();
+    await at(120, 300);
+    expect(q('.doc-header')!.getAttribute('data-folded')).toBe('2');
+    expect(q('.doc-header')!.getAttribute('data-tight')).toBe('true');
+  });
+
+  it('unfolds again when the pane widens, and closes a menu that would be stale', async () => {
+    answer = () => ok(HEADINGS);
+    await at(400);
+    await click(more());
+    expect(q('[data-testid="doc-menu"]')).not.toBeNull();
+    await at(800);
+    expect(more()).toBeNull();
+    expect(q('[data-testid="doc-menu"]')).toBeNull();
+    expect(buttonByText('Reveal in folder')).toBeDefined();
   });
 });
 

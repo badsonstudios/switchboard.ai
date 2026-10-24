@@ -112,6 +112,32 @@ const rendered = (w: Page) => w.locator('[data-testid="doc-rendered"]');
 /** `tokens.css`: `@container (max-width: 420px) { .doc-outline { display: none } }`. */
 const OUTLINE_MIN_PANE = 420;
 
+/**
+ * Where the header's controls end, against where the pane does (#1408). Asked
+ * per control rather than trusted to the header's own `scrollWidth`: a flex
+ * row's `scrollWidth` hides what its children wanted.
+ */
+type HeaderFit = { pane: number; edge: number; worst: number; scroll: number; client: number };
+async function headerFit(w: Page): Promise<HeaderFit> {
+  return w.evaluate(() => {
+    const header = document.querySelector('[data-testid="document-viewer"] .doc-header') as HTMLElement;
+    const box = header.getBoundingClientRect();
+    // every control a reader could aim at — a hidden one has no box, and is
+    // not on the row
+    const rights = [...header.querySelectorAll('button')]
+      .map((b) => b.getBoundingClientRect())
+      .filter((r) => r.width > 0)
+      .map((r) => r.right);
+    return {
+      pane: box.width,
+      edge: box.right,
+      worst: Math.max(...rights),
+      scroll: header.scrollWidth,
+      client: header.clientWidth,
+    };
+  });
+}
+
 test.describe('document viewer (P2-E16-02)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
@@ -350,10 +376,102 @@ test.describe('document viewer (P2-E16-02)', () => {
     // what CI reported. What survives a restart is the remembered STATE, and
     // asking about it must not depend on the window's width. The chip's a11y
     // reachability is asserted above, on a pane this test gave room to.
-    await expect(viewer(w).locator('[data-testid="doc-outline-toggle"]')).toHaveAttribute(
-      'aria-pressed',
-      'false'
-    );
+    //
+    // ...and since #1408 the chip may not be in the DOM at all: a pane this
+    // narrow can fold the view controls into "…" (with Linux CI's wider fonts
+    // the margin at 348px is ~24px). `.doc-outline` having NO element above is
+    // already the read-back — a wanted outline is in the DOM even where the
+    // container query hides it — so the chip is checked only when it is there.
+    await expect(viewer(w).locator('.doc-header')).toHaveAttribute('data-folded', /^[0-2]$/);
+    const relaunchedChip = viewer(w).locator('[data-testid="doc-outline-toggle"]');
+    const folded = await viewer(w).locator('.doc-header').getAttribute('data-folded');
+    if (folded !== '2') await expect(relaunchedChip).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  // ── the header folds into "…" in a narrow pane (#1408) ────────────────────
+  //
+  // The issue's two widths: window 1024 -> a ~348px pane, which needed 448px of
+  // header, and the default 1280 -> ~476px, which needed 511. Only a real engine
+  // has widths, and only Linux CI has its ~5% wider fonts — which is why this is
+  // NOT a popout spec (those skip on Linux) and why it asks the geometry
+  // question directly, per control, rather than trusting the header's own
+  // `scrollWidth` (a flex row's `scrollWidth` hides what its children wanted).
+  // The rule's arithmetic and the menu's contents are the unit tests'.
+  test('the header folds into "…" at both narrow widths, with nothing past the edge (#1408)', async () => {
+    const { folder, doc } = seededProject();
+    a = await launchApp({ seedFolder: folder, seedDocument: doc });
+    const w = a.window;
+    await expect(rendered(w).locator('h1')).toBeVisible();
+    const more = viewer(w).locator('[data-testid="doc-more"]');
+
+    for (const width of [1024, 1280]) {
+      await setBounds(width, 768);
+      // ⚠️ WAIT FOR THE RESIZE ITSELF, not just for a narrow pane: the default
+      // window already gives a ~476px pane, so a pane check alone passed BEFORE
+      // the 1024 resize landed — and the late `resize` then closed the menu
+      // under the test (an open menu closes on a window resize, by design).
+      //
+      // ...and wait for the width MAIN APPLIED, not the one asked for, nor a
+      // change from the one before: the Windows CI runner's screen is ~1024
+      // wide, so its window is already 1008 wide at launch and the OS clamps
+      // both of these asks to that. The px are the stimulus; the claim is the
+      // fold invariant below, at whatever width the screen allowed.
+      const applied = await a.app.evaluate(
+        ({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getContentSize()[0] ?? -1
+      );
+      expect(applied, `window ${width}: no content size`).toBeGreaterThan(0);
+      await expect
+        .poll(() => w.evaluate(() => window.innerWidth), {
+          message: `window ${width}: the renderer never reached main's ${applied}px`,
+        })
+        .toBeGreaterThanOrEqual(applied - 2);
+      await expect.poll(() => w.evaluate(() => window.innerWidth)).toBeLessThanOrEqual(applied + 2);
+      // ...and has stopped moving
+      await expect
+        .poll(async () => {
+          const before = await w.evaluate(() => window.innerWidth);
+          await w.waitForTimeout(300);
+          return (await w.evaluate(() => window.innerWidth)) === before;
+        })
+        .toBe(true);
+      // settle on the pane the resize produced: the issue's two shapes are both
+      // under 520px, and a pane that is not would test nothing
+      await expect
+        .poll(async () => (await headerFit(w)).pane, { message: `window ${width}: the pane never narrowed` })
+        .toBeLessThan(520);
+      // the fold lands a frame after the resize; poll for the verdict, then
+      // assert it whole so a failure prints every number
+      await expect.poll(async () => {
+        const f = await headerFit(w);
+        return f.worst <= f.edge + 0.5 && f.scroll <= f.client;
+      }).toBe(true);
+      const fit = await headerFit(w);
+      expect(fit.worst, `window ${width}: ${JSON.stringify(fit)}`).toBeLessThanOrEqual(fit.edge + 0.5);
+      expect(fit.scroll, `window ${width}: ${JSON.stringify(fit)}`).toBeLessThanOrEqual(fit.client);
+
+      // ...and what folded is still reachable, BY KEYBOARD: "…" opens a menu
+      // holding the file actions; Escape hands focus back. (Not chosen — they
+      // would open Explorer on the machine running the suite.)
+      await expect(more).toBeVisible();
+      await more.focus();
+      await w.keyboard.press('Enter');
+      const menu = w.getByRole('menu', { name: 'More document options' });
+      await expect(menu).toBeVisible();
+      await expect(menu.getByRole('menuitem', { name: 'Reveal in folder' })).toBeVisible();
+      await expect(menu.getByRole('menuitem', { name: 'Open externally' })).toBeVisible();
+      // ...and it opens UNDER "…", not offset by the pane: `.doc-viewer` is a
+      // size container, the first one a fixed-position menu has lived in
+      const btn = (await more.boundingBox())!;
+      const box = (await menu.boundingBox())!;
+      expect(box.y, 'the menu is not below "…"').toBeGreaterThanOrEqual(btn.y + btn.height - 2);
+      expect(box.y).toBeLessThan(btn.y + btn.height + 40);
+      const inner = await w.evaluate(() => window.innerWidth);
+      expect(box.x + box.width, 'the menu is off the window').toBeLessThanOrEqual(inner + 1);
+      expect(Math.abs(box.x - btn.x) < 4 || box.x + box.width <= btn.x + btn.width + 4).toBe(true);
+      await w.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      await expect(more).toBeFocused();
+    }
   });
 
   test('a relative link navigates in the viewer; Back returns; a PDF gets the card', async () => {
@@ -604,5 +722,26 @@ test.describe('opening a document from the Changes tab (P2-E16-02)', () => {
     await expect(viewer(w)).toBeVisible();
     await expect(w.locator('[data-testid="doc-name"]')).toHaveText(file);
     await expect(rendered(w).locator('h1')).toHaveText('committed');
+
+    // #1408, in the shape most documents are opened in: ATTRIBUTED, beside a
+    // card, in the default window. The session chip is never squeezed to
+    // make room (the fold does that), and no control sits past the pane edge.
+    const chip = viewer(w).locator('[data-testid="doc-attribution"]');
+    await expect(chip).toBeVisible();
+    await expect.poll(async () => {
+      const f = await headerFit(w);
+      return f.worst <= f.edge + 0.5 && f.scroll <= f.client;
+    }).toBe(true);
+    // Its 22ch cap is the chip's only truncation: it is as wide as its text, or
+    // as wide as the cap allows — never narrower because the row was short.
+    const chipFit = await chip.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+      const cap = parseFloat(cs.maxWidth) + pad;
+      return { has: el.clientWidth, wants: Math.min(el.scrollWidth, cap) };
+    });
+    expect(chipFit.has, `the session chip is squeezed: ${JSON.stringify(chipFit)}`).toBeGreaterThanOrEqual(
+      chipFit.wants - 1
+    );
   });
 });

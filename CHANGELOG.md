@@ -157,6 +157,10 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   all Claude remembers of that part now. **Hide summary** folds it away. It
   stays folded until you ask, works in a popped-out window, and is still there
   after you reopen the app.
+- **Readable width is in the command list.** Press **Ctrl+Shift+P** and type
+  "readable" to turn the document reader's 78-character column on or off,
+  whatever the width of the pane. Before this the only way was the button in
+  the reader's header, which is hidden in a narrow pane.
 
 ### Fixed
 
@@ -164,6 +168,13 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   Claude Code compacted a reviewer's conversation on its own in the middle of
   its final answer, only the part after the "Conversation compacted" line was
   sent back as the review. Both halves now come back as one.
+- **The document reader's buttons no longer run off the edge of a narrow
+  pane.** With a document beside a session card in an ordinary window, the
+  header was wider than the pane, so **Reveal in folder** and **⤢** were cut
+  off or out of reach. Now the buttons that do not fit move into a **…** menu
+  just before **⤢**: Open externally and Reveal in folder first, then
+  Rendered, Source, Outline and Readable width. The menu works with the
+  keyboard too.
 
 ### Internal
 

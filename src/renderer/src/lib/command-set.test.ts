@@ -51,6 +51,7 @@ function deps(): CommandDeps & DepMocks {
     toggleTabRows: vi.fn(),
     toggleDiffLayout: vi.fn(),
     toggleDocumentOutline: vi.fn(),
+    toggleDocumentMeasure: vi.fn(),
     jumpToNextAttention: vi.fn(),
     openAbout: vi.fn(),
     checkForUpdates: vi.fn(),
@@ -881,5 +882,24 @@ describe('the document outline, from the command palette (#1017)', () => {
     expect(cmd.enabled?.(ctxWith(['a'], 'a'))).toBe(false);
     expect(cmd.enabled?.({ ...ctxWith([]), documentOutlineOffered: true })).toBe(true);
     expect(cmd.disabledReasonKey).toBe('commands.disabled.noOutline');
+  });
+});
+
+describe('the document Readable width, from the command palette (#1408)', () => {
+  it('flips the measure, takes no card, and has no binding', () => {
+    const d = deps();
+    const cmd = byId(buildCommands(d), 'view.documentMeasure');
+    cmd.run({ ...ctxWith([]), documentMeasureOffered: true });
+    expect(d.toggleDocumentMeasure).toHaveBeenCalledOnce();
+    expect(cmd.binding).toBeUndefined();
+    expect(cmd.categoryKey).toBe(byId(buildCommands(d), 'view.documentOutline').categoryKey);
+  });
+
+  it('is greyed by the chip’s own rule: no open document shows rendered prose', () => {
+    const cmd = byId(buildCommands(deps()), 'view.documentMeasure');
+    expect(cmd.enabled?.({ ...ctxWith(['a'], 'a'), documentMeasureOffered: false })).toBe(false);
+    expect(cmd.enabled?.(ctxWith(['a'], 'a'))).toBe(false);
+    expect(cmd.enabled?.({ ...ctxWith([]), documentMeasureOffered: true })).toBe(true);
+    expect(cmd.disabledReasonKey).toBe('commands.disabled.noReadableWidth');
   });
 });

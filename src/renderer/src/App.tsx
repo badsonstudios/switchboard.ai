@@ -162,6 +162,7 @@ import { applyTabRows, loadTabRows, syncDocumentFlags, toggleTabRows } from './l
 import { toggleDiffLayout } from './lib/diff-layout';
 import { isModalOpen } from './lib/modal-layer';
 import { isOutlineOffered, toggleDocumentOutline } from './lib/document-outline';
+import { isMeasureOffered, toggleDocumentMeasure } from './lib/document-measure';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
 import { openFindBar } from './lib/find-bar-state';
 import { setDocumentOpener } from './lib/document-open';
@@ -2084,6 +2085,10 @@ export function App(): React.JSX.Element {
           toggleDocumentOutline: () => {
             toggleDocumentOutline();
           },
+          // the same, for Readable width (#1408)
+          toggleDocumentMeasure: () => {
+            toggleDocumentMeasure();
+          },
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
           // #885. ONE dep where push, quiet hours and task label size each had
@@ -2249,6 +2254,8 @@ export function App(): React.JSX.Element {
       closableDocumentCount: grid.current?.closableDocumentCount() ?? 0,
       // the viewer's Outline chip is greyed by this same answer (#1017)
       documentOutlineOffered: isOutlineOffered(),
+      // ...and its Readable width chip by this one (#1408)
+      documentMeasureOffered: isMeasureOffered(),
       // resolved HERE, once, so the palette's enabled state and the keyboard's
       // both come from the same read (E9-06's group-level commands)
       activeGroupId: activeCardId

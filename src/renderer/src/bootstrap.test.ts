@@ -41,6 +41,7 @@ function noopDeps(): CommandDeps {
     toggleTabRows: () => {},
     toggleDiffLayout: () => {},
     toggleDocumentOutline: () => {},
+    toggleDocumentMeasure: () => {},
     jumpToNextAttention: () => {},
     openAbout: () => {},
     checkForUpdates: () => {},
