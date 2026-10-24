@@ -226,16 +226,17 @@ export function runtimeStatus(server: McpRuntimeServer): {
  *
  * ── WHY SIGN IN IS OFFERED WIDER THAN `needs-auth` ───────────────────────────
  *
- * Because **`needs-auth` is itself an unverified guess.** `status.ts` maps it
- * speculatively and says so: no connector on the build machine ever produced
- * that word, so we do not actually know the CLI spells it that way. Gating the
- * only fix for this ticket on a string we have never seen would ship a feature
- * that is invisible in precisely the situation it was written for — the same
- * class of miss as the one that produced the ticket. `failed` and `unknown` are
- * where a connector wanting authorisation would otherwise land, so they get the
- * button too. The cost of being wrong is one extra button on a broken row; the
- * cost of being right and silent is another release with nothing behind the
- * label.
+ * The SPELLING is no longer the reason: since #1425 `status.ts` quotes the
+ * binary, whose `mcp_status` schema lists `needs-auth` and whose connect path
+ * assigns it when auth discovery fails. What a grep does NOT prove is that
+ * EVERY server wanting a sign-in reaches that word rather than `failed` — that
+ * would take reading every connect path — and no live connector has been
+ * watched doing either on the build machine. Gating the only fix on one word
+ * would ship a feature that is invisible whenever a server lands elsewhere.
+ * `failed` and `unknown` are where a connector wanting authorisation would
+ * otherwise land, so they get the button too. The cost of being wrong is one
+ * extra button on a broken row; the cost of being right and silent is another
+ * release with nothing behind the label.
  *
  * ── SIGN OUT IS A RECOVERY CONTROL, NOT A GENERAL ONE ────────────────────────
  *
@@ -449,13 +450,14 @@ export function controlFailure(
   /**
    * A verb-specific sentence for `timed-out` — and #734 is why the seam exists.
    *
-   * ⚠️ **THE CONTROL CHANNEL ALLOWS TEN SECONDS (`claude-control-channel.ts`) AND A
-   * SIGN-IN IS A HUMAN WALKING TO A BROWSER.** If the CLI's `mcp_authenticate`
-   * blocks until the flow completes — plausible, and completely UNMEASURED,
-   * because no connector exists on the machine this was built on — then every
-   * real sign-in times out, and the default sentence tells the user their
-   * session "may be busy or stuck". That is alarming, wrong, and looks exactly
-   * like the feature being broken, for a flow that is proceeding normally.
+   * #734 feared `mcp_authenticate` blocked for the whole browser flow. #1420
+   * read the CLI and found it does not: it answers as soon as the server's
+   * authorisation side has produced a sign-in address, and the HOST opens the
+   * browser from that answer. So a sign-in `timed-out` means Claude Code never
+   * handed back a page — nothing opened, and the default "may be busy or
+   * stuck" is the wrong thing to say about a slow authorisation server. That
+   * verb gets thirty seconds rather than ten (#1425,
+   * `MCP_AUTHENTICATE_TIMEOUT_MS`), and its own sentence: try again.
    *
    * Every other verb here answers in milliseconds, so they keep the default.
    */
@@ -842,7 +844,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
       }
       setStatus({ key, reason: res.reason });
       // A FAILURE LEAVES THE LIST ALONE — no `else`, on purpose. A single
-      // timed-out poll (the channel gets ten seconds) would otherwise swap
+      // timed-out poll (`mcp_status` gets ten seconds) would otherwise swap
       // sixteen rows the user is reading for the three-row config subset, put
       // the #723 footer back, and arm the health spawn, all for a blip. Nothing
       // was learned about the servers, so nothing about them changes; the
@@ -1215,7 +1217,9 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
    * into a visible one. **The window is opened BEFORE the call**, not after it
    * — `controlMutate` bumps `generation`, which re-enters the status effect, and
    * a ref set after the await would race that re-entry. Starting the clock a few
-   * milliseconds early costs nothing against a sixty-second window.
+   * milliseconds early costs nothing against a sixty-second window — but the
+   * answer itself may now take up to thirty seconds (#1425), so a browser that
+   * DID open gets the window again from that moment, as the sentence promises.
    */
   const doAuthenticate = async (s: McpRuntimeServer): Promise<void> => {
     if (!folder || !props.liveId) {
@@ -1236,26 +1240,24 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
           return answer;
         });
       },
-      // The ten-second channel timeout against a human in a browser — see
-      // `controlFailure`. A generic "busy or stuck" here would report a flow
-      // that is going fine as a fault.
+      // Claude Code took longer than the thirty seconds this verb gets to hand
+      // back a sign-in page (#1425) — see `controlFailure`. A generic "busy or
+      // stuck" would misdescribe a slow authorisation server.
       'mcp.signInTimedOut'
     );
     if (problem === STALE) return;
-    // A REFUSAL CLOSES THE WINDOW AGAIN — nothing was started, so there is
-    // nothing to watch for, and leaving it open would spend a minute of round
-    // trips re-asking about a request the CLI declined.
+    // ANY FAILURE CLOSES THE WINDOW AGAIN — a refusal and a timeout alike.
+    // Nothing was opened, so there is nothing to watch for, and leaving it open
+    // would spend a minute of round trips re-asking about a sign-in that never
+    // reached a browser.
     //
-    // ⚠️ **A TIMEOUT IS NOT A REFUSAL, AND IS THE CASE WATCHING EXISTS FOR.**
-    // If the CLI blocks for the length of the browser flow, ten seconds elapse
-    // and we hear nothing — while the sign-in is proceeding perfectly well.
-    // Closing the watch there would abandon the one outcome we most want to
-    // catch. Recognised by the sentence because `controlMutate` hands back
-    // prose rather than the verdict; the alternative was widening its return
-    // type for one caller.
-    const timedOut = problem === t('mcp.signInTimedOut');
+    // A TIMEOUT USED TO KEEP WATCHING, on #734's theory that the CLI blocks for
+    // the length of the browser flow. #1420 found it does not: the HOST opens
+    // the browser from the answer, and an answer that arrives after the
+    // timeout is dropped by the channel — so a timed-out sign-in is one no
+    // browser can have opened (#1425).
     if (problem) {
-      if (!timedOut) authWatchUntil.current = 0;
+      authWatchUntil.current = 0;
       setNotice({ bad: true, text: problem });
       return;
     }
@@ -1263,6 +1265,11 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
     // NOTHING THE USER CAN FINISH: no address, or the OS would not open it.
     // Same argument as a refusal — there is no flow on this side to watch for.
     if (outcome === 'no-url' || outcome === 'open-failed') authWatchUntil.current = 0;
+    // A BROWSER OPENED: the minute the sentence promises starts NOW, not when
+    // the button was pressed — a slow server may have spent half of it (#1425).
+    // Only ever extends a window the pre-call line already opened; an
+    // already-signed-in answer keeps that window as it always did.
+    if (outcome === 'opened') authWatchUntil.current = Date.now() + AUTH_WATCH_MS;
     setNotice({
       bad: outcome === 'no-url' || outcome === 'open-failed',
       text: t(SIGN_IN_SENTENCE[outcome], { name: s.name }),

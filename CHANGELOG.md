@@ -164,6 +164,14 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ### Fixed
 
+- **A slow MCP sign-in is no longer lost.** When you click **Sign in** on a
+  server in the MCP servers panel, Claude Code has to fetch a sign-in page from
+  that server first. If the server took more than ten seconds, switchboard had
+  already given up, so no browser ever opened. Sign-in now waits about 30
+  seconds. If it still times out, the panel now says plainly that no browser
+  window was opened and that you should try again. It used to tell you to
+  finish signing in in a browser that could not have opened.
+
 - **A review that Claude compacted halfway through now arrives whole.** If
   Claude Code compacted a reviewer's conversation on its own in the middle of
   its final answer, only the part after the "Conversation compacted" line was

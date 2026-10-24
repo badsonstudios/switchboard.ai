@@ -92,6 +92,8 @@ let reconnectServerAnswer: () => ControlVerdict;
  *  SUCCESS shape is deliberately `{}` — the real payload has never been seen,
  *  because no claude.ai connector exists on the machine this was built on. */
 let authAnswer: ControlVerdict;
+/** when set, the sign-in answer is HELD until the test resolves it (#1425) */
+let authHold: Promise<ControlVerdict> | null;
 let clearAuthAnswer: ControlVerdict;
 
 function installBridge(): void {
@@ -127,7 +129,7 @@ function installBridge(): void {
         : {}),
       toggle: record('toggle', () => toggleAnswer),
       reconnectServer: record('reconnectServer', () => reconnectServerAnswer()),
-      authenticate: record('authenticate', () => authAnswer),
+      authenticate: record('authenticate', () => authHold ?? authAnswer),
       clearAuth: record('clearAuth', () => clearAuthAnswer),
       add: record('add', () => addAnswer),
       remove: record('remove', () => removeAnswer),
@@ -211,6 +213,7 @@ beforeEach(() => {
   toggleAnswer = { ok: true, response: {} };
   // what main answers once it has opened the browser (#1420)
   authAnswer = { ok: true, response: { signIn: 'opened' } };
+  authHold = null;
   clearAuthAnswer = { ok: true, response: {} };
   reconnectServerAnswer = () => ({ ok: true, response: {} });
   listAnswer = (folder) => ({ folder, servers: [], unreadable: [] });
@@ -1428,18 +1431,20 @@ describe('signing in and out of a connector (#734)', () => {
     expect(text()).not.toContain('has forgotten your sign-in for');
   });
 
-  it('says something reassuring, not alarming, when the request times out', async () => {
-    // ⚠️ THE MOST LIKELY FIRST-CONTACT FAILURE, and it is not a failure. The
-    // control channel allows ten seconds; a sign-in is a human walking to a
-    // browser. If the CLI blocks for the length of that flow — plausible,
-    // unmeasured — every real sign-in times out while working perfectly, and
-    // the generic sentence ("may be busy or stuck") reports it as breakage.
+  it('says honestly that nothing opened when the request times out (#1425)', async () => {
+    // The HOST opens the browser from the answer (#1420), and an answer after
+    // the timeout is dropped — so a timed-out sign-in is one no browser can
+    // have opened. The old sentence ("if a browser window opened, finish
+    // signing in there") could not be true; the generic "busy or stuck" would
+    // misdescribe a slow authorisation server.
     useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
     authAnswer = { ok: false, reason: 'timed-out', message: '' };
     await mount();
     await click(button('Sign in'));
     expect(text()).not.toContain('busy or stuck');
-    expect(text()).toContain('finish signing in there');
+    expect(text()).not.toContain('finish signing in there');
+    expect(text()).toContain('took too long to hand back a sign-in page');
+    expect(text()).toContain('Try again');
   });
 
   // NOT TESTED HERE: the in-flight "Working…" label and the sibling-button lock.
@@ -1516,11 +1521,71 @@ describe('signing in and out of a connector (#734)', () => {
   it('does NOT start watching when the CLI refused the sign-in', async () => {
     // Nothing was started, so there is nothing to watch for. A refusal that left
     // the window open would spend a minute of round trips re-asking about a
-    // request the CLI declined. (A TIMEOUT is different — see its own test.)
+    // request the CLI declined. (A timeout is the same since #1425 — see below.)
     vi.useFakeTimers();
     try {
       useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
       authAnswer = { ok: false, reason: 'refused', message: 'Server not found: Slack' };
+      await mount();
+      await click(button('Sign in'));
+      const after = statusCalls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(statusCalls).toHaveLength(after);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('watches for a minute from the ANSWER, not the click, when the answer is slow (#1425)', async () => {
+    // The answer may now take up to thirty seconds. Counted from the click, a
+    // 20-second answer would leave the "keeps checking for about a minute" the
+    // sentence promises at forty.
+    vi.useFakeTimers();
+    try {
+      useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
+      let release: (v: ControlVerdict) => void = () => {};
+      authHold = new Promise<ControlVerdict>((r) => {
+        release = r;
+      });
+      await mount();
+      await click(button('Sign in'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(20_000);
+      });
+      await act(async () => {
+        release({ ok: true, response: { signIn: 'opened' } });
+        await vi.advanceTimersByTimeAsync(42_000);
+      });
+      // 62 s after the click: a window counted from the click has closed
+      const late = statusCalls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12_000);
+      });
+      expect(statusCalls.length).toBeGreaterThan(late);
+      // and it is still bounded
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      const settled = statusCalls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(statusCalls).toHaveLength(settled);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does NOT keep watching after a timed-out sign-in (#1425)', async () => {
+    // #734 kept watching on a timeout, on the theory that the CLI blocks for the
+    // whole browser flow. It does not (#1420): no answer means no browser, so
+    // there is no sign-in on this side to wait for.
+    vi.useFakeTimers();
+    try {
+      useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
+      authAnswer = { ok: false, reason: 'timed-out', message: '' };
       await mount();
       await click(button('Sign in'));
       const after = statusCalls.length;

@@ -3,7 +3,7 @@
 // Synchronous, no spawn: the CI unit job does not run a build, so anything that
 // needed the compiled CLI could only skip there. The compiled program is proven
 // end-to-end over real pipes by `npm run check:fake-stream`.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   FAKE_COMPACT_SUMMARY,
   FakeStreamProtocol,
@@ -1669,5 +1669,26 @@ describe('scripted MCP answers (#1420)', () => {
       { subtype: 'success', request_id: 'r1', response: authAnswer },
       { subtype: 'error', request_id: 'r1', error: 'Server not found: other' },
     ]);
+  });
+
+  it('answers mcp_authenticate LATE when the script says so (#1425)', () => {
+    vi.useFakeTimers();
+    try {
+      const authAnswer = { authUrl: 'https://auth.test/a' };
+      const p = new FakeStreamProtocol(
+        { ...host, mcp: () => ({ status: [], authenticate: { remote: authAnswer }, authenticateDelayMs: 15_000 }) },
+        (m) => out.push(m)
+      );
+      ask(p, { subtype: 'mcp_authenticate', serverName: 'remote' });
+      expect(out).toEqual([]);
+      vi.advanceTimersByTime(14_999);
+      expect(out).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(out.map((m) => m.response)).toEqual([
+        { subtype: 'success', request_id: 'r1', response: authAnswer },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

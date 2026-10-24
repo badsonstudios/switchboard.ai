@@ -3574,6 +3574,14 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
     still does not mean "signed in": the row's own status says that.
     `mcp_oauth_callback_url` is for a host that cannot receive the callback, and
     is not used. Recipes: `docs/reference-implementations.md` §1.2.2.
+    **2026-10-24 (#1425): `mcp_authenticate` alone gets 30 s on the control
+    channel**, every other verb keeping the global 10 s. Its answer waits on the
+    server's authorisation side (discovery and client registration), and an
+    answer after the timeout is dropped, so a slow server's sign-in never
+    reached a browser. A sign-in that still times out says so plainly (Claude
+    Code took too long to hand back a sign-in page; try again) and stops
+    watching the row: with the host opening the browser, no answer means no
+    browser.
   - **The picker commands do NOT dead-end after all — we had never learned to
     ask (#721).** §5.17 treated `/model`, `/permissions` and friends as
     unreachable in Direct mode because they open a TUI picker and a Direct

@@ -1023,10 +1023,11 @@ const api = {
     /**
      * Start a remote server's OAuth sign-in (#734).
      *
-     * ⚠️ **`ok: true` IS NOT "SIGNED IN".** Only the refusal shapes are
-     * measured — there is no claude.ai connector on the machine this was built
-     * on, so the success payload has never been seen. Treat a success as "the
-     * CLI accepted the request" and nothing further; the dialog's wording does.
+     * ⚠️ **`ok: true` IS NOT "SIGNED IN".** Since #1420 main opens the
+     * browser from the CLI's answer and returns only the outcome as
+     * `response.signIn`; the row's own status is what says the sign-in worked.
+     * The answer may take up to thirty seconds (#1425): it waits on the
+     * server's authorisation side.
      *
      * Refused by TYPE for a stdio server, which is why the row only offers it
      * when the transport is not definitely stdio.

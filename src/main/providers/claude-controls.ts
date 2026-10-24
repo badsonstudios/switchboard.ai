@@ -27,7 +27,7 @@ import type {
 } from '../sessions/engine-controls';
 import type { ControlVerdict } from '../../shared/control';
 import type { EffortState } from '../../shared/effort';
-import { ControlChannel } from './claude-control-channel';
+import { ControlChannel, MCP_AUTHENTICATE_TIMEOUT_MS } from './claude-control-channel';
 import {
   controlResponse,
   interruptRequest,
@@ -177,7 +177,12 @@ export function createClaudeControls(session: ControlSession): SessionControls {
       reconnect: (serverName) => ask((requestId) => mcpReconnectRequest(requestId, serverName)),
       // ⚠️ `ok: true` does not mean "signed in": it carries the `authUrl` the
       // HOST must open (#1420, `mcp/sign-in.ts`).
-      authenticate: (serverName) => ask((requestId) => mcpAuthenticateRequest(requestId, serverName)),
+      // THE ONE VERB WITH ITS OWN TIMEOUT (#1425): its answer waits on the
+      // server's authorisation side, and a late one is dropped, not opened.
+      authenticate: (serverName) =>
+        ask((requestId) => mcpAuthenticateRequest(requestId, serverName), {
+          timeoutMs: MCP_AUTHENTICATE_TIMEOUT_MS,
+        }),
       clearAuth: (serverName) => ask((requestId) => mcpClearAuthRequest(requestId, serverName)),
     },
 

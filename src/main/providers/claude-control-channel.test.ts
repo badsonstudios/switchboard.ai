@@ -11,8 +11,13 @@
 // Everything else is the ordinary contract: one verdict per call, never a
 // rejection, never a leaked pending entry.
 import { describe, it, expect, vi } from 'vitest';
-import { ControlChannel, type ControlPort } from './claude-control-channel';
-import { listModelsRequest, setModelRequest } from './claude-protocol';
+import {
+  CONTROL_TIMEOUT_MS,
+  ControlChannel,
+  MCP_AUTHENTICATE_TIMEOUT_MS,
+  type ControlPort,
+} from './claude-control-channel';
+import { listModelsRequest, mcpAuthenticateRequest, setModelRequest } from './claude-protocol';
 
 /** A port that records what was written and lets a test answer by hand. */
 function harness(opts: { sendOk?: boolean } = {}) {
@@ -224,6 +229,74 @@ describe('the ways it gives up', () => {
       // The late answer must not throw, double-resolve, or resurrect an entry.
       expect(() => h.reply('S1', h.idOf(), { subtype: 'success', response: {} })).not.toThrow();
       expect(ch.inFlight).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // ── A per-request timeout (#1425) ──────────────────────────────────────────────────
+
+  it('keeps the global ten seconds, and gives mcp_authenticate thirty', () => {
+    // Pinned as numbers: the default is the measured "a session that stopped
+    // answering" bound, and the override is the one verb whose answer waits on
+    // somebody else's server.
+    expect(CONTROL_TIMEOUT_MS).toBe(10_000);
+    expect(MCP_AUTHENTICATE_TIMEOUT_MS).toBe(30_000);
+  });
+
+  it('keeps an answer that arrives after the default but inside the per-request timeout', async () => {
+    // THE RESCUE: a slow authorisation server answered at 15 s, and under the
+    // global ten seconds that answer was dropped and no browser ever opened.
+    vi.useFakeTimers();
+    try {
+      const h = harness();
+      const ch = new ControlChannel(h.port);
+      const p = ch.request('S1', (id) => mcpAuthenticateRequest(id, 'remote'), {
+        timeoutMs: MCP_AUTHENTICATE_TIMEOUT_MS,
+      });
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(ch.inFlight).toBe(1);
+      h.reply('S1', h.idOf(), { subtype: 'success', response: { authUrl: 'https://a.test/x' } });
+      await expect(p).resolves.toEqual({ ok: true, response: { authUrl: 'https://a.test/x' } });
+      expect(ch.inFlight).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still times out at the per-request bound, and still drops a reply after it', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness();
+      const ch = new ControlChannel(h.port);
+      const p = ch.request('S1', (id) => mcpAuthenticateRequest(id, 'remote'), {
+        timeoutMs: MCP_AUTHENTICATE_TIMEOUT_MS,
+      });
+      await vi.advanceTimersByTimeAsync(MCP_AUTHENTICATE_TIMEOUT_MS - 1);
+      expect(ch.inFlight).toBe(1);
+      await vi.advanceTimersByTimeAsync(2);
+      await expect(p).resolves.toMatchObject({ reason: 'timed-out' });
+      expect(() => h.reply('S1', h.idOf(), { subtype: 'success', response: {} })).not.toThrow();
+      expect(ch.inFlight).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('overrides only the request it was passed to: a neighbour keeps the channel default', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness();
+      const ch = new ControlChannel(h.port);
+      const slow = ch.request('S1', (id) => mcpAuthenticateRequest(id, 'remote'), {
+        timeoutMs: MCP_AUTHENTICATE_TIMEOUT_MS,
+      });
+      const plain = ch.request('S1', listModelsRequest);
+      await vi.advanceTimersByTimeAsync(CONTROL_TIMEOUT_MS + 1);
+      await expect(plain).resolves.toMatchObject({ reason: 'timed-out' });
+      expect(ch.inFlight).toBe(1);
+      h.reply('S1', h.idOf(0), { subtype: 'success', response: {} });
+      await expect(slow).resolves.toEqual({ ok: true, response: {} });
     } finally {
       vi.useRealTimers();
     }

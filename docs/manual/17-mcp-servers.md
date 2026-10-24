@@ -212,8 +212,10 @@ A few other answers are possible, and the panel says which one you got:
   where to sign in, so nothing opened. Try again in a moment.
 - **Your computer wouldn't open a browser.** Check that you have a default
   browser set, then try again.
-- **Claude Code hasn't answered yet.** It gets ten seconds to hand back the
-  sign-in page. If nothing opened, try again.
+- **Claude Code took too long to hand back a sign-in page.** It gets about 30
+  seconds, because the server it's signing you in to has to answer first. If
+  that runs out, no browser window was opened, so just try again. A server
+  that's having a slow moment usually answers the second time.
 
 **Sign out** does the opposite: it makes Claude Code forget your sign-in for
 that server. Use it if a sign-in got stuck halfway and you want to start again,

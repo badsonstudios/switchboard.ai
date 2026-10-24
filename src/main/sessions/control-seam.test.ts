@@ -17,16 +17,24 @@
 // …and it drives the FAKE PROVIDER's implementations of the verbs, so the fake
 // and the real reader are exercised against each other rather than each against
 // its own assumptions.
-import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SessionManager } from './session-manager';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions } from '../extensibility/contributions';
 import { claudeEvents } from '../providers/claude-events';
 import { claudeControls } from '../providers/claude-controls';
-import { ControlChannel } from '../providers/claude-control-channel';
+import {
+  CONTROL_TIMEOUT_MS,
+  ControlChannel,
+  MCP_AUTHENTICATE_TIMEOUT_MS,
+} from '../providers/claude-control-channel';
 import { SessionTransport } from '../transport/transport';
-import { FakeStreamProtocol, FAKE_MODELS } from '../providers/fake-stream-protocol';
+import {
+  FakeStreamProtocol,
+  FAKE_MODELS,
+  type FakeMcpScript,
+} from '../providers/fake-stream-protocol';
 import { readModels } from '../../shared/models';
 import { LogSink, createLogger } from '../log/logger';
 import type { TransportKind } from '../../shared/transport';
@@ -44,7 +52,11 @@ class DrivableTransport implements SessionTransport {
   private listeners = new Set<(m: Record<string, unknown>) => void>();
   private protocol: FakeStreamProtocol | null = null;
 
-  constructor(private readonly useProtocol = false) {}
+  constructor(
+    private readonly useProtocol = false,
+    /** the fake's scripted MCP answers (#1420), for the sign-in timeout (#1425) */
+    private readonly mcp?: FakeMcpScript
+  ) {}
 
   spawn() {
     if (this.useProtocol) {
@@ -55,6 +67,7 @@ class DrivableTransport implements SessionTransport {
           stderr: () => {},
           exit: () => {},
           resolve: (cwd: string, target: string) => `${cwd}/${target}`,
+          mcp: () => this.mcp,
         },
         (m) => this.deliver(m)
       );
@@ -408,5 +421,87 @@ describe('driven against the fake provider’s own implementation', () => {
 
     // …and the session still answers the next thing it is asked.
     await expect(m.listModels(rec.id)).resolves.toMatchObject({ ok: true });
+  });
+});
+
+describe('mcp_authenticate gets its own, longer timeout (#1425)', () => {
+  // THE LOST SIGN-IN: the host opens the browser FROM this verb's answer
+  // (#1420), and under the global ten seconds an answer from a slow
+  // authorisation server arrived after the channel had given up and was
+  // dropped — no browser, ever. Driven through the manager, the adapter's
+  // controls and the FAKE CLI answering late, so the claim is about the wiring
+  // and not just the channel's arithmetic.
+  const script = (delay: number): FakeMcpScript => ({
+    status: [{ name: 'remote', status: 'needs-auth', scope: 'local', config: { type: 'http' } }],
+    authenticate: { remote: { authUrl: 'https://auth.test/a', requiresUserAction: true } },
+    authenticateDelayMs: delay,
+  });
+
+  it('keeps an answer that arrives at 15 s — past the old ten', async () => {
+    vi.useFakeTimers();
+    try {
+      const m = managerOn('stream', new DrivableTransport(true, script(15_000)));
+      const rec = m.create(identity);
+      const v = m.mcpAuthenticate(rec.id, 'remote');
+      await vi.advanceTimersByTimeAsync(15_001);
+      await expect(v).resolves.toEqual({
+        ok: true,
+        response: { authUrl: 'https://auth.test/a', requiresUserAction: true },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still gives up at thirty seconds', async () => {
+    vi.useFakeTimers();
+    try {
+      const m = managerOn('stream', new DrivableTransport(true, script(31_000)));
+      const rec = m.create(identity);
+      const v = m.mcpAuthenticate(rec.id, 'remote');
+      let settled = false;
+      void v.then(() => {
+        settled = true;
+      });
+      // past the global ten seconds it is still waiting…
+      await vi.advanceTimersByTimeAsync(CONTROL_TIMEOUT_MS + 1);
+      expect(settled).toBe(false);
+      // …and it gives up at thirty
+      await vi.advanceTimersByTimeAsync(MCP_AUTHENTICATE_TIMEOUT_MS - CONTROL_TIMEOUT_MS);
+      await expect(v).resolves.toMatchObject({ ok: false, reason: 'timed-out' });
+      // and the late answer, when it does come, changes nothing: the verdict
+      // stands, and the session still answers the next thing it is asked
+      await vi.advanceTimersByTimeAsync(1_000);
+      await expect(v).resolves.toMatchObject({ ok: false, reason: 'timed-out' });
+      const status = m.mcpStatus(rec.id);
+      await vi.advanceTimersByTimeAsync(0);
+      await expect(status).resolves.toMatchObject({ ok: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('every other verb keeps the global ten seconds', async () => {
+    // Both real verbs on one session whose transport never answers on its own:
+    // `mcp_status` gives up at ten seconds while the sign-in, sent at the same
+    // moment, is still waiting — so the override is per verb, not per session.
+    vi.useFakeTimers();
+    try {
+      const t = new DrivableTransport(false);
+      const m = managerOn('stream', t);
+      const rec = m.create(identity);
+      const status = m.mcpStatus(rec.id);
+      const auth = m.mcpAuthenticate(rec.id, 'remote');
+      await vi.advanceTimersByTimeAsync(CONTROL_TIMEOUT_MS + 1);
+      await expect(status).resolves.toMatchObject({ ok: false, reason: 'timed-out' });
+      // the sign-in, asked at the same moment, is still waiting
+      t.deliver({
+        type: 'control_response',
+        response: { subtype: 'success', request_id: t.idOf(1), response: { authUrl: 'https://auth.test/b' } },
+      });
+      await expect(auth).resolves.toEqual({ ok: true, response: { authUrl: 'https://auth.test/b' } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
