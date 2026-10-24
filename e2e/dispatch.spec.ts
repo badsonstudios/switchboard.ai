@@ -457,7 +457,7 @@ test.describe('dispatching a Code Reviewer (#948, §5.15)', () => {
   // wrote into the SAVED LAYOUT survive the quit and carry no briefing, and the
   // relaunch starts nothing on the card's behalf — measured 2026-10-21, such a
   // card is pruned from the restored layout, not started plain.
-  test('a dispatched card with no record never starts plain after a relaunch; its saved facts carry no briefing (#1400)', async () => {
+  test('a dispatched card with no record never starts plain after a relaunch; its saved facts carry no briefing (#1400); the loss is announced, a plain dropped card is not (#1417)', async () => {
     test.setTimeout(240_000);
     const folder = tempGitProject();
     const first = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
@@ -501,6 +501,39 @@ test.describe('dispatching a Code Reviewer (#948, §5.15)', () => {
     const records = ws.sessions ?? [];
     expect(records.some((r) => r.id === cardId), 'the dispatched card had a record to remove').toBe(true);
     ws.sessions = records.filter((r) => r.id !== cardId);
+    // #1417's negative, in the SAME restore: a second dropped card that was NOT
+    // a dispatch — the dispatched panel's definition minus its dispatch params,
+    // under a card id with no record, shown in the same group. It is pruned by
+    // the same verdict in the same synchronous step as the dispatched one, so
+    // the moment the notice is up this card has already been judged.
+    const layout = persistedLayout(ws) as unknown as {
+      grid: { root: unknown };
+      panels: Record<string, { id: string; params?: Record<string, unknown> }>;
+    };
+    const dispatchedPanelId = `session-${cardId}`;
+    const ghostId = 'e2e-ghost-plain-card';
+    const plainParams: Record<string, unknown> = { ...params, cardId: ghostId };
+    delete plainParams.dispatchId;
+    delete plainParams.dispatchedAs;
+    layout.panels[`session-${ghostId}`] = {
+      ...layout.panels[dispatchedPanelId],
+      id: `session-${ghostId}`,
+      params: plainParams,
+    };
+    const holder = (function find(n: unknown): { views: string[] } | null {
+      const node = n as { type?: string; data?: unknown };
+      if (node?.type === 'leaf') {
+        const g = node.data as { views?: string[] };
+        return g?.views?.includes(dispatchedPanelId) ? (g as { views: string[] }) : null;
+      }
+      for (const c of Array.isArray(node?.data) ? node.data : []) {
+        const hit = find(c);
+        if (hit) return hit;
+      }
+      return null;
+    })(layout.grid.root);
+    expect(holder, 'the dispatched card sits in a grid group').not.toBeNull();
+    holder!.views.push(`session-${ghostId}`);
     writeWorkspaceFile(first.home, ws);
 
     a = await launchApp({ home: first.home, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
@@ -516,5 +549,26 @@ test.describe('dispatching a Code Reviewer (#948, §5.15)', () => {
     await expect(w2.locator('.dv-tab', { hasText: 'Code Reviewer' })).toHaveCount(0);
     const live = await liveSessions(w2);
     expect(live.filter((s) => s.title.includes('Code Reviewer'))).toHaveLength(0);
+
+    // #1417: ...BUT THE LOSS IS SAID. The Events drawer's notice slot names the
+    // AI and the sender, from the card's saved facts — one row, for the one
+    // dispatch (NOT for the plain card dropped beside it), and no briefing
+    // anywhere in it.
+    expect(typeof facts?.fromName, 'the saved facts name the sender').toBe('string');
+    await openEventsDrawer(w2);
+    const notice = w2.locator('[data-events-notice="lost-dispatch"]');
+    await expect(notice).toBeVisible({ timeout: 15_000 });
+    const rows = notice.locator('[data-lost-dispatch]');
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toHaveAttribute('data-lost-dispatch', cardId);
+    await expect(rows.first()).toContainText(
+      `A dispatch to ${String(facts?.aiName)} from “${String(facts?.fromName)}” was lost before it started.`
+    );
+    await expect(notice).not.toContainText(MARKER);
+    // ...and the plain card was dropped too, silently, with nothing started for it
+    expect(live.some((s) => s.id === ghostId)).toBe(false);
+    // dismiss-only: Got it takes the row, and the notice with it
+    await rows.first().getByRole('button').click();
+    await expect(notice).toHaveCount(0);
   });
 });

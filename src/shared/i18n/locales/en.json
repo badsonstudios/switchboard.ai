@@ -838,6 +838,13 @@
     "historyAdopted": "“{card}” had lost track of its conversation — it's been reconnected to the most recent one in its folder.",
     "historyCeded": "“{card}” and “{kept}” were both pointing at one conversation. “{kept}” kept it, and “{card}” starts a new one — nothing was deleted. The manual explains how to swap them back.",
     "historyDismiss": "Got it — hide the history notice for {card}",
+    "lostDispatch": {
+      "full": "A dispatch to {ai} from “{from}” was lost before it started.",
+      "toAi": "A dispatch to {ai} was lost before it started.",
+      "fromSender": "A dispatch from “{from}” was lost before it started.",
+      "bare": "A dispatch was lost before it started.",
+      "dismiss": "Got it — hide: {line}"
+    },
     "gotIt": "Got it",
     "dismiss": "Dismiss",
     "dismissHint": "Remove this event from the list (the session is untouched)",

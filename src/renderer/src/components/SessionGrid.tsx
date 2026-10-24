@@ -85,6 +85,8 @@ import {
   Box,
   boxOnAnyDisplay,
   isDerivedPanelId,
+  type LostDispatch,
+  lostDispatches,
   prunePopoutGroups,
   RescuedPopout,
   sanitizePopoutLayout,
@@ -7152,6 +7154,13 @@ export function SessionGrid(props: {
    * rename, open-changes, move and pin the lists of sessions are given.
    */
   sessionMenu?: Omit<SessionMenuActions, 'askName'>;
+  /**
+   * The dispatched cards this launch's restore dropped because they never
+   * started before the quit (#1417) — called once, after the restore, only
+   * when there is at least one. Read at that moment, like `seedPanels`, so the
+   * caller passes something stable (a state setter).
+   */
+  onDispatchesLost?: (lost: LostDispatch[]) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const apiRef = useRef<DockviewApi | null>(null);
@@ -8412,6 +8421,24 @@ export function SessionGrid(props: {
             // timer — removing a panel from a popout that has not finished
             // opening strands that window on screen, empty, for ever.
             for (const p of [...api.panels]) if (willBePruned(p.id)) api.removePanel(p);
+            // ...and say which of the dropped cards were DISPATCHES (#1417): one
+            // that never started before the quit has no record, so it went with
+            // the rest, and the session that sent it has no way to know. Read
+            // off the layout as it was SAVED (`saved`, not the pruned copy) by
+            // the same verdict — so a refused known-cards read, which prunes
+            // nothing, reports nothing either. Only the AI's and the sender's
+            // names leave here; the layout holds no briefing to leak.
+            // Its own try: a failure here is a missing notice, never a "restore
+            // failed" that forgets every slot and skips the focus below.
+            try {
+              const lost = lostDispatches(saved, willBePruned);
+              if (lost.length > 0) {
+                console.log(`[layout] ${lost.length} dispatched card(s) never started and were dropped`);
+                props.onDispatchesLost?.(lost);
+              }
+            } catch (err) {
+              console.warn(`[layout] lost-dispatch report failed: ${errorText(err)}`);
+            }
             // land the user exactly where they were (§5.25): refocus the saved
             // card — resume-on-focus then brings that session back first
             const focused = uiGet<string | null>('focusedCardId', null);
