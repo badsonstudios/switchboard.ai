@@ -44,16 +44,7 @@ test.describe('focus-state persistence (E12-08)', () => {
     ).toHaveAttribute('aria-selected', 'true', { timeout: 20_000 });
   });
 
-  test('titlebar autonomy choice survives a relaunch (ui blob, not localStorage)', async () => {
-    a = await launchApp(); // shared handle first (#16)
-    const first = a;
-    const w = first.window;
-    await expect(w.getByRole('button', { name: /ask/ })).toBeVisible();
-    await w.getByRole('button', { name: /ask/ }).click(); // -> plan
-    await expect(w.getByRole('button', { name: /plan/ })).toBeVisible();
-    await w.waitForTimeout(900);
-    await first.close();
-    a = await launchApp({ home: first.home });
-    await expect(a.window.getByRole('button', { name: /plan/ })).toBeVisible();
-  });
+  // (The title-bar autonomy relaunch test went with the chip, #1434. The
+  // per-session chip's relaunch is `feed.spec.ts`'s "composer autonomy chip
+  // cycles and survives a relaunch".)
 });

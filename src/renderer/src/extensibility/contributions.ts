@@ -27,7 +27,7 @@ import type { ThemeDefinition, ThemeId } from '../theme/theme';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
 import type { PlanLimitWindow } from '../../../shared/usage-report';
-import type { DecideHeld } from '../../../shared/ipc/permissions';
+import type { DecideHeld, StandingGrants } from '../../../shared/ipc/permissions';
 import type { TransportKind } from '../../../shared/transport';
 
 /**
@@ -237,6 +237,14 @@ export interface PanelContext {
   /** §5.16's middle rung (#974) — grant one file, and answer this call */
   onAllowFile?: (filePath: string) => void;
   onCycleAutonomy?: () => void;
+  /**
+   * What this live session has been told it may do without asking (#974), for
+   * the mode chip (#1434): while `allowAll` is on it reads "ask · allow all"
+   * and offers the way out. Optional — absent reads as no grant.
+   */
+  standingGrants?: StandingGrants;
+  /** take back "Allow all (this session)"; absent when no session is live */
+  onStopAllowAll?: () => void;
   /** the provider this card is on (#1294) */
   providerId?: string;
   /**

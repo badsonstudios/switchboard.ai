@@ -15,9 +15,6 @@ import type { LayoutPreset } from '../lib/layout-presets';
 import { LayoutPresets } from './LayoutPresets';
 import type { SessionsPlacement } from '../lib/sessions-placement';
 import { SessionsPlacementSwitch } from './SessionsPlacementSwitch';
-import { autonomyTooltip } from '../lib/autonomy';
-import { getAisState, subscribeAis } from '../lib/ais-store';
-import { isClaudeAi } from '../lib/session-ai';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
 import type { PlanLimitWindow } from '../../../shared/usage-report';
@@ -71,8 +68,6 @@ export function TitleBar(props: {
   onOpenAbout: () => void;
   notifEnabled: boolean;
   onToggleNotif: () => void;
-  autonomy: string;
-  onCycleAutonomy: () => void;
   /** §5.8's presentation policy — what a submit does to the card (E9-06) */
   presentationPolicy: PresentationPolicy;
   onCyclePresentationPolicy: () => void;
@@ -137,8 +132,6 @@ export function TitleBar(props: {
   paletteBinding: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const ais = React.useSyncExternalStore(subscribeAis, getAisState);
-  const newSessionsOnClaude = isClaudeAi(ais.defaultId);
   return (
     <header style={barStyle}>
       <strong style={{ fontWeight: 600 }}>{t('app.title')}</strong>
@@ -230,21 +223,11 @@ export function TitleBar(props: {
       >
         {props.speakOn ? t('titlebar.speakOn') : t('titlebar.speakOff')}
       </Chip>
-      {/* The autonomy chip (E6-01). Its TOOLTIP carries what the mode actually
-          does (#534) — the names alone never told anyone that full-auto is the
-          CLI's bypassPermissions and not a gentler cousin of it, and the copy
-          is shared with the composer's shield button and the card badge so
-          three controls cannot give three answers. */}
-      <Chip
-        selected={false}
-        onClick={props.onCycleAutonomy}
-        // the mode NEW sessions start at, so the Claude Code half applies when
-        // they start on Claude (#1316)
-        title={autonomyTooltip(t, props.autonomy, 'workspace', newSessionsOnClaude)}
-        testId="titlebar-autonomy"
-      >
-        {t(`autonomy.${props.autonomy}`)}
-      </Chip>
+      {/* NO AUTONOMY CHIP SINCE #1434. It set the mode NEW sessions started
+          at, beside each session's own shield button under the prompt box, and
+          two controls for one idea confused the owner — his call was to keep
+          only the per-session one. New sessions start at ask; a dispatch role
+          template brings its own. */}
       {/* The GLOBAL presentation policy (E9-06, §5.8). A chip and not a buried
           setting because it changes what the workspace does on every prompt —
           "where did my card go?" has to be answerable by looking, and this is

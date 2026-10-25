@@ -76,6 +76,12 @@ in one — stays put at the top while the rest of the list scrolls underneath it
 and is skipped by everything that acts on sessions in bulk. See
 [Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
 
+A small **✓✓** next to a session's name, in this list, on its pill on the
+strip and on its tab, means **Allow all (this session)** is on: that session
+runs everything without asking you until it restarts. The session's mode chip
+says the same thing in words, and clicking the chip turns it off. See
+[Taking a standing approval back](04-approvals-and-autonomy.md#taking-a-standing-approval-back).
+
 Sessions that are suspended or not currently on screen still appear here — the
 list is the complete inventory. That includes a card whose session
 [didn't start](11-troubleshooting.md#sessions): it shows as *not started*, and
@@ -1080,6 +1086,10 @@ same reason as above.
 - The only thing that moves in the sessions list is the working ring. Nothing
   blinks or pulses — if something has caught your eye there, it's because a
   session genuinely changed state.
+- **The title bar has no mode (🛡) chip any more.** It used to set the mode new
+  sessions start at. Now every new session starts at **ask**, and you change a
+  session's mode with the shield chip under its prompt box. See
+  [Autonomy modes](04-approvals-and-autonomy.md#autonomy-modes).
 
 ---
 

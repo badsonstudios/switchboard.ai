@@ -102,7 +102,12 @@ export function useStandingGrants(liveId: string | null): StandingGrants {
     const off = api.onStandingGrants((g) => {
       if (!mounted || g.sessionId !== liveId) return;
       pushed = true;
-      setGrants({ allowAll: g.allowAll, files: g.files });
+      setGrants({
+        allowAll: g.allowAll,
+        // #1434: the mode chip's "since when" — carried only while it is on
+        ...(g.allowAll && g.allowAllSince !== undefined ? { allowAllSince: g.allowAllSince } : {}),
+        files: g.files,
+      });
     });
     return () => {
       mounted = false;

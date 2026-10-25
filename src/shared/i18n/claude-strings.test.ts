@@ -39,6 +39,7 @@ const ALLOWED: Readonly<Record<string, string>> = {
   'titlebar.forkHint': 'says forking relies on undocumented Claude Code behaviour, which is true for any reader',
   // The autonomy tooltip's Claude half: added only when the AI is Claude
   // (`autonomyTooltip`'s `claude` argument).
+  'autonomy.claude.ask': 'shown only when the AI is Claude',
   'autonomy.claude.plan': 'shown only when the AI is Claude',
   'autonomy.claude.auto-edit': 'shown only when the AI is Claude',
   'autonomy.claude.full-auto': 'shown only when the AI is Claude',

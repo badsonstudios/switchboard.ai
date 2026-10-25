@@ -508,25 +508,41 @@
     "auto-edit": "🛡 auto-edit",
     "full-auto": "🛡 full-auto",
     "desc": {
-      "ask": "ask — every tool call comes to you first: file changes, shell commands, web fetches. Full gatekeeping, and the safe default.",
+      "ask": "ask — everything your AI's own settings don't already allow comes to you first: file changes, shell commands, web fetches. The safe default.",
       "plan": "plan — the AI reads and explores, but changes nothing until you approve.",
       "auto-edit": "auto-edit — the AI edits files inside the session's folder without asking you. Anything heavier still comes to you.",
       "full-auto": "full-auto — nothing comes to you. Every tool call runs the moment the AI asks for it, including writes outside the session's folder. It is not a sandbox."
     },
     "claude": {
+      "ask": "With Claude Code: that means everything your Claude Code settings don't already allow. The allow rules in your own settings file and in this folder's .claude/settings.json and settings.local.json are honoured in this mode, so whatever they allow runs without asking. Switchboard never changes those files.",
       "plan": "With Claude Code: it writes you a plan, and the block is Claude Code's own. What you will be asked is whether to go ahead with the plan — and Allow on that is what ends it: the session leaves plan mode and starts the work, asking about each change.",
       "auto-edit": "With Claude Code: this is its acceptEdits, exactly as it behaves on its own, so the housekeeping commands that go with editing — mkdir, touch, mv, cp, rm, sed — run without asking too. If you want every command to stop for you, use ask.",
       "full-auto": "With Claude Code: this is its bypassPermissions, the mode --dangerously-skip-permissions turns on: deny rules in your settings still block, a few things always need a person (a question for you, rm on a critical path), and nothing else stops anything.",
       "session": "Claude Code cannot switch mode mid-flight, so for this session that is the next start."
     },
     "scope": {
-      "workspace": "Click to cycle. This sets the mode NEW sessions start at — each session keeps its own from then on.",
       "session": "Click to cycle. If this session's AI can switch mode mid-flight it switches straight away; if not, the change applies the next time this session starts or resumes.",
       "badge": "The mode this session is running at. Change it with the shield button under the prompt box.",
       "moved": "This session is in {now} right now. {ai} changed it itself — approving a plan takes a session out of plan mode. The mode below is the one it goes back to.",
       "movedUnnamed": "This session is in {now} right now. Its AI changed it itself — approving a plan takes a session out of plan mode. The mode below is the one it goes back to."
     },
-    "nowThenNext": "{now} now · {next} at next start"
+    "nowThenNext": "{now} now · {next} at next start",
+    "allowAll": {
+      "label": "{mode} · allow all",
+      "since": "Allowing all since {time}: this session runs every tool call without asking you. Questions it asks you still come through.",
+      "sinceUnknown": "Allowing all: this session runs every tool call without asking you. Questions it asks you still come through.",
+      "howSession": "It lasts until the session restarts. Click to stop allowing all.",
+      "howBadge": "It lasts until the session restarts. To stop it, click the shield button under the prompt box.",
+      "files": "{count, plural, one {# file is also always allowed.} other {# files are also always allowed.}}",
+      "menuLabel": "Allow all is on for this session",
+      "stop": "Stop allowing all",
+      "stopHint": "Go back to asking. Files you chose to always allow stay allowed.",
+      "changeMode": "Change mode (next: {next})",
+      "mark": "✓✓",
+      "markHint": "Allowing all: this session runs every tool call without asking you, until it restarts.",
+      "spoken": "{name}, allowing all without asking",
+      "spokenSuffix": ", allowing all without asking"
+    }
   },
   "workspace": {
     "readOnlyTitle": "Nothing in this workspace will be saved.",

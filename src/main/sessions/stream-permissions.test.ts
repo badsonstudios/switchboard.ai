@@ -2232,6 +2232,22 @@ describe('revoking a standing grant (P2-E22-03, #974)', () => {
     expect(requests).toEqual([]); // the file grant survived
   });
 
+  // #1434: the mode chip says "allowing all since …", so main has to know when
+  it('reports WHEN allow-all was granted, keeps the first time, and drops it on revoke', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_000);
+      perms.setAllowAll('s1');
+      vi.setSystemTime(5_000);
+      perms.setAllowAll('s1'); // a second grant is not a new start
+      expect(perms.standingGrants('s1')).toEqual({ allowAll: true, allowAllSince: 1_000, files: [] });
+      perms.revokeAllowAll('s1');
+      expect(perms.standingGrants('s1')).toEqual({ allowAll: false, files: [] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('revoking something that was never granted answers false rather than throwing', () => {
     expect(perms.revokeAllowAll('s1')).toBe(false);
     expect(perms.revokeFile('s1', ABS)).toBe(false);

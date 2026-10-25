@@ -74,6 +74,12 @@ export type DecideHeld = (
 export interface StandingGrants {
   /** "Always allow for this session" — the wider rung */
   allowAll: boolean;
+  /**
+   * When `allowAll` was granted, epoch ms (#1434) — for the mode chip's
+   * "allowing all since …". Present only while `allowAll` is true; optional
+   * because the empty set (and a preload older than this field) has none.
+   */
+  allowAllSince?: number;
   /** resolved, host-folded absolute paths, sorted */
   files: string[];
 }

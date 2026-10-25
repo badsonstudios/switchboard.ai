@@ -2072,3 +2072,58 @@ describe('hasHeldQuestion (#1351)', () => {
     expect(store.hasHeldQuestion('c1')).toBe(false);
   });
 });
+
+// #1434: the tab, the rail row and the strip pill mark an allow-all session,
+// so the store has to answer per CARD and tell its readers when that moves.
+describe('allow-all per card, for the quiet marks (#1434)', () => {
+  let store: SessionStore;
+  beforeEach(() => {
+    store = new SessionStore();
+  });
+
+  it("answers per card, from main's pushed truth, and notifies each change", () => {
+    const heard = vi.fn();
+    store.subscribe(heard);
+    store.mapLiveToCard('live-1', 'card-A');
+    expect(store.isCardAllowAll('card-A')).toBe(false);
+
+    heard.mockClear();
+    store.setAllowAllFromMain('live-1', true);
+    expect(store.isCardAllowAll('card-A')).toBe(true);
+    expect(store.isCardAllowAll('card-B')).toBe(false);
+    expect(heard).toHaveBeenCalled();
+
+    // the click's local copy is a no-op when it is already on, and says nothing
+    heard.mockClear();
+    store.setAllowAll('live-1');
+    expect(heard).not.toHaveBeenCalled();
+
+    // a revoke anywhere arrives as main's push, and clears the mark
+    store.setAllowAllFromMain('live-1', false);
+    expect(store.isCardAllowAll('card-A')).toBe(false);
+    expect(heard).toHaveBeenCalled();
+  });
+
+  it('the local click notifies too, so the mark is there in the same tick', () => {
+    const heard = vi.fn();
+    store.mapLiveToCard('live-1', 'card-A');
+    store.subscribe(heard);
+    store.setAllowAll('live-1');
+    expect(store.isCardAllowAll('card-A')).toBe(true);
+    expect(heard).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes with the session: a retired live id takes the mark with it', () => {
+    store.mapLiveToCard('live-1', 'card-A');
+    store.setAllowAll('live-1');
+    const heard = vi.fn();
+    store.subscribe(heard);
+    store.forgetCardLiveIds('card-A');
+    expect(store.isCardAllowAll('card-A')).toBe(false);
+    expect(heard).toHaveBeenCalled();
+  });
+
+  it('answers false for no card at all', () => {
+    expect(store.isCardAllowAll(undefined)).toBe(false);
+  });
+});

@@ -6,9 +6,12 @@ import {
   AUTONOMIES,
   Autonomy,
   DEFAULT_AUTONOMY,
+  allowAllTooltip,
+  autonomyLabel,
   autonomyTooltip,
   isAutonomy,
   nextAutonomy,
+  PARAGRAPH,
 } from './autonomy';
 
 describe('the autonomy cycle', () => {
@@ -50,22 +53,23 @@ describe('the hover copy', () => {
       expect(desc(m), `autonomy.desc.${m}`).toBeTruthy();
       expect(desc(m).length).toBeGreaterThan(40);
     }
-    for (const s of ['workspace', 'session', 'badge'] as const) {
+    for (const s of ['session', 'badge'] as const) {
       expect(en.autonomy.scope[s], `autonomy.scope.${s}`).toBeTruthy();
     }
+    // the title-bar chip's line went with the chip (#1434)
+    expect('workspace' in en.autonomy.scope).toBe(false);
   });
 
   it('is the SAME description on every surface — one source of truth (#534)', () => {
     const t = i18next.t.bind(i18next);
     for (const m of AUTONOMIES) {
-      const tips = (['workspace', 'session', 'badge'] as const).map((s) => autonomyTooltip(t, m, s));
+      const tips = (['session', 'badge'] as const).map((s) => autonomyTooltip(t, m, s));
       for (const tip of tips) expect(tip).toContain(desc(m));
       // ...and each surface still says what IT does with the mode
-      expect(tips[0]).toContain(en.autonomy.scope.workspace);
-      expect(tips[1]).toContain(en.autonomy.scope.session);
-      expect(tips[2]).toContain(en.autonomy.scope.badge);
-      // three distinct tooltips, not one repeated
-      expect(new Set(tips).size).toBe(3);
+      expect(tips[0]).toContain(en.autonomy.scope.session);
+      expect(tips[1]).toContain(en.autonomy.scope.badge);
+      // two distinct tooltips, not one repeated
+      expect(new Set(tips).size).toBe(2);
     }
   });
 
@@ -77,7 +81,7 @@ describe('the hover copy', () => {
 
   it('separates the two halves with a blank line, which a native title honours', () => {
     const t = i18next.t.bind(i18next);
-    expect(autonomyTooltip(t, 'ask', 'workspace').split('\n\n')).toHaveLength(2);
+    expect(autonomyTooltip(t, 'ask', 'badge').split(PARAGRAPH)).toHaveLength(2);
   });
 
   /**
@@ -146,13 +150,25 @@ describe('the hover copy', () => {
   /**
    * `ask` lost a clause in the same change, for the same reason: it promised
    * that reading anything OUTSIDE the session's folder came to you, which was
-   * `READ_GATED_AUTONOMIES` and is gone. What it must still say is the thing
-   * that is true and is why anyone picks it — every tool call stops.
+   * `READ_GATED_AUTONOMIES` and is gone.
+   *
+   * ⚠️ AND "EVERY TOOL CALL STOPS" WAS ITSELF FALSE, which this test used to
+   * pin (#1434). Ask is the CLI's `default` permission mode, and that honours the allow rules in the user's Claude Code
+   * settings before Switchboard is consulted — on Dan's machine Read, Write
+   * and Edit were pre-allowed in switchboard.ai's own project settings, so ask
+   * never asked about a file change there. That is correct CLI behaviour and
+   * stays (host-don't-reimplement); the copy is what changed.
    */
   it('tells the truth about ask', () => {
     const d = desc('ask');
-    expect(d).toMatch(/every tool call/i);
+    expect(d).not.toMatch(/every tool call comes to you/i);
+    expect(d).toContain("settings don't already allow");
     expect(d).not.toMatch(/outside the session's folder/);
+    // on Claude it names the settings files, and promises not to touch them
+    const c = claudeTip('ask');
+    expect(c).toContain("everything your Claude Code settings don't already allow");
+    expect(c).toContain('.claude/settings.json');
+    expect(c).toContain('never changes those files');
   });
 });
 
@@ -164,7 +180,7 @@ describe('the Claude Code half is said only to Claude (#1316)', () => {
   it('another AI hears the AI-neutral sentence, with no Claude in it', () => {
     const t = i18next.t.bind(i18next);
     for (const m of AUTONOMIES) {
-      for (const s of ['workspace', 'session', 'badge'] as const) {
+      for (const s of ['session', 'badge'] as const) {
         expect(autonomyTooltip(t, m, s)).not.toMatch(/claude|anthropic/i);
         expect(autonomyTooltip(t, m, s, false)).not.toMatch(/claude|anthropic/i);
       }
@@ -173,19 +189,50 @@ describe('the Claude Code half is said only to Claude (#1316)', () => {
 
   it('Claude hears the same sentence, then what Claude Code does with it', () => {
     const t = i18next.t.bind(i18next);
-    for (const m of ['plan', 'auto-edit', 'full-auto'] as const) {
+    // every mode since #1434 — ask's Claude half is that the allow rules apply
+    for (const m of AUTONOMIES) {
       const tip = autonomyTooltip(t, m, 'badge', true);
       expect(tip).toContain(en.autonomy.desc[m]);
       expect(tip).toContain(en.autonomy.claude[m]);
     }
-    // ask has nothing Claude-specific to add
-    expect(autonomyTooltip(t, 'ask', 'badge', true)).toBe(autonomyTooltip(t, 'ask', 'badge'));
   });
 
   it("only the session chip says Claude cannot switch mid-flight — it is about that chip's click", () => {
     const t = i18next.t.bind(i18next);
     expect(autonomyTooltip(t, 'ask', 'session', true)).toContain(en.autonomy.claude.session);
-    expect(autonomyTooltip(t, 'ask', 'workspace', true)).not.toContain(en.autonomy.claude.session);
     expect(autonomyTooltip(t, 'ask', 'badge', true)).not.toContain(en.autonomy.claude.session);
+  });
+});
+
+describe('allow-all, said on the label (#1434)', () => {
+  beforeAll(async () => {
+    await initI18nForTests();
+  });
+
+  it('a session that will auto-allow everything never reads plain ask', () => {
+    const t = i18next.t.bind(i18next);
+    expect(autonomyLabel(t, 'ask', false)).toBe(en.autonomy.ask);
+    expect(autonomyLabel(t, 'ask', true)).toBe('🛡 ask · allow all');
+    expect(autonomyLabel(t, 'plan', true)).toBe('🛡 plan · allow all');
+    // full-auto asks nothing anyway; "full-auto · allow all" would be noise
+    expect(autonomyLabel(t, 'full-auto', true)).toBe(en.autonomy['full-auto']);
+    // an unknown stored value is the default, allow-all or not
+    expect(autonomyLabel(t, 'yolo', true)).toBe('🛡 ask · allow all');
+  });
+
+  it('the tooltip says since when, that it lasts until restart, and counts the files', () => {
+    const t = i18next.t.bind(i18next);
+    const at = Date.UTC(2026, 9, 23, 14, 2);
+    const tip = allowAllTooltip(t, { allowAllSince: at, files: ['a'] }, 'session');
+    expect(tip).toContain(new Date(at).toLocaleTimeString(i18next.language, { timeStyle: 'short' }));
+    expect(tip).toContain('until the session restarts');
+    expect(tip).toContain(en.autonomy.allowAll.howSession);
+    expect(tip).toContain('1 file is also always allowed');
+    // no files: no count at all, not "0 files"
+    expect(allowAllTooltip(t, { allowAllSince: at, files: [] }, 'session')).not.toMatch(/files? (is|are) also/);
+    // the badge points at the chip instead of offering a click it does not have
+    expect(allowAllTooltip(t, { files: [] }, 'badge')).toContain(en.autonomy.allowAll.howBadge);
+    // no time known: says so without inventing one
+    expect(allowAllTooltip(t, { files: [] }, 'badge')).toContain(en.autonomy.allowAll.sinceUnknown);
   });
 });

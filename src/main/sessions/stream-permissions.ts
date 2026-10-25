@@ -35,7 +35,7 @@
 import { errorText } from '../../shared/error-text';
 import { randomBytes } from 'crypto';
 import path from 'path';
-import { MAX_DENIAL_REASON_CHARS, type PermissionRequest } from '../../shared/ipc/permissions';
+import { MAX_DENIAL_REASON_CHARS, type PermissionRequest, type StandingGrants } from '../../shared/ipc/permissions';
 import { targetPath } from '../../shared/tool-paths';
 import { HOST_STYLE } from '../fs/read-scope';
 import { Logger } from '../log/logger';
@@ -339,8 +339,14 @@ export class StreamPermissions {
    * Keyed by LIVE id so a respawn asks again — `HookListener`'s semantics, and
    * the renderer's (`sessionStore.allowAllByLive`). Cleared in `forgetSession`,
    * which is where a live id stops existing.
+   *
+   * A MAP to the moment it was granted (epoch ms), not a set (#1434): the
+   * session's mode chip says "allowing all since 14:02", because a grant
+   * nobody can see was the defect, and "since when" is how a user tells a
+   * deliberate one from a mis-click an hour ago. A repeat grant keeps the
+   * first time.
    */
-  private readonly allowAllSessions = new Set<string>();
+  private readonly allowAllSessions = new Map<string, number>();
   /**
    * Per-file standing grants, the ladder's MIDDLE rung (#974, §5.16).
    *
@@ -1516,7 +1522,7 @@ export class StreamPermissions {
    * lived only in the renderer. `sessions:allowAllSession` now tells both.
    */
   setAllowAll(sessionId: string): void {
-    this.allowAllSessions.add(sessionId);
+    if (!this.allowAllSessions.has(sessionId)) this.allowAllSessions.set(sessionId, Date.now());
     this.log.info('allow-all enabled for stream session', { sessionId });
   }
 
@@ -1609,9 +1615,12 @@ export class StreamPermissions {
    * original would be showing something other than the grant in force, and the
    * revoke that followed would be a second guess at the same normalisation.
    */
-  standingGrants(sessionId: string): { allowAll: boolean; files: string[] } {
+  standingGrants(sessionId: string): StandingGrants {
+    const since = this.allowAllSessions.get(sessionId);
     return {
-      allowAll: this.allowAllSessions.has(sessionId),
+      allowAll: since !== undefined,
+      // only when on — an absent field is "no grant", never a stale time
+      ...(since !== undefined ? { allowAllSince: since } : {}),
       files: [...(this.filesAllowed.get(sessionId) ?? [])].sort(),
     };
   }

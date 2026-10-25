@@ -100,7 +100,15 @@ import {
   placeAt,
 } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
-import { autonomyTooltip, DEFAULT_AUTONOMY, isAutonomy, nextAutonomy } from '../lib/autonomy';
+import {
+  allowAllTooltip,
+  autonomyLabel,
+  autonomyTooltip,
+  DEFAULT_AUTONOMY,
+  isAutonomy,
+  nextAutonomy,
+  PARAGRAPH,
+} from '../lib/autonomy';
 import { isClaudeAi } from '../lib/session-ai';
 import { submitTarget } from '../lib/presentation-policy';
 import { SubmitNotice, SubmitPolicyNotice, submitNoticeMuted } from './SubmitPolicyNotice';
@@ -138,6 +146,7 @@ import { tabStripAction } from '../lib/tabstrip-keys';
 import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
 import { AiBadge } from './AiBadge';
+import { AllowAllMark } from './AllowAllMark';
 import { CONTEXT_DND_TYPE } from '../../../shared/context-drop';
 import {
   closeHandoffPicker,
@@ -1065,6 +1074,8 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
           ) : undefined
         }
       />
+      {/* #1434: a session on "Allow all" says so on its tab, quietly */}
+      {cardId && <AllowAllMark cardId={cardId} announce />}
       {tabWord && tabWord.state === 'waiting' && cardId ? (
         // WAITING IS A BUTTON (#1413): a click dismisses it, here and on every
         // other surface, and the click still selects the tab (nothing here
@@ -1600,6 +1611,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // you have opened something. Cheap — one IPC read per live id, then pushes.
   const standingGrants = useStandingGrants(live?.id ?? null);
   const standingCount = grantCount(standingGrants);
+  // "Allow all (this session)" is in force (#1434): the mode chip and the
+  // header badge say so, and the chip offers the way back out
+  const allowAllOn = standingGrants.allowAll;
+  const stopAllowAll = React.useCallback((): void => {
+    if (!live) return;
+    // main's push is the only writer of the new state (StandingGrants.tsx's
+    // `revoke` makes the same argument), so nothing is cleared locally here
+    void window.switchboard.sessions.revokeStandingGrant(live.id, 'all').catch(() => false);
+  }, [live]);
   const [confirmClear, setConfirmClear] = React.useState(false);
   // WHERE THE "⋯" MENU GOES (#695): see `placeMenuAtBox`. A layout effect,
   // because the place is a fact about laid-out boxes and correcting it after
@@ -1833,10 +1853,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   React.useEffect(() => {
     if (!visible || live || ended || suspended || spawning.current || !cardId || !folder) return;
     spawning.current = true;
-    // titlebar autonomy chip applies to NEW cards; main keeps a card's own
-    // autonomy across resumes
-    const stored = uiGet<string>('autonomy', DEFAULT_AUTONOMY);
-    const autonomy = isAutonomy(stored) ? stored : DEFAULT_AUTONOMY;
+    // A NEW card starts at ask (#1434). Main keeps a card's own autonomy across
+    // resumes and a dispatched session's template autonomy (`prior ?? template
+    // ?? this`), so this is only ever the brand-new card's answer. It used to be
+    // the title-bar chip's stored choice; that chip is gone, and the `autonomy`
+    // key it wrote to the ui blob is deliberately not read.
+    const autonomy = DEFAULT_AUTONOMY;
     // A start that did not happen, from either of the two ways to learn that
     // (#347). `sessions:create` used to REJECT for everything — bad input, a
     // folder that is gone, a spawn that failed — and this effect's `.catch` was
@@ -2726,6 +2748,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     onDecide: decide,
     onAllowFile: approveFile,
     onCycleAutonomy: cycleCardAutonomy,
+    standingGrants,
+    onStopAllowAll: live ? stopAllowAll : undefined,
     providerId: live?.providerId ?? cardProvider,
     onSwitchAi: cardId ? switchAiHere : undefined,
     setView,
@@ -2941,16 +2965,28 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               </span>
             )}
             <span style={{ flex: 1, minInlineSize: 8 }} />
-            {shownMode && shownMode !== 'ask' && (
+            {/* #1434: shown at ask too while allow-all is on: a session that
+                will never ask must not read as a calm ask session anywhere */}
+            {shownMode && (shownMode !== 'ask' || allowAllOn) && (
               <span
                 data-testid="card-mode-badge"
-                title={autonomyTooltip(t, shownMode, 'badge', isClaudeAi(headerProvider))}
+                data-allow-all={allowAllOn ? 'true' : undefined}
+                title={
+                  allowAllOn
+                    ? [
+                        allowAllTooltip(t, standingGrants, 'badge'),
+                        autonomyTooltip(t, shownMode, 'badge', isClaudeAi(headerProvider)),
+                      ].join(PARAGRAPH)
+                    : autonomyTooltip(t, shownMode, 'badge', isClaudeAi(headerProvider))
+                }
                 style={{
                   fontSize: 9.5,
                   fontFamily: 'var(--font-mono)',
                   // -ink, not the raw hue: this is 9.5px TEXT on --panel2, where
                   // the hue measures 3.1:1 on daylight (#221)
-                  color: shownMode === 'full-auto' ? 'var(--status-crashed-ink)' : 'var(--muted)',
+                  // allow-all wears full-auto's warning ink (#1434): both ask nothing
+                  color:
+                    shownMode === 'full-auto' || allowAllOn ? 'var(--status-crashed-ink)' : 'var(--muted)',
                   // its own field (#905): neither ink is AA on the identity wash
                   background: 'var(--panel2)',
                   border: '1px solid var(--border)',
@@ -2959,7 +2995,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   paddingBlock: 1,
                 }}
               >
-                {t(`autonomy.${shownMode}`)}
+                {autonomyLabel(t, shownMode, allowAllOn)}
               </span>
             )}
             <StatusPill
