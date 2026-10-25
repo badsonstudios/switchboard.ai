@@ -9,6 +9,7 @@ import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import {
   closeSettings,
+  disableTransitions,
   hookPoster,
   launchApp,
   LaunchedApp,
@@ -147,14 +148,29 @@ test.describe('how a working session looks (#718)', () => {
     // (highlighted as FINISHED: its own count since #1219, lit the same way)
     await expect(row(w, title)).toHaveAttribute('data-finished', 'true', { timeout: 15_000 });
 
+    // END STATES ONLY (issue 1416). The row eases its fill, and while an ease
+    // is running Chromium reports the colour in another form: one failure read
+    // `oklab(0.694 -0.143 0.093 / 0.1)` for glow and
+    // `color(srgb 0.247 0.725 0.314 / 0.1)` for marquee. That is one colour
+    // written two ways, and `toEqual` compares strings. Transitions off means
+    // each read is the settled value, and the poll waits out a late repaint
+    // after Settings closes. The compare is still the WHOLE paint against the
+    // first look's, so a look that really repaints a row that needs you never
+    // settles to it and fails.
+    await disableTransitions(w);
     let first: Awaited<ReturnType<typeof paint>> | null = null;
     for (const look of LOOKS) {
       await choose(w, look);
-      const now = await paint(w, title);
+      // still the row this test is about: finished, waiting for you to look
+      await expect(row(w, title), look).toHaveAttribute('data-finished', 'true');
+      if (first) {
+        const want = first;
+        await expect.poll(() => paint(w, title), { message: look }).toEqual(want);
+      } else {
+        first = await paint(w, title);
+      }
       // no working layer on it, whatever the look
-      expect(now.afterContent, look).toBe('none');
-      if (first) expect(now, look).toEqual(first);
-      first = now;
+      expect((await paint(w, title)).afterContent, look).toBe('none');
     }
   });
 

@@ -1156,11 +1156,44 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
         // that means "done with this home" — the same moment the old `rmSync`
         // fired. Deleted with retries and requeued if Windows still holds it,
         // which the old one did neither of (#213).
+        keepAppLogIfFailed(home);
         registerTempDir(home);
         await sweepTempDirs();
       }
     },
   };
+}
+
+/**
+ * A failed test keeps its app's own log (`switchboard.log`) in its
+ * test-results folder, next to the trace. `cleanup()` is about to delete the
+ * home it lives in.
+ *
+ * Why (issue 1437): twice a seeded session's row never appeared, for 25 s,
+ * while the tests on either side came up in 2 s. Once was in a full run and
+ * once in a repro under load in another spec. The page showed nothing and the
+ * trace has no main-process side, so there was nothing left to say why. The
+ * renderer's console is forwarded into this log (#165), so the next time it
+ * happens, whatever main or the grid said is kept.
+ *
+ * Fail-open, like the rest of teardown: outside a test, on a pass, or with no
+ * log to copy, it does nothing and never throws. Not covered: a `serial` group
+ * that shares one app and calls `cleanup()` from `afterAll`. There
+ * `test.info()` is the hook's own, which reads as passed.
+ */
+function keepAppLogIfFailed(home: string): void {
+  try {
+    const info = test.info();
+    if (info.status === info.expectedStatus) return;
+    const log = findFile(home, 'switchboard.log');
+    if (!log) return;
+    const dest = info.outputPath('switchboard.log');
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(log, dest);
+    info.attachments.push({ name: 'switchboard.log', path: dest, contentType: 'text/plain' });
+  } catch {
+    /* best-effort: a missing log never fails a teardown */
+  }
 }
 
 /**
@@ -1616,6 +1649,31 @@ export async function setTheme(window: Page, name: string): Promise<void> {
   const dialog = await openSettingsTab(window, 'appearance');
   await dialog.getByRole('button', { name, exact: true }).click();
   await closeSettings(window);
+}
+
+/**
+ * Turn CSS transitions off in this window, so `getComputedStyle` reads the
+ * colour a change is heading to and not a frame on the way there.
+ *
+ * Use it before a spec compares computed paint. Several surfaces ease their
+ * fill (`.rail-row` has `transition: background 0.11s`, chips ease colour and
+ * border), so a single read can land mid-fade. On a loaded machine that
+ * happens often enough to fail runs: issue 1444 read a row's fill at alpha
+ * 0.00002 to 0.09 on its way to transparent. And while an ease is running,
+ * even its END colour comes back in another form (`oklab(...)` rather than the
+ * settled `color(srgb ...)`), so a string compare of two identical colours
+ * fails. That was issue 1416. Transitions are animation, not state, so turning
+ * them off changes no end value. `theme.spec.ts` inlines this same style tag
+ * for its colour sweeps, for the same reason.
+ *
+ * It does NOT wait for state to arrive. A spec still has to poll for a change
+ * that comes over IPC or through a React render. This only removes the eased
+ * frames in between.
+ */
+export async function disableTransitions(window: Page): Promise<void> {
+  await window.addStyleTag({
+    content: '*, *::before, *::after { transition: none !important; }',
+  });
 }
 
 /**
