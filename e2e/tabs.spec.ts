@@ -93,9 +93,9 @@ test.describe('tab strip (#84)', () => {
     // #1293 REPLACED THE DOT (design record E40 §1, the owner's call: "The
     // AI's icon replaces the status dot on the tab; a ring around it carries
     // the status"). So the seven-colours half of this no longer has a dot to
-    // read: the accent now reaches a tab through its lang badge's field and
-    // the open tab's wash, and these temp folders have no lang badge. What is
-    // left to assert here is that every one of the seven tabs carries its
+    // read: the accent now reaches a tab only through the open tab's wash
+    // (the project-type badge's field carried it too, until #1433 removed the
+    // badge). What is left to assert here is that every one of the seven tabs carries its
     // session's AI mark, which is the identity the tab now shows.
     const marks = await w.evaluate(() =>
       [...document.querySelectorAll('.dv-tabs-container .dv-tab')].map(

@@ -68,7 +68,7 @@ function installBridge(): void {
         created += 1;
         return Promise.resolve({
           id: 'live-1',
-          identity: { accentColor: 'var(--accent-teal)', langBadge: 'ts' },
+          identity: { accentColor: 'var(--accent-teal)' },
           autonomy: 'ask',
           status: 'idle',
           transport: 'pty',
@@ -155,7 +155,7 @@ beforeAll(async () => {
 beforeEach(() => {
   installBridge();
   sessionStore.setSessions([
-    { id: 'c1', title: 'acme', accent: 'var(--accent-teal)', badge: 'ts', status: 'idle' },
+    { id: 'c1', title: 'acme', accent: 'var(--accent-teal)', status: 'idle' },
     // a second card, so a maximize has something to be a maximize OVER
     { id: 'c2', title: 'other', status: 'idle' },
   ]);
@@ -188,9 +188,10 @@ describe('a suspended card still has a header', () => {
     expect(created).toBe(0);
   });
 
-  it('carries the card identity — badge and accent (§5.11)', async () => {
+  it('carries the card identity — the accent, and no project-type badge (§5.11, #1433)', async () => {
     await mountCard();
-    expect(host.querySelector('[data-testid="identity-badge"]')?.textContent).toBe('ts');
+    // the owner had the "TS" / boxed "·" box removed outright (#1433)
+    expect(host.querySelector('[data-testid="identity-badge"]')).toBeNull();
     // the accent is the card record's, not a grey fallback — the same field the
     // card TAB and the live header read
     expect(header()!.style.borderInlineStart).toContain('var(--accent-teal)');
@@ -209,7 +210,7 @@ describe('a suspended card still has a header', () => {
 
   it('falls back to the neutral accent before the card list has landed', async () => {
     // the frame a card restored at boot renders in: it is suspended from the ui
-    // blob, and the `sessions:cards` push that carries its accent and badge has
+    // blob, and the `sessions:cards` push that carries its accent has
     // not arrived. A header that throws or draws `undefined` here is a card the
     // user watches fail to appear.
     sessionStore.setSessions([]);
@@ -218,7 +219,6 @@ describe('a suspended card still has a header', () => {
     expect(header()!.style.borderInlineStart).toContain('var(--faint)');
     // no accent, no wash: the plain surface an accent-less open tab paints
     expect(header()!.getAttribute('style')).toContain('background: var(--panel)');
-    expect(host.querySelector('[data-testid="identity-badge"]')).toBeNull();
   });
 
   it('says suspended in the same word the rail and the lamps use', async () => {

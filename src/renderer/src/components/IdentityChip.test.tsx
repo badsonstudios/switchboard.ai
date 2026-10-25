@@ -1,56 +1,78 @@
-// The §5.11 identity badge's colours (#269).
+// @vitest-environment jsdom
+// The identity chip after #1433: a mark and a name, and nothing after the name.
 //
-// `tokens.drift.test.ts` owns the NUMBERS — that the neutral ink clears 4.5:1 on
-// every accent in the palette, in every theme. What it cannot see is which of
-// the two colours the component hands to which property: it reads `color: ink`
-// and has no way to know what `ink` holds, and that indirection is deliberate
-// (a ternary spelled inside the declaration would read as an offender to its
-// accent scan). So this is the other half of the promise, and it is the half
-// that would have caught the original bug: the card header wrote the accent as
-// the `color` and left the field alone.
+// Until #1433 this file held the §5.11 project-type badge's colours (#269) —
+// the accent as the badge's FIELD, a neutral ink on top. The owner had the
+// badge removed outright (2026-10-23: "TS" told him nothing and the boxed "·"
+// for every other folder read as a glitch), so what is left to hold here is
+// that it STAYS gone at the component, whatever a caller hands it, and that the
+// name is the last thing in the chip — which is what lets it sit where the box
+// used to be, with no trailing gap.
 //
-// Asserted on the style object rather than through a render, because that object
-// is the shared thing — both render sites take it verbatim, and a test that
-// mounted one of them would be testing that site instead of the rule.
-import { describe, it, expect } from 'vitest';
-import { identityBadgeStyle } from './IdentityChip';
+// The tab's wiring (that the store's accent reaches the chip) is
+// IdentityTab.test.tsx's; the card headers are the SessionGrid.*-header tests'.
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { act } from 'react';
+import { createRoot, Root } from 'react-dom/client';
+import { IdentityChip, identityWash } from './IdentityChip';
 
-const ACCENT = 'var(--accent-pink)';
+declare global {
+  var IS_REACT_ACT_ENVIRONMENT: boolean;
+}
 
-describe('the identity badge (issue 269)', () => {
-  it('paints the accent as the FIELD, and the ink measured against it', () => {
-    // the ink is named, not merely "not the accent": `--muted` and `--text` are
-    // both plausible-looking neutrals and neither is measured against a field
-    const s = identityBadgeStyle(ACCENT);
-    expect(s.background).toBe(ACCENT);
-    expect(s.color).toBe('var(--accent-ink-on-fill)');
+let root: Root | null = null;
+let host: HTMLElement;
+
+beforeEach(() => {
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  host = document.createElement('div');
+  document.body.appendChild(host);
+  root = createRoot(host);
+});
+
+afterEach(async () => {
+  if (root) {
+    const r = root;
+    root = null;
+    await act(async () => r.unmount());
+  }
+  host.remove();
+});
+
+async function render(el: React.JSX.Element): Promise<void> {
+  await act(async () => root!.render(el));
+}
+
+describe('the identity chip (issue 1433)', () => {
+  it('draws a dot and the name, and no project-type badge', async () => {
+    await render(<IdentityChip title="acme" accent="var(--accent-pink)" compact />);
+    expect(host.querySelector('[data-testid="identity-badge"]')).toBeNull();
+    expect(host.textContent).toBe('acme');
+    const chip = host.firstElementChild!;
+    // the dot, then the name: two children, nothing else
+    expect(chip.children).toHaveLength(2);
+    expect(chip.lastElementChild!.classList.contains('identity-chip-title')).toBe(true);
   });
 
-  it('falls back to a neutral chip when the card has no accent yet', () => {
-    // a dark on-field ink over nothing is invisible — the badge has to become a
-    // different object, not the same one missing its fill
-    const s = identityBadgeStyle(undefined);
-    expect(s.background).toBe('var(--chip)');
-    expect(s.color).toBe('var(--text)');
+  it('puts the name last when a mark replaces the dot, too', async () => {
+    await render(
+      <IdentityChip title="acme" accent="var(--accent-pink)" mark={<i data-mark />} compact />
+    );
+    const chip = host.firstElementChild!;
+    expect(chip.firstElementChild!.hasAttribute('data-mark')).toBe(true);
+    expect(chip.lastElementChild!.classList.contains('identity-chip-title')).toBe(true);
+    expect(chip.children).toHaveLength(2);
+  });
+});
+
+describe('identityWash (#905)', () => {
+  it('mixes the accent into the panel at the shared strength', () => {
+    expect(identityWash('var(--accent-pink)')).toBe(
+      'color-mix(in srgb, var(--accent-pink) var(--identity-wash), var(--panel2))'
+    );
   });
 
-  it('keeps an edge, so a field at 1.8:1 on a light theme still has a shape', () => {
-    expect(identityBadgeStyle(ACCENT).border).toContain('var(--border)');
-    expect(identityBadgeStyle(undefined).border).toContain('var(--border)');
-  });
-
-  it('is ONE look — the accent changes the colours and nothing else (§5.11)', () => {
-    // the two render sites had drifted into two different badges; this is what
-    // stops the next edit re-splitting them by adding a shape to one branch
-    const shape = (s: ReturnType<typeof identityBadgeStyle>): unknown[] => [
-      s.fontFamily,
-      s.fontSize,
-      s.fontWeight,
-      s.border,
-      s.borderRadius,
-      s.paddingInline,
-      s.paddingBlock,
-    ];
-    expect(shape(identityBadgeStyle(ACCENT))).toEqual(shape(identityBadgeStyle(undefined)));
+  it('is the plain panel for a card with no accent yet', () => {
+    expect(identityWash(undefined)).toBe('var(--panel)');
   });
 });

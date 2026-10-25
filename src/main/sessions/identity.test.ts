@@ -1,14 +1,7 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import fs from 'fs';
-import path from 'path';
-import { assignAccent, detectProjectType } from './identity';
+import { describe, it, expect } from 'vitest';
+import { assignAccent } from './identity';
 // The palette lives in `shared/` as of #946 — one home, one import path.
 import { ACCENTS } from '../../shared/accents';
-import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
-
-// The two `detectProjectType` tests below each make a throwaway project dir
-// (#213). Nothing here outlives its test, so sweeping per test is safe.
-afterEach(() => cleanupTempDirs());
 
 describe('assignAccent (the seven-sessions-distinct done-when)', () => {
   it('gives 8 sessions 8 different accents', () => {
@@ -21,20 +14,5 @@ describe('assignAccent (the seven-sessions-distinct done-when)', () => {
     const used = ACCENTS.map((a) => a.value); // one of each
     const ninth = assignAccent(used);
     expect(ninth).toBe(ACCENTS[0].value);
-  });
-});
-
-describe('detectProjectType', () => {
-  it('detects markers with TS beating JS', () => {
-    const dir = tempDir('sb-id-');
-    fs.writeFileSync(path.join(dir, 'package.json'), '{}');
-    expect(detectProjectType(dir)).toBe('JS');
-    fs.writeFileSync(path.join(dir, 'tsconfig.json'), '{}');
-    expect(detectProjectType(dir)).toBe('TS');
-  });
-
-  it('falls back to a generic badge', () => {
-    const dir = tempDir('sb-id-');
-    expect(detectProjectType(dir)).toBe('·');
   });
 });

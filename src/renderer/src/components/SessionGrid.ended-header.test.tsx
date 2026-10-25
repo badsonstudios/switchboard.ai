@@ -180,7 +180,7 @@ beforeEach(() => {
   // line is deliberate (#347) and is not what this file is about
   warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   sessionStore.setSessions([
-    { id: 'c1', title: 'acme', accent: 'var(--accent-teal)', badge: 'ts', status: 'idle' },
+    { id: 'c1', title: 'acme', accent: 'var(--accent-teal)', status: 'idle' },
     // a second card, so a maximize has something to be a maximize OVER
     { id: 'c2', title: 'other', status: 'idle' },
   ]);
@@ -211,9 +211,10 @@ describe('an ended card still has a header (#606)', () => {
     expect(created).toBe(1);
   });
 
-  it('carries the card identity — badge and accent (§5.11)', async () => {
+  it('carries the card identity — the accent, and no project-type badge (§5.11, #1433)', async () => {
     await mountCard();
-    expect(host.querySelector('[data-testid="identity-badge"]')?.textContent).toBe('ts');
+    // the owner had the "TS" / boxed "·" box removed outright (#1433)
+    expect(host.querySelector('[data-testid="identity-badge"]')).toBeNull();
     expect(header()!.style.borderInlineStart).toContain('var(--accent-teal)');
     // the same wash as the open tab above it (#905)
     expect(header()!.getAttribute('style')).toContain(
@@ -235,7 +236,6 @@ describe('an ended card still has a header (#606)', () => {
     await mountCard();
     expect(header()).not.toBeNull();
     expect(header()!.style.borderInlineStart).toContain('var(--faint)');
-    expect(host.querySelector('[data-testid="identity-badge"]')).toBeNull();
   });
 
   it('offers no control that would act on a session that is not running', async () => {

@@ -140,6 +140,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.130 — unreleased
 
+### Changed
+
+- **No more "TS" box beside a session's name.** Tabs and card headers used to
+  show a small boxed label after the name: `TS` in a green box for a
+  TypeScript project, and a box with a dot for most other folders. It said
+  nothing you needed and the dot looked like a glitch, so it is gone, on the
+  tab, the card header and in a popped-out window. The name sits where it was.
+  The session's colour still shows on its open tab, its card header and its
+  row in the sessions list. Saved workspaces open exactly as before.
+
 ## 0.8.129 — 2026-10-24
 
 ### Added

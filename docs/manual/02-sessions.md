@@ -271,16 +271,14 @@ Off means: every auto-filled label disappears at once, desktop notifications go
 back to using the session's name, and no new ones are filled in. **Labels you
 typed yourself are never hidden** — those are your words, not Claude's. Click
 the chip again and the auto labels come straight back; nothing was thrown away.
-- Each session also gets a color and a short badge automatically, so you can
-  recognize it without reading. The color is the stripe down the left edge of
-  the card header and the bar down the edge of its row in the sessions list.
-  When the card's **tab** is open, the tab and the card header under it are
-  also shaded in that color. The badge is a two- or three-letter note of what the project is
-  written in (`TS`, `Py`, `Rs`), and it sits next to the name in those same
-  places — **filled in the session's own color, with dark lettering on top**, so
-  it is a second place the color shows up rather than a second thing to read.
-  Both are picked for you when the session starts and stay the same for that
-  session, including across restarts, so "the teal one" keeps meaning the same
+- Each session also gets a color automatically, so you can recognize it
+  without reading. The color is the stripe down the left edge of the card
+  header and the bar down the edge of its row in the sessions list. When the
+  card's **tab** is open, the tab and the card header under it are also shaded
+  in that color. (There used to be a small boxed label after the name too,
+  such as `TS` for a TypeScript project, or a box with a dot for anything
+  else. It told you nothing you needed, so it is gone.) The color is picked for you when the session starts and stays the same
+  for that session, including across restarts, so "the teal one" keeps meaning the same
   session all day. **No session is ever yellow or orange:** those two colours
   are kept for one meaning, a session that needs you. (If you had an amber or
   orange session before version 0.8.117, it is indigo or magenta now, and two
@@ -291,8 +289,8 @@ the chip again and the auto labels come straight back; nothing was thrown away.
   waiting to be read.
 
   With several cards docked side by side, the tabs are usually all you can see
-  of the ones you are not looking at — so the AI's icon and the badge there are
-  what let you pick the right tab without reading every name.
+  of the ones you are not looking at — so the AI's icon and the name there are
+  what let you pick the right tab.
 
 ## Which AI a session is on
 
@@ -514,8 +512,8 @@ crashed says **crashed**, in red. If Claude Code closes with an error code
 ("Exited unexpectedly (code 1)") but the session still reads **ended**,
 not crashed: the work it was doing had already finished.
 
-Either way the card keeps its **header** — the session's name, its colour and
-badge, the same strip every other card wears. A card that never started shows the
+Either way the card keeps its **header** — the session's name and its colour,
+the same strip every other card wears. A card that never started shows the
 words *not started* there. Until recently that one card had no header at all,
 which made it the only thing on screen you could not tell apart from another one
 like it.

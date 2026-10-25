@@ -74,7 +74,7 @@ import { isConversationId } from '../transcripts/paths';
 import type { TranscriptQuery, TranscriptSearchRequest } from '../../shared/transcripts';
 import type { ConversationHistoryRequest } from '../../shared/session-history';
 import { LogFields, Logger } from '../log/logger';
-import { assignAccent, detectProjectType } from './identity';
+import { assignAccent } from './identity';
 import { ACCENTS, RETIRED_ACCENTS } from '../../shared/accents';
 import { outOfReserved } from '../../shared/reserved-hue';
 import { assistantLabelFor, summariesFrom } from './queries';
@@ -2446,12 +2446,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         title,
         folder: opts.folder,
         providerId: plan.providerId,
-        // stable across resumes: reuse the card's assigned accent/badge
+        // stable across resumes: reuse the card's assigned accent
         // A DISPATCHED SESSION WEARS ITS ROLE'S COLOUR (P2-E13-03) — the
         // done-when's "visibly not the author". §5.15 says "icon/colour" and #946
-        // explains why a template carries only the colour: the one badge slot a
-        // card has is §5.11's project-type badge, and a role glyph in it would make
-        // one badge mean two things.
+        // explains why a template carries only the colour: a session has no
+        // icon vocabulary (the project-type badge #946 named as the one slot was
+        // removed outright in #1433), and colour is what the rail paints.
         //
         // AFTER `prior`, BEFORE `assignAccent`, and both halves matter. After
         // `prior` because a card keeps its accent across resumes and a restart must
@@ -2470,7 +2470,6 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           ACCENTS.map((a) => a.value),
           RETIRED_ACCENTS
         ),
-        langBadge: prior?.identity.langBadge ?? detectProjectType(opts.folder),
       };
 
       // an existing card keeps its autonomy across resumes; a brand-new card
@@ -3441,7 +3440,6 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           title: card.identity.title,
           folder: card.identity.folder,
           accent: card.identity.accentColor,
-          badge: card.identity.langBadge,
           // the AI the icon shows (#1293): what is running now, else what ran
           // last; '' (a card never started) is "no answer", not an id
           providerId: rec?.identity.providerId || card.identity.providerId || undefined,

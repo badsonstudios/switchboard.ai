@@ -123,10 +123,9 @@ export const DEFAULT_WORKSPACE_POLICY: WorkspacePolicy = 'same-folder';
  *   honour or migrate away from, decided by someone who had not yet built the
  *   rail nesting it belongs to.
  * - **An icon.** §5.15 says "icon/colour" and this app has no icon vocabulary
- *   for a session; the one badge slot a card has is §5.11's project-type badge
- *   (`TS`, `Rs`), and overwriting it with a role glyph would make one badge mean
- *   two things — the drift `SessionCardWire`'s header spends a paragraph on.
- *   Colour is what the rail actually paints, so colour is what a template
+ *   for a session. (This used to say the one badge slot a card had was §5.11's
+ *   project-type badge; #1433 removed that badge outright.) Colour is what the
+ *   rail actually paints, so colour is what a template
  *   carries. #948 has the surface, and gets to decide whether a role needs a
  *   glyph of its own.
  */

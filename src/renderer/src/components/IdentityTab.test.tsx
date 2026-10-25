@@ -76,7 +76,7 @@ function rename(cardId: string, title: string): Promise<void> {
 /** Publish a card's whole identity, the way `sessions:cards` does. */
 function publishIdentity(
   cardId: string,
-  identity: { title?: string; accent?: string; badge?: string }
+  identity: { title?: string; accent?: string }
 ): Promise<void> {
   return act(async () => {
     sessionStore.setSessions([
@@ -85,9 +85,15 @@ function publishIdentity(
   });
 }
 
-/** The lang badge's field — where a SESSION tab's accent lives since #1293. */
-function badgeField(): string {
-  return host.querySelector<HTMLElement>('[data-testid="identity-badge"]')?.style.background ?? '';
+/**
+ * The tab's identity wash (#905), as the tab hands it to the stylesheet — where
+ * a SESSION tab's accent lives since #1293 took the dot and #1433 took the
+ * project-type badge. Read off the custom property, because which tab is OPEN
+ * is the stylesheet's business: `--tab-wash` is set on every session tab and
+ * painted only on the open one.
+ */
+function tabWash(): string {
+  return host.querySelector<HTMLElement>('.identity-tab')?.style.getPropertyValue('--tab-wash') ?? '';
 }
 
 /** The AI badge (#1293), which stands where a session tab's dot was. */
@@ -223,13 +229,13 @@ describe('the session tab follows a rename (issue 264)', () => {
 
 // The same defect class as #264 above and as #261/#308 (a declared prop that no
 // caller passes), and it needs the same kind of test: the RULE here is
-// `IdentityChip`, which has rendered an accent dot and a badge correctly since
-// it was written. What no test could see was whether the tab hands it anything.
+// `IdentityChip`, which has rendered an accent dot correctly since it was
+// written. What no test could see was whether the tab hands it anything.
 // It did not — `<IdentityChip title={title} compact />` — so seven sessions all
 // tabbed the same grey dot while their headers each drew a different accent.
 //
 // Every assertion below reads the real DOM through the real component, so
-// dropping `accent=` or `badge=` at the render site turns them red. Verified by
+// dropping `accent=` at the render site turns them red. Verified by
 // doing exactly that before keeping them.
 describe('the session tab paints the card identity (issue 312)', () => {
   beforeEach(async () => {
@@ -255,7 +261,8 @@ describe('the session tab paints the card identity (issue 312)', () => {
 
   // #1293 (design record §1, the owner's call): on a SESSION's tab the AI's
   // icon in its status ring REPLACES the accent dot. The accent still reaches
-  // the tab — the open tab's wash, and the lang badge's field, asserted below.
+  // the tab through the open tab's wash, asserted below. (Also through the
+  // project-type badge's field until #1433 removed the badge.)
   it('draws the AI badge where the dot was, and no dot (#1293)', async () => {
     await act(async () => {
       sessionStore.setSessions([
@@ -283,7 +290,7 @@ describe('the session tab paints the card identity (issue 312)', () => {
     expect(badge!.hasAttribute('role')).toBe(false);
     expect(badge!.getAttribute('data-ai-name')).toBe('claude-code');
     // no accent dot beside it: nothing on the tab is painted the accent but
-    // the badge field (absent here) and the wash
+    // the wash
     const painted = [...host.querySelectorAll<HTMLElement>('span')].filter(
       (el) => el.style.background === 'var(--accent-1)'
     );
@@ -292,40 +299,47 @@ describe('the session tab paints the card identity (issue 312)', () => {
     expect(tabText()).toBe('acme');
   });
 
-  it('shows the language badge beside the name', async () => {
-    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)', badge: 'TS' });
+  // #1433 (the owner's call, 2026-10-23): no project-type box beside the name
+  // — not "TS" for a TypeScript folder, not the boxed "·" for anything else.
+  // The name is the LAST thing in the chip, so nothing trails it and it sits
+  // where the box used to be.
+  it('draws no project-type badge: the name is the last thing in the chip (#1433)', async () => {
+    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)' });
     await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
-    expect(tabText()).toContain('TS');
+    expect(host.querySelector('[data-testid="identity-badge"]')).toBeNull();
+    expect(tabText()).toBe('acme');
+    const title = host.querySelector<HTMLElement>('.identity-chip-title');
+    expect(title).not.toBeNull();
+    expect(title!.nextElementSibling).toBeNull();
   });
 
-  it('gives two cards two different badge fields — the point of the accent', async () => {
+  it('gives two cards two different washes — the point of the accent', async () => {
     // THE USER-VISIBLE CLAIM. One card at a time can pass while every tab still
     // shares one colour, so this asserts the tabs can be told APART.
     await act(async () => {
       sessionStore.setSessions([
-        { id: 'c1', title: 'acme', folder: 'C:\\a', accent: 'var(--accent-1)', badge: 'TS' },
-        { id: 'c2', title: 'beta', folder: 'C:\\b', accent: 'var(--accent-2)', badge: 'PY' },
+        { id: 'c1', title: 'acme', folder: 'C:\\a', accent: 'var(--accent-1)' },
+        { id: 'c2', title: 'beta', folder: 'C:\\b', accent: 'var(--accent-2)' },
       ]);
     });
     await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\a' });
-    const first = badgeField();
+    const first = tabWash();
     await mount('beta', { cardId: 'c2', title: 'beta', folder: 'C:\\b' });
-    expect(badgeField()).not.toBe(first);
-    expect(first).toBe('var(--accent-1)');
-    expect(badgeField()).toBe('var(--accent-2)');
+    expect(tabWash()).not.toBe(first);
+    expect(first).toContain('var(--accent-1)');
+    expect(tabWash()).toContain('var(--accent-2)');
   });
 
   it('follows a re-assignment after the tab is already up', async () => {
     // The store subscription, not a mount-time snapshot: nothing about the panel
     // changes here, exactly as in the rename regression above.
-    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)', badge: 'TS' });
+    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)' });
     await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
-    expect(badgeField()).toBe('var(--accent-1)');
+    expect(tabWash()).toContain('var(--accent-1)');
 
-    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-2)', badge: 'PY' });
-    expect(badgeField()).toBe('var(--accent-2)');
-    expect(tabText()).toContain('PY');
-    expect(tabText()).not.toContain('TS');
+    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-2)' });
+    expect(tabWash()).toContain('var(--accent-2)');
+    expect(tabWash()).not.toContain('var(--accent-1)');
   });
 
   it('still draws the AI badge for a session with no accent and no provider yet', async () => {
@@ -335,11 +349,11 @@ describe('the session tab paints the card identity (issue 312)', () => {
     await mount('acme', { cardId: 'c1', title: 'acme', folder: 'C:\\Projects\\acme' });
     expect(aiBadge()).not.toBeNull();
     expect(host.querySelector('[data-ai-icon="initial"]')).not.toBeNull();
-    expect(tabText()).toBe('acme'); // and no badge
+    expect(tabText()).toBe('acme'); // and no stray text
   });
 
   it('leaves a derived tab grey — no cardId, so the store has no identity for it', async () => {
-    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)', badge: 'TS' });
+    await publishIdentity('c1', { title: 'acme', accent: 'var(--accent-1)' });
     await mount('Changes — acme', { folder: 'C:\\Projects\\acme' });
     expect(dotColor()).toBe('var(--faint)');
     expect(tabText()).toBe('Changes — acme');

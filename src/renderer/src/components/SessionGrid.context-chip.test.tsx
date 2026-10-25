@@ -64,7 +64,9 @@ function installBridge(): void {
       create: () =>
         Promise.resolve({
           id: 'live-1',
-          identity: { accentColor: 'var(--faint)', langBadge: 'ts' },
+          // `langBadge` is LEGACY (#1433): a record restored from an old
+          // workspace still carries it, and the header must not draw it
+          identity: { accentColor: 'var(--faint)', langBadge: 'TS' },
           autonomy: 'ask',
           status: 'idle',
           transport: 'pty',
@@ -226,6 +228,16 @@ describe('the context chip (#851)', () => {
     });
     expect(pendingHandoff()).toMatchObject({ target: 'c2', fromLiveId: 'live-1' });
     expect(picker()).toBeNull();
+  });
+});
+
+describe('the live header (#1433)', () => {
+  it('draws no project-type badge, even for a record that still carries one', async () => {
+    await mountCard();
+    const header = host.querySelector<HTMLElement>('[data-testid="card-header"]');
+    expect(header).not.toBeNull();
+    expect(host.querySelector('[data-testid="identity-badge"]')).toBeNull();
+    expect(header!.textContent).not.toContain('TS');
   });
 });
 

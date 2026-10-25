@@ -292,7 +292,9 @@
   --accent-pink: #db61a2;
   --accent-magenta: #cf7bea;
 
-  /* Ink for words on an ACCENT FIELD — the §5.11 identity badge (#269, Dan's
+  /* (The badge named below was removed in #1433; the ink stays, measured, for
+     any word that sits on an accent field, and the warning banners use it.)
+     Ink for words on an ACCENT FIELD — the §5.11 identity badge (#269, Dan's
      call 2026-08-10: an accent is a FIELD colour, never a text ink at badge
      sizes). The palette above has no ink family and cannot grow one the way the
      status ramp did: an accent is an IDENTITY, so a per-theme second shade would
@@ -655,7 +657,7 @@ button[data-dismiss-waiting]:focus-visible {
  * WORDS, so they owe WCAG 4.5:1 — and `--muted` on `--chip` is 4.10:1 on
  * nordic, under AA. That exact pair has come up twice before and been answered
  * the same way both times: the urgency lamp's "you are here" state and the
- * accent-less §5.11 badge both write `--text` the moment they sit on a chip
+ * accent-less §5.11 badge (removed in #1433) both wrote `--text` on a chip
  * fill. `--muted` was fine while these chips were transparent on `--panel2`
  * (4.55:1); it stops being fine the moment they are filled, so it goes.
  * `--text` measures 8.44-16.48:1 at rest.

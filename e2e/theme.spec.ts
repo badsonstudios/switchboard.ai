@@ -5,7 +5,6 @@
 // resolves is a token map that does nothing), and that the paint reaches a
 // popped-out window, which is a separate document with its own <html>.
 import { test, expect, Page } from '@playwright/test';
-import fs from 'fs';
 import path from 'path';
 import {
   launchApp,
@@ -149,7 +148,7 @@ const auditWords = (opts: { ramp: string[]; only?: string }): Audit => {
   // `var(--accent-ink-on-fill)` on an accent FIELD, so it arrives with a name
   // and is measured like anything else. What is still skipped is a word whose
   // colour merely EQUALS an accent with nothing naming it, which after #269 is
-  // no known site.
+  // no known site. (#1433 then removed the badge itself.)
   const accents = new Set<string>();
   for (const sheet of Array.from(document.styleSheets)) {
     let rules: CSSRule[];
@@ -205,8 +204,8 @@ const auditWords = (opts: { ramp: string[]; only?: string }): Audit => {
     // collide; a colour value can.
     //
     // `--accent-*` is read here too since #269, and it is worth being precise
-    // about what that buys. The §5.11 badge writes `--accent-ink-on-fill`
-    // inline; without the name, that word falls into the value-matching branch
+    // about what that buys. The §5.11 badge (removed in #1433) wrote
+    // `--accent-ink-on-fill` inline; without the name, that word falls into the value-matching branch
     // below, is recognised as neither a hue nor a status ink, and is SKIPPED —
     // so the fix would ship unmeasured. That is the reason.
     //
@@ -214,9 +213,10 @@ const auditWords = (opts: { ramp: string[]; only?: string }): Audit => {
     // the renderer as a raw hex from the main process, so `color: live.accent`
     // computes to `#db61a2` with no name attached and lands in the accent skip
     // below (which exists precisely because a VALUE cannot be told apart from a
-    // status hue). What catches THAT is the `"JS"` entry in this sweep's site
-    // list — the badge drops out of the words measured — and the focused badge
-    // test above. A named `color: var(--accent-pink)` would fail here; that is a
+    // status hue). What caught THAT was the badge's `"JS"` entry in this
+    // sweep's site list and its focused test, until #1433 removed the badge;
+    // the header-accent test now holds the ratio of the words on an accent
+    // wash. A named `color: var(--accent-pink)` would fail here; that is a
     // stylesheet spelling nothing in the tree currently uses.
     const token = /var\((--(?:status|accent)-[a-z-]+)\)/.exec(
       (el as HTMLElement).style?.color ?? ''
@@ -382,77 +382,68 @@ test.describe('themes (P2-E15-05)', () => {
     }
   });
 
-  test('the identity badge is legible in every theme, as painted (#269)', async () => {
-    // The unit tests measure the ink against the eight accents in the file. Only
-    // the window can say that the badge really is a FIELD — that the accent
-    // reaching the renderer as a raw hex from the main process ends up in the
-    // background and not in the `color`, at BOTH render sites (§5.11's "renders
-    // identically everywhere": the card's dockview tab and the card header).
-    //
-    // The seeded folder gets a package.json so the badge reads `JS`. It matters:
-    // `tempProjectFolder()` alone detects nothing and the badge is `·`, which the
-    // sweep correctly refuses to count as a word — the test would pass having
-    // measured no badge at all.
-    const folder = tempProjectFolder();
-    fs.writeFileSync(path.join(folder, 'package.json'), '{}\n');
-    a = await launchApp({ seedFolder: folder });
+  test('a session accent reaches the card header as painted, and no theme repaints it (#269, #1433)', async () => {
+    // This was the identity BADGE's test until #1433 removed the badge (the
+    // owner's call: "TS" told him nothing and the boxed "·" read as a glitch).
+    // The claim it held is still worth holding on the surface that still wears
+    // the accent in every theme, the card header:
+    //   • the accent that main assigned arrives as a raw colour and is painted
+    //     as a FIELD (the header's left edge, and the wash under its words),
+    //     never as an ink (§5.11, Dan's call on #269);
+    //   • it is the SAME colour in all four themes, because an accent is an
+    //     identity and §5.20 forbids a theme from repainting one;
+    //   • the words on that wash are legible, and none is written in an accent.
+    // The tab's half of this (the open tab's wash) is e2e/tab-header.spec.ts's.
+    a = await launchApp({ seedFolder: tempProjectFolder() });
     const w = a.window;
-    const badge = w.getByTestId('identity-badge').first();
-    await expect(badge).toBeVisible({ timeout: 25_000 });
-    await expect(badge).toHaveText('JS');
+    const header = w.getByTestId('card-header').first();
+    await expect(header).toBeVisible({ timeout: 25_000 });
+    // gone from every surface, not merely empty (#1433)
+    await expect(w.getByTestId('identity-badge')).toHaveCount(0);
 
-    // WHICH COLOUR WENT WHERE, at the render site, with the real accent the main
-    // process assigned. The ratio loop below cannot say this: a badge painted
-    // dark-on-dark would fail it, but a badge that simply dropped the field and
-    // kept a legible ink would pass while the identity signal was gone. Read off
-    // the inline style, so the accent is the raw hex `sessions/identity.ts`
-    // handed over rather than a token this test could have spelled itself.
-    const paint = await badge.evaluate((el) => ({
-      color: (el as HTMLElement).style.color,
-      background: (el as HTMLElement).style.background,
-    }));
-    expect(paint.color, 'the badge writes the one measured on-field ink').toBe(
-      'var(--accent-ink-on-fill)'
-    );
-    expect(paint.background, 'the accent is the FIELD — a real colour, not a token').toMatch(
-      /^(#|rgb)/
-    );
+    // WHICH COLOUR WENT WHERE, at the render site, with the real accent main
+    // assigned. Read off the inline style, so the accent is the raw colour
+    // `sessions/ipc.ts` handed over rather than a token this test could have
+    // spelled itself, and so the grey `var(--faint)` fallback (no accent read
+    // yet) cannot pass for one.
+    // POLLED: a header can draw for a frame before the card list lands, on the
+    // grey fallback, and Chromium reads a `var()` shorthand's longhand as "".
+    await expect
+      .poll(
+        () => header.evaluate((el) => (el as HTMLElement).style.borderInlineStartColor),
+        { message: 'the header edge is the accent itself, a real colour' }
+      )
+      .toMatch(/^(#|rgb)/);
 
-    // The sweep disables transitions before sampling for a real reason (#246's
-    // hand-off: a mid-`transition: color` sample reads the previous theme).
-    // Nothing this test measures transitions today, but the next person will
-    // copy it, so it samples end states too.
+    // Sample END states: the sweep below explains why (#246's hand-off).
     await w.addStyleTag({
       content: '*, *::before, *::after { transition: none !important; }',
     });
 
+    const edges = new Set<string>();
     for (const [label, id] of THEMES) {
       await setTheme(w, label);
       await expect(w.locator('html')).toHaveAttribute('data-theme-id', id);
 
+      edges.add(await header.evaluate((el) => getComputedStyle(el).borderInlineStartColor));
+
       const seen = await w.evaluate(auditWords, {
         ramp: [...STATUS_TOKENS],
-        only: '[data-testid="identity-badge"]',
+        only: '[data-testid="card-header"] [data-testid="card-session-name"]',
       });
-      // both sites, not one: the header's badge and the tab's are the defect and
-      // the regression risk respectively, and a single one measured would let
-      // the other drift back
-      expect(seen.words.length, `${id}: fewer than two badges were measured`).toBeGreaterThan(1);
-      // NOT covered here, and worth knowing: the accent-LESS branch
-      // (`--text` on `--chip`, for a card whose record has not been read yet).
-      // Every seeded session has an accent, so only the drift test's
-      // "the accent-less badge" case measures that pair.
+      expect(seen.words.length, `${id}: the header's session name was not measured`).toBeGreaterThan(0);
       for (const word of seen.words) {
-        expect(word.from, `${id}: the badge's own field must be what the word sits on`).toBe('self');
-        // fires on the stylesheet spelling of the revert (`color:
-        // var(--accent-pink)`); the raw-hex spelling is caught by `from` and the
-        // ratio, both mutation-checked 2026-08-10
-        expect(word.hue, `${id}: the badge must paint its ink, never an accent`).toBeNull();
-        expect(word.ratio, `${id} identity badge contrast — ${word.why}`).toBeGreaterThanOrEqual(
+        // the name has no fill of its own: what it sits on IS the accent wash
+        expect(word.from, `${id}: the name must sit on the header's accent wash`).toBe('card-header');
+        expect(word.hue, `${id}: the name must be written in an ink, never an accent`).toBeNull();
+        expect(word.ratio, `${id} header name on the accent wash — ${word.why}`).toBeGreaterThanOrEqual(
           4.5
         );
       }
     }
+    // one accent, four themes: a theme that could repaint it would change what
+    // the session IS (§5.20)
+    expect([...edges], 'the accent edge must not change with the theme').toHaveLength(1);
   });
 
   test('no word on screen is painted in a raw status hue (#246)', async () => {
@@ -469,16 +460,9 @@ test.describe('themes (P2-E15-05)', () => {
     // The feed is loaded first because five of the six sites are in it, and it
     // is where the surfaces are tinted rather than flat.
     //
-    // The package.json is for the §5.11 badge (#269), and it is not decoration:
-    // a folder with no project marker gets the badge `·`, which this sweep
-    // rightly refuses to count as a word — so the badge was never among the
-    // words measured at all, and a revert passed here. With `JS` in it the badge
-    // joins the site list below, and a revert to `color: live.accent` fails
-    // because the badge stops being one of the words measured (its colour is
-    // then a bare accent value, which the skip drops). Mutation-checked both
-    // ways, 2026-08-10.
+    // (Until #1433 the folder got a package.json so the §5.11 badge read `JS`
+    // and joined the site list below. The badge is gone; so is that site.)
     const folder = tempProjectFolder();
-    fs.writeFileSync(path.join(folder, 'package.json'), '{}\n');
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -535,7 +519,7 @@ test.describe('themes (P2-E15-05)', () => {
       // rendering the feed would look like. Named sites, not a count, so a
       // sweep that quietly stops reaching the feed fails instead of shrinking.
       const measured = seen.words.map((x) => x.what).join(' | ');
-      for (const site of ['.status-pill', 'a "the manual"', '"Read"', '"[x]"', '"JS"']) {
+      for (const site of ['.status-pill', 'a "the manual"', '"Read"', '"[x]"']) {
         expect(measured, `${id}: ${site} was not among the words measured`).toContain(site);
       }
       if (seen.distinguishable) distinguishable.add(id);

@@ -2166,10 +2166,20 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
   `--accent-ink-on-fill`, which is theme-independent for the same reason the
   accents are and clears 4.5:1 on every one of them. Enforced, not remembered:
   `tokens.drift.test.ts` fails any `color:` in the renderer that names an accent,
-  and `e2e/theme.spec.ts` measures the badge as painted in all four themes.
-- **Icon**: default from project-type detection (`.csproj`→C#, `package.json`→Node,
-  `Cargo.toml`→Rust, `pyproject.toml`→Python, …); emoji/icon picker to override.
-  Provider badge (Claude/Codex/…) shown alongside.
+  and `e2e/theme.spec.ts` measures the card header's accent edge and the name
+  on its accent wash, as painted, in all four themes *(it measured the
+  project-type badge until #1433 removed it)*.
+- ~~**Icon**: default from project-type detection (`.csproj`→C#, `package.json`→Node,
+  `Cargo.toml`→Rust, `pyproject.toml`→Python, …); emoji/icon picker to override.~~
+  *(⚠️ **REMOVED 2026-10-23, #1433, the owner's call: "remove this icon
+  altogether."** What shipped was a 9px project-type badge after the name on
+  the tab and the card header, `TS` for a TypeScript folder and a boxed `·` for
+  anything it did not recognise, which was most of them. It told him nothing he
+  needed and the dot read as a glitch. Nothing detects a project type any more.
+  Workspace files saved before then still carry `identity.langBadge`; it is an
+  optional field the loader ignores, with no schema bump and no migration.)*
+  Provider badge (Claude/Codex/…) shown alongside — that one is the AI's icon
+  in its status ring (#1293), and it stays.
 - **Git context line**: branch · dirty-file count · ahead/behind.
 - **Task label**: ~~one-line~~ **up to three lines** of "what am I doing", shown
   under the title. *(⚠️ **AMENDED 2026-09-20, #877, on the owner's direct
@@ -2630,6 +2640,9 @@ transfer + role templates, all already in the design.
 > lifecycle paragraph is #951's) and **an icon**. There is no icon vocabulary for a
 > session in this app — the one badge slot a card has is §5.11's project-type badge
 > — and overwriting it with a role glyph would make one badge mean two things.
+> *(2026-10-25: #1433 removed that project-type badge outright, so a card has no
+> badge slot at all now. The conclusion stands: colour is what a template
+> carries.)*
 > Colour is what the rail paints, so colour is what a template carries; the §5.11
 > palette moved to `shared/accents.ts` so that a template could name one without a
 > second copy of the hex values.
@@ -5823,6 +5836,7 @@ context transfer, and the attention queue work across monitors.
 - Claude Code adapter: PTY terminal panes (xterm.js), per-session cwd
 - Sidebar with hook-driven status badges (working / needs input / idle / done)
 - Session identity v1: title (folder-name default), accent color, project-type icon
+  *(the project-type icon was removed 2026-10-23, #1433; see §5.11)*
 - Event feed v1: done / needs-input / needs-permission / crash events, click-to-focus
 - Notifications v1: sound + window flash + OS toast on needs-input/done (top pain point)
 - Autonomy profiles at spawn (permission-mode / allowed tools slider)

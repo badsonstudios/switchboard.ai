@@ -43,9 +43,9 @@
 // must obey is written once, between them, instead of twice in two files.
 //
 // (`PersistedSession` in `main/workspace/store.ts` is a third shape again: what
-// goes in the workspace FILE. `sessions:cards` projects it — renaming
-// `identity.langBadge` to `badge`, joining the live status on — so it is not
-// this and does not want to be.)
+// goes in the workspace FILE. `sessions:cards` projects it — flattening the
+// identity, joining the live status on — so it is not this and does not want
+// to be.)
 import type { TransportKind } from './transport';
 
 /**
@@ -128,7 +128,14 @@ export interface SessionIdentity {
   title: string;
   folder: string;
   accentColor?: string;
-  /** project-type lang badge (§5.11), e.g. "TS", "Rs" */
+  /**
+   * LEGACY, read and ignored (#1433). The project-type badge ("TS", "Rs", or
+   * "·") that once sat beside the name; the owner had it removed. Nothing sets
+   * it any more and nothing shows it (an old value rides along on a copied
+   * identity until the session next starts), but workspace files saved before then
+   * carry it, and they must keep loading unchanged — so it stays declared,
+   * optional, rather than becoming an unknown key. No schema bump, no migration.
+   */
   langBadge?: string;
   providerId: string;
 }
@@ -330,9 +337,6 @@ export interface SessionCardWire {
   title: string;
   folder: string;
   accent?: string;
-  /** project-type lang badge (§5.11) — `SessionIdentity.langBadge` renamed on
-   *  the way out, which is why this shape is not the identity */
-  badge?: string;
   /**
    * Which AI this card is on (E40 item 10, #1293): the live session's
    * provider, else the one the card was last started on. What the tab, the

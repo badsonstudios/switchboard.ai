@@ -22,7 +22,6 @@ export interface RailSession {
   title: string;
   folder?: string;
   accent?: string;
-  badge?: string;
   /** which AI the card is on (#1293), off `sessions:cards`; absent = not known */
   providerId?: string;
   /**

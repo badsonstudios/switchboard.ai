@@ -29,7 +29,7 @@ import { LABEL_LINES } from '../../../shared/task-label-size';
 import { DEFAULT_PANEL_ID, PanelContext, PanelId } from '../extensibility/contributions';
 import { listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
 import { ContributionBoundary } from '../extensibility/boundary';
-import { IdentityChip, identityBadgeStyle, identityWash } from './IdentityChip';
+import { IdentityChip, identityWash } from './IdentityChip';
 import { CardPolicyRows } from './CardPolicyRows';
 import { applyPreset, arrangeablePanels, equalizeGrid } from './grid-presets';
 import type { LayoutPreset } from '../lib/layout-presets';
@@ -309,7 +309,6 @@ export function dispatchFactsFor(
 interface Live {
   id: string;
   accent?: string;
-  badge?: string;
   /** which AI it is on (#1293) — the header's icon, and the AI chip (#1294) */
   providerId?: string;
   autonomy?: AutonomyMode;
@@ -654,8 +653,8 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
     props.params?.folder
   );
   // ...and the rest of the identity, from the same place (#312). `IdentityChip`
-  // has rendered an accent dot and a language badge since it was written, and
-  // this — the only site in src/ — passed neither, so every card tab painted the
+  // has rendered an accent dot since it was written, and this — the only site
+  // in src/ — did not pass the accent, so every card tab painted the
   // same grey dot while the header below it drew the card's real accent. §5.11:
   // one identity, rendered IDENTICALLY everywhere it appears.
   //
@@ -667,9 +666,6 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
   // field, from the same record, that the header's border reads.
   const accent = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardAccent(cardId)
-  );
-  const badge = React.useSyncExternalStore(subscribeStore, () =>
-    sessionStore.getCardBadge(cardId)
   );
   // Which AI, and what it is doing (#1293): the AI's icon in a status ring
   // stands where the accent dot was. Store reads, for the reason above, and
@@ -1046,13 +1042,12 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
         </span>
       ) : (
         <>
-      {/* undefined accent/badge are passed through as undefined on purpose: the
-          chip's own fallbacks (grey dot, no badge) stay the behaviour for a
-          derived tab and for a card the store has not answered for yet. */}
+      {/* an undefined accent is passed through as undefined on purpose: the
+          chip's own fallback (the grey dot) stays the behaviour for a derived
+          tab and for a card the store has not answered for yet. */}
       <IdentityChip
         title={title}
         accent={accent}
-        badge={badge}
         compact
         // a session's tab only: a document or a diff has no AI and no status.
         // It SPINS while the session works (#1279, folded into #1351): it stood
@@ -1362,15 +1357,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     sessionStore.getCardTitle(cardId)
   );
   // The rest of the identity, for the header a card draws while it has NO live
-  // session (#216, the suspended state). `live.accent` / `live.badge` below are
-  // the same two fields off the session record; these are the card record's
-  // copy, which is the one that still exists when the session does not — the
-  // same pair, from the same `sessions:cards` push, that the card TAB reads.
+  // session (#216, the suspended state). `live.accent` below is the same field
+  // off the session record; this is the card record's copy, which is the one
+  // that still exists when the session does not — the same value, from the same
+  // `sessions:cards` push, that the card TAB reads.
   const cardAccent = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardAccent(cardId)
-  );
-  const cardBadge = React.useSyncExternalStore(subscribeStore, () =>
-    sessionStore.getCardBadge(cardId)
   );
   // ...and which AI it is on — the header's AI icon (#1293) and the AI chip
   // (#1294), off the CARD so it is there with no session running and after a
@@ -1988,7 +1980,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         setLive({
           id: record.id,
           accent: record.identity.accentColor,
-          badge: record.identity.langBadge,
           providerId: record.identity.providerId,
           autonomy: record.autonomy,
           status: record.status,
@@ -2679,7 +2670,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // one of them there is a grey border that pops to the real accent in front of
   // the user.
   const headerAccent = live?.accent ?? cardAccent;
-  const headerBadge = live?.badge ?? cardBadge;
   const headerProvider = live?.providerId ?? cardProvider;
   // The Changes tab's badge. THE THIRD READER OF `git:status` (#785 review) —
   // `unreadable` arrives with `files: []`, so this quietly counts zero, which is
@@ -2877,14 +2867,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 ring the tab above draws, standing still — the pill at the end
                 of this row says the state in a word, as it always has. */}
             <AiBadge providerId={headerProvider} status={shownStatus} needsYou={cardNeedsYou} spin={false} />
-            {/* the SAME badge the tab above draws (#269) — §5.11's "renders
-                identically everywhere", and the accent is the field, never the
-                ink: as 9px text it measured 1.80-3.11:1 on daylight */}
-            {headerBadge && (
-              <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
-                {headerBadge}
-              </span>
-            )}
             {/* THE NAME, FIRST AND BOLD (#1405, reversing #905's "no name
                 here"): "<name> · <task label>", so the pane under a tab says
                 whose it is. */}
@@ -3806,7 +3788,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               going away.
 
               The SUSPENDED-APPROPRIATE SUBSET of the live header, and nothing
-              else: identity (accent and badge — §5.11's one identity — and the
+              else: identity (the accent — §5.11's one identity — and the
               name, back since #1405), the
               state in a word, and the maximize gesture. Deliberately NOT the
               controls: the collapse/pop-out/⋯ buttons act on a running session,
@@ -3828,11 +3810,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             style={cheadStyle(headerAccent)}
           >
             <AiBadge providerId={headerProvider} status="suspended" needsYou={cardNeedsYou} spin={false} />
-            {headerBadge && (
-              <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
-                {headerBadge}
-              </span>
-            )}
             <HeaderSessionName name={headerTitle} />
             <span style={{ flex: 1, minInlineSize: 8 }} />
             <StatusPill status="suspended" label={t('status.suspended')} />
@@ -3885,11 +3862,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               needsYou={cardNeedsYou}
               spin={false}
             />
-            {headerBadge && (
-              <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
-                {headerBadge}
-              </span>
-            )}
             <HeaderSessionName name={headerTitle} />
             <span style={{ flex: 1, minInlineSize: 8 }} />
             {pill && <StatusPill status={pill.status} label={t(pill.labelKey)} />}
