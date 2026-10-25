@@ -25,7 +25,14 @@
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { launchApp, LaunchedApp, setTheme, streamPrompter, tempProjectFolder } from './fixtures/app';
+import {
+  disableTransitions,
+  launchApp,
+  LaunchedApp,
+  setTheme,
+  streamPrompter,
+  tempProjectFolder,
+} from './fixtures/app';
 
 const rail = (w: Page) => w.locator('nav');
 const row = (w: Page, title: string) => rail(w).locator('.rail-row').filter({ hasText: title });
@@ -101,9 +108,18 @@ test.describe('waiting on you (#1351)', () => {
     }
     // NO wash (#1405): a waiting row that is not the open one is filled
     // exactly like the calm one. The newest session (working) is the open one.
+    //
+    // A row EASES its fill (`transition: background 0.11s`). Each session that
+    // opened above took the selection from the one before, so the row it left
+    // was still fading to transparent when this read it, at alpha 0.00002 to
+    // 0.09 under load (issue 1444). Transitions off reads end states, and the
+    // poll lets the last selection change finish rendering. It is still
+    // equality with the calm row, so a real wash fails here as before.
+    await disableTransitions(w);
+    await expect(row(w, working)).toHaveAttribute('data-selected', 'true');
     const calmFill = await fill(row(w, calm));
     for (const title of [approval, question, waiting]) {
-      expect(await fill(row(w, title)), `${title}'s row is washed`).toBe(calmFill);
+      await expect.poll(() => fill(row(w, title)), { message: `${title}'s row is washed` }).toBe(calmFill);
     }
 
     // ── the tabs ────────────────────────────────────────────────────────────

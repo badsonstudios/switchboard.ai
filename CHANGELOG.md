@@ -172,6 +172,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   to being asked. The card header says the same, and the session's tab, list
   row and strip pill show a small **✓✓**.
 
+### Internal
+
+- **Three end-to-end tests stopped failing at random under load.** Two of them
+  compared a session row's colour while it was still fading, so the same colour
+  sometimes read as a different value. They now turn fading off and wait for
+  the colour to settle before comparing. The third once failed because its
+  session never appeared, and that has not been explained yet. When any
+  end-to-end test fails, the app's own log is now kept beside the failure so
+  the next one can be.
+
 ## 0.8.129 — 2026-10-24
 
 ### Added
