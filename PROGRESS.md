@@ -3,6 +3,19 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔄 ORCHESTRATION RUN — 2026-10-25 ~07:20 EDT → in flight: #1434 + #1433, TWO WORKERS IN PARALLEL, MERGE ON GREEN CI, NO RELEASE
+>
+> **Single-writer rule:** this file is written ONLY by the orchestrator session. Workers never touch it; their inputs are the handoff files in `.claude/work_files/orchestrator/<issue#>.md` (git-ignored, main checkout), and their shared contract is `.claude/work_files/orchestrator/worker-contract.md`. Resume from this block if the orchestrator session dies.
+>
+> **Dan's instruction (2026-10-25):** asked for one ticket from the newest; on the recommendation of #1434 he said *"go ahead and knock those two tickets out, the 1434 and 1433"*. Merge on green CI as in every run since 2026-10-17 (nothing queues for Dan); **do NOT cut a release** — v0.8.129 is released; `0.8.130 — unreleased` is the open CHANGELOG section. Both issues carry Dan's decisions in their bodies (#1434: remove the title-bar autonomy chip, keep only the per-session one, show **ask · allow all** while allow-all is on with **Stop allowing all**, honest Ask copy, never rewrite the user's settings; #1433: remove the project-type badge everywhere, old workspaces still load). Orchestrator model this run: Opus 5.5 (Dan's `/model` choice); workers Opus.
+>
+> | Order | Issue | Worktree / branch | State |
+> |---|---|---|---|
+> | 1 | #1434 "ask" sessions don't ask — silent allow-all + allow rules; remove the title-bar mode chip | `sb-wt-1` / `feature/1434-ask-honest-allow-all` | **DISPATCHED ~07:20 EDT** (Opus worker) |
+> | 2 | #1433 remove the project-type badge ("TS" / boxed dot) beside the session name | `sb-wt-2` / `feature/1433-remove-project-badge` | **DISPATCHED ~07:20 EDT** (Opus worker) |
+>
+> **Merge log:** this block (docs PR) · — . **Worktree pool at start:** `sb-wt-1/2` on the two branches from `27c38a27`, `sb-wt-3` detached at `a00400c5`, `sb-docs` on this docs branch. **Open PRs at start:** none. **e2e lock at start:** free.
+
 > # ✅ RELEASED: v0.8.129, 2026-10-24 (PR #1446, tag on `e9eb1ebc`, release run 40136443023) — THE WHOLE 2026-10-23/24 RUN
 >
 > Dan, after the run's report: *"Go ahead and create a release."* A **regular release, on his word**, as 0.8.128 was (the beta channel stays unproven until he asks for one). Version, lock and dated notes together as before (`0.8.130 — unreleased` is open). The release PR merged on green CI as `e9eb1ebc`, tag `v0.8.129` was pushed from it, and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.129.exe` (105 MB) + `.sha256` as a normal release — `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.129` (published 22:06Z). Tanner's install gets it too. The six dogfood rows now read RELEASED (this docs PR).
