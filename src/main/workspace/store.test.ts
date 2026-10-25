@@ -3457,6 +3457,23 @@ describe('v3 -> v4: one conversation per AI (#1294)', () => {
     expect(after.sessions).toEqual(before.sessions);
   });
 
+  // #1433 removed the project-type badge, and nothing writes `identity.langBadge`
+  // any more — but every workspace saved before then carries it (this fixture's
+  // first card does). It must load as it always did: no warning, no read-only
+  // fallback, no version bump, the card intact.
+  it('a card still carrying the retired identity.langBadge loads unchanged (#1433)', () => {
+    fs.copyFileSync(fixture, file);
+    const before = JSON.parse(fs.readFileSync(fixture, 'utf8')) as { sessions: PersistedSession[] };
+    const legacy = before.sessions.find((s) => s.identity.langBadge !== undefined);
+    expect(legacy, 'the v3 fixture must keep a card with langBadge').toBeDefined();
+    const warns: Line[] = [];
+    const store = makeStore(file, fakeLogger(warns));
+    const state = store.load();
+    expect(warns).toEqual([]);
+    expect(store.isReadOnly()).toBe(false);
+    expect(state.sessions.find((s) => s.id === legacy!.id)).toEqual(legacy);
+  });
+
   it('a switched card round-trips: its parked conversations and its marks come back', () => {
     const mark = {
       kind: 'ai-switch',

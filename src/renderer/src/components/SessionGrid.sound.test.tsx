@@ -88,7 +88,7 @@ function installBridge(withSounds = true): void {
       create: () =>
         Promise.resolve({
           id: 'live-1',
-          identity: { accentColor: 'var(--faint)', langBadge: 'ts' },
+          identity: { accentColor: 'var(--faint)' },
           autonomy: 'ask',
           status: 'idle',
           transport: 'pty',

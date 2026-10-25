@@ -76,7 +76,8 @@ function declaredValues(text: string): Record<string, string> {
   return out;
 }
 
-/** the one neutral ink §5.11 badges write on an accent field (#269) */
+/** the one neutral ink a word writes on an accent field (#269; the §5.11 badge
+ *  that introduced it was removed in #1433) */
 const ACCENT_INK = '--accent-ink-on-fill';
 
 const nordic = declaredTokens(block(":root,\n:root[data-theme='nordic']"));
@@ -834,7 +835,7 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
 //     everywhere, and retuning it to 3:1 to fix one row is #685's job, not
 //     this one's.
 //   • the enabled INK clears AA on the fill. It is `--text` rather than
-//     `--muted` for the reason the accent-less badge above already gives:
+//     `--muted` for the reason the --text-on-chip guard below gives:
 //     `--muted` on `--chip` is 4.10:1 on nordic.
 //   • the DISABLED ink visibly deadens — strictly less contrast than the
 //     enabled one, on the same fill, in every theme. That is the #268 shape,
@@ -913,6 +914,9 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
 
 // --- Words on an ACCENT FIELD, in EVERY shipped theme (#269) ----------------
 //
+// (#1433 removed the §5.11 badge this section was written for; no word sits on
+// a bare accent field today. The guard stays, for the next one that does.)
+//
 // The §5.11 identity badge is the one place a session's accent has words on it,
 // and until #269 the accent WAS the words: 9px of `--accent-pink` on the card
 // header measured 3.39:1 on nordic, and every one of the eight was 1.80-3.11:1
@@ -981,12 +985,14 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
   }
 );
 
-// The badge falls back to a neutral chip for a card with no accent yet, and that
-// pair is `--text` on `--chip` — 8.4:1 on nordic, where the `--muted` it
-// replaced was 4.10:1. Held here because the chip is the only place in the app
-// that writes it and PAIRS above only covers the two contrast themes.
+// `--text` on `--chip`: what a word on a FILLED neutral chip writes — 8.4:1 on
+// nordic, where `--muted` is 4.10:1. It was written for the §5.11 badge's
+// accent-less fallback (#269); that badge is gone (#1433), and the pair is
+// still the one the urgency lamp's "you are here" state and the filled
+// control chips below lean on. Held here because PAIRS above only covers the
+// two contrast themes.
 describe.each(builtinThemes.map((t) => [t.id, t] as const))(
-  '%s: the accent-less badge',
+  '%s: --text on the neutral chip',
   (id, theme) => {
     const tokens = resolved(theme);
     it('clears 4.5:1 on the neutral chip it falls back to', () => {
@@ -1001,7 +1007,7 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
 // --- Words on the IDENTITY WASH, in EVERY shipped theme (#905) -------------
 //
 // The open tab and its card header are washed in the session's accent
-// (`identityWash()`), and the accent is a FIELD there as it is on the badge.
+// (`identityWash()`), and the accent is a FIELD there, never an ink.
 // The words on that wash are `--text` — the header's label and buttons, and the
 // open tab's title in every group — so that is the pair measured here, for all
 // eight accents in all four themes, at the strength tokens.css actually ships.
@@ -1300,16 +1306,17 @@ describe('a status hue is never spent on words', () => {
    * property is spelled `accent`.
    *
    * Both spellings count: `var(--accent-*)` for a stylesheet, and any value
-   * naming an `accent` identifier for the inline styles the badge is written in.
+   * naming an `accent` identifier for inline styles (the badge was written that
+   * way until #1433 removed it; the card header's edge and wash still are).
    * The one exemption is the ink that sits ON a field, which has to be allowed
    * to be a `color:` because being one is its entire job.
    *
    * SAME BLIND SPOT as the hop above, and it is worth naming: `color: ink`,
-   * where a local holds the token, reads as innocent here. `identityBadgeStyle`
-   * is written that way on purpose (a ternary inside the declaration would read
-   * as an offender), so its half of the promise is held by IdentityChip.test.tsx
-   * and by the painted badge test in e2e/theme.spec.ts, which measures both
-   * render sites in all four themes against what is really behind them.
+   * where a local holds the token, reads as innocent here. The badge's style
+   * was written that way on purpose, and held by its own unit and painted
+   * tests, until #1433 removed the badge outright. What e2e/theme.spec.ts
+   * paints now is the card header: the accent as its edge and its wash, and
+   * the name on that wash never written in an accent, in all four themes.
    */
   const accented = (src: string): string[] =>
     colorValues(src)

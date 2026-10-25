@@ -13,8 +13,8 @@
 //  - session accent colors (`--accent-*`) — §5.20: identities are separate from
 //    themes and survive a theme switch. A theme that could repaint them would
 //    change what a session IS, not how the app looks.
-//  - `--accent-ink-on-fill`, the ink the §5.11 badge writes ON one of those
-//    accents (#269). Note this is the OPPOSITE call from
+//  - `--accent-ink-on-fill`, the ink a word writes ON one of those accents
+//    (#269; the §5.11 badge that introduced it was removed in #1433). Note this is the OPPOSITE call from
 //    `--status-needs-permission-ink-on-fill` below, which IS themeable, and the
 //    difference is which side of the pair a theme controls: that ink sits on a
 //    themeable fill, so a theme repainting the fill must be able to lift the ink

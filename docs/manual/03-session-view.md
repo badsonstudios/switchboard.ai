@@ -12,7 +12,7 @@ and is covered in [The Files tab](21-files.md).
 
 When several sessions are docked together, each one has a tab along the top
 with its name on it. **The open tab is shaded in that session's own colour**
-(the same colour as its badge), and so is the bar right under it, the **card
+(the same colour as the stripe down the edge of its card), and so is the bar right under it, the **card
 header**. The two read as one piece. The open tab also has a **blue bar along
 its top**, and its name is bold. The other tabs have no shading and lighter
 text.
@@ -31,7 +31,7 @@ open tabs in the other groups have a grey bar.
 
 The card header says **whose window this is**. From left to right it shows:
 
-- the session's **badge**, filled in its colour;
+- the icon of the AI it is on, in a ring that shows what it is doing;
 - the session's **name**, in bold. A very long name is cut short with an `…`
   so the buttons stay put. Hover over it to see the whole name;
 - its **task label** after a dot, or **+ task label** if it doesn't have one

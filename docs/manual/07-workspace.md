@@ -660,7 +660,7 @@ wrong there would be the worse mistake.)
 
 This works on a **suspended** session too (one that came back with the app and
 hasn't been resumed yet). Its card keeps a header — the session's name, its
-colour and badge, and the word *suspended* — so there's something to
+colour, and the word *suspended* — so there's something to
 double-click, and `Ctrl+Shift+M` does the same thing from the keyboard.
 Maximizing a suspended session doesn't wake it up: it stays suspended, with its
 **Resume** button, until you press that.

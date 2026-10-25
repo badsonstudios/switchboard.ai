@@ -1020,21 +1020,14 @@ export class SessionStore {
    * card header — the same component, further down the same file — drew that
    * session's real accent on its border.
    *
-   * Deliberately NOT one `getCardIdentity()` returning `{accent, badge}`: a
-   * fresh object per call re-renders `useSyncExternalStore` forever. Two scalar
+   * Deliberately NOT one `getCardIdentity()` returning `{accent, provider}`: a
+   * fresh object per call re-renders `useSyncExternalStore` forever. Scalar
    * snapshots settle by value, which is the same exception `getCardTitle`
    * documents above.
    */
   getCardAccent(cardId: string | undefined): string | undefined {
     if (!cardId) return undefined;
     return this.state.sessions.find((s) => s.id === cardId)?.accent;
-  }
-
-  /** One card's language badge, or undefined. `getCardAccent`'s twin, and split
-   *  from it for the reason documented there. */
-  getCardBadge(cardId: string | undefined): string | undefined {
-    if (!cardId) return undefined;
-    return this.state.sessions.find((s) => s.id === cardId)?.badge;
   }
 
   /** Which AI one card is on (#1293; the AI chip's too, #1294), or undefined.
@@ -1055,7 +1048,7 @@ export class SessionStore {
   }
 
   /** One card's status as the rail sees it (#1293: the tab's ring), or
-   *  undefined. Scalar, like the accent, badge and provider above. */
+   *  undefined. Scalar, like the accent and provider above. */
   getCardStatus(cardId: string | undefined): string | undefined {
     if (!cardId) return undefined;
     return this.state.sessions.find((s) => s.id === cardId)?.status;

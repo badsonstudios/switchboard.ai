@@ -1,8 +1,7 @@
 // Session identity kit v1 (P1-E3-03, §5.11): auto accent assignment from the
 // distinguishable palette (least-used first — seven sessions get seven
-// different colors) and project-type detection for the lang badge.
-import fs from 'fs';
-import path from 'path';
+// different colors). Project-type detection for the lang badge lived here too
+// until #1433 removed the badge; nothing detects a project type any more.
 // The palette itself moved to `shared/accents.ts` in #946 so the §5.15 role
 // templates can name an accent without a second copy of the hex values; see that
 // file's header. NOT re-exported from here: the whole point of the move is that
@@ -23,28 +22,4 @@ export function assignAccent(inUse: string[]): string {
     }
   }
   return best;
-}
-
-const TYPE_MARKERS: Array<{ file: string; badge: string }> = [
-  { file: 'cargo.toml', badge: 'Rs' },
-  { file: 'Cargo.toml', badge: 'Rs' },
-  { file: 'go.mod', badge: 'Go' },
-  { file: 'pyproject.toml', badge: 'Py' },
-  { file: 'requirements.txt', badge: 'Py' },
-  { file: 'tsconfig.json', badge: 'TS' },
-  { file: 'package.json', badge: 'JS' },
-  { file: 'pom.xml', badge: 'Jv' },
-  { file: 'build.gradle', badge: 'Jv' },
-  { file: 'Gemfile', badge: 'Rb' },
-];
-
-export function detectProjectType(folder: string): string {
-  for (const m of TYPE_MARKERS) {
-    try {
-      if (fs.existsSync(path.join(folder, m.file))) return m.badge;
-    } catch {
-      /* unreadable folder -> generic */
-    }
-  }
-  return '·';
 }
