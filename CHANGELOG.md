@@ -149,6 +149,28 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   tab, the card header and in a popped-out window. The name sits where it was.
   The session's colour still shows on its open tab, its card header and its
   row in the sessions list. Saved workspaces open exactly as before.
+- **One mode control, per session.** The shield (🛡) chip in the title bar is
+  gone. It set the mode new sessions start at, next to each session's own
+  shield chip under the prompt box, and two controls for one thing were
+  confusing. Every new session now starts at **ask**, and you change a
+  session's mode with the chip under its prompt box. A dispatched session still
+  starts at the mode its role sets.
+- **The ask mode's description is honest about your settings.** It used to say
+  every tool call comes to you first. That isn't true if your Claude Code
+  settings allow some tools: their allow rules apply in ask mode too, and
+  whatever they allow runs without asking. The hover now says "everything your
+  Claude Code settings don't already allow comes to you first" and names the
+  settings files. Switchboard still never changes those files.
+
+### Fixed
+
+- **A session on "Allow all" no longer reads as plain "ask".** After **Allow all
+  (this session)**, a session runs everything without asking until it restarts,
+  but its mode chip went on saying **ask**. Now the chip reads
+  **ask · allow all** in red, and its hover says when you turned it on and that
+  it lasts until restart. Click it and choose **Stop allowing all** to go back
+  to being asked. The card header says the same, and the session's tab, list
+  row and strip pill show a small **✓✓**.
 
 ## 0.8.129 — 2026-10-24
 

@@ -18,6 +18,7 @@ import { registerBuiltinContributions } from '../bootstrap';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { SessionGrid, type CardParams } from './SessionGrid';
+import { uiSet } from '../lib/ui-state';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -57,21 +58,42 @@ let startedAt: string;
 let pulledMode: string | null;
 /** the live push: the CLI announcing a mode change */
 let pushMode: (e: { sessionId: string; mode: string }) => void;
+/** what `sessions.create` was asked for (#1434: the autonomy a NEW card starts at) */
+let createdWith: { autonomy?: string } | null;
+/** main's standing grants for live-1, and the push that changes them (#1434) */
+let grants: { allowAll: boolean; allowAllSince?: number; files: string[] };
+let pushGrants: (g: { sessionId: string; allowAll: boolean; allowAllSince?: number; files: string[] }) => void;
+let revoked: unknown[][];
 
 function installBridge(): void {
   startedAt = 'plan';
   pulledMode = null;
   pushMode = () => {};
+  createdWith = null;
+  grants = { allowAll: false, files: [] };
+  pushGrants = () => {};
+  revoked = [];
   (window as unknown as { switchboard: unknown }).switchboard = {
     sessions: {
-      create: () =>
-        Promise.resolve({
+      create: (opts: { autonomy?: string }) => {
+        createdWith = opts;
+        return Promise.resolve({
           id: 'live-1',
           identity: { accentColor: 'var(--faint)' },
           autonomy: startedAt,
           status: 'idle',
           transport: 'stream',
-        }),
+        });
+      },
+      standingGrants: () => Promise.resolve(grants),
+      onStandingGrants: (cb: typeof pushGrants) => {
+        pushGrants = cb;
+        return off;
+      },
+      revokeStandingGrant: (...args: unknown[]) => {
+        revoked.push(args);
+        return Promise.resolve(true);
+      },
       setAutonomy: () => Promise.resolve(),
       setTaskLabel: () => Promise.resolve(),
       decidePermission: () => Promise.resolve(),
@@ -209,5 +231,48 @@ describe('the mode badge follows what the session SAYS it is in (#1072)', () => 
       pushMode({ sessionId: 'live-1', mode: 'dontAsk' });
     });
     expect(badge()).toContain('plan');
+  });
+});
+
+describe('a NEW card starts at ask, whatever the old title-bar chip stored (#1434)', () => {
+  it('sends ask to main even with "plan" left in the ui blob by the removed chip', async () => {
+    // the chip wrote `autonomy` to the ui blob; it is left there, read by nothing
+    uiSet('autonomy', 'plan');
+    try {
+      await mountCard();
+      expect(createdWith?.autonomy).toBe('ask');
+    } finally {
+      uiSet('autonomy', undefined);
+    }
+  });
+});
+
+describe('allow-all on the card header (#1434)', () => {
+  const badgeEl = (): HTMLElement | null =>
+    host.querySelector<HTMLElement>('[data-testid="card-mode-badge"]');
+
+  it('an ask session on allow-all shows the badge, saying so; revoking clears it', async () => {
+    startedAt = 'ask';
+    grants = { allowAll: true, allowAllSince: Date.UTC(2026, 9, 23, 14, 2), files: [] };
+    await mountCard();
+    expect(badgeEl()?.textContent).toBe('🛡 ask · allow all');
+    expect(badgeEl()?.dataset.allowAll).toBe('true');
+    expect(badgeEl()?.title).toContain('until the session restarts');
+    // main's push after a revoke — from the chip, the card menu, anywhere
+    await act(async () => {
+      pushGrants({ sessionId: 'live-1', allowAll: false, files: [] });
+    });
+    // a plain ask session shows no badge at all
+    expect(badgeEl()).toBeNull();
+  });
+
+  it('a grant pushed while the card is up turns the badge on', async () => {
+    startedAt = 'ask';
+    await mountCard();
+    expect(badgeEl()).toBeNull();
+    await act(async () => {
+      pushGrants({ sessionId: 'live-1', allowAll: true, allowAllSince: 1, files: [] });
+    });
+    expect(badgeEl()?.textContent).toBe('🛡 ask · allow all');
   });
 });

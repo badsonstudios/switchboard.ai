@@ -52,8 +52,6 @@ async function bar(): Promise<void> {
         onOpenAbout={noop}
         notifEnabled={false}
         onToggleNotif={noop}
-        autonomy="ask"
-        onCycleAutonomy={noop}
         presentationPolicy="always-visible"
         onCyclePresentationPolicy={noop}
         layoutMode="grid"

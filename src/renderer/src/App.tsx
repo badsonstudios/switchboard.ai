@@ -29,7 +29,6 @@ import { Usage, CliCost, addUsage, sumCostUsd, ZERO_USAGE } from './lib/usage';
 import type { PlanLimitWindow } from '../../shared/usage-report';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { holdSiblingMessage } from './lib/sibling-hold';
-import { DEFAULT_AUTONOMY, nextAutonomy } from './lib/autonomy';
 import { initPresentation } from './lib/presentation-boot';
 import { boxOnAnyDisplay, type LostDispatch, RescuedPopout } from './lib/layout';
 import { rendererRegistry } from './extensibility/registry-instance';
@@ -277,7 +276,6 @@ export function App(): React.JSX.Element {
   const [speakOn, setSpeakOn] = useState(false);
   // gate the shell on the persisted UI state (E12-08): reads are sync after
   const [uiReady, setUiReady] = useState(false);
-  const [autonomy, setAutonomy] = useState<string>(DEFAULT_AUTONOMY);
   // rail visibility (E9-01 'toggle rail' command) — persisted like the other
   // renderer prefs, read once the ui blob has loaded
   const [railHidden, setRailHidden] = useState(false);
@@ -769,7 +767,6 @@ export function App(): React.JSX.Element {
       // mounts (uiReady gates it): an early write would persist an empty map
       // over the saved one (P2-E15-08)
       initPresentation();
-      setAutonomy(uiGet('autonomy', DEFAULT_AUTONOMY));
       setRailHidden(uiGet('railHidden', false));
       setSessionsPlacement(sessionsPlacementOf(uiGet<unknown>(SESSIONS_PLACEMENT_KEY, undefined)));
       setWorkingLook(workingLookOf(uiGet<unknown>(WORKING_LOOK_KEY, undefined)));
@@ -1428,12 +1425,6 @@ export function App(): React.JSX.Element {
     if (installStatus?.phase === 'failed') return;
     setUpdateNotice({ kind: 'available', version });
   }, [updateStatus, installStatus]);
-
-  const cycleAutonomy = (): void => {
-    const next = nextAutonomy(autonomy);
-    uiSet('autonomy', next);
-    setAutonomy(next);
-  };
 
   // eslint-disable-next-line no-restricted-syntax -- returns its unsubscribe
   useEffect(() => followSystemTheme(themes, setTheme), [themes]);
@@ -2649,8 +2640,6 @@ export function App(): React.JSX.Element {
           setNotifEnabled(next);
           void bridge.notifications?.setPrefs?.({ enabled: next });
         }}
-        autonomy={autonomy}
-        onCycleAutonomy={cycleAutonomy}
         presentationPolicy={policies.global}
         onCyclePresentationPolicy={cycleGlobalPolicy}
         layoutMode={layout.mode}

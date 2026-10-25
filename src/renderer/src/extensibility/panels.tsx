@@ -104,6 +104,9 @@ export const sessionPanels: PanelContribution[] = [
         // #261's lesson again: the button is absent, not broken, without this
         onAllowFile={ctx.onAllowFile}
         onCycleAutonomy={ctx.onCycleAutonomy}
+        // #1434, and #261's lesson: without these the chip never says allow-all
+        standingGrants={ctx.standingGrants}
+        onStopAllowAll={ctx.onStopAllowAll}
         // #1294, and #261's lesson once more: without these the AI chip is absent
         providerId={ctx.providerId}
         onSwitchAi={ctx.onSwitchAi}

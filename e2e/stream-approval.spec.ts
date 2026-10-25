@@ -398,6 +398,48 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     expect(fs.existsSync(path.join(folder, 'three.sh'))).toBe(false);
   });
 
+  // #1434 — "ask" sessions that did not ask. Allow all left the mode chip
+  // reading "ask" over a session that would never ask again, and the only way
+  // out was a card-menu section the owner did not look at. The chip says it
+  // now, the session's tab and row carry a mark, and the chip is the way out.
+  test('Allow all is said on the mode chip, and the chip takes it back', async () => {
+    test.setTimeout(120_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: DIRECT });
+    const w = a.window;
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    const chip = w.getByTestId('composer-autonomy');
+    // a new session starts at ask, and reads as plain ask
+    await expect(chip).toHaveText('🛡 ask', { timeout: 25_000 });
+    await expect(w.locator('[data-allow-all-mark]')).toHaveCount(0);
+
+    const prompt = streamPrompter(a);
+    await prompt(title, '!perm one.sh');
+    await expect(w.getByText('Allow Write?')).toBeVisible({ timeout: 30_000 });
+    await w.getByRole('button', { name: 'Allow all (this session)' }).click();
+    await expect(w.locator('[data-approval-bar]')).toHaveCount(0, { timeout: 15_000 });
+
+    // never plain "ask" while the grant stands — on the chip, and marked on
+    // the tab and the row
+    await expect(chip).toHaveText('🛡 ask · allow all', { timeout: 15_000 });
+    await expect(chip).toHaveAttribute('data-allow-all', 'true');
+    await expect(chip).toHaveAttribute('title', /until the session restarts/);
+    await expect(w.locator('[data-allow-all-mark]').first()).toBeVisible();
+
+    // the chip's click offers the way out instead of cycling the mode
+    await chip.click();
+    await w.getByTestId('composer-stop-allow-all').click();
+    await expect(chip).toHaveText('🛡 ask', { timeout: 15_000 });
+    await expect(w.locator('[data-allow-all-mark]')).toHaveCount(0);
+
+    // ...and it really is off: the session asks again
+    await prompt(title, '!perm two.sh');
+    await expect(w.getByText('Allow Write?')).toBeVisible({ timeout: 30_000 });
+    expect(fs.existsSync(path.join(folder, 'two.sh'))).toBe(false);
+  });
+
   // Two gated calls in ONE turn, which is the only way to reach the card's
   // queue on this transport from the outside: a second prompt cannot be typed
   // while the composer's session sits behind the first request's bar. The fake

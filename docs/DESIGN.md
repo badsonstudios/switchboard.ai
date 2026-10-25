@@ -1842,6 +1842,34 @@ mechanisms where it supports live switching, else flagged "takes effect on
 restart" (never faked, P7) — and the active mode renders on the session identity
 badge (§5.11) so a glance answers "will this one interrupt me?"
 
+> **One control, not three *(amended 2026-10-25, Dan, #1434)*.** The mode was
+> shown on three surfaces: a title-bar chip setting the mode NEW sessions start
+> at, the per-session shield under the prompt box, and the read-only header
+> badge. Dan found two setting controls for one idea confusing, and his call was
+> to **remove the title-bar chip and keep only the per-session one**. A new
+> session starts at `ask`. A dispatched session starts at its role template's
+> autonomy (§5.15). The stored workspace default is left readable and unused,
+> with no migration. Two surfaces remain: the shield (sets) and the badge
+> (shows).
+>
+> **"Will this one interrupt me?" has to be answered honestly, and it wasn't.**
+> Two things make an `ask` session stop asking, and the chip said neither:
+>
+> - **"Allow all (this session)"**, a standing grant main answers at the
+>   server (§5.16's ladder, issue 974's revoke). It now shows on the chip as
+>   **ask · allow all** (since when, until restart). Clicking the chip offers
+>   **Stop allowing all**. The header badge shows it too, and the tab, rail row
+>   and strip pill wear a quiet mark. Main publishes when the grant was made
+>   (`StandingGrants.allowAllSince`) on the existing standing-grants push.
+> - **The user's own Claude Code allow rules**, which the CLI honours in its
+>   `default` mode before Switchboard is consulted. This is correct
+>   (host-don't-reimplement) and stays: Switchboard never overrides or rewrites
+>   those settings. What was wrong was the copy promising "every tool call comes
+>   to you first". It now says everything your settings don't already allow,
+>   and names the files. An allow-rule count per folder was considered and
+>   deferred: it needs a new main-side read of three settings files, and the
+>   copy alone makes the claim true.
+
 ### 5.10 The Session view — the primary working surface
 
 > **Revised 2026-07-21 (owner decision, after hands-on E12 use):** the rendered
@@ -5241,7 +5269,7 @@ becoming the next dump. Applied:
 | task labels, session sounds, speak announcements | they govern what a room full of people can see and hear |
 | notifications | the same, one level up |
 | auto-trust | a security answer, and a stored one you must be able to read |
-| autonomy, presentation policy, layout mode | they answer "why does the window look like this?", which has to be answerable by looking up |
+| presentation policy, layout mode | they answer "why does the window look like this?", which has to be answerable by looking up. *(Autonomy was on this list until 2026-10-25: its title-bar chip was removed in #1434, and the mode is now set per session only. See §5.9.)* |
 
 | Moved into Settings | Why |
 |---|---|

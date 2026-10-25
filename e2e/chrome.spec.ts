@@ -36,12 +36,24 @@ test.describe('titlebar chrome', () => {
     await expect(window.getByRole('button', { name: '+ session' })).toHaveCount(0);
   });
 
-  test('autonomy chip cycles (E6-01)', async () => {
+  // #1434: the title bar's autonomy chip (E6-01) is gone. It set the mode NEW
+  // sessions start at, beside each session's own shield button, and two
+  // controls for one idea confused the owner. One control remains, per session
+  // (`stream-approval.spec.ts` drives it); no palette command ever set the
+  // default, and this pins that none appears.
+  test('no autonomy chip in the title bar, and no autonomy command in the palette (#1434)', async () => {
     a = await launchApp();
     const { window } = a;
-    await expect(window.getByRole('button', { name: /ask/ })).toBeVisible();
-    await window.getByRole('button', { name: /ask/ }).click();
-    await expect(window.getByRole('button', { name: /plan/ })).toBeVisible();
+    await expect(window.getByRole('button', { name: '+ session' })).toBeVisible({ timeout: 25_000 });
+    await expect(window.getByTestId('titlebar-autonomy')).toHaveCount(0);
+    await expect(window.locator('header').getByText(/🛡/)).toHaveCount(0);
+    const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+    await window.keyboard.press(`${MOD}+Shift+P`);
+    const palette = window.getByRole('dialog', { name: 'Command palette' });
+    await expect(palette).toBeVisible();
+    await expect(palette.getByText('New session…')).toBeVisible();
+    await expect(palette.getByText(/🛡|autonomy/i)).toHaveCount(0);
+    await window.keyboard.press('Escape');
   });
 });
 

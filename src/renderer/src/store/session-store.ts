@@ -579,6 +579,12 @@ export class SessionStore {
     // Only the finished set: nothing else here reads the dismissals.
     else if (waitChanged) this.refilterFinished();
     if ('pendingPermissions' in patch) this.rederiveBatch();
+    this.notifyListeners();
+  }
+
+  /** Tell every subscriber something changed — `set`'s tail, and the one way a
+   *  registry outside `state` (the allow-all mirror, #1434) can be seen. */
+  private notifyListeners(): void {
     for (const l of this.listeners) {
       try {
         l();
@@ -1617,6 +1623,8 @@ export class SessionStore {
     this.liveToCard.set(liveId, cardId);
     // the silenced-feed filter is keyed by card and reads this map (E9-10)
     this.rederiveAttention();
+    // a grant that landed before its id was bound now belongs to a card (#1434)
+    if (this.allowAllByLive.has(liveId)) this.notifyListeners();
   }
   cardIdForLive(liveId: string): string {
     return this.liveToCard.get(liveId) ?? liveId;
@@ -1708,10 +1716,11 @@ export class SessionStore {
    */
   forgetCardLiveIds(cardId: string): void {
     const retired: string[] = [];
+    let droppedAllowAll = false;
     for (const [liveId, cid] of this.liveToCard) {
       if (cid !== cardId) continue;
       this.liveToCard.delete(liveId);
-      this.allowAllByLive.delete(liveId);
+      if (this.allowAllByLive.delete(liveId)) droppedAllowAll = true;
       retired.push(liveId);
     }
     // Batched, so the loop over `liveToCard` is finished before any subscriber
@@ -1719,6 +1728,9 @@ export class SessionStore {
     // is at most one id here, so nothing today can observe the difference —
     // this is what keeps that from becoming a constraint on the invariant.)
     for (const liveId of retired) this.notifyLiveRetired(liveId);
+    // #1434: a card's allow-all mark goes with the session it was granted to.
+    // After the retire signals, so readers see the re-derived attention too.
+    if (droppedAllowAll) this.notifyListeners();
   }
 
   // ── a live session was retired (#239) ───────────────────────────────────
@@ -1781,7 +1793,10 @@ export class SessionStore {
   // locally in the same tick — the in-flight request it exists for can be sitting
   // in the queue right now — and the push that follows confirms it.
   setAllowAll(liveId: string): void {
+    if (this.allowAllByLive.has(liveId)) return;
     this.allowAllByLive.add(liveId);
+    // #1434: the tab, row and pill wear a mark while this is on
+    this.notifyListeners();
   }
   /**
    * Mirror main's answer, which is the ONE that decides (#974).
@@ -1800,9 +1815,26 @@ export class SessionStore {
     // next request will be held rather than swallowed — same reason
     // `notifyLiveRetired` re-derives.
     this.rederiveAttention();
+    // #1434: and the surfaces that mark an allow-all session have to hear it.
+    // `rederiveAttention` recomputes but does not notify.
+    this.notifyListeners();
   }
   isAllowAll(liveId: string): boolean {
     return this.allowAllByLive.has(liveId);
+  }
+  /**
+   * Is any live session of this CARD on allow-all (#1434)?
+   *
+   * What the tab, the rail row and the strip pill read for their quiet mark: a
+   * session that will never ask must be recognisable without opening it. A
+   * boolean, so a `useSyncExternalStore` reader settles by value.
+   */
+  isCardAllowAll(cardId: string | undefined): boolean {
+    if (!cardId || this.allowAllByLive.size === 0) return false;
+    for (const liveId of this.allowAllByLive) {
+      if (this.liveToCard.get(liveId) === cardId) return true;
+    }
+    return false;
   }
 
   // ── hide vs close (P2-E15-08) ───────────────────────────────────────────

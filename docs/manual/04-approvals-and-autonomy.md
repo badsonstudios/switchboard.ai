@@ -175,6 +175,22 @@ because a session under "Allow all" cannot ask you anything — so without the d
 "it hasn't asked me about anything in a while" and "I told it not to" look
 identical.
 
+**"Allow all" also shows on the session's mode chip**, the shield under the
+prompt box, so you can't miss it. While it's on, the chip reads
+**🛡 ask · allow all** (or whichever mode the session is in, followed by
+"· allow all") in red, instead of plain **🛡 ask**. Hover it to see when you
+turned it on, that it lasts until the session restarts, and how many files you
+have also always allowed. **Click it** and you get two buttons beside it:
+
+- **Stop allowing all** takes the blanket approval back, just like the **✕** in
+  the menu. The session asks again from its next request. Your per-file
+  approvals stay.
+- **Change mode** changes the mode, as a click on the chip normally does.
+
+The card's header shows the same **ask · allow all** marker. The session's tab,
+its row in the sessions list and its pill on the strip get a small **✓✓** too,
+so you can spot a session that won't ask without opening it.
+
 Standing approvals last as long as the *running session* does. Restart it, or
 close and reopen the card, and it asks again from scratch. Nothing is saved to
 disk.
@@ -393,21 +409,25 @@ runs on the card next.
 
 Each session runs at one of four levels. Click the shield chip under the prompt
 box to cycle it — **and hover it to read what the mode you are about to pick
-actually does.** The same hover works on the shield chip in the title bar and on
-the little mode marker in a card's header.
+actually does.** The same hover works on the little mode marker in a card's
+header.
+
+**There is one mode control, and it belongs to each session.** A new session
+starts at **ask**. A session started by [dispatch](20-dispatch.md) starts at the
+mode its role sets. From then on, each session keeps whatever you set on its
+chip. *(Earlier versions also had a shield chip in the title bar that set the
+mode for new sessions. Having two controls was confusing, so it's gone.)*
 
 | Mode | What runs without asking you | What still stops for you |
 |---|---|---|
-| **ask** | Reading files inside the session's folder. | Everything else: file changes, shell commands, web fetches, and reading anything outside the folder. The safe default. |
+| **ask** | Reading files inside the session's folder, and **anything your Claude Code settings already allow** (see [below](#what-decides-when-you-get-asked)). | Everything else: file changes, shell commands, web fetches, and reading anything outside the folder. The safe default. |
 | **plan** | Reading and exploring. | Claude writes you a plan and changes nothing until you approve it. Claude Code enforces that block itself. See [Approving a plan](#approving-a-plan). |
 | **auto-edit** | File edits inside the session's folder. | Shell commands, web fetches, and reading anything outside the folder. |
 | **full-auto** | Everything. | Almost nothing — see below. |
 
 On a Claude Code session, changing the mode applies **the next time the session
 starts or resumes** — Claude Code can't switch modes mid-flight. An AI that can
-switch mid-flight, such as Codex, switches straight away. The chip in the title
-bar sets the mode that *new* sessions start at; each session keeps its own
-after that.
+switch mid-flight, such as Codex, switches straight away.
 
 Hover a mode chip to read what the mode means. The first part is true of any
 AI; on a Claude Code session it goes on to say which of Claude Code's own
@@ -485,6 +505,17 @@ be asked running `claude` yourself in that folder on that mode — no more, no
 less. Switchboard chooses the mode and then presents the questions Claude Code
 decides to ask; it does not keep a list of its own.
 
+**Your Claude Code settings count, in every mode, including ask.** Claude Code
+reads *allow rules* from its settings files: your own (`~/.claude/settings.json`)
+and the project's (`.claude/settings.json` and `.claude/settings.local.json` in
+the session's folder). Anything a rule allows runs without asking, and
+Switchboard isn't consulted. If a project's settings allow `Write` and `Edit`,
+an **ask** session in that folder won't ask you about file changes. That isn't a
+fault: it's your settings speaking, and Switchboard never overrides them or
+changes those files. If a session isn't asking about something you expected it
+to, check those files for an allow rule (`/permissions` in a Claude Code session
+lists them), and check the mode chip for **allow all**.
+
 > **⚠️ This changed, and it changed in the direction of FEWER prompts.**
 > Switchboard used to keep its own table of which tools to stop for, because of
 > how the old approval mechanism worked — it saw every tool call and had to
@@ -502,7 +533,8 @@ decides to ask; it does not keep a list of its own.
 > surprise and the other way round is not — which is still true, and is why this
 > is called out rather than quietly dropped. If **auto-edit** felt right to you
 > partly because switchboard was adding that extra layer, **use ask instead**:
-> it stops for every tool call, and it is the mode that has not changed.
+> it stops for every tool call your Claude Code settings don't already allow,
+> and it is the mode that has not changed.
 >
 > Why it changed: the extra layer rode on a mechanism that also had a hole in it
 > — it could not answer some questions at all, and Claude Code asked you a second

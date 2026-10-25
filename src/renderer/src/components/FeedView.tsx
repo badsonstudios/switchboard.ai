@@ -17,7 +17,14 @@ import { writtenPages, writtenPagesFromKey, writtenPagesKey } from '../lib/feed-
 import { gutterIconFor } from '../../../shared/tool-icon';
 import { groupBySeq } from '../lib/feed-skipping';
 import { FEED_GROUP_ATTR, FEED_GROUP_OPEN_ATTR, useFeedSkipping } from '../lib/use-feed-skipping';
-import { autonomyTooltip, isAutonomy } from '../lib/autonomy';
+import {
+  allowAllTooltip,
+  autonomyLabel,
+  autonomyTooltip,
+  isAutonomy,
+  nextAutonomy,
+  PARAGRAPH,
+} from '../lib/autonomy';
 import {
   clearConversation,
   compactConversation,
@@ -128,7 +135,7 @@ import {
 import { ApprovalPreview } from './ApprovalPreview';
 import { DenyFeedbackField } from './DenyFeedback';
 import { targetPath } from '../../../shared/tool-paths';
-import type { DecideHeld } from '../../../shared/ipc/permissions';
+import type { DecideHeld, StandingGrants } from '../../../shared/ipc/permissions';
 import {
   filterCommands,
   insertCommand,
@@ -684,6 +691,10 @@ export function FeedView(props: {
   liveAutonomy?: string;
   model?: string;
   onCycleAutonomy?: () => void;
+  /** this live session's standing grants (#974), for the mode chip (#1434) */
+  standingGrants?: StandingGrants;
+  /** take back "Allow all (this session)" (#1434) */
+  onStopAllowAll?: () => void;
   /** the provider this card is on (#1294) — what the AI chip shows */
   providerId?: string;
   /** switch this card to another AI (#1294); absent = no AI chip */
@@ -2024,6 +2035,8 @@ export function FeedView(props: {
         controlsLock={props.controlsLock}
         transport={props.transport}
         onCycleAutonomy={props.onCycleAutonomy}
+        standingGrants={props.standingGrants}
+        onStopAllowAll={props.onStopAllowAll}
         providerId={props.providerId}
         aiControls={aiControls}
         onSwitchAi={props.onSwitchAi}
@@ -2573,6 +2586,8 @@ function Composer({
   controlsLock,
   transport,
   onCycleAutonomy,
+  standingGrants,
+  onStopAllowAll,
   providerId,
   aiControls,
   onSwitchAi,
@@ -2616,6 +2631,12 @@ function Composer({
   /** P2-E10-09: only a typed-message transport can carry a pasted image */
   transport?: TransportKind;
   onCycleAutonomy?: () => void;
+  /**
+   * #1434: "Allow all (this session)" in force makes the chip read
+   * "ask · allow all", and its click offers Stop allowing all.
+   */
+  standingGrants?: StandingGrants;
+  onStopAllowAll?: () => void;
   /** #1294: the card's AI, and the switch to another */
   providerId?: string;
   /** this session's declared controls (#1287), asked by the feed; null while unknown */
@@ -2642,6 +2663,26 @@ function Composer({
     liveAutonomy && isAutonomy(liveAutonomy) && liveAutonomy !== (autonomy ?? 'ask')
       ? liveAutonomy
       : null;
+  // ALLOW-ALL, SAID ON THE CHIP (#1434). While it is on, main answers every
+  // gated call Allow with no hold and no sound, so a chip reading "ask" was
+  // the lie Dan hit: "ask" sessions that never asked. The chip says so, and
+  // its click opens a two-item choice instead of cycling — Stop allowing all
+  // (the same revoke as the card menu's standing-approvals list) or the
+  // ordinary mode change. The choice closes itself when the grant goes,
+  // whichever surface took it back.
+  const allowAllOn = !!standingGrants?.allowAll;
+  const [allowAllChoice, setAllowAllChoice] = React.useState(false);
+  // where focus goes back to when the choice closes: the two buttons unmount
+  // under it, and a keyboard user would otherwise be dropped on the page body
+  const autonomyChip = React.useRef<HTMLButtonElement | null>(null);
+  const allowAllGroup = React.useRef<HTMLSpanElement | null>(null);
+  const allowAllChoiceId = React.useId();
+  /** Stop was pressed: when the grant actually goes, put focus somewhere real */
+  const focusBackOnRevoke = React.useRef(false);
+  const closeAllowAllChoice = (): void => {
+    setAllowAllChoice(false);
+    autonomyChip.current?.focus();
+  };
   // The draft OUTLIVES this component (#485). It is seeded from the workspace
   // `ui` blob on mount and written back on every change, because the component
   // dies far more often than the user's intent does: switching to the Terminal
@@ -2656,6 +2697,22 @@ function Composer({
     [cardId]
   );
   const box = React.useRef<HTMLTextAreaElement | null>(null);
+  // THE GRANT WENT (#1434, review) — from this chip, the card menu or anywhere
+  // else. The choice closes; and if focus was in it, or Stop was just pressed,
+  // it goes back to the chip — or, on an AI that cannot switch modes, to the
+  // prompt box, because without allow-all that chip is disabled again and a
+  // disabled control drops focus on the page. A LAYOUT effect, and the choice
+  // stays mounted until here, so "was focus inside it" can still be asked.
+  React.useLayoutEffect(() => {
+    if (allowAllOn) return;
+    const inChoice = !!allowAllGroup.current?.contains(document.activeElement);
+    if (inChoice || focusBackOnRevoke.current) {
+      const chip = autonomyChip.current;
+      (chip && !chip.disabled ? chip : box.current)?.focus();
+    }
+    focusBackOnRevoke.current = false;
+    setAllowAllChoice(false);
+  }, [allowAllOn]);
   // "Use again" from the prompt list (#1203). It ADDS to what is typed rather
   // than replacing it (`recallInto`), and hands the keyboard to the box with
   // the caret at the end, where the recalled prompt is.
@@ -4736,20 +4793,45 @@ function Composer({
             has to answer. `data-testid` so the e2e that cycles it is not
             pinned to the copy. */}
         {withReason(
-          noModes,
+          allowAllOn ? null : noModes,
           <button
-            onClick={noModes === null ? onCycleAutonomy : undefined}
-            disabled={noModes !== null}
-            data-unavailable={noModes !== null ? 'modes' : undefined}
+            onClick={
+              allowAllOn
+                ? () => setAllowAllChoice((open) => !open)
+                : noModes === null
+                  ? onCycleAutonomy
+                  : undefined
+            }
+            // with allow-all on the chip stays clickable on an AI that cannot
+            // switch modes: the way OUT of the grant is not a mode switch
+            disabled={noModes !== null && !allowAllOn}
+            data-unavailable={noModes !== null && !allowAllOn ? 'modes' : undefined}
+            data-allow-all={allowAllOn ? 'true' : undefined}
+            ref={autonomyChip}
+            aria-expanded={allowAllOn ? allowAllChoice : undefined}
+            aria-controls={allowAllChoice ? allowAllChoiceId : undefined}
+            onKeyDown={
+              allowAllChoice
+                ? (e) => {
+                    if (e.key === 'Escape') {
+                      e.stopPropagation();
+                      closeAllowAllChoice();
+                    }
+                  }
+                : undefined
+            }
             data-testid="composer-autonomy"
             // What the session is in NOW comes first when it is not what the chip
             // sets (#1072) — otherwise the tooltip describes a mode the session
             // has already left.
             title={
-              noModes ??
+              (allowAllOn && standingGrants
+                ? allowAllTooltip(t, standingGrants, 'session') + PARAGRAPH
+                : '') +
+              (noModes ??
               (movedTo
                 ? `${sessionAi.name ? t('autonomy.scope.moved', { now: t(`autonomy.${movedTo}`), ai: sessionAi.name }) : t('autonomy.scope.movedUnnamed', { now: t(`autonomy.${movedTo}`) })}\n\n${autonomyTooltip(t, autonomy, 'session', sessionAi.claude)}`
-                : autonomyTooltip(t, autonomy, 'session', sessionAi.claude))
+                : autonomyTooltip(t, autonomy, 'session', sessionAi.claude)))
             }
             data-live-mode={movedTo ?? undefined}
             className={CHIP_CLASS}
@@ -4760,17 +4842,77 @@ function Composer({
             // 5.65:1 on daylight, asserted in tokens.drift.test.ts. Every other
             // state leaves `color` unset so the class owns it, which is what
             // `FeedView.session-controls.test.tsx` pins.
+            //
+            // Allow-all (#1434) wears the same ink, measured on the same fill,
+            // and an edge in it: the session asks nothing, as full-auto does,
+            // and the edge is what tells it apart at a glance from a chip that
+            // only names a mode.
             style={
-              autonomy === 'full-auto' ? { color: 'var(--status-crashed-ink)' } : undefined
+              allowAllOn
+                ? { color: 'var(--status-crashed-ink)', borderColor: 'currentColor' }
+                : autonomy === 'full-auto'
+                  ? { color: 'var(--status-crashed-ink)' }
+                  : undefined
             }
           >
             {movedTo
               ? t('autonomy.nowThenNext', {
-                  now: t(`autonomy.${movedTo}`),
+                  now: autonomyLabel(t, movedTo, allowAllOn),
                   next: t(`autonomy.${autonomy ?? 'ask'}`),
                 })
-              : t(`autonomy.${autonomy ?? 'ask'}`)}
+              : autonomyLabel(t, autonomy, allowAllOn)}
           </button>
+        )}
+        {allowAllChoice && (
+          // The choice the chip offers while allow-all is on (#1434). Inline in
+          // the options row rather than a floating menu: two buttons, beside
+          // the thing they act on, in a row that already wraps (#903).
+          <span
+            ref={allowAllGroup}
+            id={allowAllChoiceId}
+            role="group"
+            aria-label={t('autonomy.allowAll.menuLabel')}
+            data-testid="composer-allow-all-choice"
+            style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation();
+                closeAllowAllChoice();
+              }
+            }}
+          >
+            <button
+              type="button"
+              className={CHIP_CLASS}
+              data-testid="composer-stop-allow-all"
+              title={t('autonomy.allowAll.stopHint')}
+              disabled={!onStopAllowAll}
+              // focus lands on the way out, which is why the chip was clicked
+              autoFocus
+              onClick={() => {
+                focusBackOnRevoke.current = true;
+                closeAllowAllChoice();
+                onStopAllowAll?.();
+              }}
+            >
+              {t('autonomy.allowAll.stop')}
+            </button>
+            {noModes === null && onCycleAutonomy && (
+              <button
+                type="button"
+                className={CHIP_CLASS}
+                data-testid="composer-allow-all-change-mode"
+                onClick={() => {
+                  closeAllowAllChoice();
+                  onCycleAutonomy();
+                }}
+              >
+                {t('autonomy.allowAll.changeMode', {
+                  next: t(`autonomy.${nextAutonomy(autonomy)}`),
+                })}
+              </button>
+            )}
+          </span>
         )}
         {/* WHICH MODEL, and — since #747 — the switcher for it.
 
