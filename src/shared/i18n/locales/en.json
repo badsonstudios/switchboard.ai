@@ -133,7 +133,7 @@
     "openInGroup": "New session in this group",
     "openInGroupIcon": "⊕",
     "deleteGroupIcon": "✕",
-    "renameGroup": "Double-click to rename",
+    "renameGroup": "{name}\nDouble-click to rename",
     "recolorGroup": "Click to change color",
     "collapse": "Collapse",
     "expand": "Expand",

@@ -156,6 +156,14 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   session is docked and the main window was behind something, the main window
   comes forward too. Sessions that jump forward on their own because they need
   you do not flash.
+- **A folded-shut group shows its name again.** A group's heading was one line:
+  the name, then the session count, what the group is doing ("1 waiting",
+  "calm"), how many are folded away, and three buttons. Everything but the name
+  kept its size, so on a normal-width list the name shrank to "IT…" or vanished.
+  The heading now has two lines: the name and the buttons on the first, the
+  count and the other chips on the second, under the name. A name too long for
+  its line ends in "…" and shows in full when you hover it. **No group** and
+  the folder groups look the same.
 
 ## 0.8.130 — 2026-10-25
 
