@@ -106,8 +106,8 @@ import {
   autonomyTooltip,
   DEFAULT_AUTONOMY,
   isAutonomy,
-  nextAutonomy,
   PARAGRAPH,
+  type Autonomy,
 } from '../lib/autonomy';
 import { isClaudeAi } from '../lib/session-ai';
 import { submitTarget } from '../lib/presentation-policy';
@@ -146,7 +146,6 @@ import { tabStripAction } from '../lib/tabstrip-keys';
 import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
 import { AiBadge } from './AiBadge';
-import { AllowAllMark } from './AllowAllMark';
 import { CONTEXT_DND_TYPE } from '../../../shared/context-drop';
 import {
   closeHandoffPicker,
@@ -1076,8 +1075,8 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
           ) : undefined
         }
       />
-      {/* #1434: a session on "Allow all" says so on its tab, quietly */}
-      {cardId && <AllowAllMark cardId={cardId} announce />}
+      {/* No allow-all mark here: #1434 put a ✓✓ on the tab, and Dan removed it
+          (#1462) — the mode chip under the prompt box is where that is said. */}
       {tabWord && tabWord.state === 'waiting' && cardId ? (
         // WAITING IS A BUTTON (#1413): a click dismisses it, here and on every
         // other surface, and the click still selects the tab (nothing here
@@ -1407,9 +1406,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // per-card autonomy for the composer options row (E10-05): persists to the
   // record and applies on the NEXT spawn/resume (the CLI can't switch live)
   const [cardAutonomy, setCardAutonomy] = React.useState<string | undefined>(undefined);
-  const cycleCardAutonomy = (): void => {
+  // ...set from the mode chip's menu (#1462); a click cycled it until then
+  const setCardAutonomyTo = (next: Autonomy): void => {
     if (!cardId) return;
-    const next = nextAutonomy(cardAutonomy);
     setCardAutonomy(next);
     void window.switchboard.sessions.setAutonomy(cardId, next);
   };
@@ -2749,7 +2748,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     approvalBatched: permBatched,
     onDecide: decide,
     onAllowFile: approveFile,
-    onCycleAutonomy: cycleCardAutonomy,
+    onSetAutonomy: setCardAutonomyTo,
     standingGrants,
     onStopAllowAll: live ? stopAllowAll : undefined,
     providerId: live?.providerId ?? cardProvider,

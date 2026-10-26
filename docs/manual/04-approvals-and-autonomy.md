@@ -180,16 +180,24 @@ prompt box, so you can't miss it. While it's on, the chip reads
 **🛡 ask · allow all** (or whichever mode the session is in, followed by
 "· allow all") in red, instead of plain **🛡 ask**. Hover it to see when you
 turned it on, that it lasts until the session restarts, and how many files you
-have also always allowed. **Click it** and you get two buttons beside it:
+have also always allowed. **Click it** and the list of modes opens as usual
+(see [Autonomy modes](#autonomy-modes)), with one more line at the bottom,
+ticked: **✓ Allow all (this session)**.
 
-- **Stop allowing all** takes the blanket approval back, just like the **✕** in
-  the menu. The session asks again from its next request. Your per-file
-  approvals stay.
-- **Change mode** changes the mode, as a click on the chip normally does.
+- **Click that ticked line** to take the blanket approval back, just like the
+  **✕** in the ⋯ menu. The session asks again from its next request. Your
+  per-file approvals stay.
+- **Pick a mode** from the same list and the mode changes, but Allow all stays
+  on (the line stays ticked, so you can see it).
 
-The card's header shows the same **ask · allow all** marker. The session's tab,
-its row in the sessions list and its pill on the strip get a small **✓✓** too,
-so you can spot a session that won't ask without opening it.
+The line only appears while Allow all is on. Turning it on is still done from
+the approval bar.
+
+The card's header shows the same **ask · allow all** marker. Those two places
+are where it shows: the session's tab, its row in the sessions list and its
+pill on the strip don't mark it. *(Earlier versions put a small **✓✓** beside
+the session's name there. It was easy to mistake for something else, so it's
+gone.)*
 
 Standing approvals last as long as the *running session* does. Restart it, or
 close and reopen the card, and it asks again from scratch. Nothing is saved to
@@ -407,10 +415,23 @@ runs on the card next.
 
 ## Autonomy modes
 
-Each session runs at one of four levels. Click the shield chip under the prompt
-box to cycle it — **and hover it to read what the mode you are about to pick
-actually does.** The same hover works on the little mode marker in a card's
-header.
+Each session runs at one of four levels. **Click the shield chip under the
+prompt box** and a list of the four opens — **ask**, **plan**, **auto-edit**,
+**full-auto** — with a **✓** beside the one the session is set to. Click the
+one you want. It works like changing the model: you always see what you are
+picking, and nothing changes until you pick.
+
+- **Hover a line** in the list to read what that mode does. Hover the chip
+  itself for the mode it is on now. The same hover works on the little mode
+  marker in a card's header.
+- **From the keyboard:** with the chip focused, **Enter** or **Space** opens
+  the list, **Up** and **Down** move, **Enter** picks, and **Esc** closes it
+  without changing anything.
+- Clicking the mode that is already ticked, clicking outside the list, or
+  clicking the chip again just closes it.
+
+*(Earlier versions changed to the next mode on every click, so you had to click
+round to the one you wanted.)*
 
 **There is one mode control, and it belongs to each session.** A new session
 starts at **ask**. A session started by [dispatch](20-dispatch.md) starts at the
@@ -439,9 +460,9 @@ about them.
 it leaves **plan** and carries on as an **ask** session. The chip under the
 prompt box then reads **ask now · plan at next start** — where the session is,
 and what it is set to go back to — and the **plan** badge on the card's header
-goes away, as it does for any ask session. Click the chip to change what it
-starts at next time; if you set it to the mode the session is already in, it
-goes back to showing just that one.
+goes away, as it does for any ask session. Pick from the chip's list to change
+what it starts at next time; if you pick the mode the session is already in,
+it goes back to showing just that one.
 
 ### Approving a plan
 

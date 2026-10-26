@@ -651,8 +651,9 @@ name, then the keys below.
   - If the lookup itself fails, your message is still sent as you typed it, and
     a note under the box says the other session's work didn't go with it.
 
-Under the box is a row showing this session's **autonomy mode** (click to
-cycle) and the **model** it's running — click that to switch it, or see
+Under the box is a row showing this session's **autonomy mode** (click it to
+pick from a list — see
+[Autonomy modes](04-approvals-and-autonomy.md#autonomy-modes)) and the **model** it's running — click that to switch it, or see
 [Choosing a model](18-model.md). Next to the model is **effort**, which sets
 [how hard the model thinks](18-model.md#how-hard-the-model-thinks). Beside
 them are **Compact** and **Clear**,

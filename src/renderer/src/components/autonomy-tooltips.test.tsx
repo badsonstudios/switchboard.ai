@@ -27,7 +27,7 @@ import en from '../../../shared/i18n/locales/en.json';
 import { TitleBar } from './chrome';
 import { sessionPanels } from '../extensibility/panels';
 import { PanelContext } from '../extensibility/contributions';
-import { allowAllTooltip, AUTONOMIES, autonomyTooltip } from '../lib/autonomy';
+import { allowAllTooltip, AUTONOMIES, autonomyDescription, autonomyTooltip } from '../lib/autonomy';
 import { UNKNOWN_BUILD_IDENTITY } from '../../../shared/build-identity';
 import { resetAisStoreForTests } from '../lib/ais-store';
 
@@ -117,7 +117,7 @@ async function composerHost(
     controlsLock: null,
     setView: () => {},
     autonomy,
-    onCycleAutonomy: noop,
+    onSetAutonomy: noop,
     ...(providerId ? { providerId } : {}),
     ...extra,
   };
@@ -229,8 +229,8 @@ describe('the permission-mode hover', () => {
 /**
  * ALLOW-ALL ON THE CHIP (#1434). With "Allow all (this session)" in force main
  * answers every gated call Allow, silently, until the session restarts — and
- * the chip went on reading "ask". These pin that it no longer does, and that
- * the way out is one click from the chip.
+ * the chip went on reading "ask". These pin that it no longer does. The way out
+ * is the chip's menu since #1462 (below).
  */
 describe('the mode chip while allow-all is on (#1434)', () => {
   beforeAll(async () => {
@@ -282,43 +282,187 @@ describe('the mode chip while allow-all is on (#1434)', () => {
     expect(chip.dataset.allowAll).toBeUndefined();
   });
 
-  it('a click offers Stop allowing all instead of cycling, and Stop calls the revoke', async () => {
-    const cycle = vi.fn();
+  it('full-auto reads as itself — it already asks nothing', async () => {
+    const host = await composerHost('full-auto', undefined, { standingGrants: ON, onStopAllowAll: noop });
+    expect(titled(host, 'composer-autonomy').textContent).toBe('🛡 full-auto');
+  });
+});
+
+/**
+ * THE MODE MENU (#1462). Dan: the chip cycled blind on a click, and with
+ * allow-all on it grew two extra buttons he found confusing. A click now always
+ * opens a ticked list of the four modes, plus — only while allow-all is on — a
+ * ticked "Allow all (this session)" row that takes it back.
+ */
+describe('the mode chip opens a ticked list of modes (#1462)', () => {
+  beforeAll(async () => {
+    await initI18nForTests();
+    stubBridge();
+  });
+  beforeEach(() => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe(): void {}
+        unobserve(): void {}
+        disconnect(): void {}
+      }
+    );
+  });
+  afterEach(async () => {
+    await act(async () => {
+      for (const r of roots.splice(0)) r.unmount();
+    });
+    document.body.innerHTML = '';
+  });
+
+  const menuOf = (host: HTMLElement): HTMLElement | null =>
+    host.querySelector<HTMLElement>('[data-testid="autonomy-menu"]');
+  const modeRows = (host: HTMLElement): HTMLButtonElement[] =>
+    Array.from(host.querySelectorAll<HTMLButtonElement>('[data-autonomy-row]'));
+  const allowAllRow = (host: HTMLElement): HTMLButtonElement | null =>
+    host.querySelector<HTMLButtonElement>('[data-testid="autonomy-menu-allow-all"]');
+  const key = async (el: Element, k: string): Promise<void> => {
+    await act(async () => {
+      el.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    });
+  };
+
+  it('a click opens the four modes in order, the current one ticked, and cycles nothing', async () => {
+    const set = vi.fn();
+    const host = await composerHost('plan', undefined, { onSetAutonomy: set });
+    const chip = titled(host, 'composer-autonomy');
+    expect(chip.getAttribute('aria-haspopup')).toBe('menu');
+    expect(chip.getAttribute('aria-expanded')).toBe('false');
+    expect(menuOf(host)).toBeNull();
+
+    await act(async () => chip.click());
+    expect(set).not.toHaveBeenCalled();
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    expect(menuOf(host)!.querySelector('[role="menu"]')).not.toBeNull();
+    const rows = modeRows(host);
+    expect(rows.map((r) => r.dataset.autonomyRow)).toEqual([...AUTONOMIES]);
+    expect(rows.map((r) => r.getAttribute('role'))).toEqual(Array(4).fill('menuitemradio'));
+    expect(rows.map((r) => r.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false', 'false']);
+    // the ✓ is drawn on the current row only, in its own column
+    expect(rows[1].textContent).toBe(en.autonomy.menu.currentMark + en.autonomy.menu.name.plan);
+    expect(rows[0].textContent).toBe(en.autonomy.menu.name.ask);
+    // each row's hover says what the mode does
+    const t = i18next.t.bind(i18next);
+    rows.forEach((r, i) => expect(r.title).toBe(autonomyDescription(t, AUTONOMIES[i])));
+    // the keyboard lands on the ticked row
+    expect(document.activeElement).toBe(rows[1]);
+    // no allow-all row while allow-all is off
+    expect(allowAllRow(host)).toBeNull();
+    // and the old inline buttons are gone for good
+    expect(host.querySelector('[data-testid="composer-stop-allow-all"]')).toBeNull();
+    expect(host.querySelector('[data-testid="composer-allow-all-change-mode"]')).toBeNull();
+  });
+
+  it('picking a row sets that mode and closes, focus back on the chip', async () => {
+    const set = vi.fn();
+    const host = await composerHost('ask', undefined, { onSetAutonomy: set });
+    const chip = titled(host, 'composer-autonomy');
+    await act(async () => chip.click());
+    await act(async () => modeRows(host)[2].click());
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(set).toHaveBeenCalledWith('auto-edit');
+    expect(menuOf(host)).toBeNull();
+    expect(chip.getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(chip);
+  });
+
+  it('picking the current mode only closes', async () => {
+    const set = vi.fn();
+    const host = await composerHost('full-auto', undefined, { onSetAutonomy: set });
+    await act(async () => titled(host, 'composer-autonomy').click());
+    await act(async () => modeRows(host)[3].click());
+    expect(set).not.toHaveBeenCalled();
+    expect(menuOf(host)).toBeNull();
+  });
+
+  it('a second click on the chip closes it', async () => {
+    const host = await composerHost('ask', undefined, { onSetAutonomy: vi.fn() });
+    const chip = titled(host, 'composer-autonomy');
+    await act(async () => chip.click());
+    expect(menuOf(host)).not.toBeNull();
+    await act(async () => chip.click());
+    expect(menuOf(host)).toBeNull();
+  });
+
+  it('Escape closes without changing anything, and gives the chip its focus back', async () => {
+    const set = vi.fn();
+    const host = await composerHost('ask', undefined, { onSetAutonomy: set });
+    const chip = titled(host, 'composer-autonomy');
+    await act(async () => chip.click());
+    await key(document.activeElement!, 'Escape');
+    expect(menuOf(host)).toBeNull();
+    expect(set).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(chip);
+  });
+
+  it('arrows walk the rows and wrap; Enter on a row is its click', async () => {
+    const set = vi.fn();
+    const host = await composerHost('ask', undefined, { onSetAutonomy: set });
+    await act(async () => titled(host, 'composer-autonomy').click());
+    const rows = modeRows(host);
+    expect(document.activeElement).toBe(rows[0]);
+    await key(rows[0], 'ArrowDown');
+    expect(document.activeElement).toBe(rows[1]);
+    await key(rows[1], 'ArrowUp');
+    await key(rows[0], 'ArrowUp');
+    expect(document.activeElement).toBe(rows[3]);
+    await key(rows[3], 'Home');
+    expect(document.activeElement).toBe(rows[0]);
+    // a native <button>: Enter and Space are its click, which is what we test
+    await act(async () => rows[1].click());
+    expect(set).toHaveBeenCalledWith('plan');
+  });
+
+  const ON = { allowAll: true, allowAllSince: Date.UTC(2026, 9, 23, 14, 2), files: [] };
+
+  it('with allow-all on, the list ends with a ticked "Allow all (this session)" row that takes it back', async () => {
+    const set = vi.fn();
     const stop = vi.fn();
     const host = await composerHost('ask', undefined, {
       standingGrants: ON,
       onStopAllowAll: stop,
-      onCycleAutonomy: cycle,
+      onSetAutonomy: set,
     });
     const chip = titled(host, 'composer-autonomy');
-    expect(host.querySelector('[data-testid="composer-allow-all-choice"]')).toBeNull();
     await act(async () => chip.click());
-    expect(cycle).not.toHaveBeenCalled();
-    expect(chip.getAttribute('aria-expanded')).toBe('true');
-    const stopBtn = titled(host, 'composer-stop-allow-all');
-    expect(stopBtn.textContent).toBe(en.autonomy.allowAll.stop);
-    await act(async () => stopBtn.click());
+    expect(modeRows(host)).toHaveLength(4);
+    const row = allowAllRow(host)!;
+    expect(row.getAttribute('role')).toBe('menuitemcheckbox');
+    expect(row.getAttribute('aria-checked')).toBe('true');
+    expect(row.textContent).toBe(en.autonomy.menu.currentMark + en.autonomy.menu.allowAll);
+    // it is the LAST item in the menu
+    const items = Array.from(menuOf(host)!.querySelectorAll('[role^="menuitem"]'));
+    expect(items[items.length - 1]).toBe(row);
+    await act(async () => row.click());
     expect(stop).toHaveBeenCalledTimes(1);
-    // the choice closes, and focus goes back to the chip rather than the body
-    expect(host.querySelector('[data-testid="composer-allow-all-choice"]')).toBeNull();
+    expect(set).not.toHaveBeenCalled();
+    expect(menuOf(host)).toBeNull();
     expect(document.activeElement).toBe(chip);
   });
 
-  it('Change mode is still there, and cycles', async () => {
-    const cycle = vi.fn();
+  it('picking a mode while allow-all is on changes the mode and leaves allow-all alone', async () => {
+    // Dan's call in the issue comment; his to flip
+    const set = vi.fn();
+    const stop = vi.fn();
     const host = await composerHost('ask', undefined, {
       standingGrants: ON,
-      onStopAllowAll: noop,
-      onCycleAutonomy: cycle,
+      onStopAllowAll: stop,
+      onSetAutonomy: set,
     });
     await act(async () => titled(host, 'composer-autonomy').click());
-    const change = titled(host, 'composer-allow-all-change-mode');
-    expect(change.textContent).toContain('plan');
-    await act(async () => change.click());
-    expect(cycle).toHaveBeenCalledTimes(1);
+    await act(async () => modeRows(host)[1].click());
+    expect(set).toHaveBeenCalledWith('plan');
+    expect(stop).not.toHaveBeenCalled();
   });
 
-  it('a revoke from ELSEWHERE closes the choice and puts focus back on the chip, not the page', async () => {
+  it('a revoke from ELSEWHERE closes the menu and puts focus back on the chip, not the page', async () => {
     const ctx = (grants: PanelContext['standingGrants']): PanelContext => ({
       sessionId: 'live-1',
       cardId: 'card-1',
@@ -331,34 +475,48 @@ describe('the mode chip while allow-all is on (#1434)', () => {
       controlsLock: null,
       setView: () => {},
       autonomy: 'ask',
-      onCycleAutonomy: noop,
+      onSetAutonomy: noop,
       standingGrants: grants,
       onStopAllowAll: noop,
     });
     const host = await mount(feedPanel.render(ctx(ON)));
     const chip = titled(host, 'composer-autonomy');
     await act(async () => chip.click());
-    titled(host, 'composer-stop-allow-all').focus();
-    expect(chip.getAttribute('aria-controls')).toBe(titled(host, 'composer-allow-all-choice').id);
+    allowAllRow(host)!.focus();
     // the card menu's ✕ (or a toast) revoked it: main pushes the new set
     await act(async () => roots[roots.length - 1].render(feedPanel.render(ctx({ allowAll: false, files: [] }))));
-    expect(host.querySelector('[data-testid="composer-allow-all-choice"]')).toBeNull();
+    expect(menuOf(host)).toBeNull();
     expect(document.activeElement).toBe(chip);
     expect(chip.textContent).toBe('🛡 ask');
   });
 
-  it('Escape on the chip closes the choice too', async () => {
-    const host = await composerHost('ask', undefined, { standingGrants: ON, onStopAllowAll: noop });
-    const chip = titled(host, 'composer-autonomy');
-    await act(async () => chip.click());
-    await act(async () => {
-      chip.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  it("another card's grant ending leaves THIS card's open menu and its focus alone", async () => {
+    // review: the focus check once asked "is focus in ANY mode menu", so card
+    // A's grant dropping (a restart) pulled the keyboard out of card B's menu
+    const ctx = (cardId: string, grants: PanelContext['standingGrants']): PanelContext => ({
+      sessionId: `live-${cardId}`,
+      cardId,
+      title: cardId,
+      visible: true,
+      dockEpoch: 0,
+      theme: 'nordic',
+      colorScheme: 'dark',
+      changed: 0,
+      controlsLock: null,
+      setView: () => {},
+      autonomy: 'ask',
+      onSetAutonomy: noop,
+      standingGrants: grants,
+      onStopAllowAll: noop,
     });
-    expect(host.querySelector('[data-testid="composer-allow-all-choice"]')).toBeNull();
-  });
-
-  it('full-auto reads as itself — it already asks nothing', async () => {
-    const host = await composerHost('full-auto', undefined, { standingGrants: ON, onStopAllowAll: noop });
-    expect(titled(host, 'composer-autonomy').textContent).toBe('🛡 full-auto');
+    await mount(feedPanel.render(ctx('A', ON)));
+    const rootA = roots[roots.length - 1];
+    const b = await mount(feedPanel.render(ctx('B', { allowAll: false, files: [] })));
+    await act(async () => titled(b, 'composer-autonomy').click());
+    const focused = document.activeElement;
+    expect(menuOf(b)!.contains(focused)).toBe(true);
+    await act(async () => rootA.render(feedPanel.render(ctx('A', { allowAll: false, files: [] }))));
+    expect(menuOf(b)).not.toBeNull();
+    expect(document.activeElement).toBe(focused);
   });
 });

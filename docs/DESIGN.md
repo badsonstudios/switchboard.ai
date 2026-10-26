@@ -1859,7 +1859,8 @@ badge (§5.11) so a glance answers "will this one interrupt me?"
 >   server (§5.16's ladder, issue 974's revoke). It now shows on the chip as
 >   **ask · allow all** (since when, until restart). Clicking the chip offers
 >   **Stop allowing all**. The header badge shows it too, and the tab, rail row
->   and strip pill wear a quiet mark. Main publishes when the grant was made
+>   and strip pill wear a quiet mark *(both since amended, 2026-10-26, #1462 —
+>   see below)*. Main publishes when the grant was made
 >   (`StandingGrants.allowAllSince`) on the existing standing-grants push.
 > - **The user's own Claude Code allow rules**, which the CLI honours in its
 >   `default` mode before Switchboard is consulted. This is correct
@@ -1869,6 +1870,26 @@ badge (§5.11) so a glance answers "will this one interrupt me?"
 >   and names the files. An allow-rule count per folder was considered and
 >   deferred: it needs a new main-side read of three settings files, and the
 >   copy alone makes the claim true.
+
+> **The quiet mark is gone, and the shield picks from a list *(amended
+> 2026-10-26, Dan, #1462)*.** Two changes to the block above.
+>
+> - **No ✓✓ on the tab, rail row or strip pill.** Dan saw two ticks beside some
+>   session names, could not tell what they meant, and had them removed. The
+>   grant is now stated in two places only: the shield chip (**ask · allow
+>   all**) and the header badge. #1434's acceptance ("never reads plain **ask**
+>   anywhere") still holds, because neither of those reads plain ask.
+> - **The shield opens a ticked list instead of cycling.** A click used to step
+>   to the next mode blind, and with allow-all on it grew two inline buttons
+>   (**Stop allowing all**, **Change mode (next: …)**), which Dan found
+>   confusing. Now a click always opens the same pick-one menu as the model and
+>   AI chips: the four modes in order (ask, plan, auto-edit, full-auto), ✓ on
+>   the card's setting, each row's hover the mode's description. While
+>   allow-all is on the list ends with one ticked row, **Allow all (this
+>   session)**, whose click is the revoke. Picking a mode while allow-all is on
+>   changes the mode and leaves allow-all on (the ticked row shows it); Dan may
+>   flip that. Turning allow-all ON stays on the approval bar. No keyboard
+>   shortcut or palette command cycled the mode, so nothing else changed.
 
 ### 5.10 The Session view — the primary working surface
 

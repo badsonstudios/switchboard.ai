@@ -521,7 +521,7 @@
       "session": "Claude Code cannot switch mode mid-flight, so for this session that is the next start."
     },
     "scope": {
-      "session": "Click to cycle. If this session's AI can switch mode mid-flight it switches straight away; if not, the change applies the next time this session starts or resumes.",
+      "session": "Click to pick this session's mode from a list. If this session's AI can switch mode mid-flight it switches straight away; if not, the change applies the next time this session starts or resumes.",
       "badge": "The mode this session is running at. Change it with the shield button under the prompt box.",
       "moved": "This session is in {now} right now. {ai} changed it itself — approving a plan takes a session out of plan mode. The mode below is the one it goes back to.",
       "movedUnnamed": "This session is in {now} right now. Its AI changed it itself — approving a plan takes a session out of plan mode. The mode below is the one it goes back to."
@@ -531,17 +531,21 @@
       "label": "{mode} · allow all",
       "since": "Allowing all since {time}: this session runs every tool call without asking you. Questions it asks you still come through.",
       "sinceUnknown": "Allowing all: this session runs every tool call without asking you. Questions it asks you still come through.",
-      "howSession": "It lasts until the session restarts. Click to stop allowing all.",
+      "howSession": "It lasts until the session restarts. To stop it, click here and untick Allow all (this session).",
       "howBadge": "It lasts until the session restarts. To stop it, click the shield button under the prompt box.",
-      "files": "{count, plural, one {# file is also always allowed.} other {# files are also always allowed.}}",
-      "menuLabel": "Allow all is on for this session",
-      "stop": "Stop allowing all",
-      "stopHint": "Go back to asking. Files you chose to always allow stay allowed.",
-      "changeMode": "Change mode (next: {next})",
-      "mark": "✓✓",
-      "markHint": "Allowing all: this session runs every tool call without asking you, until it restarts.",
-      "spoken": "{name}, allowing all without asking",
-      "spokenSuffix": ", allowing all without asking"
+      "files": "{count, plural, one {# file is also always allowed.} other {# files are also always allowed.}}"
+    },
+    "menu": {
+      "label": "Mode for this session",
+      "currentMark": "✓",
+      "name": {
+        "ask": "ask",
+        "plan": "plan",
+        "auto-edit": "auto-edit",
+        "full-auto": "full-auto"
+      },
+      "allowAll": "Allow all (this session)",
+      "allowAllHint": "On: this session runs every tool call without asking you, until it restarts. Click to stop allowing all. Files you chose to always allow stay allowed."
     }
   },
   "workspace": {

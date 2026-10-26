@@ -1,4 +1,4 @@
-// The four autonomy profiles (§5.9) — the ORDER they cycle in, and the ONE
+// The four autonomy profiles (§5.9) — the ORDER they are listed in, and the ONE
 // place the hover copy that explains them is assembled (#534).
 //
 // WHY THIS FILE EXISTS
@@ -73,10 +73,11 @@ import { AUTONOMY_MODES, isAutonomyMode, type AutonomyMode } from '../../../shar
 export type Autonomy = AutonomyMode;
 
 /**
- * The cycle order for the chips and the palette.
+ * The order the mode menu lists them in (#1462; until then, the order a click
+ * cycled through them).
  *
  * Least to most autonomous, with `plan` second because it is the one mode that
- * grants LESS than the default rather than more — a user walking the cycle
+ * grants LESS than the default rather than more — a user reading down the list
  * meets "safe" and "safer" before anything starts running on its own. That
  * order is now recorded with the values in `shared/sessions.ts`, so the type
  * cannot outgrow the list the chip walks.
@@ -92,12 +93,10 @@ export const DEFAULT_AUTONOMY: Autonomy = 'ask';
  *  which needs the same answer about untrusted input (§5.29). */
 export const isAutonomy = isAutonomyMode;
 
-/** The next mode for a chip click — wrapping, and tolerant of a value we do
- *  not recognise (which starts the walk from the default). */
-export function nextAutonomy(cur: string | undefined): Autonomy {
-  const i = isAutonomy(cur) ? AUTONOMIES.indexOf(cur) : AUTONOMIES.indexOf(DEFAULT_AUTONOMY);
-  return AUTONOMIES[(i + 1) % AUTONOMIES.length];
-}
+// `nextAutonomy` lived here: a click on the shield button CYCLED to the next
+// mode. Dan found that blind (#1462), so the click opens a ticked list
+// (`AutonomyMenu`) instead. Nothing else cycled (no shortcut, no palette
+// command), so it went.
 
 /**
  * Which control is being hovered — the second half of the tooltip.
@@ -134,12 +133,22 @@ export function autonomyTooltip(
    */
   claude = false
 ): string {
+  const how = t(`autonomy.scope.${scope}`);
+  const howClaude = claude && scope === 'session' ? ` ${t('autonomy.claude.session')}` : '';
+  return `${autonomyDescription(t, mode, claude)}${PARAGRAPH}${how}${howClaude}`;
+}
+
+/**
+ * What a mode DOES: the first paragraph of `autonomyTooltip`, on its own.
+ *
+ * The mode menu (#1462) hangs it on each row. The second paragraph says what
+ * the CHIP does with a mode, which is the chip's to say, not each row's.
+ */
+export function autonomyDescription(t: TFunction, mode: string | undefined, claude = false): string {
   const m = isAutonomy(mode) ? mode : DEFAULT_AUTONOMY;
   const what = t(`autonomy.desc.${m}`);
   const whatClaude = claude && CLAUDE_NOTES.has(m) ? ` ${t(`autonomy.claude.${m}`)}` : '';
-  const how = t(`autonomy.scope.${scope}`);
-  const howClaude = claude && scope === 'session' ? ` ${t('autonomy.claude.session')}` : '';
-  return `${what}${whatClaude}\n\n${how}${howClaude}`;
+  return `${what}${whatClaude}`;
 }
 
 /** The modes whose Claude Code behaviour has its own sentence. Every one since
@@ -176,7 +185,7 @@ export function autonomyLabel(t: TFunction, mode: string | undefined, allowAll: 
 export function allowAllTooltip(
   t: TFunction,
   grants: { allowAllSince?: number; files: readonly string[] },
-  /** how this surface stops it: the chip offers the button, the badge points at the chip */
+  /** how this surface stops it: the chip's menu has the ticked row, the badge points at the chip */
   scope: AutonomyScope
 ): string {
   const since =

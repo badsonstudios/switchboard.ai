@@ -103,7 +103,7 @@ export const sessionPanels: PanelContribution[] = [
         onDecide={ctx.onDecide}
         // #261's lesson again: the button is absent, not broken, without this
         onAllowFile={ctx.onAllowFile}
-        onCycleAutonomy={ctx.onCycleAutonomy}
+        onSetAutonomy={ctx.onSetAutonomy}
         // #1434, and #261's lesson: without these the chip never says allow-all
         standingGrants={ctx.standingGrants}
         onStopAllowAll={ctx.onStopAllowAll}

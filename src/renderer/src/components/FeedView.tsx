@@ -22,8 +22,8 @@ import {
   autonomyLabel,
   autonomyTooltip,
   isAutonomy,
-  nextAutonomy,
   PARAGRAPH,
+  type Autonomy,
 } from '../lib/autonomy';
 import {
   clearConversation,
@@ -98,6 +98,7 @@ import {
 } from '../lib/sibling-inbox';
 import { subscribeHandoff, takeHandoff } from '../lib/context-handoff';
 import { ModelQuickMenu } from './ModelQuickMenu';
+import { AutonomyMenu } from './AutonomyMenu';
 import { EffortChip } from './EffortChip';
 import { AiSwitchChip } from './AiSwitchChip';
 import type { SwitchAiNext } from '../lib/ai-switch-view';
@@ -691,7 +692,8 @@ export function FeedView(props: {
    */
   liveAutonomy?: string;
   model?: string;
-  onCycleAutonomy?: () => void;
+  /** set this card's mode, from the mode chip's menu (#1462) */
+  onSetAutonomy?: (mode: Autonomy) => void;
   /** this live session's standing grants (#974), for the mode chip (#1434) */
   standingGrants?: StandingGrants;
   /** take back "Allow all (this session)" (#1434) */
@@ -750,7 +752,7 @@ export function FeedView(props: {
   // them afresh on every render of its own, and `Composer` is memoised so that
   // a streamed chunk — a render of THIS component — leaves the prompt box
   // alone. See `use-stable-callback.ts`.
-  const onCycleAutonomy = useStableCallback(props.onCycleAutonomy);
+  const onSetAutonomy = useStableCallback(props.onSetAutonomy);
   const onStopAllowAll = useStableCallback(props.onStopAllowAll);
   const onSwitchAi = useStableCallback(props.onSwitchAi);
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
@@ -2042,7 +2044,7 @@ export function FeedView(props: {
         requestHeld={!!props.approval || !!props.approvalBatched}
         controlsLock={props.controlsLock}
         transport={props.transport}
-        onCycleAutonomy={onCycleAutonomy}
+        onSetAutonomy={onSetAutonomy}
         standingGrants={props.standingGrants}
         onStopAllowAll={onStopAllowAll}
         providerId={props.providerId}
@@ -2603,7 +2605,7 @@ const Composer = React.memo(function Composer({
   requestHeld,
   controlsLock,
   transport,
-  onCycleAutonomy,
+  onSetAutonomy,
   standingGrants,
   onStopAllowAll,
   providerId,
@@ -2648,10 +2650,11 @@ const Composer = React.memo(function Composer({
   controlsLock: SessionControlLock;
   /** P2-E10-09: only a typed-message transport can carry a pasted image */
   transport?: TransportKind;
-  onCycleAutonomy?: () => void;
+  /** set this card's mode — what a mode row in the chip's menu does (#1462) */
+  onSetAutonomy?: (mode: Autonomy) => void;
   /**
    * #1434: "Allow all (this session)" in force makes the chip read
-   * "ask · allow all", and its click offers Stop allowing all.
+   * "ask · allow all", and its menu (#1462) a ticked row that takes it back.
    */
   standingGrants?: StandingGrants;
   onStopAllowAll?: () => void;
@@ -2683,24 +2686,27 @@ const Composer = React.memo(function Composer({
       : null;
   // ALLOW-ALL, SAID ON THE CHIP (#1434). While it is on, main answers every
   // gated call Allow with no hold and no sound, so a chip reading "ask" was
-  // the lie Dan hit: "ask" sessions that never asked. The chip says so, and
-  // its click opens a two-item choice instead of cycling — Stop allowing all
-  // (the same revoke as the card menu's standing-approvals list) or the
-  // ordinary mode change. The choice closes itself when the grant goes,
-  // whichever surface took it back.
+  // the lie Dan hit: "ask" sessions that never asked. The chip says so.
   const allowAllOn = !!standingGrants?.allowAll;
-  const [allowAllChoice, setAllowAllChoice] = React.useState(false);
-  // where focus goes back to when the choice closes: the two buttons unmount
-  // under it, and a keyboard user would otherwise be dropped on the page body
+  // THE MODE MENU (#1462). A click on the chip opens a ticked list of the four
+  // modes — and, while allow-all is on, a ticked "Allow all (this session)" row
+  // that takes it back. It replaced click-to-cycle and the two inline buttons
+  // allow-all used to get. WHERE it was asked for (the chip's box, taken at
+  // click time), or null for shut — the model menu's arrangement.
+  const [autonomyMenuAt, setAutonomyMenuAt] = React.useState<DOMRect | null>(null);
+  // where focus goes back to when the menu closes: its rows unmount under it,
+  // and a keyboard user would otherwise be dropped on the page body
   const autonomyChip = React.useRef<HTMLButtonElement | null>(null);
-  const allowAllGroup = React.useRef<HTMLSpanElement | null>(null);
-  const allowAllChoiceId = React.useId();
-  /** Stop was pressed: when the grant actually goes, put focus somewhere real */
+  /** wraps the open menu, so "is focus in it" is asked of this composer's menu alone */
+  const autonomyMenuHost = React.useRef<HTMLSpanElement | null>(null);
+  const autonomyMenuId = React.useId();
+  /** the allow-all row was clicked: when the grant actually goes, put focus somewhere real */
   const focusBackOnRevoke = React.useRef(false);
-  const closeAllowAllChoice = (): void => {
-    setAllowAllChoice(false);
+  // Stable, so the menu's resize listener is not re-subscribed per render.
+  const closeAutonomyMenu = React.useCallback((): void => {
+    setAutonomyMenuAt(null);
     autonomyChip.current?.focus();
-  };
+  }, []);
   // The draft OUTLIVES this component (#485). It is seeded from the workspace
   // `ui` blob on mount and written back on every change, because the component
   // dies far more often than the user's intent does: switching to the Terminal
@@ -2715,21 +2721,33 @@ const Composer = React.memo(function Composer({
     [cardId]
   );
   const box = React.useRef<HTMLTextAreaElement | null>(null);
-  // THE GRANT WENT (#1434, review) — from this chip, the card menu or anywhere
-  // else. The choice closes; and if focus was in it, or Stop was just pressed,
-  // it goes back to the chip — or, on an AI that cannot switch modes, to the
-  // prompt box, because without allow-all that chip is disabled again and a
-  // disabled control drops focus on the page. A LAYOUT effect, and the choice
-  // stays mounted until here, so "was focus inside it" can still be asked.
+  // THE GRANT WENT (#1434, review) — from the menu's ticked row, the card menu
+  // or anywhere else. The menu closes; and if focus was in it, or its allow-all
+  // row was just clicked, focus goes back to the chip — or, on an AI that
+  // cannot switch modes, to the prompt box, because without allow-all that
+  // chip is disabled again and a disabled control drops focus on the page. A
+  // LAYOUT effect, and the menu stays mounted until here, so "was focus inside
+  // it" can still be asked — of the chip's OWN document, which in a popout is
+  // not the global one.
+  //
+  // `menuAllowAll` is what keeps it mounted: the menu's allow-all row follows
+  // the grant one layout pass LATE, so on the render where the grant goes the
+  // row (which may hold the focus) is still there to be asked about. Read
+  // straight from `allowAllOn` it would already have unmounted, and focus would
+  // be on the page body before this effect could see where it had been.
+  const [menuAllowAll, setMenuAllowAll] = React.useState(allowAllOn);
   React.useLayoutEffect(() => {
+    setMenuAllowAll(allowAllOn);
     if (allowAllOn) return;
-    const inChoice = !!allowAllGroup.current?.contains(document.activeElement);
-    if (inChoice || focusBackOnRevoke.current) {
-      const chip = autonomyChip.current;
+    const chip = autonomyChip.current;
+    // THIS composer's menu, never "any mode menu": another card's grant can
+    // end (a restart drops it) while a different card's menu has the keyboard
+    const inMenu = !!autonomyMenuHost.current?.contains(chip?.ownerDocument.activeElement ?? null);
+    if (inMenu || focusBackOnRevoke.current) {
       (chip && !chip.disabled ? chip : box.current)?.focus();
     }
     focusBackOnRevoke.current = false;
-    setAllowAllChoice(false);
+    setAutonomyMenuAt(null);
   }, [allowAllOn]);
   // "Use again" from the prompt list (#1203). It ADDS to what is typed rather
   // than replacing it (`recallInto`), and hands the keyboard to the box with
@@ -2988,6 +3006,18 @@ const Composer = React.memo(function Composer({
   // then the provider's own off the controls answer.
   const sessionAi = useSessionAi(providerId, aiControls?.ai);
   const stopTitle = sessionAi.name ? t('feedView.stop', { ai: sessionAi.name }) : t('feedView.stopUnnamed');
+  /**
+   * Does a click on the mode chip open its menu (#1462)? When there is a mode
+   * to set, or an allow-all to take back — which on an AI that cannot switch
+   * modes is the only thing the menu offers.
+   */
+  const modeMenuOpens = allowAllOn || (noModes === null && !!onSetAutonomy);
+  const pickAutonomy = (mode: Autonomy): void => onSetAutonomy?.(mode);
+  const revokeAllowAllFromMenu = (): void => {
+    focusBackOnRevoke.current = true;
+    closeAutonomyMenu();
+    onStopAllowAll?.();
+  };
   const closeModelMenu = (): void => {
     // The REF, not the state — see `modelBusyRef`. Belt to the chip's
     // `disabled` braces, which is what actually stops the click getting here;
@@ -4815,17 +4845,25 @@ const Composer = React.memo(function Composer({
         {/* This session's autonomy (E10-05). The tooltip is the shared one
             (#534) â€” it says what the MODE does, then what THIS control does
             with it, which is the question a chip that applies on next resume
-            has to answer. `data-testid` so the e2e that cycles it is not
-            pinned to the copy. */}
+            has to answer. `data-testid` so the e2e that picks from it is not
+            pinned to the copy.
+
+            A click opens the mode menu (#1462), every time — it used to cycle
+            blind. */}
         {withReason(
           allowAllOn ? null : noModes,
           <button
             onClick={
-              allowAllOn
-                ? () => setAllowAllChoice((open) => !open)
-                : noModes === null
-                  ? onCycleAutonomy
-                  : undefined
+              modeMenuOpens
+                ? (e) => {
+                    // A second click CLOSES, as every menu button does. With a
+                    // mouse the menu's click-away layer gets there first (it
+                    // covers the chip); this is for a click that is not one,
+                    // like a screen reader's activate on the chip.
+                    if (autonomyMenuAt) return closeAutonomyMenu();
+                    setAutonomyMenuAt(e.currentTarget.getBoundingClientRect());
+                  }
+                : undefined
             }
             // with allow-all on the chip stays clickable on an AI that cannot
             // switch modes: the way OUT of the grant is not a mode switch
@@ -4833,18 +4871,9 @@ const Composer = React.memo(function Composer({
             data-unavailable={noModes !== null && !allowAllOn ? 'modes' : undefined}
             data-allow-all={allowAllOn ? 'true' : undefined}
             ref={autonomyChip}
-            aria-expanded={allowAllOn ? allowAllChoice : undefined}
-            aria-controls={allowAllChoice ? allowAllChoiceId : undefined}
-            onKeyDown={
-              allowAllChoice
-                ? (e) => {
-                    if (e.key === 'Escape') {
-                      e.stopPropagation();
-                      closeAllowAllChoice();
-                    }
-                  }
-                : undefined
-            }
+            aria-haspopup={modeMenuOpens ? 'menu' : undefined}
+            aria-expanded={modeMenuOpens ? autonomyMenuAt !== null : undefined}
+            aria-controls={autonomyMenuAt ? autonomyMenuId : undefined}
             data-testid="composer-autonomy"
             // What the session is in NOW comes first when it is not what the chip
             // sets (#1072) — otherwise the tooltip describes a mode the session
@@ -4888,55 +4917,25 @@ const Composer = React.memo(function Composer({
               : autonomyLabel(t, autonomy, allowAllOn)}
           </button>
         )}
-        {allowAllChoice && (
-          // The choice the chip offers while allow-all is on (#1434). Inline in
-          // the options row rather than a floating menu: two buttons, beside
-          // the thing they act on, in a row that already wraps (#903).
-          <span
-            ref={allowAllGroup}
-            id={allowAllChoiceId}
-            role="group"
-            aria-label={t('autonomy.allowAll.menuLabel')}
-            data-testid="composer-allow-all-choice"
-            style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.stopPropagation();
-                closeAllowAllChoice();
-              }
-            }}
-          >
-            <button
-              type="button"
-              className={CHIP_CLASS}
-              data-testid="composer-stop-allow-all"
-              title={t('autonomy.allowAll.stopHint')}
-              disabled={!onStopAllowAll}
-              // focus lands on the way out, which is why the chip was clicked
-              autoFocus
-              onClick={() => {
-                focusBackOnRevoke.current = true;
-                closeAllowAllChoice();
-                onStopAllowAll?.();
-              }}
-            >
-              {t('autonomy.allowAll.stop')}
-            </button>
-            {noModes === null && onCycleAutonomy && (
-              <button
-                type="button"
-                className={CHIP_CLASS}
-                data-testid="composer-allow-all-change-mode"
-                onClick={() => {
-                  closeAllowAllChoice();
-                  onCycleAutonomy();
-                }}
-              >
-                {t('autonomy.allowAll.changeMode', {
-                  next: t(`autonomy.${nextAutonomy(autonomy)}`),
-                })}
-              </button>
-            )}
+        {autonomyMenuAt && (
+          // Not portalled, like the model menu: it renders in this subtree, so
+          // a popped-out card's menu opens in the popout's own document. The
+          // host is `display: contents`, no box of its own in the row (the
+          // menu inside is `position: fixed` anyway).
+          <span ref={autonomyMenuHost} style={{ display: 'contents' }}>
+            <AutonomyMenu
+              id={autonomyMenuId}
+              anchor={autonomyMenuAt}
+              current={autonomy}
+              claude={sessionAi.claude}
+              // only reachable greyed while allow-all is on (the chip is
+              // disabled otherwise): its row is the way out
+              modesUnavailable={noModes}
+              allowAll={allowAllOn || menuAllowAll}
+              onPick={pickAutonomy}
+              onRevokeAllowAll={onStopAllowAll ? revokeAllowAllFromMenu : undefined}
+              onClose={closeAutonomyMenu}
+            />
           </span>
         )}
         {/* WHICH MODEL, and — since #747 — the switcher for it.

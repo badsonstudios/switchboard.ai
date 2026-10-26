@@ -8,29 +8,16 @@ import {
   DEFAULT_AUTONOMY,
   allowAllTooltip,
   autonomyLabel,
+  autonomyDescription,
   autonomyTooltip,
   isAutonomy,
-  nextAutonomy,
   PARAGRAPH,
 } from './autonomy';
 
-describe('the autonomy cycle', () => {
-  it('wraps through all four in order', () => {
+describe('the four modes', () => {
+  it('are listed in this order, starting at the default (the mode menu reads it, #1462)', () => {
     expect(AUTONOMIES).toEqual(['ask', 'plan', 'auto-edit', 'full-auto']);
-    const walk: string[] = [];
-    let cur: string = DEFAULT_AUTONOMY;
-    for (let i = 0; i < AUTONOMIES.length; i++) {
-      cur = nextAutonomy(cur);
-      walk.push(cur);
-    }
-    expect(walk).toEqual(['plan', 'auto-edit', 'full-auto', 'ask']);
-  });
-
-  it('starts the walk from the default for a value it does not recognise', () => {
-    // a workspace blob outlives the code that wrote it: a mode we retired must
-    // not strand the chip on a value no click can leave
-    expect(nextAutonomy('yolo')).toBe('plan');
-    expect(nextAutonomy(undefined)).toBe('plan');
+    expect(AUTONOMIES[0]).toBe(DEFAULT_AUTONOMY);
   });
 
   it('recognises exactly the four', () => {
@@ -82,6 +69,18 @@ describe('the hover copy', () => {
   it('separates the two halves with a blank line, which a native title honours', () => {
     const t = i18next.t.bind(i18next);
     expect(autonomyTooltip(t, 'ask', 'badge').split(PARAGRAPH)).toHaveLength(2);
+  });
+
+  it("the menu rows' description is the tooltip's first half, and only that (#1462)", () => {
+    const t = i18next.t.bind(i18next);
+    for (const m of AUTONOMIES) {
+      for (const claude of [false, true]) {
+        const d = autonomyDescription(t, m, claude);
+        expect(autonomyTooltip(t, m, 'session', claude).split(PARAGRAPH)[0]).toBe(d);
+        expect(d).not.toContain(en.autonomy.scope.session);
+      }
+    }
+    expect(autonomyDescription(t, 'yolo')).toBe(desc('ask'));
   });
 
   /**

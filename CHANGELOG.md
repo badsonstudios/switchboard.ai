@@ -140,6 +140,25 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.132 — unreleased
 
+### Changed
+
+- **The mode button under the prompt box opens a list.** Clicking the shield
+  (🛡 ask / plan / auto-edit / full-auto) used to jump to the next mode, so you
+  clicked round until you reached the one you wanted. Now it opens a list of
+  the four modes with a ✓ on the current one, like the model picker beside it.
+  Pick one and the list closes. Hover a mode in the list to read what it does.
+  It works from the keyboard too: arrows move, Enter picks, Esc closes.
+- **Allow all is in the same list.** While **Allow all (this session)** is on,
+  the list has one more line at the bottom, ticked: **✓ Allow all (this
+  session)**. Click it to turn Allow all off. The two extra buttons the shield
+  used to show for this (**Stop allowing all** and **Change mode (next: …)**)
+  are gone. Picking a mode while Allow all is on changes the mode and leaves
+  Allow all on.
+- **No more ✓✓ beside a session's name.** The two ticks on a session's tab, its
+  row in the sessions list and its pill meant Allow all was on for that
+  session. They were easy to misread, so they are gone. The mode button still
+  reads **ask · allow all** while it is on.
+
 ### Fixed
 
 - **Typing in the message box costs the app less, most of all with several

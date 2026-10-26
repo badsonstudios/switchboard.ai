@@ -22,7 +22,6 @@ import { useShownStatus } from '../lib/use-shown-status';
 import { dismissWaiting, isDismissClick } from '../lib/seen';
 import { tint } from '../lib/tint';
 import { AiBadge } from './AiBadge';
-import { AllowAllMark, useCardAllowAll } from './AllowAllMark';
 import { DEFAULT_TASK_LABEL_SIZE, LABEL_LINES } from '../../../shared/task-label-size';
 
 /**
@@ -102,16 +101,12 @@ export function sessionSpokenName(
   t: TFunction,
   s: RailSession,
   isPinned: boolean,
-  waiting: number,
-  /**
-   * "Allow all (this session)" is on (#1434). Said in the name because the
-   * mark beside the row is decoration, like the pin, and a screen-reader user
-   * must hear that this session will not ask either.
-   */
-  allowAll = false
+  waiting: number
 ): string {
-  const name = baseSpokenName(t, s, isPinned, waiting);
-  return allowAll ? t('autonomy.allowAll.spoken', { name }) : name;
+  // #1434 added ", allowing all without asking" here, to go with a ✓✓ mark
+  // beside the row. Dan removed the mark (#1462), and the words went with it:
+  // the mode chip under the prompt box is the one place that is said.
+  return baseSpokenName(t, s, isPinned, waiting);
 }
 
 function baseSpokenName(
@@ -224,7 +219,6 @@ export function SessionRow(props: {
   const accent = s.accent ?? 'var(--faint)';
   const selected = props.selected;
   const isPinned = props.pinned;
-  const allowAll = useCardAllowAll(s.id);
   const waiting = props.waiting;
   const depth = props.depth;
   const indent = railDepthIndent(depth);
@@ -410,8 +404,8 @@ export function SessionRow(props: {
             // `aria-hidden` decoration like every other glyph on the row.
             aria-label={
               props.folded
-                ? t('strip.pillFolded', { name: sessionSpokenName(t, s, isPinned, waiting, allowAll) })
-                : sessionSpokenName(t, s, isPinned, waiting, allowAll)
+                ? t('strip.pillFolded', { name: sessionSpokenName(t, s, isPinned, waiting) })
+                : sessionSpokenName(t, s, isPinned, waiting)
             }
             // "this is the session the grid is showing" — a fact about the
             // rail's own list, which is what aria-current is for
@@ -584,8 +578,6 @@ export function SessionRow(props: {
               {t('rail.pinIcon')}
             </span>
           )}
-          {/* #1434: this session will not ask — beside the pin, as quiet */}
-          <AllowAllMark cardId={s.id} />
           <div
             style={{
               display: 'flex',

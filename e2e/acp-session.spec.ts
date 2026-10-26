@@ -133,7 +133,9 @@ test.describe('a session on the fake ACP agent (#1289)', () => {
     await expect(chip).toBeEnabled();
     await expect(chip).not.toHaveAttribute('data-unavailable', /.+/);
     await expect(chip).toContainText('ask');
+    // picked from the chip's menu (#1462; a click cycled until then)
     await chip.click();
+    await w.locator('[data-autonomy-row="plan"]').click();
     await expect(chip).toContainText('plan');
     // ONE prompt, no retry: the chip's IPC reaches main before the prompt's,
     // and main writes the mode switch to the agent before the prompt, which

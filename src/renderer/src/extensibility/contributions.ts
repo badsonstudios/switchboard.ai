@@ -29,6 +29,7 @@ import type { EventDto } from '../model/types';
 import type { PlanLimitWindow } from '../../../shared/usage-report';
 import type { DecideHeld, StandingGrants } from '../../../shared/ipc/permissions';
 import type { TransportKind } from '../../../shared/transport';
+import type { AutonomyMode } from '../../../shared/sessions';
 
 /**
  * A set of commands. Built lazily from deps rather than supplied as a list:
@@ -236,11 +237,12 @@ export interface PanelContext {
   onDecide?: DecideHeld;
   /** §5.16's middle rung (#974) — grant one file, and answer this call */
   onAllowFile?: (filePath: string) => void;
-  onCycleAutonomy?: () => void;
+  /** set this card's mode, from the mode chip's menu (#1462; it cycled until then) */
+  onSetAutonomy?: (mode: AutonomyMode) => void;
   /**
    * What this live session has been told it may do without asking (#974), for
    * the mode chip (#1434): while `allowAll` is on it reads "ask · allow all"
-   * and offers the way out. Optional — absent reads as no grant.
+   * and its menu has the way out. Optional — absent reads as no grant.
    */
   standingGrants?: StandingGrants;
   /** take back "Allow all (this session)"; absent when no session is live */
