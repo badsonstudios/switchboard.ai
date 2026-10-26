@@ -339,10 +339,110 @@ one of every block construct in it.
 render. The feed's finished blocks are memoised and do not re-render; the
 document viewer and the update dialog were not measured.
 
+## Fourth step, 2026-10-26: what the prompt box itself costs, and what several busy sessions cost it
+
+The first three steps were about a reply streaming into the conversation you
+are typing under. This one asked what is left on the keystroke's own path, and
+— because the owner's laptop runs several busy sessions at once — what OTHER
+busy sessions cost it. The probe gained `PROBE_SESSIONS` (real sessions in
+their own cards, hidden behind the one being typed in, each with 300 blocks and
+a reply streaming), `PROBE_NOTYPE` (the same window untyped, as the control),
+Event Timing processing time per event type, and render counts from a
+measurement-only build patch (`render-counter.js`, never shipped).
+
+### One quiet session: a keystroke is cheap
+
+4x, 980 blocks, nothing streaming. Typing a key every 100 ms against the same
+window untyped: **~19 ms of main thread per keystroke** — about 5 of it script,
+4 layout (one full-document layout of 37 dirty objects; the textarea is not a
+relayout boundary, and `contain: strict` on it measured no different), and the
+rest the editing command itself, paint, pre-paint and layerize. No long tasks,
+nothing near a frame. Ruled out on the way, each by measurement: a long draft
+(4,000 characters: identical), the textarea's `field-sizing: content`
+(a fixed-height box: identical), and DOM writes (a `MutationObserver` saw only
+the textarea's own text change per key).
+
+**But the composer rendered TWICE per keystroke**, and on every streamed chunk
+in every card:
+
+| render counts | before | after |
+|---|---|---|
+| 1 session, quiet, 96 keys | Composer 192, ContextMeter 96 | Composer 98, ContextMeter 0 |
+| 4 sessions streaming, 6 s, NO typing | FeedView 392, Composer 385, ContextMeter 384 | FeedView 392, **Composer 0**, ContextMeter 0 |
+
+- The second render per key was the key-up handler writing the caret the change
+  handler had just written. React ran the whole composer body again, found
+  nothing changed and skipped the children, which is why the meter's count was
+  half the composer's.
+- Every `FeedView` render — one per streamed chunk — rendered its `Composer`.
+  #1123 tried memoising it with one session and saw noise; with four busy
+  cards it is a quarter of the script.
+
+**Fixed:** the composer is `React.memo`, the card's callbacks reach it through
+`useStableCallback` (the card makes fresh arrow functions on every render of
+its own), the key-up writes the caret only when it moved, and the context meter
+is memoised with its number format kept per language.
+
+### Before and after, alternated run by run (both builds side by side)
+
+| | before | after |
+|---|---|---|
+| **1 session, quiet, 4x** — script / main thread busy | 525, 517 / 3,811, 3,703 ms | 389, 390 / 3,661, 3,631 ms |
+| key-up handler, summed over ~96 keys | 113, 111 ms | 20, 23 ms |
+| **4 sessions, 4x, no typing** — script | 4,710, 4,790 ms | 3,572, 3,534 ms |
+| main thread busy (of 12,000) | 9,346, 9,406 ms | **8,140, 8,141 ms** |
+| **4 sessions, 4x, typing** — main thread busy | 10,842, 10,796 ms | 9,777, 9,791 ms |
+| key → paint p50 / p95 | 56–64 / 80 ms | 64 / 72–80 ms |
+| **4 sessions, 6x, typing** — frames drawn | 254, 261 | **345, 332** |
+| frames slower than 50 ms | 139, 132 | 84, 96 |
+| key → paint p50 / p95 | 96 / 120–128 ms | 96 / 120 ms |
+
+So about a tenth of the main thread back at 4x with four busy sessions, and a
+third more frames at 6x — but **key → paint does not move**, because of the two
+things below, neither of which is the composer's.
+
+### What is left, and whose it is
+
+**1. Hidden busy cards saturate the thread (issue 1013's, not this one's).**
+One visible session streaming at 4x: 7.7 s of the 12 s window busy, 2.6 s of it
+script. Add three hidden busy cards: 10.8 s busy, 5.1 s script — about a second
+of main thread per hidden card per 12 s at 4x, and at 6x four sessions use the
+whole thread (12.0 of 12.0 s) whether or not anyone types. A profile of that
+window is dominated by the feeds (three of the four hidden) re-rendering on every chunk: `reconcileChildrenArray`
+over every block, `applyFolds`, `writtenPages`, `upsertBlock`, the tail pin, the
+markdown parse and sanitise of each hidden reply, and i18n lookups. #1062's
+"undrawn streams cost about nothing" was measured with GHOST sessions — ids with
+no card — which pay the wire and nothing else; a real hidden card renders.
+Issue 1013's item 3 ("pause rendering for hidden cards", recorded as low value
+on that evidence) is the measured next step: `FeedView` already receives
+`visible`.
+
+**2. Any running CSS animation adds two frames to every keystroke's echo.**
+Found by accident while reading the trace: with every animation in the window
+paused, key → paint fell from **56 → 24 ms p50 at 1x** (two alternated pairs:
+56/24, 56/24) and **80 → 48 ms at 6x** with a reply and three ghost streams
+running. Cancelling only the spinning rings or only the pulsing dots changed
+nothing; a single 10 px composited `will-change: transform` square spinning by
+itself brought the whole 32 ms back; `animation-play-state: paused` removes it.
+The animations that run whenever a session is working are the working ring
+(`sb-spin`, rail and tab) and the working banner's dots (`sb-pulse`) — so on the
+owner's machines, where something is nearly always working, every keystroke
+pays it. This is Chromium's frame scheduling while anything animates, not script
+of ours; the only lever is not animating while someone types (pause the working
+indicators for a moment after each keystroke), which changes what the rail looks
+like and is the owner's call. Measured with injected input (CDP); the
+presentation time Event Timing reports is the real one.
+
+### Not changed
+
+The per-keystroke layout and paint (whole-document, ~4 ms of layout and ~8 ms
+of paint pipeline per key at 4x) — no containment tried moved it, and it is the
+browser's editing path, not ours.
+
 ## What this probe cannot say
 
-- **One session.** #1013 is eight. Each visible conversation pays this
-  separately, so the saving should multiply, but that is an inference.
+- **One session** in the first three steps. The fourth measured four, and found
+  that a HIDDEN busy card pays nearly what a visible one does (see above).
 - **Synthetic stream.** One prose block growing. A real turn interleaves tool
   calls, results landing late and thinking blocks.
 - **The throttle is a proxy.** It slows JavaScript and layout alike; a real

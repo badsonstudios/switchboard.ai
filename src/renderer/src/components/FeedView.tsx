@@ -60,6 +60,7 @@ import {
 } from '../lib/composer-attachment-draft';
 import { interruptSession, resolveDraftMentions, submitPrompt } from '../lib/composer';
 import { controlUnavailable, useAiControls } from '../lib/ai-controls';
+import { useStableCallback } from '../lib/use-stable-callback';
 import { useSessionAi } from '../lib/session-ai';
 import type { SessionControlsWire } from '../../../shared/engine-controls';
 import { mayMention } from '../../../shared/mention-finder';
@@ -745,6 +746,13 @@ export function FeedView(props: {
   const aiControls = useAiControls(props.sessionId);
   // which AI the working strip names (#1316) — never "Claude" for every AI
   const sessionAiName = useSessionAi(props.providerId, aiControls?.ai).name;
+  // The composer's callbacks, held to one identity each (#716). The card makes
+  // them afresh on every render of its own, and `Composer` is memoised so that
+  // a streamed chunk — a render of THIS component — leaves the prompt box
+  // alone. See `use-stable-callback.ts`.
+  const onCycleAutonomy = useStableCallback(props.onCycleAutonomy);
+  const onStopAllowAll = useStableCallback(props.onStopAllowAll);
+  const onSwitchAi = useStableCallback(props.onSwitchAi);
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
   /** counts the times `blocks` was REPLACED outright, for `useFeedSkipping` */
   const [conversation, setConversation] = React.useState(0);
@@ -2034,12 +2042,12 @@ export function FeedView(props: {
         requestHeld={!!props.approval || !!props.approvalBatched}
         controlsLock={props.controlsLock}
         transport={props.transport}
-        onCycleAutonomy={props.onCycleAutonomy}
+        onCycleAutonomy={onCycleAutonomy}
         standingGrants={props.standingGrants}
-        onStopAllowAll={props.onStopAllowAll}
+        onStopAllowAll={onStopAllowAll}
         providerId={props.providerId}
         aiControls={aiControls}
-        onSwitchAi={props.onSwitchAi}
+        onSwitchAi={onSwitchAi}
         // Everything ELSE docked in this column, as one value (#716 review).
         // The composer's height cap is what the panel can spare, which is its
         // own height less the feed's floor less every sibling docked around the
@@ -2574,7 +2582,17 @@ function withReason(reason: string | null, el: React.JSX.Element): React.JSX.Ele
  * text is written to the session's PTY exactly as if typed in the terminal
  * (multiline goes as a bracketed paste so the TUI treats it as one prompt).
  */
-function Composer({
+//
+// MEMOISED (#716), and the reason is the busy cards, not the box you type in.
+// `Composer` is a child of `FeedView`, and `FeedView` renders on every streamed
+// chunk — so every working session was rendering its prompt box, its chips and
+// its context meter several times a second, in every card, open or hidden,
+// while nothing about any of them had changed. Measured with four busy
+// sessions: one composer render per feed render, ~64 a second in all. With
+// the memo a chunk renders none, and a keystroke renders this one. The card's
+// callbacks reach here through `useStableCallback` so that a fresh arrow
+// function from the card does not undo it.
+const Composer = React.memo(function Composer({
   sessionId,
   cardId,
   title,
@@ -3529,7 +3547,14 @@ function Composer({
           hints: slashHints,
         }
       : null;
-  const syncCaret = (): void => setCaret(box.current?.selectionStart ?? 0);
+  // Only when it MOVED (#716). This runs on every key-up, straight after the
+  // change handler has already recorded the same caret, and a state write of
+  // an equal value from an event handler still renders this whole component
+  // once more — a second full composer render for every character typed.
+  const syncCaret = (): void => {
+    const at = box.current?.selectionStart ?? 0;
+    if (at !== caret) setCaret(at);
+  };
   const popupWanted = slash !== null;
   const mentionWanted = mention !== null;
   /** Which completion is live, as one comparable key: the selection resets when it changes. */
@@ -5239,4 +5264,4 @@ function Composer({
       </div>
     </div>
   );
-}
+});

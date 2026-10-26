@@ -10,7 +10,20 @@ import { createRoot, Root } from 'react-dom/client';
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { initI18nForTests } from '../i18n/test-i18n';
 import type { ControlVerdict } from '../../../shared/control';
-import { CONTEXT_POLL_MS, CONTEXT_RETRY_MS, CONTEXT_SETTLE_MS, ContextMeter } from './ContextMeter';
+import { CONTEXT_POLL_MS, CONTEXT_RETRY_MS, CONTEXT_SETTLE_MS, ContextMeter, formatCount } from './ContextMeter';
+
+/** every render of the meter, counted through the one hook it calls first */
+const drawn = vi.hoisted(() => ({ n: 0 }));
+vi.mock('react-i18next', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-i18next')>();
+  return {
+    ...actual,
+    useTranslation: (...args: Parameters<typeof actual.useTranslation>) => {
+      drawn.n += 1;
+      return actual.useTranslation(...args);
+    },
+  };
+});
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -278,5 +291,40 @@ describe('when there is no answer', () => {
     await mount();
     expect(meter()).toBeNull();
     expect(calls).toEqual([]);
+  });
+});
+
+describe('formatCount (#716)', () => {
+  it('says a count the way the language does, the same as toLocaleString', () => {
+    expect(formatCount(38913, 'en')).toBe((38913).toLocaleString('en'));
+    expect(formatCount(200000, 'de')).toBe((200000).toLocaleString('de'));
+  });
+
+  it('a language tag the platform rejects falls back rather than throwing in render', () => {
+    expect(() => formatCount(1234, 'not a tag!!')).not.toThrow();
+    expect(formatCount(1234, 'not a tag!!')).toBe((1234).toLocaleString());
+  });
+});
+
+describe('it does not redraw with the composer (#716)', () => {
+  it('a parent render with the same four props does not render the meter again', async () => {
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    const draw = async (): Promise<void> => {
+      await act(async () => {
+        root!.render(<ContextMeter liveId="live-1" working={false} model="claude-opus-5-5" />);
+      });
+      await settle();
+    };
+    await draw();
+    expect(meter()!.textContent).toBe('context 19%');
+    const settled = drawn.n;
+    // the composer renders on every keystroke and hands the meter the same
+    // props each time: nothing about the context window changed
+    await draw();
+    await draw();
+    expect(drawn.n).toBe(settled);
+    expect(meter()!.textContent).toBe('context 19%');
   });
 });
