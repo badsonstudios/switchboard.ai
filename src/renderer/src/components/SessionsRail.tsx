@@ -1263,9 +1263,20 @@ export function SessionsRail(props: {
           }}
           style={
             {
-              display: 'flex',
+              // TWO LINES (#1455), not one flex row. In one row the name was the
+              // only item that could shrink — the count, the roll-up, the
+              // waiting chip, the folded-away pill and the three buttons are all
+              // `flexShrink: 0` — so on a normal list width it went to "IT…" or
+              // to nothing, and a group you cannot read is a group you cannot
+              // find. Line 1 is caret | mark | NAME | buttons; line 2 is the
+              // chips, in the name's column so they start under it whatever
+              // leads the row (a dot, a folder, or — "No group" — nothing; the
+              // empty mark column is 0 wide, which is why the spacing is
+              // margins and not `columnGap`).
+              display: 'grid',
+              gridTemplateColumns: 'auto auto minmax(0, 1fr) auto',
               alignItems: 'center',
-              gap: 7,
+              rowGap: 4,
               padding: '8px 9px 8px 10px',
               background: isAuto ? 'var(--auto-head)' : tint(opts.color, 7),
               // what the card's `overflow: hidden` used to do for it (#295).
@@ -1311,6 +1322,9 @@ export function SessionsRail(props: {
           <span
             aria-hidden
             style={{
+              gridColumn: 1,
+              gridRow: 1,
+              marginInlineEnd: 7,
               fontSize: 8,
               color: 'var(--muted)',
               inlineSize: 8,
@@ -1342,6 +1356,9 @@ export function SessionsRail(props: {
               title={t('rail.recolorGroup')}
               aria-label={t('rail.recolorGroup')}
               style={{
+                gridColumn: 2,
+                gridRow: 1,
+                marginInlineEnd: 7,
                 inlineSize: 9,
                 blockSize: 9,
                 padding: 0,
@@ -1358,6 +1375,9 @@ export function SessionsRail(props: {
             // — "this one is a directory, and I made it, not you"
             <span
               style={{
+                gridColumn: 2,
+                gridRow: 1,
+                marginInlineEnd: 7,
                 color: 'var(--auto-ink)',
                 display: 'flex',
                 alignItems: 'center',
@@ -1405,13 +1425,17 @@ export function SessionsRail(props: {
                 if (e.key === 'Escape') setEditingGroup(null);
               }}
               style={{
+                gridColumn: 3,
+                gridRow: 1,
                 inlineSize: '100%',
-                // #295. This field is one flex item among eight (chevron, dot,
-                // count chip, AUTO badge, the calm/need line, three buttons —
-                // every one of them `flexShrink: 0`), and a flex item's
-                // automatic minimum size is its own intrinsic width until this
-                // is set (CSS Sizing 3 5.2). At ~150px against ~70px of room it
-                // has always overflowed the header; the card's
+                // #295. This field used to be one flex item among eight
+                // (chevron, dot, count chip, AUTO badge, the calm/need line,
+                // three buttons — every one of them `flexShrink: 0`), and a
+                // flex item's automatic minimum size is its own intrinsic
+                // width until this is set (CSS Sizing 3 5.2). Since #1455 it
+                // is a grid item in the name's `minmax(0, 1fr)` column, whose
+                // fixed 0 minimum makes this redundant but harmless. At ~150px
+                // against ~70px of room it overflowed the header; the card's
                 // `overflow: hidden` was hiding it, and that clip had to go so
                 // the pinned block could stick. Same reason the card header's
                 // name carried this pair until #905 took the name out of the
@@ -1475,8 +1499,27 @@ export function SessionsRail(props: {
                 const box = e.currentTarget.getBoundingClientRect();
                 setGroupMenu({ group: g, x: box.left, y: box.bottom });
               }}
-              title={g ? t('rail.renameGroup') : undefined}
+              // the FULL name (#1455): it has its line to itself now, but a long
+              // enough name still ends in an ellipsis, and this is where the
+              // rest of it is. A held approval's hint (#1202) comes with it: the
+              // name is most of what a closed header is, and a tooltip that
+              // only shows over its empty end is one nobody finds.
+              title={
+                approval.active
+                  ? `${opts.name}\n${approvalHint(t, approval)}`
+                  : g
+                    ? t('rail.renameGroup', { name: opts.name })
+                    : opts.title
+                      ? `${opts.name}\n${opts.title}`
+                      : opts.name
+              }
               style={{
+                gridColumn: 3,
+                gridRow: 1,
+                // its own width, not the column's: a click on the empty end of
+                // line 1 lands on the header, which toggles just the same
+                justifySelf: 'start',
+                maxInlineSize: '100%',
                 minInlineSize: 0,
                 fontSize: 11.5,
                 fontWeight: 600,
@@ -1496,137 +1539,154 @@ export function SessionsRail(props: {
               {opts.name}
             </button>
           )}
-          {opts.members.length > 0 && (
-            <span
-              className={ink}
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontWeight: 600,
-                fontSize: 9,
-                color: ink ? undefined : opts.color,
-                background: tint(opts.color, 12),
-                borderRadius: 4,
-                padding: '1px 5px',
-                flexShrink: 0,
-              }}
-            >
-              {opts.members.length}
-            </span>
-          )}
-          {isAuto && (
-            // the word, so nothing is left to infer from styling alone
-            <span
-              title={t('rail.autoGroupHint')}
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 8.5,
-                letterSpacing: 0.5,
-                textTransform: 'uppercase',
-                color: 'var(--auto-ink)',
-                border: '1px solid var(--auto-ink)',
-                borderRadius: 3,
-                padding: '0 3px',
-                flexShrink: 0,
-              }}
-            >
-              {t('rail.autoBadge')}
-            </span>
-          )}
-          {workingHead && (
-            // the spinner (or, in look 6, the bars) a working session has, for
-            // a closed group with one inside — the strip's group box's own mark
-            <span aria-hidden style={{ marginInlineStart: 'auto', display: 'flex', flexShrink: 0 }}>
-              <StatusMark status="working" needsYou={false} />
-            </span>
-          )}
+          {/* Line 2 (#1455): what the group holds and how it is doing, under
+              the name. It may wrap at a very narrow list rather than push the
+              header wider than the rail; it never takes the name's room. */}
           <span
-            data-rail-group-summary={opts.key}
+            data-rail-group-line="chips"
             style={{
-              fontFamily: 'var(--font-ui)',
-              fontWeight: lead && lead !== 'working' ? 700 : 600,
-              fontSize: 9,
-              whiteSpace: 'nowrap',
-              marginInlineStart: workingHead ? undefined : 'auto',
-              // the most urgent state's INK (#1351), the working ink while
-              // something runs, quiet when the group is calm
-              color: leadToken ? `var(--status-${leadToken}-ink)` : 'var(--muted)',
-              // closed and waiting: the summary is washed in that colour, the
-              // mockup's count chip — the header's own fill stays the group's,
-              // which is what its name is measured against. OPAQUE, over the
-              // card: on an automatic group's darker header a see-through wash
-              // took the words under AA (tokens.drift measured 4.07:1)
-              ...(washHead && leadToken
-                ? {
-                    background: `color-mix(in srgb, var(--status-${leadToken}) ${WAIT_WASH}%, var(--rail-card))`,
-                    borderRadius: 7,
-                    paddingInline: 5,
-                    paddingBlock: 1,
-                  }
-                : {}),
+              gridColumn: '3 / 5',
+              gridRow: 2,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 5,
+              minInlineSize: 0,
             }}
           >
-            {rollupWords(t, rollup)}
+            {opts.members.length > 0 && (
+              <span
+                className={ink}
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 600,
+                  fontSize: 9,
+                  color: ink ? undefined : opts.color,
+                  background: tint(opts.color, 12),
+                  borderRadius: 4,
+                  padding: '1px 5px',
+                  flexShrink: 0,
+                }}
+              >
+                {opts.members.length}
+              </span>
+            )}
+            {isAuto && (
+              // the word, so nothing is left to infer from styling alone
+              <span
+                title={t('rail.autoGroupHint')}
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 8.5,
+                  letterSpacing: 0.5,
+                  textTransform: 'uppercase',
+                  color: 'var(--auto-ink)',
+                  border: '1px solid var(--auto-ink)',
+                  borderRadius: 3,
+                  padding: '0 3px',
+                  flexShrink: 0,
+                }}
+              >
+                {t('rail.autoBadge')}
+              </span>
+            )}
+            {workingHead && (
+              // the spinner (or, in look 6, the bars) a working session has, for
+              // a closed group with one inside — the strip's group box's own mark
+              <span aria-hidden style={{ display: 'flex', flexShrink: 0 }}>
+                <StatusMark status="working" needsYou={false} />
+              </span>
+            )}
+            <span
+              data-rail-group-summary={opts.key}
+              style={{
+                fontFamily: 'var(--font-ui)',
+                fontWeight: lead && lead !== 'working' ? 700 : 600,
+                fontSize: 9,
+                whiteSpace: 'nowrap',
+                // the most urgent state's INK (#1351), the working ink while
+                // something runs, quiet when the group is calm
+                color: leadToken ? `var(--status-${leadToken}-ink)` : 'var(--muted)',
+                // closed and waiting: the summary is washed in that colour, the
+                // mockup's count chip — the header's own fill stays the group's,
+                // which is what its name is measured against. OPAQUE, over the
+                // card: on an automatic group's darker header a see-through wash
+                // took the words under AA (tokens.drift measured 4.07:1)
+                ...(washHead && leadToken
+                  ? {
+                      background: `color-mix(in srgb, var(--status-${leadToken}) ${WAIT_WASH}%, var(--rail-card))`,
+                      borderRadius: 7,
+                      paddingInline: 5,
+                      paddingBlock: 1,
+                    }
+                  : {}),
+              }}
+            >
+              {rollupWords(t, rollup)}
+            </span>
+            {/* …and what siblings have left inside it (#774 review). AFTER the
+                need summary and in its own chip rather than folded into that
+                text: "two of these want you" and "somebody left you a note in
+                here" are different claims, and the first must not be diluted by
+                the second. Shown collapsed or not — the count is about the group
+                either way, and when it is open the rows carry their own marks. */}
+            {waitingHere > 0 && (
+              <span
+                data-rail-group-waiting={opts.key}
+                // its OWN hint, not the row's: the row's says "open it to read
+                // and send", and on a heading "it" points at nothing — there are
+                // N sessions in there.
+                title={t('rail.groupWaitingHint', { count: waitingHere })}
+                style={{
+                  fontFamily: 'var(--font-ui)',
+                  fontWeight: 700,
+                  fontSize: 9,
+                  lineHeight: 1,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  paddingInline: 4,
+                  paddingBlock: 2,
+                  borderRadius: 7,
+                  color: 'var(--status-working-ink)',
+                  background: tint('var(--status-working)', 18),
+                }}
+              >
+                {t('rail.waitingChip', { count: waitingHere })}
+              </span>
+            )}
+            {foldedHere > 0 && (
+              <span
+                data-rail-group-folded={opts.key}
+                title={t('rail.groupFoldedHint', { count: foldedHere })}
+                style={{
+                  fontFamily: 'var(--font-ui)',
+                  fontSize: 9,
+                  lineHeight: 1,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  paddingInline: 4,
+                  paddingBlock: 2,
+                  borderRadius: 7,
+                  color: 'var(--muted)',
+                  border: '1px dashed var(--group-frame)',
+                }}
+              >
+                {t('rail.groupFolded', { count: foldedHere })}
+              </span>
+            )}
           </span>
-          {/* …and what siblings have left inside it (#774 review). AFTER the
-              need summary and in its own chip rather than folded into that
-              text: "two of these want you" and "somebody left you a note in
-              here" are different claims, and the first must not be diluted by
-              the second. Shown collapsed or not — the count is about the group
-              either way, and when it is open the rows carry their own marks. */}
-          {waitingHere > 0 && (
-            <span
-              data-rail-group-waiting={opts.key}
-              // its OWN hint, not the row's: the row's says "open it to read
-              // and send", and on a heading "it" points at nothing — there are
-              // N sessions in there.
-              title={t('rail.groupWaitingHint', { count: waitingHere })}
-              style={{
-                fontFamily: 'var(--font-ui)',
-                fontWeight: 700,
-                fontSize: 9,
-                lineHeight: 1,
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-                marginInlineStart: 4,
-                paddingInline: 4,
-                paddingBlock: 2,
-                borderRadius: 7,
-                color: 'var(--status-working-ink)',
-                background: tint('var(--status-working)', 18),
-              }}
-            >
-              {t('rail.waitingChip', { count: waitingHere })}
-            </span>
-          )}
-          {foldedHere > 0 && (
-            <span
-              data-rail-group-folded={opts.key}
-              title={t('rail.groupFoldedHint', { count: foldedHere })}
-              style={{
-                fontFamily: 'var(--font-ui)',
-                fontSize: 9,
-                lineHeight: 1,
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-                marginInlineStart: 4,
-                paddingInline: 4,
-                paddingBlock: 2,
-                borderRadius: 7,
-                color: 'var(--muted)',
-                border: '1px dashed var(--group-frame)',
-              }}
-            >
-              {t('rail.groupFolded', { count: foldedHere })}
-            </span>
-          )}
           {g && (
+            // line 1's right end (#1455): last in the DOM, so last in tab
+            // order as before, but placed beside the name
             <span
               style={{
+                gridColumn: 4,
+                gridRow: 1,
                 display: 'flex',
                 gap: 2,
                 flexShrink: 0,
                 alignItems: 'center',
-                marginInlineStart: 4,
+                marginInlineStart: 7,
               }}
             >
               {/* §5.8's per-GROUP presentation override (E9-06). A cycle here,

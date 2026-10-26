@@ -443,6 +443,17 @@ coloured bar at its left edge. The Sessions list totals them: at its foot when
 it is on the left, on its first line when it is across the top. The counts and
 the highlighted rows always match.
 
+**A group's heading has two lines.** The first is the group's **name**. On a
+group you made, its three buttons sit at the right of that line (the
+presentation setting, **⊕** for a new session in the group, and **✕** to delete
+it). The second line, starting under the name, holds everything else: how many
+sessions are in it, what they are doing, how many are folded away, any messages
+left for them, and the **AUTO** badge on a folder group. The name has the first
+line to itself, so it stays readable however many of those chips there are and
+however narrow you make the list. A name too long for the line ends in "…", and
+hovering it shows it in full. **No group** and the automatic folder groups use
+the same two lines; they just have no buttons.
+
 **Each group's heading says what is inside it**: **"1 approval · 2 waiting"**
 (any of approval, question and waiting that it has, most urgent first), or
 **"2 working"** when something inside is busy and nothing is waiting, or
