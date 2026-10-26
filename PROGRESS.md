@@ -3,7 +3,13 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ ORCHESTRATION RUN — 2026-10-26 ~14:00 → ~16:30 EDT: BOTH MERGED (#1455 #1456, two workers in parallel), NOTHING IN FLIGHT, NOT RELEASED
+> # ✅ RELEASED: v0.8.131, 2026-10-26 (this PR; tag pushed from its merge commit) — #1455 AND #1456
+>
+> Dan, after the run's report: *"Go ahead and do a release."* A **regular release, on his word**, like 0.8.130. Version, lock and dated notes land together (`0.8.132 — unreleased` is open). Once this PR merges on green CI, tag `v0.8.131` is pushed from the merge commit, and the release workflow publishes `switchboard-Setup-0.8.131.exe` + `.sha256`. The follow-up docs PR records the run id and flips the two dogfood rows to RELEASED.
+>
+> **In it:** #1456 (clicking a session in any list brings its window forward, including the second of two side-by-side sessions in one popout, which used to do nothing; the session you land on flashes; the taskbar blinks if Windows refuses the raise) and #1455 (a group's heading is two lines, so a folded-shut group shows its name). **Neither is hand-tested**: two dogfood UNTESTED rows. **DO NOT CUT ANOTHER unless he asks.**
+
+> # ✅ ORCHESTRATION RUN — 2026-10-26 ~14:00 → ~16:30 EDT: BOTH MERGED (#1455 #1456, two workers in parallel), NOTHING IN FLIGHT, RELEASED AS v0.8.131 (block above)
 >
 > **Outcome:** two PRs merged on green CI (4/4 jobs each), two issues closed. **Neither is hand-tested**: two dogfood UNTESTED rows. **Not released:** `0.8.131 — unreleased` holds both. **DO NOT CUT unless Dan asks.** The main checkout's `out/` was rebuilt at `590f7344` for the About-stamp check.
 >
