@@ -1887,7 +1887,7 @@ export function App(): React.JSX.Element {
   // pin, close and find mean the same thing there as on a docked card, and
   // pulling the main window forward would bury the window the user is in.
   const actedInPopoutRef = React.useRef(false);
-  const focusSession = React.useCallback((sessionId: string, opts?: { raiseWindow?: boolean }): boolean => {
+  const focusSession = React.useCallback((sessionId: string, opts?: { raiseWindow?: boolean; via?: string }): boolean => {
     // #923. Click in the rail to the card painted — #904's second named
     // interaction, and the one the owner notices after typing.
     measureToPaint('session-switch');
@@ -1924,7 +1924,7 @@ export function App(): React.JSX.Element {
     if (!next) return; // empty queue: a no-op, never a focus change
     // focusSession maps a live session id to its card itself, and passes any
     // id it doesn't recognise straight through
-    focusSession(next.sessionId);
+    focusSession(next.sessionId, { via: 'attention-jump' });
     // §5.8's delayed urgency reset: keep the arrived-at lamp lit for a beat so
     // you can still see WHICH session called you. Keyed by CARD id — the event
     // carries the live id, which churns on every resume, and a lamp that went
@@ -1967,7 +1967,7 @@ export function App(): React.JSX.Element {
   const commands = React.useMemo(
     () =>
       buildContributedCommands(rendererRegistry, {
-          focusCard: (cardId) => focusSession(cardId),
+          focusCard: (cardId) => focusSession(cardId, { via: 'command' }),
           // The whole gesture belongs to the grid (#531): picking a folder and
           // placing the card are one decision, because BOTH depend on which
           // window the ask came from — the dialog is parented to it and the
@@ -2268,7 +2268,11 @@ export function App(): React.JSX.Element {
       attentionCount: sessionStore.getQueue().length,
     };
   }, []);
-  const focusCard = React.useCallback((cardId: string) => focusSession(cardId), [focusSession]);
+  // `via` names the list it was picked from, for the focus log (#1456)
+  const focusCard = React.useCallback(
+    (cardId: string, via = 'palette') => focusSession(cardId, { via }),
+    [focusSession]
+  );
   // P2-E14-04: main asks for a card to be brought forward. Today's only sender
   // is a click on the OS toast for a held permission — main has already raised
   // the WINDOW by then, and this is the second half: land on the card that is
@@ -2278,7 +2282,7 @@ export function App(): React.JSX.Element {
   // test must not throw out of a passive effect and tear the app down).
   useEffect(() => {
     const off = window.switchboard?.sessions?.onRevealCard?.((r) => {
-      if (r?.cardId) focusCard(r.cardId);
+      if (r?.cardId) focusCard(r.cardId, 'toast');
     });
     return off;
   }, [focusCard]);
@@ -3039,7 +3043,7 @@ export function App(): React.JSX.Element {
         onCreateGroup={createGroup}
         onNewSession={() => void grid.current?.newSessionHere()}
         onOpenInGroup={openInGroup}
-        onFocus={(cardId) => focusSession(cardId)}
+        onFocus={(cardId) => focusSession(cardId, { via: 'tabs' })}
         onClose={(cardId) => grid.current?.closeCard(cardId)}
         onDiff={openChanges}
         onRename={renameCard}
@@ -3106,7 +3110,7 @@ export function App(): React.JSX.Element {
             // count, so "full" cannot mean three lines here and two on a card.
             labelLines={LABEL_LINES[taskLabelSize]}
             onRename={renameCard}
-            onFocus={(cardId) => focusSession(cardId)}
+            onFocus={(cardId) => focusSession(cardId, { via: 'rail' })}
             onDiff={openChanges}
             onClose={(cardId) => grid.current?.closeCard(cardId)}
             selectedId={activeCard}
@@ -3166,7 +3170,7 @@ export function App(): React.JSX.Element {
           queueEvents={attentionFeed}
           visited={visited}
           queueBinding={queueBindingLabel}
-          onFocus={(id) => focusSession(id)}
+          onFocus={(id) => focusSession(id, { via: 'events' })}
           onVisit={(eventId) => sessionStore.visit(eventId)}
           held={heldPermissions}
           onDecidePermission={decideHeld}

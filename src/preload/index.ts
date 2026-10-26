@@ -238,9 +238,16 @@ const api = {
    * `groupId` selects among windows MAIN ITSELF made: its registry is keyed by
    * the dockview group in the frame name, so a renderer-supplied id can only
    * ever name a window we already opened, or nothing (#531's rule, reused).
+   * Name it with the WINDOW's key (`lib/popout-window-key`), never a panel's
+   * own group: a popout can hold several groups (#1456).
+   *
+   * `trace` is for the log only (`SWITCHBOARD_DEBUG=focus`): which card, picked
+   * from which list, and the group the panel is really in. It selects nothing.
    */
-  raisePopout: (groupId: string): Promise<boolean> =>
-    ipcRenderer.invoke('app:raisePopout', groupId),
+  raisePopout: (
+    groupId: string,
+    trace?: { cardId?: string; via?: string; panelGroupId?: string }
+  ): Promise<boolean> => ipcRenderer.invoke('app:raisePopout', groupId, trace),
   /**
    * Bring the MAIN window forward (P2-E13-03).
    *
@@ -249,7 +256,8 @@ const api = {
    * dockview popout shares this renderer's context — so a dialog that renders into
    * the main window's DOM, asked for from a popout, needs main to do the raising.
    */
-  raiseMain: (): Promise<boolean> => ipcRenderer.invoke('app:raiseMain'),
+  raiseMain: (trace?: { cardId?: string; via?: string }): Promise<boolean> =>
+    ipcRenderer.invoke('app:raiseMain', trace),
   /**
    * A session that needs you may bring the window hosting it to the front
    * (#756) — the main window, or the popout `groupId` names. Asked only when

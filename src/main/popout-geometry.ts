@@ -37,12 +37,9 @@ interface Layout {
   [k: string]: unknown;
 }
 
-/** dockview names a popout window `<componentId>-<groupId>` */
-export function groupIdFromFrameName(frameName: string | undefined): string | undefined {
-  if (!frameName) return undefined;
-  const i = frameName.lastIndexOf('-');
-  return i > 0 && i < frameName.length - 1 ? frameName.slice(i + 1) : undefined;
-}
+// dockview names a popout window `<componentId>-<groupId>`. Lives in `shared/`
+// since #1456: the renderer must name a popout window the same way main does.
+export { groupIdFromFrameName } from '../shared/popout-frame';
 
 function idOf(group: PopoutGroup): string | undefined {
   const data = group.data as { id?: unknown } | undefined;

@@ -140,6 +140,23 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.131 — unreleased
 
+### Fixed
+
+- **Clicking a popped-out session in the list brings its window forward again.**
+  If you had two sessions side by side inside one pop-out window, clicking the
+  second one in the sessions list did nothing, and the window stayed behind the
+  main window. Every session in a pop-out now raises its window: from behind the
+  main window, from behind another app, and from minimised. If Windows refuses
+  to bring it forward, its taskbar button blinks until you click it.
+- **Picking a session from any list now shows you where you landed.** That means
+  the sessions list, the tab pills, the Events drawer, the command palette and a
+  notification. The session's pane becomes the active one and briefly flashes in
+  the accent colour, in the main window and in pop-outs. If your system asks for
+  less motion, the outline holds still for a moment instead of fading. If the
+  session is docked and the main window was behind something, the main window
+  comes forward too. Sessions that jump forward on their own because they need
+  you do not flash.
+
 ## 0.8.130 — 2026-10-25
 
 ### Changed

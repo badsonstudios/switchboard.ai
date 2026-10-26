@@ -406,6 +406,16 @@ sessions are simply the list.)
 Click **⤢** in a card header to tear that session into its own window — useful
 for a second monitor. The session keeps running throughout; nothing restarts.
 
+- **Click a popped-out session anywhere in a list and its window comes to the
+  front.** That means its row in the Sessions list, its tab pill, its row in
+  Events, or **Go to** *session-name* in the command palette. The window comes forward
+  whether it was behind the main window or behind another app, and if it was
+  minimised it opens back up. That includes two sessions you have put side by
+  side inside one pop-out. The session's pane then flashes briefly in the accent
+  colour so you can see which one you landed on. If Windows refuses to bring the
+  window forward, which it sometimes does to stop apps grabbing the screen, the
+  window's taskbar button blinks instead until you click it.
+
 - Click **⤡** to dock it back into the main window. It goes back to the spot it
   came from — the space it left is held open while it is away — so a session you
   pop out and put back does not shuffle your layout around. If you had put that

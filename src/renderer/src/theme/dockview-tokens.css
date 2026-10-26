@@ -313,6 +313,54 @@
 }
 
 /*
+ * "YOU LANDED HERE" (#1456). Picking a session from a list outlines its pane
+ * for a moment, so the eye finds it — in the main window and in a popout alike
+ * (the popout gets these rules because dockview copies our stylesheets into it).
+ * `lib/landing-flash.ts` sets the attribute, picks `motion` or `static` from the
+ * pane's OWN window, and takes it off again.
+ *
+ * An overlay and not the pane's own outline or shadow: dockview writes
+ * `outline: none` inline on the group, and an inset shadow is painted UNDER the
+ * card's own background. `.dv-view` (dockview's absolutely positioned slot) is
+ * the containing block, so nothing about the pane's layout changes.
+ * `--status-working-ink` is the per-theme accent the focus ring uses.
+ */
+.dv-groupview[data-landed]::after {
+  content: '';
+  position: absolute;
+  /* 1px off the right: the group itself is `calc(100% - 1px)` (above), and the
+     slot's last pixel is the one a scaled display rounds away */
+  inset: 0 1px 0 0;
+  z-index: 6;
+  pointer-events: none;
+  border-radius: var(--dv-border-radius);
+  box-shadow:
+    inset 0 0 0 2px var(--status-working-ink),
+    inset 0 0 14px 2px color-mix(in srgb, var(--status-working-ink) 45%, transparent);
+}
+.dv-groupview[data-landed='motion']::after {
+  /* 700ms: LANDING_FLASH_MS, which also takes the attribute off (pinned by
+     landing-flash.test.ts) */
+  animation: sb-landed-fade 700ms ease-out forwards;
+}
+@keyframes sb-landed-fade {
+  0%,
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+/* less motion: the outline stands still and is simply removed (`static` is
+ * what the script sets then; this covers a preference flipped mid-flash) */
+@media (prefers-reduced-motion: reduce) {
+  .dv-groupview[data-landed]::after {
+    animation: none;
+  }
+}
+
+/*
  * Multi-row tabs (issue #84, default ON). Wrapping is opt-out because the
  * alternative — hiding sessions behind a dropdown — hides the very thing this
  * app is about. `overflow: visible` matters: the container scrolls by default,
