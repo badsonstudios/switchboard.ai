@@ -140,6 +140,19 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.132 — unreleased
 
+### Fixed
+
+- **Typing in the message box costs the app less, most of all with several
+  sessions busy.** Every busy session redrew its message box several times a
+  second while its reply streamed in, even when that session was hidden behind
+  another tab and nothing in the box had changed. Each letter you typed also
+  redrew the box twice. Now a streaming reply leaves the message box alone, and
+  a letter redraws it once. With four busy sessions on a slowed-down test
+  machine, that frees about a tenth of the app's main thread and lets it draw
+  about a third more frames. Typing on a slow machine may still lag a little
+  while several sessions are busy, because the busy conversations themselves
+  are what fill the time.
+
 ## 0.8.131 — 2026-10-26
 
 ### Fixed

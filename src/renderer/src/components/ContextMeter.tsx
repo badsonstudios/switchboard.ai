@@ -47,7 +47,35 @@ function readUsage(response: Record<string, unknown>): ContextUsage | null {
   };
 }
 
-export function ContextMeter(props: {
+/**
+ * One number format per language, kept (#716).
+ *
+ * `toLocaleString(language)` builds a fresh `Intl.NumberFormat` on every call,
+ * and the meter formats three numbers each time it renders. It was a measurable
+ * line in a profile of a window with several busy sessions, where the meter
+ * rendered with every streamed chunk.
+ */
+const formats = new Map<string, Intl.NumberFormat | null>();
+export function formatCount(n: number, language: string): string {
+  let format = formats.get(language);
+  if (format === undefined) {
+    // a language tag the platform rejects must not throw in render
+    try {
+      format = new Intl.NumberFormat(language);
+    } catch {
+      format = null;
+    }
+    formats.set(language, format);
+  }
+  return format ? format.format(n) : n.toLocaleString();
+}
+
+/**
+ * MEMOISED (#716): its props are four primitives, and it sits in the composer's
+ * options row, which renders on every keystroke. Nothing typed changes how full
+ * the context window is.
+ */
+export const ContextMeter = React.memo(function ContextMeter(props: {
   /** the LIVE session this reads — the composer's own */
   liveId: string;
   /** a turn is running: ask now and then, and ask once more when it ends */
@@ -130,14 +158,7 @@ export function ContextMeter(props: {
   if (!usage) return null;
 
   const level = contextLevel(usage.percentage);
-  const number = (n: number): string => {
-    // a language tag the platform rejects must not throw in render
-    try {
-      return n.toLocaleString(i18n.language);
-    } catch {
-      return n.toLocaleString();
-    }
-  };
+  const number = (n: number): string => formatCount(n, i18n.language);
   const lines: string[] = [];
   lines.push(
     usage.totalTokens !== null && usage.maxTokens !== null
@@ -175,4 +196,4 @@ export function ContextMeter(props: {
       </span>
     </span>
   );
-}
+});

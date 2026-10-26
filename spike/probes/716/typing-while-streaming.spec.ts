@@ -20,6 +20,20 @@
 //
 // ⚠️ Parked under `spike/probes/716/`; copy into `e2e/` to run it.
 //   PROBE_BACKLOG=980 PROBE_STREAM=1 PROBE_THROTTLE=1 npx playwright test e2e/typing-while-streaming.spec.ts
+//
+// Added for the fourth step (2026-10-26, the composer's own cost):
+//   PROBE_SESSIONS=<n>  n-1 more REAL sessions, each with 300 blocks, streaming
+//                       into their own hidden cards while we type here
+//   PROBE_NOTYPE=1      the same window with no typing: the control
+//   PROBE_DRAFT=<chars> a long draft in the box before typing starts
+//   PROBE_TRACE=1       now also prints which layers painted, layout roots and
+//                       the engine's invalidation reasons
+//   a `probe716 proc` line: Event Timing processing time per event type
+//   a `probe716 anims` line: every animation running when the window ends
+//   a `probe716 renders` line: FeedView / Composer / ContextMeter render counts,
+//     read off `window.__sbFeedView` etc. — which only a build carrying the
+//     measurement patch sets (`spike/probes/716/render-counter.js`: `node … apply`, build,
+//     `node … remove`; never shipped); on a normal build they read 0.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
@@ -142,6 +156,39 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
   await a.app.evaluate(({ BrowserWindow }) => {
     BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, width: 1300, height: 900 });
   });
+  // `PROBE_SESSIONS=<n>`: n-1 MORE real sessions, each busy with its own
+  // conversation, streaming into its own (hidden) card while we type here.
+  const SESSIONS = Number(process.env.PROBE_SESSIONS ?? 1);
+  const others: string[] = [];
+  for (let i = 1; i < SESSIONS; i += 1) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-probe716-'));
+    registerTempDir(dir);
+    fs.writeFileSync(path.join(dir, 'README.md'), '# probe\n');
+    await a.app.evaluate(({ dialog }, d) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
+    }, dir);
+    await w.getByRole('button', { name: '+ session' }).click();
+    const name = path.basename(dir);
+    await expect(w.locator('nav .rail-row').filter({ hasText: name })).toBeVisible({ timeout: 25_000 });
+    await (await preparedStreamPrompt(a, name))('!hang');
+    const id = await pollAsync(async () => {
+      const cards = (await w.evaluate(() => window.switchboard.sessions.cards())) as Array<{ title: string; liveId?: string }>;
+      return cards.find((c) => c.title === name)?.liveId ?? null;
+    }, 'no live id');
+    others.push(id);
+    const theirs = realBlocks(300).map((b, k) => ({ ...b, seq: 10_000 + k }));
+    await a.app.evaluate(
+      ({ BrowserWindow }, { id: sid, blocks }) => {
+        const wc = BrowserWindow.getAllWindows()[0].webContents;
+        for (const block of blocks) wc.send('sessions:feedBlock', { sessionId: sid, block });
+      },
+      { id, blocks: theirs }
+    );
+  }
+  if (SESSIONS > 1) {
+    await w.locator('nav .rail-row').filter({ hasText: title }).click();
+    await w.waitForTimeout(1_000);
+  }
   const send = await preparedStreamPrompt(a, title);
   await send('!hang');
   await expect(w.getByText('working on it')).toBeVisible({ timeout: 30_000 });
@@ -176,8 +223,18 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
     await w.waitForTimeout(1_000);
   }
 
-  const box = w.getByPlaceholder(/Prompt this session/);
+  const box = w.getByPlaceholder(/^Message .+…$/).first();
   await box.click();
+  const DRAFT = Number(process.env.PROBE_DRAFT ?? 0);
+  if (DRAFT > 0) {
+    const para = 'Here is a long draft about the feed and the composer, with some words to wrap across the line. ';
+    let d = '';
+    while (d.length < DRAFT) d += para + (d.length % 600 < para.length ? '\n\n' : '');
+    await box.fill(d.slice(0, DRAFT));
+    await box.press('End');
+    await w.keyboard.press('Control+End');
+    await w.waitForTimeout(1_500);
+  }
 
   await w.evaluate(() => {
     const rec: Rec = { keys: [], long: [], frames: [], stop: false };
@@ -185,6 +242,9 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
     new PerformanceObserver((list) => {
       for (const e of list.getEntries() as PerformanceEventTiming[]) {
         if (e.name === 'keydown') rec.keys.push([e.duration, e.processingStart - e.startTime]);
+        const r = rec as unknown as { proc?: Record<string, number[]> };
+        r.proc = r.proc ?? {};
+        (r.proc[e.name] = r.proc[e.name] ?? []).push(e.processingEnd - e.processingStart);
       }
     }).observe({ type: 'event', durationThreshold: 16, buffered: false } as PerformanceObserverInit);
     new PerformanceObserver((list) => {
@@ -205,7 +265,7 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
   let streamed = Promise.resolve();
   if (STREAM) {
     streamed = a.app.evaluate(
-      ({ BrowserWindow }, { id, text, ms, still, flagged, newEvery, step, ghosts, visible, start }) =>
+      ({ BrowserWindow }, { id, text, ms, still, flagged, newEvery, step, ghosts, visible, start, others }) =>
         new Promise<void>((done) => {
           const wc = BrowserWindow.getAllWindows()[0].webContents;
           const t0 = Date.now();
@@ -221,6 +281,12 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
             n += step;
             let body = '';
             while (body.length < n) body += text;
+            for (const o of others) {
+              wc.send('sessions:feedBlock', {
+                sessionId: o,
+                block: { seq: 900_000, kind: 'assistant', text: body.slice(0, n), streaming: true },
+              });
+            }
             for (let g = 0; g < ghosts; g += 1) {
               wc.send('sessions:feedBlock', {
                 sessionId: `ghost-${g}`,
@@ -253,6 +319,7 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
         newEvery: NEW_EVERY,
         step: STEP,
         ghosts: GHOSTS,
+        others,
         visible: process.env.PROBE_VISIBLE !== '0',
         start: START,
       }
@@ -276,9 +343,10 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
     cdp.on('Tracing.dataCollected', (e) => traced.push(...(e.value as unknown as typeof traced)));
     await cdp.send('Tracing.start', {
       transferMode: 'ReportEvents',
-      traceConfig: { includedCategories: ['devtools.timeline', 'disabled-by-default-devtools.timeline'] },
+      traceConfig: { includedCategories: ['devtools.timeline', 'disabled-by-default-devtools.timeline', 'blink.animations', 'devtools.timeline.async', 'disabled-by-default-devtools.timeline.invalidationTracking'] },
     });
   }
+  const rendersBefore = await w.evaluate(() => { const r = window as unknown as Record<string, number>; return { f: r.__sbFeedView ?? 0, c: r.__sbComposer ?? 0, m: r.__sbContextMeter ?? 0 }; });
   const before = await metrics();
   // ...and the MAIN process's CPU over the same window: it is the one that
   // serialises every block it sends, and the throttle above does not reach it.
@@ -296,12 +364,14 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
   const until = Date.now() + SECONDS * 1000;
   let typed = 0;
   while (Date.now() < until) {
-    await w.keyboard.type('x');
+    if (process.env.PROBE_NOTYPE !== '1') await w.keyboard.type(typed % 7 === 6 ? ' ' : 'x');
     typed += 1;
     await w.waitForTimeout(100);
   }
   await streamed;
   const after = await metrics();
+  const rendersAfter = await w.evaluate(() => { const r = window as unknown as Record<string, number>; return { f: r.__sbFeedView ?? 0, c: r.__sbComposer ?? 0, m: r.__sbContextMeter ?? 0 }; });
+  console.log(`probe716 renders ${LABEL} | FeedView ${rendersAfter.f - rendersBefore.f} Composer ${rendersAfter.c - rendersBefore.c} ContextMeter ${rendersAfter.m - rendersBefore.m} over ${typed} keys`);
   const mainSpent = Math.round((await mainCpu()) - mainBefore);
   const spent = (k: string): number => Math.round((after[k] - before[k]) * 1000);
   if (TRACE) {
@@ -327,6 +397,32 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
       }
       if (e.name === 'UpdateLayoutTree') styled += Number((e.args as { elementCount?: number })?.elementCount ?? 0);
     }
+    const paints = traced.filter((e) => e.name === 'Paint' && e.ph === 'X');
+    const pk = new Map<string, number>();
+    for (const e of paints) {
+      const d = (e.args?.data ?? {}) as Record<string, unknown>;
+      const k = `${String((d.nodeName as string | number | undefined) ?? '')}#${String((d.nodeId as string | number | undefined) ?? '')}#${JSON.stringify(d.clip ?? '').slice(0, 60)}`;
+      pk.set(k, (pk.get(k) ?? 0) + 1);
+    }
+    for (const [k, n] of [...pk.entries()].sort((x, y) => y[1] - x[1]).slice(0, 8)) console.log(`probe716 paint: ${n}x ${k}`);
+    const animEv = new Map<string, number>();
+    for (const e of traced) {
+      if (!/Animation/i.test(e.name) || /AnimationFrame/.test(e.name)) continue;
+      const k = `${e.name}:${e.ph}:${JSON.stringify(e.args ?? {}).slice(0, 220)}`;
+      animEv.set(k, (animEv.get(k) ?? 0) + 1);
+    }
+    for (const [k, n] of [...animEv.entries()].slice(0, 30)) console.log(`probe716 animev: ${n}x ${k}`);
+    if (paints[0]) console.log(`probe716 paint sample: ${JSON.stringify(paints[paints.length - 1].args).slice(0, 400)}`);
+    const lays = traced.filter((e) => e.name === 'Layout' && e.ph === 'X');
+    for (const e of lays.slice(-3)) console.log(`probe716 layout sample: ${JSON.stringify(e.args).slice(0, 1200)}`);
+    const inval = new Map<string, number>();
+    for (const e of traced) {
+      if (!/Invalidat|ScheduleStyle|LayoutInvalidation|StyleRecalcInvalidation/.test(e.name)) continue;
+      const d = (e.args?.data ?? {}) as Record<string, unknown>;
+      const k = `${e.name}:${String((d.reason as string | number | undefined) ?? '')}:${String((d.nodeName as string | number | undefined) ?? '')}:${JSON.stringify(d.stackTrace ?? '').slice(0, 80)}`;
+      inval.set(k, (inval.get(k) ?? 0) + 1);
+    }
+    for (const [k, n] of [...inval.entries()].sort((x, y) => y[1] - x[1]).slice(0, 25)) console.log(`probe716 inval: ${n}x ${k}`);
     for (const [name, r] of [...by.entries()].sort((x, y) => y[1].us - x[1].us).slice(0, 25)) {
       console.log(`probe716 trace: ${String(Math.round(r.us / 1000)).padStart(6)} ms  ${String(r.n).padStart(6)}x  ${name}`);
     }
@@ -360,6 +456,13 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
     p.stop = true;
     return p;
   });
+  const proc = (rec as unknown as { proc?: Record<string, number[]> }).proc ?? {};
+  console.log(
+    `probe716 proc ${LABEL} | ` +
+      Object.entries(proc)
+        .map(([n, xs]) => `${n} n${xs.length} p50 ${pct(xs, 50)} p95 ${pct(xs, 95)} sum ${Math.round(xs.reduce((x, y) => x + y, 0))}`)
+        .join(' | ')
+  );
   const dur = rec.keys.map((k) => k[0]);
   const delay = rec.keys.map((k) => k[1]);
   const longTotal = Math.round(rec.long.reduce((x, y) => x + y, 0));
@@ -370,6 +473,17 @@ test(`probe #716: backlog ${BACKLOG}, stream ${STREAM}, throttle ${THROTTLE}x ${
     return f ? f() : '';
   });
   if (note) console.log(`probe716 note: ${note}`);
+  const anims = await w.evaluate(() =>
+    document
+      .getAnimations()
+      .map((an) => {
+        const t = (an.effect as KeyframeEffect | null)?.target as HTMLElement | null;
+        const name = (an as CSSAnimation).animationName ?? (an as CSSTransition).transitionProperty ?? '?';
+        return `${an.constructor.name}:${name}:${an.playState}@${t?.tagName}.${String(t?.className).slice(0, 40)}[${t?.getAttribute('data-testid') ?? ''}]`;
+      })
+      .join(' ; ')
+  );
+  console.log(`probe716 anims: ${anims}`);
   const blocks = await w.locator('[data-perf-blocks]').first().getAttribute('data-perf-blocks');
   // Is the scroll height still the fully-laid-out truth? Read both ways, the
   // way `e2e/feed-skipping.spec.ts` does — after the numbers above are taken,
