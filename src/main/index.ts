@@ -164,12 +164,12 @@ import {
   noActivate,
   noActivateRequested,
   raiseForAttention,
-  raiseWindow,
   revealChildWindow,
   revealWindow,
   setNoActivate,
 } from './window-activation';
 import { refocusAfterDialog } from './dialog-refocus';
+import { performUserRaise } from './user-raise';
 import {
   FrontAtEvent,
   logRaise,
@@ -1379,15 +1379,46 @@ app
     // window still leaves popouts where they are. The owner asked for that to
     // stay, and it stays because raising is only ever done on an explicit
     // request for a particular session — never on window focus.
-    broker.handle('app:raisePopout', (_e, groupId: unknown) => {
+    //
+    // #1456: the id is the WINDOW's key (the group in its frame name), which the
+    // renderer reads off the popout's `window.name`. It used to send the panel's
+    // own group, which misses every session not in the window's first group —
+    // so each step is logged at debug (`SWITCHBOARD_DEBUG=focus`), and a miss
+    // says which ids it had, so a sighting can be read back from the log.
+    const focusLog = createLogger(sink, 'focus');
+    const traceOf = (t: unknown): Record<string, string> => {
+      const out: Record<string, string> = {};
+      if (t && typeof t === 'object') {
+        for (const k of ['cardId', 'via', 'panelGroupId'] as const) {
+          const v = (t as Record<string, unknown>)[k];
+          if (typeof v === 'string' && v) out[k] = v.slice(0, 120);
+        }
+      }
+      return out;
+    };
+    const ourWindowHasFocus = (): boolean => BrowserWindow.getFocusedWindow() !== null;
+    broker.handle('app:raisePopout', async (_e, groupId: unknown, trace?: unknown) => {
+      const t = traceOf(trace);
       if (typeof groupId !== 'string' || !groupId) return false;
       const hit = popoutWindows.find((p) => p.groupId === groupId);
       const win = hit && !hit.win.isDestroyed() ? hit.win : null;
+      focusLog.debug('raise popout: located', {
+        ...t,
+        windowKey: groupId,
+        found: win !== null,
+        ...(win ? {} : { known: popoutWindows.map((p) => p.groupId ?? '?').join(',') }),
+      });
       if (!win) return false;
-      // minimized counts as "behind": `raiseWindow` restores before raising, or
-      // focus() on a minimized window is a taskbar flash and nothing else
-      raiseWindow(win);
-      return true;
+      // minimized counts as "behind": `raiseWindow` (inside) restores before
+      // raising, or focus() on a minimized window is a taskbar flash and nothing
+      // else. A refusal blinks the taskbar button instead (`user-raise.ts`).
+      const appHadForeground = ourWindowHasFocus();
+      const r = await performUserRaise(win, {
+        appHadForeground,
+        wait: (ms) => new Promise((res) => setTimeout(res, ms)),
+      });
+      focusLog.debug('raise popout: result', { ...t, ...r, appHadForeground });
+      return r.outcome !== 'no-window';
     });
     // ...AND THE OTHER DIRECTION, ON AN EXPLICIT REQUEST ONLY (P2-E13-03).
     //
@@ -1406,14 +1437,20 @@ app
     // measurement covers. The dispatch dialog renders into the main window's DOM, so
     // without this, `Dispatch…` from a popped-out card would put a modal in a window
     // the user cannot see and look like it did nothing.
-    broker.handle('app:raiseMain', () => {
+    broker.handle('app:raiseMain', async (_e, trace?: unknown) => {
       const win = currentWindow;
       if (!win || win.isDestroyed()) return false;
       // Minimized counts as "behind": `raiseWindow` restores before raising, or
       // `focus()` on a minimized window is a taskbar flash and nothing else
-      // (`app:raisePopout`'s own lesson, reused rather than re-learned).
-      raiseWindow(win);
-      return true;
+      // (`app:raisePopout`'s own lesson, reused rather than re-learned) — and a
+      // refusal blinks the taskbar button (#1456, `user-raise.ts`).
+      const appHadForeground = ourWindowHasFocus();
+      const r = await performUserRaise(win, {
+        appHadForeground,
+        wait: (ms) => new Promise((res) => setTimeout(res, ms)),
+      });
+      focusLog.debug('raise main: result', { ...traceOf(trace), ...r, appHadForeground });
+      return r.outcome !== 'no-window';
     });
     broker.handle('app:movePopout',
       (_e, from: { x: number; y: number }, to: { left: number; top: number; width: number; height: number }) => {

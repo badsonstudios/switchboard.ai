@@ -974,6 +974,15 @@ Two things worth knowing, because they're different from the drag:
 
 ## Good to know
 
+- **Clicking a session in the list takes you to it, wherever it is.** The same
+  goes for its tab pill, its row in Events and **Go to** *session-name* in the command
+  palette. Its pane becomes the one you're working in and flashes briefly in the
+  accent colour, so your eye goes straight to it. If the session is in a pop-out
+  window, that window comes to the front (see
+  [Pop-out windows](07-workspace.md#pop-out-windows)). If your system is set to
+  reduce motion, the outline stays still for a moment instead of fading. A
+  session that jumps forward on its own because it needs you does not flash. The
+  flash is only for sessions you picked.
 - Quitting the app while sessions are mid-task pops up a warning listing them,
   with **Quit anyway** and **Cancel**. Cancel is the default.
 - Closing a session clears its entries from Events.

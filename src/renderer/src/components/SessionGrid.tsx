@@ -191,6 +191,8 @@ import type {
   SwitchConversationResult,
 } from '../../../shared/sessions';
 import { srOnly } from './sr-only';
+import { popoutWindowKey } from '../lib/popout-window-key';
+import { flashLanding } from '../lib/landing-flash';
 import {
   dropRetired,
   dropAnswered,
@@ -4826,7 +4828,9 @@ async function newSessionIn(
     // rather than a message anyone saw.
     // `answered` (#440): a refused picker resolves a truthy object, which would
     // reach `addSessionCardTo` as the folder path.
-    const folder = answered(await window.switchboard.sessions.pickFolder(into?.id));
+    // named by its WINDOW's key (#1456): `into` may be a popout's second group,
+    // which main's registry has never heard of
+    const folder = answered(await window.switchboard.sessions.pickFolder(popoutWindowKey(into) ?? undefined));
     if (!folder) return;
     // `into` was sampled BEFORE the picker opened, and a group can die while it
     // is up: the dialog is modal to that popout, so the user cannot close it
@@ -5912,15 +5916,113 @@ function rescueStrandedCard(api: DockviewApi, cardId: string): void {
  * main window still leaves popouts exactly where they are, which the owner asked
  * for explicitly and which nothing here touches.
  */
-function raisePopoutWindow(panel: IDockviewPanel, domWindow: Window | undefined): void {
+function raisePopoutWindow(
+  panel: IDockviewPanel,
+  domWindow: Window | undefined,
+  trace?: { cardId?: string; via?: string }
+): void {
   domWindow?.focus();
-  const groupId = panel.group?.id;
+  // THE WINDOW'S key, not the panel's group (#1456): a popout window can hold
+  // several groups and main only knows it by the first one's id. Asking with
+  // `panel.group.id` raised nothing for a session split beside another inside
+  // a popout — the bug the issue's probe reproduced.
+  const groupId = popoutWindowKey(panel.group);
   if (!groupId) return;
-  void window.switchboard.raisePopout?.(groupId)?.catch?.(() => {
+  const sent = { ...trace, panelGroupId: panel.group?.id };
+  void window.switchboard?.raisePopout?.(groupId, sent)?.catch?.(() => {
     // a window that closed between the click and the answer: the click has
     // already done everything it can, and a rejection here would be an
     // unhandled one in a click handler
   });
+}
+
+/**
+ * Whether a `focusSession` request LANDS (#1456): flashes the pane, and brings
+ * the main window forward for a docked card.
+ *
+ * OPT-IN, by naming the list a person picked from (`via`). Every list in App
+ * passes one; the attention auto-focus passes none (and `raiseWindow: false`).
+ * Derived the other way round — "lands unless told not to raise" — the next
+ * automatic caller that forgot the flag would flash AND take the foreground
+ * outside #756's gates.
+ */
+export function landsFor(opts: { raiseWindow?: boolean; via?: string } | undefined): boolean {
+  return !!opts?.via && opts.raiseWindow !== false;
+}
+
+/** How `focusCardIn` was asked. */
+export interface FocusCardOpts {
+  /** false: do not raise a popped-out card's OS window (the attention jump,
+   *  which asks main through its own gated raise, #756) */
+  raiseWindow?: boolean;
+  /**
+   * A PERSON asked for this card — a list click, the palette, a toast (#1456).
+   * Only then does it LAND: the pane flashes, and a docked card's main window
+   * comes forward if it was behind. Unset for every focus change the person did
+   * not ask for (the attention auto-focus, auto-placement, the launch restore).
+   */
+  land?: boolean;
+  /** which list the person picked it from — for the log line only */
+  via?: string;
+}
+
+/**
+ * Bring a card in front of the user — the body of the grid's `focusSession`, by
+ * CARD id. Module-level so it is testable with a stand-in grid.
+ *
+ * Answers true when it raised a DIFFERENT window (a popped-out card): the
+ * popout keyboard bridge must not then pull the main window in front of it.
+ */
+export function focusCardIn(
+  api: Pick<DockviewApi, 'getPanel'> | null | undefined,
+  cardId: string,
+  opts: FocusCardOpts | undefined,
+  reveal: (cardId: string) => Promise<void>
+): boolean {
+  const panel = api?.getPanel(`session-${cardId}`);
+  const trace = { cardId, ...(opts?.via ? { via: opts.via } : {}) };
+  // §5.8: "reveal triggers: ... user click anywhere (sidebar, event,
+  // lamp)". Every one of those paths lands here, so a hidden card comes
+  // back rather than the click doing nothing.
+  if (!panel) {
+    const shown = reveal(cardId);
+    if (opts?.land) {
+      // ...and it is still the card you asked for: flash it once it is there
+      void shown
+        .then(() => {
+          const back = api?.getPanel(`session-${cardId}`);
+          if (back) flashLanding(back.group?.element);
+        })
+        .catch(() => {
+          // the reveal reports its own failures; the flash is decoration
+        });
+    }
+    return false;
+  }
+  panel.focus();
+  const loc = panel.group.api.location;
+  if (loc.type !== 'popout') {
+    if (opts?.land) {
+      // A docked card is in THIS window. Picked from somewhere that is not
+      // this window (the palette run from a popout, a toast), this window may
+      // be behind — and `window.focus()` alone does not raise it on Windows
+      // (#571), so main does, as it does for `openDispatch`.
+      // (The DOM `focus()` is the existing pattern — `openDispatch`, the
+      // hand-off — and is not gated by the e2e no-activate seam; it is only
+      // reached when this document has no focus, which Playwright never reports.)
+      if (!document.hasFocus()) {
+        window.focus();
+        void window.switchboard?.raiseMain?.(trace)?.catch?.(() => {});
+      }
+      flashLanding(panel.group.element);
+    }
+    return false;
+  }
+  // a popped-out card is in another OS window — focusing the panel alone
+  // leaves it buried behind this one, so raise its window too (E9-01)
+  if (opts?.raiseWindow !== false) raisePopoutWindow(panel, loc.getWindow(), trace);
+  if (opts?.land) flashLanding(panel.group.element);
+  return true;
 }
 
 /** The popout window's rect on screen, when this panel is in one. */
@@ -6967,7 +7069,7 @@ export interface GridController {
    *  `raiseWindow: false` skips that raise (the return value still says the
    *  card is popped out): the attention jump asks main for its raise through
    *  `attentionRaise` instead, behind the focus-stealing gates (#756). */
-  focusSession: (sessionId: string, opts?: { raiseWindow?: boolean }) => boolean;
+  focusSession: (sessionId: string, opts?: { raiseWindow?: boolean; via?: string }) => boolean;
   /**
    * Which OS window HOSTS this card's panel right now (#756): `popoutGroupId`
    * names a popped-out window (main's registry key), null is the main window.
@@ -7393,23 +7495,8 @@ export function SessionGrid(props: {
    * popout keyboard bridge must not then pull the main window in front of it.
    */
   const focusCardPanel = useCallback(
-    (cardId: string, opts?: { raiseWindow?: boolean }): boolean => {
-      const panel = apiRef.current?.getPanel(`session-${cardId}`);
-      // §5.8: "reveal triggers: ... user click anywhere (sidebar, event,
-      // lamp)". Every one of those paths lands here, so a hidden card comes
-      // back rather than the click doing nothing.
-      if (!panel) {
-        void revealCard(cardId);
-        return false;
-      }
-      panel.focus();
-      // a popped-out card is in another OS window — focusing the panel alone
-      // leaves it buried behind this one, so raise its window too (E9-01)
-      const loc = panel.group.api.location;
-      if (loc.type !== 'popout') return false;
-      if (opts?.raiseWindow !== false) raisePopoutWindow(panel, loc.getWindow());
-      return true;
-    },
+    (cardId: string, opts?: FocusCardOpts): boolean =>
+      focusCardIn(apiRef.current, cardId, opts, (id) => revealCard(id)),
     [revealCard]
   );
 
@@ -7722,7 +7809,8 @@ export function SessionGrid(props: {
         const panel = apiRef.current?.getPanel(`session-${cardId}`);
         if (!panel) return null;
         if (panel.group.api.location.type !== 'popout') return { popoutGroupId: null };
-        const groupId = panel.group?.id;
+        // the WINDOW's key, not the panel's group (#1456 — see popout-window-key)
+        const groupId = popoutWindowKey(panel.group);
         return groupId ? { popoutGroupId: groupId } : null;
       },
       isCardOnScreen: (cardId) => {
@@ -7760,7 +7848,10 @@ export function SessionGrid(props: {
       applyPreset: (preset) => arrangeWorkspace(apiRef.current, preset),
       equalize: () => (layoutSweepPort.ready() ? equalizeGrid(apiRef.current) : false),
       applyLayout: (trigger) => applyLayout(apiRef.current, trigger),
-      focusSession: (liveId, opts) => focusCardPanel(sessionStore.cardIdForLive(liveId), opts),
+      // It LANDS (the flash, and the main window brought forward, #1456) only
+      // when the caller says which list a person picked it from — see `landsFor`.
+      focusSession: (liveId, opts) =>
+        focusCardPanel(sessionStore.cardIdForLive(liveId), { ...opts, land: landsFor(opts) }),
       activeCardId: () => {
         const panel = apiRef.current?.activePanel;
         // a popped-out card lives in ANOTHER OS window; commands typed in this

@@ -355,7 +355,7 @@ describe('the click path is wired end to end (P2-E14-04)', () => {
 
   it('App subscribes and lands on the card, rather than merely raising a window', () => {
     const app = read('renderer', 'src', 'App.tsx');
-    expect(app).toMatch(/onRevealCard\?\.\(\(r\) => \{[\s\S]{0,120}focusCard\(r\.cardId\)/);
+    expect(app).toMatch(/onRevealCard\?\.\(\(r\) => \{[\s\S]{0,120}focusCard\(r\.cardId[,)]/);
   });
 });
 
