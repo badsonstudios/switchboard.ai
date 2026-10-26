@@ -266,7 +266,7 @@ test.describe('Feed view (E12-06)', () => {
     await expect(w.getByText('TAIL_BLOCK_60')).toBeInViewport({ timeout: 10_000 });
   });
 
-  test('composer autonomy chip cycles and survives a relaunch (E10-05)', async () => {
+  test('composer autonomy chip picks a mode from its menu and survives a relaunch (E10-05, #1462)', async () => {
     const folder = tempProjectFolder();
     const title = folder.split(/[\\/]/).pop()!;
     // assign to the shared handle IMMEDIATELY: an assertion failing before
@@ -281,7 +281,11 @@ test.describe('Feed view (E12-06)', () => {
     // meant to be edited freely, which a locator pinned to it would punish
     const chip = w.getByTestId('composer-autonomy');
     await expect(chip).toContainText('ask');
-    await chip.click(); // -> plan
+    // picked from the chip's menu (#1462; a click cycled until then)
+    await chip.click();
+    await expect(w.getByTestId('autonomy-menu')).toBeVisible();
+    await w.locator('[data-autonomy-row="plan"]').click();
+    await expect(w.getByTestId('autonomy-menu')).toHaveCount(0);
     await expect(chip).toContainText('plan');
 
     await w.waitForTimeout(900); // debounced store save

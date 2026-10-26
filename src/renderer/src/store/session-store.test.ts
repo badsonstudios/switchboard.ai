@@ -2073,24 +2073,24 @@ describe('hasHeldQuestion (#1351)', () => {
   });
 });
 
-// #1434: the tab, the rail row and the strip pill mark an allow-all session,
-// so the store has to answer per CARD and tell its readers when that moves.
-describe('allow-all per card, for the quiet marks (#1434)', () => {
+// #1434 made the allow-all mirror tell its subscribers when it moves (for a
+// tab/row/pill mark that #1462 removed). The notifications stay; these pin them
+// against the live id, which is what the approval path reads.
+describe('allow-all mirror notifies its subscribers (#1434)', () => {
   let store: SessionStore;
   beforeEach(() => {
     store = new SessionStore();
   });
 
-  it("answers per card, from main's pushed truth, and notifies each change", () => {
+  it("follows main's pushed truth, and notifies each change", () => {
     const heard = vi.fn();
     store.subscribe(heard);
     store.mapLiveToCard('live-1', 'card-A');
-    expect(store.isCardAllowAll('card-A')).toBe(false);
+    expect(store.isAllowAll('live-1')).toBe(false);
 
     heard.mockClear();
     store.setAllowAllFromMain('live-1', true);
-    expect(store.isCardAllowAll('card-A')).toBe(true);
-    expect(store.isCardAllowAll('card-B')).toBe(false);
+    expect(store.isAllowAll('live-1')).toBe(true);
     expect(heard).toHaveBeenCalled();
 
     // the click's local copy is a no-op when it is already on, and says nothing
@@ -2098,32 +2098,27 @@ describe('allow-all per card, for the quiet marks (#1434)', () => {
     store.setAllowAll('live-1');
     expect(heard).not.toHaveBeenCalled();
 
-    // a revoke anywhere arrives as main's push, and clears the mark
     store.setAllowAllFromMain('live-1', false);
-    expect(store.isCardAllowAll('card-A')).toBe(false);
+    expect(store.isAllowAll('live-1')).toBe(false);
     expect(heard).toHaveBeenCalled();
   });
 
-  it('the local click notifies too, so the mark is there in the same tick', () => {
+  it('the local click notifies too', () => {
     const heard = vi.fn();
     store.mapLiveToCard('live-1', 'card-A');
     store.subscribe(heard);
     store.setAllowAll('live-1');
-    expect(store.isCardAllowAll('card-A')).toBe(true);
+    expect(store.isAllowAll('live-1')).toBe(true);
     expect(heard).toHaveBeenCalledTimes(1);
   });
 
-  it('goes with the session: a retired live id takes the mark with it', () => {
+  it('goes with the session: a retired live id takes the grant with it', () => {
     store.mapLiveToCard('live-1', 'card-A');
     store.setAllowAll('live-1');
     const heard = vi.fn();
     store.subscribe(heard);
     store.forgetCardLiveIds('card-A');
-    expect(store.isCardAllowAll('card-A')).toBe(false);
+    expect(store.isAllowAll('live-1')).toBe(false);
     expect(heard).toHaveBeenCalled();
-  });
-
-  it('answers false for no card at all', () => {
-    expect(store.isCardAllowAll(undefined)).toBe(false);
   });
 });

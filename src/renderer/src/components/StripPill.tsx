@@ -24,7 +24,6 @@ import { dismissWaiting, isDismissClick } from '../lib/seen';
 import { tint } from '../lib/tint';
 import { sessionSpokenName } from './SessionRow';
 import { AiBadge } from './AiBadge';
-import { AllowAllMark, useCardAllowAll } from './AllowAllMark';
 
 export function StripPill(props: {
   session: RailSession;
@@ -73,8 +72,7 @@ export function StripPill(props: {
   const hue = `var(--status-${paint.token})`;
   const ink = `var(--status-${paint.token}-ink)`;
   const accent = s.accent ?? 'var(--faint)';
-  // #1434: an allow-all session says so in its name, beside the quiet mark
-  const spoken = sessionSpokenName(t, s, props.pinned, props.waiting, useCardAllowAll(s.id));
+  const spoken = sessionSpokenName(t, s, props.pinned, props.waiting);
   // SELECTION OWNS THE FILL AND THE EDGE (#1405). #1351 let a waiting session
   // outrank selection here, so two waiting pills were the same gold and the
   // strip could not say which one you had open — the tab strip's defect, and
@@ -254,7 +252,6 @@ export function StripPill(props: {
           {t('rail.pinIcon')}
         </span>
       )}
-      <AllowAllMark cardId={s.id} />
       {props.waiting > 0 && (
         // What other sessions have left here. Its own mark beside the status,
         // never instead of it, and never part of "need you" — the same call the

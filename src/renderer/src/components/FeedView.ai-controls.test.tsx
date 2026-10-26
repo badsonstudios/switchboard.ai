@@ -162,6 +162,35 @@ describe('a control the AI lacks greys out, with a reason (issue 1287)', () => {
     expect(s.hasAttribute('data-unavailable')).toBe(false);
   });
 
+  it('with allow-all on, the mode chip still opens its menu: the modes greyed with the reason, the allow-all row live (#1462)', async () => {
+    answer = reduced(['approvals', 'interrupt']);
+    const set = vi.fn();
+    const revoke = vi.fn();
+    const host = await mountFeed({
+      autonomy: 'ask',
+      onSetAutonomy: set,
+      standingGrants: { allowAll: true, files: [] },
+      onStopAllowAll: revoke,
+    });
+    const chip = byId(host, 'composer-autonomy')!;
+    // the way OUT of the grant is not a mode switch, so the chip stays live
+    expect(chip.disabled).toBe(false);
+    await act(async () => chip.click());
+    const rows = [...host.querySelectorAll<HTMLButtonElement>('[data-autonomy-row]')];
+    expect(rows).toHaveLength(4);
+    for (const r of rows) {
+      expect(r.disabled).toBe(true);
+      expect(r.title).toBe(REASON);
+    }
+    const allowAll = byId(host, 'autonomy-menu-allow-all')!;
+    expect(allowAll.disabled).toBe(false);
+    // the keyboard lands on the one row that can be used
+    expect(document.activeElement).toBe(allowAll);
+    await act(async () => allowAll.click());
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(set).not.toHaveBeenCalled();
+  });
+
   it('a greyed control does nothing when clicked', async () => {
     answer = reduced(['approvals']);
     const host = await mountFeed();

@@ -76,11 +76,12 @@ in one — stays put at the top while the rest of the list scrolls underneath it
 and is skipped by everything that acts on sessions in bulk. See
 [Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
 
-A small **✓✓** next to a session's name, in this list, on its pill on the
-strip and on its tab, means **Allow all (this session)** is on: that session
-runs everything without asking you until it restarts. The session's mode chip
-says the same thing in words, and clicking the chip turns it off. See
+Whether a session is on **Allow all (this session)** isn't shown in this list,
+on its pill or on its tab. Its mode chip under the prompt box says so in words
+(**ask · allow all**), and the chip's list is where you turn it off. See
 [Taking a standing approval back](04-approvals-and-autonomy.md#taking-a-standing-approval-back).
+*(Earlier versions put a small **✓✓** next to the session's name here. It's
+gone.)*
 
 Sessions that are suspended or not currently on screen still appear here — the
 list is the complete inventory. That includes a card whose session

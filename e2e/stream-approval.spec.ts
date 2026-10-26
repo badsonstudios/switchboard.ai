@@ -163,7 +163,8 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     // only thing on screen that named a mode at all.
     const chip = w.getByTestId('composer-autonomy');
     await expect(chip).toContainText('ask');
-    await chip.click(); // -> plan
+    await chip.click(); // the mode menu (#1462)
+    await w.locator('[data-autonomy-row="plan"]').click();
     await expect(chip).toContainText('plan');
     await expect(chip).not.toHaveAttribute('data-live-mode', /.+/);
 
@@ -185,9 +186,8 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     await expect(chip).toContainText('ask now');
     await expect(chip).toContainText('plan at next start');
     // set it to what the session is already in, and there is nothing left to say
-    await chip.click(); // plan -> auto-edit
-    await chip.click(); // -> full-auto
-    await chip.click(); // -> ask
+    await chip.click();
+    await w.locator('[data-autonomy-row="ask"]').click();
     await expect(chip).not.toHaveAttribute('data-live-mode', /.+/);
     await expect(chip).not.toContainText('now');
   });
@@ -401,7 +401,9 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
   // #1434 — "ask" sessions that did not ask. Allow all left the mode chip
   // reading "ask" over a session that would never ask again, and the only way
   // out was a card-menu section the owner did not look at. The chip says it
-  // now, the session's tab and row carry a mark, and the chip is the way out.
+  // now, and its menu is the way out (#1462: a ticked "Allow all (this
+  // session)" row). #1434 also put a ✓✓ on the session's tab and row; Dan had
+  // it removed (#1462), so this pins that it is NOT there.
   test('Allow all is said on the mode chip, and the chip takes it back', async () => {
     test.setTimeout(120_000);
     const folder = tempProjectFolder();
@@ -413,7 +415,6 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     const chip = w.getByTestId('composer-autonomy');
     // a new session starts at ask, and reads as plain ask
     await expect(chip).toHaveText('🛡 ask', { timeout: 25_000 });
-    await expect(w.locator('[data-allow-all-mark]')).toHaveCount(0);
 
     const prompt = streamPrompter(a);
     await prompt(title, '!perm one.sh');
@@ -421,18 +422,31 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     await w.getByRole('button', { name: 'Allow all (this session)' }).click();
     await expect(w.locator('[data-approval-bar]')).toHaveCount(0, { timeout: 15_000 });
 
-    // never plain "ask" while the grant stands — on the chip, and marked on
-    // the tab and the row
+    // never plain "ask" while the grant stands — on the chip
     await expect(chip).toHaveText('🛡 ask · allow all', { timeout: 15_000 });
     await expect(chip).toHaveAttribute('data-allow-all', 'true');
     await expect(chip).toHaveAttribute('title', /until the session restarts/);
-    await expect(w.locator('[data-allow-all-mark]').first()).toBeVisible();
-
-    // the chip's click offers the way out instead of cycling the mode
-    await chip.click();
-    await w.getByTestId('composer-stop-allow-all').click();
-    await expect(chip).toHaveText('🛡 ask', { timeout: 15_000 });
+    // ...and NOT on the tab or the session's row (#1462)
+    const tab = w.locator('.dv-tab', { hasText: title }).first();
+    // the whole sessions list: the mark sat BESIDE the row's button, not in it
+    // (the nav that holds the rows; a document viewer draws a nav of its own)
+    const rail = w.locator('nav', { has: w.locator('[data-rail-open]') });
+    await expect(tab).toBeVisible();
+    await expect(rail.locator('[data-rail-open]', { hasText: title })).toBeVisible();
+    await expect(tab).not.toContainText('✓✓');
+    await expect(rail).not.toContainText('✓✓');
     await expect(w.locator('[data-allow-all-mark]')).toHaveCount(0);
+
+    // the chip opens the mode list, with allow-all as its last, ticked row
+    await chip.click();
+    const menu = w.getByTestId('autonomy-menu');
+    await expect(menu).toBeVisible();
+    await expect(menu.locator('[data-autonomy-row="ask"]')).toHaveAttribute('aria-checked', 'true');
+    const allowAll = menu.getByTestId('autonomy-menu-allow-all');
+    await expect(allowAll).toHaveAttribute('aria-checked', 'true');
+    await allowAll.click();
+    await expect(menu).toHaveCount(0);
+    await expect(chip).toHaveText('🛡 ask', { timeout: 15_000 });
 
     // ...and it really is off: the session asks again
     await prompt(title, '!perm two.sh');

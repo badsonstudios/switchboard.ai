@@ -212,17 +212,22 @@ describe('the prompt box, in renders (#716)', () => {
 
   it("the card's fresh callbacks do not render it, and a click reaches the NEWEST one", async () => {
     const first = vi.fn();
-    await render(context({ onCycleAutonomy: first }));
+    await render(context({ onSetAutonomy: first }));
     const before = counted.meter;
     const second = vi.fn();
     // the card re-renders and hands down a new arrow function, as it does on
     // every render of its own; nothing the box shows has changed
-    await render(context({ onCycleAutonomy: second }));
+    await render(context({ onSetAutonomy: second }));
     expect(counted.meter).toBe(before);
+    // the mode chip opens its menu (#1462); picking a mode is the callback
     await act(async () => {
       (host.querySelector('[data-testid="composer-autonomy"]') as HTMLButtonElement).click();
     });
+    await act(async () => {
+      (host.querySelector('[data-autonomy-row="plan"]') as HTMLButtonElement).click();
+    });
     expect(second).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledWith('plan');
     expect(first).not.toHaveBeenCalled();
   });
 

@@ -1,17 +1,17 @@
 // @vitest-environment jsdom
-// The quiet allow-all mark on a session's row and pill (#1434).
+// No ✓✓ on a session's row or pill, allow-all or not (#1462).
 //
-// "Allow all (this session)" makes main answer every gated call Allow, silently,
-// until the session restarts. The mode chip under the prompt box says so in
-// words (`autonomy-tooltips.test.tsx`); these pin the smaller cue on the places
-// a session is listed WITHOUT being open, and that the cue comes and goes with
-// main's pushed truth. The tab carries the same component; it lives inside a
-// live dockview, so it is covered by the e2e (`stream-approval.spec.ts`).
+// #1434 put a quiet ✓✓ mark on the tab, the rail row and the strip pill of a
+// session on "Allow all (this session)". Dan saw two ticks beside some names,
+// did not know what they meant, and asked for them gone. The mode chip under
+// the prompt box still says "ask · allow all" (`autonomy-tooltips.test.tsx`).
+// These pin that the row and the pill say nothing about it, by glyph or by
+// name. The TAB lives inside a live dockview, so it is covered by the e2e
+// (`stream-approval.spec.ts`).
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
-import en from '../../../shared/i18n/locales/en.json';
 import { sessionStore } from '../store/session-store';
 import { SessionRow } from './SessionRow';
 import { StripPill } from './StripPill';
@@ -90,21 +90,17 @@ describe.each([
   ['the rail row', row, '[data-rail-open]'],
   ['the strip pill', pill, '[data-strip-pill]'],
 ])('%s', (_name, el, named) => {
-  it('wears no mark while the session asks', async () => {
+  it('shows no ✓✓ and says nothing of allow-all, with allow-all on', async () => {
     const host = await mount(el);
-    expect(host.querySelector('[data-allow-all-mark]')).toBeNull();
-    expect(host.querySelector(named)!.getAttribute('aria-label')).not.toContain('allowing all');
-  });
-
-  it('wears the mark, and says it in its name, while allow-all is on — and drops both on revoke', async () => {
-    const host = await mount(el);
+    const before = host.textContent;
+    const nameBefore = host.querySelector(named)!.getAttribute('aria-label');
     await act(async () => sessionStore.setAllowAllFromMain('live-A', true));
-    const mark = host.querySelector<HTMLElement>('[data-allow-all-mark="card-A"]');
-    expect(mark?.textContent).toBe(en.autonomy.allowAll.mark);
-    expect(mark?.title).toBe(en.autonomy.allowAll.markHint);
-    expect(host.querySelector(named)!.getAttribute('aria-label')).toContain('allowing all without asking');
-
-    await act(async () => sessionStore.setAllowAllFromMain('live-A', false));
+    expect(sessionStore.isAllowAll('live-A')).toBe(true);
     expect(host.querySelector('[data-allow-all-mark]')).toBeNull();
+    expect(host.textContent).not.toContain('✓✓');
+    // nothing about the session's look or its spoken name moved
+    expect(host.textContent).toBe(before);
+    expect(host.querySelector(named)!.getAttribute('aria-label')).toBe(nameBefore);
+    expect(nameBefore).not.toMatch(/allowing all/);
   });
 });

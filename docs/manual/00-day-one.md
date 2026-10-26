@@ -131,8 +131,9 @@ itself for a shell command. Then:
 - **Deny with feedback…** — no, and here's why. Your words go back to Claude.
 
 If being asked about every edit is too much, change how much the session may do
-without you. Click the shield chip under the prompt box to cycle through the four
-modes, and hover it to read what each one does:
+without you. Click the shield chip under the prompt box and pick one of the four
+modes from the list (the current one has a ✓). Hover a mode in the list to read
+what it does:
 
 | Mode | Runs without asking |
 |---|---|
