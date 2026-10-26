@@ -59,14 +59,15 @@ hunting through a window.
 | **🗣 announce / 🗣 silent** | Whether switchboard says out loud which session needs you |
 | **🔓 auto-trust / 🔒 ask trust** | Whether new folders are trusted automatically. Greyed out, because nothing can ask any more — see below |
 
-Four more chips are on the bar because they answer "why does the window look
+Three more chips are on the bar because they answer "why does the window look
 like this?", and you need to be able to answer that by looking up rather than by
-opening a window:
+opening a window. (There used to be a fourth, the 🛡 mode chip. Each session's
+own mode button, under its prompt box, replaced it; see
+[Approvals and autonomy](04-approvals-and-autonomy.md).)
 
 | Chip | Does |
 |---|---|
 | **◧ left / ⬒ top** | Where your sessions are listed: down the left, or across the top. The same choice as **Appearance ▸ Sessions list**. See [Listing sessions across the top instead](07-workspace.md#listing-sessions-across-the-top-instead) |
-| **🛡 ask / plan / auto-edit / full-auto** | The autonomy mode *new* sessions start at — click to cycle |
 | **⬍ Keep visible / Collapse on submit** | What happens to a session's card when you send it a prompt — click to switch. See below |
 | **Five small pictures of split boxes** | Arrange the open sessions in that shape with one click, or make the current arrangement even. See [Arranging cards with one click](07-workspace.md#arranging-cards-with-one-click) |
 | **▦ Focus / Queue** | Only shown while one of those layouts is on (or a session is maximized), in place of the pictures. Click to step to the next layout |
