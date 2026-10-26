@@ -54,8 +54,22 @@ test.describe('a group header on a narrow list (#1455)', () => {
       await row(w, title).click({ button: 'right' });
       await w.getByRole('menuitemradio', { name: 'New group' }).click();
     }
-    const card = rail(w).locator('[data-group-card]', { hasText: 'New group' });
+    const key = await rail(w)
+      .locator('[data-group-card]', { hasText: 'New group' })
+      .getAttribute('data-group-card');
+    const card = rail(w).locator(`[data-group-card="${key}"]`);
     await expect(card.locator('.rail-row')).toHaveCount(2);
+
+    // named "IT", the group Dan's screenshot showed as "IT…". A SHORT name is
+    // the honest case: at the list's 200px minimum, line 1 is the name beside
+    // three buttons, and a longer name ("New group") legitimately ends in "…"
+    // there on Linux CI's ~5% wider fonts. What #1455 broke was a two-letter
+    // name squeezed out by the chips; that is what this pins.
+    await card.locator('[data-rail-group-toggle]').dblclick();
+    const field = card.locator('.rail-head input');
+    await field.fill('IT');
+    await field.press('Enter');
+    await expect(card.locator('[data-rail-group-toggle]')).toHaveText('IT');
 
     // stand on the third; Focus folds the other two away
     await row(w, third).click();
@@ -89,7 +103,7 @@ test.describe('a group header on a narrow list (#1455)', () => {
     const name = card.locator('[data-rail-group-toggle]');
     const summary = card.locator('[data-rail-group-summary]');
     await expect(name).toBeVisible();
-    await expect(name).toHaveText('New group');
+    await expect(name).toHaveText('IT');
     await expect(folded).toBeVisible();
     await expect(summary).toBeVisible();
 
