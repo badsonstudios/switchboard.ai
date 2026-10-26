@@ -3,6 +3,19 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔄 ORCHESTRATION RUN — 2026-10-26 from ~14:00 EDT: #1455 + #1456, TWO WORKERS IN PARALLEL
+>
+> **Dan's instruction (2026-10-26):** two bugs he filed that morning: *"let's work on these next."* Merge on green CI as in every run since 2026-10-17 (nothing queues for Dan). **Do NOT cut a release.** v0.8.130 is released, and `0.8.131 — unreleased` is the open CHANGELOG section. #1455 arrived with no label or milestone; the orchestrator added `bug` + `phase-3` + Phase 3 and wrote its spec as the first comment, from Dan's own suggestion (a **two-line group header**: name + buttons on line 1, count / status / folded-away on line 2). #1456's body is its spec.
+>
+> **Single-writer rule:** this file is written ONLY by the orchestrator session. Workers never touch it. Their inputs are the handoff files in `.claude/work_files/orchestrator/<issue#>.md` (git-ignored, main checkout), and their shared contract is `.claude/work_files/orchestrator/worker-contract.md` (now pointed at 0.8.131). Resume from this block if the orchestrator session dies.
+>
+> | Issue | Worktree / branch | State |
+> |---|---|---|
+> | #1455 Collapsed group headers lose their name (the chips squeeze it to "IT…" or nothing) | `sb-wt-1` / `feature/1455-group-header-two-lines` | **DISPATCHED** ~14:00 EDT (Opus worker) |
+> | #1456 Clicking a session in the list doesn't raise its popped-out window; every click should land on, focus and flash the session | `sb-wt-2` / `feature/1456-raise-and-flash-session` | **DISPATCHED** ~14:00 EDT (Opus worker) |
+>
+> **Collision note:** both touch the sessions rail. #1455 is the group header's layout and #1456 is the row-click wiring, so the second to land rebases.
+
 > # ✅ RELEASED: v0.8.130, 2026-10-25 (PR #1453, tag on `1e32d7f5`, release run 40247043058; flakes PR #1452 merged `63df03ee`, Windows e2e re-run once for #1320) — #1434, #1433 AND THE FLAKE FIXES
 >
 > Dan, after the two-ticket report: *"go ahead and fix the flake tickets… Once that's done, go ahead and commit, push, do a PR, and a release."* A **regular release, on his word**, as 0.8.129 was. Version, lock and dated notes together (`0.8.131 — unreleased` is open). The release PR merged on green CI as `1e32d7f5`, tag `v0.8.130` was pushed from it, and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.130.exe` (105 MB) + `.sha256` as a normal release — `prerelease=false`, `draft=false`, `releases/latest` answers `v0.8.130` (published 00:05Z on 10-26). The two dogfood rows now read RELEASED.
