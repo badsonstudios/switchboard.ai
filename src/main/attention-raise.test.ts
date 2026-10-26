@@ -96,10 +96,11 @@ function target(opts: { focusedAfter: boolean; destroyedAfter?: boolean }) {
     showInactive: () => calls.push('showInactive'),
     focus: () => calls.push('focus'),
     flashFrame: (f: boolean) => calls.push(`flash:${f}`),
-    once: (_ev: 'focus', l: () => void) => {
-      onFocus = l;
+    once: (ev: 'focus' | 'blur', l: () => void) => {
+      if (ev === 'focus') onFocus = l;
       return w;
     },
+    removeListener: () => w,
     arrive: () => onFocus?.(),
   };
   const raise = () => {
@@ -199,5 +200,25 @@ describe('logRaise', () => {
     expect(lines[0][0]).toMatch(/attention raise: the OS kept another app in front/);
     expect(lines[0][1]).toEqual({ outcome: 'refused', window: 'popout', technique: 'minimize-restore', cardId: 'card-1' });
     expect(lines[1]).toEqual(['attention raise: not raised: quiet hours', { outcome: 'quiet-hours', window: 'main' }]);
+  });
+});
+
+describe('performAttentionRaise reads the OS answer, not isFocused() (#1379)', () => {
+  const wait = () => Promise.resolve();
+
+  it('Electron says focused but the OS kept another app in front: refused, and flashed', async () => {
+    const { w, raise } = target({ focusedAfter: true });
+    await expect(performAttentionRaise(w, { raise, wait, isFront: () => false })).resolves.toMatchObject({
+      outcome: 'refused',
+    });
+    expect(w.calls).toEqual(['raise', 'flash:true']);
+  });
+
+  it('really in front: raised, no flash', async () => {
+    const { w, raise } = target({ focusedAfter: false });
+    await expect(performAttentionRaise(w, { raise, wait, isFront: () => true })).resolves.toMatchObject({
+      outcome: 'raised',
+    });
+    expect(w.calls).toEqual(['raise']);
   });
 });

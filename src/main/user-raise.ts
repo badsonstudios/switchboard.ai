@@ -16,14 +16,11 @@
 // window is in the foreground.
 import { noActivate, raiseWindow, type ActivatableWindow } from './window-activation';
 import { RAISE_SETTLE_MS } from './attention-raise';
-
-const awaitingFocus = new WeakSet<object>();
+import { flashUntilArrival, type FlashableWindow } from './foreground';
 
 /** What a person-asked raise needs of a window. Structural, for tests. */
-export interface UserRaiseTarget extends ActivatableWindow {
+export interface UserRaiseTarget extends ActivatableWindow, FlashableWindow {
   isFocused(): boolean;
-  flashFrame(flag: boolean): void;
-  once(event: 'focus', listener: () => void): unknown;
 }
 
 export type UserRaiseOutcome =
@@ -45,15 +42,21 @@ export interface UserRaiseResult {
 /**
  * Raise `win` for a person who asked for it, then check, then fall back.
  *
- * `appHadForeground` is read by the caller BEFORE the raise: whether one of our
- * windows was the focused one. Known limit (recorded at #756): a refused DOM
- * `focus()` can leave Electron's `isFocused()` saying true, so a window can
- * look focused when it is not — which is exactly why "the app was not in front
- * when asked" flashes regardless of what `isFocused()` says afterwards.
+ * `appHadForeground` is read by the caller BEFORE the raise: whether the app
+ * held the OS foreground (`ForegroundTracker.appHasForeground`). "Is it in
+ * front now?" is `deps.isFront` (`ForegroundTracker.isFront`), because a
+ * refused `focus()` leaves Electron's `isFocused()` saying true (#756, #1379).
+ * Without `isFront` it is `isFocused()`, and "the app was not in front when
+ * asked" still flashes regardless of what that says afterwards.
  */
 export async function performUserRaise(
   win: UserRaiseTarget,
-  deps: { appHadForeground: boolean; wait: (ms: number) => Promise<void> }
+  deps: {
+    appHadForeground: boolean;
+    wait: (ms: number) => Promise<void>;
+    /** is `win` really in front now (`ForegroundTracker.isFront`) */
+    isFront?: () => boolean;
+  }
 ): Promise<UserRaiseResult> {
   if (win.isDestroyed()) return { outcome: 'no-window', wasMinimized: false };
   const wasMinimized = win.isMinimized();
@@ -61,18 +64,12 @@ export async function performUserRaise(
   if (noActivate()) return { outcome: 'no-activate', wasMinimized };
   await deps.wait(RAISE_SETTLE_MS);
   if (win.isDestroyed()) return { outcome: 'no-window', wasMinimized };
-  if (deps.appHadForeground && win.isFocused()) return { outcome: 'raised', wasMinimized };
+  const inFront = deps.isFront ? deps.isFront() : win.isFocused();
+  if (deps.appHadForeground && inFront) return { outcome: 'raised', wasMinimized };
   try {
-    win.flashFrame(true);
-    // one pending clear per window: repeated clicks on a refused window must
-    // not stack a `focus` listener each
-    if (!awaitingFocus.has(win)) {
-      awaitingFocus.add(win);
-      win.once('focus', () => {
-        awaitingFocus.delete(win);
-        if (!win.isDestroyed()) win.flashFrame(false);
-      });
-    }
+    // once per window: repeated clicks on a refused window neither restart
+    // the blink nor stack a listener each (`flashUntilArrival`)
+    flashUntilArrival(win);
   } catch {
     // best-effort, like every other signal: never break the click
   }

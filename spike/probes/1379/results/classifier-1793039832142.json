@@ -1,0 +1,569 @@
+{
+  "electron": "43.1.1",
+  "os": "10.0.26300",
+  "rows": [
+    {
+      "step": "start",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "M:NC1@45377 M:ACT1@45377 M:NC0@46412 M:ACT0@46413"
+    },
+    {
+      "step": "0 S0 other app in front",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "P:NC0@48013 P:ACT0@48013"
+    },
+    {
+      "step": "0 S1 refused P.focus()",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@48834 P:ACT1@48834"
+    },
+    {
+      "step": "0 S2 person CLICKS the poisoned popout",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@49637 P:NC1@49891"
+    },
+    {
+      "step": "0 S3 back to the other app",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "P:NC0@50352 P:ACT0@50353"
+    },
+    {
+      "step": "0 S4 refused P.focus() + flashing 1.6 s",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@51181 P:ACT1@51181 P:NC1@51496 P:NC0@51713 P:NC1@52260 P:NC0@52791"
+    },
+    {
+      "step": "0 S4b still flashing, 2.9 s",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@53336 P:NC0@53864 P:NC1@54396"
+    },
+    {
+      "step": "0 S5 person clicks the poisoned, flashing popout",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@54499 P:NC1@54928"
+    },
+    {
+      "step": "0 S6 main flashing (not poisoned)",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "P:NC1@55214 P:NC0@55216 P:ACT0@55217 M:NC0@56035 M:NC1@56565 M:NC0@57096 M:NC1@57628"
+    },
+    {
+      "step": "0 S7 person clicks main",
+      "truth": "main",
+      "classifier": "main",
+      "electron": "main",
+      "ok": true,
+      "raw": "M:NC1@57835 M:ACT1@57835 M:NC0@58162"
+    },
+    {
+      "step": "0 S8 opener's DOM popout.focus()",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "M:NC1@58555 M:NC0@58558 M:ACT0@58559"
+    },
+    {
+      "step": "0 S9 poisoned popout brought forward by SetForegroundWindow (alt-tab-like)",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@60091 P:ACT1@60091 P:NC1@60599 P:NC1@60621"
+    },
+    {
+      "step": "0 S10 M.focus() while our popout is in front (between our own windows)",
+      "truth": "main",
+      "classifier": "main",
+      "electron": "main",
+      "ok": true,
+      "raw": "P:NC0@61308 P:ACT0@61308 M:NC1@61309 M:ACT1@61309"
+    },
+    {
+      "step": "0 S11 P.focus() while main is in front",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "M:NC0@62022 M:ACT0@62023 P:NC1@62023 P:ACT1@62024"
+    },
+    {
+      "step": "0 S12 swoop on the poisoned popout",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@62741 P:ACT0@62741 P:NC0@63549 P:ACT1@63549 P:ACT1@64058"
+    },
+    {
+      "step": "0 S12b other app in front again",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": ""
+    },
+    {
+      "step": "0 S13 swoop on the poisoned, FLASHING popout",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@65904 P:NC0@66138 P:NC1@66675 P:NC0@67206 P:ACT1@67215 P:NC1@67738"
+    },
+    {
+      "step": "0 S13b other app in front again",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@67930"
+    },
+    {
+      "step": "1 S0 other app in front",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": ""
+    },
+    {
+      "step": "1 S1 refused P.focus()",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": ""
+    },
+    {
+      "step": "1 S2 person CLICKS the poisoned popout",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@70371 P:NC1@70646"
+    },
+    {
+      "step": "1 S3 back to the other app",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "P:NC0@71092 P:ACT0@71092"
+    },
+    {
+      "step": "1 S4 refused P.focus() + flashing 1.6 s",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@71911 P:ACT1@71911 P:NC1@72224 P:NC0@72441 P:NC1@72975 P:NC0@73502"
+    },
+    {
+      "step": "1 S4b still flashing, 2.9 s",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@74034 P:NC0@74564 P:NC1@75100"
+    },
+    {
+      "step": "1 S5 person clicks the poisoned, flashing popout",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@75233 P:NC1@75629"
+    },
+    {
+      "step": "1 S6 main flashing (not poisoned)",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "P:NC1@75953 P:NC0@75957 P:ACT0@75958 M:NC0@76784 M:NC1@77317 M:NC0@77849 M:NC1@78375"
+    },
+    {
+      "step": "1 S7 person clicks main",
+      "truth": "main",
+      "classifier": "main",
+      "electron": "main",
+      "ok": true,
+      "raw": "M:NC1@78587 M:ACT1@78587 M:NC0@78906"
+    },
+    {
+      "step": "1 S8 opener's DOM popout.focus()",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "M:NC1@79306 M:NC0@79310 M:ACT0@79310"
+    },
+    {
+      "step": "1 S9 poisoned popout brought forward by SetForegroundWindow (alt-tab-like)",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@80836 P:ACT1@80836 P:NC1@81346 P:NC1@81375"
+    },
+    {
+      "step": "1 S10 M.focus() while our popout is in front (between our own windows)",
+      "truth": "main",
+      "classifier": "main",
+      "electron": "main",
+      "ok": true,
+      "raw": "P:NC0@82053 P:ACT0@82053 M:NC1@82054 M:ACT1@82055"
+    },
+    {
+      "step": "1 S11 P.focus() while main is in front",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "M:NC0@82776 M:ACT0@82777 P:NC1@82778 P:ACT1@82778"
+    },
+    {
+      "step": "1 S12 swoop on the poisoned popout",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@83498 P:ACT0@83498 P:NC0@84330 P:ACT1@84331 P:ACT1@84848"
+    },
+    {
+      "step": "1 S12b other app in front again",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": ""
+    },
+    {
+      "step": "1 S13 swoop on the poisoned, FLASHING popout",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@86697 P:NC0@86918 P:NC1@87448 P:NC0@87980 P:ACT1@88024 P:NC1@88518"
+    },
+    {
+      "step": "1 S13b other app in front again",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@88742"
+    },
+    {
+      "step": "2 S0 other app in front",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": ""
+    },
+    {
+      "step": "2 S1 refused P.focus()",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": ""
+    },
+    {
+      "step": "2 S2 person CLICKS the poisoned popout",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@91194 P:NC1@91451"
+    },
+    {
+      "step": "2 S3 back to the other app",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "P:NC0@91915 P:ACT0@91915"
+    },
+    {
+      "step": "2 S4 refused P.focus() + flashing 1.6 s",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@92741 P:ACT1@92741 P:NC1@93045 P:NC0@93262 P:NC1@93793 P:NC0@94325"
+    },
+    {
+      "step": "2 S4b still flashing, 2.9 s",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@94857 P:NC0@95388 P:NC1@95920"
+    },
+    {
+      "step": "2 S5 person clicks the poisoned, flashing popout",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@96068 P:NC1@96454"
+    },
+    {
+      "step": "2 S6 main flashing (not poisoned)",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "P:NC1@96788 P:NC0@96791 P:ACT0@96792 M:NC0@97607 M:NC1@98136 M:NC0@98666 M:NC1@99201"
+    },
+    {
+      "step": "2 S7 person clicks main",
+      "truth": "main",
+      "classifier": "main",
+      "electron": "main",
+      "ok": true,
+      "raw": "M:NC1@99409 M:ACT1@99410 M:NC0@99733"
+    },
+    {
+      "step": "2 S8 opener's DOM popout.focus()",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "M:NC1@130 M:NC0@133 M:ACT0@133"
+    },
+    {
+      "step": "2 S9 poisoned popout brought forward by SetForegroundWindow (alt-tab-like)",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@1680 P:ACT1@1680 P:NC1@2186 P:NC1@2215"
+    },
+    {
+      "step": "2 S10 M.focus() while our popout is in front (between our own windows)",
+      "truth": "main",
+      "classifier": "main",
+      "electron": "main",
+      "ok": true,
+      "raw": "P:NC0@2907 P:ACT0@2908 M:NC1@2908 M:ACT1@2909"
+    },
+    {
+      "step": "2 S11 P.focus() while main is in front",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "M:NC0@3622 M:ACT0@3622 P:NC1@3622 P:ACT1@3623"
+    },
+    {
+      "step": "2 S12 swoop on the poisoned popout",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@4354 P:ACT0@4355 P:NC0@5178 P:ACT1@5178 P:ACT1@5698"
+    },
+    {
+      "step": "2 S12b other app in front again",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": ""
+    },
+    {
+      "step": "2 S13 swoop on the poisoned, FLASHING popout",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@7553 P:NC0@7788 P:NC1@8318 P:NC0@8848 P:ACT1@8877 P:NC1@9377"
+    },
+    {
+      "step": "2 S13b other app in front again",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@9585"
+    },
+    {
+      "step": "3 S0 other app in front",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": ""
+    },
+    {
+      "step": "3 S1 refused P.focus()",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": ""
+    },
+    {
+      "step": "3 S2 person CLICKS the poisoned popout",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@12044 P:NC1@12308"
+    },
+    {
+      "step": "3 S3 back to the other app",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "P:NC0@12768 P:ACT0@12768"
+    },
+    {
+      "step": "3 S4 refused P.focus() + flashing 1.6 s",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@13601 P:ACT1@13601 P:NC1@13917 P:NC0@14134 P:NC1@14668 P:NC0@15199"
+    },
+    {
+      "step": "3 S4b still flashing, 2.9 s",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@15733 P:NC0@16278 P:NC1@16809"
+    },
+    {
+      "step": "3 S5 person clicks the poisoned, flashing popout",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@16935 P:NC1@17339"
+    },
+    {
+      "step": "3 S6 main flashing (not poisoned)",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "P:NC1@17656 P:NC0@17659 P:ACT0@17659 M:NC0@18495 M:NC1@19025 M:NC0@19557 M:NC1@20088"
+    },
+    {
+      "step": "3 S7 person clicks main",
+      "truth": "main",
+      "classifier": "main",
+      "electron": "main",
+      "ok": true,
+      "raw": "M:NC1@20294 M:ACT1@20294 M:NC0@20622"
+    },
+    {
+      "step": "3 S8 opener's DOM popout.focus()",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "other",
+      "ok": true,
+      "raw": "M:NC1@21006 M:NC0@21010 M:ACT0@21011"
+    },
+    {
+      "step": "3 S9 poisoned popout brought forward by SetForegroundWindow (alt-tab-like)",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@22565 P:ACT1@22565 P:NC1@23078 P:NC1@23091"
+    },
+    {
+      "step": "3 S10 M.focus() while our popout is in front (between our own windows)",
+      "truth": "main",
+      "classifier": "main",
+      "electron": "main",
+      "ok": true,
+      "raw": "P:NC0@23803 P:ACT0@23803 M:NC1@23804 M:ACT1@23805"
+    },
+    {
+      "step": "3 S11 P.focus() while main is in front",
+      "truth": "popout",
+      "classifier": "popout",
+      "electron": "popout",
+      "ok": true,
+      "raw": "M:NC0@24524 M:ACT0@24525 P:NC1@24526 P:ACT1@24527"
+    },
+    {
+      "step": "3 S12 swoop on the poisoned popout",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@25246 P:ACT0@25247 P:NC0@26082 P:ACT1@26083 P:ACT1@26595"
+    },
+    {
+      "step": "3 S12b other app in front again",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": ""
+    },
+    {
+      "step": "3 S13 swoop on the poisoned, FLASHING popout",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC1@28445 P:NC0@28678 P:NC1@29207 P:NC0@29728 P:ACT1@29763 P:NC1@30270"
+    },
+    {
+      "step": "3 S13b other app in front again",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": "P:NC0@30484"
+    },
+    {
+      "step": "end other app in front",
+      "truth": "other",
+      "classifier": "other",
+      "electron": "popout",
+      "ok": true,
+      "raw": ""
+    }
+  ],
+  "agree": 70,
+  "disagree": 0,
+  "electronLies": 32
+}

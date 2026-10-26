@@ -1,0 +1,165 @@
+{
+  "electron": "43.1.1",
+  "os": "10.0.26300",
+  "pid": 29168,
+  "rows": [
+    {
+      "step": "A other app in front",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "B after DOM popout.focus() (refused?)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "C 3 s later",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "D after P.focus() main-side",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "E after more typing in the other app",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "F person brings M to front",
+      "truth": "probe-1379-main",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:blur",
+        "M:focus"
+      ],
+      "appEvents": [
+        "app-blur:P",
+        "app-focus:M"
+      ]
+    },
+    {
+      "step": "G back to the other app",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:blur"
+      ],
+      "appEvents": [
+        "app-blur:M"
+      ]
+    },
+    {
+      "step": "H person brings P to front",
+      "truth": "probe-1379-popout",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "I back to the other app",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "J refused DOM focus again",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "K person brings P to front (after the lie)",
+      "truth": "probe-1379-popout",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "L back to the other app",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:P"
+      ]
+    }
+  ]
+}

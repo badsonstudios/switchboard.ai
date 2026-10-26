@@ -1,0 +1,186 @@
+{
+  "electron": "43.1.1",
+  "os": "10.0.26300",
+  "rows": [
+    {
+      "technique": "minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "blur()+minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "blur()+minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "blur()+minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "hide()+minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "hide()+minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "hide()+minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()+focus()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()+focus()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()+focus()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "blur()+minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "blur()+minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "blur()+minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "hide()+minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "hide()+minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "hide()+minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()+focus()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()+focus()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "technique": "minimize(), 400 ms, restore()+focus()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    }
+  ]
+}

@@ -18,11 +18,12 @@ function fakeWindow(o: { minimized?: boolean; focusedAfter?: boolean; destroyed?
     focus: () => calls.push('focus'),
     isFocused: () => o.focusedAfter ?? true,
     flashFrame: (flag: boolean) => calls.push(`flash:${flag}`),
-    once: (_event: 'focus', listener: () => void) => {
-      focusListener = listener;
-      calls.push('once:focus');
+    once: (event: 'focus' | 'blur', listener: () => void) => {
+      if (event === 'focus') focusListener = listener;
+      calls.push(`once:${event}`);
       return win;
     },
+    removeListener: () => win,
   };
   return { win, calls, arrive: () => focusListener?.() };
 }
@@ -89,5 +90,21 @@ describe('performUserRaise (#1456)', () => {
     const r = await performUserRaise(win, { ...noWait, appHadForeground: false });
     expect(r.outcome).toBe('no-activate');
     expect(calls).toEqual(['showInactive']);
+  });
+});
+
+describe('performUserRaise reads the OS answer, not isFocused() (#1379)', () => {
+  it('Electron says focused, the OS says not: blinks', async () => {
+    const { win, calls } = fakeWindow({ focusedAfter: true });
+    const r = await performUserRaise(win, { ...noWait, appHadForeground: true, isFront: () => false });
+    expect(r.outcome).toBe('flashed');
+    expect(calls).toContain('flash:true');
+  });
+
+  it('really in front: raised, no blink', async () => {
+    const { win, calls } = fakeWindow({ focusedAfter: false });
+    const r = await performUserRaise(win, { ...noWait, appHadForeground: true, isFront: () => true });
+    expect(r.outcome).toBe('raised');
+    expect(calls).not.toContain('flash:true');
   });
 });

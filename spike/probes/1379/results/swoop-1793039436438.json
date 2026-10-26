@@ -1,0 +1,90 @@
+{
+  "electron": "43.1.1",
+  "os": "10.0.26300",
+  "rows": [
+    {
+      "target": "main",
+      "technique": "minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "target": "main",
+      "technique": "minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "target": "main",
+      "technique": "minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "target": "popout",
+      "technique": "minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "target": "popout",
+      "technique": "minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "target": "popout",
+      "technique": "minimize()+restore()",
+      "poisoned": false,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "target": "popout",
+      "technique": "minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "target": "popout",
+      "technique": "minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "target": "popout",
+      "technique": "minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "target": "main",
+      "technique": "minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "target": "main",
+      "technique": "minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    },
+    {
+      "target": "main",
+      "technique": "minimize()+restore()",
+      "poisoned": true,
+      "validStart": true,
+      "took": false
+    }
+  ]
+}

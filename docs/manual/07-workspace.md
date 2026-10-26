@@ -835,8 +835,14 @@ in from being interrupted, and it can say no — expect that if the switchboard
 window is in full screen, which it can't come out of to swoop forward. When
 that happens switchboard doesn't pretend: the taskbar button flashes and the
 session is marked in the Sessions list, exactly as if you'd picked a quieter
-setting. (If you're curious, the
+setting. A popped-out window is turned down more often than the main window. When
+that happens, the popped-out window's own taskbar button flashes. (If you're curious, the
 app's log records each time it asked and what Windows said.)
+
+Nothing is brought forward if the session's window is **already in front of
+you**. switchboard asks Windows which window that is rather than trusting its
+own guess, so a session is never skipped just because an earlier call was held
+back by quiet hours or the 🔔 switch.
 
 **It is a notification, so the notification switches apply.** With **🔔**
 turned off, or during your [quiet hours](10-settings.md#quiet-hours), nothing

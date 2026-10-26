@@ -188,3 +188,61 @@ describe('the beep steps aside for an action that made the noise (#1267)', () =>
     expect(beeps.count).toBe(1);
   });
 });
+
+// #1379: the taskbar flash is for a window that is NOT in front. A refused
+// focus() leaves Electron's isFocused() saying true, which used to silence it.
+describe('the taskbar flash asks the OS, not isFocused() (#1379)', () => {
+  function fakeWin(focused: boolean) {
+    const calls: string[] = [];
+    const listeners = new Map<string, () => void>();
+    const win = {
+      isDestroyed: () => false,
+      isFocused: () => focused,
+      flashFrame: (f: boolean) => calls.push(`flash:${f}`),
+      once: (e: string, l: () => void) => {
+        listeners.set(e, l);
+        return win;
+      },
+      removeListener: (e: string) => {
+        listeners.delete(e);
+        return win;
+      },
+    };
+    return { win, calls, fire: (e: string) => listeners.get(e)?.(), listeners };
+  }
+  const make = (win: unknown, front: boolean) =>
+    new Notifier({
+      getWindow: () => win as never,
+      getPrefs: () => ({ enabled: true }),
+      rules: { fire: () => ({ replacesBeep: false }) },
+      isFront: () => front,
+    });
+
+  it('flashes a window Electron calls focused when the OS says another app is in front', () => {
+    const w = fakeWin(true);
+    make(w.win, false).handle(ev('needs-permission'));
+    expect(w.calls).toEqual(['flash:true']);
+  });
+
+  it('does not flash a window really in front', () => {
+    const w = fakeWin(false);
+    make(w.win, true).handle(ev('needs-permission'));
+    expect(w.calls).toEqual([]);
+  });
+
+  it('a BLUR ends the wait too — a lied-about window gets no focus event when the person arrives', () => {
+    const w = fakeWin(true);
+    const n = make(w.win, false);
+    n.handle(ev('needs-permission'));
+    // a second event while it blinks does not restart the blink
+    n.handle(ev('needs-input'));
+    expect(w.calls).toEqual(['flash:true']);
+    w.fire('blur');
+    // the blink is the OS's to stop (it stops on arrival); nothing cut short
+    expect(w.calls).toEqual(['flash:true']);
+    expect(w.listeners.size).toBe(0); // the other listener went with it
+    // and the next event can flash again
+    n.handle(ev('needs-input'));
+    expect(w.calls).toEqual(['flash:true', 'flash:true']);
+  });
+});

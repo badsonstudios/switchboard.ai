@@ -1,0 +1,4 @@
+PROBE {"step":"0 other app in front","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":[],"raises":[]}
+PROBE {"step":"1 first event, raise declined (notifications off)","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":[],"raises":[{"outcome":"notifications-off","window":"popout"}]}
+PROBE {"step":"2 after answering","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":[],"raises":[{"outcome":"notifications-off","window":"popout"},{"outcome":"notifications-off","window":"popout"}]}
+PROBE {"step":"3 second event, raise allowed","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":[],"raises":[{"outcome":"notifications-off","window":"popout"},{"outcome":"notifications-off","window":"popout"},{"outcome":"already-front","window":"popout"}]}

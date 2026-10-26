@@ -1,0 +1,620 @@
+{
+  "electron": "43.1.1",
+  "os": "10.0.26300",
+  "pid": 39804,
+  "rows": [
+    {
+      "step": "0 just after window.open (nothing done yet)",
+      "truth": "probe-1379-popout",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "M:WM_NCACTIVATE(0)",
+        "M:WM_ACTIVATE(0)",
+        "M:WM_KILLFOCUS(62785382)",
+        "M:blur",
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-blur:M",
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "A other app in front",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(0)",
+        "P:WM_ACTIVATEAPP(0)",
+        "M:WM_ACTIVATEAPP(0)",
+        "P:WM_KILLFOCUS(0)",
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "B after DOM popout.focus()",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "F person brings M to front",
+      "truth": "probe-1379-main",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:WM_ACTIVATEAPP(1)",
+        "P:WM_ACTIVATEAPP(1)",
+        "M:WM_NCACTIVATE(1)",
+        "M:WM_ACTIVATE(1)",
+        "M:WM_SETFOCUS(0)",
+        "M:focus"
+      ],
+      "appEvents": [
+        "app-focus:M"
+      ]
+    },
+    {
+      "step": "G back to the other app (honest blur)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:WM_NCACTIVATE(0)",
+        "M:WM_ACTIVATE(0)",
+        "M:WM_ACTIVATEAPP(0)",
+        "P:WM_ACTIVATEAPP(0)",
+        "M:WM_KILLFOCUS(0)",
+        "M:blur"
+      ],
+      "appEvents": [
+        "app-blur:M"
+      ]
+    },
+    {
+      "step": "R DOM popout.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R DOM popout.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R DOM popout.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:WM_ACTIVATEAPP(1)",
+        "M:WM_ACTIVATEAPP(1)",
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_ACTIVATE(1)",
+        "P:WM_SETFOCUS(0)",
+        "P:focus",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(0)",
+        "P:WM_ACTIVATEAPP(0)",
+        "M:WM_ACTIVATEAPP(0)",
+        "P:WM_KILLFOCUS(0)",
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-focus:P",
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "R P.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:WM_ACTIVATEAPP(1)",
+        "M:WM_ACTIVATEAPP(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(1)",
+        "P:WM_SETFOCUS(0)",
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "R P.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R P.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(0)",
+        "P:WM_ACTIVATEAPP(0)",
+        "M:WM_ACTIVATEAPP(0)",
+        "P:WM_KILLFOCUS(0)",
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "R P.show()+P.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:WM_ACTIVATEAPP(1)",
+        "M:WM_ACTIVATEAPP(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(1)",
+        "P:WM_SETFOCUS(0)",
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "R P.show()+P.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R P.show()+P.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(0)",
+        "P:WM_ACTIVATEAPP(0)",
+        "M:WM_ACTIVATEAPP(0)",
+        "P:WM_KILLFOCUS(0)",
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "R P.webContents.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:WM_ACTIVATEAPP(1)",
+        "M:WM_ACTIVATEAPP(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(1)",
+        "P:WM_SETFOCUS(0)",
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "R P.webContents.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R P.webContents.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(0)",
+        "P:WM_ACTIVATEAPP(0)",
+        "M:WM_ACTIVATEAPP(0)",
+        "P:WM_KILLFOCUS(0)",
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "R M.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:WM_ACTIVATEAPP(1)",
+        "P:WM_ACTIVATEAPP(1)",
+        "M:WM_NCACTIVATE(0)",
+        "M:WM_ACTIVATE(1)",
+        "M:WM_SETFOCUS(0)",
+        "M:focus"
+      ],
+      "appEvents": [
+        "app-focus:M"
+      ]
+    },
+    {
+      "step": "R M.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R M.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:WM_NCACTIVATE(0)",
+        "M:WM_ACTIVATE(0)",
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_ACTIVATE(1)",
+        "M:WM_KILLFOCUS(62785382)",
+        "P:WM_SETFOCUS(47974290)",
+        "M:blur",
+        "P:focus",
+        "M:WM_NCACTIVATE(0)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(0)",
+        "P:WM_ACTIVATEAPP(0)",
+        "M:WM_ACTIVATEAPP(0)",
+        "P:WM_KILLFOCUS(0)",
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:M",
+        "app-focus:P",
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "R M.show()+M.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:WM_ACTIVATEAPP(1)",
+        "P:WM_ACTIVATEAPP(1)",
+        "M:WM_NCACTIVATE(0)",
+        "M:WM_ACTIVATE(1)",
+        "M:WM_SETFOCUS(0)",
+        "M:focus"
+      ],
+      "appEvents": [
+        "app-focus:M"
+      ]
+    },
+    {
+      "step": "R M.show()+M.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R M.show()+M.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:WM_NCACTIVATE(0)",
+        "M:WM_ACTIVATE(0)",
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_ACTIVATE(1)",
+        "M:WM_KILLFOCUS(62785382)",
+        "P:WM_SETFOCUS(47974290)",
+        "M:blur",
+        "P:focus",
+        "M:WM_NCACTIVATE(0)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(0)",
+        "P:WM_ACTIVATEAPP(0)",
+        "M:WM_ACTIVATEAPP(0)",
+        "P:WM_KILLFOCUS(0)",
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:M",
+        "app-focus:P",
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "X0 honest blur before the flash",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "X1 P.flashFrame(true) for 3 s, never focused",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_NCACTIVATE(1)"
+      ],
+      "appEvents": []
+    },
+    {
+      "step": "X2 refused P.focus() while flashing, +2.5 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:WM_ACTIVATEAPP(1)",
+        "M:WM_ACTIVATEAPP(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(1)",
+        "P:WM_SETFOCUS(0)",
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "X3 person brings P to front (poisoned + flashing before)",
+      "truth": "probe-1379-popout",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(1)"
+      ],
+      "appEvents": []
+    },
+    {
+      "step": "X4 back to the other app",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(0)",
+        "P:WM_ACTIVATEAPP(0)",
+        "M:WM_ACTIVATEAPP(0)",
+        "P:WM_KILLFOCUS(0)",
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "Y0 refused P.focus() (poisoned)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:WM_ACTIVATEAPP(1)",
+        "M:WM_ACTIVATEAPP(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(1)",
+        "P:WM_SETFOCUS(0)",
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "Y1 poisoned P flashFrame(true) for 3 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(0)"
+      ],
+      "appEvents": []
+    },
+    {
+      "step": "Y2 M flashFrame(true) for 3 s, P still poisoned",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "M:WM_NCACTIVATE(0)",
+        "P:WM_NCACTIVATE(1)",
+        "M:WM_NCACTIVATE(1)",
+        "P:WM_NCACTIVATE(0)",
+        "M:WM_NCACTIVATE(0)",
+        "M:WM_NCACTIVATE(1)",
+        "M:WM_NCACTIVATE(0)",
+        "M:WM_NCACTIVATE(1)"
+      ],
+      "appEvents": []
+    },
+    {
+      "step": "Y3 person brings M to front",
+      "truth": "probe-1379-main",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:WM_NCACTIVATE(0)",
+        "P:WM_ACTIVATE(0)",
+        "M:WM_NCACTIVATE(1)",
+        "M:WM_ACTIVATE(1)",
+        "P:WM_KILLFOCUS(47974290)",
+        "M:WM_SETFOCUS(62785382)",
+        "P:blur",
+        "M:focus",
+        "M:WM_NCACTIVATE(0)",
+        "M:WM_NCACTIVATE(1)"
+      ],
+      "appEvents": [
+        "app-blur:P",
+        "app-focus:M"
+      ]
+    },
+    {
+      "step": "Y4 back to the other app",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:WM_NCACTIVATE(0)",
+        "M:WM_NCACTIVATE(1)",
+        "M:WM_NCACTIVATE(0)",
+        "M:WM_ACTIVATE(0)",
+        "M:WM_ACTIVATEAPP(0)",
+        "P:WM_ACTIVATEAPP(0)",
+        "M:WM_KILLFOCUS(0)",
+        "M:blur"
+      ],
+      "appEvents": [
+        "app-blur:M"
+      ]
+    }
+  ]
+}
