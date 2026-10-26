@@ -171,6 +171,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   about a third more frames. Typing on a slow machine may still lag a little
   while several sessions are busy, because the busy conversations themselves
   are what fill the time.
+- **A popped-out session set to "Always jump to it" is no longer skipped after
+  an earlier call was held back.** If quiet hours or the 🔔 switch held back a
+  popped-out session's call, its next call could be skipped as "already in front"
+  while you were working in another app. Nothing came forward and nothing
+  flashed. This happened because Windows had turned down an earlier attempt to
+  focus that window, and switchboard still believed the window was in front.
+  switchboard now asks Windows which window is really in front. The session's
+  window is brought forward, or, if Windows says no, its taskbar button flashes.
+  The taskbar flash for a session that needs you, and the blink after a refused
+  click in the list, had the same problem and are fixed too.
 
 ## 0.8.131 — 2026-10-26
 

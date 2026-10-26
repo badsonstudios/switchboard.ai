@@ -27,6 +27,7 @@
 // `performAttentionRaise` takes its window and clock as arguments.
 import type { Logger } from './log/logger';
 import type { AttentionTechnique, AttentionWindow } from './window-activation';
+import { flashUntilArrival, type FlashableWindow } from './foreground';
 
 /**
  * The feed kinds an attention raise can answer — the renderer's REVEAL_KINDS
@@ -93,10 +94,8 @@ export function planAttentionRaise(f: RaiseFacts): RaisePlan {
 }
 
 /** What the OS window needs for the raise and its fallback. */
-export interface RaiseTarget extends AttentionWindow {
+export interface RaiseTarget extends AttentionWindow, FlashableWindow {
   isFocused(): boolean;
-  flashFrame(flag: boolean): void;
-  once(event: 'focus', listener: () => void): unknown;
 }
 
 /** How long the OS gets to hand over the foreground before we call it refused.
@@ -106,18 +105,19 @@ export const RAISE_SETTLE_MS = 400;
 /**
  * Raise, then check, then fall back.
  *
- * `isFocused()` after the attempt is trusted HERE and not in general: the
- * probe's lie (true with another process in front) came from refused
- * `focus()` calls, and `raiseForAttention` makes none on Windows when another
- * app is in front. Where it does — between our own windows (measured to work),
- * or on another OS — a lie reads as `raised`, and the one cost is a missing
- * flash, never a stolen keyboard.
+ * "Did it come forward?" is `deps.isFront` — the OS's answer from
+ * `foreground.ts` (#1379) — and not `isFocused()`, which a refused `focus()`
+ * leaves saying true. Without `isFront` (tests, and a caller with no tracker)
+ * it is `isFocused()`, trusted only as far as #756 measured: the swoop makes no
+ * `focus()` call when another app is in front, so it has nothing to lie about.
  */
 export async function performAttentionRaise(
   win: RaiseTarget,
   deps: {
     raise: (w: AttentionWindow) => AttentionTechnique;
     wait: (ms: number) => Promise<void>;
+    /** is `win` really in front now (`ForegroundTracker.isFront`) */
+    isFront?: () => boolean;
   }
 ): Promise<{ outcome: 'raised' | 'refused' | 'no-window' | 'no-activate'; technique: AttentionTechnique }> {
   const technique = deps.raise(win);
@@ -128,17 +128,14 @@ export async function performAttentionRaise(
   if (technique !== 'none') {
     await deps.wait(RAISE_SETTLE_MS);
     if (win.isDestroyed()) return { outcome: 'no-window', technique };
-    if (win.isFocused()) return { outcome: 'raised', technique };
+    if (deps.isFront ? deps.isFront() : win.isFocused()) return { outcome: 'raised', technique };
   }
   // The OS said no (or, for `none`, was measured to). Degrade to the signal it
   // does allow, on THIS window — a popout has its own taskbar button, and the
-  // notifier only flashes the main one. Cleared the moment the person arrives,
-  // the notifier's own rule.
+  // notifier only flashes the main one. Until the person arrives, and never
+  // twice over (`flashUntilArrival`).
   try {
-    win.flashFrame(true);
-    win.once('focus', () => {
-      if (!win.isDestroyed()) win.flashFrame(false);
-    });
+    flashUntilArrival(win);
   } catch {
     // best-effort, like every other signal: never break the session flow
   }
@@ -196,13 +193,13 @@ export function logRaise(log: Pick<Logger, 'info'>, r: RaiseRecord, cardId?: str
  * Bounded by age, and pruned on write, so a workspace cannot accrete a record
  * per session it ever saw.
  *
- * KNOWN LIMIT: event time is only clean if no refused `focus()` came BEFORE
- * it, and the probe saw that lie persist. One path still produces one: a
- * popped-out card under `focus` whose raise is DECLINED (quiet hours, 🔔 off)
- * still gets dockview's DOM `focus()` from the in-app jump, refused. Until that
- * popout is really activated, its next event can read `already-front` (and the
- * notifier's flash guard is blinded the same way). Not fixed here: knowing the
- * truth needs the OS's foreground window, which Electron does not expose.
+ * WHICH window was in front comes from `foreground.ts` (#1379), not from
+ * `getFocusedWindow()`. Reading at event time is not enough by itself: the lie
+ * outlives the call that caused it, so a popout whose earlier raise was
+ * DECLINED (quiet hours, 🔔 off), or that was opened while another app was in
+ * front, used to answer "already in front" at its next event and be skipped.
+ * The tracker reads what Windows tells the window, which a refused `focus()`
+ * cannot fake.
  */
 export class FrontAtEvent {
   private readonly snaps = new Map<string, { windowId: number | null; at: number }>();

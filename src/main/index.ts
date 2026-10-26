@@ -170,6 +170,7 @@ import {
 } from './window-activation';
 import { refocusAfterDialog } from './dialog-refocus';
 import { performUserRaise } from './user-raise';
+import { ForegroundTracker } from './foreground';
 import {
   FrontAtEvent,
   logRaise,
@@ -321,6 +322,14 @@ function isPopoutUrl(url: string): boolean {
 
 let workspace: WorkspaceStore;
 let currentWindow: BrowserWindow | null = null;
+/**
+ * Which of our windows REALLY holds the OS foreground (#1379). Electron's
+ * `isFocused()` / `getFocusedWindow()` say "focused" after a refused `focus()`
+ * and keep saying it; this reads what Windows tells each window instead. Every
+ * window is tracked from birth: the main window in `createWindow`, popouts in
+ * `did-create-window`. Off Windows it answers the old way.
+ */
+const foreground = new ForegroundTracker({ anyFocused: () => BrowserWindow.getFocusedWindow() !== null });
 /**
  * **The notification stack's one clock** (P2-E14-05b).
  *
@@ -698,6 +707,8 @@ function createWindow(): BrowserWindow {
   win.on('page-title-updated', (e) => {
     e.preventDefault();
   });
+  // before the first show, so its first activation is seen (#1379)
+  foreground.track(win);
 
   if (state.isMaximized) win.maximize();
   currentWindow = win;
@@ -883,6 +894,7 @@ function createWindow(): BrowserWindow {
     if (!isPopoutUrl(details.url)) return;
     const entry = { win: child, groupId: groupIdFromFrameName(details.frameName) };
     popoutWindows.push(entry);
+    foreground.track(child); // #1379: seeded, it was activated before we got it
     revealChildWindow(child); // no-op unless `childWindowOptions` hid it (#1332)
     // A popped-out session is still a session: the palette and the attention
     // jump have to work from its terminal too (#90, §5.8 — tearing a card off
@@ -1386,6 +1398,10 @@ app
     // so each step is logged at debug (`SWITCHBOARD_DEBUG=focus`), and a miss
     // says which ids it had, so a sighting can be read back from the log.
     const focusLog = createLogger(sink, 'focus');
+    // #1379: every change of "which window is really in front", and what
+    // Electron claimed at the time — a sighting of a skipped raise can be read
+    // back from the log
+    foreground.onChange((c) => focusLog.debug('foreground', { ...c }));
     const traceOf = (t: unknown): Record<string, string> => {
       const out: Record<string, string> = {};
       if (t && typeof t === 'object') {
@@ -1396,7 +1412,9 @@ app
       }
       return out;
     };
-    const ourWindowHasFocus = (): boolean => BrowserWindow.getFocusedWindow() !== null;
+    // #1379: the OS's answer, not `getFocusedWindow()`, which a refused focus()
+    // leaves pointing at a window that is not in front
+    const ourWindowHasFocus = (): boolean => foreground.appHasForeground();
     broker.handle('app:raisePopout', async (_e, groupId: unknown, trace?: unknown) => {
       const t = traceOf(trace);
       if (typeof groupId !== 'string' || !groupId) return false;
@@ -1416,6 +1434,7 @@ app
       const r = await performUserRaise(win, {
         appHadForeground,
         wait: (ms) => new Promise((res) => setTimeout(res, ms)),
+        isFront: () => foreground.isFront(win),
       });
       focusLog.debug('raise popout: result', { ...t, ...r, appHadForeground });
       return r.outcome !== 'no-window';
@@ -1448,6 +1467,7 @@ app
       const r = await performUserRaise(win, {
         appHadForeground,
         wait: (ms) => new Promise((res) => setTimeout(res, ms)),
+        isFront: () => foreground.isFront(win),
       });
       focusLog.debug('raise main: result', { ...traceOf(trace), ...r, appHadForeground });
       return r.outcome !== 'no-window';
@@ -2713,6 +2733,8 @@ app
     const notifier = new Notifier({
       getWindow: () => currentWindow,
       getPrefs: () => workspace.getNotificationPrefs(),
+      // #1379: a refused focus() must not silence the taskbar flash
+      isFront: (w) => foreground.isFront(w),
       rules,
       // The same `clock` the engine got: the beep and the rules deciding it is
       // a different time of day is the kind of bug nobody would think to look
@@ -2727,7 +2749,10 @@ app
     feed.onEvent((e) => {
       if (e && RAISE_EVENT_KINDS.includes(e.kind)) {
         const card = cardIdForLive(e.sessionId);
-        if (card) frontAtEvent.note(card, BrowserWindow.getFocusedWindow()?.id ?? null, Date.now());
+        if (card) {
+          const frontId = foreground.frontWindowId(() => BrowserWindow.getFocusedWindow()?.id ?? null);
+          frontAtEvent.note(card, frontId, Date.now());
+        }
       }
       if (e) notifier.handle(e); // null = pure removal, nothing to announce
     });
@@ -2779,6 +2804,7 @@ app
           // windows (measured); another app in front: the swoop
           raise: (w) => raiseForAttention(w, { appHasForeground: front?.windowId != null }),
           wait: (ms) => new Promise((res) => setTimeout(res, ms)),
+          isFront: () => foreground.isFront(win!),
         });
         rec = { outcome: done.outcome, window: which, technique: done.technique };
       }

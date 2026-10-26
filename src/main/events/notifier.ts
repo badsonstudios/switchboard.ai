@@ -36,6 +36,7 @@
 // here is only their effect on the two unconditional local signals below: the
 // beep and the taskbar flash, both of which are aimed squarely at a person.
 import { shell } from 'electron';
+import { flashUntilArrival } from '../foreground';
 import type { BrowserWindow } from 'electron';
 import { FeedEvent, FeedKind } from './feed';
 import { QuietWindow, inQuietWindow } from './rules';
@@ -126,7 +127,6 @@ export function shouldConsultRules(prefs: NotificationPrefs, e: FeedEvent): bool
 }
 
 export class Notifier {
-  private flashPending = false;
 
   constructor(
     private readonly opts: {
@@ -139,6 +139,10 @@ export class Notifier {
       /** the app's ONE clock (P2-E14-05b) — the same function the engine gets,
        *  so the beep and the rules can never disagree about what time it is */
       now?: () => Date;
+      /** is this window REALLY in front (`ForegroundTracker.isFront`, #1379).
+       *  Without it, `isFocused()` — which a refused `focus()` on that window
+       *  leaves saying true, silencing the flash for every event after it */
+      isFront?: (win: BrowserWindow) => boolean;
     }
   ) {}
 
@@ -178,14 +182,10 @@ export class Notifier {
       // per pref, because that rule only matches some of them.
       if (!prefs.sounds && !replacesBeep) shell.beep();
       const win = this.opts.getWindow();
-      if (win && !win.isDestroyed() && !win.isFocused() && !this.flashPending) {
-        this.flashPending = true;
-        win.flashFrame(true);
-        win.once('focus', () => {
-          this.flashPending = false;
-          if (!win.isDestroyed()) win.flashFrame(false);
-        });
-      }
+      const inFront = (w: BrowserWindow) => (this.opts.isFront ? this.opts.isFront(w) : w.isFocused());
+      // until the person arrives, and never twice over — the one flash every
+      // signal shares (`flashUntilArrival`, #1379)
+      if (win && !win.isDestroyed() && !inFront(win)) flashUntilArrival(win);
     } catch {
       // notifying is best-effort; never let it break the session flow
     }

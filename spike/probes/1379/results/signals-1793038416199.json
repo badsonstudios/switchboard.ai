@@ -1,0 +1,332 @@
+{
+  "electron": "43.1.1",
+  "os": "10.0.26300",
+  "pid": 6256,
+  "rows": [
+    {
+      "step": "0 just after window.open (nothing done yet)",
+      "truth": "probe-1379-popout",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "M:blur",
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-blur:M",
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "A other app in front",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "B after DOM popout.focus()",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "F person brings M to front",
+      "truth": "probe-1379-main",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:focus"
+      ],
+      "appEvents": [
+        "app-focus:M"
+      ]
+    },
+    {
+      "step": "G back to the other app (honest blur)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:blur"
+      ],
+      "appEvents": [
+        "app-blur:M"
+      ]
+    },
+    {
+      "step": "R DOM popout.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R DOM popout.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R DOM popout.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:focus",
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-focus:P",
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "R P.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "R P.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R P.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "R P.show()+P.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "R P.show()+P.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R P.show()+P.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "R P.webContents.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [
+        "P:focus"
+      ],
+      "appEvents": [
+        "app-focus:P"
+      ]
+    },
+    {
+      "step": "R P.webContents.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": true,
+      "M_isFocused": false,
+      "focusedWindow": "P",
+      "P_wc_isFocused": true,
+      "P_hasFocus": true,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R P.webContents.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "R M.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:focus"
+      ],
+      "appEvents": [
+        "app-focus:M"
+      ]
+    },
+    {
+      "step": "R M.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R M.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:blur",
+        "P:focus",
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:M",
+        "app-focus:P",
+        "app-blur:P"
+      ]
+    },
+    {
+      "step": "R M.show()+M.focus() from an honest blur (before: P=false M=false)",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:focus"
+      ],
+      "appEvents": [
+        "app-focus:M"
+      ]
+    },
+    {
+      "step": "R M.show()+M.focus() +2 s",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": true,
+      "focusedWindow": "M",
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [],
+      "appEvents": []
+    },
+    {
+      "step": "R M.show()+M.focus() reset",
+      "truth": "OTHER:powershell",
+      "P_isFocused": false,
+      "M_isFocused": false,
+      "focusedWindow": null,
+      "P_wc_isFocused": false,
+      "P_hasFocus": false,
+      "events": [
+        "M:blur",
+        "P:focus",
+        "P:blur"
+      ],
+      "appEvents": [
+        "app-blur:M",
+        "app-focus:P",
+        "app-blur:P"
+      ]
+    }
+  ]
+}
