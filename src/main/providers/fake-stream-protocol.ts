@@ -221,6 +221,12 @@ export interface FakeScriptedTurn {
   then?: string;
   /** end the turn HELD on this request instead of finishing it */
   permission?: { tool: string; input: Record<string, unknown> };
+  /**
+   * leave the turn RUNNING after the tool calls: no result, so the session
+   * stays `working` with its last call (the one without a `result`) still
+   * in progress. For a picture of a session mid-turn; `!hang` with tools.
+   */
+  open?: boolean;
 }
 
 export interface FakeStreamHost {
@@ -680,7 +686,7 @@ export class FakeStreamProtocol {
         return; // the turn continues when the answer arrives
       }
       if (scripted.tools?.length) {
-        this.emitToolTurn(scripted.tools, scripted.then ?? '');
+        this.emitToolTurn(scripted.tools, scripted.then ?? '', !scripted.open);
         return;
       }
       this.emitResult();
@@ -1236,7 +1242,8 @@ export class FakeStreamProtocol {
    */
   private emitToolTurn(
     calls: FakeToolCall[] = DEFAULT_TOOL_CALLS,
-    prose = 'STREAM_PROSE answer'
+    prose = 'STREAM_PROSE answer',
+    finish = true
   ): void {
     // ONE api message for the whole turn — its tool calls AND the prose below
     // share this id, which is what a message split across several lines looks
@@ -1313,7 +1320,7 @@ export class FakeStreamProtocol {
       this.emit({ type: 'user', message: resultMessage, session_id: this.sessionId, parent_tool_use_id: null });
       this.transcribe('user', resultMessage);
     }
-    this.emitResult();
+    if (finish) this.emitResult();
   }
 
   /**

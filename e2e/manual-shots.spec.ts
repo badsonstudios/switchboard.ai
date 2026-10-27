@@ -1190,3 +1190,333 @@ test.describe('manual screenshots (#1082)', () => {
     await shot(w, 'ai-colours-light', [], await clipOf());
   });
 });
+
+// ── the README's pictures ────────────────────────────────────────────────────
+//
+// The repository's front page, not the manual: one launch, twelve sessions
+// in five groups and every state at once — the app doing what it is for.
+// Written to `docs/img/readme/`, with NO arrows (a front page shows the app,
+// not a lesson). Same skip as above, so `npm run e2e` and CI never run it.
+//
+//   npm run manual:shots -- -g README
+
+const README_OUT =
+  process.env.SWITCHBOARD_README_SHOTS_DIR ?? path.join(__dirname, '..', 'docs', 'img', 'readme');
+
+/** The README's window: wide enough for three cards side by side to stay legible. */
+const README_WINDOW = { width: 1880, height: 1040 };
+
+/** A made-up path as the feed prints it — never the temp folder the run used. */
+const shown = (...parts: string[]): string => ['C:', 'Projects', ...parts].join(path.win32.sep);
+
+const PROMPT_SEARCH = 'Add full-text search to the product catalogue';
+const PROMPT_CHECKOUT = 'Move checkout to one page, with the address and payment side by side';
+const PROMPT_FRAUD = 'Hold orders over $2,000 from brand-new accounts for a manual review';
+const PROMPT_INDEX = 'Reindex the catalogue nightly instead of on every save';
+const PROMPT_TERRAFORM = 'Add a staging database with nightly backups';
+const PROMPT_LAUNCH = 'Write the launch post for the new pricing page';
+const PROMPT_IOS = 'Fix the crash when someone opens an empty cart';
+
+/** A turn that is still running: its last call has no result yet. */
+function working(say: string, calls: Array<[string, Record<string, unknown>, string?]>): Record<string, unknown> {
+  return {
+    say,
+    open: true,
+    tools: calls.map(([name, input, result], i) => ({ id: `toolu_readme_${name}_${i}`, name, input, result })),
+  };
+}
+
+/** What the thirteen sessions say. The storefront and billing turns are the manual's. */
+function readmeScript(billing: string): Record<string, unknown> {
+  return {
+    ...script(billing),
+    [PROMPT_SEARCH]: {
+      say: 'There are two sensible ways to do this, and they differ in what you would have to run.',
+      permission: {
+        tool: 'AskUserQuestion',
+        input: {
+          questions: [
+            {
+              question: 'Which search engine should the catalogue use?',
+              header: 'Search',
+              options: [
+                { label: 'Postgres full-text', description: 'Nothing new to run; fine for a few hundred thousand products' },
+                { label: 'Meilisearch', description: 'Typo-tolerant and very fast, but one more service to deploy' },
+                { label: 'SQLite FTS5', description: 'Only for the local demo build' },
+              ],
+              multiSelect: false,
+            },
+          ],
+        },
+      },
+    },
+    [PROMPT_CHECKOUT]: working(
+      'I will read the current three-step checkout first, so nothing it validates gets lost in the move.',
+      [
+        ['Read', { file_path: shown('checkout-redesign', 'src', 'pages', 'CheckoutPage.tsx') }, '182 lines'],
+        [
+          'Grep',
+          { pattern: 'validateAddress', path: shown('checkout-redesign', 'src') },
+          'src/pages/CheckoutPage.tsx\nsrc/forms/AddressForm.tsx\nsrc/forms/validate.ts',
+        ],
+        [
+          'TodoWrite',
+          {
+            todos: [
+              { content: 'Put the address and payment forms in one two-column page', status: 'completed' },
+              { content: 'Keep the address checks from the old step two', status: 'in_progress' },
+              { content: 'Update the checkout tests', status: 'pending' },
+            ],
+          },
+          'Todos have been modified successfully.',
+        ],
+        [
+          'Edit',
+          {
+            file_path: shown('checkout-redesign', 'src', 'pages', 'CheckoutPage.tsx'),
+            old_string: '<AddressStep onNext={next} />',
+            new_string: '<div className="checkout-columns">\n  <AddressForm />\n  <PaymentForm />\n</div>',
+          },
+          'The file has been updated.',
+        ],
+        ['Bash', { command: 'npm test -- checkout', description: 'Run the checkout tests' }],
+      ]
+    ),
+    [PROMPT_FRAUD]: working('The rules live in one file, so this is a new rule plus a test for it.', [
+      ['Read', { file_path: shown('fraud-rules', 'rules', 'orders.yaml') }, '64 lines'],
+      [
+        'Edit',
+        {
+          file_path: shown('fraud-rules', 'rules', 'orders.yaml'),
+          old_string: 'rules:',
+          new_string: 'rules:\n  - name: big-first-order\n    when: order.total > 2000 and account.age_days < 7\n    then: hold_for_review',
+        },
+        'The file has been updated.',
+      ],
+      ['Bash', { command: 'npm run test:rules', description: 'Run the rule tests' }],
+    ]),
+    [PROMPT_INDEX]: working('Indexing runs in the save handler today. I will move it to a nightly job.', [
+      ['Read', { file_path: shown('catalog-indexer', 'src', 'onSave.ts') }, '41 lines'],
+      ['Write', { file_path: shown('catalog-indexer', 'jobs', 'nightly-reindex.ts'), content: '// nightly' }, 'File created.'],
+      ['Bash', { command: 'npm run reindex -- --dry-run', description: 'Try the nightly job once' }],
+    ]),
+    [PROMPT_TERRAFORM]: working('Staging has no database yet; I will add one with a seven-day backup window.', [
+      ['Read', { file_path: shown('terraform-infra', 'staging', 'main.tf') }, '118 lines'],
+      ['Bash', { command: 'terraform plan -out staging.plan', description: 'Plan the staging change' }],
+    ]),
+    [PROMPT_LAUNCH]: {
+      say: 'I will base the post on the pricing page itself so the numbers match.',
+      tools: [
+        { id: 'toolu_readme_launch_read', name: 'Read', input: { file_path: shown('marketing-site', 'pages', 'pricing.md') }, result: '96 lines' },
+        {
+          id: 'toolu_readme_launch_write',
+          name: 'Write',
+          input: { file_path: shown('marketing-site', 'blog', 'new-pricing.md'), content: '# New pricing, explained' },
+          result: 'File created.',
+        },
+      ],
+      then:
+        'The post is in `blog/new-pricing.md`: what changed, who it helps, and a table of the three plans.\n\n' +
+        'I kept it under 600 words. Want a shorter version for the newsletter?',
+    },
+    [PROMPT_IOS]: {
+      say: 'The cart view force-unwraps its first item. That is the crash.',
+      tools: [
+        { id: 'toolu_readme_ios_read', name: 'Read', input: { file_path: shown('ios-app', 'Cart', 'CartView.swift') }, result: '77 lines' },
+        {
+          id: 'toolu_readme_ios_edit',
+          name: 'Edit',
+          input: {
+            file_path: shown('ios-app', 'Cart', 'CartView.swift'),
+            old_string: 'let first = items.first!',
+            new_string: 'guard let first = items.first else { return EmptyCartView() }',
+          },
+          result: 'The file has been updated.',
+        },
+      ],
+      then: 'Fixed: an empty cart now shows the "Your cart is empty" screen instead of crashing.',
+    },
+  };
+}
+
+/** The made-up workspace: five groups (three folded shut), and one session in none. */
+const README_GROUPS: Array<{ name: string; sessions: string[]; fold?: boolean }> = [
+  { name: 'Storefront', sessions: ['acme-storefront', 'checkout-redesign'] },
+  { name: 'Payments', sessions: ['billing-api', 'fraud-rules', 'invoice-worker'] },
+  { name: 'Search', sessions: ['search-service', 'catalog-indexer'], fold: true },
+  { name: 'Mobile app', sessions: ['ios-app', 'android-app'], fold: true },
+  { name: 'Infrastructure', sessions: ['terraform-infra', 'ci-pipelines'], fold: true },
+];
+const README_UNGROUPED = ['marketing-site'];
+
+test.describe('README screenshots', () => {
+  test.skip(!process.env.SWITCHBOARD_MANUAL_SHOTS, 'set SWITCHBOARD_MANUAL_SHOTS=1 — npm run manual:shots');
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  test('a busy workspace', async () => {
+    test.setTimeout(600_000);
+    const parent = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-shots-')));
+    const shop = storefront(parent);
+    const others = [...README_GROUPS.flatMap((g) => g.sessions), ...README_UNGROUPED].filter(
+      (n) => n !== 'acme-storefront'
+    );
+    const dirs: Record<string, string> = {};
+    for (const name of others) dirs[name] = plainProject(parent, name, `# ${name}\n`);
+    const scriptFile = path.join(parent, 'script.json');
+    fs.writeFileSync(scriptFile, JSON.stringify(readmeScript(dirs['billing-api'])), 'utf8');
+
+    a = await launchApp({
+      seedFolder: shop,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_FAKE_SCRIPT: scriptFile },
+    });
+    const w = a.window;
+    await placeWindow(a, onTestDisplay(a, { x: 0, y: 0, ...README_WINDOW }));
+    await expect(w.getByText('acme-storefront').first()).toBeVisible({ timeout: 25_000 });
+    await setTheme(w, 'nordic');
+
+    const snap = async (name: string, clip?: Clip): Promise<void> => {
+      await w.mouse.move(2, 2);
+      await w.waitForTimeout(600);
+      // the stand-in's version beside "Claude Code" in the status bar means nothing
+      await tidy(w, parent, { ' 0.0.0': '', '=0.0.0': '' });
+      // the list scrolls to the row last clicked; a picture shows it from the top
+      await w.evaluate(() => {
+        for (const el of document.querySelectorAll<HTMLElement>('nav, nav *')) if (el.scrollTop > 0) el.scrollTop = 0;
+      });
+      fs.mkdirSync(README_OUT, { recursive: true });
+      await w.screenshot({ path: path.join(README_OUT, `${name}.png`), clip, animations: 'disabled' });
+    };
+    const row = (name: string) => w.locator('nav .rail-row').filter({ hasText: name }).first();
+    const tab = (name: string) => w.locator('.dv-tab', { hasText: name }).first();
+    const card = (title: string) =>
+      w.locator('.dv-groupview', { has: w.locator('.dv-tab', { hasText: title }) }).first();
+    /** a card without its row of tabs, which in the last place holds every other session */
+    const cardBody = async (title: string): Promise<Clip> => {
+      const c = (await card(title).boundingBox())!;
+      const t = (await card(title).locator('.dv-tabs-and-actions-container').boundingBox())!;
+      const top = t.y + t.height;
+      return { x: c.x, y: top, width: c.width, height: c.y + c.height - top };
+    };
+
+    // ── twelve more sessions ─────────────────────────────────────────────────
+    for (const name of others) {
+      await a.app.evaluate(({ dialog }, d) => {
+        dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
+      }, dirs[name]);
+      await w.getByRole('button', { name: '+ session' }).click();
+      await expect(row(name)).toBeVisible({ timeout: 25_000 });
+    }
+
+    // ── five groups, named, and the sessions moved into them ─────────────────
+    for (const g of README_GROUPS) {
+      await w.getByTitle('Create a persistent group').click();
+      await expect(w.getByText('New group')).toBeVisible();
+      await w.getByText('New group').dblclick();
+      await w.locator('input:focus').fill(g.name);
+      await w.locator('input:focus').press('Enter');
+      await expect(w.locator('nav').getByText(g.name, { exact: true })).toBeVisible();
+    }
+    for (const g of README_GROUPS) {
+      for (const s of g.sessions) {
+        await row(s).click({ button: 'right' });
+        const item = w.locator('[data-move-item]', { hasText: g.name }).first();
+        await expect(item).toBeVisible({ timeout: 5_000 });
+        await item.click();
+      }
+    }
+
+    // ── every state at once ──────────────────────────────────────────────────
+    const prompt = streamPrompter(a);
+    const status = async (name: string, token: string): Promise<void> => {
+      await expect(row(name)).toHaveAttribute('data-session-status', token, { timeout: 30_000 });
+    };
+    await prompt('acme-storefront', PROMPT_FEATURE);
+    await prompt('marketing-site', PROMPT_LAUNCH);
+    await prompt('ios-app', PROMPT_IOS);
+    await prompt('checkout-redesign', PROMPT_CHECKOUT);
+    await prompt('fraud-rules', PROMPT_FRAUD);
+    await prompt('catalog-indexer', PROMPT_INDEX);
+    await prompt('terraform-infra', PROMPT_TERRAFORM);
+    await prompt('search-service', PROMPT_SEARCH);
+    await prompt('billing-api', PROMPT_BUILD);
+    await status('billing-api', 'needs-permission');
+    await status('search-service', 'needs-input');
+    for (const s of ['checkout-redesign', 'fraud-rules', 'catalog-indexer', 'terraform-infra']) await status(s, 'working');
+
+    // two groups folded shut: their headings still say what is inside
+    for (const g of README_GROUPS.filter((x) => x.fold)) {
+      const toggle = w.locator('nav [data-rail-group-toggle]', { hasText: g.name }).first();
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    }
+
+    // ── three side by side, the list on the left ─────────────────────────────
+    await w.locator('[data-layout-preset="columns3"]').click();
+    await expect(w.locator('.dv-groupview')).toHaveCount(3, { timeout: 10_000 });
+    await tab('billing-api').click();
+    await expect(w.getByRole('button', { name: 'Allow', exact: true }).first()).toBeVisible({ timeout: 15_000 });
+    await snap('three-side-by-side');
+
+    // the list on its own, top to bottom
+    const nav = (await w.locator('nav').first().boundingBox())!;
+    await snap('sessions-list', { x: nav.x, y: nav.y, width: nav.width, height: nav.height });
+
+
+    // ── two by two ───────────────────────────────────────────────────────────
+    await w.locator('[data-layout-preset="grid"]').click();
+    await expect(w.locator('.dv-groupview')).toHaveCount(4, { timeout: 10_000 });
+    await tab('search-service').click();
+    await expect(w.getByText('Which search engine should the catalogue use?').first()).toBeVisible({ timeout: 15_000 });
+    await snap('two-by-two');
+    await snap('approval', (await card('billing-api').boundingBox())!);
+    await snap('question', await cardBody('search-service'));
+
+    // ── the composer's chips: AI, model, mode, effort, context ───────────────
+    const storeCard = card('acme-storefront');
+    const options = storeCard.locator('[data-testid="composer-options"]');
+    await expect(options).toBeVisible();
+    await snap('composer', await around(w, [options, storeCard.getByPlaceholder(/^Message .+…$/)], 10));
+
+    // ── the Events drawer: everything that needs you, answerable in place ────
+    await openEventsDrawer(w);
+    await expect(w.getByTestId('events-drawer').locator('[data-event-held]').first()).toBeVisible({ timeout: 15_000 });
+    await snap('events');
+    await w.getByTestId('events-close').click();
+
+    // ── the list across the top instead ──────────────────────────────────────
+    await w.locator('[data-placement="top"]').click();
+    await expect(w.locator('[data-strip-group]').first()).toBeVisible({ timeout: 10_000 });
+    await w.locator('[data-layout-preset="columns3"]').click();
+    await expect(w.locator('.dv-groupview')).toHaveCount(3, { timeout: 10_000 });
+    await snap('sessions-top');
+    // one group's list dropped down
+    const payments = w.locator('[data-strip-group]', { hasText: 'Payments' }).first();
+    await payments.locator('[data-strip-group-open]').click();
+    await expect(w.locator('[data-strip-list]')).toBeVisible();
+    await snap('sessions-top-open', { x: 0, y: 0, width: README_WINDOW.width, height: 400 });
+    await w.keyboard.press('Escape');
+    await expect(w.locator('[data-strip-list]')).toHaveCount(0);
+    await w.locator('[data-placement="left"]').click();
+    await expect(row('acme-storefront')).toBeVisible();
+
+    // ── the same window in a light theme ─────────────────────────────────────
+    await w.locator('[data-layout-preset="grid"]').click();
+    await setTheme(w, 'daylight');
+    await snap('daylight');
+    await setTheme(w, 'nordic');
+
+    // ── one session's changes, with the diff open ────────────────────────────
+    await w.locator('[data-layout-preset="columns2"]').click();
+    await tab('acme-storefront').click();
+    const tabs = storeCard.locator('[data-testid="view-tabs"]');
+    await tabs.getByText(/^Changes/).click();
+    await expect(storeCard.getByText('SettingsPage.tsx').first()).toBeVisible({ timeout: 15_000 });
+    await storeCard.getByText('SettingsPage.tsx').first().click();
+    await expect(w.locator('.monaco-diff-editor').first()).toBeVisible({ timeout: 20_000 });
+    // one column, so whole lines fit in a card half the window wide
+    await storeCard.getByRole('button', { name: 'Inline', exact: true }).click();
+    await w.waitForTimeout(1200);
+    await snap('changes', (await storeCard.boundingBox())!);
+  });
+});

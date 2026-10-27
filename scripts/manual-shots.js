@@ -4,10 +4,11 @@
 // `SWITCHBOARD_MANUAL_SHOTS` is set so that `npm run e2e` and CI never rewrite
 // one. This sets it and runs that one spec. A script rather than an inline
 // `VAR=1 playwright …` in package.json because that spelling is POSIX-only and
-// the project is developed on Windows.
+// the project is developed on Windows. Anything after `--` is passed on to
+// Playwright: `npm run manual:shots -- -g README` takes only the README's.
 const { spawnSync } = require('child_process');
 
-const result = spawnSync('npx', ['playwright', 'test', 'e2e/manual-shots.spec.ts'], {
+const result = spawnSync('npx', ['playwright', 'test', 'e2e/manual-shots.spec.ts', ...process.argv.slice(2)], {
   stdio: 'inherit',
   shell: true,
   env: { ...process.env, SWITCHBOARD_MANUAL_SHOTS: '1' },

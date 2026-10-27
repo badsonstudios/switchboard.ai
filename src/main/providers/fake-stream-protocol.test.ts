@@ -1692,3 +1692,30 @@ describe('scripted MCP answers (#1420)', () => {
     }
   });
 });
+
+// A scripted turn that is still running — the README's working sessions.
+describe('a scripted turn left open', () => {
+  const turn = {
+    say: 'Starting on it.',
+    tools: [
+      { id: 'toolu_open_read', name: 'Read', input: { file_path: '/work/a.ts' }, result: 'one' },
+      { id: 'toolu_open_bash', name: 'Bash', input: { command: 'npm test' } },
+    ],
+  };
+  const run = (open: boolean): string[] => {
+    const p = new FakeStreamProtocol({ ...host, script: () => ({ ...turn, open }) }, (m) => out.push(m));
+    p.handle(userMsg('anything'));
+    return out.map((m) => `${tag(m.type)}${m.subtype ? ':' + tag(m.subtype) : ''}`);
+  };
+
+  it('emits the tool calls and no result, so the session stays working', () => {
+    const t = run(true);
+    expect(t.filter((x) => x === 'assistant').length).toBeGreaterThanOrEqual(3);
+    expect(t.some((x) => x.startsWith('result'))).toBe(false);
+  });
+
+  it('finishes as before when not open', () => {
+    const t = run(false);
+    expect(t[t.length - 1]).toBe('result:success');
+  });
+});
