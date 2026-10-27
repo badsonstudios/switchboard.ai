@@ -93,5 +93,7 @@
   "--link": "#7cc4ff",
   "--subagent": "#d0b3ff",
   "--btn-primary-bg": "#2ea043",
-  "--btn-primary-text": "#000000"
+  "--btn-primary-text": "#000000",
+  "--btn-secondary-bg": "#7cc4ff",
+  "--btn-secondary-text": "#000000"
 }

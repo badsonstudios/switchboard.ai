@@ -154,7 +154,17 @@ export const TOKEN_GROUPS: readonly TokenGroup[] = [
     id: 'controls',
     layer: 2,
     kind: 'color',
-    tokens: ['--link', '--subagent', '--btn-primary-bg', '--btn-primary-text'],
+    tokens: [
+      '--link',
+      '--subagent',
+      '--btn-primary-bg',
+      '--btn-primary-text',
+      // a live button that is NOT the one finishing the job: the question
+      // bar's Next question (#1471). Blue, and a different LIGHTNESS from the
+      // primary green, never hue alone (§5.32)
+      '--btn-secondary-bg',
+      '--btn-secondary-text',
+    ],
   },
 ];
 

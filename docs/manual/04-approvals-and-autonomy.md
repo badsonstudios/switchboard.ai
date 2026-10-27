@@ -295,8 +295,10 @@ none left after it. It deliberately does *not* move when:
 
 To move on yourself — for example after ticking boxes — use **Next question**,
 the first of the three buttons (**Next question**, **Send answer**, **Don't
-answer**). It goes to the next unanswered question the same way, and it's greyed
-out when every other question already has an answer. Either way, the keyboard
+answer**). It goes to the next unanswered question the same way. While you can
+click it, it's a solid **blue** button, so it never looks like the green **Send
+answer** or the plain **Don't answer**. It's greyed out when every other
+question already has an answer. Either way, the keyboard
 focus lands on the first answer of the question you've moved to.
 
 ### Answering only some of the questions

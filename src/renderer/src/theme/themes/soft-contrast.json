@@ -84,5 +84,7 @@
   "--link": "#79b8f5",
   "--subagent": "#c2a9f0",
   "--btn-primary-bg": "#2f9e46",
-  "--btn-primary-text": "#08120a"
+  "--btn-primary-text": "#08120a",
+  "--btn-secondary-bg": "#79b8f5",
+  "--btn-secondary-text": "#08120a"
 }

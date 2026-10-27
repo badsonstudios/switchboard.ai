@@ -1087,3 +1087,44 @@ describe('the Next question button (#733)', () => {
     expect(calls).toEqual([{ decision: 'deny', allowAll: false, updatedInput: undefined }]);
   });
 });
+
+describe('Next question LOOKS live while it is live (#1471)', () => {
+  const dismissButton = (host: HTMLElement): HTMLButtonElement =>
+    host.querySelector<HTMLButtonElement>('[data-testid="question-dismiss"]')!;
+
+  it('is the blue secondary fill while it can be clicked', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    const next = nextButton(host)!;
+    expect(next.disabled).toBe(false);
+    expect(next.style.background).toBe('var(--btn-secondary-bg)');
+    expect(next.style.color).toBe('var(--btn-secondary-text)');
+    // the edge is the fill's own colour, not the panel hairline
+    expect(next.getAttribute('style')).toContain('var(--btn-secondary-bg)');
+    expect(next.getAttribute('style')).not.toContain('var(--border)');
+    expect(next.style.cursor).toBe('pointer');
+  });
+
+  it('keeps the muted look, and its reason, once it is dead', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await click(optionRow(host, 0, 'Red')); // → Languages, the only one left
+    const next = nextButton(host)!;
+    expect(next.disabled).toBe(true);
+    expect(next.style.background).toBe('var(--panel)');
+    expect(next.style.color).toBe('var(--muted)');
+    expect(next.getAttribute('style')).not.toContain('btn-secondary');
+    expect(next.style.cursor).toBe('not-allowed');
+    expect(next.title).toBe('Every other question is already answered');
+  });
+
+  it("never looks like Send answer or Don't answer", async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await click(optionRow(host, 0, 'Red')); // Send live (green)…
+    await openTab(host, 0); // …and Next live (blue)
+    const next = nextButton(host)!;
+    expect(next.disabled).toBe(false);
+    expect(submitButton(host).style.background).toBe('var(--btn-primary-bg)');
+    expect(dismissButton(host).style.background).toBe('var(--panel)');
+    expect(next.style.background).not.toBe(submitButton(host).style.background);
+    expect(next.style.background).not.toBe(dismissButton(host).style.background);
+  });
+});
