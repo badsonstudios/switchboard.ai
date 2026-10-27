@@ -490,8 +490,13 @@ export function QuestionPanel({
             the owner listed: Next question · Send answer · Don't answer. The
             same `advance` the pick-one auto-advance uses, on demand — the way
             off a checkbox question, and a walk through the panel that needs no
-            aim at the strip. Neutral, not primary: Send is still the button
-            that finishes the job. */}
+            aim at the strip. Not primary: Send is still the button that
+            finishes the job, so it keeps the green. But not neutral either
+            (#1471): in the panel colour it was the same button as Don't
+            answer, and looked dead while it was live. So while it can be
+            clicked it is the secondary fill, blue and a different lightness
+            from the green (§5.32); dead, it keeps the muted look, so live and
+            dead read at a glance. No hover state, because Send has none. */}
         {tabbed && (
           <button
             type="button"
@@ -501,9 +506,9 @@ export function QuestionPanel({
             // a dead button says why, the same idiom Send answer uses
             title={canAdvance ? undefined : t('question.nextHint')}
             style={{
-              background: 'var(--panel)',
-              color: canAdvance ? 'var(--text)' : 'var(--muted)',
-              border: '1px solid var(--border)',
+              background: canAdvance ? 'var(--btn-secondary-bg)' : 'var(--panel)',
+              color: canAdvance ? 'var(--btn-secondary-text)' : 'var(--muted)',
+              border: `1px solid ${canAdvance ? 'var(--btn-secondary-bg)' : 'var(--border)'}`,
               borderRadius: 'var(--radius-chip)',
               padding: '4px 14px',
               cursor: canAdvance ? 'pointer' : 'not-allowed',

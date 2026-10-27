@@ -277,6 +277,12 @@
   --subagent: #a78bfa;
   --btn-primary-bg: #238636;
   --btn-primary-text: #ffffff;
+  /* A live button that is not the primary (#1471: Next question). Darker
+     than the green on purpose: #1f6feb, the obvious blue, has exactly the
+     green's lightness (L* 49 both), so in greyscale the two would be one
+     button. This one is L* 40, and white on it is 6.5:1. */
+  --btn-secondary-bg: #1158c7;
+  --btn-secondary-text: #ffffff;
 
   /* session identity accent palette (§5.11) — auto-assigned, user-overridable */
   /* NO YELLOW AND NO ORANGE HERE (#1165, shared/reserved-hue.ts). There were:

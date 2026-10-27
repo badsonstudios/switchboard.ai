@@ -140,6 +140,17 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.133 — unreleased
 
+### Changed
+
+- **Next question is blue while you can click it.** When a session asks
+  several questions, the **Next question** button under them used to be the
+  same plain colour as **Don't answer**, so it looked switched off even when it
+  worked. Now it's a solid blue button whenever it can move you on, and grey
+  when it can't (on the last unanswered question). **Send answer** stays green,
+  and the blue is a different shade of light and dark from the green, so the
+  two don't look alike even if you can't tell blue from green. Every theme gets
+  it, and a theme can pick its own blue.
+
 ## 0.8.132 — 2026-10-26
 
 ### Changed

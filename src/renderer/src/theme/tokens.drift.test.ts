@@ -244,6 +244,7 @@ const PAIRS: Array<[string, string, number]> = [
   ['--diff-added', '--panel', 4.5],
   ['--diff-removed', '--panel', 4.5],
   ['--btn-primary-text', '--btn-primary-bg', 4.5],
+  ['--btn-secondary-text', '--btn-secondary-bg', 4.5],
 ];
 
 // Both contrast themes, same bars. `soft-contrast` is the comfort variant —
@@ -288,6 +289,40 @@ const semanticDefaults = declaredValues(block(':root {\n  /* status machine'));
 function resolved(theme: (typeof builtinThemes)[number]): Record<string, string> {
   return { ...semanticDefaults, ...preset[theme.base], ...theme.tokens };
 }
+
+// --- The two filled BUTTONS, in EVERY shipped theme (#1471) ----------------
+//
+// Unlike the PAIRS above this IS a claim nordic and daylight make: a filled
+// button's label is its whole reason to exist, so its words clear AA
+// everywhere. And the question bar puts the secondary (blue, Next question)
+// right beside the primary (green, Send answer), so the two fills must differ
+// in LIGHTNESS too: §5.32's colour-blind rule, never hue alone. The issue's
+// example blue, #1f6feb, measures 1.00 against the default green — the same
+// grey — which is the defect this floor exists to catch.
+const SECONDARY_VS_PRIMARY_MIN = 1.3;
+describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s: filled buttons', (id, theme) => {
+  const tokens = resolved(theme);
+
+  it.each([
+    ['--btn-primary-text', '--btn-primary-bg'],
+    ['--btn-secondary-text', '--btn-secondary-bg'],
+  ])('%s on %s clears 4.5:1', (ink, fill) => {
+    for (const token of [ink, fill]) {
+      expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(/^#[0-9a-f]{6}$/i);
+    }
+    expect(ratio(tokens[ink], tokens[fill]), `${id}: ${tokens[ink]} on ${tokens[fill]}`).toBeGreaterThanOrEqual(
+      4.5
+    );
+  });
+
+  it('keeps the secondary fill a different lightness from the primary', () => {
+    const [secondary, primary] = [tokens['--btn-secondary-bg'], tokens['--btn-primary-bg']];
+    expect(
+      ratio(secondary, primary),
+      `${id}: ${secondary} against ${primary} reads as one grey`
+    ).toBeGreaterThanOrEqual(SECONDARY_VS_PRIMARY_MIN);
+  });
+});
 
 /** the rules that fill OPAQUELY with a color and write on it, and the floor
  *  each owes. Tinted fills are the same promise measured differently — see
