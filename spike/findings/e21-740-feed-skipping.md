@@ -189,7 +189,11 @@ so again regardless of what lands near it.
 
 * **Everything here is Windows.** #740 says Windows-only green is not evidence,
   because the reverted attempt was green on Windows and red on Linux CI.
-* **The observer count now scales with blocks × open cards.** Every FeedView
+* ~~**The observer count now scales with blocks × open cards.**~~ **Measured in
+  #1035** (`1035-feed-relayout-n-cards.md`): the median frame stays at one frame
+  through 8 full cards, while the per-frame observer pass grows linearly —
+  ~0.8ms per 1,000 on-screen targets, ~3.5ms at four full cards on screen, and a
+  ~5% slow-frame tail. The original note follows. Every FeedView
   observes each of its blocks individually, `upsertBlock` caps at 1,000 per
   session, and the dogfooding workflow is many cards at once — so eight busy
   cards is up to 8,000 live ResizeObserver targets gathered every frame. The
