@@ -3,6 +3,12 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚀 RELEASING: v0.8.133, 2026-10-27 — #1472, #1471, #1439, #1468 (+ #1035 measured, #1355 tests, the README rewrite)
+>
+> Dan, after the run's report and the orchestrator's recommendation to release: *"Go."* A **regular release, on his word**. Version, lock and dated notes land together (`0.8.134 — unreleased` is open). On merge, tag `v0.8.133` is pushed from the merge commit and the release workflow publishes the installer. This block is updated to RELEASED once `releases/latest` answers `v0.8.133`.
+>
+> **In it:** #1472 (Enter in a still-working session no longer folds its card under Collapse on submit), #1471 (Next question is filled blue while live), #1439 ("see what it was told" is on the feed's arrow-key walk, not a Tab stop), #1468 (the rules engine asks `foreground.ts`, not `isFocused()`; a popout swoop briefly hides the app's other windows so Windows lets it win, **a decision Dan may still flip to "flash only"**). Also merged after the run: **the README rewrite with 11 harness screenshots** (PR #1481, `83095d69`; `docs/img/readme/`, fake demo data only; the stream fake can now leave a scripted turn running). Filed from it: #1482 (manual 01 still says there is no download). **None of the user-facing changes is hand-tested**: four dogfood UNTESTED rows.
+
 > # ✅ ORCHESTRATION RUN — 2026-10-27 ~09:45 → ~14:30 EDT: ALL SIX MERGED (#1472 #1471 #1439 #1468 #1035 #1355, Dan's pairs, two workers), NOTHING IN FLIGHT, NOT RELEASED
 >
 > **Dan's instruction (2026-10-27):** `/orchestrate 1472 1471 1439 1468 1035 1355`, two workers, in pairs, merge on green CI. **Do NOT cut a release.** `0.8.133 — unreleased` holds the four user-facing changes (#1472, #1471, #1439, #1468). **None is hand-tested**: four dogfood UNTESTED rows. Main checkout `out/` was rebuilt at `e78af446` for the About-stamp check. #1472's report said "0.8.132 / `59c8dd36` / dirty tree"; that was verified to be the **released v0.8.132** (the tagged release commit), so its log was read against `main`.
