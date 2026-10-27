@@ -3,6 +3,21 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔄 ORCHESTRATION RUN — 2026-10-27 from ~09:45 EDT: SIX ISSUES IN THREE PAIRS, TWO WORKERS
+>
+> **Dan's instruction (2026-10-27):** `/orchestrate 1472 1471 1439 1468 1035 1355`, two workers, run in pairs: (1) #1472 + #1471, (2) #1439 + #1468, (3) #1035 + #1355. Merge every PR on green CI. **Do NOT cut a release.** v0.8.132 is released; `0.8.133 — unreleased` is the open CHANGELOG section. **#1472 is the priority:** pressing Enter in a working session's prompt box closed that session's window (the row stayed in the list). The issue arrived with no label or milestone. The orchestrator added `bug` + `phase-3` + Phase 3 and posted the spec as a comment. The report's "0.8.132 / `59c8dd36` / branch v0.8.132 / dirty tree" was checked: it is the **released v0.8.132** (the tagged release commit on `main`, built by the release workflow), so the log reads against `main`. #1035 is measure-first (post the curve; fix only if bad). #1355 is test-only.
+>
+> **Single-writer rule:** this file is written ONLY by the orchestrator session. Workers never touch it. Their inputs are the handoff files in `.claude/work_files/orchestrator/<issue#>.md` (git-ignored, main checkout), and their shared contract is `.claude/work_files/orchestrator/worker-contract.md` (now pointed at 0.8.133). Resume from this block if the orchestrator session dies.
+>
+> | Issue | Worktree / branch | State |
+> |---|---|---|
+> | #1472 Enter in a working session's prompt closed its window | `sb-wt-1` / `feature/1472-enter-closes-session-window` | **DISPATCHED** ~09:45 EDT (Opus worker; reproduce → root-cause → fix) |
+> | #1471 "Next question" is filled blue while it can be clicked | `sb-wt-2` / `feature/1471-next-question-blue` | **DISPATCHED** ~09:45 EDT (Opus worker) |
+> | #1439 "See briefing" follows the Show summary keyboard rule | — | queued, pair 2 |
+> | #1468 Popout swoop never wins the foreground; rules visibility check moves to `foreground.ts` | — | queued, pair 2 (rework the rules and permission-toast e2e specs first; see `spike/findings/1379-isfocused-after-refused-raise.md`) |
+> | #1035 Feed relayout at N cards: measure the curve | — | queued, pair 3 |
+> | #1355 Drop redundant `retryLostReply` wrappers; cover string evaluates | — | queued, pair 3 |
+
 > # ✅ RELEASED: v0.8.132, 2026-10-26 (PR #1469, tag on `59c8dd36`, release run 40404358970) — #716, #1462, #1379
 >
 > Dan, after the run's report: *"just go ahead and do the release whenever you're ready."* A **regular release, on his word**, like 0.8.131 earlier the same day. Version, lock and dated notes land together (`0.8.133 — unreleased` is open). The release PR merged on green CI (4/4) as `59c8dd36`, tag `v0.8.132` was pushed from it, and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.132.exe` (105 MB) + `.sha256` as a normal release: `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.132` (published 17:36 EDT). The three dogfood rows now read RELEASED.
