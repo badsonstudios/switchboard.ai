@@ -1,0 +1,79 @@
+────────────────────────────────────────────────────────────────────────
+playwright test — NO BUILD RAN. Testing the bundle already in out/.
+  bundle:  ea6a559b* on feature/1468-popout-swoop-foreground, built 2026-10-27T16:08:55.812Z (just now)
+  out/:    written just now (oldest artifact: out/main/index.js)
+  sources: newest bundled change is src/main/index.ts (19m ago)
+  FRESH — every bundled source is older than this build.
+────────────────────────────────────────────────────────────────────────
+
+Running 2 tests using 1 worker
+
+[1/2] e2e\probe-real-app.spec.ts:68:5 › probe 1379
+
+e2e\probe-real-app.spec.ts:68:5 › probe 1379
+[fixture] SWITCHBOARD_E2E_MONITOR=right matched no secondary display (1 display(s); monitor 1 is the primary) — not moving anything
+PROBE {"step":"0 other app in front","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":[],"raises":[]}
+
+PROBE {"step":"1 first event, raise declined (notifications off)","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":[],"raises":[{"outcome":"notifications-off","window":"popout"}]}
+
+PROBE {"step":"2 after answering","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":[],"raises":[{"outcome":"notifications-off","window":"popout"},{"outcome":"notifications-off","window":"popout"}]}
+
+PROBE {"step":"3 second event, raise allowed","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":["P:focus"],"raises":[{"outcome":"notifications-off","window":"popout"},{"outcome":"notifications-off","window":"popout"},{"outcome":"refused","window":"popout","technique":"minimize-restore-aside"}]}
+
+PROBE {"step":"4 another event, other app put back in front first","truth":"OTHER:electron","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":["P:focus","P:focus"],"raises":[{"outcome":"notifications-off","window":"popout"},{"outcome":"notifications-off","window":"popout"},{"outcome":"refused","window":"popout","technique":"minimize-restore-aside"},{"outcome":"refused","window":"popout","technique":"minimize-restore-aside"},{"outcome":"raised","window":"popout","technique":"minimize-restore-aside"}]}
+
+PROBE {"step":"5 another event, other app put back in front first","truth":"OTHER:electron","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":["P:blur","P:focus","P:focus"],"raises":[{"outcome":"notifications-off","window":"popout"},{"outcome":"notifications-off","window":"popout"},{"outcome":"refused","window":"popout","technique":"minimize-restore-aside"},{"outcome":"refused","window":"popout","technique":"minimize-restore-aside"},{"outcome":"raised","window":"popout","technique":"minimize-restore-aside"},{"outcome":"already-front","window":"popout"},{"outcome":"raised","window":"popout","technique":"minimize-restore-aside"}]}
+
+LOG {"ts":"2026-10-27T16:09:06.460Z","level":"info","subsystem":"app","msg":"app ready","version":"0.8.132","platform":"win32","commit":"ea6a559b","branch":"feature/1468-popout-swoop-foreground","dirty":true,"builtAt":"2026-10-27T16:08:55.812Z","release":false}
+
+LOG {"ts":"2026-10-27T16:09:06.504Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":1,"message":"tracked","on":false,"front":false,"electronSaysFocused":false}
+
+LOG {"ts":"2026-10-27T16:09:06.815Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":1,"message":"activate","on":true,"front":true,"electronSaysFocused":false}
+
+LOG {"ts":"2026-10-27T16:09:07.221Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":1,"message":"activate","on":false,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:09:07.223Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":1,"message":"app-deactivated","on":false,"front":false,"electronSaysFocused":false}
+
+LOG {"ts":"2026-10-27T16:09:07.321Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"tracked","on":true,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:09:10.182Z","level":"info","subsystem":"attention","msg":"attention raise: not raised: notifications are off","outcome":"notifications-off","window":"popout","cardId":"3cdfe409-a926-477f-bcfb-c836e0889164"}
+
+LOG {"ts":"2026-10-27T16:09:11.829Z","level":"info","subsystem":"attention","msg":"attention raise: not raised: notifications are off","outcome":"notifications-off","window":"popout","cardId":"3cdfe409-a926-477f-bcfb-c836e0889164"}
+
+LOG {"ts":"2026-10-27T16:09:16.361Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":true,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:09:16.763Z","level":"info","subsystem":"attention","msg":"attention raise: the OS kept another app in front — flashing the taskbar; the lamp in the list carries it","outcome":"refused","window":"popout","technique":"minimize-restore-aside","cardId":"3cdfe409-a926-477f-bcfb-c836e0889164"}
+
+LOG {"ts":"2026-10-27T16:09:18.793Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":true,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:09:19.204Z","level":"info","subsystem":"attention","msg":"attention raise: the OS kept another app in front — flashing the taskbar; the lamp in the list carries it","outcome":"refused","window":"popout","technique":"minimize-restore-aside","cardId":"3cdfe409-a926-477f-bcfb-c836e0889164"}
+
+LOG {"ts":"2026-10-27T16:09:22.931Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":true,"front":true,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:09:23.336Z","level":"info","subsystem":"attention","msg":"attention raise: brought the window to the front","outcome":"raised","window":"popout","technique":"minimize-restore-aside","cardId":"3cdfe409-a926-477f-bcfb-c836e0889164"}
+
+LOG {"ts":"2026-10-27T16:09:25.334Z","level":"info","subsystem":"attention","msg":"attention raise: not raised: it was already in front","outcome":"already-front","window":"popout","cardId":"3cdfe409-a926-477f-bcfb-c836e0889164"}
+
+LOG {"ts":"2026-10-27T16:09:28.344Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":false,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:09:28.345Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"app-deactivated","on":false,"front":false,"electronSaysFocused":false}
+
+LOG {"ts":"2026-10-27T16:09:28.345Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":1,"message":"app-deactivated","on":false,"front":false,"electronSaysFocused":false}
+
+LOG {"ts":"2026-10-27T16:09:29.485Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":true,"front":true,"electronSaysFocused":false}
+
+LOG {"ts":"2026-10-27T16:09:29.487Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":true,"front":true,"electronSaysFocused":false}
+
+LOG {"ts":"2026-10-27T16:09:29.899Z","level":"info","subsystem":"attention","msg":"attention raise: brought the window to the front","outcome":"raised","window":"popout","technique":"minimize-restore-aside","cardId":"3cdfe409-a926-477f-bcfb-c836e0889164"}
+
+LOG {"ts":"2026-10-27T16:09:31.901Z","level":"info","subsystem":"attention","msg":"attention raise: not raised: it was already in front","outcome":"already-front","window":"popout","cardId":"3cdfe409-a926-477f-bcfb-c836e0889164"}
+
+[2/2] e2e\probe-real-app.spec.ts:173:5 › probe 1379: the main window raise, another app in front
+e2e\probe-real-app.spec.ts:173:5 › probe 1379: the main window raise, another app in front
+PROBE {"i":0,"before":"44300|powershell|probe-756-holder","after":"44300|powershell|probe-756-holder","appInFront":false,"raise":{"outcome":"refused","window":"main","technique":"minimize-restore"}}
+
+PROBE {"i":1,"before":"44300|powershell|probe-756-holder","after":"11908|electron|switchboard.ai - feature/1468-popout-swoop-foreground � ea6a559b*","appInFront":false,"raise":{"outcome":"raised","window":"main","technique":"minimize-restore"}}
+
+PROBE {"i":2,"before":"44300|powershell|probe-756-holder","after":"11908|electron|switchboard.ai - feature/1468-popout-swoop-foreground � ea6a559b*","appInFront":false,"raise":{"outcome":"raised","window":"main","technique":"minimize-restore"}}
+
+  2 passed (50.5s)

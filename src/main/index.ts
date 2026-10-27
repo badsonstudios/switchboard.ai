@@ -86,6 +86,7 @@ import {
   defaultRules,
   inQuietWindow,
   visibilityAcross,
+  type WindowVisibility,
 } from './events/rules';
 import type { QuietState } from '../shared/quiet-hours';
 import type { NotificationPrefs } from '../shared/notifications';
@@ -164,13 +165,14 @@ import {
   noActivate,
   noActivateRequested,
   raiseForAttention,
+  isSteppedAside,
   revealChildWindow,
   revealWindow,
   setNoActivate,
 } from './window-activation';
 import { refocusAfterDialog } from './dialog-refocus';
 import { performUserRaise } from './user-raise';
-import { ForegroundTracker } from './foreground';
+import { ForegroundTracker, isFlashing } from './foreground';
 import {
   FrontAtEvent,
   logRaise,
@@ -364,6 +366,15 @@ let pushToRenderer: ((win: BrowserWindow | null, channel: Channel, payload?: unk
 // famously doesn't, because dockview registers a popout when its window has
 // finished loading, not when it opened.
 const popoutWindows: Array<{ win: BrowserWindow; groupId?: string }> = [];
+/**
+ * Can the user see the app, and are they IN it (§5.9) — the rules engine's
+ * visibility condition, across every window (a popped-out card is a window the
+ * user can be looking at while the main one is minimized). "In it" is the OS's
+ * answer (#1468), not Electron's `isFocused()`, which a refused raise leaves
+ * saying true for a window behind another app.
+ */
+const appVisibility = (): WindowVisibility =>
+  visibilityAcross([currentWindow, ...popoutWindows.map((p) => p.win)], (w) => foreground.isFront(w));
 // true while a saved layout is being restored: dockview reopens popouts ~100ms
 // apart, so a geometry nudge during that window would make the renderer
 // serialize a layout that is missing the popouts still to come (#86)
@@ -1402,6 +1413,27 @@ app
     // Electron claimed at the time — a sighting of a skipped raise can be read
     // back from the log
     foreground.onChange((c) => focusLog.debug('foreground', { ...c }));
+    // The e2e's window onto "is the user in switchboard" (#1468). The rules
+    // read the OS's answer now, and a Playwright run cannot honestly give our
+    // window the desktop foreground (it would take the developer's keyboard),
+    // nor read the answer through Electron's `isFocused()`, which is the lie the
+    // tracker replaces. So a spec READS what the rules would see, and a spec
+    // whose precondition is "the user is in this window" PINS it, out loud
+    // (`e2e/fixtures/app.ts`: `appVisibility`, `pretendForeground`).
+    // Non-packaged builds only, the rule every test seam in this file follows.
+    if (!app.isPackaged) {
+      (
+        globalThis as {
+          __switchboardForeground?: {
+            visibility: () => WindowVisibility;
+            setOverride: (id: number | null | undefined) => void;
+          };
+        }
+      ).__switchboardForeground = {
+        visibility: appVisibility,
+        setOverride: (id) => foreground.setOverride(id),
+      };
+    }
     const traceOf = (t: unknown): Record<string, string> => {
       const out: Record<string, string> = {};
       if (t && typeof t === 'object') {
@@ -2680,7 +2712,10 @@ app
       cardIdFor: (liveId) => cardIdForLive(liveId),
       // Every window, not just the main one: a popped-out card (E8) is a
       // window the user can be looking at while the main one is minimized.
-      getVisibility: () => visibilityAcross([currentWindow, ...popoutWindows.map((p) => p.win)]),
+      //
+      // "Focused" is the OS's answer (#1468), not Electron's `isFocused()`,
+      // which a refused raise leaves saying true for a window behind another app.
+      getVisibility: appVisibility,
       isInFront: (cardId) => cardId !== null && cardId === frontCard,
       titleFor: (e) =>
         labelForLive(e.sessionId) ??
@@ -2768,6 +2803,9 @@ app
       // mid-hotplug the #864 restore is about to place it; a raise now would
       // show it wherever the OS dropped it
       if (displaySettling) return 'displays are settling';
+      // hidden for 150 ms by another window's swoop, not by the person (#1468):
+      // read as hidden it would get no raise and no flash
+      if (isSteppedAside(w)) return null;
       try {
         return unreachableReason(w, [], workAreas(), {
           minimizedIsReachable: MINIMIZED_IS_REACHABLE,
@@ -2801,8 +2839,21 @@ app
       } else {
         const done = await performAttentionRaise(win!, {
           // one of OUR windows in front: the plain raise between our own
-          // windows (measured); another app in front: the swoop
-          raise: (w) => raiseForAttention(w, { appHasForeground: front?.windowId != null }),
+          // windows (measured); another app in front: the swoop, with our
+          // other windows stepped aside, without which it never wins (#1468)
+          raise: (w) =>
+            raiseForAttention(w, {
+              appHasForeground: front?.windowId != null,
+              // not if the person has come back to switchboard since the
+              // event: the window they are typing in must not blink out
+              others: foreground.appHasForeground()
+                ? []
+                : [currentWindow, ...popoutWindows.map((p) => p.win)].filter(
+                    (o): o is BrowserWindow => o !== null
+                  ),
+              // a taskbar blink nobody has seen yet survives the step aside
+              blinking: (o) => isFlashing(o),
+            }),
           wait: (ms) => new Promise((res) => setTimeout(res, ms)),
           isFront: () => foreground.isFront(win!),
         });

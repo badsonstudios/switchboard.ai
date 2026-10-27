@@ -575,16 +575,33 @@ export interface VisibilityProbe {
 }
 
 /**
+ * "Is this window the one the user is in?" The app passes
+ * `ForegroundTracker.isFront` (#1468): Electron's `isFocused()` reads TRUE
+ * after a refused `focus()` — a raise the OS declined, or a popout opened while
+ * another app was in front — and keeps reading it, so a rule for "while you are
+ * in switchboard" fired for someone who was in another app, and the away-rules
+ * (toast, voice, phone) held back for them
+ * (`spike/findings/1379-isfocused-after-refused-raise.md`).
+ */
+export type InFront<W extends VisibilityProbe = VisibilityProbe> = (win: W) => boolean;
+
+/**
  * Read the window's visibility, defensively: any window that is gone, dead,
  * minimized or off-screen counts as `hidden`, which is the state that lets the
  * MOST channels through. Fail-open (P6) — if we cannot tell whether the user
  * can see the app, telling them twice beats not telling them at all.
+ *
+ * `focused` comes from `inFront`; without one it is `isFocused()`, the answer
+ * from before #1468 (and the tracker's own answer off Windows).
  */
-export function visibilityOf(win: VisibilityProbe | null | undefined): WindowVisibility {
+export function visibilityOf<W extends VisibilityProbe>(
+  win: W | null | undefined,
+  inFront?: InFront<W>
+): WindowVisibility {
   try {
     if (!win || win.isDestroyed()) return 'hidden';
     if (win.isMinimized() || !win.isVisible()) return 'hidden';
-    return win.isFocused() ? 'focused' : 'visible';
+    return (inFront ? inFront(win) : win.isFocused()) ? 'focused' : 'visible';
   } catch {
     return 'hidden';
   }
@@ -604,12 +621,13 @@ export function visibilityOf(win: VisibilityProbe | null | undefined): WindowVis
  * ("can they see us?"), not about a particular frame. No windows at all is
  * `hidden`, same as a single dead one.
  */
-export function visibilityAcross(
-  wins: readonly (VisibilityProbe | null | undefined)[]
+export function visibilityAcross<W extends VisibilityProbe>(
+  wins: readonly (W | null | undefined)[],
+  inFront?: InFront<W>
 ): WindowVisibility {
   let best: WindowVisibility = 'hidden';
   for (const w of wins) {
-    const v = visibilityOf(w);
+    const v = visibilityOf(w, inFront);
     if (v === 'focused') return 'focused';
     if (v === 'visible') best = 'visible';
   }

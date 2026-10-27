@@ -11,9 +11,12 @@
 // sink logs and sends nothing, and the cue is proven through that log line
 // exactly as `sounds.spec.ts` proves the per-session cue.
 //
-// `bringToFront` is called on purpose (see its header): the rule only runs
-// while the app is the focused window, and a quiet launch never activates one
-// on its own.
+// `pretendForeground` is called on purpose (see its header): the rule only
+// runs while switchboard is the window you are using, which since #1468 is the
+// OS's answer (`src/main/foreground.ts`), not Electron's `isFocused()`. A
+// Playwright run cannot honestly take the desktop foreground, so the spec
+// states the precondition. `bringToFront` still activates the window, for
+// the window's own report of the card in front.
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
@@ -21,6 +24,7 @@ import {
   answerHeldPermissions,
   bringToFront,
   findFile,
+  pretendForeground,
   launchApp,
   LaunchedApp,
   openSettingsTab,
@@ -86,6 +90,7 @@ function lastFrontReport(home: string): string | null {
 async function standOn(a: LaunchedApp, title: string): Promise<void> {
   await row(a.window, title).click();
   await bringToFront(a, 'main');
+  await pretendForeground(a, 'main');
   const id = await cardIdOf(a, title);
   await poll(() => (lastFrontReport(a.home) === id ? true : null), 15_000);
 }

@@ -380,7 +380,10 @@ is waiting on you, and it may run out of time*.
 - **It plays while you're working in switchboard**, for a session other than
   the one you're in. That's the case nothing else covers: while you're in
   another app, the taskbar flash (and pop-ups, phone and voice if you've turned
-  them on) are what reach you.
+  them on) are what reach you. To know whether you're in switchboard or in
+  another app, switchboard asks Windows which window is in front, so a
+  switchboard window that Windows just refused to bring forward doesn't count
+  as one you're in.
 - **The session you're in stays quiet.** Its approval bar or question is already
   in front of you. "The session you're in" is the one you're working in: the
   selected one in the main window, or the one in a pop-out window if that's

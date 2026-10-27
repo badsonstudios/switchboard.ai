@@ -1,0 +1,192 @@
+{
+  "electron": "43.1.1",
+  "os": "10.0.26300",
+  "argv": [
+    "--reps",
+    "4",
+    "--under",
+    "--poison",
+    "--configs",
+    "open",
+    "--techniques",
+    "hide-others-retry"
+  ],
+  "rows": [
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": true,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": "first",
+      "topAtTarget": "25208|electron|probe-1468-main",
+      "topAtOthers": [
+        "8020|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "hide-others-retry",
+      "rep": 0,
+      "validStart": true,
+      "electronBefore": true,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "8020|powershell|probe-756-holder",
+      "after": "25208|electron|probe-1468-main"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": true,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": "first",
+      "topAtTarget": "25208|electron|probe-1468-main",
+      "topAtOthers": [
+        "8020|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "hide-others-retry",
+      "rep": 1,
+      "validStart": true,
+      "electronBefore": true,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "8020|powershell|probe-756-holder",
+      "after": "25208|electron|probe-1468-main"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": true,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": "first",
+      "topAtTarget": "25208|electron|probe-1468-main",
+      "topAtOthers": [
+        "8020|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "hide-others-retry",
+      "rep": 2,
+      "validStart": true,
+      "electronBefore": true,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "8020|powershell|probe-756-holder",
+      "after": "25208|electron|probe-1468-main"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": true,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": "first",
+      "topAtTarget": "25208|electron|probe-1468-main",
+      "topAtOthers": [
+        "8020|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "hide-others-retry",
+      "rep": 3,
+      "validStart": true,
+      "electronBefore": true,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "8020|powershell|probe-756-holder",
+      "after": "25208|electron|probe-1468-main"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": true,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": "first",
+      "topAtTarget": "25208|electron|probe-1468-popout",
+      "topAtOthers": [
+        "8020|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "hide-others-retry",
+      "rep": 0,
+      "validStart": true,
+      "electronBefore": true,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "8020|powershell|probe-756-holder",
+      "after": "25208|electron|probe-1468-popout"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": true,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": "first",
+      "topAtTarget": "25208|electron|probe-1468-popout",
+      "topAtOthers": [
+        "8020|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "hide-others-retry",
+      "rep": 1,
+      "validStart": true,
+      "electronBefore": true,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "8020|powershell|probe-756-holder",
+      "after": "25208|electron|probe-1468-popout"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": true,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": "first",
+      "topAtTarget": "25208|electron|probe-1468-popout",
+      "topAtOthers": [
+        "8020|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "hide-others-retry",
+      "rep": 2,
+      "validStart": true,
+      "electronBefore": true,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "8020|powershell|probe-756-holder",
+      "after": "25208|electron|probe-1468-popout"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": true,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": "first",
+      "topAtTarget": "25208|electron|probe-1468-popout",
+      "topAtOthers": [
+        "8020|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "hide-others-retry",
+      "rep": 3,
+      "validStart": true,
+      "electronBefore": true,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "8020|powershell|probe-756-holder",
+      "after": "25208|electron|probe-1468-popout"
+    }
+  ]
+}
