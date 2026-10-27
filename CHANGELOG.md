@@ -151,6 +151,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   two don't look alike even if you can't tell blue from green. Every theme gets
   it, and a theme can pick its own blue.
 
+### Fixed
+
+- **Pressing Enter in a session that is still working no longer folds its
+  card away.** With **Collapse on submit** on (globally, for the session's
+  group, or for that session), a prompt you typed into a session while it was
+  still busy put the card away the moment you pressed Enter. Prompts sent
+  after a session had finished were never folded, so it looked random. Now a
+  prompt added to a turn that is still running leaves the card where it is.
+  A prompt that starts a new turn still folds the card, as the setting says.
+
 ## 0.8.132 — 2026-10-26
 
 ### Changed

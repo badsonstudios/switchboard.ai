@@ -703,6 +703,15 @@ With **Collapse on submit** on, the session keeps running and **its card comes
 straight back to the spot it left** when it finishes, asks a question, or asks
 permission — the same reappearance described under *Coming back* above.
 
+It only folds a card when your prompt **starts** the work. A card stays where it
+is when:
+
+- the session had finished and is **waiting** for you (unless you dismissed the
+  *waiting*);
+- the session is **still working**, and you are adding to what it is doing;
+- it is asking for an approval or has a question for you;
+- it is pinned, or popped out into its own window.
+
 It hands the space to the sessions you're still looking at. The session leaves
 the workspace and lives only in the Sessions list, with a dashed edge, and in
 Events — until it needs you, at which point it comes back like everything else.

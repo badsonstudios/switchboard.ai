@@ -6257,6 +6257,19 @@ function cardWaitsOnHuman(cardId: string): boolean {
 }
 
 /**
+ * Is this card's turn running RIGHT NOW (#1472)?
+ *
+ * Asked by the submit listener at the keystroke, before anything is deferred,
+ * so the answer describes the session the user typed into: main's own
+ * "working" for the turn this prompt starts comes back over IPC and must not
+ * be mistaken for a turn that was already under way. The raw status, not the
+ * derived one: a dismissal only ever calms a finished turn, never a running one.
+ */
+export function turnRunningNow(cardId: string): boolean {
+  return sessionStore.getState().sessions.find((s) => s.id === cardId)?.status === 'working';
+}
+
+/**
  * A card that came back WITHOUT taking focus is still shown (#1258).
  *
  * An attention reveal adds the panel `inactive`, so it does not pull the tab
@@ -6306,9 +6319,16 @@ function showIfPaneIsBlank(panel: IDockviewPanel): void {
  * would move it, so a card popped out (or blocked) between the keystroke and
  * this call must still be spared.
  *
+ * `atKeystroke` is the one fact that must NOT be read now: whether the turn
+ * was already running when Enter was pressed (#1472). See `turnRunningNow`.
+ *
  * Returns the rung the card was sent to, or null when it stayed.
  */
-export function applySubmitPolicy(api: DockviewApi | null, cardId: string): 'collapsed' | null {
+export function applySubmitPolicy(
+  api: DockviewApi | null,
+  cardId: string,
+  atKeystroke: { turnRunning?: boolean } = {}
+): 'collapsed' | null {
   if (!api || !cardId || sessionStore.isTearingDown()) return null;
   const p = sessionStore.getPresentation(cardId);
   const rung = submitTarget({
@@ -6321,6 +6341,7 @@ export function applySubmitPolicy(api: DockviewApi | null, cardId: string): 'col
     // §5.8's pinning contract (E9-09): this is the "auto-collapse sweep" it
     // names, and a pinned card sits it out
     pinned: sessionStore.isPinned(cardId),
+    turnRunning: atKeystroke.turnRunning === true,
   });
   if (rung) setCardLadder(api, cardId, rung, 'submit policy');
   // the rung it was sent to, so the caller can SAY so (#1210). Read back
@@ -7697,9 +7718,12 @@ export function SessionGrid(props: {
     const pending = new Set<ReturnType<typeof setTimeout>>();
     const off = sessionStore.subscribePromptSubmit((liveId) => {
       const cardId = sessionStore.cardIdForLive(liveId);
+      // NOW, not in the timer (#1472): was this turn already running when
+      // Enter was pressed? A prompt added mid-turn keeps its card on screen.
+      const turnRunning = turnRunningNow(cardId);
       const timer = setTimeout(() => {
         pending.delete(timer);
-        const rung = applySubmitPolicy(apiRef.current, cardId);
+        const rung = applySubmitPolicy(apiRef.current, cardId, { turnRunning });
         // #1210: SAY SO. The owner pressed Enter and the card he was typing
         // in left the screen with nothing to explain it; the setting had been
         // on for hours. The strip names the session and the setting, and
