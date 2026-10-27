@@ -36,6 +36,7 @@ import {
   settleDockedBackCards,
   stepCardLadder,
   toggleMaximizeCard,
+  turnRunningNow,
 } from './SessionGrid';
 import type { DockviewApi } from 'dockview-react';
 import en from '../../../shared/i18n/locales/en.json';
@@ -590,6 +591,52 @@ describe('auto-minimize on submit reads the dismissed "waiting" (#1427)', () => 
   it('folds it once the word is dismissed, like any calm card', () => {
     sessionStore.dismissWait('a');
     expect(applySubmitPolicy(bare, 'a')).toBe('collapsed');
+    expect(sessionStore.getPresentation('a').ladder).toBe('collapsed');
+  });
+});
+
+// #1472: the owner pressed Enter in a session that was mid-turn, in a group on
+// "Collapse on submit", and its card left the screen. The submit listener reads
+// `turnRunningNow` at the keystroke and hands it to the deferred policy call.
+describe('auto-minimize on submit spares a turn already running (#1472)', () => {
+  const bare = { getPanel: () => undefined } as never;
+  let log: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    sessionStore.initPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
+  });
+  afterEach(() => {
+    log.mockRestore();
+    sessionStore.initPolicies(DEFAULT_BOOK);
+  });
+
+  it('reads "running" off the raw status, and only `working` counts', () => {
+    seed([
+      { id: 'w', status: 'working' },
+      { id: 'i', status: 'idle' },
+      { id: 'd', status: 'done' },
+      { id: 's', status: 'starting' },
+    ]);
+    expect(turnRunningNow('w')).toBe(true);
+    for (const id of ['i', 'd', 's', 'nobody']) expect(turnRunningNow(id)).toBe(false);
+  });
+
+  it('a mid-turn prompt leaves the card where it is, and writes no breadcrumb', () => {
+    seed([{ id: 'a', status: 'working' }]);
+    place('a', 'expanded');
+    expect(applySubmitPolicy(bare, 'a', { turnRunning: turnRunningNow('a') })).toBeNull();
+    expect(sessionStore.getPresentation('a').ladder).toBe('expanded');
+    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('(submit policy)'));
+  });
+
+  it('a prompt that STARTS a turn still folds it, even if main says "working" by the time the move runs', () => {
+    // captured as idle at the keystroke; the status flipping before the
+    // deferred call is main reporting the turn THIS prompt started
+    seed([{ id: 'a', status: 'idle' }]);
+    place('a', 'expanded');
+    const atKeystroke = { turnRunning: turnRunningNow('a') };
+    seed([{ id: 'a', status: 'working' }]);
+    expect(applySubmitPolicy(bare, 'a', atKeystroke)).toBe('collapsed');
     expect(sessionStore.getPresentation('a').ladder).toBe('collapsed');
   });
 });

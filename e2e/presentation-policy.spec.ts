@@ -188,6 +188,71 @@ test.describe('presentation policy (E9-06)', () => {
     await expect(notice(w)).toHaveText('');
   });
 
+  test('Enter in a session that is already WORKING leaves its card on screen (#1472)', async () => {
+    // THE OWNER'S REPORT, 0.8.132: "I hit Enter on a prompt while a session was
+    // working, and that session closed." His log has one line at that moment:
+    //   [ladder] moving session-…: expanded → collapsed (submit policy)
+    // The session's group was on "Collapse on submit". Every prompt he had sent
+    // it from a FINISHED turn was spared (a finished turn is waiting on him,
+    // the needs-a-human rule); the one he typed while it was still running was
+    // not, because a running session waits on nobody. A prompt added to a turn
+    // you are watching is not "I'm done here, give me the screen back".
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const first = path.basename(folder);
+    await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
+    const second = await addSession(a);
+    await expect(tabs(w)).toHaveCount(2);
+
+    // start a turn that keeps running, under the default, so the card stays
+    await submitIn(w, second);
+    await expectSubmitLanded(w);
+    await expect(w.getByText(/working on it/)).toBeVisible({ timeout: 30_000 });
+
+    // then opt in, as his group was
+    await setPresentationPolicy(w, 'Collapse on submit');
+
+    // THE BREADCRUMB his log carried is the assertion. The fake answers a
+    // mid-turn prompt at once, and a finished turn brings a collapsed card
+    // back on its own, so what is on screen a second later can look right
+    // even though the card left: measured, the tab count alone passed one run
+    // in five against the unfixed build. The ladder line is written the
+    // moment the rule decides, so it cannot miss a collapse that was undone.
+    const ladderMoves: string[] = [];
+    w.on('console', (m) => {
+      if (m.text().startsWith('[ladder] moving')) ladderMoves.push(m.text());
+    });
+    const working = await w.evaluate(async (t) => {
+      const list = (await window.switchboard.sessions.list()) as Array<{
+        identity: { title: string };
+        status: string;
+      }>;
+      return list.find((s) => s.identity.title === t)?.status;
+    }, second);
+    expect(working).toBe('working');
+
+    // and type into the RUNNING session and press Enter, the way he did
+    await composer(w).click();
+    await composer(w).fill('one more thing while you work');
+    await w.keyboard.press('Enter');
+    await expectSubmitLanded(w); // positive control: the prompt really went
+
+    // nothing moves. Given a moment, because the collapse is deferred a tick.
+    await w.waitForTimeout(1000);
+    expect(ladderMoves.filter((m) => m.includes('(submit policy)'))).toEqual([]);
+    await expect(tabs(w)).toHaveCount(2);
+    await expect(strip(w)).toHaveCount(0);
+    await expect(w.locator('.dv-active-tab')).toContainText(second);
+    await expect(notice(w)).toHaveText('');
+    expect(await liveCount(w)).toBe(2);
+
+    // the setting itself still works: a prompt that STARTS a turn folds its card
+    await submitIn(w, first);
+    await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
+    await expect(stripRow(w, first)).toBeVisible();
+  });
+
   test('the notice brings a collapsed card back, and can turn the setting off (#1210)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });

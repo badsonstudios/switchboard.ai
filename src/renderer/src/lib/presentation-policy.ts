@@ -219,6 +219,17 @@ export function groupOverride(book: PolicyBook, groupId: string): PresentationPo
  *    hide all still work by hand, and a layout mode still arranges a pinned
  *    card like any other (see lib/pinning's header for why that is the same
  *    rule and not an exception to it).
+ *
+ *  • A session whose turn was ALREADY RUNNING when Enter was pressed is left
+ *    alone (#1472). Auto-minimize answers "I've handed this off, give me the
+ *    screen back", and a prompt added to a turn still in progress is the
+ *    opposite: you are watching that turn and steering it. The owner's report
+ *    was exactly this card leaving the screen: "I hit Enter on a prompt while a
+ *    session was working, and that session closed." The rule above made it
+ *    look arbitrary, because a FINISHED turn counts as waiting on a human, so
+ *    every prompt he sent from one was spared, and only the one typed mid-turn
+ *    was not. What still folds: a prompt that STARTS a turn, from a calm card
+ *    (idle, or a finished turn whose "waiting" was dismissed, #1427).
  */
 export function submitTarget(opts: {
   policy: PresentationPolicy;
@@ -229,12 +240,19 @@ export function submitTarget(opts: {
   needsHuman: boolean;
   /** §5.8's pinning contract (E9-09) */
   pinned?: boolean;
+  /**
+   * The session's turn was already running AT THE KEYSTROKE (#1472). Read by
+   * the caller when the prompt is submitted, not when the move would happen:
+   * by then main may already be reporting the turn this very prompt started.
+   */
+  turnRunning?: boolean;
 }): 'collapsed' | null {
   if (opts.policy !== 'auto-collapse') return null;
   if (opts.ladder !== 'expanded') return null;
   if (opts.poppedOut) return null;
   if (opts.needsHuman) return null;
   if (opts.pinned) return null;
+  if (opts.turnRunning) return null;
   // the ONLY rung a submit may send a card to (#1276: never `hidden`)
   return 'collapsed';
 }

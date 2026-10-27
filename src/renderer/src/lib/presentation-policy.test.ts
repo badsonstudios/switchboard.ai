@@ -143,6 +143,18 @@ describe('presentation policy (E9-06, §5.8)', () => {
       expect(submitTarget({ ...base, policy: 'auto-collapse', pinned: false })).toBe('collapsed');
       expect(submitTarget({ ...base, policy: 'auto-collapse' })).toBe('collapsed');
     });
+
+    it('a turn ALREADY RUNNING at the keystroke is left alone (#1472)', () => {
+      // "I hit Enter on a prompt while a session was working, and that session
+      // closed." A prompt added to a turn in progress is not a hand-off.
+      expect(submitTarget({ ...base, policy: 'auto-collapse', turnRunning: true })).toBeNull();
+      // ...and only that: a prompt that STARTS a turn still folds, and an
+      // omitted flag means "not running" (the rule is opt-in per caller)
+      expect(submitTarget({ ...base, policy: 'auto-collapse', turnRunning: false })).toBe('collapsed');
+      expect(submitTarget({ ...base, policy: 'auto-collapse' })).toBe('collapsed');
+      // it does not turn the policy ON either
+      expect(submitTarget({ ...base, policy: 'always-visible', turnRunning: false })).toBeNull();
+    });
   });
 
   describe('cycling', () => {

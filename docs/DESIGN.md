@@ -1562,6 +1562,19 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
   > hidden RUNG is untouched: hiding a session by hand is the user asking,
   > which is the whole difference. Do not reintroduce a policy that hides
   > the card being typed into.
+
+  > **A prompt typed into a turn that is still running does not fold the card
+  > *(amended 2026-10-27, #1472)*.** Dan's report, 0.8.132: *"I hit Enter on a
+  > prompt while a session was working, and that session closed."* His group
+  > was on auto-collapse. The submit policy already spared a card waiting on a
+  > human, and a finished turn counts as waiting, so every prompt he sent after
+  > a turn ended was spared and only the mid-turn one was folded. That is
+  > backwards: auto-collapse means "I've handed this off", and adding to a turn
+  > you are watching is the opposite. So `submitTarget` spares a session whose
+  > status was `working` **at the keystroke** (read before the deferred move,
+  > so main's report of the turn the prompt itself started cannot count). What
+  > still folds: a prompt that starts a turn from a calm card (idle, or a
+  > finished turn whose waiting was dismissed, per #1427).
 - **Pinning is a protection contract** (research v2: VS Code + IntelliJ pinned-tab
   semantics): a pinned session sorts first in the rail, never scrolls out of view
   under overflow, and is exempt from EVERY bulk operation — bulk-close, idle
