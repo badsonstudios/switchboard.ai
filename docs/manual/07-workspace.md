@@ -844,9 +844,17 @@ in from being interrupted, and it can say no — expect that if the switchboard
 window is in full screen, which it can't come out of to swoop forward. When
 that happens switchboard doesn't pretend: the taskbar button flashes and the
 session is marked in the Sessions list, exactly as if you'd picked a quieter
-setting. A popped-out window is turned down more often than the main window. When
-that happens, the popped-out window's own taskbar button flashes. (If you're curious, the
-app's log records each time it asked and what Windows said.)
+setting. When a popped-out window is turned down, its own taskbar button
+flashes. (If you're curious, the app's log records each time it asked and what
+Windows said.)
+
+**Your other switchboard windows step aside for a moment.** Windows only lets
+an app swoop forward like this when it has no other window on screen, so while
+the swoop lands, switchboard's other windows (the main window, other pop-outs)
+disappear for a split second and come straight back, behind the program you
+were in, the same size as before. A window you had minimised stays minimised.
+Even so, the first call after you pop a session out while working in another
+program may still be turned down, and then the taskbar button flashes.
 
 Nothing is brought forward if the session's window is **already in front of
 you**. switchboard asks Windows which window that is rather than trusting its

@@ -114,6 +114,16 @@ export class ForegroundTracker {
   private readonly states = new Map<TrackableWindow, ActivationState>();
   private appFront = false;
   private listener: ((c: ForegroundChange) => void) | null = null;
+  /**
+   * A real-app spec's stated precondition (#1468): "window N holds the OS
+   * foreground" (an id) or "none of ours does" (null). `undefined` = no
+   * override, the truth. Playwright cannot honestly hand our window the
+   * desktop foreground without taking the developer's keyboard, and Electron's
+   * `isFocused()` is no stand-in (it is the lie this module replaces), so a
+   * spec that needs "the user is in switchboard" says so here. Set only through
+   * the e2e seam in `index.ts`, which exists in non-packaged builds alone.
+   */
+  private override: number | null | undefined = undefined;
 
   constructor(
     private readonly opts: {
@@ -133,6 +143,16 @@ export class ForegroundTracker {
 
   onChange(listener: (c: ForegroundChange) => void): void {
     this.listener = listener;
+  }
+
+  /**
+   * TEST SEAM (#1468): pretend window `id` holds the OS foreground, or
+   * (`null`) that none of ours does; `undefined` goes back to the truth. Every
+   * answer below follows it, on every platform, so the rules, the flash guard
+   * and the attention raise cannot disagree about a pretended state.
+   */
+  setOverride(id: number | null | undefined): void {
+    this.override = id;
   }
 
   /**
@@ -201,6 +221,7 @@ export class ForegroundTracker {
   isFront(win: TrackableWindow): boolean {
     try {
       if (win.isDestroyed()) return false;
+      if (this.override !== undefined) return this.override === win.id;
       const s = this.states.get(win);
       return s ? s.front : win.isFocused();
     } catch {
@@ -214,6 +235,9 @@ export class ForegroundTracker {
    * read, used when this platform cannot tell the truth.
    */
   frontWindowId(fallback: () => number | null): number | null {
+    // (a pinned id is the spec's statement, returned as stated; `isFront`
+    // still says no for a destroyed window, which is all a raise reads)
+    if (this.override !== undefined) return this.override;
     if (!this.truthful) return fallback();
     for (const [w, s] of this.states) {
       if (s.front && !w.isDestroyed()) return w.id;
@@ -228,6 +252,7 @@ export class ForegroundTracker {
    * WM_ACTIVATEAPP(FALSE), which is what ends it.
    */
   appHasForeground(): boolean {
+    if (this.override !== undefined) return this.override !== null;
     if (!this.truthful) return this.opts.anyFocused();
     return this.appFront;
   }
@@ -257,6 +282,13 @@ export interface FlashableWindow {
 }
 
 const flashing = new WeakSet<object>();
+
+/** Is this window's taskbar button blinking for a person who has not come to
+ *  it yet? A swoop leaves such a window in place (#1468): hiding it would
+ *  drop the blink. */
+export function isFlashing(win: object): boolean {
+  return flashing.has(win);
+}
 
 /**
  * Blink a window's taskbar button until the person comes to it — the ONE way
