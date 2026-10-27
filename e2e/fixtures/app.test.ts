@@ -55,6 +55,7 @@ import {
   noActivateSetting,
   onTestDisplay,
   pickTestDisplay,
+  pretendForeground,
   readSettingsKey,
   retryLostReply,
   translateToDisplay,
@@ -911,13 +912,53 @@ describe('blurApp — a dropped blur is retried, not waited out (#538)', () => {
     };
   };
 
-  const appWith = (wins: ReturnType<typeof fakeWin>[]): LaunchedApp =>
-    ({
+  // `index.ts`'s seam (#1468): what the rules see. Here a window "is in front"
+  // when it is focused, unless a `pretendForeground` pin says otherwise.
+  type Seam = { visibility: () => string; setOverride: (id: number | null | undefined) => void };
+  const g = globalThis as { __switchboardForeground?: Seam };
+  let pin: number | null | undefined;
+  let liveWins: ReturnType<typeof fakeWin>[] = [];
+  beforeEach(() => {
+    pin = undefined;
+    g.__switchboardForeground = {
+      visibility: () =>
+        pin !== undefined
+          ? pin === null
+            ? 'visible'
+            : 'focused'
+          : liveWins.some((w) => !w.isDestroyed() && w.isFocused())
+            ? 'focused'
+            : 'visible',
+      setOverride: (id) => {
+        pin = id;
+      },
+    };
+  });
+  afterEach(() => {
+    delete g.__switchboardForeground;
+  });
+
+  const appWith = (wins: ReturnType<typeof fakeWin>[]): LaunchedApp => {
+    liveWins = wins;
+    return {
       app: {
         evaluate: (fn: (m: { BrowserWindow: unknown }) => unknown) =>
           Promise.resolve(fn({ BrowserWindow: { getAllWindows: () => wins } })),
       },
-    }) as unknown as LaunchedApp;
+    } as unknown as LaunchedApp;
+  };
+
+  it('drops a pretendForeground pin: going away ends the pretence (#1468)', async () => {
+    const win = fakeWin({ focused: false });
+    pin = 7; // "the user is in window 7"
+    await blurApp(appWith([win]));
+    expect(pin).toBeUndefined();
+  });
+
+  it('throws when the app has no seam to read, rather than assuming (#1468)', async () => {
+    delete g.__switchboardForeground;
+    await expect(blurApp(appWith([fakeWin()]), 300)).rejects.toThrow(/never went away/);
+  });
 
   it('settles on the first attempt when the blur lands', async () => {
     const win = fakeWin();
@@ -1214,5 +1255,50 @@ describe('functionExpression — the same text Playwright would send (#1343)', (
 
   it('refuses text that is not a function in any form', () => {
     expect(() => functionExpression('{{')).toThrow(/not well-serializable/);
+  });
+});
+
+describe('pretendForeground — states "the user is in this window" to the rules (#1468)', () => {
+  type Seam = { visibility: () => string; setOverride: (id: number | null | undefined) => void };
+  const g = globalThis as { __switchboardForeground?: Seam };
+  let pin: number | null | undefined;
+  beforeEach(() => {
+    pin = undefined;
+    g.__switchboardForeground = {
+      visibility: () => (typeof pin === 'number' ? 'focused' : 'visible'),
+      setOverride: (id) => {
+        pin = id;
+      },
+    };
+  });
+  afterEach(() => {
+    delete g.__switchboardForeground;
+  });
+  const win = (id: number) => ({
+    id,
+    isDestroyed: () => false,
+    webContents: { getURL: () => (id >= 9 ? 'http://127.0.0.1/popout.html' : 'http://127.0.0.1/') },
+  });
+  const appWith = (wins: ReturnType<typeof win>[]): LaunchedApp =>
+    ({
+      app: {
+        evaluate: (fn: (m: { BrowserWindow: unknown }, arg: unknown) => unknown, arg: unknown) =>
+          Promise.resolve(fn({ BrowserWindow: { getAllWindows: () => [...wins] } }, arg)),
+      },
+    }) as unknown as LaunchedApp;
+
+  it('pins the main window by default', async () => {
+    await pretendForeground(appWith([win(12), win(1)]));
+    expect(pin).toBe(1);
+  });
+
+  it('pins the newest popout when asked for one', async () => {
+    await pretendForeground(appWith([win(1), win(9), win(12)]), 'popout');
+    expect(pin).toBe(12);
+  });
+
+  it('throws when the app has no seam, instead of letting the spec carry on', async () => {
+    delete g.__switchboardForeground;
+    await expect(pretendForeground(appWith([win(1)]))).rejects.toThrow(/no seam/);
   });
 });

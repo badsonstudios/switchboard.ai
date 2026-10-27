@@ -1,0 +1,711 @@
+{
+  "electron": "43.1.1",
+  "os": "10.0.26300",
+  "argv": [
+    "--reps",
+    "6",
+    "--under",
+    "--configs",
+    "open",
+    "--techniques",
+    "hide-others,swoop"
+  ],
+  "rows": [
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-main",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "hide-others",
+      "rep": 0,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-main"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-main",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "hide-others",
+      "rep": 1,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-main"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-main",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "hide-others",
+      "rep": 2,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-main"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-main",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "hide-others",
+      "rep": 3,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-main"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-main",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "hide-others",
+      "rep": 4,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-main"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-main",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "hide-others",
+      "rep": 5,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-main"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "swoop",
+      "rep": 0,
+      "validStart": true,
+      "electronBefore": false,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "swoop",
+      "rep": 1,
+      "validStart": true,
+      "electronBefore": true,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "swoop",
+      "rep": 2,
+      "validStart": true,
+      "electronBefore": true,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "swoop",
+      "rep": 3,
+      "validStart": true,
+      "electronBefore": true,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "swoop",
+      "rep": 4,
+      "validStart": true,
+      "electronBefore": true,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "main",
+      "technique": "swoop",
+      "rep": 5,
+      "validStart": true,
+      "electronBefore": true,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-popout",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "hide-others",
+      "rep": 0,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-popout"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-popout",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "hide-others",
+      "rep": 1,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-popout"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-popout",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "hide-others",
+      "rep": 2,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-popout"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-popout",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "hide-others",
+      "rep": 3,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-popout"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-popout",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "hide-others",
+      "rep": 4,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-popout"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "5820|electron|probe-1468-popout",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "hide-others",
+      "rep": 5,
+      "validStart": true,
+      "electronBefore": false,
+      "took": true,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "5820|electron|probe-1468-popout"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "swoop",
+      "rep": 0,
+      "validStart": true,
+      "electronBefore": false,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "swoop",
+      "rep": 1,
+      "validStart": true,
+      "electronBefore": true,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "swoop",
+      "rep": 2,
+      "validStart": true,
+      "electronBefore": true,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "swoop",
+      "rep": 3,
+      "validStart": true,
+      "electronBefore": true,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "swoop",
+      "rep": 4,
+      "validStart": true,
+      "electronBefore": true,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    },
+    {
+      "config": "open",
+      "under": true,
+      "poisoned": false,
+      "poisonedBySwoop": false,
+      "poisonWait": 0,
+      "attempt": null,
+      "targetMinimized": false,
+      "othersMaximizedAfter": [
+        false
+      ],
+      "othersVisibleAfter": [
+        true
+      ],
+      "topAtTarget": "35164|powershell|probe-756-holder",
+      "topAtOthers": [
+        "35164|powershell|probe-756-holder"
+      ],
+      "target": "popout",
+      "technique": "swoop",
+      "rep": 5,
+      "validStart": true,
+      "electronBefore": true,
+      "took": false,
+      "oursButOther": false,
+      "electronAfter": true,
+      "before": "35164|powershell|probe-756-holder",
+      "after": "35164|powershell|probe-756-holder"
+    }
+  ]
+}

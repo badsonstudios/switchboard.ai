@@ -346,12 +346,14 @@ export {
  * CDP, not through the OS, and Playwright's focus emulation pins
  * `document.hasFocus()` true whatever the desktop is doing (measured —
  * `tabFromFeedToComposer`'s header). What DOES change is the OS's own answer,
- * `BrowserWindow.isFocused()`: false from launch to close. The app reads that
- * for "is the user looking at us" (`visibilityAcross`, the WHEN_AWAY rules,
- * "seen at once"), and the app is NEVER told otherwise — a spec that needs the
- * user to be present makes them present with `bringToFront(a)`, which really
- * activates the window, and says so in its header. The measured list is in that
- * helper's comment.
+ * `BrowserWindow.isFocused()`: false from launch to close. The app reads the
+ * OS's own answer for "is the user looking at us" (`visibilityAcross`, the
+ * WHEN_AWAY rules — via `src/main/foreground.ts` since #1468, because
+ * `isFocused()` lies after a refused raise), and the app is NEVER told
+ * otherwise — a spec that needs the user to be present says so in its header:
+ * `pretendForeground(a)` for the rules' "focused" (#1468), `bringToFront(a)`
+ * where the precondition is an activated OS window. The measured list is in
+ * those helpers' comments.
  *
  * Accepted values: `1` / `true` / `on` / `yes` (any case). Anything else, empty,
  * or absent is off — and off is the CI path: the child's environment never
@@ -1413,20 +1415,79 @@ export async function rungOf(w: Page, title: string): Promise<string> {
  * Throws — with the state it could not reach — rather than returning a boolean:
  * a spec that carried on from here would go on to prove its rule fired for a
  * reason it did not have.
+ *
+ * PROVED AGAINST WHAT THE RULES READ (#1468), not against Electron's
+ * `isFocused()`: since #1468 the rules ask the OS which window is in front
+ * (`src/main/foreground.ts`), because `isFocused()` reads true after a refused
+ * raise. The poll waits for `appVisibility(a)` to stop saying `focused`. A
+ * `pretendForeground` pin from earlier in the spec is dropped first: "the user
+ * went away" ends any pretence that they were in a window.
  */
 export async function blurApp(a: LaunchedApp, timeoutMs = 15_000): Promise<void> {
   await pollAsync(
     async () => {
-      const stillFocused = await a.app.evaluate(({ BrowserWindow }) => {
-        const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
-        for (const w of wins) w.blur();
-        return wins.filter((w) => w.isFocused()).length;
+      const seen = await a.app.evaluate(({ BrowserWindow }) => {
+        const seam = (globalThis as { __switchboardForeground?: ForegroundSeam }).__switchboardForeground;
+        seam?.setOverride(undefined);
+        for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.blur();
+        return seam ? seam.visibility() : 'no seam';
       });
-      return stillFocused === 0 ? true : null;
+      return seen !== 'focused' && seen !== 'no seam' ? true : null;
     },
-    `the app never went away: a window still reports isFocused() after repeatedly asking every window to blur (${timeoutMs}ms)`,
+    `the app never went away: the rules still see the app as focused after repeatedly asking every window to blur (${timeoutMs}ms)`,
     timeoutMs
   );
+}
+
+/** `index.ts`'s e2e seam onto the rules' "is the user in switchboard" (#1468). */
+interface ForegroundSeam {
+  visibility: () => 'focused' | 'visible' | 'hidden';
+  setOverride: (id: number | null | undefined) => void;
+}
+
+/**
+ * What the rules engine sees right now — `focused`, `visible` or `hidden` — read
+ * from the app (#1468). The same function the engine calls, so a spec can
+ * assert its precondition rather than infer it from Electron.
+ */
+export async function appVisibility(a: LaunchedApp): Promise<string> {
+  return a.app.evaluate(() => {
+    const seam = (globalThis as { __switchboardForeground?: ForegroundSeam }).__switchboardForeground;
+    return seam ? seam.visibility() : 'no seam';
+  });
+}
+
+/**
+ * State "the user is IN this window" to the app (#1468): pin the OS-foreground
+ * answer the rules, the flash guard and the attention raise read
+ * (`ForegroundTracker.setOverride`, non-packaged builds only).
+ *
+ * WHY A PIN, NOT A REAL ACTIVATION: since #1468 the rules ask the OS which
+ * window holds the desktop foreground, and a Playwright run cannot honestly
+ * get that — Windows refuses a background `focus()` while the developer types
+ * elsewhere (#756), and on a quiet launch nothing ever activates a window.
+ * `bringToFront` used to be enough only because Electron's `isFocused()` says
+ * true after the refused call, which is the very lie #1379 measured. A spec
+ * that calls this says so in its header; the tracker itself is unit-tested
+ * against the recorded Windows message sequences (`foreground.test.ts`).
+ *
+ * `which` picks the window as `bringToFront` does. Lasts until `blurApp`.
+ */
+export async function pretendForeground(a: LaunchedApp, which: 'main' | 'popout' = 'main'): Promise<void> {
+  const ok = await a.app.evaluate(({ BrowserWindow }, pick) => {
+    const seam = (globalThis as { __switchboardForeground?: ForegroundSeam }).__switchboardForeground;
+    if (!seam) return 'no seam';
+    const wins = BrowserWindow.getAllWindows()
+      .filter((w) => !w.isDestroyed())
+      .sort((x, y) => x.id - y.id);
+    const isPopout = (w: (typeof wins)[number]): boolean => w.webContents.getURL().includes('popout.html');
+    const target = pick === 'main' ? wins.find((w) => !isPopout(w)) : wins.filter(isPopout).at(-1);
+    if (!target) return `no ${pick} window`;
+    seam.setOverride(target.id);
+    return seam.visibility();
+  }, which);
+  if (ok !== 'focused')
+    throw new Error(`pretendForeground(${which}): the rules still do not see the app as focused (${ok})`);
 }
 
 /**

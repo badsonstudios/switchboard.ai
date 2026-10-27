@@ -3,6 +3,8 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   type ActivatableWindow,
+  ASIDE_MS,
+  isSteppedAside,
   childWindowOptions,
   NO_ACTIVATE_ENV,
   noActivate,
@@ -233,5 +235,194 @@ describe('raiseForAttention (#756) — the measured technique', () => {
     const w = attentionWindow({ destroyed: true });
     expect(raiseForAttention(w, OTHER_APP)).toBe('destroyed');
     expect(w.calls).toEqual([]);
+  });
+});
+
+describe('raiseForAttention — our other windows step aside (#1468)', () => {
+  /** one shared log, so the ORDER across windows is asserted */
+  function rig() {
+    const log: string[] = [];
+    const pending: Array<{ fn: () => void; ms: number }> = [];
+    const target = (state: { minimized?: boolean } = {}) => {
+      let minimized = state.minimized === true;
+      return {
+        isDestroyed: () => false,
+        isMinimized: () => minimized,
+        isFullScreen: () => false,
+        minimize: () => {
+          minimized = true;
+          log.push('target.minimize');
+        },
+        restore: () => {
+          minimized = false;
+          log.push('target.restore');
+        },
+        show: () => log.push('target.show'),
+        showInactive: () => log.push('target.showInactive'),
+        focus: () => log.push('target.focus'),
+      };
+    };
+    const other = (name: string, s: { visible?: boolean; minimized?: boolean; destroyed?: boolean } = {}) => {
+      let visible = s.visible !== false;
+      return {
+        isDestroyed: () => s.destroyed === true,
+        isVisible: () => visible,
+        isMinimized: () => s.minimized === true,
+        hide: () => {
+          visible = false;
+          log.push(`${name}.hide`);
+        },
+        showInactive: () => {
+          visible = true;
+          log.push(`${name}.showInactive`);
+        },
+      };
+    };
+    const later = (fn: () => void, ms: number) => pending.push({ fn, ms });
+    const flush = () => pending.splice(0).forEach((p) => p.fn());
+    return { log, pending, target, other, later, flush };
+  }
+
+  it('hides the other visible window, swoops, then shows it back WITHOUT activating', () => {
+    const r = rig();
+    const t = r.target();
+    const main = r.other('main');
+    expect(
+      raiseForAttention(t, { appHasForeground: false, platform: 'win32', others: [main, t as never], later: r.later })
+    ).toBe('minimize-restore-aside');
+    expect(r.log).toEqual(['main.hide', 'target.minimize', 'target.restore']);
+    expect(r.pending.map((p) => p.ms)).toEqual([ASIDE_MS]);
+    r.flush();
+    expect(r.log.at(-1)).toBe('main.showInactive');
+    // never an activating call on anything
+    expect(r.log.some((l) => /\.(show|focus)$/.test(l))).toBe(false);
+  });
+
+  it('a minimized target: restore-aside', () => {
+    const r = rig();
+    const t = r.target({ minimized: true });
+    const main = r.other('main');
+    expect(raiseForAttention(t, { appHasForeground: false, platform: 'win32', others: [main], later: r.later })).toBe(
+      'restore-aside'
+    );
+    expect(r.log).toEqual(['main.hide', 'target.restore']);
+  });
+
+  it('leaves minimized, hidden and destroyed windows alone (showInactive would un-minimize one)', () => {
+    const r = rig();
+    const t = r.target();
+    const others = [
+      r.other('min', { minimized: true }),
+      r.other('hidden', { visible: false }),
+      r.other('dead', { destroyed: true }),
+    ];
+    expect(raiseForAttention(t, { appHasForeground: false, platform: 'win32', others, later: r.later })).toBe(
+      'minimize-restore'
+    );
+    expect(r.log).toEqual(['target.minimize', 'target.restore']);
+    expect(r.pending).toEqual([]);
+  });
+
+  it('never steps aside for a raise between our own windows, off Windows, in full screen or quiet', () => {
+    const r = rig();
+    const main = r.other('main');
+    raiseForAttention(r.target(), { appHasForeground: true, platform: 'win32', others: [main], later: r.later });
+    raiseForAttention(r.target(), { appHasForeground: false, platform: 'darwin', others: [main], later: r.later });
+    raiseForAttention(Object.assign(r.target(), { isFullScreen: () => true }), {
+      appHasForeground: false,
+      platform: 'win32',
+      others: [main],
+      later: r.later,
+    });
+    setNoActivate(true);
+    raiseForAttention(r.target(), { appHasForeground: false, platform: 'win32', others: [main], later: r.later });
+    setNoActivate(false);
+    expect(r.log.filter((l) => l.startsWith('main.'))).toEqual([]);
+  });
+
+  it('a BLINKING window still steps aside (the notifier blinks main on every event), and blinks again once back', () => {
+    const r = rig();
+    const main = Object.assign(r.other('main'), { flashFrame: (f: boolean) => r.log.push(`main.flash(${f})`) });
+    const quiet = Object.assign(r.other('other'), { flashFrame: (f: boolean) => r.log.push(`other.flash(${f})`) });
+    // read before the hide: a hide can end the blink's wait (a `blur`)
+    let hidden = false;
+    const blinking = (o: unknown) => o === main && !hidden;
+    const hide = main.hide;
+    main.hide = () => {
+      hidden = true;
+      hide();
+    };
+    expect(
+      raiseForAttention(r.target(), {
+        appHasForeground: false,
+        platform: 'win32',
+        others: [main, quiet],
+        later: r.later,
+        blinking,
+      })
+    ).toBe('minimize-restore-aside');
+    r.flush();
+    expect(r.log).toEqual([
+      'main.hide',
+      'other.hide',
+      'target.minimize',
+      'target.restore',
+      'main.showInactive',
+      'main.flash(true)',
+      'other.showInactive',
+    ]);
+  });
+
+  it('a window is "stepped aside" only until it is shown back, so a second raise can still reach it', () => {
+    const r = rig();
+    const main = r.other('main');
+    raiseForAttention(r.target(), { appHasForeground: false, platform: 'win32', others: [main], later: r.later });
+    expect(isSteppedAside(main)).toBe(true);
+    r.flush();
+    expect(isSteppedAside(main)).toBe(false);
+  });
+
+  it('a second swoop FOR the window an earlier one hid: shown back quietly first, and not shown twice', () => {
+    const r = rig();
+    const popout = r.target();
+    const main = Object.assign(r.target(), { isVisible: () => true, hide: () => r.log.push('main.hide') });
+    // swoop 1, for the popout: main steps aside
+    raiseForAttention(popout, {
+      appHasForeground: false,
+      platform: 'win32',
+      others: [main, popout as never],
+      later: r.later,
+    });
+    expect(isSteppedAside(main)).toBe(true);
+    r.log.length = 0;
+    // swoop 2, inside the 150 ms, for main itself
+    raiseForAttention(main, { appHasForeground: false, platform: 'win32', others: [], later: r.later });
+    expect(r.log).toEqual(['target.showInactive', 'target.minimize', 'target.restore']);
+    expect(isSteppedAside(main)).toBe(false);
+    r.log.length = 0;
+    r.flush(); // swoop 1's re-show: main is already back
+    expect(r.log).toEqual([]);
+  });
+
+  it('a window that throws, or closes before it is shown back, does not break the raise', () => {
+    const r = rig();
+    const t = r.target();
+    const angry = {
+      isDestroyed: () => false,
+      isVisible: () => {
+        throw new Error('gone');
+      },
+      isMinimized: () => false,
+      hide: () => undefined,
+      showInactive: () => undefined,
+    };
+    let closed = false;
+    const closing = { ...r.other('closing'), isDestroyed: () => closed };
+    expect(
+      raiseForAttention(t, { appHasForeground: false, platform: 'win32', others: [angry, closing], later: r.later })
+    ).toBe('minimize-restore-aside');
+    closed = true;
+    r.flush();
+    expect(r.log).toEqual(['closing.hide', 'target.minimize', 'target.restore']);
   });
 });

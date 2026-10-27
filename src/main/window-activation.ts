@@ -116,7 +116,37 @@ export type AttentionTechnique =
   | 'none'
   | 'restore'
   | 'minimize-restore'
-  | 'show-focus';
+  | 'show-focus'
+  /** `restore` / `minimize-restore` with our other windows stepped aside (#1468) */
+  | 'restore-aside'
+  | 'minimize-restore-aside';
+
+/** What stepping aside needs of one of our OTHER windows (#1468). */
+export interface AsideWindow {
+  isDestroyed(): boolean;
+  isVisible(): boolean;
+  isMinimized(): boolean;
+  hide(): void;
+  showInactive(): void;
+  /** to start a hidden window's taskbar blink again once it is back */
+  flashFrame?(flag: boolean): void;
+}
+
+/** How long our other windows stay hidden while the swoop lands. The probe hid
+ *  them for 150 ms (`spike/probes/1468/`); a granted restore lands inside it. */
+export const ASIDE_MS = 150;
+
+/** Windows hidden by a swoop right now, until they are shown back (#1468). */
+const steppedAside = new WeakSet<object>();
+
+/**
+ * Is this window hidden only because another window's swoop stepped it aside?
+ * A second raise inside those 150 ms must not read it as "hidden, unreachable"
+ * (no raise AND no flash), so the reach check asks this first.
+ */
+export function isSteppedAside(win: object): boolean {
+  return steppedAside.has(win);
+}
 
 /**
  * Bring a window forward because a SESSION asked for you (#756), not because
@@ -153,13 +183,46 @@ export type AttentionTechnique =
  * Other platforms: the plain `raiseWindow`, unmeasured — the measurement and the
  * owner's machine are Windows.
  *
+ * OUR OTHER WINDOWS STEP ASIDE (#1468). The swoop only takes the foreground
+ * when NO OTHER window of this process is on screen: measured
+ * (`spike/findings/1468-popout-swoop.md`), a lone window 10 of 10, and with a
+ * second visible window of ours 0 of 59 — for the main window and the
+ * popout alike, a popout made by `window.open` or by main, owned or not. That
+ * is why a popped-out session's swoop never won (the main window is always on
+ * screen beside it). With every other visible window of ours hidden for the
+ * swoop and shown again without activating (`showInactive`, which kept a
+ * maximized window maximized and put each one back BEHIND the app the person
+ * was in), it took the foreground 66 of 66, including from a target a refused
+ * `focus()` had left "active". Minimized and hidden windows are left alone:
+ * they do not count against the swoop, and `showInactive` would un-minimize
+ * one. `others` is every window of ours; the target in it is skipped.
+ *
+ * NOT EVERY TIME: right after a refused swoop the next attempt was refused too
+ * (0 of 48), and in the real app the first raise after a popout opened behind
+ * another app, and its immediate repeat, were still refused (4 of 4 runs);
+ * every raise after that was granted. A refusal still ends in the flash
+ * (`performAttentionRaise`).
+ *
  * Quiet (`SWITCHBOARD_E2E_NO_ACTIVATE`): NOTHING. Not even `showInactive()` —
  * an attention raise is never something the suite needs to see happen to the
  * OS window, only to see requested.
  */
 export function raiseForAttention(
   win: AttentionWindow,
-  opts: { appHasForeground: boolean; platform?: NodeJS.Platform }
+  opts: {
+    appHasForeground: boolean;
+    platform?: NodeJS.Platform;
+    /** every window of ours (#1468); the visible, un-minimized ones step aside */
+    others?: readonly AsideWindow[];
+    /** runs `fn` after `ms` (default `setTimeout`); tests pass their own */
+    later?: (fn: () => void, ms: number) => void;
+    /** is this window's taskbar button blinking for someone who has not come
+     *  to it yet (`isFlashing`)? Hiding a window takes its taskbar button
+     *  away, so such a window has its blink started again once it is back.
+     *  It still steps aside: the notifier blinks the main window for every
+     *  attention event, and leaving it on screen is what makes the swoop lose */
+    blinking?: (w: AsideWindow) => boolean;
+  }
 ): AttentionTechnique {
   const platform = opts.platform ?? process.platform;
   if (win.isDestroyed()) return 'destroyed';
@@ -169,13 +232,58 @@ export function raiseForAttention(
     return 'show-focus';
   }
   if (win.isFullScreen()) return 'none';
-  if (win.isMinimized()) {
-    win.restore();
-    return 'restore';
+  // a window an earlier swoop hid a moment ago: back on screen first, quietly
+  if (steppedAside.has(win)) {
+    steppedAside.delete(win);
+    win.showInactive();
   }
-  win.minimize();
+  // read BEFORE hiding: a hide can emit `blur`, which ends the blink's wait
+  const reblink = new Set((opts.others ?? []).filter((o) => safely(() => opts.blinking?.(o) === true)));
+  const aside = stepAside(win, opts.others ?? []);
+  const wasMinimized = win.isMinimized();
+  if (!wasMinimized) win.minimize();
   win.restore();
-  return 'minimize-restore';
+  if (aside.length === 0) return wasMinimized ? 'restore' : 'minimize-restore';
+  const later = opts.later ?? ((fn: () => void, ms: number) => void setTimeout(fn, ms));
+  later(() => {
+    for (const o of aside) {
+      // a later swoop that raised this window has already shown it
+      if (!steppedAside.has(o)) continue;
+      steppedAside.delete(o);
+      try {
+        if (o.isDestroyed()) continue;
+        o.showInactive();
+        if (reblink.has(o)) o.flashFrame?.(true);
+      } catch {
+        // a window closed meanwhile: nothing to bring back
+      }
+    }
+  }, ASIDE_MS);
+  return wasMinimized ? 'restore-aside' : 'minimize-restore-aside';
+}
+
+/** Hide every OTHER visible, un-minimized window of ours; returns the ones hidden. */
+function safely(fn: () => boolean): boolean {
+  try {
+    return fn();
+  } catch {
+    return false;
+  }
+}
+
+function stepAside(target: object, others: readonly AsideWindow[]): AsideWindow[] {
+  const hidden: AsideWindow[] = [];
+  for (const o of others) {
+    try {
+      if (o === target || o.isDestroyed() || !o.isVisible() || o.isMinimized()) continue;
+      o.hide();
+      steppedAside.add(o);
+      hidden.push(o);
+    } catch {
+      // fail-open: a window we cannot read or hide stays as it is
+    }
+  }
+  return hidden;
 }
 
 /**

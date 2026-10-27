@@ -463,6 +463,42 @@ describe('visibilityAcross — the APP, not one window', () => {
   });
 });
 
+describe('"focused" comes from the in-front predicate when given one (#1468)', () => {
+  const w = (o: Partial<Record<'minimized' | 'focused', boolean>>) => ({
+    isDestroyed: () => false,
+    isMinimized: () => o.minimized === true,
+    isVisible: () => true,
+    isFocused: () => o.focused === true,
+  });
+
+  it('a REFUSED raise: Electron says focused, the OS says not — the predicate wins', () => {
+    const lying = w({ focused: true });
+    expect(visibilityOf(lying, () => false)).toBe('visible');
+    expect(visibilityAcross([lying], () => false)).toBe('visible');
+    // so the away-rule toasts the person who is in another app…
+    expect(ruleMatches(notifyWhenDoneRule(CARD), trigger('done', CARD, 'visible'))).toBe(true);
+  });
+
+  it('really in front while Electron says otherwise: focused', () => {
+    expect(visibilityOf(w({ focused: false }), () => true)).toBe('focused');
+  });
+
+  it('minimized stays hidden whatever the predicate says, and the predicate is per window', () => {
+    const min = w({ minimized: true });
+    const pop = w({});
+    expect(visibilityOf(min, () => true)).toBe('hidden');
+    expect(visibilityAcross([min, pop], (x) => x === pop)).toBe('focused');
+  });
+
+  it('a predicate that throws reads as hidden — fail open', () => {
+    expect(
+      visibilityOf(w({ focused: true }), () => {
+        throw new Error('tracker gone');
+      })
+    ).toBe('hidden');
+  });
+});
+
 describe('isSaneRule — what survives a hand-edited workspace file', () => {
   const good = notifyWhenDoneRule(CARD);
 

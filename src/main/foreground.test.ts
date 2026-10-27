@@ -11,6 +11,7 @@ import {
   type TrackableWindow,
 } from './foreground';
 import { FrontAtEvent, planAttentionRaise, type RaiseFacts } from './attention-raise';
+import { visibilityAcross } from './events/rules';
 
 // The message sequences below are the ones `spike/probes/1379/` RECORDED on
 // Windows 11 (`spike/findings/1379-isfocused-after-refused-raise.md`). A step
@@ -303,6 +304,111 @@ describe('ForegroundTracker (#1379)', () => {
   });
 });
 
+describe('the e2e override (#1468)', () => {
+  it('pins every answer to the stated window, over the truth, until cleared', () => {
+    const { t, turn } = tracker();
+    const m = fakeWindow(1);
+    const p = fakeWindow(2);
+    t.track(m.win);
+    t.track(p.win);
+    m.caption(true);
+    m.activate(true);
+    turn();
+    t.setOverride(2);
+    expect(t.isFront(p.win)).toBe(true);
+    expect(t.isFront(m.win)).toBe(false);
+    expect(t.frontWindowId(() => null)).toBe(2);
+    expect(t.appHasForeground()).toBe(true);
+    t.setOverride(null); // "the user is in another app"
+    expect(t.isFront(m.win)).toBe(false);
+    expect(t.frontWindowId(() => 1)).toBeNull();
+    expect(t.appHasForeground()).toBe(false);
+    t.setOverride(undefined); // back to the truth
+    expect(t.isFront(m.win)).toBe(true);
+    expect(t.frontWindowId(() => null)).toBe(1);
+  });
+
+  it('holds off Windows too, where the tracker otherwise answers isFocused()', () => {
+    const mac = tracker('darwin', () => true);
+    const m = fakeWindow(1, { focused: true });
+    mac.t.setOverride(null);
+    expect(mac.t.isFront(m.win)).toBe(false);
+    expect(mac.t.appHasForeground()).toBe(false);
+  });
+
+  it('never calls a destroyed window in front', () => {
+    const { t } = tracker();
+    const p = fakeWindow(2);
+    t.track(p.win);
+    t.setOverride(2);
+    p.close();
+    expect(t.isFront(p.win)).toBe(false);
+  });
+});
+
+/** a window as the rules see it: visible, not minimized, plus the tracker's facts */
+function shown(f: ReturnType<typeof fakeWindow>) {
+  return Object.assign(f.win, { isMinimized: () => false, isVisible: () => true });
+}
+
+describe("the rules' visibility reads the truth, not the lie (#1468)", () => {
+  it('THE ISSUE: after a refused raise Electron says focused; the rules see "visible"', () => {
+    const { t, turn } = tracker();
+    const m = fakeWindow(1);
+    const p = fakeWindow(2);
+    t.track(m.win);
+    t.track(p.win);
+    // a popout opened (or raised) while another app was in front: refused
+    p.caption(false);
+    p.activate(true);
+    p.setFocused(true);
+    turn();
+    const wins = [shown(m), shown(p)];
+    expect(visibilityAcross(wins, (w) => t.isFront(w))).toBe('visible');
+    // what the old read said: "focused" — the away-rules held back, the
+    // focused-only cue rang for someone in another app
+    expect(visibilityAcross(wins)).toBe('focused');
+  });
+
+  it('a window really in front is "focused"', () => {
+    const { t, turn } = tracker();
+    const m = fakeWindow(1);
+    t.track(m.win);
+    m.caption(true);
+    m.activate(true);
+    turn();
+    expect(visibilityAcross([shown(m)], (w) => t.isFront(w))).toBe('focused');
+  });
+
+  it('the person arriving at the lying window makes it "focused" (two active captions)', () => {
+    const { t, turn } = tracker();
+    const p = fakeWindow(2);
+    t.track(p.win);
+    p.caption(false);
+    p.activate(true);
+    p.setFocused(true);
+    turn();
+    p.caption(true);
+    p.caption(true);
+    turn();
+    expect(visibilityAcross([shown(p)], (w) => t.isFront(w))).toBe('focused');
+  });
+
+  it('leaving for another app is "visible" again', () => {
+    const { t, turn } = tracker();
+    const m = fakeWindow(1);
+    t.track(m.win);
+    m.caption(true);
+    m.activate(true);
+    turn();
+    m.caption(false);
+    m.activate(false);
+    m.appActivate(false);
+    turn();
+    expect(visibilityAcross([shown(m)], (w) => t.isFront(w))).toBe('visible');
+  });
+});
+
 describe('the attention gate reads the truth, not the lie (#1379)', () => {
   const GO: RaiseFacts = {
     notificationsOn: true,
@@ -379,6 +485,30 @@ describe('wiring in main/index.ts (#1379)', () => {
     expect(src.match(/isFront: \(\) => foreground\.isFront\(win!?\)/g)).toHaveLength(3);
     expect(src).toContain('isFront: (w) => foreground.isFront(w)');
     expect(src).toContain('const ourWindowHasFocus = (): boolean => foreground.appHasForeground();');
+  });
+
+  it("the rules' visibility reads the tracker, and the e2e seam is non-packaged only (#1468)", () => {
+    expect(src).toContain(
+      'visibilityAcross([currentWindow, ...popoutWindows.map((p) => p.win)], (w) => foreground.isFront(w));'
+    );
+    expect(src).toContain('getVisibility: appVisibility,');
+    // the one call: no second, unconverted reading of "is the app focused"
+    expect(src.split('visibilityAcross(').length - 1).toBe(1);
+    // the seam sits inside the non-packaged guard: between the guard's `{` and
+    // the seam, more braces open than close (the block has not ended)
+    const seam = src.indexOf('__switchboardForeground = {');
+    const guard = src.lastIndexOf('if (!app.isPackaged) {', seam);
+    expect(seam).toBeGreaterThan(0);
+    expect(guard).toBeGreaterThan(0);
+    const between = src.slice(guard, seam);
+    expect(between.split('{').length).toBeGreaterThan(between.split('}').length);
+    expect(src.match(/__switchboardForeground = \{/g)).toHaveLength(1);
+  });
+
+  it('the swoop: our other windows step aside unless the app is in front now; a blinking one stays (#1468)', () => {
+    expect(src).toContain('others: foreground.appHasForeground()');
+    expect(src).toContain('blinking: (o) => isFlashing(o),');
+    expect(src).toContain('if (isSteppedAside(w)) return null;');
   });
 });
 

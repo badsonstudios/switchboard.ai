@@ -167,6 +167,26 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   line: Tab into the conversation, use the arrow keys to reach it, and press
   Enter. It no longer adds a Tab press between you and the message box. When
   the briefing window closes, you are back on the link.
+- **Notifications follow which window you are really in.** Some notifications
+  only come while you are away from switchboard (the pop-up, the spoken
+  summary, the phone, "Notify when done"). The needs-you sound only comes while
+  you are working in switchboard. To tell which, switchboard asked its own
+  window whether it had the keyboard, and after Windows had turned down a
+  request to bring a switchboard window forward (or a session was popped out
+  while you were in another program), the window wrongly said yes. So you
+  could be typing in your editor and get the needs-you sound, while the pop-up
+  and the phone stayed quiet. switchboard now asks Windows itself which window
+  is in front, as the taskbar flash and "Always jump to it" already do.
+- **"Always jump to it" brings a popped-out session's window forward.** Windows
+  only lets an app swoop a window to the front when the app has no other
+  window on screen, and a popped-out session always has the main window beside
+  it, so its swoop never worked: only the taskbar button flashed. Now, for the
+  moment the swoop takes, switchboard's other windows step out of the way and
+  come straight back behind the program you were in. Measured on Windows: from
+  never to every time in a test with two windows. In the real app, the first
+  call after you pop a session out while working in another program can still
+  be turned down, and then the taskbar button flashes as before. The main
+  window's swoop gets the same help while a pop-out is open.
 
 ## 0.8.132 — 2026-10-26
 

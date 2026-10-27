@@ -1,0 +1,67 @@
+────────────────────────────────────────────────────────────────────────
+playwright test — NO BUILD RAN. Testing the bundle already in out/.
+  bundle:  7eeb932a on feature/1468-popout-swoop-foreground, built 2026-10-27T16:33:57.478Z (1m ago)
+  out/:    written 1m ago (oldest artifact: out/main/index.js)
+  sources: newest bundled change is src/main/index.ts (10m ago)
+  FRESH — every bundled source is older than this build.
+────────────────────────────────────────────────────────────────────────
+
+Running 1 test using 1 worker
+
+[1/1] e2e\probe-real-app.spec.ts:68:5 › probe 1379
+
+e2e\probe-real-app.spec.ts:68:5 › probe 1379
+[fixture] SWITCHBOARD_E2E_MONITOR=right matched no secondary display (1 display(s); monitor 1 is the primary) — not moving anything
+PROBE {"step":"0 other app in front","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":[],"raises":[]}
+
+PROBE {"step":"1 first event, raise declined (notifications off)","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":[],"raises":[{"outcome":"notifications-off","window":"popout"}]}
+
+PROBE {"step":"2 after answering","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":[],"raises":[{"outcome":"notifications-off","window":"popout"},{"outcome":"notifications-off","window":"popout"}]}
+
+PROBE {"step":"3 second event, raise allowed","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":["P:focus"],"raises":[{"outcome":"notifications-off","window":"popout"},{"outcome":"notifications-off","window":"popout"},{"outcome":"refused","window":"popout","technique":"minimize-restore"}]}
+
+PROBE {"step":"4 another event, other app put back in front first","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":["P:focus","P:focus"],"raises":[{"outcome":"notifications-off","window":"popout"},{"outcome":"notifications-off","window":"popout"},{"outcome":"refused","window":"popout","technique":"minimize-restore"},{"outcome":"refused","window":"popout","technique":"minimize-restore"},{"outcome":"refused","window":"popout","technique":"minimize-restore"}]}
+
+PROBE {"step":"5 another event, other app put back in front first","truth":"OTHER:powershell","P_isFocused":true,"M_isFocused":false,"focusedWindow":"P","events":["P:focus","P:focus"],"raises":[{"outcome":"notifications-off","window":"popout"},{"outcome":"notifications-off","window":"popout"},{"outcome":"refused","window":"popout","technique":"minimize-restore"},{"outcome":"refused","window":"popout","technique":"minimize-restore"},{"outcome":"refused","window":"popout","technique":"minimize-restore"},{"outcome":"refused","window":"popout","technique":"minimize-restore"},{"outcome":"refused","window":"popout","technique":"minimize-restore"}]}
+
+LOG {"ts":"2026-10-27T16:35:16.647Z","level":"info","subsystem":"app","msg":"app ready","version":"0.8.132","platform":"win32","commit":"7eeb932a","branch":"feature/1468-popout-swoop-foreground","dirty":false,"builtAt":"2026-10-27T16:33:57.478Z","release":false}
+
+LOG {"ts":"2026-10-27T16:35:16.692Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":1,"message":"tracked","on":false,"front":false,"electronSaysFocused":false}
+
+LOG {"ts":"2026-10-27T16:35:17.005Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":1,"message":"activate","on":true,"front":true,"electronSaysFocused":false}
+
+LOG {"ts":"2026-10-27T16:35:17.442Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":1,"message":"activate","on":false,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:35:17.443Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":1,"message":"app-deactivated","on":false,"front":false,"electronSaysFocused":false}
+
+LOG {"ts":"2026-10-27T16:35:17.527Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"tracked","on":true,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:35:20.297Z","level":"info","subsystem":"attention","msg":"attention raise: not raised: notifications are off","outcome":"notifications-off","window":"popout","cardId":"00f40ffc-0114-4886-84c1-34344db64a6c"}
+
+LOG {"ts":"2026-10-27T16:35:21.949Z","level":"info","subsystem":"attention","msg":"attention raise: not raised: notifications are off","outcome":"notifications-off","window":"popout","cardId":"00f40ffc-0114-4886-84c1-34344db64a6c"}
+
+LOG {"ts":"2026-10-27T16:35:26.487Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":true,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:35:26.892Z","level":"info","subsystem":"attention","msg":"attention raise: the OS kept another app in front — flashing the taskbar; the lamp in the list carries it","outcome":"refused","window":"popout","technique":"minimize-restore","cardId":"00f40ffc-0114-4886-84c1-34344db64a6c"}
+
+LOG {"ts":"2026-10-27T16:35:28.904Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":true,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:35:29.322Z","level":"info","subsystem":"attention","msg":"attention raise: the OS kept another app in front — flashing the taskbar; the lamp in the list carries it","outcome":"refused","window":"popout","technique":"minimize-restore","cardId":"00f40ffc-0114-4886-84c1-34344db64a6c"}
+
+LOG {"ts":"2026-10-27T16:35:33.047Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":true,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:35:33.462Z","level":"info","subsystem":"attention","msg":"attention raise: the OS kept another app in front — flashing the taskbar; the lamp in the list carries it","outcome":"refused","window":"popout","technique":"minimize-restore","cardId":"00f40ffc-0114-4886-84c1-34344db64a6c"}
+
+LOG {"ts":"2026-10-27T16:35:35.500Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":true,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:35:35.917Z","level":"info","subsystem":"attention","msg":"attention raise: the OS kept another app in front — flashing the taskbar; the lamp in the list carries it","outcome":"refused","window":"popout","technique":"minimize-restore","cardId":"00f40ffc-0114-4886-84c1-34344db64a6c"}
+
+LOG {"ts":"2026-10-27T16:35:39.633Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":true,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:35:40.048Z","level":"info","subsystem":"attention","msg":"attention raise: the OS kept another app in front — flashing the taskbar; the lamp in the list carries it","outcome":"refused","window":"popout","technique":"minimize-restore","cardId":"00f40ffc-0114-4886-84c1-34344db64a6c"}
+
+LOG {"ts":"2026-10-27T16:35:42.066Z","level":"debug","subsystem":"focus","msg":"foreground","windowId":2,"message":"activate","on":true,"front":false,"electronSaysFocused":true}
+
+LOG {"ts":"2026-10-27T16:35:42.478Z","level":"info","subsystem":"attention","msg":"attention raise: the OS kept another app in front — flashing the taskbar; the lamp in the list carries it","outcome":"refused","window":"popout","technique":"minimize-restore","cardId":"00f40ffc-0114-4886-84c1-34344db64a6c"}
+
+  1 passed (29.3s)
