@@ -32,7 +32,6 @@ import {
   LaunchedApp,
   onTestDisplay,
   registerTempDir,
-  retryLostReply,
 } from './fixtures/app';
 
 /**
@@ -84,13 +83,8 @@ test.describe('the Files tab (#521 layer 2)', () => {
     const { folder, outside } = seededProject();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
-    // through `retryLostReply`: the first resize after launch is the call most
-    // likely to lose its reply, and in a quiet launch it did so every time (#1332)
-    const app = a.app;
     const box = onTestDisplay(a, { x: 20, y: 20, width: 1400, height: 950 });
-    await retryLostReply(() =>
-      app.evaluate(({ BrowserWindow }, b) => BrowserWindow.getAllWindows()[0]?.setBounds(b), box)
-    );
+    await a.app.evaluate(({ BrowserWindow }, b) => BrowserWindow.getAllWindows()[0]?.setBounds(b), box);
     await expect(viewTabs(w).first()).toBeVisible({ timeout: 25_000 });
     // THE GEOMETRY PRECONDITION, ASSERTED. A tab crowded to zero width is in the
     // accessibility tree and unclickable, which is the failure this states as a

@@ -457,9 +457,13 @@ export function translateToDisplay(bounds: Box, from: Box, to: Box): Box {
  *
  * #1343 found the cause, and it is not the geometry change: it is garbage
  * collection. See `keepRepliesAlive` below, which every launch now goes
- * through, so this retry should no longer fire. It stays for the call sites
- * that already use it: it costs nothing, and it is a second line of defence
- * if a future Playwright or Electron finds another way to drop a reply.
+ * through.
+ *
+ * FIXTURE-INTERNAL since #1355. A spec never needs it: every `a.app.evaluate`
+ * already recovers a lost reply through `keepRepliesAlive`, and the spec-level
+ * wrappers were removed. It has exactly two jobs left, both here: the display
+ * move's two calls, which run BEFORE `keepRepliesAlive` is installed, and the
+ * idempotent `FETCH_ANSWER` read inside it. Exported only for its unit tests.
  */
 export async function retryLostReply<T>(call: () => Promise<T>, attempts = 8): Promise<T> {
   for (let i = 1; ; i++) {
@@ -593,15 +597,32 @@ const FETCH_ANSWER = (_electron: unknown, id: string): Promise<{ found: boolean;
 let onceSeq = 0;
 
 /**
- * Route this app's `evaluate` through `RUN_ONCE` (#1343). Only a function is
- * wrapped. Anything else, such as a string expression, goes through untouched,
- * because Playwright does not CALL a string's value, so there is nothing to
- * wrap.
+ * The start of the error a refused main-process call throws (#1355). Says what
+ * to do instead, because the reader is a spec author who just hit it.
+ */
+export const UNCOVERED_CALL =
+  'e2e fixture: only a FUNCTION passed to app.evaluate is protected against a lost main-process ' +
+  'reply (keepRepliesAlive, #1343), so string expressions and app.evaluateHandle are refused (#1355). ' +
+  'Pass a function that returns a serializable answer instead.';
+
+/**
+ * Route this app's `evaluate` through `RUN_ONCE` (#1343).
  *
  * Installed on the instance, so it covers every caller of `a.app.evaluate`,
  * including the fixture's own helpers (`bringToFront`, `blurApp`, ...), without
- * one edit to the ~170 spec call sites. NOT covered: `evaluateHandle` (no spec
- * calls it today) and string expressions.
+ * one edit to the ~170 spec call sites.
+ *
+ * WHAT IT CANNOT COVER, IT REFUSES (#1355). A string expression and
+ * `app.evaluateHandle` would both be open to the same lost reply, and neither
+ * can be recovered the way a function can: a string's value is not a call (and
+ * Playwright's rules for a string that evaluates to a function would have to be
+ * copied exactly), and a handle is a live main-process object, not an answer
+ * that can be stored and read back. No spec or helper uses either, so both
+ * throw `UNCOVERED_CALL` at once rather than being exposed in silence. Refused
+ * here, on the instance, rather than by a scan of `e2e/`, because this catches
+ * every route to them, an aliased `const app = a.app` or a variable holding the
+ * expression included, which a text scan cannot. `Page.evaluateHandle` (the
+ * renderer, used by the drag specs) is a different object and is not touched.
  *
  * The real method is called through a property named `evaluate` on purpose.
  * Playwright names a failing call after the frame it was entered from. Called
@@ -610,7 +631,7 @@ let onceSeq = 0;
 export function keepRepliesAlive(app: ElectronApplication): void {
   const real = { evaluate: app.evaluate.bind(app) as (fn: unknown, arg?: unknown) => Promise<unknown> };
   const wrapped = async (fn: unknown, arg?: unknown): Promise<unknown> => {
-    if (typeof fn !== 'function') return real.evaluate(fn, arg);
+    if (typeof fn !== 'function') throw new Error(`${UNCOVERED_CALL} app.evaluate was passed a ${typeof fn}.`);
     const call: OnceCall = { id: String(++onceSeq), src: functionExpression(String(fn)), arg };
     try {
       return await real.evaluate(RUN_ONCE, call);
@@ -628,6 +649,8 @@ export function keepRepliesAlive(app: ElectronApplication): void {
     }
   };
   app.evaluate = wrapped as ElectronApplication['evaluate'];
+  app.evaluateHandle = (() =>
+    Promise.reject(new Error(`${UNCOVERED_CALL} app.evaluateHandle was called.`))) as ElectronApplication['evaluateHandle'];
 }
 
 /** Say which display we landed on ONCE per worker, not once per launch. */
