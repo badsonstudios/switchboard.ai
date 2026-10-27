@@ -64,9 +64,14 @@ export const FEED_COPY_ATTR = 'data-feed-copy';
 // take no Tab stop. Spelled out here rather than imported from `feed-images`,
 // which would make the key rules depend on the picture pass.
 // And since #1240 so is a thumbnail on a tool's box or on a prompt.
+// And since #1439 so is "see what it was told" on an AI-switch divider. It
+// opens a dialog rather than showing anything in place, so it is not a
+// `FeedExpander` (that attribute claims `aria-expanded`), but it is a control
+// in the conversation all the same.
 export const FEED_STOP_SELECTOR =
   `[${FEED_EXPANDER_ATTR}], [${FEED_COPY_ATTR}], ` +
-  'button[data-feed-open-path], button[data-doc-external], button[data-feed-picture]';
+  'button[data-feed-open-path], button[data-doc-external], button[data-feed-picture], ' +
+  'button[data-ai-switch-see-briefing]';
 
 /** What a keystroke inside the conversation region means. */
 export type FeedKeyAction =

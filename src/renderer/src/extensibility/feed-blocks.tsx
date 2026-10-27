@@ -750,9 +750,14 @@ function AiSwitchDivider({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
           <span aria-hidden>{text}</span>
         </span>
         {ref && (
+          // A stop on the conversation's arrow-key walk, not a Tab stop of its
+          // own (#1439, §5.32): `FEED_STOP_SELECTOR` names it, and the dialog
+          // hands focus back here on close, so the walk resumes where it was.
           <button
             type="button"
             data-ai-switch-see-briefing
+            aria-haspopup="dialog"
+            tabIndex={-1}
             title={t('aiSwitch.seeBriefingHint', { to: mark.to.name })}
             onClick={() => setViewing(true)}
             style={{
