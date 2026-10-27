@@ -24,7 +24,6 @@ import {
   LaunchedApp,
   persistedLayout,
   readWorkspaceFile,
-  retryLostReply,
   tempProjectFolder,
   writeWorkspaceFile,
 } from './fixtures/app';
@@ -32,11 +31,8 @@ import {
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
 
 /** The labels of the top-level menus, in order. */
-// Reads, straight after the fixture's cross-screen move: `retryLostReply` (#1332).
 const menuLabels = (a: LaunchedApp): Promise<string[]> =>
-  retryLostReply(() =>
-    a.app.evaluate(({ Menu }) => (Menu.getApplicationMenu()?.items ?? []).map((i) => i.label))
-  );
+  a.app.evaluate(({ Menu }) => (Menu.getApplicationMenu()?.items ?? []).map((i) => i.label));
 
 /** Fire File › Open File…, the way the OS would. */
 const clickOpenFile = (a: LaunchedApp): Promise<boolean> =>
@@ -124,17 +120,15 @@ test.describe('the File menu (#569)', () => {
     // Playwright types it as a bare `JSHandle`, so every property read off it is
     // an `any` the lint rules reject.)
     const app = a.app;
-    const bar = await retryLostReply(() =>
-      app.evaluate(({ BrowserWindow }) => {
-        const all = BrowserWindow.getAllWindows();
-        const w = all[0];
-        return {
-          count: all.length,
-          visible: w?.isMenuBarVisible() ?? null,
-          autoHide: w?.autoHideMenuBar ?? null,
-        };
-      })
-    );
+    const bar = await app.evaluate(({ BrowserWindow }) => {
+      const all = BrowserWindow.getAllWindows();
+      const w = all[0];
+      return {
+        count: all.length,
+        visible: w?.isMenuBarVisible() ?? null,
+        autoHide: w?.autoHideMenuBar ?? null,
+      };
+    });
     expect(bar.count, 'one window, so [0] is the window under test').toBe(1);
     // SEPARATELY: a visible menu bar with no menu in it is still nothing to
     // click, and this is the assertion carrying the #521 label that a later
@@ -148,9 +142,7 @@ test.describe('the File menu (#569)', () => {
     // belt-and-braces rather than the only net. It stays: that coupling is
     // undocumented, it is not measured on Linux, and naming the claim beats
     // inheriting it from an implementation detail.
-    const hasMenu = await retryLostReply(() =>
-      app.evaluate(({ Menu }) => Menu.getApplicationMenu() !== null)
-    );
+    const hasMenu = await app.evaluate(({ Menu }) => Menu.getApplicationMenu() !== null);
 
     expect(
       bar.visible,

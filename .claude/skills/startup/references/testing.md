@@ -186,9 +186,10 @@ still how a new probe works; it is no longer how the project works.
      (`keepRepliesAlive` in `e2e/fixtures/app.ts`): a function passed to it
      runs exactly once, the main process keeps its answer for a moment, and a
      lost reply is recovered by reading that answer back. Nothing to do in a
-     spec. Not covered: `evaluateHandle` and string expressions.
-     `retryLostReply` still exists, and it still only belongs on idempotent
-     calls.
+     spec. What it cannot protect it refuses (#1355): a string expression or
+     `app.evaluateHandle` on a launched app throws at once, so always pass a
+     function. (`Page.evaluateHandle` in the renderer is unaffected.)
+     `retryLostReply` is fixture-internal now; never wrap a spec call in it.
    - **Going AWAY in a spec: `blurApp(a)`, never a bare `blur()` (#538).**
      Every `WHEN_AWAY` rule (toast, voice, push) is gated on no window of ours
      being focused, and `BrowserWindow.blur()` is a fire-and-forget command the

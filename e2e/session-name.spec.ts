@@ -66,14 +66,11 @@ test.describe('naming a new session (#1282)', () => {
       env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_NO_NAME_PROMPT: '' },
     });
     const w = a.window;
-    const plus = w.getByRole('button', { name: '+ session' });
-    await expect(plus).toBeVisible({ timeout: 25_000 });
-    // AFTER the window is up. That once dodged a lost reply on the first
-    // main-process call after launch (#1343). `launchApp` now recovers a lost
-    // reply for every call (`keepRepliesAlive`), so the order no longer matters.
     await a.app.evaluate(({ dialog: d }, f) => {
       d.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [f] });
     }, folder);
+    const plus = w.getByRole('button', { name: '+ session' });
+    await expect(plus).toBeVisible({ timeout: 25_000 });
     // The precondition, checked rather than assumed: the folder really does
     // have a conversation to offer, so "no picker" below means removed, not
     // merely "nothing to show".

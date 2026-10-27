@@ -58,6 +58,7 @@ import {
   readSettingsKey,
   retryLostReply,
   translateToDisplay,
+  UNCOVERED_CALL,
   type DisplayInfo,
   type LaunchedApp,
 } from './app';
@@ -1126,14 +1127,17 @@ describe('keepRepliesAlive — every main-process call runs exactly once (#1343)
     expect(electron.calls).toEqual(['ran']);
   });
 
-  it('leaves a string expression alone: Playwright does not call it', async () => {
+  it('REFUSES a string expression, which it cannot protect, without sending anything (#1355)', async () => {
     const { app, evaluate } = appWithEvaluate();
-    // the stand-in calls whatever it is given, so hand it something callable
-    // through the string overload's type and check it arrived untouched
-    const expr = 'process.platform';
-    evaluate.mockImplementationOnce(() => Promise.resolve('as-sent'));
-    await app.evaluate(expr);
-    expect(evaluate.mock.calls[0][0]).toBe(expr);
+    await expect(app.evaluate('process.platform')).rejects.toThrow(UNCOVERED_CALL);
+    await expect(app.evaluate('process.platform')).rejects.toThrow(/was passed a string/);
+    expect(evaluate).not.toHaveBeenCalled();
+  });
+
+  it('REFUSES app.evaluateHandle, which it cannot protect either (#1355)', async () => {
+    const { app, evaluate } = appWithEvaluate();
+    await expect(app.evaluateHandle(() => 1)).rejects.toThrow(UNCOVERED_CALL);
+    expect(evaluate).not.toHaveBeenCalled();
   });
 
   it('a LOST reply comes back as the answer, and the function does not run twice', async () => {
@@ -1191,6 +1195,8 @@ describe('keepRepliesAlive — every main-process call runs exactly once (#1343)
     // the wrapper went out, carrying the spec function as text
     const sent = original.mock.calls[0] as unknown as [unknown, { src: string }];
     expect(sent[1].src).toBe('(() => 1)');
+    // and the refusals ride along on the instance a spec actually gets
+    await expect(launched.app.evaluateHandle(() => 1)).rejects.toThrow(UNCOVERED_CALL);
     await launched.cleanup();
   });
 });
