@@ -59,6 +59,12 @@ AI, folded so it does not fill the view. The new AI's short reply follows it.
 Click **see what it was told** on the switch line. A window opens with the
 exact text the new AI was given, character for character.
 
+From the keyboard: Tab into the conversation, use the arrow keys to reach
+**see what it was told**, and press Enter. It is one of the stops the arrow
+keys visit, like **Show summary** on a compaction line, so it never adds a
+Tab press between you and the message box. When the window closes, you are
+back on the link and the arrow keys carry on from there.
+
 - **Copy** puts the text on the clipboard.
 - **Escape** or **Close** shuts the window.
 

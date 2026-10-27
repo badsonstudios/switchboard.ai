@@ -160,6 +160,13 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   after a session had finished were never folded, so it looked random. Now a
   prompt added to a turn that is still running leaves the card where it is.
   A prompt that starts a new turn still folds the card, as the setting says.
+- **"See what it was told" follows the conversation's keyboard rule.** On the
+  line that marks a switch to another AI, the **see what it was told** link
+  used to take a Tab press of its own, and the arrow keys inside the
+  conversation skipped it. Now it works like **Show summary** on a compaction
+  line: Tab into the conversation, use the arrow keys to reach it, and press
+  Enter. It no longer adds a Tab press between you and the message box. When
+  the briefing window closes, you are back on the link.
 
 ## 0.8.132 — 2026-10-26
 
