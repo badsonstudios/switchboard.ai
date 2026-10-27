@@ -3,9 +3,9 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚀 RELEASING: v0.8.133, 2026-10-27 — #1472, #1471, #1439, #1468 (+ #1035 measured, #1355 tests, the README rewrite)
+> # ✅ RELEASED: v0.8.133, 2026-10-27 (PR #1483, tag on `e0ffd2d0`, release run 40572346680) — #1472, #1471, #1439, #1468 (+ #1035 measured, #1355 tests, the README rewrite)
 >
-> Dan, after the run's report and the orchestrator's recommendation to release: *"Go."* A **regular release, on his word**. Version, lock and dated notes land together (`0.8.134 — unreleased` is open). On merge, tag `v0.8.133` is pushed from the merge commit and the release workflow publishes the installer. This block is updated to RELEASED once `releases/latest` answers `v0.8.133`.
+> Dan, after the run's report and the orchestrator's recommendation to release: *"Go."* A **regular release, on his word**. Version, lock and dated notes land together (`0.8.134 — unreleased` is open). The release PR merged on green CI (4/4) as `e0ffd2d0`, tag `v0.8.133` was pushed from it, and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.133.exe` (105 MB) + `.sha256` as a normal release: `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.133` (published 15:55 EDT). The four dogfood rows now read RELEASED. **DO NOT CUT ANOTHER unless he asks.**
 >
 > **In it:** #1472 (Enter in a still-working session no longer folds its card under Collapse on submit), #1471 (Next question is filled blue while live), #1439 ("see what it was told" is on the feed's arrow-key walk, not a Tab stop), #1468 (the rules engine asks `foreground.ts`, not `isFocused()`; a popout swoop briefly hides the app's other windows so Windows lets it win, **a decision Dan may still flip to "flash only"**). Also merged after the run: **the README rewrite with 11 harness screenshots** (PR #1481, `83095d69`; `docs/img/readme/`, fake demo data only; the stream fake can now leave a scripted turn running). Filed from it: #1482 (manual 01 still says there is no download). **None of the user-facing changes is hand-tested**: four dogfood UNTESTED rows.
 
