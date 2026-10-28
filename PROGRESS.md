@@ -3,6 +3,10 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚢 RELEASING: v0.8.134, 2026-10-28 — #1485, #1487, #1490
+>
+> Dan, after #1490: *"Once everything's done and merged, go ahead and fire off a release, please."* A **regular release, on his word**. Version, lock and dated notes land together (`0.8.135 — unreleased` is open). **In it:** #1485 (Collapse on submit removed entirely; a saved setting is wiped at boot), #1487 (folders with `_` or other non-alphanumerics resume again: `slugForCwd` follows the CLI's rule; the lost SK-929 conversation is reachable from 🕘), #1490 (the mode badge is gone from the card header; the composer chip is the one place). **None is hand-tested**: three dogfood UNTESTED rows. **DO NOT CUT ANOTHER unless he asks.**
+
 > # ✅ DONE: #1490 — the mode badge is gone from the session card header (PR #1491 merged `956b6f0c`, issue closed, NOT RELEASED)
 >
 > **Dan (2026-10-28):** *"get rid of the edit setting … plan, auto-edit, etc. … shown at the top of the session next to the Waiting and the Context button … We already have it down at the bottom left … That way, we can expand our label."* Filed as #1490 and done the same day.
