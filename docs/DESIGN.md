@@ -1894,8 +1894,8 @@ badge (§5.11) so a glance answers "will this one interrupt me?"
 >   server (§5.16's ladder, issue 974's revoke). It now shows on the chip as
 >   **ask · allow all** (since when, until restart). Clicking the chip offers
 >   **Stop allowing all**. The header badge shows it too, and the tab, rail row
->   and strip pill wear a quiet mark *(both since amended, 2026-10-26, #1462 —
->   see below)*. Main publishes when the grant was made
+>   and strip pill wear a quiet mark *(both since amended: the marks 2026-10-26,
+>   #1462, and the header badge 2026-10-28, #1490 — see below)*. Main publishes when the grant was made
 >   (`StandingGrants.allowAllSince`) on the existing standing-grants push.
 > - **The user's own Claude Code allow rules**, which the CLI honours in its
 >   `default` mode before Switchboard is consulted. This is correct
@@ -1913,7 +1913,9 @@ badge (§5.11) so a glance answers "will this one interrupt me?"
 >   session names, could not tell what they meant, and had them removed. The
 >   grant is now stated in two places only: the shield chip (**ask · allow
 >   all**) and the header badge. #1434's acceptance ("never reads plain **ask**
->   anywhere") still holds, because neither of those reads plain ask.
+>   anywhere") still holds, because neither of those reads plain ask. *(The
+>   header badge went too, 2026-10-28, #1490 — see below; the chip is now the
+>   one place.)*
 > - **The shield opens a ticked list instead of cycling.** A click used to step
 >   to the next mode blind, and with allow-all on it grew two inline buttons
 >   (**Stop allowing all**, **Change mode (next: …)**), which Dan found
@@ -1925,6 +1927,19 @@ badge (§5.11) so a glance answers "will this one interrupt me?"
 >   changes the mode and leaves allow-all on (the ticked row shows it); Dan may
 >   flip that. Turning allow-all ON stays on the approval bar. No keyboard
 >   shortcut or palette command cycled the mode, so nothing else changed.
+
+> **The header badge is gone; the shield chip is the only place a mode shows
+> *(amended 2026-10-28, Dan, #1490)*.** The card header's read-only badge
+> (**plan** / **auto-edit** / **full-auto**, and **ask · allow all**) repeated
+> what the chip under the prompt box already says and sets. Dan removed it so
+> the task label gets the width. **The trade, recorded rather than accidental:**
+> the badge was the header's warning for a session that will never ask
+> (full-auto or allow-all, in `--status-crashed-ink`). That warning now lives on
+> the chip alone, so a folded card or a background tab does not show it in its
+> header. #1434's "never reads plain **ask** anywhere" still holds — nothing
+> else shows a mode to misread. The `badge` tooltip scope and its two strings
+> went with it; the card still reads the CLI's own mode change (#1072) and hands
+> it to the chip as `liveAutonomy`.
 
 ### 5.10 The Session view — the primary working surface
 

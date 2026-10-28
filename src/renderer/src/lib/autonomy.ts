@@ -99,19 +99,12 @@ export const isAutonomy = isAutonomyMode;
 // command), so it went.
 
 /**
- * Which control is being hovered — the second half of the tooltip.
+ * The hover text for one mode on the shield button under the prompt box.
  *
- * The description of a mode is the same everywhere; what differs is WHAT THIS
- * CONTROL DOES WITH IT. Two scopes, one per surface (a third, `workspace`, was
- * the title-bar chip #1434 removed):
- *
- *   session    the shield button under the prompt box — this session, next start
- *   badge      the card header's read-only marker — states, does not set
- */
-export type AutonomyScope = 'session' | 'badge';
-
-/**
- * The hover text for one mode on one control.
+ * The ONE control that shows a mode. There used to be a `scope` saying which
+ * control was hovered: a `workspace` title-bar chip (removed by #1434) and a
+ * read-only `badge` in the card header (removed by #1490). With one surface
+ * left, the second paragraph is simply what that button does.
  *
  * Two paragraphs separated by a blank line, because a native `title` honours
  * newlines and a wall of one paragraph is what the issue was complaining
@@ -124,7 +117,6 @@ export type AutonomyScope = 'session' | 'badge';
 export function autonomyTooltip(
   t: TFunction,
   mode: string | undefined,
-  scope: AutonomyScope,
   /**
    * Whether the control's AI is Claude (#1316). The mode's own sentence is
    * AI-neutral; what Claude Code does with it (its `acceptEdits`, its
@@ -133,8 +125,8 @@ export function autonomyTooltip(
    */
   claude = false
 ): string {
-  const how = t(`autonomy.scope.${scope}`);
-  const howClaude = claude && scope === 'session' ? ` ${t('autonomy.claude.session')}` : '';
+  const how = t('autonomy.scope.session');
+  const howClaude = claude ? ` ${t('autonomy.claude.session')}` : '';
   return `${autonomyDescription(t, mode, claude)}${PARAGRAPH}${how}${howClaude}`;
 }
 
@@ -160,7 +152,7 @@ const CLAUDE_NOTES: ReadonlySet<Autonomy> = new Set<Autonomy>(['ask', 'plan', 'a
 export const PARAGRAPH = String.fromCharCode(10, 10);
 
 /**
- * What the mode chip and the header badge SAY (#1434).
+ * What the mode chip SAYS (#1434).
  *
  * `allowAll` is "Allow all (this session)" in force: main answers every gated
  * call Allow, with no hold and no sound, until the session restarts. A chip
@@ -184,16 +176,14 @@ export function autonomyLabel(t: TFunction, mode: string | undefined, allowAll: 
  */
 export function allowAllTooltip(
   t: TFunction,
-  grants: { allowAllSince?: number; files: readonly string[] },
-  /** how this surface stops it: the chip's menu has the ticked row, the badge points at the chip */
-  scope: AutonomyScope
+  grants: { allowAllSince?: number; files: readonly string[] }
 ): string {
   const since =
     grants.allowAllSince !== undefined
       ? t('autonomy.allowAll.since', { time: clockTime(grants.allowAllSince) })
       : t('autonomy.allowAll.sinceUnknown');
   const files = grants.files.length > 0 ? ` ${t('autonomy.allowAll.files', { count: grants.files.length })}` : '';
-  const how = t(scope === 'session' ? 'autonomy.allowAll.howSession' : 'autonomy.allowAll.howBadge');
+  const how = t('autonomy.allowAll.howSession');
   return `${since} ${how}${files}`;
 }
 

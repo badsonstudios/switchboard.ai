@@ -518,7 +518,6 @@
     },
     "scope": {
       "session": "Click to pick this session's mode from a list. If this session's AI can switch mode mid-flight it switches straight away; if not, the change applies the next time this session starts or resumes.",
-      "badge": "The mode this session is running at. Change it with the shield button under the prompt box.",
       "moved": "This session is in {now} right now. {ai} changed it itself — approving a plan takes a session out of plan mode. The mode below is the one it goes back to.",
       "movedUnnamed": "This session is in {now} right now. Its AI changed it itself — approving a plan takes a session out of plan mode. The mode below is the one it goes back to."
     },
@@ -528,7 +527,6 @@
       "since": "Allowing all since {time}: this session runs every tool call without asking you. Questions it asks you still come through.",
       "sinceUnknown": "Allowing all: this session runs every tool call without asking you. Questions it asks you still come through.",
       "howSession": "It lasts until the session restarts. To stop it, click here and untick Allow all (this session).",
-      "howBadge": "It lasts until the session restarts. To stop it, click the shield button under the prompt box.",
       "files": "{count, plural, one {# file is also always allowed.} other {# files are also always allowed.}}"
     },
     "menu": {

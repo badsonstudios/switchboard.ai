@@ -100,16 +100,7 @@ import {
   placeAt,
 } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
-import {
-  allowAllTooltip,
-  autonomyLabel,
-  autonomyTooltip,
-  DEFAULT_AUTONOMY,
-  isAutonomy,
-  PARAGRAPH,
-  type Autonomy,
-} from '../lib/autonomy';
-import { isClaudeAi } from '../lib/session-ai';
+import { DEFAULT_AUTONOMY, isAutonomy, type Autonomy } from '../lib/autonomy';
 import { bulkClose } from '../lib/pinning';
 import {
   mayRetire,
@@ -1610,9 +1601,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // you have opened something. Cheap — one IPC read per live id, then pushes.
   const standingGrants = useStandingGrants(live?.id ?? null);
   const standingCount = grantCount(standingGrants);
-  // "Allow all (this session)" is in force (#1434): the mode chip and the
-  // header badge say so, and the chip offers the way back out
-  const allowAllOn = standingGrants.allowAll;
   const stopAllowAll = React.useCallback((): void => {
     if (!live) return;
     // main's push is the only writer of the new state (StandingGrants.tsx's
@@ -2121,8 +2109,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // it was STARTED at, and for every change we make that is the whole story —
   // a changed setting applies at the next start. But the CLI changes mode by
   // itself: approve a plan and it leaves plan mode, announcing it in a status
-  // message. Until this existed nothing read that, and the badge went on
+  // message. Until this existed nothing read that, and the header badge went on
   // saying **plan** over a session that had started asking about each write.
+  // (That badge is gone, #1490; the composer chip reads this via `liveAutonomy`.)
   //
   // Push plus pull, cleared first, for exactly the reasons the model effect
   // below gives. `?.` on both calls: a window whose preload predates the
@@ -2144,8 +2133,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       off?.();
     };
   }, [live]);
-  /** what the header says: what the CLI announced, else what it started at */
-  const shownMode = liveMode ?? live?.autonomy;
   const [model, setModel] = React.useState<string | null>(null);
   React.useEffect(() => {
     if (!live) {
@@ -2964,39 +2951,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               </span>
             )}
             <span style={{ flex: 1, minInlineSize: 8 }} />
-            {/* #1434: shown at ask too while allow-all is on: a session that
-                will never ask must not read as a calm ask session anywhere */}
-            {shownMode && (shownMode !== 'ask' || allowAllOn) && (
-              <span
-                data-testid="card-mode-badge"
-                data-allow-all={allowAllOn ? 'true' : undefined}
-                title={
-                  allowAllOn
-                    ? [
-                        allowAllTooltip(t, standingGrants, 'badge'),
-                        autonomyTooltip(t, shownMode, 'badge', isClaudeAi(headerProvider)),
-                      ].join(PARAGRAPH)
-                    : autonomyTooltip(t, shownMode, 'badge', isClaudeAi(headerProvider))
-                }
-                style={{
-                  fontSize: 9.5,
-                  fontFamily: 'var(--font-mono)',
-                  // -ink, not the raw hue: this is 9.5px TEXT on --panel2, where
-                  // the hue measures 3.1:1 on daylight (#221)
-                  // allow-all wears full-auto's warning ink (#1434): both ask nothing
-                  color:
-                    shownMode === 'full-auto' || allowAllOn ? 'var(--status-crashed-ink)' : 'var(--muted)',
-                  // its own field (#905): neither ink is AA on the identity wash
-                  background: 'var(--panel2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 4,
-                  paddingInline: 5,
-                  paddingBlock: 1,
-                }}
-              >
-                {autonomyLabel(t, shownMode, allowAllOn)}
-              </span>
-            )}
+            {/* No mode badge here (#1490). The header used to repeat the mode
+                (plan / auto-edit / full-auto, and "ask · allow all") that the
+                chip under the prompt box already shows and sets; Dan removed
+                it so the task label gets the width. The chip is now the one
+                place a never-asks session is flagged in warning ink. */}
             <StatusPill
               status={headerPill.status}
               label={t(headerPill.labelKey)}

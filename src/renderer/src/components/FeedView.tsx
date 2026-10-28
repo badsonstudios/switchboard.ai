@@ -4880,12 +4880,12 @@ const Composer = React.memo(function Composer({
             // has already left.
             title={
               (allowAllOn && standingGrants
-                ? allowAllTooltip(t, standingGrants, 'session') + PARAGRAPH
+                ? allowAllTooltip(t, standingGrants) + PARAGRAPH
                 : '') +
               (noModes ??
               (movedTo
-                ? `${sessionAi.name ? t('autonomy.scope.moved', { now: t(`autonomy.${movedTo}`), ai: sessionAi.name }) : t('autonomy.scope.movedUnnamed', { now: t(`autonomy.${movedTo}`) })}\n\n${autonomyTooltip(t, autonomy, 'session', sessionAi.claude)}`
-                : autonomyTooltip(t, autonomy, 'session', sessionAi.claude)))
+                ? `${sessionAi.name ? t('autonomy.scope.moved', { now: t(`autonomy.${movedTo}`), ai: sessionAi.name }) : t('autonomy.scope.movedUnnamed', { now: t(`autonomy.${movedTo}`) })}\n\n${autonomyTooltip(t, autonomy, sessionAi.claude)}`
+                : autonomyTooltip(t, autonomy, sessionAi.claude)))
             }
             data-live-mode={movedTo ?? undefined}
             className={CHIP_CLASS}
