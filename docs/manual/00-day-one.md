@@ -45,8 +45,7 @@ anywhere in switchboard, and no switchboard account.
 **switchboard.ai itself.** Download the newest `switchboard-Setup-<version>.exe`
 from the project's Releases page on GitHub and run it. The installer is for
 Windows; that's the only platform with a published build today. The repository
-is private, so you need to have been given access to it before the Releases page
-will open.
+is public, so anyone can open the Releases page and download it.
 
 The installer is one click: no questions, no administrator prompt, and it
 installs for your user only. It is **not code-signed**, so a copy downloaded
@@ -259,7 +258,9 @@ Being straight about it, so you don't go looking:
 - **Several sessions fail at once** — it may not be you. See
   [Is it me or is it them?](14-provider-status.md)
 - **Something looks like a bug** — **Help ▸ Report a problem…** collects the logs
-  and files the report for you. Say what you did and what you expected.
+  and files the report on GitHub for you (or, if this computer isn't signed in
+  to GitHub, opens GitHub's form in your browser with it filled in). You need a
+  GitHub account. Say what you did and what you expected.
 
 ---
 

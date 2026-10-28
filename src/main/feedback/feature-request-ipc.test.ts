@@ -9,7 +9,7 @@ import { registerFeatureRequestIpc, sanitizeDraft } from './feature-request-ipc'
 import type { IpcBroker } from '../ipc/broker';
 import type { Logger } from '../log/logger';
 import type { FeedbackResult } from '../../shared/feedback';
-import { REPORT_EMAIL_TO, REPORT_REPO } from '../../shared/diagnostics';
+import { REPORT_REPO } from '../../shared/diagnostics';
 
 /** captures what `registerFeatureRequestIpc` registers so a test can call it */
 function harness(opts: { openFails?: boolean } = {}) {
@@ -51,21 +51,9 @@ describe('the channel it registers', () => {
 describe('the guard', () => {
   it('refuses a request with nothing in it, and opens nothing', async () => {
     const h = harness();
-    const r = await h.send({ title: 'x', details: '   ', channel: 'email' });
-    expect(r).toEqual({ ok: false, channel: 'email', problem: 'empty-details' });
+    const r = await h.send({ title: 'x', details: '   ', channel: 'ticket' });
+    expect(r).toEqual({ ok: false, channel: 'ticket', problem: 'empty-details' });
     expect(h.openExternal).not.toHaveBeenCalled();
-  });
-});
-
-describe('the email channel', () => {
-  it('hands the OS a mailto pre-addressed to the owner and pre-filled', async () => {
-    const h = harness();
-    const r = await h.send({ ...ask, channel: 'email' });
-    expect(r.ok).toBe(true);
-    const url = h.openExternal.mock.calls[0][0];
-    expect(url.startsWith(`mailto:${REPORT_EMAIL_TO.join(',')}?`)).toBe(true);
-    expect(url).toContain(encodeURIComponent('[switchboard feature] Pin a session'));
-    expect(url).toContain(encodeURIComponent('top of the rail'));
   });
 });
 
@@ -76,21 +64,32 @@ describe('the ticket channel', () => {
     expect(r).toEqual({ ok: true, channel: 'ticket' });
     const url = h.openExternal.mock.calls[0][0];
     expect(url.startsWith(`https://github.com/${REPORT_REPO}/issues/new?`)).toBe(true);
+    expect(url).toContain(encodeURIComponent('[switchboard feature] Pin a session'));
+    expect(url).toContain(encodeURIComponent('top of the rail'));
     // The whole local-first argument in one assertion: this opens a page, it
     // does not create anything. A POST would go to api.github.com.
     expect(url).not.toContain('api.github.com');
+  });
+
+  it('opens the form for an old renderer still asking for email — never a mailto (#1494)', async () => {
+    const h = harness();
+    const r = await h.send({ ...ask, channel: 'email' });
+    expect(r).toEqual({ ok: true, channel: 'ticket' });
+    const url = h.openExternal.mock.calls[0][0];
+    expect(url.startsWith('mailto:')).toBe(false);
+    expect(url.startsWith(`https://github.com/${REPORT_REPO}/issues/new?`)).toBe(true);
   });
 });
 
 describe('when the OS will not take it', () => {
   it('is a FAILURE the dialog can show, not a swallowed shrug', async () => {
-    // `openExternal` rejects when nothing is registered for the scheme — a
-    // machine with no mail client is the everyday case. The dialog closes on
-    // success, so calling this success would close the window over words that
-    // went nowhere. That is exactly the defect #896 fixed for the report path.
+    // `openExternal` rejects when nothing is registered for the scheme. The
+    // dialog closes on success, so calling this success would close the window
+    // over words that went nowhere. That is exactly the defect #896 fixed for
+    // the report path.
     const h = harness({ openFails: true });
-    const r = await h.send({ ...ask, channel: 'email' });
-    expect(r).toEqual({ ok: false, channel: 'email', problem: 'send-failed' });
+    const r = await h.send({ ...ask, channel: 'ticket' });
+    expect(r).toEqual({ ok: false, channel: 'ticket', problem: 'send-failed' });
     expect(h.warn).toHaveBeenCalled();
   });
 
@@ -103,33 +102,34 @@ describe('when the OS will not take it', () => {
 describe('what reaches the log', () => {
   it('records the channel and the size, never the words', async () => {
     const h = harness();
-    await h.send({ title: 'Secret plan', details: 'A very private idea.', channel: 'email' });
+    await h.send({ title: 'Secret plan', details: 'A very private idea.', channel: 'ticket' });
     const fields = JSON.stringify(h.info.mock.calls);
-    expect(fields).toContain('email');
+    expect(fields).toContain('ticket');
     expect(fields).not.toContain('Secret plan');
     expect(fields).not.toContain('very private idea');
   });
 });
 
 describe('sanitizeDraft — whatever crossed the wire', () => {
-  it('defaults an unknown channel to email rather than the private tracker', () => {
-    // Failing CLOSED in the useful direction: email always works for whoever is
-    // running the app, the ticket path needs access to a private repo.
-    expect(sanitizeDraft({ details: 'x', channel: 'wat' }).channel).toBe('email');
+  it('narrows every channel, email and junk included, to the ticket form', () => {
+    // The only channel left (#1494). An `'email'` from an older renderer must
+    // load as a valid value, not as something no code path handles.
+    expect(sanitizeDraft({ details: 'x', channel: 'email' }).channel).toBe('ticket');
+    expect(sanitizeDraft({ details: 'x', channel: 'wat' }).channel).toBe('ticket');
     expect(sanitizeDraft({ details: 'x', channel: 'ticket' }).channel).toBe('ticket');
   });
 
   it('survives junk, null and the wrong types without throwing', () => {
-    expect(sanitizeDraft(null)).toEqual({ title: '', details: '', channel: 'email' });
+    expect(sanitizeDraft(null)).toEqual({ title: '', details: '', channel: 'ticket' });
     expect(sanitizeDraft({ title: 7, details: [], channel: 3 })).toEqual({
       title: '',
       details: '',
-      channel: 'email',
+      channel: 'ticket',
     });
   });
 
   it('trims the title but leaves the details as typed', () => {
-    const d = sanitizeDraft({ title: '  pin  ', details: '  line\n\n  more  ', channel: 'email' });
+    const d = sanitizeDraft({ title: '  pin  ', details: '  line\n\n  more  ', channel: 'ticket' });
     expect(d.title).toBe('pin');
     // The body is the user's own formatting — trimming inside it would reflow
     // somebody's bullet list on the way out.

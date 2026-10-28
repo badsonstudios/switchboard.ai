@@ -1,6 +1,6 @@
 # Git Workflow — switchboard.ai
 
-- **Host:** private GitHub repo `badsonstudios/switchboard.ai`. Tracker:
+- **Host:** public GitHub repo `badsonstudios/switchboard.ai`. Tracker:
   GitHub issues, current milestone only (see `docs/plans/00-process.md`).
 - **`main` is always-working.** Never commit red to it; never merge red into it.
 - **EVERY commit reaches `main` through a PR — no exceptions (Dan,

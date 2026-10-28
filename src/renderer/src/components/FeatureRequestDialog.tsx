@@ -10,27 +10,26 @@
 // somebody thought of while using the app, and zipping their log files to carry
 // it would be evidence for a case nobody is making.
 //
-// NOTHING LEAVES THIS MACHINE FROM HERE. Both channels open a pre-filled form
-// in an application the user already owns — their mail client, or their browser
-// on GitHub's new-issue page — and wait for them to press Send in it. There is
-// no background submission and no telemetry, which is a hard constraint of the
-// item (P8) rather than a preference, and this shape is how it is kept: there
-// is no code path in this feature that could post anything.
+// NOTHING LEAVES THIS MACHINE FROM HERE. It opens a pre-filled form in an
+// application the user already owns — their browser, on GitHub's new-issue
+// page — and waits for them to press Submit in it. There is no background
+// submission and no telemetry, which is a hard constraint of the item (P8)
+// rather than a preference, and this shape is how it is kept: there is no code
+// path in this feature that could post anything.
 //
-// THE TICKET CHANNEL ONLY WORKS FOR SOMEONE WITH ACCESS TO A PRIVATE REPO —
-// today, the owner. It ships anyway, because filing his own tickets from inside
-// the app while dogfooding is what it is for in the near term, and it fails in
-// the only place it can: GitHub's own sign-in or 404 page, in the browser, with
-// nothing in the app broken. The manual says who it is for.
+// NO CHANNEL PICKER (#1494). There were two — email and the ticket form — and
+// email was removed once the repo went public. A picker with one choice in it
+// is a question with no answer, so the choice is gone, not just the option.
+// What the form needs (a GitHub account signed in in the browser) is said on
+// screen, because it is the one way this control can look broken to someone
+// who did nothing wrong.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { ComposeDialog, composeFieldStyle, composeLabelStyle } from './ComposeDialog';
 import { useModalDismiss } from '../lib/modal-dismiss';
 import {
-  FEEDBACK_CHANNELS,
   isSendable,
   type FeatureRequestDraft,
-  type FeedbackChannel,
   type FeedbackProblem,
   type FeedbackResult,
 } from '../../../shared/feedback';
@@ -47,9 +46,6 @@ const PROBLEM_KEY: Record<FeedbackProblem, string> = {
   'send-failed': 'sendFailed',
   unavailable: 'unavailable',
 };
-
-const LABEL: Record<FeedbackChannel, string> = { email: 'toEmail', ticket: 'toTicket' };
-const HINT: Record<FeedbackChannel, string> = { email: 'toEmailHint', ticket: 'toTicketHint' };
 
 /**
  * What went wrong, or null if nothing did.
@@ -70,7 +66,6 @@ export function FeatureRequestDialog(props: FeatureRequestDialogProps): React.JS
 
   const [title, setTitle] = React.useState('');
   const [details, setDetails] = React.useState('');
-  const [channel, setChannel] = React.useState<FeedbackChannel>('email');
   const [busy, setBusy] = React.useState(false);
   const [result, setResult] = React.useState<FeedbackResult | null>(null);
   /**
@@ -108,20 +103,20 @@ export function FeatureRequestDialog(props: FeatureRequestDialogProps): React.JS
     setBusy(true);
     setResult(null);
     void props
-      .onSubmit({ title, details, channel })
+      .onSubmit({ title, details, channel: 'ticket' })
       // `.catch` here rather than trusting the caller never to reject: a
       // component that depends on its parent not rejecting breaks when someone
       // rewires it.
-      .catch((): FeedbackResult => ({ ok: false, channel, problem: 'unavailable' }))
+      .catch((): FeedbackResult => ({ ok: false, channel: 'ticket', problem: 'unavailable' }))
       .then((r) => {
-        // no longer this dialog's business — the mail app or browser it opened
-        // is already on screen, and that is the whole of its confirmation
+        // no longer this dialog's business — the browser it opened is already
+        // on screen, and that is the whole of its confirmation
         if (attempt.current !== mine) return;
         // A HAND-OFF THAT WORKED CLOSES THE DIALOG (#896). The proof is outside
-        // this window — a mail client with the address filled in, or a GitHub
-        // form with the words in it — so leaving the dialog standing in front
-        // of it reads as a button that did nothing. Only a FAILURE keeps it,
-        // with the words intact, so the other channel is one click away.
+        // this window — a GitHub form with the words in it — so leaving the
+        // dialog standing in front of it reads as a button that did nothing.
+        // Only a FAILURE keeps it, with the words intact, so nothing typed is
+        // lost to a browser that would not open.
         if (feedbackProblem(r) === null) {
           close();
           return;
@@ -187,32 +182,12 @@ export function FeatureRequestDialog(props: FeatureRequestDialogProps): React.JS
         />
       </div>
 
-      <fieldset style={{ border: 0, margin: 0, padding: 0, display: 'grid', gap: 6 }}>
-        <legend style={{ ...label, padding: 0 }}>{t('feature.channel')}</legend>
-        {FEEDBACK_CHANNELS.map((c) => (
-          <label
-            key={c}
-            style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 6, fontSize: 12 }}
-          >
-            <input
-              type="radio"
-              name={`${fieldId}channel`}
-              data-feature-channel={c}
-              checked={channel === c}
-              onChange={() => setChannel(c)}
-            />
-            <span>
-              {t(`feature.${LABEL[c]}`)}
-              <span style={{ display: 'block', ...label }}>{t(`feature.${HINT[c]}`)}</span>
-            </span>
-          </label>
-        ))}
-      </fieldset>
-
-      {/* Said on screen rather than left to the manual: the repo is private, so
-          this is the one control in the app that can look broken to a user who
-          did nothing wrong. Only for the channel it is true of. */}
-      {channel === 'ticket' && <p style={{ margin: 0, ...label }}>{t('feature.ticketNote')}</p>}
+      {/* Said on screen rather than left to the manual: a browser that is not
+          signed in to GitHub lands on a sign-in page, which is the one way this
+          control can look broken to a user who did nothing wrong. */}
+      <p data-feature-ticket-note style={{ margin: 0, ...label }}>
+        {t('feature.ticketNote')}
+      </p>
 
       {/* The promise this whole feature rests on, where the user can read it
           before pressing the button — not only in the manual. */}

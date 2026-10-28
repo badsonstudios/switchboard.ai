@@ -232,9 +232,10 @@ reporting, no "phone home", and no account. If you turn automatic checks off
 and never press Update, switchboard.ai makes no network connections of its own
 at all.
 
-Right now the releases live in a private place, so the check needs credentials
-that are already on your machine. If it can't find any, checking is simply
-switched off — quietly, with no setup to do and no error to dismiss.
+Right now the check needs GitHub credentials that are already on your machine.
+If it can't find any, checking is simply switched off — quietly, with no setup
+to do and no error to dismiss. (The project's releases page is public, so you
+can always look for a newer version there yourself.)
 
 It looks in two places, in this order:
 

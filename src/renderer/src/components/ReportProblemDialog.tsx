@@ -61,18 +61,17 @@ const PROBLEM_KEY: Record<ReportProblem, string> = {
   'rate-limited': 'rateLimited',
   network: 'network',
   'bundle-failed': 'bundleFailed',
-  'mail-failed': 'mailFailed',
+  'browser-failed': 'browserFailed',
+  'too-long': 'tooLong',
   unavailable: 'unavailable',
 };
 
 const LABEL: Record<ReportDestination, string> = {
   github: 'toGithub',
-  email: 'toEmail',
   zip: 'toZip',
 };
 const HINT: Record<ReportDestination, string> = {
   github: 'toGithubHint',
-  email: 'toEmailHint',
   zip: 'toZipHint',
 };
 
@@ -167,8 +166,8 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
         // A SEND THAT WORKED CLOSES THE DIALOG. Leaving it open with a success
         // line at the foot of a scrolling form read, to the owner, as a button
         // that did nothing. Every successful destination already shows its own
-        // proof outside this window — the zip's folder is revealed, the mail app
-        // opens — and a filed issue is opened in the browser here, which is the
+        // proof outside this window — the zip's folder is revealed, GitHub's
+        // form opens in the browser — and a filed issue is opened in the browser here, which is the
         // one confirmation nobody can miss. Only a FAILURE keeps the dialog, so
         // the user can switch destination or try again with their words intact.
         if (reportProblem(r) === null) {
@@ -310,6 +309,15 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
               {t('report.tokenNotStored')}
             </span>
           )}
+          {/* Said BEFORE the hand-off (#1494): with no credential, Send opens
+              GitHub's form in the browser, and the zip has to be dragged on by
+              hand because a URL cannot carry a file. Only once main has
+              answered — a null status is "not asked yet", not "no sign-in". */}
+          {props.status !== null && !canFile && (
+            <span data-report-browser-note style={label}>
+              {t('report.browserNote')}
+            </span>
+          )}
           {!canFile && props.status?.storeAvailable === true && (
             <>
               <span style={label}>{t('report.tokenIntro')}</span>
@@ -332,7 +340,7 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
       )}
 
       {/* Only for GitHub: it explains why the zip is not attached to an ISSUE,
-          which is not a thing the email or zip destinations do. */}
+          which is not a thing the zip destination makes. */}
       {destination === 'github' && <p style={{ margin: 0, ...label }}>{t('report.bundleNote')}</p>}
     </ComposeDialog>
   );

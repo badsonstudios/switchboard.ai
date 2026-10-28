@@ -195,7 +195,7 @@ All tokens and keys live in **`.claude/.env`** (none are required yet).
 
 ## Source Control — GitHub
 
-- **Repo:** `https://github.com/badsonstudios/switchboard.ai` (private).
+- **Repo:** `https://github.com/badsonstudios/switchboard.ai` (public).
 - **Branches:** `main` is always-working; one `feature/s-<nn>-<slug>` (spike) or
   `feature/<issue#>-<slug>` branch per work item; PR references the issue
   (`Closes #<n>`); **Claude squash-merges once CI is green** — the gate is green

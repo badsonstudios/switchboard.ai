@@ -171,11 +171,13 @@ it works whether or not detailed capture has ever been on:
   detailed capture file and its `.1` sibling if they exist. That matters if the
   zip is what you are moving: drop it on the other computer and it explains
   itself, with no app needed to read it.
-- **Sending it to GitHub** files an issue with the numbers already in it. The
-  zip cannot be attached automatically — GitHub only accepts attachments through
-  its web form — so the issue tells you where the file is and you drag it on.
-- **Sending it to yourself** (choose the email or zip option) leaves the zip on
-  your disk and opens the folder with it selected, ready to copy to the other
+- **Sending it to GitHub** files an issue with the numbers already in it — or,
+  if this computer isn't signed in to GitHub, opens GitHub's new-issue form in
+  your browser with them filled in. The zip cannot be attached automatically —
+  GitHub only accepts attachments through its web form — so the issue tells you
+  where the file is and you drag it on.
+- **Keeping it for yourself** (choose the zip option) leaves the zip on your
+  disk and opens the folder with it selected, ready to copy to the other
   machine.
 
 If detailed capture has never been on, the report says exactly that rather than

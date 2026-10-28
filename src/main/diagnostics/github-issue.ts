@@ -70,12 +70,14 @@ const fail = (problem: ReportProblem): CreateIssueResult => ({
  *   It does NOT zero `x-ratelimit-remaining`, so keying only on that count
  *   reported "your token may have expired" to somebody who had simply filed
  *   two reports in a row. `update/checker.ts` already maps 429 this way.
- * - **404 is an AUTH fact here**, not a missing repo. The repo is private and
- *   GitHub deliberately will not confirm a private repo exists to a token that
- *   cannot see it — and `createIssue` has already short-circuited when there is
- *   no token at all. `checker.ts` makes the same call for the same reason.
- *   Calling it "refused" sends someone hunting for a typo in a repo name that
- *   is correct.
+ * - **404 is still read as AUTH**, though the repo is public now (#1494) and
+ *   its existence is no secret. The repo name is a constant that is known to
+ *   be right, and `createIssue` has already short-circuited when there is no
+ *   token at all — so a 404 on this POST is GitHub's documented habit of
+ *   answering 404 rather than 403 to a token that lacks write permission (a
+ *   classic token without `public_repo`, or a fine-grained one not granted
+ *   this repo). Calling it "refused" would send someone hunting for a typo in
+ *   a repo name that is correct, when the fix is the token.
  */
 function problemForStatus(status: number, headers: Headers): ReportProblem {
   if (status === 429) return 'rate-limited';
@@ -97,7 +99,8 @@ export async function createIssue(deps: CreateIssueDeps): Promise<CreateIssueRes
   const { token } = await resolveUpdateToken(deps.tokenSources);
   if (!token) {
     // Not an error state to shout about: a machine with no `gh` and nothing
-    // pasted simply cannot file, and the dialog offers email and zip instead.
+    // pasted cannot POST, and `diag:submit` hands the report to GitHub's
+    // new-issue form in the browser instead (#1494).
     deps.log?.('issue not filed: no credential could be resolved locally');
     return fail('no-token');
   }

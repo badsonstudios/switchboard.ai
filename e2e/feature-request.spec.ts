@@ -18,9 +18,8 @@
 // bypasses accelerators entirely — so the item's `click` is invoked through the
 // Electron API, which is the same function the OS would call.
 //
-// IT NEVER PRESSES SEND. Both channels end in someone else's application: a
-// mail client this suite has no business opening, or a browser pointed at a
-// real issue tracker. What Send composes is asserted in `shared/feedback.test.ts`
+// IT NEVER PRESSES SEND. It ends in someone else's application: a browser
+// pointed at a real issue tracker. What Send composes is asserted in `shared/feedback.test.ts`
 // against the string, which is the only honest place to assert it.
 import { test, expect } from '@playwright/test';
 import path from 'path';
@@ -85,11 +84,13 @@ test.describe('Feature request (#1008)', () => {
     const overflow = await dialog.evaluate((el) => el.scrollWidth - el.clientWidth);
     expect(overflow).toBeLessThanOrEqual(0);
 
-    // The sentence about the private tracker appears with the channel it is
-    // true of, and only then.
-    await expect(dialog).not.toContainText('issue tracker is private');
-    await w.locator('[data-feature-channel="ticket"]').check();
-    await expect(dialog).toContainText('issue tracker is private');
+    // No channel to choose any more (#1494 removed email), and the sentence
+    // saying the form needs a GitHub sign-in is on screen from the start.
+    await expect(dialog.locator('[data-feature-channel]')).toHaveCount(0);
+    await expect(dialog).not.toContainText('email');
+    await expect(dialog.locator('[data-feature-ticket-note]')).toContainText(
+      'signed in in your browser'
+    );
 
     await w.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);

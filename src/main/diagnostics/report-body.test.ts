@@ -1,7 +1,14 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { composeIssueBody, recentBusyMinutes, MAX_HEARTBEAT_LINES } from './report-body';
+import {
+  composeBrowserIssue,
+  composeIssueBody,
+  recentBusyMinutes,
+  MAX_HEARTBEAT_LINES,
+} from './report-body';
+import { REPORT_REPO } from '../../shared/diagnostics';
+import { MAX_ISSUE_URL_CHARS } from '../../shared/feedback';
 import { UNKNOWN_BUILD_IDENTITY } from '../../shared/build-identity';
 import { tempDir, cleanupTempDirs } from '../../test-temp-dirs';
 import { summarise } from '../../shared/perf';
@@ -169,5 +176,155 @@ describe('the Responsiveness section (#927)', () => {
     expect(section).not.toMatch(/\/(home|Users)\//); // a POSIX path
     expect(section).not.toContain('.ts');
     expect(section).not.toContain('2048'); // the draft LENGTH is not reported either
+  });
+});
+
+describe('composeBrowserIssue — the no-credential path (#1494)', () => {
+  const browserDeps = (over: Partial<Parameters<typeof composeBrowserIssue>[0]> = {}) => ({
+    ...deps(),
+    title: 'CPU pegged',
+    ...over,
+  });
+  const bodyOf = (url: string): string => decodeURIComponent(url.split('&body=')[1]);
+
+  it("is GitHub's new-issue FORM for this repo, titled with the subject", () => {
+    const r = composeBrowserIssue(browserDeps());
+    if (!r.ok) throw new Error('expected a url');
+    expect(r.url.startsWith(`https://github.com/${REPORT_REPO}/issues/new?title=`)).toBe(true);
+    expect(r.url).toContain(`title=${encodeURIComponent('CPU pegged')}&body=`);
+    expect(r.url).not.toContain('api.github.com');
+  });
+
+  it('puts the user’s words first, then the drag-the-zip line, then the diagnostics', () => {
+    const r = composeBrowserIssue(browserDeps());
+    if (!r.ok) throw new Error('expected a url');
+    const body = bodyOf(r.url);
+    expect(body.startsWith('the fans spun up and everything froze')).toBe(true);
+    const drag = body.indexOf('drag the diagnostic zip onto this issue');
+    expect(drag).toBeGreaterThan(0);
+    expect(body).toContain('switchboard-logs-v0.8.90-2026-09-18-1432.zip');
+    expect(body.indexOf('### Build and machine')).toBeGreaterThan(drag);
+  });
+
+  it('says so when there is no zip, instead of asking for one to be dragged on', () => {
+    const r = composeBrowserIssue(browserDeps({ bundlePath: null }));
+    if (!r.ok) throw new Error('expected a url');
+    const body = bodyOf(r.url);
+    expect(body).toContain('could not be written');
+    expect(body).not.toContain('drag the diagnostic zip');
+  });
+
+  it('flattens control characters in the title', () => {
+    const r = composeBrowserIssue(browserDeps({ title: 'a\nb' }));
+    if (!r.ok) throw new Error('expected a url');
+    expect(r.url.split('&body=')[0]).not.toContain('%0A');
+  });
+
+  it('LONG DIAGNOSTICS never push the URL over the cap, and the user’s text is whole', () => {
+    // Every heartbeat slot full, each line padded: the diagnostics alone are far
+    // past what a link can carry.
+    const fat = (i: number): string => beat('warn', i % 10).replace('}', `,"pad":"${'x'.repeat(900)}"}`);
+    const logsDir = logsWith(Array.from({ length: 40 }, (_, i) => fat(i)));
+    const description = 'line one\n\n' + 'a sentence the user wrote. '.repeat(60);
+    const r = composeBrowserIssue(browserDeps({ logsDir, description }));
+    if (!r.ok) throw new Error('expected a url');
+    expect(r.url.length).toBeLessThanOrEqual(MAX_ISSUE_URL_CHARS);
+    const body = bodyOf(r.url);
+    expect(body).toContain(description.trim());
+    expect(body).toContain('drag the diagnostic zip onto this issue');
+    expect(body).toContain('some diagnostics did not fit in a link. The full version is in the zip.');
+    // the footer survives the clamp too
+    expect(body).toContain('Help ▸ Report a problem');
+  });
+
+  it('trims the busy minutes BY LINE, oldest first, and keeps Responsiveness whole', () => {
+    // A realistic "it feels slow" log: the twelve-line cap full of long JSON
+    // heartbeats, which alone would fill a link. Character trimming from the
+    // end used to cut Responsiveness every time and leave the json fence open.
+    const real = (i: number): string =>
+      `{"ts":"2026-10-28T1${i % 10}:00:00.000Z","level":"warn","subsystem":"cpu","msg":"cpu heartbeat","coreCount":32,"totalCores":${i},"idleMs":${i * 1000},"rssMb":812,"processes":[{"type":"Browser","pid":${1000 + i},"cpu":${i}.5},{"type":"GPU","pid":${2000 + i},"cpu":3.1},{"type":"Tab","pid":${3000 + i},"cpu":41.7,"name":"switchboard.ai"}],"lagMs":${i * 7}}`;
+    const lines = Array.from({ length: 12 }, (_, i) => real(i));
+    const logsDir = logsWith(lines);
+    const perf = summarise({
+      interactions: [{ name: 'keystroke', ms: 41, at: 1 }],
+      longTasks: [{ at: 1, ms: 90 }],
+      keystrokes: [],
+      loop: { p50: 1.2, p99: 48, maxMs: 310 },
+    });
+    const r = composeBrowserIssue(browserDeps({ logsDir, perf }));
+    if (!r.ok) throw new Error('expected a url');
+    expect(r.url.length).toBeLessThanOrEqual(MAX_ISSUE_URL_CHARS);
+    const body = bodyOf(r.url);
+
+    expect(body).toContain('### Build and machine');
+    expect(body).toContain('### Responsiveness');
+    expect(body).toContain('keystroke');
+    // some lines were dropped, and they were the OLDEST: the newest survives
+    expect(body).not.toContain(lines[0]);
+    expect(body).toContain(lines[11]);
+    // every fence is closed, so the note and the footer are not swallowed
+    expect((body.match(/```/g) ?? []).length % 2).toBe(0);
+    const note = body.indexOf('some diagnostics did not fit in a link');
+    expect(note).toBeGreaterThan(body.lastIndexOf('```'));
+  });
+
+  it('says the busy minutes were left out, not that there were none, when no line fits', () => {
+    const fat = (i: number): string => beat('warn', i).replace('}', `,"pad":"${'"'.repeat(2000)}"}`);
+    const r = composeBrowserIssue(browserDeps({ logsDir: logsWith([fat(1), fat(2)]) }));
+    if (!r.ok) throw new Error('expected a url');
+    const body = bodyOf(r.url);
+    expect(body).toContain('Left out to fit in a link');
+    expect(body).not.toContain('None recorded');
+  });
+
+  it('a lone surrogate in what the user typed does not throw (#1494)', () => {
+    const lone = String.fromCharCode(0xd83c);
+    let r: ReturnType<typeof composeBrowserIssue> | undefined;
+    expect(() => {
+      r = composeBrowserIssue(browserDeps({ title: `t${lone}`, description: `d${lone}x` }));
+    }).not.toThrow();
+    expect(r?.ok).toBe(true);
+  });
+
+  it('clips a paragraph-long title instead of calling the description too long', () => {
+    const r = composeBrowserIssue(browserDeps({ title: 'x'.repeat(3000) }));
+    if (!r.ok) throw new Error('expected a url');
+    const title = decodeURIComponent(r.url.split('&body=')[0].split('title=')[1]);
+    expect(title.length).toBeLessThanOrEqual(120);
+    expect(title.endsWith('...')).toBe(true);
+  });
+
+  it('honours a smaller cap the same way', () => {
+    const r = composeBrowserIssue(browserDeps({ maxUrlChars: 1200 }));
+    if (!r.ok) throw new Error('expected a url');
+    expect(r.url.length).toBeLessThanOrEqual(1200);
+    expect(bodyOf(r.url)).toContain('the fans spun up and everything froze');
+  });
+
+  it('a description that alone will not fit is TOO-LONG — never cut', () => {
+    const r = composeBrowserIssue(browserDeps({ description: 'word '.repeat(3000) }));
+    expect(r).toEqual({ ok: false, problem: 'too-long' });
+  });
+
+  it('an empty description is marked rather than left blank', () => {
+    const r = composeBrowserIssue(browserDeps({ description: '   ' }));
+    if (!r.ok) throw new Error('expected a url');
+    expect(bodyOf(r.url).startsWith('_(no description given)_')).toBe(true);
+  });
+});
+
+describe('composeIssueBody after the split (#1494)', () => {
+  it('still carries every section in the order the API path always posted', () => {
+    const body = composeIssueBody(deps());
+    const order = [
+      'the fans spun up',
+      '### Build and machine',
+      '### Recent busy minutes',
+      '### Responsiveness',
+      '### Diagnostic bundle',
+      '<sub>Filed from switchboard.ai',
+    ].map((s) => body.indexOf(s));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
   });
 });
