@@ -3,6 +3,12 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE: #1490 — the mode badge is gone from the session card header (PR #1491 merged `956b6f0c`, issue closed, NOT RELEASED)
+>
+> **Dan (2026-10-28):** *"get rid of the edit setting … plan, auto-edit, etc. … shown at the top of the session next to the Waiting and the Context button … We already have it down at the bottom left … That way, we can expand our label."* Filed as #1490 and done the same day.
+>
+> **Done:** `card-mode-badge` removed from `SessionGrid.tsx` (with header-only `shownMode`/`allowAllOn`); `liveMode` stays, it feeds the composer chip (#1072). `autonomyTooltip`/`allowAllTooltip` lost their single-valued `scope` and two badge strings. **Recorded trade:** the never-asks warning (full-auto / allow-all) now lives on the composer chip only, so a folded card or background tab does not show it in its header (DESIGN §5.9 amendment, manual 04). CHANGELOG `Changed` in `0.8.134 — unreleased`; dogfood row UNTESTED. **Gate:** unit 15,267 + 7 skipped (3 new no-badge tests fail on old code), `npm run typecheck`, lint, full e2e 555 + 10 skipped + #1320 once (passed alone), CI 4/4 (run 40723648320). Review: one blocker (a test on the old 4-arg signature, caught only by `tsconfig.web.json`; `npm run typecheck` is the command, not `tsc -p tsconfig.json`), fixed.
+
 > # ✅ DONE: #1487 — "Failed to resume a session": folders with `_` never resumed (PR #1488 merged `f9d7f58c`, issue closed, NOT RELEASED)
 >
 > **Dan (2026-10-28), filed from 0.8.133:** the SK-929 session on `C:\Development\SWKeyServer\SOLOServerInstances_svn\Managed` came back empty after the morning update. **Cause, from the bundle:** at 12:27 the card's first look logged `auto label dropped … the conversation could not be reopened` then `resumed:false`; the transcript `b63fbf75…` was bound to it the day before. `slugForCwd` replaced only `\ / : .` and space, while the CLI replaces EVERY non-alphanumeric character (and truncates past 200 with a hash of the raw path) — read from the PATH binary 2.1.312 and confirmed with `claude -p` in real folders. So `_` folders were looked up under the wrong directory: resume refused, 🕘 list empty, picking from all-projects refused too. **The conversation is still on Dan's disk.**
