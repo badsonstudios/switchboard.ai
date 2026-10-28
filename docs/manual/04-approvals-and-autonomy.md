@@ -193,11 +193,14 @@ ticked: **✓ Allow all (this session)**.
 The line only appears while Allow all is on. Turning it on is still done from
 the approval bar.
 
-The card's header shows the same **ask · allow all** marker. Those two places
-are where it shows: the session's tab, its row in the sessions list and its
-pill on the strip don't mark it. *(Earlier versions put a small **✓✓** beside
-the session's name there. It was easy to mistake for something else, so it's
-gone.)*
+The chip is the **one** place it shows: the card's header, the session's tab,
+its row in the sessions list and its pill on the strip don't mark it. So a
+session you have folded away or left on a background tab doesn't remind you
+it is allowing everything; open it and look under the prompt box. *(The
+card's header used to repeat the mode, and this marker, in a small label
+beside **Waiting**. It was taken out so the session's label gets that
+room. Earlier versions also put a small **✓✓** beside the session's name on
+its tab and row; it was easy to mistake for something else, so it's gone.)*
 
 Standing approvals last as long as the *running session* does. Restart it, or
 close and reopen the card, and it asks again from scratch. Nothing is saved to
@@ -424,8 +427,7 @@ one you want. It works like changing the model: you always see what you are
 picking, and nothing changes until you pick.
 
 - **Hover a line** in the list to read what that mode does. Hover the chip
-  itself for the mode it is on now. The same hover works on the little mode
-  marker in a card's header.
+  itself for the mode it is on now.
 - **From the keyboard:** with the chip focused, **Enter** or **Space** opens
   the list, **Up** and **Down** move, **Enter** picks, and **Esc** closes it
   without changing anything.
@@ -461,8 +463,7 @@ about them.
 **The one time a session changes mode by itself** is when you approve a plan:
 it leaves **plan** and carries on as an **ask** session. The chip under the
 prompt box then reads **ask now · plan at next start** — where the session is,
-and what it is set to go back to — and the **plan** badge on the card's header
-goes away, as it does for any ask session. Pick from the chip's list to change
+and what it is set to go back to. Pick from the chip's list to change
 what it starts at next time; if you pick the mode the session is already in,
 it goes back to showing just that one.
 
@@ -492,8 +493,7 @@ the bar, so the buttons stay where they are.
   session can.
 - **The mode chip follows it out of plan mode.** Under the prompt box it reads
   **ask now · plan at next start**: the session is an ask session from here,
-  and it is still *set* to start in plan mode next time. The **plan** badge on
-  the card's header goes away.
+  and it is still *set* to start in plan mode next time.
 
 One thing to know: the bar shows the plan on a single line, so a long plan is
 hard to read there. That is a known rough edge.

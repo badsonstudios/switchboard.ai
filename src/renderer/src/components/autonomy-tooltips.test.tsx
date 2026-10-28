@@ -167,7 +167,7 @@ describe('the permission-mode hover', () => {
     for (const mode of AUTONOMIES) {
       const host = await composerHost(mode);
       const chip = titled(host, 'composer-autonomy');
-      expect(chip.title).toBe(autonomyTooltip(i18next.t.bind(i18next), mode, 'session'));
+      expect(chip.title).toBe(autonomyTooltip(i18next.t.bind(i18next), mode));
       expect(chip.title).toContain(en.autonomy.desc[mode]);
     }
   });
@@ -262,7 +262,7 @@ describe('the mode chip while allow-all is on (#1434)', () => {
     expect(chip.textContent).toBe('🛡 ask · allow all');
     expect(chip.dataset.allowAll).toBe('true');
     const t = i18next.t.bind(i18next);
-    expect(chip.title.startsWith(allowAllTooltip(t, ON, 'session'))).toBe(true);
+    expect(chip.title.startsWith(allowAllTooltip(t, ON))).toBe(true);
     expect(chip.title).toContain(new Date(ON.allowAllSince).toLocaleTimeString(i18next.language, { timeStyle: 'short' }));
     expect(chip.title).toContain('until the session restarts');
     expect(chip.title).toContain('2 files are also always allowed');

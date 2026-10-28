@@ -153,6 +153,13 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   it the next time it starts. Folding a session away **by hand** works exactly
   as before. A session that the old setting had already folded away stays
   folded until you click it in the Sessions list.
+- **A session's header no longer repeats its mode.** The small **plan** /
+  **auto-edit** / **full-auto** label beside **Waiting** is gone, and so is its
+  **ask · allow all** version. The shield chip under the prompt box already
+  showed and changed the mode, and it is now the only place the mode appears.
+  The session's label gets the space back. One thing to know: a session that
+  is allowing everything is flagged on that chip only, so a folded card or a
+  background tab no longer shows it in its header.
 
 ### Fixed
 

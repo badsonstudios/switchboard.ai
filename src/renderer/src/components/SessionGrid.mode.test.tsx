@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-// #1072 — the card's mode badge follows the CLI when the CLI changes mode itself.
+// #1072 — the card follows the CLI when the CLI changes mode itself (the header
+// badge that used to show it is gone, #1490; the composer chip shows it now).
 //
 // Approve a plan and Claude Code leaves plan mode, announcing it in a `status`
 // message. Nothing read it: the badge is drawn from the mode the session was
@@ -44,8 +45,8 @@ vi.mock('./TerminalPane', () => ({
 }));
 // The stub RENDERS the prop — see the header.
 vi.mock('./FeedView', () => ({
-  FeedView: (p: { model?: string }): React.JSX.Element => (
-    <div data-testid="feed-view" data-feed-model={p.model ?? ''} />
+  FeedView: (p: { model?: string; liveAutonomy?: string }): React.JSX.Element => (
+    <div data-testid="feed-view" data-feed-model={p.model ?? ''} data-live-autonomy={p.liveAutonomy} />
   ),
 }));
 
@@ -181,40 +182,45 @@ afterEach(async () => {
   root = null;
 });
 
-describe('the mode badge follows what the session SAYS it is in (#1072)', () => {
-  const badge = (): string | null =>
-    host.querySelector<HTMLElement>('[data-testid="card-mode-badge"]')?.textContent ?? null;
+// #1490 moved these off the card header: the header badge is gone, and the
+// chip under the prompt box is the one place a mode is shown. The card's half
+// is unchanged — read the CLI's announcement (push plus pull) and hand it to
+// the composer as `liveAutonomy` — so that is what is checked here, through the
+// stub. The chip drawing it ("ask now · plan at next start") is the composer's,
+// and `e2e/stream-approval.spec.ts` drives it against the real app.
+describe('the card hands the composer what the session SAYS it is in (#1072, #1490)', () => {
+  const liveMode = (): string | undefined =>
+    host.querySelector<HTMLElement>('[data-testid="feed-view"]')?.dataset.liveAutonomy;
 
-  it('starts on the mode the session was started at', async () => {
+  it('hands nothing over until the session announces a mode', async () => {
     await mountCard();
-    expect(badge()).toContain('plan');
+    expect(host.querySelector('[data-testid="feed-view"]')).not.toBeNull();
+    expect(liveMode()).toBeUndefined();
   });
 
-  it('drops "plan" the moment the CLI says it has left plan mode — the report', async () => {
+  it('hands over "ask" the moment the CLI says it has left plan mode — the report', async () => {
     await mountCard();
-    expect(badge()).toContain('plan');
     await act(async () => {
       pushMode({ sessionId: 'live-1', mode: 'ask' });
     });
-    // an ask session shows no badge at all, and now neither does this one
-    expect(badge()).toBeNull();
+    expect(liveMode()).toBe('ask');
   });
 
   it('shows the mode of a session that had ALREADY left plan mode when the card mounted', async () => {
     // The push fires once, on the change. A card opened afterwards missed it.
     pulledMode = 'ask';
     await mountCard();
-    expect(badge()).toBeNull();
+    expect(liveMode()).toBe('ask');
   });
 
   it('follows a move INTO a mode too', async () => {
     startedAt = 'ask';
     await mountCard();
-    expect(badge()).toBeNull();
+    expect(liveMode()).toBeUndefined();
     await act(async () => {
       pushMode({ sessionId: 'live-1', mode: 'auto-edit' });
     });
-    expect(badge()).toContain('auto-edit');
+    expect(liveMode()).toBe('auto-edit');
   });
 
   it('ignores another session`s announcement', async () => {
@@ -222,7 +228,7 @@ describe('the mode badge follows what the session SAYS it is in (#1072)', () => 
     await act(async () => {
       pushMode({ sessionId: 'someone-else', mode: 'ask' });
     });
-    expect(badge()).toContain('plan');
+    expect(liveMode()).toBeUndefined();
   });
 
   it('ignores a mode it has no name for, rather than drawing it', async () => {
@@ -230,7 +236,7 @@ describe('the mode badge follows what the session SAYS it is in (#1072)', () => 
     await act(async () => {
       pushMode({ sessionId: 'live-1', mode: 'dontAsk' });
     });
-    expect(badge()).toContain('plan');
+    expect(liveMode()).toBeUndefined();
   });
 });
 
@@ -247,32 +253,37 @@ describe('a NEW card starts at ask, whatever the old title-bar chip stored (#143
   });
 });
 
-describe('allow-all on the card header (#1434)', () => {
-  const badgeEl = (): HTMLElement | null =>
-    host.querySelector<HTMLElement>('[data-testid="card-mode-badge"]');
+// The chip under the prompt box says all of this instead, allow-all included
+// (`autonomy-tooltips.test.tsx` covers its label and tooltip).
+describe('no mode badge in the card header (#1490)', () => {
+  const badgeEl = (): HTMLElement | null => host.querySelector<HTMLElement>('[data-testid="card-mode-badge"]');
 
-  it('an ask session on allow-all shows the badge, saying so; revoking clears it', async () => {
-    startedAt = 'ask';
-    grants = { allowAll: true, allowAllSince: Date.UTC(2026, 9, 23, 14, 2), files: [] };
+  it('shows none at any mode', async () => {
+    startedAt = 'full-auto';
     await mountCard();
-    expect(badgeEl()?.textContent).toBe('🛡 ask · allow all');
-    expect(badgeEl()?.dataset.allowAll).toBe('true');
-    expect(badgeEl()?.title).toContain('until the session restarts');
-    // main's push after a revoke — from the chip, the card menu, anywhere
+    expect(badgeEl()).toBeNull();
+    // ...nor once the CLI moves it somewhere else
     await act(async () => {
-      pushGrants({ sessionId: 'live-1', allowAll: false, files: [] });
+      pushMode({ sessionId: 'live-1', mode: 'auto-edit' });
     });
-    // a plain ask session shows no badge at all
     expect(badgeEl()).toBeNull();
   });
 
-  it('a grant pushed while the card is up turns the badge on', async () => {
+  it('shows none with allow-all on, where it used to say so in warning ink (#1434)', async () => {
     startedAt = 'ask';
+    grants = { allowAll: true, allowAllSince: Date.UTC(2026, 9, 23, 14, 2), files: [] };
     await mountCard();
     expect(badgeEl()).toBeNull();
+    expect(host.textContent).not.toContain('allow all');
+  });
+
+  it('a grant pushed while the card is up does not bring one back', async () => {
+    startedAt = 'ask';
+    await mountCard();
     await act(async () => {
       pushGrants({ sessionId: 'live-1', allowAll: true, allowAllSince: 1, files: [] });
     });
-    expect(badgeEl()?.textContent).toBe('🛡 ask · allow all');
+    expect(badgeEl()).toBeNull();
+    expect(host.textContent).not.toContain('allow all');
   });
 });
