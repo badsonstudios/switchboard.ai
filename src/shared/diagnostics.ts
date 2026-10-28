@@ -11,21 +11,28 @@ import type { PerfSummary } from './perf';
 
 /** Where a finished report goes. */
 export type ReportDestination =
-  /** POST a new issue to the project's GitHub repo */
+  /**
+   * A new issue on the project's GitHub repo: POSTed through the API when a
+   * credential resolves, otherwise GitHub's pre-filled new-issue form in the
+   * user's browser (#1494)
+   */
   | 'github'
-  /** hand the zip to the user's mail client (`mailto:` — see the note below) */
-  | 'email'
   /** just build the zip and reveal it; file it however you like */
   | 'zip';
 
-export const REPORT_DESTINATIONS: ReportDestination[] = ['github', 'email', 'zip'];
+/**
+ * There was an `'email'` destination until #1494. It is gone from the union;
+ * `diag:submit` reads anything it does not recognise — that included — as
+ * `'zip'`, which builds and reveals the evidence and sends nothing.
+ */
+export const REPORT_DESTINATIONS: ReportDestination[] = ['github', 'zip'];
 
 /**
  * The repo issues are filed against.
  *
- * A constant rather than a literal at the call site for the reason #815 gives
- * about the email addresses: it is configuration, and configuration someone
- * will one day need to change should be findable by name rather than by grep.
+ * A constant rather than a literal at the call site: it is configuration, and
+ * configuration someone will one day need to change should be findable by name
+ * rather than by grep.
  */
 export const REPORT_REPO = 'badsonstudios/switchboard.ai';
 
@@ -39,12 +46,9 @@ export const REPORT_REPO = 'badsonstudios/switchboard.ai';
  */
 export const GITHUB_TOKEN_SECRET_KEY = 'github.token';
 
-/** Addresses the email destination pre-fills. Configuration, not literals. */
-export const REPORT_EMAIL_TO = ['dheinz@badsonstudios.com', 'dheinz100@gmail.com'];
-
 /** What the user typed, plus where they want it to go. */
 export interface ReportDraft {
-  /** the issue title / mail subject — trimmed, never empty by the time it ships */
+  /** the issue title — trimmed, never empty by the time it ships */
   subject: string;
   /** free text; becomes the issue body above the auto-collected diagnostics */
   description: string;
@@ -69,11 +73,15 @@ export interface ReportDraft {
 
 /** Why a report could not be filed. Each one gets its own sentence on screen. */
 export type ReportProblem =
-  /** no credential anywhere: no env var, nothing in the store, no `gh` */
+  /**
+   * no credential anywhere: no env var, nothing in the store, no `gh`. What
+   * `createIssue` answers; `diag:submit` turns it into the browser hand-off
+   * (#1494), so the dialog does not see it from there
+   */
   | 'no-token'
-  /** the token exists but GitHub refused it (401/403) */
+  /** the token exists but GitHub refused it (401/403, and 404 — see `github-issue.ts`) */
   | 'auth'
-  /** GitHub said no for some other reason, or the repo is wrong (404) */
+  /** GitHub said no for some other reason */
   | 'refused'
   /** rate limited — worth saying, because it resolves itself */
   | 'rate-limited'
@@ -84,11 +92,17 @@ export type ReportProblem =
   /** the user gave us nothing to file */
   | 'empty-subject'
   /**
-   * the mail app could not be opened. A failure, not a shrug: a successful send
-   * closes the dialog, and a "success" here would close it on words that went
-   * nowhere (#896)
+   * the browser could not be opened for the no-credential hand-off (#1494). A
+   * failure, not a shrug: a successful send closes the dialog, and a "success"
+   * here would close it on words that went nowhere (#896)
    */
-  | 'mail-failed'
+  | 'browser-failed'
+  /**
+   * the user's own description is too long to ride in a new-issue URL (#1494).
+   * The diagnostics are trimmed to fit; the user's words never are, so the
+   * dialog keeps them and says so rather than hand GitHub half a sentence
+   */
+  | 'too-long'
   /**
    * main could not be asked at all — no `diagnostics` bridge namespace, or the
    * call was refused. Its own name rather than borrowing `network`: nothing was

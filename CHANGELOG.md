@@ -160,6 +160,17 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   The session's label gets the space back. One thing to know: a session that
   is allowing everything is flagged on that chip only, so a folded card or a
   background tab no longer shows it in its header.
+- **Report a problem works without a GitHub sign-in on this computer.** It
+  used to refuse unless the GitHub command-line tool was signed in or you had
+  saved a token. Now, if neither is there, **Create a GitHub issue** opens
+  GitHub's new-issue page in your browser with your report already filled in,
+  and shows you the zip so you can drag it onto the issue before you submit.
+  You need a GitHub account, signed in in that browser. With a sign-in on the
+  computer it files straight away, as before.
+- **Email is gone from Report a problem and Feature request.** Both now go to
+  the project's GitHub issues. Feature request no longer asks how to send it:
+  it opens GitHub's new-issue page in your browser. **Just build the zip** is
+  still there for sending a report any other way.
 
 ### Fixed
 

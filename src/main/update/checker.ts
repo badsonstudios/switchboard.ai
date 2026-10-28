@@ -6,8 +6,10 @@
 //
 // ── THE ONE HARD PROBLEM, and why the endpoint is what it is ────────────────
 //
-// The repo is PRIVATE. GitHub answers **404** both for "you may not see this
-// repo" and for "this repo has no `latest` release", and ClaudeMon's checker —
+// The repo was PRIVATE when this was written (it is public now — #1494; whether
+// the check still needs a token at all is #1495). On a private repo GitHub
+// answers **404** both for "you may not see this repo" and for "this repo has
+// no `latest` release", and ClaudeMon's checker —
 // which asked `/releases/latest` anonymously — read that 404 as "no releases,
 // you're up to date" and would have said so forever (plan §E19 decision 5).
 //

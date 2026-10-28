@@ -487,8 +487,7 @@ whole period, including the part where the machine was too slow to use.
 
 ## Sending a problem report
 
-![The Report a problem box, with a subject typed in and three choices of where to send it](img/report-problem.png)
-
+![The Report a problem box, with a subject typed in and the choices of where to send it](img/report-problem.png)
 **Help ▸ Report a problem…** does the collecting for you. (It is in the command
 palette too — press `Ctrl+Shift+P` and type *report*.)
 
@@ -497,18 +496,16 @@ should go:
 
 | Choice | What happens |
 |---|---|
-| **Create a GitHub issue** | Files it straight away and opens the new issue in your browser. |
-| **Open an email** | Opens your mail app with the address already filled in. |
+| **Create a GitHub issue** | If this computer is signed in to GitHub, it files the issue straight away and opens it in your browser. If it isn't, your browser opens GitHub's new-issue page with the report already filled in, and you press **Submit** there. |
 | **Just build the zip** | Writes the file and shows it to you. Send it however you like. |
 
 Press **Send report** (it stays greyed out until you've typed a subject). **When
-the report goes through, the dialog closes by itself** — the issue opening in
-your browser, your mail app, or the folder with the zip is your confirmation.
-**If something goes wrong** — no GitHub sign-in, no network, GitHub refusing
-it, your mail app not opening —
-the dialog stays open with the reason written next to the button, and
-everything you typed is still there, so you can pick another option and send
-again.
+the report goes through, the dialog closes by itself** — the issue (or GitHub's
+form) opening in your browser, or the folder with the zip, is your
+confirmation. **If something goes wrong** — no network, GitHub refusing it,
+your browser not opening — the dialog stays open with the reason written next
+to the button, and everything you typed is still there, so you can pick another
+option and send again.
 
 **Closing the box while it is still sending does not cancel the report.** It is
 already on its way: a GitHub issue that gets filed still opens in your browser,
@@ -530,12 +527,10 @@ anyone having to ask for the file first. If the detailed recording has never
 been switched on, the report says so rather than leaving a gap.
 
 **The zip is never attached for you.** GitHub only accepts file attachments
-through its website, and email programs cannot be handed an attachment from
-outside either. So the report carries the useful details as text — your
+through its website. So the report carries the useful details as text — your
 description, the version and system information, any recent minutes where the
 app was working unusually hard, and the performance summary — and the zip waits
-in your folder. If
-someone asks for it, drag it onto the issue or into your email.
+in your folder. Drag it onto the issue to attach it.
 
 Those busy-minute lines also record **how long it had been since you last
 touched the keyboard or mouse**, and **how much memory the app was using**. The
@@ -545,17 +540,36 @@ two look identical afterwards.
 
 ### Filing to GitHub
 
-If you are already signed in with the GitHub command-line tool, this works with
-no setup at all and there is nothing to configure.
+**You need a GitHub account** — there is no way to file without one. There are
+two ways the report can reach GitHub, and the app picks for you:
 
-If you are not, the box will say so and offer a **GitHub token** field. Paste one
-in and press **Save token**; it is kept in your operating system's own secure
+- **This computer is signed in** — with the GitHub command-line tool (`gh`), or
+  with a token you saved (below). The issue is filed straight away, with no
+  further clicks, and opens in your browser.
+- **It isn't.** Your browser opens GitHub's new-issue page with your subject,
+  your description and the system details already filled in. You need to be
+  signed in to GitHub **in that browser** (GitHub asks you to sign in first if
+  you aren't). **Before you press Submit, drag the zip onto the issue** — the
+  folder with it is already open, and a web link cannot carry a file. The box
+  says this before you send, too.
+
+On the browser route, very long system details are trimmed to fit a web link,
+and the issue says so; the full version is in the zip. **What you typed is never
+trimmed.** If your description alone is too long to fit in a link, the dialog
+stays open and tells you, with your words still in it: shorten it, save a token
+so it can be filed directly, or build the zip and attach it yourself.
+
+To file directly from a computer without `gh`, paste a **GitHub token** into the
+box and press **Save token**; it is kept in your operating system's own secure
 store, is never displayed back to you, and never appears in the log. To remove
-it, save an empty box.
+it, save an empty box. If a machine cannot store secrets at all, the app says so
+plainly rather than accepting a token it would have to throw away — the browser
+route still works.
 
-If a machine cannot store secrets at all, the app says so plainly rather than
-accepting a token it would have to throw away — the other two options still
-work.
+**If GitHub turns down a saved sign-in** (an expired token, or one without
+permission to create issues), the dialog says so and files nothing. It does not
+quietly switch to the browser, because a broken sign-in is something you may
+want to fix.
 
 A token you save here is also what update checking uses, so a machine without
 the GitHub command-line tool gets both from one paste. Updates won't notice
@@ -575,39 +589,30 @@ the one that has to have something in it; the **Send** button stays greyed out
 until it does. Say what you want and what it would let you do that you can't do
 today — the second half is usually the more useful one.
 
-Then pick how it should reach us:
+**Send** opens the project's new-issue page on GitHub in your browser, with the
+title and text already filled in.
 
-| Choice | What happens |
-|---|---|
-| **Open an email** | Your mail app opens with the address and your words already filled in. |
-| **Open a ticket** | Your browser opens the project's new-issue page with the title and text already filled in. |
-
-**Nothing is sent from switchboard.** Whichever you pick, all the app does is
-open *your* email program or *your* browser with the form already written out.
-You read it, change anything you like, and press send there. Nothing happens
-until you do, and if you close the window instead, nothing was sent.
+**Nothing is sent from switchboard.** All the app does is open *your* browser
+with the form already written out. You read it, change anything you like, and
+press **Submit** there. Nothing happens until you do, and if you close the
+window instead, nothing was sent.
 
 **Only what you type is included.** No log files, no diagnostic zip, nothing
 about your sessions or your folders. That's the difference from a problem
 report, which deliberately does collect those things.
 
-**Who "Open a ticket" works for.** The project's issue tracker is **private**,
-so that option only works if your GitHub account has been given access to it —
-today that means the people building switchboard. If you don't have access,
-your browser will show GitHub's sign-in or "not found" page. That's all that
-happens: nothing in switchboard breaks, the dialog is still there with your
-words in it, and you can switch to **Open an email** and send it that way.
-**If in doubt, use the email option** — it works for everyone.
+**You need a GitHub account, signed in in your browser.** If you aren't signed
+in, GitHub asks you to sign in first. That's all that happens: nothing in
+switchboard breaks.
 
-**When it goes through, the dialog closes by itself** — your mail app or your
-browser appearing with the text in it is the confirmation. If your mail program
-or browser can't be opened at all, the dialog stays open with the reason next to
-the button and everything you typed still there, so you can pick the other
-option.
+**When it goes through, the dialog closes by itself** — your browser appearing
+with the text in it is the confirmation. If your browser can't be opened at all,
+the dialog stays open with the reason next to the button and everything you
+typed still there.
 
-**Very long requests are trimmed**, and say so where they were cut — web
-addresses and mail links can only carry so much. If you're writing an essay,
-send a short version this way and follow up with the rest in a reply.
+**Very long requests are trimmed**, and say so where they were cut — a web
+address can only carry so much. If you're writing an essay, send a short
+version this way and add the rest as a comment on the issue.
 
 ---
 

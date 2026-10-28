@@ -27,9 +27,9 @@ import { Markdown } from '../lib/markdown';
  * The checker goes to real trouble to tell a missing credential apart from an
  * unreachable host (§E19 decision 5 is the whole reason the endpoint is what it
  * is), and dropping that distinction here would waste it at the one place a
- * human ever looks. On a private repo, "no credentials" is the LIKELY case on
- * any machine but the maintainer's, and "try again later" is wrong advice for
- * it.
+ * human ever looks. While the check requires a token (#1495), "no credentials"
+ * is the LIKELY case on any machine without `gh` signed in, and "try again
+ * later" is wrong advice for it.
  *
  * Every variant stays in the same gentle register: nothing here is the user's
  * fault, and nothing here is broken.

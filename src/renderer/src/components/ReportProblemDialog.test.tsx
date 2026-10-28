@@ -128,14 +128,23 @@ describe('the report dialog', () => {
     await render(true);
     await type(field('subject')!, 'CPU pegged again');
     await type(area('description')!, 'the fans spun up and it froze');
-    await click(destination('email')!);
+    await click(destination('zip')!);
     await click(submitButton());
 
     expect(handlers.onSubmit).toHaveBeenCalledWith({
       subject: 'CPU pegged again',
       description: 'the fans spun up and it froze',
-      destination: 'email',
+      destination: 'zip',
     });
+  });
+
+  it('offers GitHub and the zip, and no email (#1494)', async () => {
+    await render(true);
+    const offered = [...host.querySelectorAll('[data-report-destination]')].map((el) =>
+      el.getAttribute('data-report-destination')
+    );
+    expect(offered).toEqual(['github', 'zip']);
+    expect(dialog()?.textContent).not.toMatch(/email|mail app/i);
   });
 
   it('always says the zip is not attached', async () => {
@@ -198,6 +207,28 @@ describe('the credential', () => {
     expect(dialog()?.textContent).not.toContain('cannot store secrets');
   });
 
+  it('says BEFORE sending that, with no sign-in, the browser opens and the zip must be dragged on (#1494)', async () => {
+    await render(true, status({ canFileIssue: false, storeAvailable: true }));
+    const note = host.querySelector('[data-report-browser-note]')?.textContent ?? '';
+    expect(note).toContain("GitHub's new-issue page in your browser");
+    expect(note).toContain('Drag the zip onto the issue');
+  });
+
+  it('says it on a machine that cannot keep secrets too — the browser path needs none', async () => {
+    await render(true, status({ canFileIssue: false, storeAvailable: false }));
+    expect(host.querySelector('[data-report-browser-note]')).not.toBeNull();
+  });
+
+  it('does not mention the browser when a credential will file it directly', async () => {
+    await render(true, status({ canFileIssue: true }));
+    expect(host.querySelector('[data-report-browser-note]')).toBeNull();
+  });
+
+  it('does not mention the browser before main has answered', async () => {
+    await render(true, null);
+    expect(host.querySelector('[data-report-browser-note]')).toBeNull();
+  });
+
   it('shows no credential controls at all for the other destinations', async () => {
     await render(true, status({ canFileIssue: false, storeAvailable: true }));
     await click(destination('zip')!);
@@ -224,9 +255,11 @@ describe('what happens when Send report is pressed', () => {
     expect(host.querySelector('[data-report-result]')).toBeNull();
   });
 
-  it('an email or a plain zip closes the dialog too, and opens nothing else', async () => {
-    handlers.onSubmit.mockImplementation(async () => ok({ destination: 'email' }));
-    await send('email');
+  it('a browser hand-off or a plain zip closes the dialog too, and opens nothing else', async () => {
+    // The browser path answers ok with NO url — main already opened the form,
+    // and opening it again from here would be a second half-filed report.
+    handlers.onSubmit.mockImplementation(async () => ok({ destination: 'github' }));
+    await send();
     expect(handlers.onClose).toHaveBeenCalledTimes(1);
 
     handlers.onSubmit.mockImplementation(async () => ok({ destination: 'zip' }));
@@ -235,13 +268,32 @@ describe('what happens when Send report is pressed', () => {
     expect(handlers.onOpenIssue).not.toHaveBeenCalled();
   });
 
-  it('a refusal STAYS OPEN and says why, in its own words', async () => {
+  it('a description too long for a link STAYS OPEN with the words intact (#1494)', async () => {
     handlers.onSubmit.mockImplementation(async () =>
-      ok({ ok: false, problem: 'no-token', destination: 'github' })
+      ok({ ok: false, problem: 'too-long', destination: 'github' })
     );
     await send();
     expect(handlers.onClose).not.toHaveBeenCalled();
-    expect(resultText()).toContain('No GitHub sign-in was found');
+    expect(resultText()).toContain('too long');
+    expect(field('subject')?.value).toBe('s');
+  });
+
+  it('a browser that would not open stays open and says so (#1494)', async () => {
+    handlers.onSubmit.mockImplementation(async () =>
+      ok({ ok: false, problem: 'browser-failed', destination: 'github' })
+    );
+    await send();
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    expect(resultText()).toContain('browser could not be opened');
+  });
+
+  it('a refusal STAYS OPEN and says why, in its own words', async () => {
+    handlers.onSubmit.mockImplementation(async () =>
+      ok({ ok: false, problem: 'auth', destination: 'github' })
+    );
+    await send();
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    expect(resultText()).toContain('would not accept the sign-in');
     // the user's words survive, so switching destination is one click
     expect(field('subject')?.value).toBe('s');
   });

@@ -9,9 +9,10 @@
 //    is the easiest way for this to quietly become a chore;
 //  • a hand-off that worked CLOSES the window and a failure keeps it with the
 //    words intact, which is #896's fix inherited rather than re-derived;
-//  • the sentence that says who the ticket channel is for is on screen when
-//    that channel is chosen, because the repo is private and this is the one
-//    control in the app that can look broken to someone who did nothing wrong.
+//  • there is no channel picker (#1494 removed email, and a one-option choice
+//    is no choice), and the sentence saying the form needs a GitHub sign-in is
+//    always on screen, because a browser that is signed out is the one way this
+//    control can look broken to someone who did nothing wrong.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
@@ -30,7 +31,7 @@ const handlers = {
   onClose: vi.fn(),
   onSubmit: vi.fn<(d: FeatureRequestDraft) => Promise<FeedbackResult>>(async () => ({
     ok: true,
-    channel: 'email',
+    channel: 'ticket',
   })),
 };
 
@@ -45,8 +46,6 @@ const field = (name: string): HTMLInputElement | null =>
   host.querySelector<HTMLInputElement>(`input[data-feature-field="${name}"]`);
 const area = (name: string): HTMLTextAreaElement | null =>
   host.querySelector<HTMLTextAreaElement>(`textarea[data-feature-field="${name}"]`);
-const channel = (c: string): HTMLInputElement =>
-  host.querySelector<HTMLInputElement>(`[data-feature-channel="${c}"]`)!;
 const submitButton = (): HTMLButtonElement =>
   host.querySelector<HTMLButtonElement>('[data-feature-submit]')!;
 const resultText = (): string =>
@@ -75,17 +74,16 @@ async function press(key: string): Promise<void> {
 }
 
 /** fill the box and press Send */
-async function send(c: 'email' | 'ticket' = 'email'): Promise<void> {
+async function send(): Promise<void> {
   await render(true);
   await type(area('details')!, 'let me pin a session');
-  if (c !== 'email') await click(channel(c));
   await click(submitButton());
 }
 
 beforeEach(async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   for (const h of Object.values(handlers)) h.mockReset();
-  handlers.onSubmit.mockImplementation(async () => ({ ok: true, channel: 'email' }));
+  handlers.onSubmit.mockImplementation(async () => ({ ok: true, channel: 'ticket' }));
   document.body.innerHTML = '';
   host = document.createElement('div');
   document.body.appendChild(host);
@@ -126,15 +124,14 @@ describe('the feature-request dialog', () => {
     expect(handlers.onSubmit).toHaveBeenCalledWith({
       title: '',
       details: 'let me pin a session',
-      channel: 'email',
+      channel: 'ticket',
     });
   });
 
-  it('carries the title, the details and the chosen channel', async () => {
+  it('carries the title and the details', async () => {
     await render(true);
     await type(field('title')!, 'Pinning');
     await type(area('details')!, 'keep it at the top');
-    await click(channel('ticket'));
     await click(submitButton());
     expect(handlers.onSubmit).toHaveBeenCalledWith({
       title: 'Pinning',
@@ -151,20 +148,19 @@ describe('the feature-request dialog', () => {
     expect(field('title')!.value).toBe('two');
   });
 
-  it('defaults to email, which is the channel anyone can use', async () => {
-    // The ticket path needs access to a PRIVATE repo. Defaulting to it would
-    // put the one broken-looking option in front of everybody who is not the
-    // owner.
+  it('offers no channel to choose, and never mentions email (#1494)', async () => {
     await render(true);
-    expect(channel('email').checked).toBe(true);
-    expect(channel('ticket').checked).toBe(false);
+    expect(host.querySelector('[data-feature-channel]')).toBeNull();
+    expect(host.querySelector('input[type="radio"]')).toBeNull();
+    expect(bodyText()).not.toMatch(/email|mail app/i);
   });
 
-  it('says who the ticket channel is for, but only when it is chosen', async () => {
+  it('says the form needs a GitHub sign-in in the browser, always', async () => {
     await render(true);
-    expect(bodyText()).not.toContain('issue tracker is private');
-    await click(channel('ticket'));
-    expect(bodyText()).toContain('issue tracker is private');
+    expect(host.querySelector('[data-feature-ticket-note]')?.textContent).toContain(
+      'signed in in your browser'
+    );
+    expect(bodyText()).not.toContain('private');
   });
 
   it('states what is included, always — the whole local-first promise', async () => {
@@ -175,8 +171,7 @@ describe('the feature-request dialog', () => {
 
 describe('what happens when Send is pressed', () => {
   it('a hand-off that worked closes the dialog', async () => {
-    // The proof is OUTSIDE this window — a mail client or a GitHub form with
-    // the words in it — so a dialog left standing in front of it reads as a
+    // The proof is OUTSIDE this window — a GitHub form with the words in it — so a dialog left standing in front of it reads as a
     // button that did nothing (#896).
     await send();
     expect(handlers.onClose).toHaveBeenCalled();
@@ -185,12 +180,12 @@ describe('what happens when Send is pressed', () => {
   it('a failure STAYS OPEN, says why, and keeps the words', async () => {
     handlers.onSubmit.mockImplementation(async () => ({
       ok: false,
-      channel: 'email',
+      channel: 'ticket',
       problem: 'send-failed',
     }));
     await send();
     expect(handlers.onClose).not.toHaveBeenCalled();
-    expect(resultText()).toContain('try the other option');
+    expect(resultText()).toContain('browser couldn');
     expect(area('details')!.value).toBe('let me pin a session');
   });
 
@@ -198,7 +193,7 @@ describe('what happens when Send is pressed', () => {
     // The lesson the report dialog learned the hard way: reading "no problem"
     // as success told the user something had happened that had not.
     handlers.onSubmit.mockImplementation(async () => ({ ok: false, channel: 'ticket' }));
-    await send('ticket');
+    await send();
     expect(handlers.onClose).not.toHaveBeenCalled();
     expect(resultText()).toContain('Nothing left your machine');
   });
@@ -214,7 +209,7 @@ describe('what happens when Send is pressed', () => {
   it('puts the reason BESIDE the button, announced', async () => {
     handlers.onSubmit.mockImplementation(async () => ({
       ok: false,
-      channel: 'email',
+      channel: 'ticket',
       problem: 'send-failed',
     }));
     await send();
@@ -235,7 +230,7 @@ describe('the window itself', () => {
   it('a re-open starts clean rather than showing last time’s words', async () => {
     handlers.onSubmit.mockImplementation(async () => ({
       ok: false,
-      channel: 'email',
+      channel: 'ticket',
       problem: 'send-failed',
     }));
     await send();
@@ -274,7 +269,7 @@ describe('a send still settling when the dialog is simply CANCELLED', () => {
     await render(false);
     expect(handlers.onClose).not.toHaveBeenCalled();
     await act(async () => {
-      settle({ ok: true, channel: 'email' });
+      settle({ ok: true, channel: 'ticket' });
     });
     expect(handlers.onClose).not.toHaveBeenCalled();
   });
@@ -290,7 +285,7 @@ describe('a send still settling when the dialog is closed and re-opened', () => 
     await render(false);
     await render(true);
     await act(async () => {
-      settle({ ok: false, channel: 'email', problem: 'send-failed' });
+      settle({ ok: false, channel: 'ticket', problem: 'send-failed' });
     });
     expect(handlers.onClose).not.toHaveBeenCalled();
     expect(resultText()).toBe('');

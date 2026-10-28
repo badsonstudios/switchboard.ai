@@ -1,9 +1,11 @@
-// Resolving the token the update check reads the private repo with
-// (P2-E19-03, plan §E19 decision 1).
+// Resolving the token the update check reads the repo with (P2-E19-03, plan
+// §E19 decision 1).
 //
 // THE RULE, borrowed from ClaudeMon and non-negotiable: **never embed a token
-// in the shipped app.** The repo is private, so the check needs credentials —
-// and the only acceptable credentials are ones already on the machine.
+// in the shipped app.** The repo was private when this was written, so the
+// check needed credentials — and the only acceptable credentials are ones
+// already on the machine. (It is public now, #1494; whether the check still
+// needs one at all is #1495.)
 //
 // The resolution order is an ORDERED SEAM, deliberately, so that adding a
 // source later is one entry in the array and not a rewrite:

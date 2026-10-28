@@ -21,16 +21,16 @@ import { shell } from 'electron';
 import { IpcBroker } from '../ipc/broker';
 import type { Logger } from '../log/logger';
 import { buildBundle, type BundleDeps } from './bundle';
-import { composeIssueBody } from './report-body';
+import { composeBrowserIssue, composeIssueBody } from './report-body';
 import { sanitizeSummary } from '../../shared/perf';
 import { createIssue, type CreateIssueResult } from './github-issue';
 import { tokenSourcesFor, type TokenSource } from '../update/token';
 import type { SecretStore } from '../secrets/store';
 import {
   GITHUB_TOKEN_SECRET_KEY,
-  REPORT_EMAIL_TO,
   isFilable,
   type BundleResult,
+  type ReportDestination,
   type ReportDraft,
   type ReportResult,
   type ReportStatus,
@@ -70,30 +70,6 @@ export interface ReportIpcDeps {
    * exactly this and said so.
    */
   tokenSources?: () => TokenSource[];
-}
-
-/**
- * A `mailto:` carries the SUBJECT and a pointer, never the diagnostics.
- *
- * Two reasons, and the second is the one that bites: `mailto:` cannot attach a
- * file at all, and its total length is capped low enough by Windows and by mail
- * clients that a body with a log in it is silently truncated — which would be
- * the same defect as a button that claims to send logs and does not.
- */
-export function mailtoFor(subject: string, bundlePath: string | null): string {
-  const body = [
-    // NOT "is attached" — it is not, and this is the line a recipient skims.
-    'The diagnostic bundle was written to:',
-    bundlePath ?? '(the bundle could not be written — see the app log)',
-    '',
-    'Please attach the zip above before sending — it is revealed in Explorer.',
-    '',
-  ].join('\n');
-  return (
-    `mailto:${REPORT_EMAIL_TO.join(',')}` +
-    `?subject=${encodeURIComponent(subject)}` +
-    `&body=${encodeURIComponent(body)}`
-  );
 }
 
 export function registerReportIpc(deps: ReportIpcDeps): void {
@@ -155,7 +131,10 @@ export function registerReportIpc(deps: ReportIpcDeps): void {
     const draft = (raw ?? {}) as Partial<ReportDraft>;
     const subject = typeof draft.subject === 'string' ? draft.subject.trim() : '';
     const description = typeof draft.description === 'string' ? draft.description : '';
-    const destination = draft.destination === 'github' || draft.destination === 'email' ? draft.destination : 'zip';
+    // Anything else — including the `'email'` an older renderer may still send
+    // (#1494 removed it) — is `'zip'`: the evidence is built and revealed, and
+    // nothing is sent anywhere the user did not choose.
+    const destination: ReportDestination = draft.destination === 'github' ? 'github' : 'zip';
 
     const empty: BundleResult = { ok: false, path: null, bytes: 0, skipped: [] };
     if (!isFilable({ subject })) {
@@ -193,19 +172,7 @@ export function registerReportIpc(deps: ReportIpcDeps): void {
       return { ok: bundle.ok, destination, url: null, number: null, bundle };
     }
 
-    if (destination === 'email') {
-      try {
-        await sh.openExternal(mailtoFor(subject, bundle.path));
-      } catch (err) {
-        log.warn('could not open the mail client', { error: errorText(err) });
-        // Reported, not swallowed (#896): the dialog closes on success, so a
-        // mail app that never opened would take the user's words with it.
-        return { ok: false, destination, url: null, number: null, bundle, problem: 'mail-failed' };
-      }
-      return { ok: true, destination, url: null, number: null, bundle };
-    }
-
-    const body = composeIssueBody({
+    const bodyDeps = {
       description,
       version: bundleDeps.version,
       identity: bundleDeps.identity,
@@ -213,16 +180,44 @@ export function registerReportIpc(deps: ReportIpcDeps): void {
       bundlePath: bundle.path,
       uptimeMs: bundleDeps.uptimeMs,
       ...(perf ? { perf } : {}),
-    });
+    };
 
     const filed: CreateIssueResult = await fileIssue({
       title: subject,
-      body,
+      body: composeIssueBody(bodyDeps),
       version: bundleDeps.version,
       tokenSources: tokenSources(),
       ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
       log: (msg, fields) => log.info(msg, fields),
     });
+
+    // NO CREDENTIAL IS NOT A DEAD END (#1494). The repo is public, so GitHub's
+    // own new-issue form takes the report from anyone signed in to GitHub in
+    // their browser. Only `no-token` comes here: a token GitHub REFUSED is a
+    // different fact with its own sentence, and quietly swapping paths on it
+    // would hide a broken credential the user may want to fix.
+    if (filed.problem === 'no-token') {
+      try {
+        const form = composeBrowserIssue({ ...bodyDeps, title: subject });
+        if (!form.ok) {
+          log.info('report not handed to the browser: description too long for a link');
+          return { ok: false, destination, url: null, number: null, bundle, problem: form.problem };
+        }
+        await sh.openExternal(form.url);
+        // the SIZE, never the words — the same rule Feature request keeps
+        log.info('report handed to the browser', { chars: form.url.length });
+      } catch (err) {
+        // The error's NAME: an `openExternal` rejection may quote the URL, and
+        // the URL is the user's description, percent-encoded.
+        log.warn('could not hand the report to the browser', {
+          error: err instanceof Error ? err.name : 'unknown',
+        });
+        return { ok: false, destination, url: null, number: null, bundle, problem: 'browser-failed' };
+      }
+      // `url: null` on purpose: the dialog opens a returned URL, and the form
+      // is already open. Opening it twice would be two half-filed reports.
+      return { ok: true, destination, url: null, number: null, bundle };
+    }
 
     return {
       ok: filed.ok,

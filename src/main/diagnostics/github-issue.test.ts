@@ -121,10 +121,10 @@ describe('createIssue — every refusal gets its own name', () => {
   it.each([
     [401, 'auth'],
     [403, 'auth'],
-    // 404 is an AUTH fact here, not a missing repo: the repo is private, and
-    // GitHub deliberately will not confirm a private repo exists to a token
-    // that cannot see it. Calling it "refused" sent people hunting for a typo
-    // in a repo name that is correct. `update/checker.ts` maps it the same way.
+    // 404 is still read as AUTH on the public repo (#1494): the repo name is a
+    // known-good constant, and GitHub answers 404 rather than 403 to a token
+    // that lacks write permission. Calling it "refused" sent people hunting
+    // for a typo in a repo name that is correct.
     [404, 'auth'],
     [422, 'refused'],
     // The documented status for a secondary rate limit, which is the one that

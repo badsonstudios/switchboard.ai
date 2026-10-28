@@ -1,28 +1,27 @@
 // The feature-request contract (#1008).
 //
-// WHAT IS PINNED HERE IS THE COMPOSED STRING AND NOTHING ELSE — no mail client
-// is opened, no browser is launched and no ticket is filed. That is a rule of
+// WHAT IS PINNED HERE IS THE COMPOSED STRING AND NOTHING ELSE — no browser is launched and no ticket is filed. That is a rule of
 // the item, not a convenience: the repo these URLs name is real, and a test
 // that "just tried it" would leave junk on somebody's tracker.
 import { describe, it, expect } from 'vitest';
 import {
   FEATURE_SUBJECT_PREFIX,
   MAX_ISSUE_URL_CHARS,
-  MAX_MAILTO_CHARS,
+  clampEncoded,
   featureIssueUrl,
-  featureMailto,
   featureSubject,
-  featureUrlFor,
+  issueFormHead,
   isSendable,
   unavailableFeedback,
+  wellFormed,
   type FeatureRequestDraft,
 } from './feedback';
-import { REPORT_EMAIL_TO, REPORT_REPO } from './diagnostics';
+import { REPORT_REPO } from './diagnostics';
 
 const draft = (over: Partial<FeatureRequestDraft> = {}): FeatureRequestDraft => ({
   title: 'Tabs that remember their scroll',
   details: 'When I come back to a tab I want it where I left it.',
-  channel: 'email',
+  channel: 'ticket',
   ...over,
 });
 
@@ -52,15 +51,14 @@ describe('the subject line', () => {
     expect(s.endsWith('...')).toBe(true);
   });
 
-  it('flattens control characters rather than letting one into a mail header', () => {
-    // RFC 6068 §7: a decoded newline in a `mailto:` subject has historically
-    // been read by some clients as the start of ANOTHER header — a `cc:` the
-    // user did not choose. Unreachable from the dialog (the title is a
-    // single-line input), but the argument this path rests on is that main
-    // composes the URL so the renderer cannot steer it.
+  it('flattens control characters, so a title stays one line', () => {
+    // Unreachable from the dialog (the title is a single-line input), but the
+    // argument this path rests on is that main composes the URL so the
+    // renderer cannot steer it.
     const s = featureSubject({ title: 'Idea\ncc: someone@example.com', details: '' });
     expect(s).not.toContain('\n');
-    expect(featureMailto(draft({ title: 'Idea\r\nbcc: x@y.z' }))).not.toContain('%0A');
+    const url = featureIssueUrl(draft({ title: 'Idea\r\nmore' }));
+    expect(url.split('&body=')[0]).not.toContain('%0A');
   });
 
   it('never cuts an emoji in half when clipping a long title', () => {
@@ -74,36 +72,6 @@ describe('the subject line', () => {
     // sanitizes whatever crosses the wire, so this must not throw or produce a
     // subject with a dangling separator.
     expect(featureSubject({ title: '', details: '' })).toBe(FEATURE_SUBJECT_PREFIX);
-  });
-});
-
-describe('the email channel', () => {
-  it('is pre-addressed to the owner and pre-filled with the request', () => {
-    const url = featureMailto(draft());
-    expect(url.startsWith(`mailto:${REPORT_EMAIL_TO.join(',')}?`)).toBe(true);
-    expect(url).toContain(`subject=${encodeURIComponent(featureSubject(draft()))}`);
-    expect(url).toContain(encodeURIComponent('where I left it'));
-  });
-
-  it('uses the SHARED address list, never a second copy of it', () => {
-    // #815 made the addresses a named constant precisely so a second surface
-    // would not grow its own. This is that assertion.
-    for (const to of REPORT_EMAIL_TO) expect(featureMailto(draft())).toContain(to);
-  });
-
-  it('stays inside the length a Windows shell and a mail client will carry', () => {
-    // Over the cap the body is TRUNCATED SILENTLY by the client, which is the
-    // bad kind of short: the recipient reads it as someone who stopped typing.
-    const url = featureMailto(draft({ details: 'a b c '.repeat(2000) }));
-    expect(url.length).toBeLessThanOrEqual(MAX_MAILTO_CHARS);
-    expect(decodeURIComponent(url.split('&body=')[1])).toContain('trimmed to fit');
-  });
-
-  it('measures the budget on the ENCODED body, not the typed one', () => {
-    // Newlines and spaces triple on the way out (`%0A`, `%20`), so a character
-    // count taken before encoding lets a URL through at three times its cap.
-    const url = featureMailto(draft({ details: '\n'.repeat(1500) }));
-    expect(url.length).toBeLessThanOrEqual(MAX_MAILTO_CHARS);
   });
 });
 
@@ -129,18 +97,9 @@ describe('the ticket channel', () => {
 });
 
 describe('the ticket channel, continued', () => {
-  it('says where it was cut, as the email one does', () => {
+  it('says where it was cut', () => {
     const url = featureIssueUrl(draft({ channel: 'ticket', details: 'word '.repeat(5000) }));
     expect(decodeURIComponent(url.split('&body=')[1])).toContain('trimmed to fit');
-  });
-});
-
-describe('featureUrlFor', () => {
-  it('routes each channel to its own composer, and only its own', () => {
-    expect(featureUrlFor(draft({ channel: 'email' })).startsWith('mailto:')).toBe(true);
-    expect(featureUrlFor(draft({ channel: 'ticket' })).startsWith('https://github.com/')).toBe(
-      true
-    );
   });
 });
 
@@ -151,25 +110,49 @@ describe('an over-length request full of emoji', () => {
   // handler's try block entirely and reached the user as "could not send" — a
   // diagnosis of the wrong thing, with no log line and no way forward. Emoji
   // are not exotic in a sentence that begins "I wish it could…".
-  it.each([
-    ['email' as const, MAX_MAILTO_CHARS],
-    ['ticket' as const, MAX_ISSUE_URL_CHARS],
-  ])('%s composes instead of throwing, and still fits', (channel, cap) => {
-    const d = draft({ channel, title: 'Emoji', details: 'a🎉'.repeat(4000) });
+  it('composes instead of throwing, and still fits', () => {
+    const d = draft({ title: 'Emoji', details: 'a🎉'.repeat(4000) });
     let url = '';
-    expect(() => (url = featureUrlFor(d))).not.toThrow();
-    expect(url.length).toBeLessThanOrEqual(cap);
+    expect(() => (url = featureIssueUrl(d))).not.toThrow();
+    expect(url.length).toBeLessThanOrEqual(MAX_ISSUE_URL_CHARS);
     // and the URL is a real one — a half-encoded surrogate would not survive
     expect(() => decodeURIComponent(url)).not.toThrow();
   });
 
   it('holds at every length, not just the one a fixture happened to pick', () => {
     // The cut lands on a surrogate for only some inputs, so a single fixture
-    // passes 89 times in 100 while the defect is still there.
-    for (let n = 900; n < 1000; n++) {
-      const d = draft({ channel: 'email', details: 'a🎉'.repeat(n) });
-      expect(() => featureUrlFor(d), `n=${n}`).not.toThrow();
+    // passes 89 times in 100 while the defect is still there. The range
+    // straddles the cap: 'a🎉' is 13 characters once encoded.
+    for (let n = 420; n < 520; n++) {
+      const d = draft({ details: 'a🎉'.repeat(n) });
+      expect(() => featureIssueUrl(d), `n=${n}`).not.toThrow();
     }
+  });
+});
+
+describe('the shared pieces Report a problem reuses (#1494)', () => {
+  it('issueFormHead is the form address with the title encoded, ending at body=', () => {
+    expect(issueFormHead('a & b')).toBe(
+      `https://github.com/${REPORT_REPO}/issues/new?title=${encodeURIComponent('a & b')}&body=`
+    );
+  });
+
+  it('clampEncoded appends the caller’s note, not the feature request’s', () => {
+    const out = clampEncoded('word '.repeat(2000), 100, 1000, '\n[diagnostics trimmed]');
+    expect(out.endsWith('[diagnostics trimmed]')).toBe(true);
+    expect(out).not.toContain('send the rest in a reply');
+    expect(100 + encodeURIComponent(out).length).toBeLessThanOrEqual(1000);
+  });
+
+  it('wellFormed replaces a lone surrogate and leaves a real emoji alone', () => {
+    const lone = String.fromCharCode(0xd83c);
+    expect(() => encodeURIComponent(wellFormed(`a${lone}b`))).not.toThrow();
+    expect(wellFormed('ok 🎉')).toBe('ok 🎉');
+    expect(() => featureIssueUrl(draft({ details: `x${lone}` }))).not.toThrow();
+  });
+
+  it('clampEncoded leaves text that fits exactly as it was', () => {
+    expect(clampEncoded('short', 10, 1000, 'NOTE')).toBe('short');
   });
 });
 
