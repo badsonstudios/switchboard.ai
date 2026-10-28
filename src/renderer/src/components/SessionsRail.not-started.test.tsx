@@ -24,7 +24,6 @@ import i18next from 'i18next';
 import { act } from 'react';
 import { SessionsRail } from './SessionsRail';
 import { RailGroup, RailSession } from '../model/types';
-import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { NO_ORDER } from '../lib/rail-order';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { uiDelete } from '../lib/ui-state';
@@ -79,7 +78,6 @@ async function mount(sessions: RailSession[], groups: RailGroup[] = []): Promise
         needing={new Set<string>()}
         palette={['var(--status-working)']}
         selectedId={null}
-        policies={DEFAULT_BOOK}
         pinned={new Set<string>()}
         manualOrder={NO_ORDER}
         onReorder={noop}
@@ -94,7 +92,6 @@ async function mount(sessions: RailSession[], groups: RailGroup[] = []): Promise
         onOpenInGroup={noop}
         onMoveToGroup={move}
         onTogglePin={pin}
-        onCycleGroupPolicy={noop}
       />
     );
   });

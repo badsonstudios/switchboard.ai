@@ -12,7 +12,6 @@ import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { SessionsStrip } from './SessionsStrip';
 import { railOrder } from '../lib/groups';
-import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { DND_TYPE } from '../lib/rail-dnd';
 import { setDraggedCard } from '../lib/drag-context';
 import { edgeAtY } from '../lib/strip-drag';
@@ -78,8 +77,6 @@ async function mount(
         onRenameGroup={noop}
         palette={['var(--status-working)']}
         onRecolorGroup={noop}
-        policies={DEFAULT_BOOK}
-        onCycleGroupPolicy={noop}
         onDeleteGroup={noop}
         onOpenAll={noop}
         onPlace={noop}

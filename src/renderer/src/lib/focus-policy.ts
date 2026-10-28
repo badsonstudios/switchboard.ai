@@ -295,8 +295,8 @@ export function withFocusCard(
  * Drop overrides for cards that no longer exist.
  *
  * Returns null when there is nothing to drop, so the caller can skip a pointless
- * write and re-render — the same contract `prunePolicies` uses, and for the same
- * reason: a workspace must not accrete a record per session it ever opened.
+ * write and re-render — the same contract `prunePresentation` uses, and for
+ * the same reason: a workspace must not accrete a record per session it ever opened.
  */
 export function pruneFocusPolicies(
   book: FocusBook,

@@ -3,7 +3,7 @@
 // A three-word list does not need a module of its own, but the alternative was
 // `command-set.ts` importing a type out of a component to name the section its
 // aliases jump to. The rest of this folder already holds the closed vocabularies
-// the commands speak in (`layout-mode`, `presentation-policy`, `focus-policy`);
+// the commands speak in (`layout-mode`, `focus-policy`);
 // this is one more, and it keeps the arrow pointing the way the others do —
 // components import from lib, never the reverse.
 

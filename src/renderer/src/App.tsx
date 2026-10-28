@@ -141,15 +141,6 @@ import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
 import { interpretPushAnswer } from './lib/push-answer';
 import {
-  cycleGlobal,
-  cycleOverride,
-  groupOverride,
-  PresentationPolicy,
-  withCard,
-  withGlobal,
-  withGroup,
-} from './lib/presentation-policy';
-import {
   attentionResponse,
   FocusPolicy,
   raisesHostWindow,
@@ -709,41 +700,8 @@ export function App(): React.JSX.Element {
     };
     // bridge is resolved once per mount and stable for the process
   }, []);
-  // §5.8's presentation policy (E9-06). Read from the store rather than App
-  // state, because the SUBMIT path reads it synchronously from outside React's
-  // commit — the same requirement that put the ladder there.
-  const policies = useSyncExternalStore(subscribeStore, () => sessionStore.getPolicies());
-  const setGlobalPolicy = React.useCallback(
-    (p: PresentationPolicy, via = 'command') =>
-      sessionStore.setPolicies(withGlobal(sessionStore.getPolicies(), p), via),
-    []
-  );
-  const setSessionPolicy = React.useCallback(
-    (cardId: string, p: PresentationPolicy | undefined) =>
-      sessionStore.setPolicies(withCard(sessionStore.getPolicies(), cardId, p), 'command'),
-    []
-  );
-  const setGroupPolicy = React.useCallback(
-    (groupId: string, p: PresentationPolicy | undefined, via = 'command') =>
-      sessionStore.setPolicies(withGroup(sessionStore.getPolicies(), groupId, p), via),
-    []
-  );
-  // The two CYCLES read-then-write on the store's own snapshot, never on the
-  // rendered `policies` — a click handler must act on what is true now, not on
-  // the last commit.
-  const cycleGlobalPolicy = React.useCallback(
-    () => setGlobalPolicy(cycleGlobal(sessionStore.getPolicies().global), 'title bar chip'),
-    [setGlobalPolicy]
-  );
-  const cycleGroupPolicy = React.useCallback(
-    (groupId: string) =>
-      setGroupPolicy(
-        groupId,
-        cycleOverride(groupOverride(sessionStore.getPolicies(), groupId)),
-        'group button'
-      ),
-    [setGroupPolicy]
-  );
+  // There is no "on submit" policy any more (#1485): sending a prompt never
+  // moves a card. Only the user folds a session away.
   // §5.8's focus-stealing policy (E9-10). The book itself is read from the
   // store where it is used: by the reveal effect, per event, and by the card's
   // own menu (#1168), which is where the per-session choice is made now.
@@ -758,7 +716,7 @@ export function App(): React.JSX.Element {
     []
   );
   // §5.8's layout mode (E9-07). In the store for the reason the ladder and the
-  // policy are: the chip renders from it AND the sweep reads it synchronously
+  // focus policy are: the chip renders from it AND the sweep reads it synchronously
   // from a keydown handler, outside React's commit.
   const layout = useSyncExternalStore(subscribeStore, () => sessionStore.getState().layout);
   useEffect(() => {
@@ -1898,8 +1856,8 @@ export function App(): React.JSX.Element {
 
 
   // The mouse path for the layout mode (E9-07) — the titlebar chip. It cycles
-  // rather than opening a picker, exactly as the presentation-policy chip does:
-  // three states, and the label always says which one you are on.
+  // rather than opening a picker, and the label always says which one you are on:
+  // Grid, Focus, Queue.
   const cycleLayoutMode = React.useCallback(() => grid.current?.cycleLayoutMode(), []);
   // #1147 — the one-click arrangements. Both SAY what they did: nothing else
   // tells a screen reader the workspace was rearranged, and "already even"
@@ -2020,9 +1978,6 @@ export function App(): React.JSX.Element {
           // and `stepLadderAloud` reads the rung then rather than predicting it
           stepLadder: (cardId, dir) =>
             stepLadderAloud(cardId, dir, () => grid.current?.stepLadder(cardId, dir)),
-          setGlobalPolicy,
-          setSessionPolicy,
-          setGroupPolicy,
           setGlobalFocusPolicy,
           setSessionFocusPolicy,
           setLayoutMode: (mode) => grid.current?.setLayoutMode(mode),
@@ -2175,9 +2130,6 @@ export function App(): React.JSX.Element {
       dispatchTemplates,
       toggleRail,
       jumpToNextAttention,
-      setGlobalPolicy,
-      setSessionPolicy,
-      setGroupPolicy,
       setGlobalFocusPolicy,
       setSessionFocusPolicy,
       togglePin,
@@ -2261,7 +2213,7 @@ export function App(): React.JSX.Element {
       // ...and its Readable width chip by this one (#1408)
       documentMeasureOffered: isMeasureOffered(),
       // resolved HERE, once, so the palette's enabled state and the keyboard's
-      // both come from the same read (E9-06's group-level commands)
+      // both come from the same read (for any command about the group)
       activeGroupId: activeCardId
         ? (sessionStore.getState().sessions.find((s) => s.id === activeCardId)?.groupId ?? null)
         : null,
@@ -2644,8 +2596,6 @@ export function App(): React.JSX.Element {
           setNotifEnabled(next);
           void bridge.notifications?.setPrefs?.({ enabled: next });
         }}
-        presentationPolicy={policies.global}
-        onCyclePresentationPolicy={cycleGlobalPolicy}
         layoutMode={layout.mode}
         layoutMaximized={layout.maximized !== null}
         onCycleLayoutMode={cycleLayoutMode}
@@ -3052,8 +3002,6 @@ export function App(): React.JSX.Element {
         onRenameGroup={renameGroup}
         palette={palette}
         onRecolorGroup={recolorGroup}
-        policies={policies}
-        onCycleGroupPolicy={cycleGroupPolicy}
         onDeleteGroup={deleteGroup}
         onOpenAll={(cardIds) => {
           // The strip sends only the cards that are folded away. Each goes back
@@ -3130,13 +3078,11 @@ export function App(): React.JSX.Element {
             onNewSession={() => void grid.current?.newSessionHere()}
             onRenameGroup={renameGroup}
             onRecolorGroup={recolorGroup}
-            policies={policies}
             pinned={pinned}
             onTogglePin={togglePin}
             manualOrder={manualOrder}
             lineage={lineage}
             onReorder={reorderBucket}
-            onCycleGroupPolicy={cycleGroupPolicy}
             onMoveToGroup={moveToGroup}
             onOpenInGroup={openInGroup}
             onMoveGroup={moveGroup}

@@ -13,7 +13,6 @@ import i18next from 'i18next';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { SessionsRail } from './SessionsRail';
 import { SessionsStrip } from './SessionsStrip';
-import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { uiDelete } from '../lib/ui-state';
 import { NO_ORDER } from '../lib/rail-order';
 import { railOrder } from '../lib/groups';
@@ -55,7 +54,6 @@ async function mountRail(groups: RailGroup[]): Promise<HTMLElement> {
         needing={new Set<string>()}
         finished={new Set<string>(finishedIds)}
         palette={['var(--status-working)']}
-        policies={DEFAULT_BOOK}
         onRename={noop}
         onFocus={noop}
         onDiff={noop}
@@ -68,7 +66,6 @@ async function mountRail(groups: RailGroup[]): Promise<HTMLElement> {
         onMoveToGroup={noop}
         pinned={new Set()}
         onTogglePin={noop}
-        onCycleGroupPolicy={noop}
         manualOrder={NO_ORDER}
         onReorder={noop}
       />
@@ -107,8 +104,6 @@ async function mountStrip(groups: RailGroup[]): Promise<HTMLElement> {
         onRenameGroup={noop}
         palette={['var(--status-working)']}
         onRecolorGroup={noop}
-        policies={DEFAULT_BOOK}
-        onCycleGroupPolicy={noop}
         onDeleteGroup={noop}
         onOpenAll={noop}
         onPlace={noop}

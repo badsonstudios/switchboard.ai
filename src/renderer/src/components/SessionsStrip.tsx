@@ -52,7 +52,6 @@ import { edgeOverflow, EdgeState, sameEdges } from '../lib/strip-overflow';
 import { isLit, UrgencyMarks } from '../lib/urgency';
 import { tint } from '../lib/tint';
 import { directionOf } from '../lib/writing-direction';
-import { groupOverride, PolicyBook } from '../lib/presentation-policy';
 import type { SessionsPlacement } from '../lib/sessions-placement';
 import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
 import { StripRenameBox } from './StripRenameBox';
@@ -136,9 +135,6 @@ export interface SessionsStripProps {
   /** the colours a group may be: persisted data owned by the main process */
   palette: readonly string[];
   onRecolorGroup: (groupId: string, color: string) => void;
-  /** §5.8's presentation policy, for a group's own override */
-  policies: PolicyBook;
-  onCycleGroupPolicy: (groupId: string) => void;
   onDeleteGroup: (groupId: string) => void;
   /** bring every one of these cards back into the workspace */
   onOpenAll: (cardIds: readonly string[]) => void;
@@ -1041,7 +1037,6 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
       // it has no name to change, no colour, nothing to delete, and a session
       // cannot be opened "into" it. Opening what it holds is all there is.
       if (groupId === undefined) return { label: t('rail.groupMenuLabel', { name: e.name }), items: [openAll] };
-      const own = groupOverride(props.policies, groupId);
       const items: RailGroupMenuItem[] = [
         {
           id: 'new',
@@ -1072,17 +1067,6 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
             ran('group', e.key);
             const i = props.palette.indexOf(e.color);
             props.onRecolorGroup(groupId, props.palette[(i + 1) % props.palette.length]);
-          },
-        },
-        {
-          id: 'policy',
-          label: t('strip.menuGroupPolicy', {
-            policy: own ? t(`policy.${own}`) : t('policy.groupDefault'),
-          }),
-          can: true,
-          run: () => {
-            ran('group', e.key);
-            props.onCycleGroupPolicy(groupId);
           },
         },
         {

@@ -14,7 +14,6 @@ import {
   interruptSession,
   resolveDraftMentions,
 } from './composer';
-import { sessionStore } from '../store/session-store';
 import { ipcRefusal } from '../../../shared/ipc/refusal';
 
 /** everything written to the PTY, in order, as the bridge would have seen it */
@@ -131,43 +130,13 @@ describe('sendSessionCommand — the ⋯ menu route (#381)', () => {
     expect(ptyWrites).toEqual([]); // and nothing is written anywhere else either
   });
 
-  // §5.8: the workspace folding itself away because you clicked a menu item
-  // would be baffling. This is the ONLY difference from `submitPrompt`, so it
-  // is the only thing that could be lost by routing them through one function.
-  it('does not count as the user submitting a prompt', async () => {
-    const notify = vi.spyOn(sessionStore, 'notifyPromptSubmitted');
-
-    await sendSessionCommand('live-1', '/compact');
-
-    expect(notify).not.toHaveBeenCalled();
-    notify.mockRestore();
-  });
 });
 
 describe('submitPrompt', () => {
-  it('sends the prompt AND announces it', async () => {
-    const notify = vi.spyOn(sessionStore, 'notifyPromptSubmitted');
-
+  it('sends the prompt', async () => {
     await submitPrompt('live-1', 'hello');
 
-    expect(notify).toHaveBeenCalledWith('live-1');
     expect(submitted).toEqual([{ id: 'live-1', text: 'hello' }]);
-    notify.mockRestore();
-  });
-
-  it('announces before the round trip, not after it', async () => {
-    const order: string[] = [];
-    const notify = vi
-      .spyOn(sessionStore, 'notifyPromptSubmitted')
-      .mockImplementation(() => void order.push('notified'));
-    mainTakesPrompts = false;
-
-    const done = submitPrompt('live-1', 'hello');
-    // the IPC promise has not resolved yet, and the collapse has already run
-    expect(order).toEqual(['notified']);
-    await done;
-
-    notify.mockRestore();
   });
 });
 
@@ -216,8 +185,7 @@ describe('a rejecting IPC is read as "main did not take it" (P2-E18-17)', () => 
   });
 
 
-  it('submitPrompt survives it too, and still counts as a submit', async () => {
-    const notify = vi.spyOn(sessionStore, 'notifyPromptSubmitted');
+  it('submitPrompt survives it too', async () => {
     promptFailure = new Error('ipc exploded');
 
     // FALSE now, and the change is the point (#952). A text prompt used to always
@@ -227,12 +195,7 @@ describe('a rejecting IPC is read as "main did not take it" (P2-E18-17)', () => 
     // whose words went nowhere.
     await expect(submitPrompt('live-1', 'hello')).resolves.toBe(false);
 
-    // §5.8's auto-minimize still fires: it is a response to the user's GESTURE,
-    // deliberately taken before the IPC round trip, and it must not depend on
-    // whether the send succeeded.
-    expect(notify).toHaveBeenCalledWith('live-1');
     expect(ptyWrites).toEqual([]);
-    notify.mockRestore();
   });
 
   // The nothing-happened case stays untouched: a plain `false` is a routine
@@ -314,17 +277,5 @@ describe('submitPrompt WITH IMAGES (P2-E10-09)', () => {
     await expect(submitPrompt('live-1', 'what is this?', [png])).resolves.toBe(false);
 
     expect(ptyWrites).toEqual([]);
-  });
-
-  // §5.8's auto-minimize is about the USER submitting, not about which
-  // transport took it — an image prompt is still a prompt.
-  it('still counts as the user submitting a prompt', async () => {
-    const notify = vi.spyOn(sessionStore, 'notifyPromptSubmitted');
-    mainTakesPrompts = false;
-
-    await submitPrompt('live-1', 'look', [png]);
-
-    expect(notify).toHaveBeenCalledWith('live-1');
-    notify.mockRestore();
   });
 });

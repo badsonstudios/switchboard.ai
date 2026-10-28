@@ -18,7 +18,6 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import {
   applyLayout,
   captureSlots,
-  applySubmitPolicy,
   clusterCardWithGroup,
   cycleLayoutMode,
   endedCopy,
@@ -36,13 +35,11 @@ import {
   settleDockedBackCards,
   stepCardLadder,
   toggleMaximizeCard,
-  turnRunningNow,
 } from './SessionGrid';
 import type { DockviewApi } from 'dockview-react';
 import en from '../../../shared/i18n/locales/en.json';
 import { sessionStore } from '../store/session-store';
 import { DEFAULT_LAYOUT, withMaximized, withMode } from '../lib/layout-mode';
-import { DEFAULT_BOOK, withGlobal } from '../lib/presentation-policy';
 import type { SweepRequest } from '../lib/layout-sweep';
 import type { Ladder } from '../lib/presentation';
 import type { RailSession } from '../model/types';
@@ -505,7 +502,6 @@ describe('the ladder breadcrumb (#813)', () => {
   });
   afterEach(() => {
     log.mockRestore();
-    sessionStore.initPolicies(DEFAULT_BOOK);
     delete (window as unknown as { switchboard?: unknown }).switchboard;
   });
 
@@ -513,12 +509,6 @@ describe('the ladder breadcrumb (#813)', () => {
     setCardLadder(bare, 'a', 'hidden');
     expect(log).toHaveBeenCalledWith('[ladder] moving session-a: expanded → hidden (command)');
     expect(sessionStore.getPresentation('a').ladder).toBe('hidden');
-  });
-
-  it('the submit policy names itself — driven through the real policy path', () => {
-    sessionStore.initPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
-    applySubmitPolicy(bare, 'a');
-    expect(log).toHaveBeenCalledWith('[ladder] moving session-a: expanded → collapsed (submit policy)');
   });
 
   it('a sweep names its trigger and mode — and a maximize, only on the switch that takes it', () => {
@@ -564,83 +554,6 @@ describe('the ladder breadcrumb (#813)', () => {
   });
 });
 
-// `cardWaitsOnHuman` reads the same derived value as the layout modes, so the
-// submit policy and queue mode cannot disagree about one card. This pins THAT
-// reading of the card as it stands; it is not a claim about what the status is
-// at the moment a real prompt is sent (the policy runs before main reports the
-// new turn, so a follow-up prompt usually still sees the old `done`).
-describe('auto-minimize on submit reads the dismissed "waiting" (#1427)', () => {
-  const bare = { getPanel: () => undefined } as never;
-  let log: ReturnType<typeof vi.spyOn>;
-  beforeEach(() => {
-    log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    sessionStore.initPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
-    seed([{ id: 'a', status: 'done' }]);
-    place('a', 'expanded');
-  });
-  afterEach(() => {
-    log.mockRestore();
-    sessionStore.initPolicies(DEFAULT_BOOK);
-  });
-
-  it('spares a card still saying "waiting"', () => {
-    expect(applySubmitPolicy(bare, 'a')).toBeNull();
-    expect(sessionStore.getPresentation('a').ladder).toBe('expanded');
-  });
-
-  it('folds it once the word is dismissed, like any calm card', () => {
-    sessionStore.dismissWait('a');
-    expect(applySubmitPolicy(bare, 'a')).toBe('collapsed');
-    expect(sessionStore.getPresentation('a').ladder).toBe('collapsed');
-  });
-});
-
-// #1472: the owner pressed Enter in a session that was mid-turn, in a group on
-// "Collapse on submit", and its card left the screen. The submit listener reads
-// `turnRunningNow` at the keystroke and hands it to the deferred policy call.
-describe('auto-minimize on submit spares a turn already running (#1472)', () => {
-  const bare = { getPanel: () => undefined } as never;
-  let log: ReturnType<typeof vi.spyOn>;
-  beforeEach(() => {
-    log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    sessionStore.initPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
-  });
-  afterEach(() => {
-    log.mockRestore();
-    sessionStore.initPolicies(DEFAULT_BOOK);
-  });
-
-  it('reads "running" off the raw status, and only `working` counts', () => {
-    seed([
-      { id: 'w', status: 'working' },
-      { id: 'i', status: 'idle' },
-      { id: 'd', status: 'done' },
-      { id: 's', status: 'starting' },
-    ]);
-    expect(turnRunningNow('w')).toBe(true);
-    for (const id of ['i', 'd', 's', 'nobody']) expect(turnRunningNow(id)).toBe(false);
-  });
-
-  it('a mid-turn prompt leaves the card where it is, and writes no breadcrumb', () => {
-    seed([{ id: 'a', status: 'working' }]);
-    place('a', 'expanded');
-    expect(applySubmitPolicy(bare, 'a', { turnRunning: turnRunningNow('a') })).toBeNull();
-    expect(sessionStore.getPresentation('a').ladder).toBe('expanded');
-    expect(log).not.toHaveBeenCalledWith(expect.stringContaining('(submit policy)'));
-  });
-
-  it('a prompt that STARTS a turn still folds it, even if main says "working" by the time the move runs', () => {
-    // captured as idle at the keystroke; the status flipping before the
-    // deferred call is main reporting the turn THIS prompt started
-    seed([{ id: 'a', status: 'idle' }]);
-    place('a', 'expanded');
-    const atKeystroke = { turnRunning: turnRunningNow('a') };
-    seed([{ id: 'a', status: 'working' }]);
-    expect(applySubmitPolicy(bare, 'a', atKeystroke)).toBe('collapsed');
-    expect(sessionStore.getPresentation('a').ladder).toBe('collapsed');
-  });
-});
-
 describe('layoutSweepPort — the rest of the wiring', () => {
   it('aborts on teardown, and only on teardown', () => {
     expect(layoutSweepPort.aborted()).toBe(false);
@@ -673,8 +586,6 @@ describe('a missing grid is never a crash', () => {
       // no-grid path has to hand back a RESOLVED promise rather than throwing —
       // `void` here because this case is about the throw, not the value
       void stepCardLadder(null, 'a', 'down');
-      applySubmitPolicy(null, 'a');
-      applySubmitPolicy(noGrid, '');
     }).not.toThrow();
   });
 

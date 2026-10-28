@@ -24,7 +24,6 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../../../shared/i18n/locales/en.json';
 import { SessionsRail } from './SessionsRail';
 import { EventsPanel } from './EventsPanel';
-import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { uiDelete } from '../lib/ui-state';
 import { RailGroup, RailSession, EventDto } from '../model/types';
 import { NO_ORDER } from '../lib/rail-order';
@@ -72,7 +71,6 @@ function rail(
       needing={new Set<string>()}
       selectedId={'selectedId' in over ? (over.selectedId ?? null) : 'c1'}
       palette={['var(--status-working)', 'var(--status-crashed)']}
-      policies={DEFAULT_BOOK}
       onRename={noop}
       onFocus={noop}
       onDiff={noop}
@@ -85,7 +83,6 @@ function rail(
       onMoveToGroup={over.onMoveToGroup ?? noop}
       pinned={new Set()}
       onTogglePin={noop}
-      onCycleGroupPolicy={noop}
         manualOrder={NO_ORDER}
         onReorder={noop}
     />

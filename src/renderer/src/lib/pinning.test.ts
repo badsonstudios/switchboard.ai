@@ -1,8 +1,7 @@
 // §5.8's pinning contract (P2-E9-09) — the state and the two rules that are
 // purely about pinning. The EXEMPTIONS are tested where they live, because that
 // is where a future change would break them: groups.test.ts (sorts first),
-// ladder.test.ts (never aggregates), presentation-policy.test.ts (never
-// auto-collapses on submit).
+// ladder.test.ts (never aggregates).
 import { describe, it, expect } from 'vitest';
 import {
   bulkClose,

@@ -28,7 +28,6 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 import { SessionsRail } from './SessionsRail';
 import { RailGroup, RailSession } from '../model/types';
-import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { NO_ORDER } from '../lib/rail-order';
 import { initI18nForTests } from '../i18n/test-i18n';
 import {
@@ -75,7 +74,6 @@ async function mount(sessions: RailSession[]): Promise<void> {
         needing={new Set<string>()}
         palette={['var(--status-working)']}
         selectedId={null}
-        policies={DEFAULT_BOOK}
         pinned={new Set<string>()}
         manualOrder={NO_ORDER}
         onReorder={noop}
@@ -90,7 +88,6 @@ async function mount(sessions: RailSession[]): Promise<void> {
         onOpenInGroup={noop}
         onMoveToGroup={noop}
         onTogglePin={noop}
-        onCycleGroupPolicy={noop}
       />
     );
   });
@@ -233,7 +230,6 @@ describe('a COLLAPSED group still says something is inside (#774 review)', () =>
           needing={new Set<string>()}
           palette={['var(--status-working)']}
           selectedId={null}
-          policies={DEFAULT_BOOK}
           pinned={new Set<string>()}
           manualOrder={NO_ORDER}
           onReorder={noop}
@@ -248,7 +244,6 @@ describe('a COLLAPSED group still says something is inside (#774 review)', () =>
           onOpenInGroup={noop}
           onMoveToGroup={noop}
           onTogglePin={noop}
-          onCycleGroupPolicy={noop}
         />
       );
     });

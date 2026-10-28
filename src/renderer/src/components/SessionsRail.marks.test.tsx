@@ -11,7 +11,6 @@ import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { SessionsRail } from './SessionsRail';
-import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { uiDelete } from '../lib/ui-state';
 import { NO_ORDER } from '../lib/rail-order';
 import { RailSession } from '../model/types';
@@ -42,7 +41,6 @@ async function mountRail(over: Partial<RailProps> = {}): Promise<HTMLElement> {
         groups={[]}
         needing={new Set<string>()}
         palette={['var(--status-working)']}
-        policies={DEFAULT_BOOK}
         onRename={noop}
         onFocus={noop}
         onDiff={noop}
@@ -55,7 +53,6 @@ async function mountRail(over: Partial<RailProps> = {}): Promise<HTMLElement> {
         onMoveToGroup={noop}
         pinned={new Set()}
         onTogglePin={noop}
-        onCycleGroupPolicy={noop}
         manualOrder={NO_ORDER}
         onReorder={noop}
         {...over}

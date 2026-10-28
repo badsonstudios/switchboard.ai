@@ -9,7 +9,6 @@ import { ContributionBoundary } from '../extensibility/boundary';
 import { StatusBarContext } from '../extensibility/contributions';
 import { ThemeDefinition } from '../theme/theme';
 import { BuildIdentity, commitStamp } from '../../../shared/build-identity';
-import type { PresentationPolicy } from '../lib/presentation-policy';
 import type { LayoutMode } from '../lib/layout-mode';
 import type { LayoutPreset } from '../lib/layout-presets';
 import { LayoutPresets } from './LayoutPresets';
@@ -68,9 +67,6 @@ export function TitleBar(props: {
   onOpenAbout: () => void;
   notifEnabled: boolean;
   onToggleNotif: () => void;
-  /** §5.8's presentation policy — what a submit does to the card (E9-06) */
-  presentationPolicy: PresentationPolicy;
-  onCyclePresentationPolicy: () => void;
   /** §5.8's layout mode — how the whole workspace is arranged (E9-07) */
   layoutMode: LayoutMode;
   /** a session is blown up to fill the workspace right now (E9-07) */
@@ -228,23 +224,13 @@ export function TitleBar(props: {
           two controls for one idea confused the owner — his call was to keep
           only the per-session one. New sessions start at ask; a dispatch role
           template brings its own. */}
-      {/* The GLOBAL presentation policy (E9-06, §5.8). A chip and not a buried
-          setting because it changes what the workspace does on every prompt —
-          "where did my card go?" has to be answerable by looking, and this is
-          the answer. Per-session and per-group overrides live in the rail, next
-          to the thing they override. */}
-      <Chip
-        selected={false}
-        onClick={props.onCyclePresentationPolicy}
-        title={t('policy.chipHint', { policy: t(`policy.${props.presentationPolicy}`) })}
-        testId="presentation-policy"
-      >
-        {t('policy.chip', { policy: t(`policy.${props.presentationPolicy}`) })}
-      </Chip>
-      {/* The LAYOUT MODE (E9-07, §5.8). Beside the policy chip because the two
-          answer neighbouring questions — that one is what happens to ONE card
-          when you submit, this one is how the WHOLE workspace is arranged — and
-          because "why is everything a strip all of a sudden?" has to be
+      {/* NO "ON SUBMIT" CHIP SINCE #1485. The ⬍ chip here cycled a setting
+          that folded a card away when you sent it a prompt. One click turned
+          it on, and the owner lost sessions to it for weeks without ever
+          having chosen it (#813, #1210, #1276, #1472, #1485). His call: remove
+          the feature, so nothing but the user ever puts a session away. */}
+      {/* The LAYOUT MODE (E9-07, §5.8). Here because "why is everything a
+          strip all of a sudden?" has to be
           answerable by looking up, not by reading a settings page. */}
       {/* #1147: THE ARRANGEMENT BUTTONS TOOK THIS CHIP'S PLACE. The owner, of
           the "▦ Grid" chip that used to sit here always: "What does the grid

@@ -20,11 +20,12 @@
 //     BY HAND. Collapse it, tab it, hide it — pinning does not argue. What it
 //     stops is the MACHINE doing any of that unasked.
 //
-// The last distinction is what makes "exempt from auto-collapse sweeps" and
+// The last distinction is what makes "exempt from bulk operations" and
 // "pinned ≠ always-expanded" consistent rather than contradictory, and it is
 // the rule every exemption below is derived from: the exemption fires when
-// something happens TO the session (a sweep on submit, a fold, a bulk close),
-// never when the user does something WITH it.
+// something happens TO the session (an idle fold, a bulk close), never when the
+// user does something WITH it. (The "auto-collapse sweeps" the quote names were
+// "collapse on submit", removed in #1485; nothing sweeps on submit now.)
 //
 // ── WHERE THE EXEMPTIONS LIVE, AND WHY NOT HERE ─────────────────────────────
 //
@@ -35,8 +36,10 @@
 //
 //   sort first          lib/groups          `railOrder` pre-sorts its input
 //   idle aggregation    lib/ladder          `foldableRow` — a pinned row never folds
-//   auto-collapse       lib/presentation-policy  `submitTarget` returns null
 //   bulk-close          `closableCards` below, applied by the close-all command
+//
+// (There was a fourth, "auto-collapse on submit". That setting is gone, #1485:
+// nothing folds a card away because a prompt was sent, pinned or not.)
 //
 // AND ONE DELIBERATE NON-EXEMPTION: lib/layout-mode's `plan`. A layout mode is
 // the user asking, in one gesture, for a whole arrangement — and it only ever
@@ -128,8 +131,8 @@ export function togglePin(pins: PinSet, cardId: string): PinSet {
  * Drop pins for cards that no longer exist.
  *
  * Returns null when there is nothing to drop, so the caller can skip a pointless
- * write and re-render — the same contract `prunePresentation`, `prunePolicies`
- * and `pruneLayout` use, and for the same reason: a workspace must not accrete a
+ * write and re-render — the same contract `prunePresentation`,
+ * `pruneFocusPolicies` and `pruneLayout` use, and for the same reason: a workspace must not accrete a
  * record per session it ever opened.
  */
 export function prunePins(pins: PinSet, knownCardIds: Iterable<string>): PinSet | null {

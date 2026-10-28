@@ -109,7 +109,6 @@ import { sessionMenuItems } from '../lib/session-menu';
 import { SessionRow } from './SessionRow';
 import { FolderGlyph } from './FolderGlyph';
 import { directionOf } from '../lib/writing-direction';
-import { groupOverride, PolicyBook } from '../lib/presentation-policy';
 import { srOnly } from './sr-only';
 
 export type { RailSession, RailGroup } from '../model/types';
@@ -238,16 +237,6 @@ export function SessionsRail(props: {
   onOpenInGroup: (id: string) => void;
   /** move a session between groups / to ungrouped (E12-04, rail DnD) */
   onMoveToGroup: (cardId: string, groupId: string | null) => void;
-  /**
-   * §5.8's presentation policy and its overrides (E9-06).
-   *
-   * The rail carries the per-GROUP override, on the group header. The
-   * per-SESSION ones were on the session menu here until #1168 moved them to
-   * the card's own menu (`CardPolicyRows`), so that this menu and the strip's
-   * are the same short list.
-   */
-  policies: PolicyBook;
-  onCycleGroupPolicy: (groupId: string) => void;
   /**
    * §5.8's pinning contract (E9-09) — the pinned CARD ids.
    *
@@ -1689,34 +1678,6 @@ export function SessionsRail(props: {
                 marginInlineStart: 7,
               }}
             >
-              {/* §5.8's per-GROUP presentation override (E9-06). A cycle here,
-                  unlike the session menu: the button stays put, so one click
-                  per step is the cheapest gesture there is, and the tooltip
-                  always names the state it is currently in. */}
-              <button
-                className="rail-x"
-                data-group-policy={g.id}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  props.onCycleGroupPolicy(g.id);
-                }}
-                title={t('ladder.policyGroup', {
-                  policy: (() => {
-                    const own = groupOverride(props.policies, g.id);
-                    return own ? t(`policy.${own}`) : t('policy.groupDefault');
-                  })(),
-                })}
-                style={{
-                  fontSize: 10,
-                  // an override is a state worth seeing without hovering: full
-                  // ink. Without one it is the readable grey, and NOT faded
-                  // (#1211): this is an enabled control, and 0.55 made it
-                  // look like a disabled one.
-                  color: groupOverride(props.policies, g.id) ? 'var(--text)' : 'var(--muted)',
-                }}
-              >
-                {t('ladder.policyGroupIcon')}
-              </button>
               <button
                 className="rail-x"
                 onClick={(e) => {

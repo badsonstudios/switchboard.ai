@@ -59,16 +59,17 @@ hunting through a window.
 | **🗣 announce / 🗣 silent** | Whether switchboard says out loud which session needs you |
 | **🔓 auto-trust / 🔒 ask trust** | Whether new folders are trusted automatically. Greyed out, because nothing can ask any more — see below |
 
-Three more chips are on the bar because they answer "why does the window look
+Two more chips are on the bar because they answer "why does the window look
 like this?", and you need to be able to answer that by looking up rather than by
-opening a window. (There used to be a fourth, the 🛡 mode chip. Each session's
-own mode button, under its prompt box, replaced it; see
-[Approvals and autonomy](04-approvals-and-autonomy.md).)
+opening a window. (There used to be two others. The 🛡 mode chip was replaced by
+each session's own mode button, under its prompt box; see
+[Approvals and autonomy](04-approvals-and-autonomy.md). The **⬍ Keep visible /
+Collapse on submit** chip went in 0.8.134 with the setting it switched: see
+below.)
 
 | Chip | Does |
 |---|---|
 | **◧ left / ⬒ top** | Where your sessions are listed: down the left, or across the top. The same choice as **Appearance ▸ Sessions list**. See [Listing sessions across the top instead](07-workspace.md#listing-sessions-across-the-top-instead) |
-| **⬍ Keep visible / Collapse on submit** | What happens to a session's card when you send it a prompt — click to switch. See below |
 | **Five small pictures of split boxes** | Arrange the open sessions in that shape with one click, or make the current arrangement even. See [Arranging cards with one click](07-workspace.md#arranging-cards-with-one-click) |
 | **▦ Focus / Queue** | Only shown while one of those layouts is on (or a session is maximized), in place of the pictures. Click to step to the next layout |
 
@@ -114,22 +115,15 @@ individual colors.
 
 ## What a card does when you submit a prompt
 
-The **⬍** chip sets this for every session at once. The default, **Keep
-visible**, does nothing at all: the card stays put and you watch the turn come
-in. The other, **Collapse on submit**, is opt-in: it folds the card away the
-moment you send a prompt and brings it back when the session finishes or needs
-you, so the space goes to whatever you're actually looking at. (A third
-setting, *Hide on submit*, was removed in 0.8.124; if you had it on, it now
-behaves as **Keep visible**.)
-
-Individual sessions and groups can disagree with the chip: open the **⋯** menu on
-a session's card, or use the **⬍** button on a group header. The full story,
-including what it deliberately won't do, is in
-[Organizing your workspace](07-workspace.md#getting-out-of-the-way-by-itself).
+Nothing. The card stays where it is, and you watch the turn come in. There used
+to be a setting, **Collapse on submit**, that folded the card away instead; it
+was removed in 0.8.134, with its **⬍** chip. If you had it on, switchboard
+forgets it the next time it starts. See
+[Sending a prompt never moves a card](07-workspace.md#sending-a-prompt-never-moves-a-card).
 
 ## What a session may do when it needs you
 
-The other half of the same question, and it isn't a chip — it lives in the
+This one isn't a chip — it lives in the
 command palette (`Ctrl+Shift+P`, search for *needs you*) and, for one session,
 in the **⋯** menu on its card. Four settings: **always jump to it**, **jump only if
 its card is on screen** (the default), **never jump, just mark it in the list**, and

@@ -1575,6 +1575,28 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
   > so main's report of the turn the prompt itself started cannot count). What
   > still folds: a prompt that starts a turn from a calm card (idle, or a
   > finished turn whose waiting was dismissed, per #1427).
+
+  > **THE WHOLE PRESENTATION POLICY IS REMOVED *(amended 2026-10-28, Dan,
+  > #1485)*.** The same report a fourth time, on 0.8.133: he typed a prompt into
+  > his SOLO Server session after it sat overnight and *"it closed out"*, then
+  > came back for a Bash approval in a different place in the layout. The log
+  > line was `[ladder] … expanded → collapsed (submit policy)`; his workspace
+  > had `auto-collapse` on that one group, set by the group header's ⬍ button
+  > on a date nobody can recover. His words: *"I want to remove whatever
+  > feature that is that hides the session. I want to get rid of it entirely
+  > … I don't want it coming back."* So there is no setting any more, at any
+  > level, and **sending a prompt never moves a card**. Removed: the
+  > `always-visible | auto-collapse` setting and its book
+  > (`lib/presentation-policy`), the ⬍ title-bar chip, the ⬍ group-header
+  > button, the strip's group-menu entry, the card menu's **On submit** row,
+  > the palette's eleven entries, the "was collapsed because…" notice (#1210),
+  > and the store's prompt-submitted signal, which had no other listener. A
+  > saved `presentationPolicy` record is deleted from the ui blob at boot.
+  > **Untouched:** the ladder itself, folding a session by hand, the layout
+  > modes (an explicit choice of a whole arrangement), and reveal-on-attention.
+  > **Do not reintroduce any rule that moves a card down the ladder because a
+  > prompt was sent**, under any name or default. The bullet above
+  > (*Auto-minimize on submit*) is historical.
 - **Pinning is a protection contract** (research v2: VS Code + IntelliJ pinned-tab
   semantics): a pinned session sorts first in the rail, never scrolls out of view
   under overflow, and is exempt from EVERY bulk operation — bulk-close, idle

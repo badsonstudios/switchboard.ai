@@ -110,8 +110,6 @@ import {
   type Autonomy,
 } from '../lib/autonomy';
 import { isClaudeAi } from '../lib/session-ai';
-import { submitTarget } from '../lib/presentation-policy';
-import { SubmitNotice, SubmitPolicyNotice, submitNoticeMuted } from './SubmitPolicyNotice';
 import { bulkClose } from '../lib/pinning';
 import {
   mayRetire,
@@ -3579,12 +3577,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                             })}
                           </button>
                         )}
-                        {/* The two settings about THIS session (#1168): what
-                            happens to it on submit, and when it needs you.
-                            They moved here from the left list's right-click
-                            menu so that menu could be the same short one the
-                            strip has. Not locked with the session controls:
-                            they write a preference, not a slash command. */}
+                        {/* The setting about THIS session (#1168): when it
+                            needs you. It moved here from the left list's
+                            right-click menu so that menu could be the same
+                            short one the strip has. Not locked with the session
+                            controls: it writes a preference, not a slash
+                            command. */}
                         {cardId && (
                           <>
                             <div style={{ borderBlockStart: '1px solid var(--border)', marginBlock: 3 }} />
@@ -6218,7 +6216,7 @@ function removePanelKeepingSlot(api: DockviewApi, cardId: string, rung: Ladder):
  * Through `shownStatus`, the derived value the tab, the header pill, the rail
  * row and the strip pill read (#1413): a finished turn whose "waiting" the user
  * dismissed is calm there, so it is calm to the layout rules too (#1427, Dan's
- * call) — queue mode stops holding it up and auto-minimize may fold it. The
+ * call) — queue mode stops holding it up. The
  * entry is dropped when that turn is over, so the next finished turn holds the
  * card on screen again.
  */
@@ -6226,47 +6224,6 @@ function cardShowsNeedsYou(cardId: string, status: string | undefined): boolean 
   return presentStatus(
     derivedStatus(status, sessionStore.hasHeldQuestion(cardId), sessionStore.isWaitDismissed(cardId))
   ).needsYou;
-}
-
-/**
- * Is this card waiting on a person RIGHT NOW (#1258)?
- *
- * `submitTarget`'s fourth rule is "the one card that needs a human is the one
- * card auto-minimize must never take away", and it used to be answered from
- * the session's STATUS alone. That is one of three things the window is told
- * when a session asks, on three channels, and they do not land together: a
- * request that arrived between the keystroke and the deferred call could be
- * in the Events list, and already past the reveal that would have brought the
- * card back, while the status still read `working`. The card was then hidden
- * with an approval on it and nothing left to return it (measured: one run in
- * three when the prompt that hides the card is the one that asks).
- *
- * So: the status, OR a request main is holding for it, OR a demand of its own
- * in the Events list. Whichever the window heard first. Not
- * `getNeedingCards`: that set also holds a returned review filed on the
- * author's card, which is a button to press and not a session waiting.
- */
-function cardWaitsOnHuman(cardId: string): boolean {
-  const state = sessionStore.getState();
-  if (cardShowsNeedsYou(cardId, state.sessions.find((s) => s.id === cardId)?.status)) return true;
-  const mine = (liveId: string): boolean => sessionStore.cardIdForLive(liveId) === cardId;
-  if (state.pendingPermissions.some((p) => mine(p.sessionId))) return true;
-  return state.events.some(
-    (e) => (e.kind === 'needs-permission' || e.kind === 'needs-input') && mine(e.sessionId)
-  );
-}
-
-/**
- * Is this card's turn running RIGHT NOW (#1472)?
- *
- * Asked by the submit listener at the keystroke, before anything is deferred,
- * so the answer describes the session the user typed into: main's own
- * "working" for the turn this prompt starts comes back over IPC and must not
- * be mistaken for a turn that was already under way. The raw status, not the
- * derived one: a dismissal only ever calms a finished turn, never a running one.
- */
-export function turnRunningNow(cardId: string): boolean {
-  return sessionStore.getState().sessions.find((s) => s.id === cardId)?.status === 'working';
 }
 
 /**
@@ -6305,49 +6262,6 @@ function showIfPaneIsBlank(panel: IDockviewPanel): void {
   } catch {
     /* fail-open: a tab with nothing under it is still a tab you can click */
   }
-}
-
-/**
- * §5.8's auto-minimize on submit (P2-E9-06).
- *
- * The user just sent a prompt; the presentation policy says whether that card
- * keeps the screen. Every rule about WHETHER to move is in `submitTarget`
- * (pure, unit-tested); this function is only the dockview half.
- *
- * IT READS THE CARD AS IT IS NOW, which is why the caller defers the CALL and
- * not the decision: three of the four rules describe the card at the moment we
- * would move it, so a card popped out (or blocked) between the keystroke and
- * this call must still be spared.
- *
- * `atKeystroke` is the one fact that must NOT be read now: whether the turn
- * was already running when Enter was pressed (#1472). See `turnRunningNow`.
- *
- * Returns the rung the card was sent to, or null when it stayed.
- */
-export function applySubmitPolicy(
-  api: DockviewApi | null,
-  cardId: string,
-  atKeystroke: { turnRunning?: boolean } = {}
-): 'collapsed' | null {
-  if (!api || !cardId || sessionStore.isTearingDown()) return null;
-  const p = sessionStore.getPresentation(cardId);
-  const rung = submitTarget({
-    policy: sessionStore.policyFor(cardId),
-    ladder: p.ladder,
-    poppedOut: p.poppedOut,
-    // the same vocabulary the rail rows and the lamps use, so "waiting on a
-    // human" cannot mean one thing here and another three feet to the left
-    needsHuman: cardWaitsOnHuman(cardId),
-    // §5.8's pinning contract (E9-09): this is the "auto-collapse sweep" it
-    // names, and a pinned card sits it out
-    pinned: sessionStore.isPinned(cardId),
-    turnRunning: atKeystroke.turnRunning === true,
-  });
-  if (rung) setCardLadder(api, cardId, rung, 'submit policy');
-  // the rung it was sent to, so the caller can SAY so (#1210). Read back
-  // rather than assumed: a move dropped by the ladder's own guard must not be
-  // announced as one that happened.
-  return rung && sessionStore.getPresentation(cardId).ladder === rung ? rung : null;
 }
 
 /**
@@ -6482,7 +6396,7 @@ function layoutCards(): LayoutCard[] {
     return {
       cardId: s.id,
       ladder: p.ladder,
-      // the same vocabulary the rail rows, the lamps and the submit policy use,
+      // the same vocabulary the rail rows and the lamps use,
       // read through `shownStatus` like them: a dismissed "waiting" no longer
       // holds the card on screen (#1427)
       needsAttention: cardShowsNeedsYou(s.id, s.status),
@@ -7679,9 +7593,8 @@ export function SessionGrid(props: {
         if (timers.has(eventId) || judged.has(eventId)) continue;
         // ALWAYS THROUGH A TIMER, even for `auto-close`'s zero delay. We are
         // inside a store notification, which can be raised from the middle of a
-        // component's own update — removing a panel synchronously from here is the
-        // "tearing a panel out from under React" hazard the submit sweep below
-        // spends a paragraph on.
+        // component's own update — removing a panel synchronously from here would
+        // tear a panel out from under React while it is still updating.
         timers.set(
           eventId,
           setTimeout(() => fire(cardId, eventId), delay)
@@ -7692,54 +7605,11 @@ export function SessionGrid(props: {
     const off = sessionStore.subscribe(tick);
     return () => {
       off();
-      // A teardown inside the linger must not call into a disposed dockview api,
-      // exactly as the submit sweep's timers are cancelled below.
+      // A teardown inside the linger must not call into a disposed dockview api.
       for (const t of timers.values()) clearTimeout(t);
       timers.clear();
     };
   }, [retireCard]);
-
-  const [submitNotice, setSubmitNotice] = React.useState<SubmitNotice | null>(null);
-  // §5.8's auto-minimize on submit (P2-E9-06). Subscribed ONCE, here, rather
-  // than per card: the grid is the only thing that owns the dockview api, and a
-  // subscription per mounted panel would collapse a card that had already been
-  // collapsed by its neighbour's copy of the same listener.
-  React.useEffect(() => {
-    // DEFERRED BY A TICK, and that is not cosmetic: the notification arrives
-    // from inside the composer's own submit handler, which lives in the very
-    // panel we may be about to unmount. Acting synchronously would tear that
-    // panel out from under React while it is still dispatching the event and
-    // finishing its own state updates (clearing the draft, restoring the
-    // caret). A microtask is not enough — React flushes a discrete event's
-    // updates before macrotasks, not before microtasks.
-    //
-    // The timers are tracked so a teardown in that window cancels them rather
-    // than calling into a disposed dockview api.
-    const pending = new Set<ReturnType<typeof setTimeout>>();
-    const off = sessionStore.subscribePromptSubmit((liveId) => {
-      const cardId = sessionStore.cardIdForLive(liveId);
-      // NOW, not in the timer (#1472): was this turn already running when
-      // Enter was pressed? A prompt added mid-turn keeps its card on screen.
-      const turnRunning = turnRunningNow(cardId);
-      const timer = setTimeout(() => {
-        pending.delete(timer);
-        const rung = applySubmitPolicy(apiRef.current, cardId, { turnRunning });
-        // #1210: SAY SO. The owner pressed Enter and the card he was typing
-        // in left the screen with nothing to explain it; the setting had been
-        // on for hours. The strip names the session and the setting, and
-        // carries the two things he wanted: the card back, and this stopped.
-        if (rung === 'collapsed') {
-          setSubmitNotice(submitNoticeMuted() ? null : { cardId, rung });
-        }
-      }, 0);
-      pending.add(timer);
-    });
-    return () => {
-      off();
-      for (const t of pending) clearTimeout(t);
-      pending.clear();
-    };
-  }, []);
 
   // The remount half of `forgetDockBacks` (the quit half is a `beforeunload`
   // listener in `onReady`). A dev HMR pass — or anything later that remounts
@@ -8389,19 +8259,6 @@ export function SessionGrid(props: {
         const layoutRefused = isIpcRefusal(layoutAnswer);
         if (layoutRefused) console.warn('[layout] the saved layout was refused; forgetting slots');
         if (saved) {
-          // Resolved BEFORE the restore's try/catch, not inside it: an await in
-          // there whose rejection is unrelated to the layout would abort the
-          // stale-panel cleanup and the focus restore, and report itself as
-          // "[layout] restore failed". `null` means "we do not know", which the
-          // prune below treats as "prune no groups".
-          const groupIds = await window.switchboard.groups
-            .list()
-            // #650: `?? null` and NOT `?? []`. The comment above is the reason
-            // — `null` here means "we do not know", which prunes no groups,
-            // while an empty array would assert that no group exists and prune
-            // every one of them. A refusal is the first, never the second.
-            .then((gs) => answered(gs)?.map((g) => g.id) ?? null)
-            .catch(() => null);
           try {
             // WHICH PANELS ARE NOT COMING BACK, decided once and used twice
             // (#494): the popout groups are filtered by it before `fromJSON`
@@ -8416,8 +8273,7 @@ export function SessionGrid(props: {
             //    relaunch" is named in E16's *Not in scope*, and a viewer
             //    restored blind would also re-read a file whose folder may no
             //    longer be in the read scope.
-            // #650, and the same distinction as `groupIds` above: `.map` on
-            // the brand throws, but degrading to an EMPTY set would be worse
+            // #650: `.map` on the brand throws, but degrading to an EMPTY set would be worse
             // than the throw — it says "no card has a record" and prunes every
             // session panel out of the restored layout. `null` says "we could
             // not ask", and prunes no session. Derived panels are dropped
@@ -8497,13 +8353,6 @@ export function SessionGrid(props: {
               // point of hiding), so the only thing that can retire one is the card
               // itself being gone — otherwise the blob grows for ever
               sessionStore.prunePresentation(known);
-              // the presentation POLICY overrides (E9-06) are keyed the same way and
-              // outlive their cards the same way, so they are retired at the same
-              // moment. A FAILED group list keeps every group override rather than
-              // pruning against an empty set: "the IPC rejected" and "you have no
-              // groups" are the same value otherwise, and one of them would silently
-              // delete settings the user made.
-              sessionStore.prunePolicies(known, groupIds ?? Object.keys(sessionStore.getPolicies().groups));
               // and E9-07's maximize, which names a card and snapshots every other
               // card's rung: a maximize held for a session that has since been
               // closed would keep the workspace blown up around nothing.
@@ -8635,14 +8484,6 @@ export function SessionGrid(props: {
           height back. What is left is the one thing the bar also carried and
           nothing else does: the reason a session could not be opened. It
           takes a line only while there is something to say. */}
-      <SubmitPolicyNotice
-        notice={submitNotice}
-        onRestore={(cardId) => {
-          setSubmitNotice(null);
-          setCardLadder(apiRef.current, cardId, 'expanded', 'submit notice');
-        }}
-        onDismiss={() => setSubmitNotice(null)}
-      />
       {error && (
         <div
           data-testid="grid-error"
