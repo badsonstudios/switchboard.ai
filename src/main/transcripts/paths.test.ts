@@ -13,6 +13,7 @@ import {
   listConversations,
   locateConversation,
   slugForCwd,
+  slugsForCwd,
 } from './paths';
 import { reportsConversationCount } from './test-big-dir';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
@@ -43,6 +44,64 @@ const seed = (id: string, body = '{}\n'): string => {
   fs.writeFileSync(file, body);
   return file;
 };
+
+// #1487 — a folder with an underscore in it could never be resumed. Every name
+// below was MADE BY THE CLI (claude 2.1.312 on PATH, `claude -p` run in that
+// folder, 2026-10-28), not computed from `slugForCwd`, so these agree with the
+// CLI by evidence rather than by construction.
+describe('slugForCwd (#1487)', () => {
+  const BS = String.fromCharCode(92);
+  const win = (...parts: string[]): string => parts.join(BS);
+
+  it('turns EVERY non-alphanumeric character into a dash, underscores included', () => {
+    expect(slugForCwd(win('C:', 'Development', 'SWKeyServer', 'SOLOServerInstances_svn', 'Managed'))).toBe(
+      'C--Development-SWKeyServer-SOLOServerInstances-svn-Managed'
+    );
+    expect(slugForCwd(win('C:', 'tmp', 'sb1487', 'Instances_svn ~x(1)+y'))).toBe('C--tmp-sb1487-Instances-svn--x-1--y');
+  });
+
+  it('truncates past 200 characters and appends the CLI\'s hash of the raw path', () => {
+    const long = win('C:', 'tmp', 'sb1487', 'a_'.repeat(60), 'B'.repeat(90));
+    expect(slugForCwd(long)).toBe(
+      'C--tmp-sb1487-' + 'a-'.repeat(60) + '-' + 'B'.repeat(65) + '-t7qoab'
+    );
+  });
+
+  it('counts UTF-16 code units, as the CLI does, and truncates only PAST 200', () => {
+    expect(slugForCwd('é')).toBe('-');
+    expect(slugForCwd(String.fromCodePoint(0x1f600))).toBe('--');
+    expect(slugForCwd('a'.repeat(200))).toBe('a'.repeat(200));
+    expect(slugForCwd('a'.repeat(201))).toMatch(new RegExp('^a{200}-[0-9a-z]+$'));
+    expect(slugsForCwd('/home/me/my_app')).toEqual(['-home-me-my-app']);
+  });
+
+  it('a folder with an underscore is RESUMABLE — the bug itself', () => {
+    const under = win('C:', 'Development', 'SOLOServerInstances_svn', 'Managed');
+    const cliDir = path.join(root, 'C--Development-SOLOServerInstances-svn-Managed');
+    fs.mkdirSync(cliDir, { recursive: true });
+    const file = path.join(cliDir, 'b63fbf75-dd33-4e99-a696-580ed67f099f.jsonl');
+    fs.writeFileSync(file, '{}\n');
+    expect(locateConversation(root, under, 'b63fbf75-dd33-4e99-a696-580ed67f099f')).toEqual({
+      status: 'found',
+      file,
+    });
+    const listing = listConversations(root, under);
+    expect(listing.status === 'ok' && listing.conversations.map((c) => c.file)).toEqual([file]);
+  });
+
+  it('finds a TRUNCATED directory whichever case the drive letter arrives in', () => {
+    // the hash is of the raw path, so `c:` and `C:` hash differently even though
+    // the rest of the match is case-insensitive
+    const tail = [win('tmp', 'sb1487'), 'a_'.repeat(60), 'B'.repeat(90)];
+    const cliDir = path.join(root, 'C--tmp-sb1487-' + 'a-'.repeat(60) + '-' + 'B'.repeat(65) + '-t7qoab');
+    fs.mkdirSync(cliDir, { recursive: true });
+    const file = path.join(cliDir, 'conv-long.jsonl');
+    fs.writeFileSync(file, '{}\n');
+    for (const drive of ['C:', 'c:']) {
+      expect(locateConversation(root, win(drive, ...tail), 'conv-long')).toEqual({ status: 'found', file });
+    }
+  });
+});
 
 describe('locateConversation', () => {
   it('finds the transcript under the case-insensitive slug', () => {

@@ -33,7 +33,7 @@ import path from 'path';
 import { hookPoster, launchApp, LaunchedApp, streamPrompter, tempProjectFolder } from './fixtures/app';
 
 function slugForCwd(cwd: string): string {
-  return cwd.replace(/[\\/:. ]/g, '-');
+  return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
 test.describe('transcript binding transparency (E15-10)', () => {

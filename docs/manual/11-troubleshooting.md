@@ -235,6 +235,23 @@ Sessions you **closed** with the tab ✕ are forgotten on purpose — that's wha
 the confirmation warns about. Sessions that were merely open, or suspended,
 come back.
 
+**A session came back EMPTY after a restart, in a folder with an underscore
+(or another unusual character) in its name.**
+Fixed in 0.8.134. Before that, a folder such as `SOLOServerInstances_svn` was
+looked up under the wrong name: Claude Code saves a folder's conversations under
+a name where *every* character that isn't a letter or a digit becomes a dash,
+and switchboard only swapped slashes, colons, dots and spaces. So the
+conversation was on disk the whole time, switchboard could not see it, and the
+card opened a blank session instead (the log says *"the conversation could not
+be reopened"*). The **🕘** list for that folder was empty for the same reason.
+
+**Your conversation is not lost.** On 0.8.134 or later, open a session on the
+same folder, click **🕘**, and it is in the list. Pick it and the card carries
+on from where it left off.
+
+This also explained a Session tab saying it couldn't find the transcript in
+such a folder, and missing usage totals for those sessions.
+
 **I'm hearing notification sounds and don't know why.**
 Every session that needs permission, needs input, finishes, or crashes makes a
 sound. Open the Events drawer — the tab on the right edge, or `Ctrl+E` — and it

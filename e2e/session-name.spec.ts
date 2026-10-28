@@ -24,7 +24,7 @@ import {
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 /** `slugForCwd`, restated — see session-history.spec.ts for why it is a copy */
-const slug = (cwd: string): string => cwd.replace(/[\\/:. ]/g, '-').toLowerCase();
+const slug = (cwd: string): string => cwd.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
 
 const dialog = (w: Page) => w.getByTestId('name-session-dialog');
 const field = (w: Page) => w.locator('[data-name-session-input]');
