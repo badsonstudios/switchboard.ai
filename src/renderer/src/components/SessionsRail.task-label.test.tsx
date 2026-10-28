@@ -26,7 +26,6 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 import { SessionsRail } from './SessionsRail';
 import { RailSession } from '../model/types';
-import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { NO_ORDER } from '../lib/rail-order';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { loadUiState, uiDelete } from '../lib/ui-state';
@@ -62,7 +61,6 @@ async function mount(
         needing={needing}
         palette={['var(--status-working)']}
         selectedId={null}
-        policies={DEFAULT_BOOK}
         pinned={new Set<string>()}
         manualOrder={NO_ORDER}
         labelLines={labelLines}
@@ -78,7 +76,6 @@ async function mount(
         onOpenInGroup={noop}
         onMoveToGroup={noop}
         onTogglePin={noop}
-        onCycleGroupPolicy={noop}
       />
     );
   });

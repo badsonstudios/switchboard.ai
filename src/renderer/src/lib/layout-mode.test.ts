@@ -136,8 +136,8 @@ describe('layout modes (E9-07, §5.8)', () => {
     });
 
     it('does not go and fetch a card nobody put on screen', () => {
-      // E9-06's auto-collapse can leave nothing expanded and nothing focused. A
-      // reactive pass must not answer that by re-expanding rail position 1 —
+      // Folding cards away by hand can leave nothing expanded and nothing
+      // focused. A reactive pass must not answer that by re-expanding rail position 1 —
       // that would be one §5.8 feature quietly undoing another.
       const cards = [card('a', { ladder: 'collapsed' }), card('b', { ladder: 'collapsed' })];
       expect(moves(state({ mode: 'focus' }), cards, null, 'react')).toEqual({});

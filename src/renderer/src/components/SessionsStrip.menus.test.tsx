@@ -14,7 +14,6 @@ import i18next from 'i18next';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { SessionsStrip } from './SessionsStrip';
 import { railOrder } from '../lib/groups';
-import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { RailGroup, RailSession } from '../model/types';
 
 declare global {
@@ -86,8 +85,6 @@ async function mount(
         onRenameGroup={noop}
         palette={PALETTE}
         onRecolorGroup={noop}
-        policies={DEFAULT_BOOK}
-        onCycleGroupPolicy={noop}
         onDeleteGroup={noop}
         onOpenAll={noop}
         onPlace={noop}
@@ -363,7 +360,6 @@ describe('right-click on a group', () => {
       'open-all',
       'rename',
       'recolor',
-      'policy',
       'delete',
     ]);
     expect(menu(host)!.textContent).not.toContain(i18next.t('rail.groupMoveUp'));
@@ -378,11 +374,10 @@ describe('right-click on a group', () => {
       onOpenInGroup: (id) => said.push(`new:${id}`),
       onOpenAll: (ids) => said.push(`open:${ids.join(',')}`),
       onRecolorGroup: (id, color) => said.push(`colour:${id}:${color}`),
-      onCycleGroupPolicy: (id) => said.push(`policy:${id}`),
       onDeleteGroup: (id) => said.push(`delete:${id}`),
     };
     const host = await mount(over, SESSIONS, [], ['manual']);
-    for (const id of ['new', 'open-all', 'recolor', 'policy', 'delete']) {
+    for (const id of ['new', 'open-all', 'recolor', 'delete']) {
       await rightClick(group(host, DOCS.id));
       await click(item(host, id));
     }
@@ -391,7 +386,6 @@ describe('right-click on a group', () => {
       'open:manual',
       // Docs is the second colour, so "Change colour" takes it to the third
       `colour:${DOCS.id}:${PALETTE[2]}`,
-      `policy:${DOCS.id}`,
       `delete:${DOCS.id}`,
     ]);
   });
@@ -407,14 +401,6 @@ describe('right-click on a group', () => {
     await press(field, 'Enter');
     expect(renames).toEqual([[BACK.id, 'Services']]);
     expect(group(host, BACK.id)).toBeTruthy();
-  });
-
-  it('says how the group shows its sessions, in the same words the rail uses', async () => {
-    const host = await mount();
-    await rightClick(group(host, BACK.id));
-    expect(item(host, 'policy').textContent).toBe(
-      i18next.t('strip.menuGroupPolicy', { policy: i18next.t('policy.groupDefault') })
-    );
   });
 
   it('an automatic group can only be opened: there is nothing of it to rename or delete', async () => {

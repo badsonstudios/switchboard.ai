@@ -93,9 +93,6 @@ describe('text is never dimmed by fading its box (#1211)', () => {
     expect(read('components/FindBar.tsx')).toContain("color: hit.jumpable ? 'var(--text)' : 'var(--muted)'");
     // a status letter rolled up from inside a folder
     expect(read('components/FileTree.tsx')).toMatch(/rolledUp\s*[?]\s*'var\(--muted\)'/);
-    // a group's policy button with no override
-    expect(read('components/SessionsRail.tsx')).toContain(
-      "color: groupOverride(props.policies, g.id) ? 'var(--text)' : 'var(--muted)'"
-    );
+    // (the fifth, a group's "on submit" button, was removed with the setting, #1485)
   });
 });

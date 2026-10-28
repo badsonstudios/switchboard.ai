@@ -35,8 +35,8 @@
 //     on the same card, forever.
 //   • the card you are IN is never folded away. §5.8's idle-collapse bullet
 //     already carves out "working / errored / currently-focused sessions" from
-//     a bulk collapse, and E9-06's always-visible ruling is the same instinct:
-//     nothing minimizes the thing you are looking at, unasked.
+//     a bulk collapse, and #1485's removal of "collapse on submit" is the same
+//     instinct: nothing minimizes the thing you are looking at, unasked.
 //   • a POPPED-OUT card is never touched. Its rung change would close an OS
 //     window the user deliberately placed, quite possibly on another monitor
 //     (E9-06, verbatim) — and it is not competing for the main window's space
@@ -211,8 +211,8 @@ function wants(opts: {
   // (a Changes tab), and again whenever the last session card leaves the
   // workspace. Naively falling back to rail position 1 there would make the
   // layout twitch — open a diff on the session you are reading and the big card
-  // would jump to somebody else — and it would undo E9-06's auto-collapse, by
-  // re-expanding a card the presentation policy had just minimized.
+  // would jump to somebody else — and it would undo a collapse, by
+  // re-expanding a card the user had just folded away.
   //
   //   1. the card you are in (never a POPPED-OUT one: it is in another window,
   //      so folding this window around it would empty the screen);
@@ -400,7 +400,7 @@ export function snapshotRungs(cards: readonly LayoutCard[]): Record<string, Ladd
  * rung are accepted.
  *
  * COMPARES END STATES, so it never has to ask WHO moved a card. That is what
- * makes it immune to E9-05's reveal-on-attention and E9-06's auto-collapse
+ * makes it immune to E9-05's reveal-on-attention and to a fold by hand
  * without needing a user-vs-machine distinction — and why the rung mover does
  * not become a fourth writer of layout state.
  *
@@ -485,7 +485,7 @@ export function withoutMaximized(state: LayoutState): LayoutState {
  *
  * Returns null when there is nothing to drop, so the caller can skip a pointless
  * write and re-render — the same contract `prunePresentation` and
- * `prunePolicies` use, and for the same reason: a workspace must not accrete a
+ * `pruneFocusPolicies` use, and for the same reason: a workspace must not accrete a
  * record per session it ever opened. A maximize whose card is gone is dropped
  * outright; otherwise the chip would say "maximized" about a session that no
  * longer exists, and the next toggle would restore a snapshot taken around it.

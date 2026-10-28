@@ -9,7 +9,6 @@
 import { Command, CommandContext } from './commands';
 import { PanelId } from '../extensibility/contributions';
 import type { Ladder } from './presentation';
-import { POLICY_ORDER, PresentationPolicy } from './presentation-policy';
 import { FOCUS_POLICY_ORDER, FocusPolicy } from './focus-policy';
 import { LAYOUT_MODES, LayoutMode } from './layout-mode';
 import { LAYOUT_PRESETS, LayoutPreset } from './layout-presets';
@@ -45,12 +44,6 @@ export interface CommandDeps {
   setLadder: (cardId: string, rung: Ladder) => void;
   /** step a card one rung down (collapse) or up (expand) — E9-05 */
   stepLadder: (cardId: string, dir: 'down' | 'up') => void;
-  /** what happens to EVERY session's card when its prompt is submitted (E9-06) */
-  setGlobalPolicy: (policy: PresentationPolicy) => void;
-  /** override the global for ONE session; `undefined` follows the default again */
-  setSessionPolicy: (cardId: string, policy: PresentationPolicy | undefined) => void;
-  /** override the global for a whole persistent group (E9-06) */
-  setGroupPolicy: (groupId: string, policy: PresentationPolicy | undefined) => void;
   /** what a session that finishes or needs you may do to the screen (E9-10) */
   setGlobalFocusPolicy: (policy: FocusPolicy) => void;
   /** override the focus policy for ONE session; `undefined` follows the default */
@@ -119,8 +112,8 @@ export interface CommandDeps {
    * DATA, not a function, and the only data field on this interface — because the
    * command LIST itself depends on it: §5.15 asks for "Dispatch → <template>" in
    * the palette, which means one entry per template rather than one entry that
-   * then asks. A palette entry has to say what pressing Enter will do (E9-06's
-   * rule for why the policy commands are named targets and not a cycle).
+   * then asks. A palette entry has to say what pressing Enter will do (the
+   * rule for why the focus-policy commands are named targets and not a cycle).
    *
    * Only the id and the name, because that is all a title needs. Whether a
    * template can actually run is asked FRESH when the dialog opens — a refusal
@@ -520,7 +513,7 @@ export function buildCommands(deps: CommandDeps): Command[] {
     // ONE ENTRY PER TEMPLATE, which is §5.15's own "Dispatch → <template>", and
     // generated from the list rather than written out — so a fourth template
     // cannot ship with three of its four entries (the same reason `LAYOUT_MODES`
-    // and `POLICY_ORDER` are mapped over rather than enumerated).
+    // and `FOCUS_POLICY_ORDER` are mapped over rather than enumerated).
     //
     // NO BINDING, deliberately, and for `session.closeAll`'s reason stated the
     // other way round: that one is unbound because nobody should be able to close
@@ -739,85 +732,10 @@ export function buildCommands(deps: CommandDeps): Command[] {
         if (ctx.activeCardId) deps.toggleMaximize(ctx.activeCardId);
       },
     },
-    // ── §5.8's presentation POLICY (E9-06) ────────────────────────────────
-    //
-    // Named targets, not a cycle. A palette entry has to say what it will DO
-    // before you press Enter — "cycle the presentation policy" tells you only
-    // that something will change, and the mouse paths (the titlebar chip, the
-    // rail menus) are where cycling belongs.
-    //
-    // Generated from POLICY_ORDER rather than written out three times, so a
-    // fourth policy cannot ship with two of its three entries.
-    ...POLICY_ORDER.map(
-      (policy): Command => ({
-        id: `presentation.policy.${policy}`,
-        titleKey: `commands.policy.${policy}`,
-        categoryKey: CATEGORY_VIEW,
-        scope: 'app' as const, // palette-only: a preference, not a per-minute action
-        run: () => deps.setGlobalPolicy(policy),
-      })
-    ),
-    ...POLICY_ORDER.map(
-      (policy): Command => ({
-        id: `session.policy.${policy}`,
-        titleKey: `commands.sessionPolicy.${policy}`,
-        categoryKey: CATEGORY_SESSION,
-        scope: 'app' as const,
-        enabled: hasActive,
-        disabledReasonKey: 'commands.disabled.noActiveSession',
-        run: (ctx) => {
-          if (ctx.activeCardId) deps.setSessionPolicy(ctx.activeCardId, policy);
-        },
-      })
-    ),
-    {
-      // The way BACK from an override. "Follow the default" has to be a command
-      // of its own: without it the only route out of a per-session choice would
-      // be picking the value the default happens to have today, which stops
-      // being the default the moment the user changes it.
-      id: 'session.policy.default',
-      titleKey: 'commands.sessionPolicy.default',
-      categoryKey: CATEGORY_SESSION,
-      scope: 'app',
-      enabled: hasActive,
-      disabledReasonKey: 'commands.disabled.noActiveSession',
-      run: (ctx) => {
-        if (ctx.activeCardId) deps.setSessionPolicy(ctx.activeCardId, undefined);
-      },
-    },
-    // The GROUP level exists only as a button on the rail's group header, and
-    // `Ctrl+B` hides the rail. §5.8's invariant is that hiding chrome never
-    // removes capability, so it has to be here too — acting on the focused
-    // session's group, which is the only group the palette can name without
-    // inventing a group picker.
-    ...POLICY_ORDER.map(
-      (policy): Command => ({
-        id: `group.policy.${policy}`,
-        titleKey: `commands.groupPolicy.${policy}`,
-        categoryKey: CATEGORY_SESSION,
-        scope: 'app' as const,
-        enabled: (ctx) => ctx.activeGroupId !== null,
-        disabledReasonKey: 'commands.disabled.noActiveGroup',
-        run: (ctx) => {
-          if (ctx.activeGroupId) deps.setGroupPolicy(ctx.activeGroupId, policy);
-        },
-      })
-    ),
-    {
-      id: 'group.policy.default',
-      titleKey: 'commands.groupPolicy.default',
-      categoryKey: CATEGORY_SESSION,
-      scope: 'app',
-      enabled: (ctx) => ctx.activeGroupId !== null,
-      disabledReasonKey: 'commands.disabled.noActiveGroup',
-      run: (ctx) => {
-        if (ctx.activeGroupId) deps.setGroupPolicy(ctx.activeGroupId, undefined);
-      },
-    },
     // ── §5.8's FOCUS-STEALING policy (E9-10) ──────────────────────────────
     //
-    // Named targets and no cycle, for E9-06's reason: a palette entry has to
-    // say what it will DO before you press Enter. No binding either — this is a
+    // Named targets and no cycle: a palette entry has to say what it will DO
+    // before you press Enter. No binding either — this is a
     // preference you set once, and the four modes would want four of them.
     //
     // The GLOBAL entries sit in the Attention category rather than View: this
@@ -846,8 +764,10 @@ export function buildCommands(deps: CommandDeps): Command[] {
       })
     ),
     {
-      // The way BACK from a per-session override — see session.policy.default
-      // for why picking today's default value is not the same thing.
+      // The way BACK from an override. "Follow the default" has to be a command
+      // of its own: without it the only route out of a per-session choice would
+      // be picking the value the default happens to have today, which stops
+      // being the default the moment the user changes it.
       id: 'session.focusPolicy.default',
       titleKey: 'commands.sessionFocusPolicy.default',
       categoryKey: CATEGORY_ATTENTION,

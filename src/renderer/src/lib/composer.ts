@@ -5,7 +5,6 @@
 // registers as a paste and never submits (S-03 finding, refound live
 // 2026-07-22). Escape bytes are built from char codes: no control bytes in
 // source files.
-import { sessionStore } from '../store/session-store';
 import type { PromptAttachment } from '../../../shared/prompt-attachments';
 import { answered } from '../../../shared/ipc/refusal';
 import type { MentionHandoff } from '../../../shared/mention-prompt';
@@ -54,8 +53,10 @@ export async function sendSessionCommand(sessionId: string, text: string): Promi
 /**
  * Submit a prompt the USER typed, whichever transport this session is on.
  *
- * `sendSessionCommand` plus the one thing that separates a person pressing
- * Enter from a menu item writing a command: §5.8's auto-minimize.
+ * `sendSessionCommand`, plus the attachments a person can paste and a menu
+ * item cannot. (It also used to tell the workspace a prompt had been sent, so
+ * the card could fold itself away. That feature is gone, #1485: sending a
+ * prompt never moves a card.)
  *
  * Resolves TRUE when the prompt went, FALSE when it did not — which only the
  * image path can produce (see below), and which the composer uses to keep the
@@ -66,21 +67,6 @@ export async function submitPrompt(
   text: string,
   attachments: readonly PromptAttachment[] = []
 ): Promise<boolean> {
-  // §5.8's auto-minimize hangs off THIS call and not off the composer component,
-  // because this function is already documented as "the one way renderer
-  // surfaces write a prompt into a session" — so a future second surface gets
-  // the behaviour for free instead of forgetting it.
-  //
-  // BEFORE the await, deliberately: the collapse is a response to the user's
-  // gesture and must not wait on an IPC round trip, nor depend on which
-  // transport ended up taking the prompt.
-  //
-  // `sendSessionCommand` is NOT a submit point of its own. Its other caller is
-  // the ⋯ session-controls menu, which sends slash commands like `/compact` —
-  // the workspace folding itself away because you clicked a menu item would be
-  // baffling, and §5.8 says "submitting a prompt", not "sending text".
-  sessionStore.notifyPromptSubmitted(sessionId);
-
   // NO PTY FALLBACK WHEN THERE ARE IMAGES (P2-E10-09). The whole point of
   // try-then-fall-back is that both routes deliver the same thing; that stops
   // being true the moment a bitmap is attached, because the PTY route is

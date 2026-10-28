@@ -34,7 +34,6 @@ import {
   readWorkspaceFile,
   rungOf,
   sessionStatuses,
-  setPresentationPolicy,
   streamingPermissionHolder,
   streamingQuestionHolder,
   tempProjectFolder,
@@ -227,7 +226,7 @@ for (const kind of ['approval', 'question'] as const) {
       });
     });
 
-    test('a card that was collapsed on submit comes back to its slot, and takes focus from nobody', async () => {
+    test('a card that was collapsed by hand comes back to its slot, and takes focus from nobody', async () => {
       test.setTimeout(150_000);
       const folder = tempProjectFolder();
       a = await launchApp({ seedFolder: folder });
@@ -238,12 +237,14 @@ for (const kind of ['approval', 'question'] as const) {
       const third = await addSession(a);
       await expect(tabs(w)).toHaveCount(3);
 
-      await setPresentationPolicy(w, 'Collapse on submit');
       await row(w, second).click();
       await expect(w.locator('.dv-active-tab')).toContainText(second);
       await composer(w).click();
       await composer(w).fill('!hang');
       await w.keyboard.press('Enter');
+      // sending a prompt moves nothing (#1485): the card is put away BY HAND
+      await staysFor(w, 1000, async () => expect(tabs(w)).toHaveCount(3));
+      await w.getByTestId('card-collapse').filter({ visible: true }).click();
       await expect(tabs(w)).toHaveCount(2, { timeout: 15_000 });
       await expect.poll(() => rungOf(w, second)).toBe('collapsed');
 
@@ -279,7 +280,6 @@ for (const kind of ['approval', 'question'] as const) {
       const w = a.window;
       const { left, right } = made;
 
-      await setPresentationPolicy(w, 'Collapse on submit');
       await row(w, left).click();
       await expect(composer(w).first()).toBeVisible();
       // its own composer: the one in the pane whose tab is this session
@@ -287,7 +287,9 @@ for (const kind of ['approval', 'question'] as const) {
       await paneOf(left).getByPlaceholder(/^Message .+…$/).click();
       await paneOf(left).getByPlaceholder(/^Message .+…$/).fill('!hang');
       await w.keyboard.press('Enter');
-      // alone in its pane, so the pane goes with it
+      // sending a prompt moves nothing (#1485): put it away by hand. Alone in
+      // its pane, so the pane goes with it
+      await paneOf(left).getByTestId('card-collapse').click();
       await expect(panes(w)).toHaveCount(1, { timeout: 15_000 });
       await expect.poll(() => rungOf(w, left)).toBe('collapsed');
 
@@ -330,10 +332,11 @@ for (const kind of ['approval', 'question'] as const) {
       const only = path.basename(folder);
       await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
 
-      await setPresentationPolicy(w, 'Collapse on submit');
       await composer(w).click();
       await composer(w).fill('!hang');
       await w.keyboard.press('Enter');
+      // sending a prompt moves nothing (#1485): put it away by hand
+      await w.getByTestId('card-collapse').filter({ visible: true }).click();
       await expect(tabs(w)).toHaveCount(0, { timeout: 15_000 });
       await expect.poll(() => rungOf(w, only)).toBe('collapsed');
 
@@ -345,34 +348,6 @@ for (const kind of ['approval', 'question'] as const) {
       await expect(bar(w, kind)).toBeVisible({ timeout: 15_000 });
       await staysFor(w, 1500, async () => {
         await expect(bar(w, kind)).toBeVisible();
-        await expect(railNeed(w)).toHaveAttribute('data-rail-need', '1');
-      });
-      expect(await answerHeldPermissions(a, 'deny')).toBe(1);
-    });
-
-    test('the prompt that collapses the card is the one that asks: it is not left collapsed', async () => {
-      test.setTimeout(120_000);
-      const folder = tempProjectFolder();
-      a = await launchApp({ seedFolder: folder });
-      const w = a.window;
-      await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
-      const second = await addSession(a);
-      await addSession(a);
-      await expect(tabs(w)).toHaveCount(3);
-
-      await setPresentationPolicy(w, 'Collapse on submit');
-      await row(w, second).click();
-      await expect(w.locator('.dv-active-tab')).toContainText(second);
-      await composer(w).click();
-      await composer(w).fill(kind === 'approval' ? '!permstream x.sh' : '!askstream');
-      await w.keyboard.press('Enter');
-
-      // Either it never left, or it left and came back. What it may not be is
-      // gone with a request on it: measured at one run in three before the fix.
-      await expect(railNeed(w)).toHaveAttribute('data-rail-need', '1', { timeout: 20_000 });
-      await staysFor(w, 2500, async () => {
-        await expect(tabs(w)).toHaveCount(3, { timeout: 10_000 });
-        expect(await rungOf(w, second)).toBe('expanded');
         await expect(railNeed(w)).toHaveAttribute('data-rail-need', '1');
       });
       expect(await answerHeldPermissions(a, 'deny')).toBe(1);
@@ -531,10 +506,11 @@ test.describe('finished work is its own number, in both placements (#1258)', () 
     const paneOf = (title: string) => panes(w).filter({ has: w.locator('.dv-tab', { hasText: title }) });
     const post = await hookPoster(a, 2);
 
-    await setPresentationPolicy(w, 'Collapse on submit');
     await paneOf(left).getByPlaceholder(/^Message .+…$/).click();
     await paneOf(left).getByPlaceholder(/^Message .+…$/).fill('!hang');
     await w.keyboard.press('Enter');
+    // sending a prompt moves nothing (#1485): put it away by hand
+    await paneOf(left).getByTestId('card-collapse').click();
     await expect(panes(w)).toHaveCount(1, { timeout: 15_000 });
 
     const draft = paneOf(right).getByPlaceholder(/^Message .+…$/);

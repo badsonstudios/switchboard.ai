@@ -140,6 +140,20 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.134 — unreleased
 
+### Changed
+
+- **Sending a prompt never puts a session away any more.** The **Collapse on
+  submit** setting is gone. With it on, pressing Enter folded the session's card
+  away until it finished or needed you, so it looked as if the session had
+  closed, and it came back somewhere else in the layout. It was one click to
+  turn on by accident, and that kept happening. Gone with it: the **⬍** chip in
+  the title bar, the **⬍** button on group headers, the **On submit** choice in
+  a card's **⋯** menu, the group menu's **How its sessions are shown**, and the
+  palette's *on submit* entries. If you had it on anywhere, switchboard forgets
+  it the next time it starts. Folding a session away **by hand** works exactly
+  as before. A session that the old setting had already folded away stays
+  folded until you click it in the Sessions list.
+
 ## 0.8.133 — 2026-10-27
 
 ### Changed

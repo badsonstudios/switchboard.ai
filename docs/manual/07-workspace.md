@@ -67,9 +67,9 @@ where it was. See [Getting a session out of the way](#getting-a-session-out-of-t
 Click a row to jump to that session. Double-click to rename it — `Esc`, or Enter
 on an empty box, leaves the name alone. Right-click for
 **Open changes**, **Rename…**, **Pin session**, **Close session** and
-**Move to group**. (What a session does when you send it a prompt is not on
-this menu any more; it is on the card's own **⋯** menu. See
-[Getting out of the way by itself](#getting-out-of-the-way-by-itself).)
+**Move to group**. (What a session does when it needs you is not on this menu
+any more; it is on the card's own **⋯** menu. See
+[When a session interrupts you](#when-a-session-interrupts-you).)
 
 A **pinned** session (📌) sorts to the top of the list — of its group, if it is
 in one — stays put at the top while the rest of the list scrolls underneath it,
@@ -258,9 +258,9 @@ you get by right-clicking a session in the list on the left:
   in now, and **No group**. Pick one to move it. (Not there if you have no
   groups yet, or for a session that never started.)
 
-What one session does when you send a prompt, and when it needs you, is not on
-this menu. Those two are on the session's own card, in its **⋯** menu: see
-[Getting out of the way by itself](#getting-out-of-the-way-by-itself).
+What one session does when it needs you is not on this menu. It is on the
+session's own card, in its **⋯** menu: see
+[When a session interrupts you](#when-a-session-interrupts-you).
 
 **On a group:**
 
@@ -270,9 +270,6 @@ this menu. Those two are on the session's own card, in its **⋯** menu: see
   out when none is folded away, and it leaves the others where they are.
 - **Rename group…** works like renaming a session.
 - **Change colour** steps to the next colour.
-- **How its sessions are shown: …** says what happens to this group's
-  sessions when you send a prompt, and steps to the next choice each time you
-  pick it. See [Getting out of the way by itself](#getting-out-of-the-way-by-itself).
 - **Delete group** removes the group. Its sessions are not closed; they are
   simply no longer in a group.
 
@@ -366,8 +363,6 @@ a card with its own color and a **colored dot** beside its name.
   to take it out. See
   [Moving a session into a group without dragging](06-keyboard.md#moving-a-session-into-a-group-without-dragging).
 - **Start a session directly inside one:** click the **⊕** on the group header.
-- **Set what its sessions do on submit:** the **⬍** on the group header —
-  see [Getting out of the way by itself](#getting-out-of-the-way-by-itself).
 - **Delete:** the **✕** on the header. The sessions inside are kept — they just
   become ungrouped.
 - **Change the order of your groups:** right-click a group's header and choose
@@ -560,9 +555,6 @@ same size or on the same side as before. Sessions that shared a pane and were
 all put away come back to one pane together, not one each. The pane you are
 working in stays the one in front.
 
-A session that is **already waiting on you** is never put away by *Collapse
-on submit*, even if you send it another prompt.
-
 It reappears *without stealing your place*. Whatever you were typing in stays
 focused — the returning card waits for you rather than grabbing the screen. Its
 highlighted row in the Sessions list and the Events list are what tell you it's
@@ -683,114 +675,30 @@ Maximizing a suspended session doesn't wake it up: it stays suspended, with its
 **Resume** button, until you press that.
 
 
-## Getting out of the way by itself
+## Sending a prompt never moves a card
 
-Most of the time you don't move a session down the ladder because you decided
-to — you move it because you just gave it something to do and you're going to
-go look at something else. So switchboard can do that part for you, if you ask
-it to.
+When you send a session a prompt, its card stays exactly where it is, every
+time, so you can watch the turn come in. Nothing but you ever puts a session
+away: the **▁** button, `Ctrl+Shift+↓`, the command palette, or a layout you
+picked (see [Arranging the whole workspace](#arranging-the-whole-workspace)).
 
-**Out of the box it doesn't.** Send a prompt and the card stays exactly where it
-is, so you can watch the turn come in. Turn the other setting on and sending a
-prompt gets that card out of your way by itself:
-
-| Setting | When you submit a prompt |
-|---|---|
-| **Keep visible** | nothing happens — the card stays exactly where it is *(default)* |
-| **Collapse on submit** | the card is folded away; its row or pill in the Sessions list gets a dashed edge |
-
-With **Collapse on submit** on, the session keeps running and **its card comes
-straight back to the spot it left** when it finishes, asks a question, or asks
-permission — the same reappearance described under *Coming back* above.
-
-It only folds a card when your prompt **starts** the work. A card stays where it
-is when:
-
-- the session had finished and is **waiting** for you (unless you dismissed the
-  *waiting*);
-- the session is **still working**, and you are adding to what it is doing;
-- it is asking for an approval or has a question for you;
-- it is pinned, or popped out into its own window.
-
-It hands the space to the sessions you're still looking at. The session leaves
-the workspace and lives only in the Sessions list, with a dashed edge, and in
-Events — until it needs you, at which point it comes back like everything else.
-It suits running six or seven agents at once.
-**Keep visible** is the default because watching your first prompt actually run
-matters more than the space it takes.
-
-> **There used to be a third setting, *Hide on submit*.** It was removed in
-> version 0.8.124 because it hid the card you had just typed into, the moment
-> you pressed Enter. If you had it on, switchboard now treats it as **Keep
-> visible**. Hiding a session yourself still works exactly as before.
-
-### Changing it
-
-- **For everything:** the **⬍** chip in the title bar. Click it to switch
-  between the two; the label always says which one you're on.
-- **For one session:** open the **⋯** menu at the top right of that session's
-  card. **On submit** is a drop-down there with both, plus **Follow the
-  default** — which is how you go back to whatever the global setting is,
-  including after you change it later. It shows the choice in force. (This
-  used to be on the right-click menu of the session's row in the list on the
-  left.) If the card is folded away, click the session in the list first.
-- **For a group:** the **⬍** button on the group header cycles that group's
-  setting. It's dimmed while the group is just following the default. (Only on
-  groups *you* made — [automatic groups](#automatic-groups) have nothing to
-  configure, which is why they have no buttons at all.)
-- **From the keyboard:** the command palette (`Ctrl+Shift+P`) has all of them,
-  at all three levels — search for *on submit*. (The group entries act on
-  whichever session you're currently in, so they still work with the Sessions
-  list hidden.)
-
-The most specific setting wins: a session's own choice beats its group's, which
-beats the global one. All of it is remembered across restarts.
-
-### When it puts a card away, it tells you
-
-The moment a card is collapsed because you sent a prompt, a line appears above
-the cards:
-
-> *BrainHarbor was collapsed because “Collapse on submit” is on. It is still
-> running, and it is in the Sessions list.*
-
-It says which session, which setting, and where the setting comes from (for
-everything, for its group, or for this session). It has three buttons:
-
-| Button | What it does |
-|---|---|
-| **Bring it back** | the card returns to the spot it left. The session never stopped. The setting stays as it is |
-| **Stop doing this** | brings the card back **and** switches the setting that sent it away to **Keep visible**. If the setting came from the session's group, only that group changes; if it was the session's own, only that session |
-| **Stop telling me** | hides this line until you next restart switchboard. The setting stays on. For when you turned it on deliberately and don't need reminding |
-
-The line goes away by itself when the card comes back.
-
-If a card folded away when you pressed Enter and you never asked for that: the
-**⬍** chip in the title bar switches the setting with one click, so it is easy
-to change without meaning to. **Stop doing this** puts it back.
-
-### What it won't do
-
-- **It won't touch a session you've popped out into its own window.** Putting a
-  session on a second monitor is a stronger statement than a global default, and
-  closing that window on every prompt would be obnoxious. Collapse it by hand if
-  you want to.
-- **It won't push a session further down than it already is.** If a session is
-  already collapsed, tabbed or hidden, submitting from it leaves it there.
-- **It never hides a session.** The furthest a prompt can send a card is
-  collapsed.
-- **It won't move a session that's waiting on you.** If a session is holding a
-  permission or has asked you a question, its card stays where it is when you
-  type at it — the one card that needs you is the one card this never takes
-  away.
-- **It isn't triggered by the ⋯ menu.** Running `/compact` or `/clear` from the
-  session controls isn't "submitting a prompt", and the workspace folding away
-  because you picked a menu item would be baffling.
+> **There used to be a setting for this, *Collapse on submit*.** With it on,
+> pressing Enter folded the card away until the session finished or needed you.
+> It was easy to turn on by accident (one click on a **⬍** chip in the title
+> bar, or on a group's header), and then sessions seemed to vanish. It was
+> removed in version 0.8.134, along with the **⬍** chip, the **⬍** button on
+> group headers, the **On submit** choice in a card's **⋯** menu, and its
+> command-palette entries. If you had it on anywhere, it is simply gone: the
+> next time switchboard starts it forgets the old setting. (A third setting,
+> *Hide on submit*, went the same way in 0.8.124.)
+>
+> A session that was folded away by that setting before you updated is still
+> folded away. Click its row in the Sessions list (it has a dashed edge) to
+> bring it back.
 
 ## When a session interrupts you
 
-That setting is about what happens when *you* send a prompt. This one is the
-other direction: what a session is allowed to do to your screen when **it**
+This setting is about what a session is allowed to do to your screen when **it**
 finishes, asks a question, or asks permission.
 
 There are four settings, from loudest to quietest:
@@ -878,9 +786,8 @@ list still shows what it's doing; nothing routes you there. It is
 ### Changing it
 
 - **For everything:** the command palette (`Ctrl+Shift+P`) — search for *needs
-  you*. All four are there. (No title-bar chip for this one: unlike the **⬍**
-  chip, its default is what the app has always done, so there's nothing to
-  explain at a glance.)
+  you*. All four are there. (No title-bar chip for this one: its default is
+  what the app has always done, so there's nothing to explain at a glance.)
 - **For one session:** open the **⋯** menu at the top right of that session's
   card. **When it needs you** is a drop-down there with all four, plus
   **Follow the default** — which is how you go back to the global setting,

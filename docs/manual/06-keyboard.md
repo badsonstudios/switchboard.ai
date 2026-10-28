@@ -173,12 +173,6 @@ four that name a rung outright — **Expand session to its full card**,
 **Collapse session**, **Stack session with the tabbed sessions** and
 **Hide session (keeps it running)**.
 
-Search the palette for **on submit** and you also get the eleven entries that set
-[what happens to a card when you send it a
-prompt](07-workspace.md#getting-out-of-the-way-by-itself) — three for every
-session at once, and three plus **follow the default** for both the session
-you're in and its group.
-
 Search for **needs you** and you get the nine that set [what a session may do
 when it wants your attention](07-workspace.md#when-a-session-interrupts-you) —
 four for every session at once, and four plus **follow the default** for the
@@ -390,11 +384,12 @@ added (Duplicate, Pop out, Close other tabs); see
 [Right-click a tab](07-workspace.md#right-click-a-tab).
 
 Two things that used to be on it have moved. **Move up** and **Move down** are
-the `Ctrl+Alt+↑` / `Ctrl+Alt+↓` shortcuts above. The two settings for one
-session, **On submit** and **When it needs you**, are on that session's own
-card: open its **⋯** menu. Each is an ordinary drop-down, so `Tab` reaches
-it and the arrow keys change it. Both are also in the command palette for
-the session you're in: search for *this session*.
+the `Ctrl+Alt+↑` / `Ctrl+Alt+↓` shortcuts above. The setting for one
+session, **When it needs you**, is on that session's own card: open its **⋯**
+menu. It is an ordinary drop-down, so `Tab` reaches it and the arrow keys
+change it. It is also in the command palette for the session you're in:
+search for *this session*. (**On submit** was there too until 0.8.134, when
+that setting was removed.)
 
 #### Moving a session into a group without dragging
 

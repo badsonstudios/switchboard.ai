@@ -6,8 +6,8 @@
 //
 // The unit tests own the rules themselves — lib/pinning.test.ts (the state, the
 // sort, the bulk-close exemption), lib/groups.test.ts (sorts first),
-// lib/ladder.test.ts (never aggregates), lib/presentation-policy.test.ts (never
-// auto-collapses on submit), store/session-store.test.ts (derives + persists).
+// lib/ladder.test.ts (never aggregates), store/session-store.test.ts (derives +
+// persists).
 // This file owns the four claims those cannot make: a real pin taken with a
 // real gesture STILL SORTS FIRST AFTER RELAUNCH, a real pinned idle session
 // DOES NOT AGGREGATE among real idle ones, a real bulk close LEAVES IT RUNNING

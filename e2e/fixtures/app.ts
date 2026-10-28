@@ -1651,26 +1651,6 @@ export async function openEventsDrawer(window: Page): Promise<void> {
 }
 
 /**
- * Set §5.8's global presentation policy from the titlebar chip (P2-E9-06).
- *
- * The chip CYCLES, so this walks it to the label rather than guessing a click
- * count — which also means it keeps working if the default or the order changes.
- *
- * The DEFAULT is `always-visible` (decision 2026-08-04): submitting a prompt
- * moves nothing, so a spec that submits and then keeps looking at the card needs
- * no setup at all. Opting IN to auto-collapse is what needs a click,
- * and `presentation-policy.spec.ts` is where those are asserted.
- */
-export async function setPresentationPolicy(window: Page, label: string): Promise<void> {
-  const chip = window.getByTestId('presentation-policy');
-  for (let i = 0; i < 4; i++) {
-    if ((await chip.innerText()).includes(label)) return;
-    await chip.click();
-  }
-  throw new Error(`the presentation-policy chip never reached "${label}"`);
-}
-
-/**
  * Open the settings modal (#885) and wait for it.
  *
  * `Ctrl+,` rather than the palette: it is one keystroke, it is the path most
@@ -1869,7 +1849,13 @@ export interface PersistedPopoutGroup {
 export interface PersistedUi {
   layoutMode?: { mode?: string };
   presentation?: Record<string, { ladder?: string }>;
-  presentationPolicy?: { global?: string; cards?: Record<string, string> };
+  /** RETIRED (#1485): the removed "on submit" setting. Kept only so
+   *  no-fold-on-submit.spec can seed an old workspace and see it wiped. */
+  presentationPolicy?: {
+    global?: string;
+    cards?: Record<string, string>;
+    groups?: Record<string, string>;
+  };
   /** §5.8's focus-stealing policy (P2-E9-10) — global + per-session overrides */
   focusPolicy?: { global?: string; cards?: Record<string, string> };
   /** §5.30's outline switch (#1010) — absent means shown, which is the default */
@@ -2426,7 +2412,7 @@ export async function hookPoster(
  */
 export async function setOnFrontCard(
   w: Page,
-  which: 'card-policy' | 'card-focus-policy',
+  which: 'card-focus-policy',
   value: string
 ): Promise<void> {
   await w.locator('.dv-active-group').getByTestId('card-menu-button').click();
@@ -2439,11 +2425,11 @@ export async function setOnFrontCard(
   await expect(w.getByTestId('card-menu')).toHaveCount(0);
 }
 
-/** What the front card's "…" menu says one of the two settings is. Leaves the
- *  menu closed. */
+/** What the front card's "…" menu says the setting is. Leaves the menu
+ *  closed. (It held two until #1485 removed "On submit".) */
 export async function readOnFrontCard(
   w: Page,
-  which: 'card-policy' | 'card-focus-policy'
+  which: 'card-focus-policy'
 ): Promise<string> {
   await w.locator('.dv-active-group').getByTestId('card-menu-button').click();
   const value = await w.getByTestId(which).inputValue();

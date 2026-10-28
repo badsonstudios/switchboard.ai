@@ -7,7 +7,6 @@
 // setPresentation would persist an empty blob over the saved one.
 import { sessionStore } from '../store/session-store';
 import { loadPresentation, persistablePresentation, PRESENTATION_KEY } from './presentation';
-import { loadPolicyBook, POLICY_KEY } from './presentation-policy';
 import { FOCUS_POLICY_KEY, loadFocusBook } from './focus-policy';
 import { LAYOUT_KEY, loadLayout } from './layout-mode';
 import { loadPins, PIN_KEY } from './pinning';
@@ -16,26 +15,22 @@ import { LINEAGE_KEY, loadLineage } from './dispatch-lineage';
 import { DISPATCH_RETIRE_KEY } from './dispatch-ephemeral';
 import { uiAll, uiDelete, uiGet, uiSet } from './ui-state';
 
+/** Where the removed "on submit" setting used to live (#1485). */
+export const RETIRED_SUBMIT_POLICY_KEY = 'presentationPolicy';
+
 export function initPresentation(): void {
   const { map, legacyKeys } = loadPresentation(uiAll());
   sessionStore.initPresentation(map);
   sessionStore.setPresentationPersister((blob) => uiSet(PRESENTATION_KEY, blob));
-  // §5.8's presentation POLICY (P2-E9-06) rides the same edge, and must be
-  // seeded in the same pass: a policy read before the blob has been loaded
-  // would answer "always-visible" for a user who chose otherwise, and the very
-  // first prompt they submitted would leave a card where they asked it not to.
-  //
-  // `null` from persistablePolicies means "nothing worth writing" — an untouched
-  // book must not put a record in the blob, exactly as an untouched card's
-  // presentation does not.
-  sessionStore.initPolicies(loadPolicyBook(uiGet<unknown>(POLICY_KEY, null)));
-  sessionStore.setPolicyPersister((blob) => {
-    if (blob) uiSet(POLICY_KEY, blob);
-    else uiDelete([POLICY_KEY]);
-  });
+  // #1485: THE "ON SUBMIT" SETTING IS GONE. It folded a card away when you
+  // sent it a prompt, and a workspace saved by an older build may still hold
+  // it (the owner's had "Collapse on submit" on one group for weeks without
+  // having chosen it). Forgotten here, once, so no later build can read it back.
+  if (uiGet<unknown>(RETIRED_SUBMIT_POLICY_KEY, null) !== null) {
+    uiDelete([RETIRED_SUBMIT_POLICY_KEY]);
+  }
   // §5.8's FOCUS-STEALING policy (P2-E9-10) rides the same edge, and must be
-  // seeded in the same pass for the sharper version of the same reason: a
-  // policy read before the blob has loaded answers `smart` for a user who chose
+  // seeded in the same pass: a policy read before the blob has loaded answers `smart` for a user who chose
   // `urgent`, and the very first session to finish would take the cursor out of
   // whatever they were typing in — the one thing that setting exists to stop.
   sessionStore.initFocusPolicies(loadFocusBook(uiGet<unknown>(FOCUS_POLICY_KEY, null)));

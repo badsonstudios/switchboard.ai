@@ -617,9 +617,6 @@ A pinned session:
   sessions go with it, because pinning promotes a session inside its group rather
   than lifting it out of it. With no groups at all there's no caveat: it's on
   screen wherever you scroll to.
-- **is never minimized behind your back.** If you've turned on
-  [Collapse on submit](07-workspace.md), a pinned session ignores it
-  and stays put when you send a prompt.
 - **survives Close all sessions.** See below.
 
 Pinning is *protection*, not a size. It doesn't force the session to stay big:

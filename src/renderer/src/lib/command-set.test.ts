@@ -4,7 +4,6 @@ import { buildCommands, CommandDeps } from './command-set';
 import { Command, CommandContext } from './commands';
 import { TERMINAL_ACCELERATORS } from '../../../shared/terminal-accelerators';
 import en from '../../../shared/i18n/locales/en.json';
-import { POLICY_ORDER } from './presentation-policy';
 import { LAYOUT_MODES } from './layout-mode';
 
 // The three the tests reach for by name have to be MOCKS, not just members of
@@ -34,9 +33,6 @@ function deps(): CommandDeps & DepMocks {
     hideCard: vi.fn(),
     setLadder: vi.fn(),
     stepLadder: vi.fn(),
-    setGlobalPolicy: vi.fn(),
-    setSessionPolicy: vi.fn(),
-    setGroupPolicy: vi.fn(),
     setGlobalFocusPolicy: vi.fn(),
     setSessionFocusPolicy: vi.fn(),
     setLayoutMode: vi.fn<CommandDeps['setLayoutMode']>(),
@@ -543,77 +539,22 @@ describe('seed command set (E9-01)', () => {
     }
   });
 
-  // ── presentation policy (E9-06, §5.8) ─────────────────────────────────────
-  describe('presentation policy', () => {
-    it('names every policy at both levels — the global and the active session', () => {
-      // generated from POLICY_ORDER, so a fourth policy cannot ship with two of
-      // its three entries; this asserts the generation actually happened
+  // ── no "on submit" setting (#1485) ───────────────────────────────────────
+  describe('the removed "on submit" setting', () => {
+    it('has no palette entry at any level — sending a prompt never moves a card', () => {
+      // Dan, #1485: the setting that folded a card away on submit is gone, and
+      // must not come back. Its entries were presentation.policy.*,
+      // session.policy.* and group.policy.*, titled "on submit".
       const cmds = buildCommands(deps());
-      for (const p of POLICY_ORDER) {
-        expect(byId(cmds, `presentation.policy.${p}`)).toBeDefined();
-        expect(byId(cmds, `session.policy.${p}`)).toBeDefined();
-      }
-      expect(byId(cmds, 'session.policy.default')).toBeDefined();
+      const ids = cmds.map((c) => c.id);
+      expect(ids.filter((id) => /^(presentation|session|group)\.policy\./.test(id))).toEqual([]);
+      expect(ids.filter((id) => /auto-(collapse|hide)|always-visible/.test(id))).toEqual([]);
     });
 
-    it('the global entries set the global, with no session needed', () => {
-      const d = deps();
-      const cmds = buildCommands(d);
-      byId(cmds, 'presentation.policy.auto-collapse').run(ctxWith([], null));
-      expect(d.setGlobalPolicy).toHaveBeenCalledWith('auto-collapse');
-      // a workspace-wide preference must not need a focused card
-      expect(byId(cmds, 'presentation.policy.auto-collapse').enabled).toBeUndefined();
-    });
-
-    it('offers no auto-hide anywhere — the option was removed (#1276)', () => {
-      const ids = buildCommands(deps()).map((c) => c.id);
-      expect(ids.filter((id) => id.includes('auto-hide'))).toEqual([]);
-    });
-
-    it('the session entries override the ACTIVE card, and "follow the default" clears it', () => {
-      const d = deps();
-      const cmds = buildCommands(d);
-      byId(cmds, 'session.policy.always-visible').run(ctxWith(['a', 'b'], 'b'));
-      expect(d.setSessionPolicy).toHaveBeenCalledWith('b', 'always-visible');
-      byId(cmds, 'session.policy.default').run(ctxWith(['a', 'b'], 'b'));
-      // undefined, not "whatever the default is today" — the default can change
-      expect(d.setSessionPolicy).toHaveBeenLastCalledWith('b', undefined);
-    });
-
-    it('the session entries are disabled with nothing focused', () => {
+    it('the focus-policy entries that remain claim no keybinding', () => {
+      // a preference is not a per-minute action; the palette is the keyboard path
       const cmds = buildCommands(deps());
-      for (const id of ['session.policy.auto-collapse', 'session.policy.default']) {
-        expect(byId(cmds, id).enabled?.(ctxWith(['a'], null))).toBe(false);
-        expect(byId(cmds, id).disabledReasonKey).toBeTruthy();
-      }
-    });
-
-    it('the GROUP level is reachable from the palette — Ctrl+B hides the only button', () => {
-      // §5.8's invariant: hiding chrome never removes capability. The per-group
-      // override lives on the rail's group header, and the rail toggles.
-      const d = deps();
-      const cmds = buildCommands(d);
-      byId(cmds, 'group.policy.auto-collapse').run(ctxWith(['a'], 'a', 0, 'g1'));
-      expect(d.setGroupPolicy).toHaveBeenCalledWith('g1', 'auto-collapse');
-      byId(cmds, 'group.policy.default').run(ctxWith(['a'], 'a', 0, 'g1'));
-      expect(d.setGroupPolicy).toHaveBeenLastCalledWith('g1', undefined);
-    });
-
-    it('the group entries are disabled for an ungrouped session, not silently dead', () => {
-      const cmds = buildCommands(deps());
-      for (const p of [...POLICY_ORDER, 'default']) {
-        const c = byId(cmds, `group.policy.${p}`);
-        expect(c.enabled?.(ctxWith(['a'], 'a', 0, null)), p).toBe(false);
-        expect(c.enabled?.(ctxWith(['a'], 'a', 0, 'g1')), p).toBe(true);
-        expect(c.disabledReasonKey, p).toBeTruthy();
-      }
-    });
-
-    it('none of them claims a keybinding', () => {
-      // a preference is not a per-minute action; the chip and the rail menus are
-      // the everyday paths and the palette is the keyboard one
-      const cmds = buildCommands(deps());
-      for (const c of cmds.filter((c) => c.id.includes('policy'))) {
+      for (const c of cmds.filter((c) => c.id.includes('olicy'))) {
         expect(c.binding, `${c.id} took a binding`).toBeUndefined();
       }
     });

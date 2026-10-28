@@ -2,12 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { SessionStore } from './session-store';
 import { EventDto, RailGroup, RailSession } from '../model/types';
 import { DEFAULT_PRESENTATION } from '../lib/presentation';
-import {
-  DEFAULT_BOOK,
-  withCard,
-  withGlobal,
-  withGroup,
-} from '../lib/presentation-policy';
 import { DEFAULT_LAYOUT, withMaximized, withMode } from '../lib/layout-mode';
 import { DEFAULT_FOCUS_BOOK, withFocusCard, withFocusGlobal } from '../lib/focus-policy';
 import { dropRetired } from '../lib/held-permissions';
@@ -1030,106 +1024,6 @@ describe("SessionStore — the urgency strip's delayed reset (P2-E9-04)", () => 
   });
 });
 
-describe('SessionStore — presentation policy (P2-E9-06)', () => {
-  let store: SessionStore;
-  let persisted: Array<Record<string, unknown> | null>;
-  beforeEach(() => {
-    store = new SessionStore();
-    persisted = [];
-    store.setPolicyPersister((blob) => persisted.push(blob));
-  });
-
-  it('resolves a card through its GROUP without the caller knowing groups exist', () => {
-    // the submit path, the rail's tick and any future layout mode all ask this
-    // one question — three separate walks of the precedence chain is how two of
-    // them end up wrong
-    store.setSessions([session('card-A', { groupId: 'g1' }), session('card-B')]);
-    store.setPolicies(withGroup(withGlobal(DEFAULT_BOOK, 'auto-collapse'), 'g1', 'always-visible'));
-    expect(store.policyFor('card-A')).toBe('always-visible');
-    expect(store.policyFor('card-B')).toBe('auto-collapse');
-  });
-
-  it('a per-session override beats the group and the global (the done-when)', () => {
-    store.setSessions([session('card-A', { groupId: 'g1' })]);
-    store.setPolicies(
-      withCard(
-        withGroup(withGlobal(DEFAULT_BOOK, 'always-visible'), 'g1', 'always-visible'),
-        'card-A',
-        'auto-collapse'
-      )
-    );
-    expect(store.policyFor('card-A')).toBe('auto-collapse');
-  });
-
-  it('a change to the setting is LOGGED, with the surface that made it (#1210)', () => {
-    // the owner's card was hidden on submit and the log could not say who had
-    // turned that on, or when
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    try {
-      store.setPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'), 'title bar chip');
-      expect(log).toHaveBeenCalledWith(
-        '[policy] on submit, global: always-visible → auto-collapse (title bar chip)'
-      );
-      // the same book again is not a change, and says nothing
-      log.mockClear();
-      store.setPolicies(store.getPolicies(), 'title bar chip');
-      expect(log).not.toHaveBeenCalled();
-    } finally {
-      log.mockRestore();
-    }
-  });
-
-  it('turnPolicyOffFor acts at the level that decided, through the group lookup', () => {
-    store.setSessions([session('card-A', { groupId: 'g1' }), session('card-B')]);
-    store.setPolicies(withGroup(withGlobal(DEFAULT_BOOK, 'auto-collapse'), 'g1', 'auto-collapse'));
-    expect(store.policyLevelFor('card-A')).toBe('group');
-    expect(store.policyLevelFor('card-B')).toBe('global');
-    store.turnPolicyOffFor('card-A', 'submit notice');
-    expect(store.policyFor('card-A')).toBe('always-visible');
-    expect(store.policyFor('card-B')).toBe('auto-collapse');
-  });
-
-  it('an unknown card gets the global — never a throw', () => {
-    expect(store.policyFor('nobody')).toBe('always-visible');
-    expect(store.policyFor(undefined)).toBe('always-visible');
-  });
-
-  it('init seeds the book without writing it back', () => {
-    store.initPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
-    expect(store.getPolicies().global).toBe('auto-collapse');
-    expect(persisted).toEqual([]); // it just READ the blob
-  });
-
-  it('persists on change, and writes null once nothing differs from the default', () => {
-    store.setPolicies(withCard(DEFAULT_BOOK, 'card-A', 'auto-collapse'));
-    expect(persisted.at(-1)).toEqual({ cards: { 'card-A': 'auto-collapse' } });
-    store.setPolicies(withCard(store.getPolicies(), 'card-A', undefined));
-    // null means "forget the key" — an untouched workspace must not keep a
-    // settings record it no longer needs
-    expect(persisted.at(-1)).toBeNull();
-  });
-
-  it('the same book twice is not a write and not a re-render', () => {
-    const book = withGlobal(DEFAULT_BOOK, 'auto-collapse');
-    store.setPolicies(book);
-    let notifications = 0;
-    store.subscribe(() => notifications++);
-    store.setPolicies(book);
-    expect(notifications).toBe(0);
-    expect(persisted.length).toBe(1);
-  });
-
-  it('prunes overrides for cards and groups that are gone', () => {
-    store.setPolicies(
-      withGroup(withCard(DEFAULT_BOOK, 'card-A', 'auto-collapse'), 'g1', 'always-visible')
-    );
-    store.prunePolicies(['card-B'], ['g2']);
-    expect(store.getPolicies().cards).toEqual({});
-    expect(store.getPolicies().groups).toEqual({});
-    expect(persisted.at(-1)).toBeNull();
-  });
-});
-
 describe('SessionStore — focus-stealing policy (P2-E9-10)', () => {
   let store: SessionStore;
   let persisted: Array<Record<string, unknown> | null>;
@@ -1262,25 +1156,6 @@ describe('SessionStore — layout mode (P2-E9-07)', () => {
     expect(store.getLayout().maximized).toBe('card-A');
     store.forgetLayoutCard('card-A');
     expect(store.getLayout()).toEqual(DEFAULT_LAYOUT);
-  });
-});
-
-describe('SessionStore — the prompt-submit signal (P2-E9-06)', () => {
-  it('carries the live session id to every listener, and one that throws costs only itself', () => {
-    // the composer and the grid cannot see each other: the composer lives inside
-    // a dockview panel, the grid owns the verb that would remove it
-    const store = new SessionStore();
-    const seen: string[] = [];
-    const off1 = store.subscribePromptSubmit(() => {
-      throw new Error('boom');
-    });
-    const off2 = store.subscribePromptSubmit((id) => seen.push(id));
-    store.notifyPromptSubmitted('live-7');
-    expect(seen).toEqual(['live-7']);
-    off1();
-    off2();
-    store.notifyPromptSubmitted('live-8');
-    expect(seen).toEqual(['live-7']); // unsubscribed
   });
 });
 

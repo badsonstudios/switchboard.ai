@@ -1,7 +1,7 @@
 // P2-E18-14 — attention and urgency for a DIRECT session.
 //
 // THE GAP THIS FILLS, from the #404 audit: ~25 tests across `urgency`,
-// `attention`, `rail`, `ladder`, `focus-policy`, `presentation-policy`,
+// `attention`, `rail`, `ladder`, `focus-policy`, `presentation-policy` (since removed),
 // `layout-modes` and `a11y-keyboard` drive a session into `needs-permission` by
 // POSTing the CLI's permission `Notification` at the hook listener. That
 // signal is deliberately DROPPED for a stream session (#313,

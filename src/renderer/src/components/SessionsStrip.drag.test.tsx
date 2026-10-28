@@ -15,7 +15,6 @@ import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { SessionsStrip } from './SessionsStrip';
 import { railOrder } from '../lib/groups';
-import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { DND_TYPE, GROUP_DND_TYPE } from '../lib/rail-dnd';
 import { setDraggedCard } from '../lib/drag-context';
 import { RailGroup, RailSession } from '../model/types';
@@ -90,8 +89,6 @@ async function mount(
         onRenameGroup={noop}
         palette={[]}
         onRecolorGroup={noop}
-        policies={DEFAULT_BOOK}
-        onCycleGroupPolicy={noop}
         onDeleteGroup={noop}
         onOpenAll={noop}
         onPlace={noop}
@@ -460,8 +457,6 @@ describe('what else a drag touches', () => {
           onRenameGroup={noop}
           palette={[]}
           onRecolorGroup={noop}
-          policies={DEFAULT_BOOK}
-          onCycleGroupPolicy={noop}
           onDeleteGroup={noop}
           onOpenAll={noop}
           onPlace={noop}

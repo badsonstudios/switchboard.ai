@@ -2,9 +2,9 @@
 // The pin for #678: a refused `sessions:knownCards` read during layout restore
 // must prune NOTHING, and the guard for that lives at the call site.
 //
-// #650 chose `null` over `[]` for the degraded known-card set, because six of
-// the eight prune targets delete unconditionally against it — presentation,
-// policies, layout, focus policies, pins and manual rail order — so an empty
+// #650 chose `null` over `[]` for the degraded known-card set, because five of
+// the seven prune targets delete unconditionally against it — presentation,
+// layout, focus policies, pins and manual rail order — so an empty
 // set there wipes every one of them for every session, in the first second of
 // a launch, on the strength of an IPC answer we never received. The choice was
 // correct, load-bearing, and unpinned: the refusal scanner pins the LAUNDERER
@@ -14,7 +14,7 @@
 //
 // THE GUARD PLACEMENT IS A DECISION, pinned here deliberately (the issue asked
 // for one): it stays AT THE CALL SITE (`if (known !== null)`), NOT pushed down
-// into the six `prune*` helpers as an empty-set early-return. A genuinely
+// into the five `prune*` helpers as an empty-set early-return. A genuinely
 // cardless app — fresh workspace, every card closed — SHOULD prune, or stale
 // records leak forever; an unconditional `size === 0` return inside the
 // helpers cannot tell that state from "we could not ask". The second test is
@@ -64,9 +64,8 @@ vi.mock('./FeedView', () => ({
 
 const off = (): void => {};
 
-/** what `sessions.knownCards` / `groups.list` answer in this test */
+/** what `sessions.knownCards` answers in this test */
 let knownCardsAnswer: unknown;
-let groupsAnswer: unknown;
 
 // A saved layout that exists — the restore (and therefore the prune block)
 // only runs when `workspace:getLayout` answers one. No popout groups, no
@@ -90,7 +89,6 @@ function installBridge(): void {
       onPermissionRequest: () => off,
       onPermissionResolved: () => off,
     },
-    groups: { list: () => Promise.resolve(groupsAnswer) },
     workspace: {
       getLayout: () => Promise.resolve(SAVED_LAYOUT),
       setLayout: () => {},
@@ -119,11 +117,10 @@ function fakeApi(): { fromJSON: ReturnType<typeof vi.fn> } {
 
 type PruneSpy = ReturnType<typeof vi.spyOn>;
 
-/** the six unconditional deleters — the whole hazard, by name */
+/** the five unconditional deleters — the whole hazard, by name */
 function spyPrunes(): Record<string, PruneSpy> {
   return {
     presentation: vi.spyOn(sessionStore, 'prunePresentation'),
-    policies: vi.spyOn(sessionStore, 'prunePolicies'),
     layout: vi.spyOn(sessionStore, 'pruneLayout'),
     focusPolicies: vi.spyOn(sessionStore, 'pruneFocusPolicies'),
     pins: vi.spyOn(sessionStore, 'prunePins'),
@@ -183,11 +180,10 @@ afterEach(async () => {
 describe('layout restore vs a refused sessions:knownCards read (#678)', () => {
   it('a refusal reaches the prune path as NOTHING — not as an empty set', async () => {
     // The red-on-revert case. Degrade the refusal to `new Set()` instead of
-    // `null` at the `known` binding and all six spies fire with an empty set —
-    // which in a real launch is every pin, policy, presentation override,
+    // `null` at the `known` binding and all five spies fire with an empty set —
+    // which in a real launch is every pin, presentation override,
     // maximize, focus policy and manual rail position in the app, deleted.
     knownCardsAnswer = ipcRefusal('sessions:knownCards', 'capability-not-held');
-    groupsAnswer = ipcRefusal('groups:list', 'capability-not-held');
     const spies = spyPrunes();
     const api = await runBringUp();
     // the restore itself still ran — a refusal degrades the PRUNE, not the
@@ -205,7 +201,6 @@ describe('layout restore vs a refused sessions:knownCards read (#678)', () => {
     // `null` and `[]` mean different things, and this pair of tests is that
     // sentence, enforced.
     knownCardsAnswer = [];
-    groupsAnswer = [];
     const spies = spyPrunes();
     await runBringUp();
     for (const [name, spy] of Object.entries(spies)) {

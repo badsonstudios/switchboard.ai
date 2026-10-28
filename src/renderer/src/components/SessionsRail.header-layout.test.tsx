@@ -14,7 +14,6 @@ import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { SessionsRail } from './SessionsRail';
-import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { uiDelete } from '../lib/ui-state';
 import { NO_ORDER } from '../lib/rail-order';
 import { RailSession } from '../model/types';
@@ -53,7 +52,6 @@ async function mountRail(over: Partial<RailProps> = {}): Promise<HTMLElement> {
         needing={new Set<string>(['a'])}
         folded={new Set<string>(['b', 'z'])}
         palette={['var(--status-working)']}
-        policies={DEFAULT_BOOK}
         onRename={noop}
         onFocus={noop}
         onDiff={noop}
@@ -66,7 +64,6 @@ async function mountRail(over: Partial<RailProps> = {}): Promise<HTMLElement> {
         onMoveToGroup={noop}
         pinned={new Set()}
         onTogglePin={noop}
-        onCycleGroupPolicy={noop}
         manualOrder={NO_ORDER}
         onReorder={noop}
         {...over}
@@ -125,13 +122,16 @@ describe('a group header puts its name on a line of its own (#1455)', () => {
     expect(chipsOf(host, 'g1').style.gridColumn).toMatch(/^3 \/ 5$/);
   });
 
-  it('keeps the arrange / add / close buttons on the name line', async () => {
+  it('keeps the add / close buttons on the name line', async () => {
     const host = await mountRail();
-    const policy = card(host, 'g1').querySelector<HTMLElement>('[data-group-policy="g1"]')!;
-    const buttons = policy.parentElement!;
+    // the header's button cell: column 4 of the grid. It held three buttons
+    // until the "on submit" one went with that setting (#1485).
+    const buttons = Array.from(card(host, 'g1').querySelectorAll<HTMLElement>('span')).find(
+      (el) => el.style.gridColumn === '4'
+    )!;
     expect(buttons.style.gridRow).toBe('1');
-    expect(buttons.querySelectorAll('button')).toHaveLength(3);
-    expect(chipsOf(host, 'g1').contains(policy)).toBe(false);
+    expect(buttons.querySelectorAll('button')).toHaveLength(2);
+    expect(chipsOf(host, 'g1').contains(buttons)).toBe(false);
   });
 
   it('carries the full name in its tooltip, for when it does not fit', async () => {
