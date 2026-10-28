@@ -25,7 +25,7 @@ import { launchApp, LaunchedApp, retype, streamPrompter, tempProjectFolder } fro
 import { REVISED, titlesOf } from '../src/main/transcripts/fixtures/ai-title';
 
 function slugForCwd(cwd: string): string {
-  return cwd.replace(/[\\/:. ]/g, '-');
+  return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
 const [FIRST_TITLE, SETTLED_TITLE] = titlesOf(REVISED);

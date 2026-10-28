@@ -154,6 +154,18 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   as before. A session that the old setting had already folded away stays
   folded until you click it in the Sessions list.
 
+### Fixed
+
+- **Sessions in a folder with an underscore in its name come back after a
+  restart.** In a folder like `SOLOServerInstances_svn`, switchboard looked for
+  the saved conversation under the wrong name, decided it was gone, and opened
+  an empty session instead. The conversation was on disk the whole time. It now
+  uses exactly the name Claude Code does (any character that isn't a letter or
+  a digit, and very long folder paths, too), so those cards pick up where they
+  left off, and the **🕘** list of past conversations shows them again. A
+  conversation an earlier version could not reopen is still there: click
+  **🕘** on a session in that folder and pick it.
+
 ## 0.8.133 — 2026-10-27
 
 ### Changed

@@ -11,9 +11,107 @@ import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 
-/** The directory name a provider derives from a project folder. */
+/**
+ * The directory name a provider derives from a project folder.
+ *
+ * ⚠️ THE CLI'S RULE, NOT AN APPROXIMATION OF IT (#1487). This used to replace
+ * only `\ / : . ` and space, which agrees with the CLI on every folder made of
+ * letters, digits and those five — and on no other. A folder with an underscore
+ * in it (`SOLOServerInstances_svn`) gets a directory the CLI calls `…Instances-svn`
+ * and we looked for `…Instances_svn`, so every resume in it was refused as "not on
+ * disk" and the card opened an empty session. Read from the PATH binary
+ * (claude 2.1.312, `docs/reference-implementations.md` §2.1):
+ *
+ *   k(e)  = e.replace(/[^a-zA-Z0-9]/g, "-")
+ *   wL(e) = k(e).length <= 200 ? k(e) : `${k(e).slice(0, 200)}-${Math.abs(jme(e)).toString(36)}`
+ *
+ * where `jme` is the 32-bit `(h << 5) - h + charCode` string hash of the RAW
+ * path. `slugHash` below is that hash; the long-path suffix only matters past
+ * 200 characters, and `slugsForCwd` covers its one case-sensitivity.
+ */
 export function slugForCwd(cwd: string): string {
-  return cwd.replace(/[\\/:. ]/g, '-');
+  const flat = cwd.replace(/[^a-zA-Z0-9]/g, '-');
+  if (flat.length <= MAX_SLUG) return flat;
+  return `${flat.slice(0, MAX_SLUG)}-${Math.abs(slugHash(cwd)).toString(36)}`;
+}
+
+function slugHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+/**
+ * Every lower-cased slug that may name `cwd`'s directory.
+ *
+ * Matching is case-insensitive because real paths lowercase the drive letter —
+ * but a TRUNCATED slug ends in a hash of the raw path, and a hash is not
+ * case-insensitive. So past 200 characters both drive-letter spellings are
+ * offered; under it the two collapse into one.
+ */
+export function slugsForCwd(cwd: string): string[] {
+  const out = new Set([slugForCwd(cwd).toLowerCase()]);
+  if (/^[A-Za-z]:/.test(cwd)) {
+    const c = cwd[0];
+    const other = (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()) + cwd.slice(1);
+    out.add(slugForCwd(other).toLowerCase());
+  }
+  return [...out];
+}
+
+/** Past this many characters the CLI truncates the slug and appends a hash. */
+const MAX_SLUG = 200;
+
+/**
+ * Is this transcript KNOWN to belong to some other folder?
+ *
+ * The slug is lossy — `my_app`, `my-app` and `my app` all share one directory,
+ * and since #1487 widened the rule to match the CLI, far more folders collide
+ * than before. A caller that GUESSES from a directory listing (the orphan repair,
+ * the folder-scoped history list) must not hand a card a sibling folder's
+ * conversation, so it asks the file itself: the CLI stamps `cwd` on its entries.
+ *
+ * `false` when the head names no readable `cwd` — unknown is not evidence, and
+ * every conversation in a folder without a sibling would otherwise be at the
+ * mercy of a read failure.
+ */
+export function belongsToOtherFolder(file: string, folder: string): boolean {
+  const cwd = transcriptCwd(file);
+  return cwd !== undefined && !samePath(cwd, folder);
+}
+
+const CWD_HEAD_BYTES = 64 * 1024;
+
+function transcriptCwd(file: string): string | undefined {
+  let text: string;
+  try {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const buf = Buffer.alloc(CWD_HEAD_BYTES);
+      text = buf.subarray(0, fs.readSync(fd, buf, 0, CWD_HEAD_BYTES, 0)).toString('utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return undefined;
+  }
+  for (const line of text.split('\n')) {
+    try {
+      const cwd = (JSON.parse(line) as { cwd?: unknown } | null)?.cwd;
+      if (typeof cwd === 'string' && cwd) return cwd;
+    } catch {
+      // a partial last line, or a non-JSON line: keep looking
+    }
+  }
+  return undefined;
+}
+
+export function samePath(a: string, b: string): boolean {
+  const norm = (p: string): string => {
+    const r = path.resolve(p);
+    return process.platform === 'win32' ? r.toLowerCase() : r;
+  };
+  return norm(a) === norm(b);
 }
 
 /**
@@ -208,7 +306,7 @@ function conversationDirs(
   projectsRoot: string,
   folder: string
 ): { status: 'ok'; dirs: string[] } | { status: 'unknown'; reason: string } {
-  const wantSlug = slugForCwd(folder).toLowerCase();
+  const want = new Set(slugsForCwd(folder));
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(projectsRoot, { withFileTypes: true });
@@ -223,7 +321,7 @@ function conversationDirs(
   }
   const dirs: string[] = [];
   for (const d of entries) {
-    if (d.isDirectory() && d.name.toLowerCase() === wantSlug) dirs.push(path.join(projectsRoot, d.name));
+    if (d.isDirectory() && want.has(d.name.toLowerCase())) dirs.push(path.join(projectsRoot, d.name));
   }
   return { status: 'ok', dirs };
 }

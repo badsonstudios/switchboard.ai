@@ -39,7 +39,7 @@ import {
  * implementation by construction instead of by evidence. If the layout ever
  * changes, this line is supposed to fail.
  */
-const slug = (cwd: string): string => cwd.replace(/[\\/:. ]/g, '-').toLowerCase();
+const slug = (cwd: string): string => cwd.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
 
 const TITLE = 'The conversation we had before';
 

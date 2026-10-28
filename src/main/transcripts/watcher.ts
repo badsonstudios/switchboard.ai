@@ -18,7 +18,7 @@ import { BlockOrigin, DISPLAY_CAPS, FeedBlock, compactionSummaryText, deriveInte
 import type { ContextRefs } from '../feed/context-refs';
 import { agentOriginFor } from '../feed/agent-attribution';
 import { FeedBuffer } from '../feed/buffer';
-import { conversationExists, slugForCwd } from './paths';
+import { conversationExists, slugForCwd, slugsForCwd } from './paths';
 import { DriftDetector } from './drift';
 import { parseCostState } from './cost-state';
 import { UsageLedger, usageKey } from './usage-ledger';
@@ -1795,7 +1795,7 @@ export class TranscriptWatcher {
   // each other's sessions (P2-E15-01).
   private discoveryCandidates(w: WatchedSession, widen: boolean): string[] {
     if (widen) return this.scan(w.projectsRoot);
-    const want = slugForCwd(w.cwd).toLowerCase();
+    const want = new Set(slugsForCwd(w.cwd));
     const acc: string[] = [];
     let entries: fs.Dirent[];
     try {
@@ -1804,7 +1804,7 @@ export class TranscriptWatcher {
       return acc;
     }
     for (const e of entries) {
-      if (e.isDirectory() && e.name.toLowerCase() === want) {
+      if (e.isDirectory() && want.has(e.name.toLowerCase())) {
         this.scan(path.join(w.projectsRoot, e.name), 1, acc);
       }
     }

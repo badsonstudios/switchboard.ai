@@ -19,7 +19,8 @@ export interface ConversationRow {
    *
    * Read from the transcript's OWN `cwd` rather than reversed out of the
    * directory name: the directory is `slugForCwd`'s output, which replaces
-   * every one of `\ / : . ` ` with `-` and is therefore not invertible — a
+   * every character that is not a letter or digit with `-` (#1487) and is
+   * therefore not invertible — a
    * folder cannot be recovered from it, only compared against it. Reading the
    * file's own `cwd` is also what makes a conversation started outside
    * switchboard listable at all.

@@ -314,6 +314,21 @@ describe('claudeAdapter.capabilities.resume.findOrphaned (#484)', () => {
     expect(find()).toBe(ORPHAN);
   });
 
+  it('never adopts a SIBLING folder\'s conversation from the shared directory (#1487)', () => {
+    // `project` and `project_` would share it too; the file's own `cwd` says whose it is
+    const file = path.join(dir, `${ORPHAN}.jsonl`);
+    const aged = (cwd: string): void => {
+      fs.writeFileSync(file, JSON.stringify({ type: 'user', cwd }) + '\n');
+      const when = new Date(Date.now() - RECENTLY_ACTIVE_MS * 2);
+      fs.utimesSync(file, when, when);
+    };
+    aged(folder + '_');
+    expect(find()).toBeNull();
+    // ...and its own folder's conversation still comes back
+    aged(folder);
+    expect(find()).toBe(ORPHAN);
+  });
+
   it('refuses when one of the card OWN ids turns out to be on disk after all', () => {
     // The guard the host cannot supply: `canResume` is a boolean, so a lock that
     // cleared between that call and this one reaches here as an ordinary "no".

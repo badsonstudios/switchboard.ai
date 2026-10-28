@@ -92,6 +92,14 @@ afterEach(() => {
 });
 
 describe('listHistory — one folder', () => {
+  it('leaves out a SIBLING folder that shares the directory (#1487)', () => {
+    // `my_app` and `my-app` slug alike, so both land in one directory
+    seed('C:/work/my_app', 'mine', [...preamble, userLine('C:/work/my_app', 'mine')], { mtimeMs: 8_000_000 });
+    seed('C:/work/my-app', 'theirs', [...preamble, userLine('C:/work/my-app', 'theirs')], { mtimeMs: 9_000_000 });
+    const rows = ok(listHistory({ scope: 'folder', folder: 'C:/work/my_app' }, deps())).rows;
+    expect(rows.map((r) => r.nativeId)).toEqual(['mine']);
+  });
+
   it("describes a conversation by the CLI's own title", () => {
     seed('C:/work/app', 'conv-a', [...preamble, userLine('C:/work/app', 'hello'), titleLine('Fix the login redirect')]);
     const rows = ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).rows;
@@ -364,7 +372,7 @@ describe('listHistory — every project', () => {
   });
 
   it('DROPS a transcript that cannot say where it ran, rather than guessing from the directory name', () => {
-    // `slugForCwd` maps `\ / : . ` and space all onto `-`, so a folder cannot be
+    // `slugForCwd` maps every non-alphanumeric character onto `-`, so a folder cannot be
     // recovered from a directory name — only compared against one. A row with no
     // folder could not be opened, so offering it would be a dead click.
     seed('C:/work/app', 'good', [...preamble, userLine('C:/work/app', 'fine')]);

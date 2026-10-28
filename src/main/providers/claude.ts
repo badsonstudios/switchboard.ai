@@ -16,7 +16,12 @@ import { SlashCommand } from '../../shared/slash-commands';
 // The transcript LOCATION is Claude's, so the check for "is this conversation
 // really there" belongs to this adapter; the tolerant reader it shares with
 // every other provider stays host-side (see ProviderCapabilities.transcripts).
-import { conversationExists, listConversations, locateConversation } from '../transcripts/paths';
+import {
+  belongsToOtherFolder,
+  conversationExists,
+  listConversations,
+  locateConversation,
+} from '../transcripts/paths';
 import { ensureFolderTrusted } from '../sessions/trust';
 import { claudeEvents } from './claude-events';
 import { AUTONOMY_PERMISSION_MODE } from './claude-modes';
@@ -362,7 +367,12 @@ export const claudeAdapter: ProviderAdapter = {
               //    session running in a terminal — which `claimed` cannot see,
               //    because it only knows about switchboard's cards — than a
               //    conversation this card walked away from and lost.
-              now - c.mtimeMs > RECENTLY_ACTIVE_MS
+              now - c.mtimeMs > RECENTLY_ACTIVE_MS &&
+              // 5. NOT ONE FROM A SIBLING FOLDER THAT SHARES THIS DIRECTORY
+              //    (#1487). `my_app` and `my-app` slug alike, so "newest in the
+              //    directory" can be the other project's conversation, and
+              //    `--resume` would append to it. Read last: it opens the file.
+              !belongsToOtherFolder(c.file, folder)
           )?.nativeId ?? null
         );
       },

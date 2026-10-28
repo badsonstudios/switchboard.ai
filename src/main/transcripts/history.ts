@@ -61,7 +61,7 @@ import { PACKAGE_CAPS, promptText } from '../sessions/context-package';
 // an opening prompt at all.
 import { PACKAGE_HEAD_BYTES } from '../sessions/queries';
 import { readTranscriptHead } from '../feed/history';
-import { isConversationId, listConversations, MAX_LISTED_CONVERSATIONS } from './paths';
+import { isConversationId, listConversations, MAX_LISTED_CONVERSATIONS, samePath } from './paths';
 import { LABEL_PROMPT_OPENING } from '../sessions/ai-label';
 
 /** What this module needs from the rest of the app, injected rather than imported. */
@@ -175,6 +175,10 @@ export function listHistory(req: ConversationHistoryRequest, deps: HistoryDeps):
     // `slugForCwd`'s output and not invertible.
     const folder = req.scope === 'all' ? d.folder : (req.folder ?? d.folder);
     if (!folder) continue;
+    // ...but the caller's authority stops at a transcript that SAYS it ran
+    // somewhere else (#1487): `my_app` and `my-app` share a directory, and a
+    // sibling's row opened here would resume in the wrong working tree.
+    if (req.scope !== 'all' && req.folder && d.folder && !samePath(d.folder, req.folder)) continue;
     rows.push({
       nativeId: f.nativeId,
       folder,
