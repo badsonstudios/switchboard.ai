@@ -17,6 +17,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 import {
   McpManagerDialog,
+  approvalSpeaks,
   authControls,
   failureMessage,
   rowStatus,
@@ -241,12 +242,15 @@ describe('rowStatus — approval beats health, and that is the decision', () => 
     const s = server({ name: 'x', scope: 'project', approval: 'pending' });
     expect(rowStatus(s, 'unknown').token).toBe('pending');
     expect(rowStatus(s, 'failed').token).toBe('pending');
-    expect(rowStatus(s, 'connected').token).toBe('pending');
+    // …but NOT over `connected` (#1500): `claude mcp list` answers a pending
+    // server without connecting it, so connected proves it was approved.
+    expect(rowStatus(s, 'connected').token).toBe('connected');
   });
 
-  it('says disabled over any health answer too', () => {
+  it('says disabled over any health answer that does not prove it running', () => {
     const s = server({ name: 'x', scope: 'project', approval: 'disabled' });
-    expect(rowStatus(s, 'connected').token).toBe('disabled');
+    expect(rowStatus(s, 'failed').token).toBe('disabled');
+    expect(rowStatus(s, 'unknown').token).toBe('disabled');
   });
 
   it('lets health speak once approval has nothing to say', () => {
@@ -1204,16 +1208,84 @@ describe('a transient poll failure does not throw away a good list', () => {
   });
 });
 
-describe('approval still beats connection state on the runtime path', () => {
+describe('approval beats connection state on the runtime path while the server is not running', () => {
   it('says "waiting for your approval" rather than reporting the symptom', async () => {
     // The precedence `rowStatus` documents at length, which the first runtime
     // renderer silently dropped: an unapproved `.mcp.json` server is one the CLI
     // deliberately has not connected to, so "not connecting" describes the
-    // symptom instead of the cause.
-    useStatus(ok([runtimeServer({ name: 'shared', scope: 'project', status: 'failed', approval: 'pending' })]));
+    // symptom instead of the cause. Only while the session has NOT shown it
+    // running (#1500) — here, still `pending`.
+    useStatus(ok([runtimeServer({ name: 'shared', scope: 'project', status: 'pending', approval: 'pending' })]));
     await mount();
     expect(rowFor('shared').dataset.mcpState).toBe('pending');
     expect(text()).toContain('waiting for your approval');
+  });
+});
+
+describe('a live status beats a pending approval guess (#1500)', () => {
+  it('THE ASHENFALL ROW: connected with tools reads "connected", not "waiting for your approval"', async () => {
+    // Dan's `ado`: approved in `.claude/settings.local.json`, 34 tools live,
+    // and the row said "waiting for your approval" through every Reconnect.
+    useStatus(
+      ok([
+        runtimeServer({
+          name: 'ado',
+          scope: 'project',
+          status: 'connected',
+          approval: 'pending',
+          tools: ['core_list_projects'],
+        }),
+      ])
+    );
+    await mount();
+    expect(rowFor('ado').dataset.mcpState).toBe('connected');
+    expect(text()).not.toContain('waiting for your approval');
+    // and, being a working row, it gets its ordinary switch back
+    expect(button('Turn off')).not.toBeNull();
+  });
+
+  it.each([
+    ['connected', 'connected', 'off'],
+    // `failed` is not proof the CLI started it (see `provenRunning`)
+    ['failed', 'pending', 'none'],
+    ['needs-auth', 'pending', 'off'],
+    ['pending', 'pending', 'none'],
+    ['unknown', 'pending', 'none'],
+  ])('a pending approval with status %s reads as %s (switch %s)', (status, token, toggle) => {
+    const r = runtimeStatus(runtimeServer({ name: 'x', approval: 'pending', status: status as never }));
+    expect(r.token).toBe(token);
+    expect(r.toggle).toBe(toggle);
+    expect(approvalSpeaks(runtimeServer({ name: 'x', approval: 'pending', status: status as never }))).toBe(
+      toggle === 'none'
+    );
+  });
+
+  it('a REJECTED server reads as turned off — until the session shows it running', () => {
+    const at = (status: McpRuntimeServer['status']) =>
+      runtimeStatus(runtimeServer({ name: 'x', approval: 'disabled', status }));
+    expect(at('pending')).toMatchObject({ labelKey: 'mcp.stateDisabled', toggle: 'none' });
+    expect(at('failed')).toMatchObject({ labelKey: 'mcp.stateDisabled', toggle: 'none' });
+    // a stale legacy rejection beside a later yes: the CLI never starts a
+    // rejected server, so a connected one was not rejected
+    expect(at('connected')).toMatchObject({ labelKey: 'mcp.stateConnected', toggle: 'off' });
+  });
+
+  it('the no-session path follows the same rule: `claude mcp list` saw it connected', () => {
+    const s = (approval: 'pending' | 'disabled') => ({
+      name: 'ado',
+      scope: 'project' as const,
+      transport: 'stdio' as const,
+      approval,
+      target: 'cmd',
+      args: [],
+      envKeys: [],
+      headerKeys: [],
+      source: '.mcp.json',
+    });
+    expect(rowStatus(s('pending'), 'connected').token).toBe('connected');
+    expect(rowStatus(s('pending'), 'failed').token).toBe('pending');
+    expect(rowStatus(s('pending'), 'unknown').token).toBe('pending');
+    expect(rowStatus(s('disabled'), 'unknown').token).toBe('disabled');
   });
 });
 
@@ -1641,7 +1713,7 @@ describe('the two off-switches must not be confused (found in review)', () => {
     // unrelated lock; pressing again cleared only that one and the approval
     // label reasserted itself — round and round, server never coming back.
     useStatus(
-      ok([runtimeServer({ name: 'shared', scope: 'project', approval: 'disabled' })])
+      ok([runtimeServer({ name: 'shared', scope: 'project', approval: 'disabled', status: 'disabled' })])
     );
     await mount();
     const labels = Array.from(rowFor('shared').querySelectorAll('button')).map((b) =>
@@ -1655,7 +1727,7 @@ describe('the two off-switches must not be confused (found in review)', () => {
     // Reachable today. Pressing Turn off here writes a persistent entry that
     // Reset approvals will NOT undo, while the row keeps saying "waiting for
     // your approval" — a second lock closing with no feedback at all.
-    useStatus(ok([runtimeServer({ name: 'shared', scope: 'project', approval: 'pending' })]));
+    useStatus(ok([runtimeServer({ name: 'shared', scope: 'project', approval: 'pending', status: 'pending' })]));
     await mount();
     const labels = Array.from(rowFor('shared').querySelectorAll('button')).map((b) =>
       b.textContent?.trim()
@@ -1674,8 +1746,8 @@ describe('the two off-switches must not be confused (found in review)', () => {
 
   it('runtimeStatus decides the label and the switch together', () => {
     // The invariant: one function, so they cannot drift apart again.
-    expect(runtimeStatus(runtimeServer({ name: 'x', approval: 'disabled' })).toggle).toBe('none');
-    expect(runtimeStatus(runtimeServer({ name: 'x', approval: 'pending' })).toggle).toBe('none');
+    expect(runtimeStatus(runtimeServer({ name: 'x', approval: 'disabled', status: 'disabled' })).toggle).toBe('none');
+    expect(runtimeStatus(runtimeServer({ name: 'x', approval: 'pending', status: 'pending' })).toggle).toBe('none');
     expect(runtimeStatus(runtimeServer({ name: 'x', status: 'disabled' })).toggle).toBe('on');
     expect(runtimeStatus(runtimeServer({ name: 'x', status: 'connected' })).toggle).toBe('off');
     expect(runtimeStatus(runtimeServer({ name: 'x', status: 'failed' })).toggle).toBe('off');
@@ -1960,8 +2032,25 @@ describe('authControls — the sign-in rule', () => {
     'offers nothing when APPROVAL decided the row (%s)',
     (approval) => {
       // Approval is a different lock and this is not its key — the same
-      // precedence the toggle already respects.
-      expect(at({ status: 'needs-auth', transport: 'http', approval })).toEqual({
+      // precedence the toggle already respects. `unknown`: a server the session
+      // has not shown running, so the approval word still stands (#1500).
+      expect(at({ status: 'unknown', transport: 'http', approval })).toEqual({
+        signIn: false,
+        signOut: false,
+      });
+    }
+  );
+
+  it('offers sign-in on a needs-auth row even if the approval guess says pending (#1500)', () => {
+    // The CLI only asks a server it STARTED for a sign-in, so it was approved.
+    expect(at({ status: 'needs-auth', transport: 'http', approval: 'pending' })).toEqual({
+      signIn: true,
+      signOut: true,
+    });
+  });
+
+  it('a REJECTED row that is not running offers nothing', () => {
+      expect(at({ status: 'failed', transport: 'http', approval: 'disabled' })).toEqual({
         signIn: false,
         signOut: false,
       });

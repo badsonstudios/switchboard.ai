@@ -105,9 +105,9 @@ export function enrichRuntime(
       envKeys: c.envKeys,
       headerKeys: c.headerKeys,
       // APPROVAL COMES FROM THE FILE AND ONLY THE FILE. `mcp_status` has no
-      // field for it — it is derived from two LISTS on the project entry
-      // (`enabledMcpjsonServers` / `disabledMcpjsonServers`) that `claude-mcp-config.ts`
-      // reads. Without carrying it across, "waiting for your approval" would
+      // field for it — `claude-mcp-config.ts` derives it from the settings
+      // files and `~/.claude.json` the way the CLI does (#1500), and the dialog
+      // lets a status that proves the server running outrank it. Without carrying it across, "waiting for your approval" would
       // stop rendering on the path most sessions are on, and an unapproved
       // `.mcp.json` server would report "not connected" — the symptom instead
       // of the cause, which is the precedence `rowStatus` documents at length.

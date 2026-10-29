@@ -137,8 +137,13 @@ export function rowStatus(
   server: McpServerWire,
   health: McpHealth
 ): { labelKey: string; token: 'connected' | 'failed' | 'pending' | 'disabled' | 'unknown' } {
-  if (server.approval === 'pending') return { labelKey: 'mcp.statePending', token: 'pending' };
-  if (server.approval === 'disabled') return { labelKey: 'mcp.stateDisabled', token: 'disabled' };
+  // …except when `claude mcp list` saw it connected (#1500): the CLI answers a
+  // pending server there without connecting, so `connected` is proof it was
+  // approved, as on the runtime path (`provenRunning`).
+  if (!provenRunning(health)) {
+    if (server.approval === 'pending') return { labelKey: 'mcp.statePending', token: 'pending' };
+    if (server.approval === 'disabled') return { labelKey: 'mcp.stateDisabled', token: 'disabled' };
+  }
   if (health === 'connected') return { labelKey: 'mcp.stateConnected', token: 'connected' };
   if (health === 'failed') return { labelKey: 'mcp.stateFailed', token: 'failed' };
   return { labelKey: 'mcp.stateUnknown', token: 'unknown' };
@@ -194,10 +199,19 @@ export function runtimeStatus(server: McpRuntimeServer): {
   // folded in, because `mcp_status` has no field for it. Review caught the
   // version without this: it silently dropped "waiting for your approval" from
   // the path most sessions are on.
-  if (server.approval === 'pending') {
+  //
+  // …BUT A PENDING GUESS DOES NOT BEAT WHAT THE SESSION SAYS (#1500). The
+  // approval is read from files, the status from the CLI that made the call.
+  // If the server is connected or wants a sign-in, the CLI started it, so it
+  // WAS approved — in a file we did not read, or by the CLI's own
+  // non-interactive rule (a `-p` session approves a pending project server
+  // itself, read from the PATH binary 2.1.312). Dan's `ado` sat at "waiting for
+  // your approval" with 34 tools live beside it, through every Reconnect. The
+  // same goes for a stale rejection: a running server was not rejected.
+  if (approvalSpeaks(server) && server.approval === 'pending') {
     return { labelKey: 'mcp.statePending', token: 'pending', toggle: 'none' };
   }
-  if (server.approval === 'disabled') {
+  if (approvalSpeaks(server) && server.approval === 'disabled') {
     return { labelKey: 'mcp.stateDisabled', token: 'disabled', toggle: 'none' };
   }
   if (server.status === 'disabled') {
@@ -277,7 +291,7 @@ export function authControls(server: McpRuntimeServer): { signIn: boolean; signO
   if (server.transport === 'stdio') return none;
   // Approval is a different lock and this is not its key. Same rule, same
   // reasoning, as `runtimeStatus`'s `toggle: 'none'`.
-  if (server.approval === 'pending' || server.approval === 'disabled') return none;
+  if (approvalSpeaks(server)) return none;
   switch (server.status) {
     // The row this ticket is about. Sign out rides along as the recovery path
     // for a flow that half-completes — see the docblock.
@@ -336,6 +350,31 @@ const SIGN_IN_SENTENCE: Record<McpSignInOutcome, string> = {
   'no-url': 'mcp.signInNoUrl',
   'open-failed': 'mcp.signInOpenFailed',
 };
+
+/**
+ * Whether the session has shown this server RUNNING (#1500).
+ *
+ * `connected` and `needs-auth` only come from a server the CLI started, and it
+ * starts neither an unapproved nor a rejected `.mcp.json` server (read from the
+ * PATH binary 2.1.312: the spawn path skips "not approved for this project",
+ * and `mcp_authenticate` refuses one). So either one outranks an approval word
+ * read from files. `failed` is NOT counted: how the CLI reports an unapproved
+ * server in its initial list has not been read, and a failure there would be
+ * the old belief this precedence was built on.
+ */
+export function provenRunning(status: McpRuntimeStatus | McpHealth): boolean {
+  return status === 'connected' || status === 'needs-auth';
+}
+
+/**
+ * Whether a runtime row's approval word ("waiting for your approval", or
+ * "turned off" for a rejected server) still stands — only while the session
+ * has not shown the server running.
+ */
+export function approvalSpeaks(server: McpRuntimeServer): boolean {
+  if (server.approval !== 'pending' && server.approval !== 'disabled') return false;
+  return !provenRunning(server.status);
+}
 
 /** The status word once approval has had its say — split out so `runtimeStatus`
  *  reads as the precedence rule it is. */

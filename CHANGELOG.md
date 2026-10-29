@@ -140,6 +140,18 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.135 — unreleased
 
+### Fixed
+
+- **A project's shared MCP server no longer says "waiting for your approval"
+  while it is working.** In **MCP servers**, a server from the project's
+  `.mcp.json` that you had already approved kept that label, even while its
+  tools were listed beside it, and pressing **Reconnect** never changed it.
+  Reconnect was working all along; the label was reading your approval from
+  the one place current versions of Claude Code no longer use. It now reads
+  them where Claude Code keeps them (the project's `settings.local.json` and
+  your own settings), and a server the session reports as running always shows
+  its real state.
+
 ## 0.8.134 — 2026-10-28
 
 ### Changed

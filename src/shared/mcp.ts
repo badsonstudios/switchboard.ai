@@ -50,9 +50,10 @@ export type McpTransport = 'stdio' | 'http' | 'sse' | 'unknown';
  *
  * Only `.mcp.json` servers have one: a repo you cloned can carry a server
  * definition, and the CLI will not connect to it until you say so. It is not a
- * field in any config — it is derived from two LISTS on the project entry,
- * `enabledMcpjsonServers` and `disabledMcpjsonServers`, and the CLI reports the
- * untouched state as `⏸ Pending approval (run \`claude\` to approve)`.
+ * field in any config — it is derived from the `enabledMcpjsonServers` /
+ * `disabledMcpjsonServers` lists and `enableAllProjectMcpServers`, in the
+ * settings files and `~/.claude.json` (`claude-mcp-config.ts`, #1500), and the
+ * CLI reports the untouched state as `⏸ Pending approval (run \`claude\` to approve)`.
  *
  * `n/a` is what local- and user-scope servers get: they were added by you, on
  * purpose, and there is nothing to approve.
