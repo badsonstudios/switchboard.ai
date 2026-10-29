@@ -169,18 +169,86 @@ function projectEntries(
 }
 
 /**
- * The approval state of one PROJECT-scope server.
+ * The approval keys a Claude Code SETTINGS file may carry (#1500).
  *
- * Derived, not stored: the CLI keeps two lists and treats absence from both as
- * "not yet answered". Disabled is checked FIRST because a name in both lists is
- * a corrupt state we did not create, and refusing to connect is the safe
- * reading of it.
+ * The same two lists as a `~/.claude.json` project entry, plus the blanket
+ * `enableAllProjectMcpServers`. Read from the settings schema in the PATH
+ * binary (2.1.312): "List of approved MCP servers from .mcp.json", "Whether to
+ * automatically approve all MCP servers in the project".
  */
-function approvalOf(name: string, entries: ProjectEntry[]): McpApproval {
-  const inAny = (key: 'enabledMcpjsonServers' | 'disabledMcpjsonServers'): boolean =>
-    entries.some((e) => stringList(e[key]).includes(name));
-  if (inAny('disabledMcpjsonServers')) return 'disabled';
-  if (inAny('enabledMcpjsonServers')) return 'approved';
+interface ApprovalSettings {
+  enabledMcpjsonServers?: unknown;
+  disabledMcpjsonServers?: unknown;
+  enableAllProjectMcpServers?: unknown;
+}
+
+/**
+ * The settings files whose approval keys count, already parsed (#1500).
+ *
+ * `user` is `~/.claude/settings.json`, `local` the folder's
+ * `.claude/settings.local.json`, `project` the folder's committed
+ * `.claude/settings.json`. Each is `{}` when absent or unreadable.
+ */
+export interface ApprovalSources {
+  user?: unknown;
+  local?: unknown;
+  project?: unknown;
+  /** the folder IS the home directory, where project settings = user settings */
+  projectIsHome?: boolean;
+}
+
+/**
+ * The approval state of one PROJECT-scope server — THE CLI'S RULE (#1500).
+ *
+ * Read from the PATH binary (2.1.312, `yht` / `ODn`), not guessed:
+ *
+ *   1. **Rejected wins.** A name in `disabledMcpjsonServers` in the MERGED
+ *      settings — every source, the committed project file included — is
+ *      rejected. Also in a legacy `~/.claude.json` project entry.
+ *   2. **Approved** if `enabledMcpjsonServers` names it, or
+ *      `enableAllProjectMcpServers` is true, in the USER or LOCAL settings — or
+ *      in the legacy `~/.claude.json` lists, which the CLI migrates into
+ *      `settings.local.json` at startup.
+ *   3. **The committed `.claude/settings.json` cannot approve.** The CLI skips
+ *      `projectSettings` here unless the folder is the home directory (where
+ *      the two files are the same file): a repo must not be able to approve
+ *      the servers it brings. Its rejections still count, per (1).
+ *   4. Otherwise pending.
+ *
+ * THE BUG THIS FIXES: only the `~/.claude.json` lists were read. The CLI's own
+ * approval prompt writes to `.claude/settings.local.json` and migrates the old
+ * lists there, so every server approved by a current CLI read as "waiting for
+ * your approval" here — Dan's `ado`, approved in Ashenfall's
+ * `settings.local.json`, with 34 tools live beside the label.
+ *
+ * NOT MODELLED, on purpose: the CLI also gates `settings.local.json` when it is
+ * tracked by git in an untrusted workspace, and reads managed/flag settings.
+ * Those decide the CLI's own prompt; for a live session the reported status
+ * beats this guess anyway (`runtimeStatus` in `McpManagerDialog.tsx`).
+ */
+function approvalOf(name: string, entries: ProjectEntry[], sources: ApprovalSources): McpApproval {
+  const settings = (v: unknown): ApprovalSettings => (isRecord(v) ? v : {});
+  const user = settings(sources.user);
+  const local = settings(sources.local);
+  const project = settings(sources.project);
+  const lists = (key: 'enabledMcpjsonServers' | 'disabledMcpjsonServers', from: ApprovalSettings[]) =>
+    from.some((s) => stringList(s[key]).includes(name));
+
+  if (
+    lists('disabledMcpjsonServers', [user, local, project]) ||
+    entries.some((e) => stringList(e.disabledMcpjsonServers).includes(name))
+  ) {
+    return 'disabled';
+  }
+
+  const approving = sources.projectIsHome ? [user, local, project] : [user, local];
+  if (
+    approving.some((s) => s.enableAllProjectMcpServers === true) ||
+    lists('enabledMcpjsonServers', approving) ||
+    entries.some((e) => stringList(e.enabledMcpjsonServers).includes(name))
+  ) {
+    return 'approved';
+  }
   return 'pending';
 }
 
@@ -216,6 +284,19 @@ export function claudeJsonPath(home = os.homedir()): string {
   return path.join(home, '.claude.json');
 }
 
+/** Where the user's Claude Code settings live (#1500). */
+export function userSettingsPath(home = os.homedir()): string {
+  return path.join(home, '.claude', 'settings.json');
+}
+
+/** Where a folder's Claude Code settings live: committed, and local (#1500). */
+export function projectSettingsPaths(folder: string): { project: string; local: string } {
+  return {
+    project: path.join(folder, '.claude', 'settings.json'),
+    local: path.join(folder, '.claude', 'settings.local.json'),
+  };
+}
+
 /** Where a folder's project-scope config lives. */
 export function mcpJsonPath(folder: string): string {
   return path.join(folder, '.mcp.json');
@@ -239,6 +320,8 @@ export function buildInventory(opts: {
   claudeJson: unknown;
   mcpJson: unknown;
   unreadable?: readonly McpUnreadableWire[];
+  /** the settings files whose approval keys count (#1500); absent = none */
+  approvals?: ApprovalSources;
   /** injected for the reason `samePath` gives — both branches on every runner */
   platform?: NodeJS.Platform;
 }): McpInventoryWire {
@@ -260,7 +343,7 @@ export function buildInventory(opts: {
 
   const servers = [
     ...rowsFrom(project.mcpServers, 'project', mcpJsonPath(opts.folder), (name) =>
-      approvalOf(name, entries)
+      approvalOf(name, entries, opts.approvals ?? {})
     ),
     ...rowsFrom(localServers, 'local', claudeJsonPath(), () => 'n/a'),
     ...rowsFrom(claude.mcpServers, 'user', claudeJsonPath(), () => 'n/a'),
@@ -282,6 +365,9 @@ function readJson(file: string): { ok: true; value: unknown } | { ok: false; mis
   let text: string;
   try {
     text = fs.readFileSync(file, 'utf8');
+    // A byte-order mark (Notepad writes one) is not JSON, and would read a
+    // working settings file as broken.
+    if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   } catch {
     return { ok: false, missing: true };
   }
@@ -324,10 +410,26 @@ export function readInventory(
     log?.warn('.mcp.json could not be parsed', { file: mcpJsonPath(folder) });
   }
 
+  // The settings files only feed APPROVAL (#1500). One that will not parse is
+  // logged and read as empty, not listed as unreadable: it holds no servers,
+  // and the CLI reports its own settings errors where the user will see them.
+  const settings = (file: string): unknown => {
+    const r = readJson(file);
+    if (!r.ok && !r.missing) log?.warn('claude settings could not be parsed', { file });
+    return r.ok ? r.value : {};
+  };
+  const own = projectSettingsPaths(folder);
+
   return buildInventory({
     folder,
     claudeJson: home.ok ? home.value : {},
     mcpJson: project.ok ? project.value : {},
     unreadable,
+    approvals: {
+      user: settings(userSettingsPath()),
+      local: settings(own.local),
+      project: settings(own.project),
+      projectIsHome: samePath(folder, os.homedir(), process.platform),
+    },
   });
 }

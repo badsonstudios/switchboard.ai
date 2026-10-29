@@ -281,6 +281,18 @@ someone else wrote that file. So **Turn on** won't approve a shared server:
 click **Reconnect** on its row and answer Claude Code's own picker in the
 session.
 
+**Where your yes is kept.** Claude Code saves it in the project's
+`.claude/settings.local.json` (older versions kept it in your home folder's
+`.claude.json`, and Claude Code moves it across on its own). Switchboard reads
+both, plus your own `~/.claude/settings.json`, including the setting that
+approves every shared server at once. The project's **committed**
+`.claude/settings.json` can say no to a server but can't say yes for you: a repo
+doesn't get to approve the programs it brings with it.
+
+**A server that is actually running never says "waiting for your approval".**
+If the session reports it connected, or asking you to sign in, Claude Code has
+started it, so it was approved. The row shows what the session says.
+
 If you want to be asked about *all* the project's shared servers again — because
 you said no to one by mistake, or the repo's `.mcp.json` has changed — click
 **Reset approvals**. It asks first. This clears every yes and every no for this

@@ -27,12 +27,14 @@ const inv = (
     mcpJson?: unknown;
     folder?: string;
     platform?: NodeJS.Platform;
+    approvals?: Parameters<typeof buildInventory>[0]['approvals'];
   } = {}
 ) =>
   buildInventory({
     folder: opts.folder ?? FOLDER,
     claudeJson: opts.claudeJson ?? {},
     mcpJson: opts.mcpJson ?? {},
+    ...(opts.approvals ? { approvals: opts.approvals } : {}),
     // WIN32 BY DEFAULT in this file, because the fixtures are Windows paths
     // read off a real Windows machine. Injected rather than ambient: read from
     // `process.platform`, the drive-letter block below passed on Windows and
@@ -168,6 +170,52 @@ describe('approval — derived from two lists, not stored anywhere', () => {
     // A corrupt state we did not create — refusing to connect is the safe
     // reading of it, so `disabled` is checked before `approved`.
     expect(byName(withLists(['s'], ['s']), 's').approval).toBe('disabled');
+  });
+
+  // ── #1500: the settings files, which are where a current CLI writes ──────
+  const fromSettings = (approvals: Parameters<typeof buildInventory>[0]['approvals']) =>
+    byName(inv({ mcpJson: { mcpServers: { ado: { command: 'cmd' } } }, approvals }), 'ado').approval;
+
+  it('THE ASHENFALL CASE: approved in the folder’s settings.local.json alone', () => {
+    // The CLI's own "approve this server?" prompt writes here, and it migrates
+    // the old `~/.claude.json` lists here too — so this is the ordinary case.
+    expect(fromSettings({ local: { enabledMcpjsonServers: ['ado'] } })).toBe('approved');
+  });
+
+  it('is approved from the user settings, and by enableAllProjectMcpServers', () => {
+    expect(fromSettings({ user: { enabledMcpjsonServers: ['ado'] } })).toBe('approved');
+    expect(fromSettings({ local: { enableAllProjectMcpServers: true } })).toBe('approved');
+    expect(fromSettings({ user: { enableAllProjectMcpServers: true } })).toBe('approved');
+    // only a real `true` approves everything
+    expect(fromSettings({ local: { enableAllProjectMcpServers: 'yes' } })).toBe('pending');
+  });
+
+  it('the COMMITTED project settings cannot approve — a repo must not approve its own servers', () => {
+    expect(fromSettings({ project: { enabledMcpjsonServers: ['ado'] } })).toBe('pending');
+    expect(fromSettings({ project: { enableAllProjectMcpServers: true } })).toBe('pending');
+  });
+
+  it('…unless the folder IS the home directory, where it is the user settings file', () => {
+    expect(fromSettings({ project: { enabledMcpjsonServers: ['ado'] }, projectIsHome: true })).toBe(
+      'approved'
+    );
+  });
+
+  it('a rejection in ANY settings file wins, the committed one included', () => {
+    expect(
+      fromSettings({
+        local: { enabledMcpjsonServers: ['ado'] },
+        project: { disabledMcpjsonServers: ['ado'] },
+      })
+    ).toBe('disabled');
+    expect(
+      fromSettings({ user: { enableAllProjectMcpServers: true, disabledMcpjsonServers: ['ado'] } })
+    ).toBe('disabled');
+  });
+
+  it('settings that are not objects, or lists that are not lists, read as nothing', () => {
+    expect(fromSettings({ user: 'nope', local: [], project: null })).toBe('pending');
+    expect(fromSettings({ local: { enabledMcpjsonServers: 'ado' } })).toBe('pending');
   });
 
   it('never puts an approval on a local or user server', () => {
@@ -389,6 +437,30 @@ describe('readInventory — the impure edge', () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0].fields).toEqual({ file: path.join(folder, '.mcp.json') });
     expect(() => readInventory(folder)).not.toThrow();
+  });
+
+  it('reads approval from the folder’s .claude/settings.local.json (#1500)', () => {
+    writeProject(JSON.stringify({ mcpServers: { ado: { command: 'cmd' } } }));
+    fs.mkdirSync(path.join(folder, '.claude'));
+    fs.writeFileSync(
+      path.join(folder, '.claude', 'settings.local.json'),
+      JSON.stringify({ enabledMcpjsonServers: ['ado'] })
+    );
+    expect(readInventory(folder).servers[0].approval).toBe('approved');
+  });
+
+  it('reads approval from ~/.claude/settings.json, and ignores a broken settings file (#1500)', () => {
+    writeProject(JSON.stringify({ mcpServers: { ado: { command: 'cmd' } } }));
+    fs.mkdirSync(path.join(home, '.claude'));
+    fs.writeFileSync(path.join(home, '.claude', 'settings.json'), JSON.stringify({ enableAllProjectMcpServers: true }));
+    fs.mkdirSync(path.join(folder, '.claude'));
+    fs.writeFileSync(path.join(folder, '.claude', 'settings.local.json'), '{ broken');
+    const warnings: string[] = [];
+    const i = readInventory(folder, { warn: (msg) => warnings.push(msg) });
+    expect(i.servers[0].approval).toBe('approved');
+    // logged, but NOT listed as an unreadable MCP config: it holds no servers
+    expect(i.unreadable).toEqual([]);
+    expect(warnings).toContain('claude settings could not be parsed');
   });
 
   it('answers an empty inventory when neither file exists at all', () => {
