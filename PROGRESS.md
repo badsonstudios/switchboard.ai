@@ -3,9 +3,9 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚢 RELEASING: v0.8.135, 2026-10-28 — #1500
+> # ✅ RELEASED: v0.8.135, 2026-10-28 (PR #1503, tag on `c7d5d62b`, release run 40805897784) — #1500
 >
-> Dan, with #1500: *"I want you to fix this bug and then fire off another release."* A **regular release, on his word**, the same day as 0.8.134. Version, lock and dated notes land together (`0.8.136 — unreleased` is open). **In it:** #1500 (a shared `.mcp.json` server Claude Code has approved no longer reads "waiting for your approval": approval is read from the settings files where the CLI keeps it, and a server the session shows running beats the guess). **Not hand-tested**: one dogfood UNTESTED row. **DO NOT CUT ANOTHER unless he asks.**
+> Dan, with #1500: *"I want you to fix this bug and then fire off another release."* A **regular release, on his word**, the same day as 0.8.134. Version, lock and dated notes land together (`0.8.136 — unreleased` is open). **In it:** #1500 (a shared `.mcp.json` server Claude Code has approved no longer reads "waiting for your approval": approval is read from the settings files where the CLI keeps it, and a server the session shows running beats the guess). The release PR merged on green CI (4/4) as `c7d5d62b`, tag `v0.8.135` was pushed from it, and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.135.exe` (105 MB) + `.sha256` as a normal release: `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.135` (published 22:31 EDT). The dogfood row now reads RELEASED. **Not hand-tested.** **DO NOT CUT ANOTHER unless he asks.**
 
 > # ✅ DONE: #1500 — MCP approval read from Claude Code's settings files; a running server beats the guess (PR #1501 merged `03b63519`, issue closed, NOT RELEASED)
 >
