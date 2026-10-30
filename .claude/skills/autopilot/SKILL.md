@@ -52,6 +52,8 @@ Hard boundaries that still apply, always:
 
 1. Run `/startup` context load if not already loaded this session; read
    `PROGRESS.md` and `gh issue list --milestone "<target>" --state open`.
+   **Skip anything labelled `needs-discussion`** (added 2026-10-30, Dan): it
+   must be gone over with him before anyone starts it.
 2. If the target phase has no issues filed yet, run `/pm file-issues <phase>`
    yourself (the plan file must already exist — if it doesn't, stop and ask;
    expanding a phase plan unattended is out of bounds).

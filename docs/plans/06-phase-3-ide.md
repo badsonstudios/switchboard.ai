@@ -48,6 +48,19 @@ Phase 3 list at all and would otherwise have no parent:
 > any epic here, and bugs it files outrank everything in this file.** Exit
 > criterion 10 exists so this cannot happen twice.
 
+> **📋 FILED 2026-10-30 — the design-vs-tracker audit, at Dan's request.**
+> Eleven epics below had never acquired an issue (the same quiet failure as
+> Phase 2's E13). Seventeen were filed as **#1505–#1521**, every one labelled
+> **`needs-discussion`**: *"Before starting any of these tickets, they need to
+> be gone over with me or the developer."* They are a record of the design, not
+> approved work; `/next-item`, `/autopilot` and `/orchestrate` skip the label.
+> E24 layer 3: #1505 (OQ 9 spike), #1506, #1507 · E25: #1508, #1509 · E26:
+> #1510, #1511 (Dan: *"we don't need"* it; filed so the call is recorded),
+> #1512 · E27: #1513–#1516 · E28: #1517 · E29: #1518 · E30: #1519 · E31:
+> #1520 · E32: #1521. **Open, not filed:** exit criterion 0 below still says
+> "a hunk can be edited in the diff pane", which e24-git-v2-design §6 decided
+> against; #1506 carries the question.
+
 **Seventeen epics is a lot, and Phase 2 was reconciled down once already
 (2026-07-21) for exactly this reason.** Expect this list to be split or demoted
 before it is filed. E24–E26 are the phase; E30–E32 are the likeliest candidates
