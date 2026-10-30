@@ -50,6 +50,10 @@ is a question that costs a round trip for nothing.
    - Otherwise resolve the argument to an issue, or take the next open,
      unblocked issue in the current milestone:
      `gh issue list --milestone "<current>" --state open`.
+     **Skip anything labelled `needs-discussion`** (added 2026-10-30, Dan):
+     designed-but-unapproved work that must be gone over with him first. If
+     Dan names one explicitly, stop and say it needs that discussion before
+     planning; do not start it.
 2. Read the issue body AND its spec section in the plan file it references
    (`docs/plans/*.md`) — the plan file carries the full done-when criteria and
    dependencies; the issue is the tracker. DESIGN.md sections cited by the plan

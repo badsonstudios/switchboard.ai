@@ -49,7 +49,9 @@ test.
 
 1. Load context as `/startup` does: `.claude/CLAUDE.md`, `PROGRESS.md`,
    `gh issue list --milestone "<current>" --state open`, and the plan files
-   the open issues reference.
+   the open issues reference. **Never dispatch an issue labelled
+   `needs-discussion`** (added 2026-10-30, Dan): it must be gone over with
+   him before anyone starts it.
 2. **Check the main checkout for in-flight work** (`git status`,
    `git branch --show-current`). If a feature branch has uncommitted or
    unmerged work (e.g. an item a previous session left half-landed),
