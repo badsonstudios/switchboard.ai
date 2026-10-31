@@ -123,7 +123,14 @@ The prompt must contain, concretely:
      atomically creating directory `C:\tmp\switchboard-e2e.lock` (mkdir
      fails if it exists → wait 60s and retry). Write your issue# into
      `owner.txt` inside it. Remove the directory when the run ends,
-     success or failure. A lock is stale ONLY if it is older than 45
+     success or failure. **The lock covers EVERY Playwright run —
+     targeted specs and `--repeat-each` repros, not just the full suite —
+     and ownership is checked, not assumed: the call that starts
+     Playwright, and the call that removes the lock, each first verify
+     `owner.txt` names your own issue, else stop** (2026-10-31, #1320: a
+     wait loop timed out WITHOUT the lock, the next call ran repro specs
+     over #680's live full suite and then deleted #680's lock; the suite
+     survived clean by luck). A lock is stale ONLY if it is older than 45
      minutes AND no electron process has been observed across a ~5-minute
      sampling window (idle instants between spec files are normal — one
      sample proves nothing); only then steal it, and say so. **Check
