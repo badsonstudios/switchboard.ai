@@ -20,18 +20,26 @@
  * checker took that at face value and reported "you're up to date" forever
  * (plan §E19 decision 5). We ask a question whose two answers differ — see
  * `main/update/checker.ts` — and 404 is reported as `auth`, never as up to date.
+ *
+ * The repo is public now, and a machine with no token asks anonymously
+ * (#1495). That made `no-token` impossible — it was the "checks are off"
+ * reason — and added `no-access`: an anonymous 404 cannot be a credentials
+ * problem, so it is its own answer. Also never up to date.
  */
 export type UpdateFailureReason =
-  /** no token could be resolved locally — checks are OFF, and that is fine */
-  | 'no-token'
   /** the user turned automatic checks off, and this was an automatic one */
   | 'auto-check-off'
   /** the app is quitting — the answer arrived too late to be worth anything */
   | 'quitting'
   /** disabled for this run by the dev/test feed override */
   | 'overridden-off'
-  /** 401/403/404 — missing or insufficient credentials (see above) */
+  /** 401/403/404 WITH a token — the credentials on this machine cannot see it */
   | 'auth'
+  /**
+   * 401/403/404 asked ANONYMOUSLY (#1495) — there were no credentials to be
+   * wrong, so the release list is gone or private again
+   */
+  | 'no-access'
   /** the API said we have asked too often */
   | 'rate-limit'
   /** DNS, offline, TLS, timeout — anything that never reached the API */
@@ -87,7 +95,9 @@ export interface UpdateCheckResult {
  * (`https://api.github.com/repos/…/releases/assets/<id>`), not the
  * `browser_download_url`: on a private repo the browser URL is a login page,
  * and the API URL with `Accept: application/octet-stream` is the documented
- * way to fetch the bytes with a token. `download.ts` is where the redirect
+ * way to fetch the bytes with a token. On the public repo the same URL works
+ * with no token at all (#1495), so one URL serves both paths and both go
+ * through the same host checks. `download.ts` is where the redirect
  * that URL answers with is handled — and where the token is dropped before
  * following it.
  */
@@ -143,8 +153,6 @@ export type UpdateInstallFailure =
    * hunting for an installer on a page that may not be there.
    */
   | 'no-offer'
-  /** no token could be resolved locally, and the asset is private */
-  | 'no-token'
   /** the asset host refused the credentials we have */
   | 'auth'
   /** never reached it, or the connection died mid-body */

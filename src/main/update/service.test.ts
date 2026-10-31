@@ -96,7 +96,8 @@ describe('shouldPrompt (the decision the renderer obeys)', () => {
   it('is silent for every automatic non-offer — up to date, disabled, failed', () => {
     for (const r of [
       result({ state: 'up-to-date', latestVersion: '0.1.0' }),
-      result({ state: 'disabled', ok: false, reason: 'no-token', latestVersion: undefined }),
+      result({ state: 'disabled', ok: false, reason: 'auto-check-off', latestVersion: undefined }),
+      result({ state: 'failed', ok: false, reason: 'no-access', latestVersion: undefined }),
       result({ state: 'failed', ok: false, reason: 'auth', latestVersion: undefined }),
     ]) {
       expect(shouldPrompt(r, prefs, false)).toBe(false);

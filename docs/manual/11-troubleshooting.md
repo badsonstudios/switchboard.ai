@@ -571,10 +571,9 @@ permission to create issues), the dialog says so and files nothing. It does not
 quietly switch to the browser, because a broken sign-in is something you may
 want to fix.
 
-A token you save here is also what update checking uses, so a machine without
-the GitHub command-line tool gets both from one paste. Updates won't notice
-until the next check, so go to **Help ▸ Check for updates…** once after saving
-and you'll see the real answer instead of "no credentials".
+A token you save here is also used by update checking. Updates don't need one —
+they work on any machine without signing in — but with a token GitHub allows
+far more checks an hour, which helps on a busy shared network.
 
 ## Asking for a feature
 

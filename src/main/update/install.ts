@@ -204,10 +204,14 @@ export class UpdateInstaller {
       return this.emit(result, 'failed', { reason: 'no-asset' });
     }
 
+    // Token if one resolves, otherwise none at all (#1495): the repo is public,
+    // and its asset URL answers an anonymous request with the same redirect a
+    // token gets. `download.ts`'s host checks apply either way — the first
+    // request must be the API host, every hop after it plain https.
     let token: string | null = null;
     if (!this.deps.skipToken) {
       token = (await resolveUpdateToken(this.deps.tokenSources)).token;
-      if (!token) return this.emit(result, 'failed', { reason: 'no-token' });
+      if (!token) this.deps.log.debug('no token resolved locally; downloading anonymously');
     }
 
     const dest = path.join(this.deps.updateDir, target.name);
@@ -218,7 +222,10 @@ export class UpdateInstaller {
       return this.emit(result, 'failed', { reason: 'disk' });
     }
 
-    const common = {
+    const common: { token: string | null } & Pick<
+      Parameters<typeof downloadAsset>[0],
+      'currentVersion' | 'signal' | 'allowLoopback'
+    > = {
       token,
       currentVersion: this.deps.currentVersion,
       signal: this.abort?.signal,
@@ -226,15 +233,35 @@ export class UpdateInstaller {
     };
 
     this.emit(result, 'downloading', { received: 0, total: target.size });
-    try {
-      const download = this.deps.downloadImpl ?? downloadAsset;
-      await download({
+    const download = this.deps.downloadImpl ?? downloadAsset;
+    const fetchInstaller = (): Promise<number> =>
+      download({
         ...common,
         url: target.url,
         dest,
         onProgress: (received, total) =>
           this.emit(result, 'downloading', { received, total: total || target.size }),
       });
+    try {
+      try {
+        await fetchInstaller();
+      } catch (err) {
+        // Any refusal of a TOKEN download is retried once without it (#1495):
+        // on a public repo a stale token must not be the reason an update
+        // cannot download. Broader than the check's rule — `download.ts` folds
+        // 401/403/404 into one `auth`, so a token 404 is retried here too —
+        // and harmless, because a download failure can never read as "up to
+        // date". The sidecar then goes anonymous too: same feed, and the token
+        // just failed. (A sidecar refused AFTER a token download succeeded is
+        // not retried — the same token, seconds later; it fails to the browser.)
+        if (this.cancelled || !common.token || failureOf(err) !== 'auth') throw err;
+        this.deps.log.debug('the token was refused for the installer; retrying without it');
+        await unlinkQuietly(dest);
+        // a cancel that landed during the unlink must not start a new request
+        if (this.cancelled) throw err;
+        common.token = null;
+        await fetchInstaller();
+      }
     } catch (err) {
       await unlinkQuietly(dest);
       return this.emit(result, this.cancelled ? 'cancelled' : 'failed', {

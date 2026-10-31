@@ -123,9 +123,10 @@ your machine. Almost every time it fires it'll be a download that got truncated
 or corrupted in transit — and the right response to that is still "throw it
 away and start again", not "run it and hope".
 
-Every other thing that can go wrong — no network, no credentials, a release
-without an installer, Windows refusing to start it — ends the same way: a plain
-sentence saying what happened, and the release page one click away. Nothing is
+Every other thing that can go wrong — no network, GitHub refusing the
+download, a release without an installer, Windows refusing to start it — ends
+the same way: a plain sentence saying what happened, and the release page one
+click away. Nothing is
 half-installed, and nothing is left behind.
 
 ## If the release goes away while the box is open
@@ -211,16 +212,18 @@ you're running is a beta.
 
 ## If it can't check
 
-Sometimes it can't: you're offline, or the machine has no credentials for the
-release list. In that case:
+Sometimes it can't: you're offline, GitHub has had too many requests from your
+network in the last hour, or the release list can't be found. In that case:
 
 - **A background check says nothing at all.** No banner, no error, no badge.
   It costs you nothing and doesn't interrupt anything you're doing.
 - **A check you asked for** says, plainly, what happened — and it tells the
-  three cases apart, because the fix is different for each: this machine has no
-  credentials for the release list, the credentials it has can't see it, or it
-  simply couldn't be reached right now. None of them are dressed up as an
-  error, because none of them are one.
+  cases apart, because the fix is different for each: it couldn't be reached
+  right now, it has asked too many times and should wait a while, the release
+  list couldn't be found at all, or a GitHub token on this machine was turned
+  down. None of them are dressed up as an error, because none of them are one.
+- **It never says "you're up to date" when it couldn't actually look.** A
+  release list it couldn't find is reported as exactly that.
 
 This is deliberate. Update checking is a convenience; it is never allowed to
 get in the way of a session that's running.
@@ -232,30 +235,38 @@ reporting, no "phone home", and no account. If you turn automatic checks off
 and never press Update, switchboard.ai makes no network connections of its own
 at all.
 
-Right now the check needs GitHub credentials that are already on your machine.
-If it can't find any, checking is simply switched off — quietly, with no setup
-to do and no error to dismiss. (The project's releases page is public, so you
-can always look for a newer version there yourself.)
+**You don't need a GitHub account or any credentials.** The project's releases
+are public, so checking and downloading work on any machine with nothing to set
+up. GitHub lets a computer ask about 60 times an hour without signing in, and
+switchboard.ai asks once a day, so that limit only matters if lots of other
+things on your network are asking GitHub too. If it is hit, the check simply
+waits for the next day (or for you to press **Check for updates…** later).
 
-It looks in two places, in this order:
+If there *is* a GitHub sign-in on your machine, it is used instead, because
+GitHub gives a signed-in check a much bigger allowance. It looks in two places,
+in this order:
 
 1. **A GitHub token you saved yourself**, in the box on Help ▸ Report a
    problem…. Yours beats anything else on the machine, because you typed it in
    on purpose.
-2. **The GitHub command-line tool**, if it is installed and signed in. Nothing
-   to set up — if you already use `gh`, checking just works.
+2. **The GitHub command-line tool**, if it is installed and signed in.
 
-So if you ever saved a token to file a problem report, update checking and
-downloading use the same one. You do not need to enter it twice, and you do not
-need to restart the app — but the check that is already on screen won't change
-its mind on its own. Ask for a fresh one with **Check for updates…** and you'll
-get a real answer.
+If GitHub turns that sign-in down — an expired token, say — the check quietly
+tries once more without it, so an old token never stops you hearing about a
+release. If that second try can't see the release list either, the message
+says the token was turned down, because that's the thing you can fix.
 
-Those credentials are used **only** to ask GitHub for the release, and only on
-GitHub's own address. The actual file comes from a storage server GitHub
-redirects to, and your credentials are deliberately not sent there — they
-aren't needed, and handing them to a machine that didn't ask for them isn't
-something an app should do quietly.
+A token you save takes effect without a restart — but the check that is already
+on screen won't change its mind on its own. Ask for a fresh one with **Check
+for updates…** and you'll get a real answer.
+
+A token, when there is one, is used **only** to ask GitHub for the release, and
+only on GitHub's own address. The actual file comes from a storage server
+GitHub redirects to, and your credentials are deliberately not sent there —
+they aren't needed, and handing them to a machine that didn't ask for them
+isn't something an app should do quietly. A download without a token goes
+through exactly the same checks: it starts at GitHub's own address and only
+follows a secure (https) redirect.
 
 ---
 

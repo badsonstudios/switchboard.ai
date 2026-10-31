@@ -88,7 +88,7 @@
     "upToDateBody": "{version} is the newest release.",
     "unavailableTitle": "Could not check for updates",
     "unavailableBody": "Nothing is wrong with your app — it just could not reach the release list right now. Try again later.",
-    "unavailableNoToken": "Nothing is wrong with your app. This machine has no credentials for the release list, so switchboard.ai is not checking for new versions.",
+    "unavailableNoAccess": "Nothing is wrong with your app. The release list could not be found on GitHub — the project may have moved or stopped publishing releases publicly — so there is nothing to compare against.",
     "unavailableAuth": "Nothing is wrong with your app. The credentials on this machine cannot see the release list, so there is nothing to compare against.",
     "unavailableRateLimit": "Nothing is wrong with your app — it has asked for the release list too many times just now. Try again in a little while.",
     "downloading": "Downloading v{version}…",
@@ -102,8 +102,7 @@
     "failedNoAsset": "This release has no installer this app can verify, so there is nothing to install automatically. The release page has the files.",
     "failedNoOffer": "That release is no longer on offer — it was withdrawn, replaced, or could not be confirmed since this box opened. Nothing was downloaded. Check for updates again to see what's available now.",
     "failedUnsupported": "One-click updates are Windows-only for now. The release page has what you need.",
-    "failedNoToken": "This machine has no credentials for the release files, so the download could not start.",
-    "failedAuth": "The credentials on this machine were refused when downloading the installer.",
+    "failedAuth": "GitHub refused the request for the installer, so the download could not finish. The release page has the files.",
     "failedDisk": "The installer could not be written to this machine's temporary folder.",
     "failedLaunch": "The installer downloaded and verified, but Windows would not start it.",
     "failedNetwork": "The download did not finish. Nothing was installed and nothing was left behind."

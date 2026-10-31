@@ -130,6 +130,43 @@ describe('THE rule: the token goes to the API host and nowhere else', () => {
   });
 });
 
+describe('ANONYMOUS downloads (#1495 — public repo, no token) get the same guards', () => {
+  const anon = { currentVersion: '0.1.0', token: null };
+
+  it('sends no Authorization on any hop and follows the storage redirect', async () => {
+    // The real shape, measured 2026-10-31: an anonymous GET of the API asset
+    // URL with `Accept: application/octet-stream` answers 302 to
+    // release-assets.githubusercontent.com.
+    const storage = 'https://release-assets.githubusercontent.com/github-production-release-asset/1?sig=x';
+    const { impl, calls } = scriptedFetch([redirect(storage), bodyResponse('installer-bytes')]);
+    await downloadAsset({ ...anon, url: API, dest, fetchImpl: impl });
+    expect(calls.map((c) => c.headers.authorization)).toEqual([undefined, undefined]);
+    expect(calls[0].headers.accept).toBe('application/octet-stream');
+    expect(fs.readFileSync(dest, 'utf8')).toBe('installer-bytes');
+  });
+
+  it('still refuses a first hop that is not the API host — no token is not a free pass', async () => {
+    const impl = vi.fn() as unknown as typeof fetch;
+    for (const url of ['https://evil.example.com/x.exe', 'http://api.github.com/x.exe']) {
+      await expect(downloadAsset({ ...anon, url, dest, fetchImpl: impl })).rejects.toThrow(
+        /untrusted origin/
+      );
+      await expect(fetchAssetText({ ...anon, url, fetchImpl: impl })).rejects.toThrow(
+        /untrusted origin/
+      );
+    }
+    expect(impl).not.toHaveBeenCalled();
+  });
+
+  it('still refuses to follow a redirect to plain http', async () => {
+    const { impl } = scriptedFetch([redirect('http://evil.example.com/x.exe')]);
+    await expect(downloadAsset({ ...anon, url: API, dest, fetchImpl: impl })).rejects.toThrow(
+      /will not follow/
+    );
+    expect(fs.existsSync(dest)).toBe(false);
+  });
+});
+
 describe('the URL that carries the credential is the tightest-guarded one', () => {
   it('refuses to send a token anywhere but the API host — before making any request', async () => {
     // The failure this closes: a feed that answers with

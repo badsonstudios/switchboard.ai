@@ -18,6 +18,10 @@
 // re-issue the request with the credentials stripped. That is the whole reason
 // this is a hand-written function rather than three lines of `fetch`.
 //
+// With NO token (#1495 — the repo is public) the same URL and the same rules
+// apply: the first request still has to be the API host, every redirect still
+// has to be absolute https. There is simply no header to strip.
+//
 // Everything else here is the ordinary fail-open contract: a typed error, never
 // a half-written file left behind, and a cancel that actually stops the socket.
 import { errorText } from '../../shared/error-text';
