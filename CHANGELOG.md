@@ -138,7 +138,9 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ---
 
-## 0.8.136 — unreleased
+## 0.8.137 — unreleased
+
+## 0.8.136 — 2026-10-31
 
 ### Changed
 
