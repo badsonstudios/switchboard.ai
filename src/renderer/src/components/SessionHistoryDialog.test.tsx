@@ -12,7 +12,7 @@
 // tested there; nothing here re-asserts them.
 import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import { createRoot, Root } from 'react-dom/client';
-import { act } from 'react';
+import { act, Profiler } from 'react';
 import {
   SessionHistoryDialog,
   HistoryPick,
@@ -327,6 +327,100 @@ describe('SessionHistoryDialog', () => {
     // An attribute selector rather than `#id`: `useId` produces `:r0:`-shaped
     // ids, which are not valid CSS identifiers, and jsdom has no `CSS.escape`.
     expect(host.querySelector(`[id="${active}"]`)).toBe(rows()[0]);
+  });
+
+  describe('a fresh list is highlighted at its top IN THE RENDER THAT SHOWS IT (#1320)', () => {
+    // The highlight used to go back to the top in an EFFECT after the list
+    // changed, which is one render late: the render that first showed a shorter
+    // list still carried the old index. Hover a lower row (that sets the index),
+    // type, press Enter quickly — on a loaded machine the Enter landed in that
+    // gap, read past the end of the list, and the pick was dropped without a
+    // word. Under `act` the gap is closed before any key can be pressed, so the
+    // thing pinned here is the state of EVERY commit, caught as it is made: a
+    // Profiler's `onRender` runs in the commit, after the DOM has been written.
+    // jsdom has no layout, so no `scrollIntoView` — which a highlight that moves
+    // off the first row calls. Absent, not stubbed elsewhere: put back after.
+    beforeEach(() => {
+      Element.prototype.scrollIntoView = (): void => {};
+    });
+    afterEach(() => {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    });
+    const twoRows = (): ConversationHistory => ({
+      status: 'ok',
+      truncated: false,
+      rows: [
+        row({ nativeId: 'a', description: 'Fix the login redirect' }),
+        row({ nativeId: 'b', description: 'Rewrite the migration' }),
+      ],
+    });
+    /** for each commit: how many rows, and which of them is highlighted */
+    let commits: Array<{ rows: number; selected: number[] }>;
+    const record = (): void => {
+      const now = rows();
+      commits.push({
+        rows: now.length,
+        selected: now.flatMap((r, i) => (r.getAttribute('aria-selected') === 'true' ? [i] : [])),
+      });
+    };
+    async function mountProfiled(): Promise<void> {
+      commits = [];
+      await act(async () => {
+        root.render(
+          <Profiler id="history" onRender={record}>
+            <SessionHistoryDialog open folder="C:/work/app" onClose={() => {}} onPick={() => {}} />
+          </Profiler>
+        );
+      });
+      await settle();
+    }
+    const hover = async (el: HTMLElement): Promise<void> => {
+      await act(async () => {
+        el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      });
+    };
+    /** every commit that shows rows highlights exactly one, and it is one that exists */
+    const neverUnhighlighted = (): void => {
+      for (const c of commits) if (c.rows > 0) expect(c.selected, JSON.stringify(commits)).toHaveLength(1);
+    };
+
+    it('typing: the first render of the shorter list already highlights its top row', async () => {
+      answer = twoRows();
+      await mountProfiled();
+      await hover(rows()[1]);
+      expect(rows()[1].getAttribute('aria-selected')).toBe('true');
+      commits = [];
+      // 'migra' leaves ONE row: the old index (1) is past its end
+      await type('migra');
+      expect(commits.length).toBeGreaterThan(0);
+      expect(commits[0]).toEqual({ rows: 1, selected: [0] });
+      neverUnhighlighted();
+    });
+
+    it('typing a query that keeps both rows starts at the top too, not at the hovered one', async () => {
+      answer = twoRows();
+      await mountProfiled();
+      await hover(rows()[1]);
+      commits = [];
+      // 'r' matches both: an index still in range was the OTHER half of the bug —
+      // Enter would have opened the hovered row instead of the best match
+      await type('r');
+      expect(commits[0]).toEqual({ rows: 2, selected: [0] });
+    });
+
+    // (The old effect happened to survive this one — the list empties while the
+    // new scope loads, and the index was reset in that gap. Pinned so a change
+    // to how a scope switch loads cannot reopen it.)
+    it('the scope toggle, and the new answer it brings, start at the top as well', async () => {
+      answer = twoRows();
+      await mountProfiled();
+      await hover(rows()[1]);
+      commits = [];
+      answer = { status: 'ok', truncated: false, rows: [row({ nativeId: 'z', folder: 'D:/elsewhere/api' })] };
+      await click(host.querySelector('[data-history-scope]'));
+      expect(rows()).toHaveLength(1);
+      neverUnhighlighted();
+    });
   });
 });
 
