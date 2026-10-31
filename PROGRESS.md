@@ -3,6 +3,16 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🛰️ ORCHESTRATION RUN 2026-10-31 — #1495, #1482, #1320, #1303, #680 (two workers)
+>
+> **Dan (2026-10-31):** `/orchestrate 1495 1482 1320 1303 680` — *"Two workers, merge on green CI. Do NOT cut a release. Skip anything labelled needs-discussion."* None of the five carries `needs-discussion`. **Merge policy for this run: every PR, user-facing included, squash-merges on green CI on Dan's word** (overrides the skill's queue-user-facing rule for this run only). **No release.**
+>
+> **Single-writer rule:** the orchestrator session is the ONLY writer of this file. Workers report through `.claude/work_files/orchestrator/<issue#>.md` handoffs (contract: `worker-contract.md` in the same folder); those are the inputs, this block is the output and the resume point.
+>
+> **Tracks:** Feed track (serial, both touch the Feed's replay/user-block path): #1303 → #680, in `C:\Projects\sb-wt-1`. Independent track: #1495 → #1320 → #1482, in `C:\Projects\sb-wt-2`.
+>
+> **Active:** #1303 → sb-wt-1 → `feature/1303-transcript-reader-behind-provider` · #1495 → sb-wt-2 → `feature/1495-anonymous-update-checks`. **Queued:** #680 (after #1303 merges), #1320, #1482. **Merged:** none yet.
+
 > # 📋 FILED 2026-10-30: 17 designed-but-unfiled Phase 3 items as #1505–#1521, all `needs-discussion`; NEXT: #1495, #1482, #1320, #1303, #680
 >
 > **Dan (2026-10-30)** asked for five tickets to work next and an audit of the design docs and plans against GitHub. **The audit:** eleven Phase 3 epics (E24 layer 3, E25 remainder, E26, E27, E28, E29, E30, E31, E32) had no issues at all; the 20 open Phase 3 issues were all bugs and follow-ups. Dan: *"create tickets for all 17 … Before starting any of these tickets, they need to be gone over with me or the developer."* Filed **#1505–#1521** in Phase 3 with a new label **`needs-discussion`** and a do-not-start block at the top of each body; `/next-item`, `/autopilot` and `/orchestrate` now skip the label. **#1511 (review queue pane):** Dan said *"we don't need"* it; filed anyway so the call is recorded, likely to be closed with a DESIGN §5.16 amendment. The mapping is in `docs/plans/06-phase-3-ide.md`. Also noted, not acted on: #1116 (Review map, §5.36) has no milestone; exit criterion 0 contradicts the no-editable-diff decision.
