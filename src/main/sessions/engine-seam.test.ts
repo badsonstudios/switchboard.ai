@@ -11,9 +11,10 @@
 //      and the declaration is what `sessions:controls` gives the composer to
 //      grey out by (with a test-only provider that declares a reduced set);
 //   3. the GREP — no module outside `src/main/providers/` imports a Claude
-//      wire module or speaks `control_request` / `can_use_tool`, and nothing
-//      subscribes to raw frames at all. Each check is exact in both
-//      directions.
+//      wire module or speaks `control_request` / `can_use_tool`, nothing
+//      subscribes to raw frames at all, and (#1303) the Feed's history replay
+//      reads Claude's TRANSCRIPT no more than it reads its stream. Each check
+//      is exact in both directions.
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
@@ -456,10 +457,8 @@ function importSpecifiers(src: string): string[] {
  * `'result'`, `'system'`, `'init'`, `subtype`). They are also neutral
  * vocabulary — `assistant` is a Feed block kind — so listing them would only
  * produce noise. The distinctive words below are how a frame reader gives
- * itself away. And the Feed's TRANSCRIPT replay (`hydrate` / `absorbSidechain`)
- * reads two transcript-entry fields, `isSidechain` and `timestamp`: that is
- * the `transcripts` capability's format, not the stream's, and is outside
- * this seam (DESIGN §5.3).
+ * itself away. The TRANSCRIPT's own words are `CLAUDE_TRANSCRIPT`, below: since
+ * #1303 the Feed's replay reads none of them either.
  */
 const CLAUDE_WIRE = [
   'input_json_delta',
@@ -518,6 +517,10 @@ const READS_NO_WIRE = ['src/main/sessions/session-manager.ts'];
  */
 const EVENT_PATH = [
   'src/main/feed/stream-feed.ts',
+  // …and the Feed's own vocabulary, which every engine derives INTO (#1303:
+  // Claude's derivation moved out of it, to `providers/claude-transcript.ts`)
+  'src/main/feed/blocks.ts',
+  'src/main/feed/buffer.ts',
   'src/main/sessions/stream-status.ts',
   'src/main/sessions/state-machine.ts',
   'src/main/sessions/engine-events.ts',
@@ -553,9 +556,10 @@ describe('the grep: nothing on the event path reads Claude', () => {
   });
 
   for (const f of EVENT_PATH) {
-    it(`${f} reads no Claude wire field and imports no provider or protocol module`, () => {
+    it(`${f} reads no Claude wire or transcript field and imports no provider or protocol module`, () => {
       const src = read(f);
       expect(wireHits(src)).toEqual([]);
+      expect(transcriptHits(src)).toEqual([]);
       const bad = importSpecifiers(src).filter((s) => /stream-protocol|(^|\/)providers\//.test(s));
       expect(bad).toEqual([]);
     });
@@ -577,6 +581,91 @@ describe('the grep: nothing on the event path reads Claude', () => {
     const importers = productionSources().filter((f) => importSpecifiers(read(f)).some((s) => TRANSLATOR.test(s)));
     expect(importers.length).toBeGreaterThan(0);
     expect(importers.filter((f) => !f.startsWith('src/main/providers/'))).toEqual([]);
+  });
+});
+
+/**
+ * Claude's TRANSCRIPT vocabulary (#1303): the fields of a JSONL line the Feed's
+ * replay used to read for itself — `isSidechain` and `timestamp` in
+ * `hydrate` / `absorbSidechain`, the summary and drop flags through the
+ * derivation it called. Since #1303 a provider's reader turns a line into a
+ * neutral `ReplayEntry` (`at`, `origin`, `compactionSummary`, `derive`), and
+ * nothing on the event path may spell any of these in code.
+ */
+const CLAUDE_TRANSCRIPT = [
+  'timestamp',
+  'isSidechain',
+  'isCompactSummary',
+  'is_compact_summary',
+  'isVisibleInTranscriptOnly',
+  'is_visible_in_transcript_only',
+  'isSynthetic',
+  'isMeta',
+  'is_meta',
+];
+
+function transcriptHits(src: string): string[] {
+  const code = stripComments(src);
+  return CLAUDE_TRANSCRIPT.filter((w) => new RegExp(`(?<![A-Za-z0-9_])${w}(?![A-Za-z0-9_])`).test(code));
+}
+
+/**
+ * Claude's history READER — the derivation of one transcript line, and the
+ * `ReplayEntry` reader built on it (#1303).
+ */
+const CLAUDE_TRANSCRIPT_MODULE = /(^|\/)(providers\/)?claude-transcript$/;
+
+/**
+ * The host modules that read Claude's JSONL through that derivation and are
+ * NOT the Feed's replay: the watcher's own Feed for a transcript-driven
+ * session, session find, and the bus's rendered transcript. They read a
+ * Claude transcript by definition — the files the `transcripts` capability
+ * locates — and DESIGN §5.3 keeps the tailing host-side. Exact, so a new
+ * reader is a decision rather than a drift.
+ */
+const READS_CLAUDE_TRANSCRIPTS = [
+  'src/main/sessions/transcript-blocks.ts',
+  'src/main/transcripts/search.ts',
+  'src/main/transcripts/watcher.ts',
+];
+
+describe('the grep: the Feed replays history through the PROVIDER (#1303)', () => {
+  it('the detector itself can fail', () => {
+    expect(transcriptHits("const at = typeof e.timestamp === 'string' ? 1 : 0;")).toEqual(['timestamp']);
+    expect(transcriptHits('const o = { sidechain: e.isSidechain === true };')).toEqual(['isSidechain']);
+    expect(transcriptHits('// reads `isSidechain` and `timestamp`\nconst ok = 1;')).toEqual([]);
+    expect(transcriptHits('const timestamps = 1;')).toEqual([]);
+    expect(importSpecifiers("import { deriveIntents } from '../providers/claude-transcript';").some((s) => CLAUDE_TRANSCRIPT_MODULE.test(s))).toBe(true);
+    expect(importSpecifiers("import { deriveIntents } from './claude-transcript';").some((s) => CLAUDE_TRANSCRIPT_MODULE.test(s))).toBe(true);
+  });
+
+  it('hydrate and absorbSidechain take ReplayEntries, not transcript lines', () => {
+    const code = stripComments(read('src/main/feed/stream-feed.ts'));
+    expect(code).toMatch(/\bhydrate\(\s*sessionId: string,\s*entries: readonly ReplayEntry\[\],/);
+    expect(code).toMatch(/\babsorbSidechain\(sessionId: string, entry: ReplayEntry\)/);
+    // …and the replay's caller hands them over as its provider read them
+    expect(stripComments(read('src/main/feed/history.ts'))).toMatch(/args\.readEntry\(e, merged\.origins\.get\(e\)\)/);
+  });
+
+  it("the derivation is no longer the Feed's: feed/ neither defines nor imports it", () => {
+    expect(stripComments(read('src/main/feed/blocks.ts'))).not.toMatch(/\bfunction deriveIntents\b/);
+    const feedImporters = productionSources().filter(
+      (f) => f.startsWith('src/main/feed/') && importSpecifiers(read(f)).some((s) => CLAUDE_TRANSCRIPT_MODULE.test(s))
+    );
+    expect(feedImporters).toEqual([]);
+  });
+
+  it("outside src/main/providers/, exactly the named host readers import Claude's history reader", () => {
+    const importers = productionSources().filter(
+      (f) => !f.startsWith('src/main/providers/') && importSpecifiers(read(f)).some((s) => CLAUDE_TRANSCRIPT_MODULE.test(s))
+    );
+    expect(importers).toEqual(READS_CLAUDE_TRANSCRIPTS);
+  });
+
+  it('both Claude adapters declare the reader on their transcripts capability', () => {
+    for (const f of ['src/main/providers/claude.ts', 'src/main/providers/fake-stream.ts']) {
+      expect(stripComments(read(f))).toMatch(/\btranscripts: \{ projectsRoot: claudeProjectsRoot, readEntry: readClaudeTranscriptEntry \}/);
+    }
   });
 });
 

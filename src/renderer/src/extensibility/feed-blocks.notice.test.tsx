@@ -5,7 +5,7 @@
 // because the defect this guards is a whole-pipeline one: the block could carry
 // a perfect `notice` payload and still reach the screen as raw XML if the
 // contribution were not registered, or if the user pill claimed it first. The
-// derivation half is pinned in `main/feed/blocks.test.ts`.
+// derivation half is pinned in `main/providers/claude-transcript.test.ts`.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';

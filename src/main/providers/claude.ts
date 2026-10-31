@@ -24,6 +24,7 @@ import {
 } from '../transcripts/paths';
 import { ensureFolderTrusted } from '../sessions/trust';
 import { claudeEvents } from './claude-events';
+import { readClaudeTranscriptEntry } from './claude-transcript';
 import { AUTONOMY_PERMISSION_MODE } from './claude-modes';
 import { claudeControls } from './claude-controls';
 import { claudeSurfaces } from './claude-surfaces';
@@ -292,7 +293,9 @@ export const claudeAdapter: ProviderAdapter = {
   // was derived FROM, so if any of it cannot be expressed here, the contract is
   // wrong (§5.23's own test).
   capabilities: {
-    transcripts: { projectsRoot: claudeProjectsRoot },
+    // #1303: what one line of Claude's JSONL means for the Feed — the replay's
+    // reader, behind the seam
+    transcripts: { projectsRoot: claudeProjectsRoot, readEntry: readClaudeTranscriptEntry },
     // E40 item 12 (#1295): Claude Code's own convention, for the switch briefing
     instructionFiles: ['CLAUDE.md'],
     // E40 item 03 (#1286): stream-json -> the neutral session events the Feed,

@@ -1642,9 +1642,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // TWO SOURCES, ONE CHANNEL (P2-E18-10). A PTY session's blocks are derived
   // from its JSONL transcript; a stream session's are derived from its typed
   // messages. They are the same blocks, built by the same code
-  // (`main/feed/blocks.ts`), and the renderer must not be able to tell which
-  // one it is looking at — so they share `sessions:feedBlock` rather than
-  // getting a second channel the FeedView would have to subscribe to twice.
+  // (`main/providers/claude-transcript.ts`), and the renderer must not be
+  // able to tell which one it is looking at — so they share
+  // `sessions:feedBlock` rather than getting a second channel the FeedView
+  // would have to subscribe to twice.
   //
   // ⚠️ TWO SOURCES SEND ON THIS CHANNEL AND THERE IS STILL ONE BUFFER PER
   // SESSION, which is the distinction #977 turns on.
@@ -2699,6 +2700,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // writes the same JSONL in stream mode (S-10), and unlike the Feed
           // there is no second source of titles to collide with.
           readTitle: plan.readTitle,
+          // what this session's subagent lines are read through before they
+          // reach the stream Feed (#1303); undefined = they are not
+          readEntry: plan.readEntry,
         });
         // the watcher refuses a root it cannot poll safely. Say so against the
         // CARD — a warning keyed by a live session id, in the transcripts log,
@@ -2727,7 +2731,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         // string third-party). Reading a transcript out of a root the host has
         // just declared unusable would make the refusal mean two different
         // things on two paths.
-        if (watching && record.transport === 'stream' && plan.resumeSessionId && deps.streamFeed) {
+        //
+        // And on the provider having a READER (#1303): the Feed reads no
+        // transcript format itself, and a provider that declares transcripts
+        // without saying how to read a line gets no replay rather than having
+        // its history read as Claude's. Its AI-switch divider is then placed
+        // below, as for any resume the transcript did not replay.
+        if (
+          watching &&
+          record.transport === 'stream' &&
+          plan.resumeSessionId &&
+          plan.readEntry &&
+          deps.streamFeed
+        ) {
           // A FORK REPLAYS THE SOURCE'S TRANSCRIPT, from the SOURCE'S FOLDER.
           //
           // Both halves are deliberate. The fork's own transcript does not exist
@@ -2745,6 +2761,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
             projectsRoot: plan.transcriptsRoot,
             folder: from ? from.sourceFolder : opts.folder,
             nativeSessionId: from ? from.sourceSessionId : plan.resumeSessionId,
+            readEntry: plan.readEntry,
             // where the switch into this AI happened, by time (#1294)
             markers:
               dividerBlock && divider ? [{ at: Date.parse(divider.at), block: dividerBlock }] : undefined,

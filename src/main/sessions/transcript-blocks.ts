@@ -15,12 +15,8 @@
 // in exactly the places a model notices — whether a subagent's line is marked,
 // whether a tool's output is attached to the call that produced it — and would
 // differ silently, because each would have its own passing tests.
-import {
-  BlockIntent,
-  DerivationCaps,
-  FeedBlock,
-  deriveIntents,
-} from '../feed/blocks';
+import { BlockIntent, DerivationCaps, FeedBlock } from '../feed/blocks';
+import { deriveIntents } from '../providers/claude-transcript';
 import { agentOriginFor } from '../feed/agent-attribution';
 
 /**

@@ -13,6 +13,7 @@ import { conversationExists } from '../transcripts/paths';
 import { ensureFolderTrusted } from '../sessions/trust';
 import { claudeProjectsRoot, readAiTitle, writeSessionSettings } from './claude';
 import { claudeEvents } from './claude-events';
+import { readClaudeTranscriptEntry } from './claude-transcript';
 import { claudeControls } from './claude-controls';
 import { claudeSurfaces } from './claude-surfaces';
 
@@ -56,7 +57,9 @@ export const fakeStreamAdapter: ProviderAdapter = {
   // capability-less fake would quietly delete half the harness and prove
   // nothing about the seam.
   capabilities: {
-    transcripts: { projectsRoot: claudeProjectsRoot },
+    // the REAL reader (#1303): the fake writes Claude's JSONL, so a resumed
+    // e2e card replays through the same seam the real one does
+    transcripts: { projectsRoot: claudeProjectsRoot, readEntry: readClaudeTranscriptEntry },
     // it stands in for Claude Code, so it declares Claude's convention (#1295)
     instructionFiles: ['CLAUDE.md'],
     // The REAL translator (#1286): the fake replays Claude's own frames, so

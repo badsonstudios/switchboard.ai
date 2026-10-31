@@ -1913,8 +1913,8 @@ app
       // two of them both number from seq 1 and the renderer upserts on seq — see
       // `TranscriptWatcherOptions.sidechainSink`, and `StreamFeed.hydrate`,
       // which makes the same argument about the same hazard for the replay.
-      sidechainSink: (sessionId, entry, origin) =>
-        streamFeed.absorbSidechain(sessionId, entry, origin),
+      // Each arrives already read by the session's provider (#1303).
+      sidechainSink: (sessionId, entry) => streamFeed.absorbSidechain(sessionId, entry),
       // The SAME register the stream Feed reads (#830) — see its construction.
       contextRefs,
       // Test-only: the real deadline is 45s, which no e2e should sit through.

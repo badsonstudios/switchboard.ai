@@ -1647,7 +1647,7 @@ function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
           with nothing typed is a real prompt and gets a real pill, but an
           empty body under the marker would be a blank line pretending to be
           words. Every other user block has non-empty text by construction —
-          `blocks.ts` only emits one for content that trims to something. */}
+          the derivation only emits one for content that trims to something. */}
       {(!expandable || open) && text !== '' && (
         <div id={expandable ? bodyId : undefined} style={{ whiteSpace: 'pre-wrap' }}>
           {text}

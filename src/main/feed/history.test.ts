@@ -16,6 +16,8 @@ import {
   replayResumedHistory,
 } from './history';
 import { slugForCwd } from '../transcripts/paths';
+import type { ReplayEntry } from './blocks';
+import { readClaudeTranscriptEntry } from '../providers/claude-transcript';
 import { Logger } from '../log/logger';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
@@ -251,8 +253,8 @@ describe('readTranscriptHead (#766)', () => {
 });
 
 describe('replayResumedHistory', () => {
-  const feed = (): { calls: Array<readonly Record<string, unknown>[]>; hydrate: (s: string, e: readonly Record<string, unknown>[]) => number } => {
-    const calls: Array<readonly Record<string, unknown>[]> = [];
+  const feed = (): { calls: Array<readonly ReplayEntry[]>; hydrate: (s: string, e: readonly ReplayEntry[]) => number } => {
+    const calls: Array<readonly ReplayEntry[]> = [];
     return {
       calls,
       hydrate: (_s, e) => {
@@ -262,7 +264,13 @@ describe('replayResumedHistory', () => {
     };
   };
 
-  const args = { sessionId: 'live-1', projectsRoot: '', folder: '', nativeSessionId: NATIVE };
+  const args = {
+    sessionId: 'live-1',
+    projectsRoot: '',
+    folder: '',
+    nativeSessionId: NATIVE,
+    readEntry: readClaudeTranscriptEntry,
+  };
 
   it('finds the resumed conversation under the slug of its folder and hydrates it', () => {
     writeTranscript(NATIVE, [userLine('one'), userLine('two')]);

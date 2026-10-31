@@ -59,7 +59,8 @@ import {
 // shared, because the renderer builds the same two clauses to PAINT what this
 // counts (#520) — see `shared/find-matching.ts`
 import { escapeLiteral, wholeWordBody } from '../../shared/find-matching';
-import { BLOCK_CAP, FeedBlock, FULL_CAPS, IDENTITY_ONLY_CAPS, deriveIntents } from '../feed/blocks';
+import { BLOCK_CAP, FeedBlock, FULL_CAPS, IDENTITY_ONLY_CAPS } from '../feed/blocks';
+import { deriveIntents } from '../providers/claude-transcript';
 
 /** One session to scan, and what the renderer is holding for it. */
 export interface SearchTarget {
@@ -548,7 +549,7 @@ function alignBySrcId(
  * Does every block the offset lines up actually look like its counterpart?
  *
  * The id fixes one position; this checks the rest of the window, on the two
- * properties both sources derive identically (`blocks.ts`). It is what catches a
+ * properties both sources derive identically (`claude-transcript.ts`). It is what catches a
  * Feed that holds a block the file does not — an interrupted turn whose tokens
  * were never written down, say — instead of shifting every hit past it by one.
  *

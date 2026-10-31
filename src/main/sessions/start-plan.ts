@@ -24,6 +24,7 @@ import {
   ProviderCapabilities,
 } from '../extensibility/contributions';
 import { NativeLineage, resumeCandidates } from './lineage';
+import type { HistoryEntryReader } from '../feed/blocks';
 
 /** The persisted card this start is for, if it already existed. */
 export interface PriorCard extends NativeLineage {
@@ -199,6 +200,17 @@ export interface StartPlan {
    * on a line degrades to "this line has no title", not to a lost transcript.
    */
   readTitle?: (line: Record<string, unknown>) => string | undefined;
+  /**
+   * Read one line of this session's history for the Feed (#1303,
+   * `transcripts.readEntry`). Undefined = the provider declares no reader, so
+   * a resumed stream session replays nothing and its subagent lines are not
+   * absorbed — nothing is read as Claude's on its behalf.
+   *
+   * Wrapped like `readTitle`: the first throw degrades it for the rest of the
+   * session (reported once), and every line after that reads as one that makes
+   * no block.
+   */
+  readEntry?: HistoryEntryReader;
   /** build injectable settings for the spawned session; undefined = inject
    *  nothing, and do not register a hook token either */
   buildSettings?: (sessionId: string) => Record<string, unknown>;
@@ -556,6 +568,24 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
       }
     : undefined;
 
+  // The same per-LINE guard, for the same reason (#1303): a reader that throws
+  // would otherwise do it once per history line, at replay and at transcript
+  // speed. Broken = every line after reads as an entry that makes no block.
+  let readerBroken = false;
+  const readEntry: HistoryEntryReader | undefined = caps?.transcripts?.readEntry
+    ? (line, origin) => {
+        if (!readerBroken) {
+          try {
+            return caps.transcripts!.readEntry!(line, origin);
+          } catch (err) {
+            readerBroken = true;
+            degraded(`provider capability "transcripts.readEntry" threw: ${errorText(err)}`);
+          }
+        }
+        return { origin: origin ?? { sidechain: false }, derive: () => [] };
+      }
+    : undefined;
+
   // A resume continues a conversation the AI already has; briefing it as well
   // would hand it a summary of what it already knows, under a label that says
   // it is new. Only a fresh start is asked.
@@ -584,6 +614,7 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
     forkUnavailable: forkUnavailable || undefined,
     transcriptsRoot,
     readTitle,
+    readEntry,
     buildSettings: caps?.hooks
       ? (id) => safely('hooks.settingsFor', () => caps.hooks!.settingsFor(id, host)) ?? {}
       : undefined,

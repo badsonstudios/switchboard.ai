@@ -9,6 +9,7 @@ import type { BusLaunch } from '../bus/launch';
 import { TransportKind } from '../transport/transport';
 import type { EngineTranslator, TranslatorHooks } from '../sessions/engine-events';
 import type { ControlCapability } from '../sessions/engine-controls';
+import type { HistoryEntryReader } from '../feed/blocks';
 // the per-AI surfaces (#1288)
 import type { Logger } from '../log/logger';
 import type { UsageTokens } from '../../shared/usage-report';
@@ -68,12 +69,12 @@ export interface ProviderCapabilities {
    * Session-view blocks, no plan chip — the session is a terminal and nothing
    * more.
    *
-   * Scope, stated plainly: this locates the transcripts, it does not abstract
-   * READING them. §5.3 names a `TranscriptReader`; our parser, tailer and block
-   * builder are still host-side, shared by every provider that writes the same
-   * shape. Moving the reader behind the adapter is a much larger change with no
-   * consumer asking for it — the day a provider writes a different transcript
-   * FORMAT is the day that becomes worth doing.
+   * Scope, stated plainly: this LOCATES the transcripts, and — since #1303 —
+   * reads one line of them for the Feed (`readEntry`). The file tailing and
+   * parsing stay host-side, shared by every provider that writes JSONL; what a
+   * line MEANS for the Feed is the provider's. (§5.3: an ACP agent's history
+   * comes back as `session/load` replay, not a JSONL, which is the day the
+   * reader moved behind the seam.)
    */
   transcripts?: TranscriptCapability;
   /**
@@ -368,6 +369,24 @@ export interface TranscriptCapability {
    *  rather than once at startup, so it can depend on the environment (a
    *  provider may honour a HOME or config override the user changes). */
   projectsRoot(): string;
+  /**
+   * Read ONE parsed transcript line as a neutral `ReplayEntry` (#1303): when it
+   * happened, whose it is, and what it means for the Feed. What a resumed
+   * stream session's history replay (`StreamFeed.hydrate`) and its subagent
+   * lines (`absorbSidechain`) go through — the Feed reads none of the line's
+   * own fields.
+   *
+   * `origin`, when given, is the caller's and wins: it knows which FILE the
+   * line came out of (a subagent's, #1140), which the line alone cannot say.
+   *
+   * OPTIONAL, and absent means NO REPLAY — never "read as Claude": a provider
+   * that declares transcripts without a reader resumes with an empty Feed and
+   * its subagent lines go nowhere (the `events` rule, DESIGN §5.3). SHOULD NOT
+   * THROW; after a first throw, reported once (`start-plan.ts`, as `titles`),
+   * it is not asked again and every later line reads as one that makes no block. Claude's is
+   * `providers/claude-transcript.ts`'s `readClaudeTranscriptEntry`.
+   */
+  readEntry?: HistoryEntryReader;
 }
 
 export interface TitleCapability {
