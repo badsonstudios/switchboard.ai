@@ -150,6 +150,10 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   hour), and if GitHub turns it down the check tries once more without it. A
   check that cannot find the release list says so, and never says "you're up
   to date".
+- **The manual's Getting started page says where to download switchboard.**
+  It used to say there was no public download yet; it now gives the Windows
+  installer on the Releases page, and the run-from-source steps for a Mac or
+  Linux, where no build is published yet.
 
 ### Fixed
 

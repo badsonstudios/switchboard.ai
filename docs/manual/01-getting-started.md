@@ -22,8 +22,26 @@ Then run `claude` once in a terminal and sign in. If switchboard can't find it,
 a banner appears along the top of the window and new sessions are disabled
 until it's sorted.
 
-TODO: where to download switchboard itself, per platform (no public release
-yet).
+## Installing switchboard
+
+**Windows:** download `switchboard-Setup-<version>.exe` from the
+[latest release](https://github.com/badsonstudios/switchboard.ai/releases/latest)
+on GitHub and run it. The Releases page is public, so there's nothing to sign
+in to. The installer isn't code-signed, so Windows may show a *"Windows
+protected your PC"* box first — [Day one](00-day-one.md#1-install) says what to
+click. After that the app tells you when a newer version is out and installs it
+when you say so — see [Updates](13-updates.md).
+
+**macOS and Linux:** switchboard is built to run there too, but only the Windows
+build is published so far. On a Mac or Linux, run it from source: get a copy
+of the [repository](https://github.com/badsonstudios/switchboard.ai) and, inside
+it, run these (you'll need Node 22 and npm):
+
+```
+npm ci
+npm run build
+npm start
+```
 
 ## Your first session
 
