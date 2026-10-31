@@ -1519,3 +1519,103 @@ describe('the AI-switch divider (#1294)', () => {
     expect(kinds().filter((k) => k === 'ai-switch')).toHaveLength(1);
   });
 });
+
+// #680: a Direct prompt reaches the Feed only as the CLI's
+// `--replay-user-messages` echo (`isReplay: true`, carrying the uuid we sent).
+// The CLI can echo ONE delivery more than once — it acknowledges a turn it
+// dropped as a duplicate with the identical envelope — and a resumed card has
+// the same prompts on screen from its transcript. One block per delivery id.
+describe('one prompt block per delivery (#680)', () => {
+  const U1 = '3f2b8c1e-0000-4000-8000-000000000001';
+  const U2 = '3f2b8c1e-0000-4000-8000-000000000002';
+  const echo = (text: string, uuid: unknown, extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+    type: 'user',
+    message: { role: 'user', content: [{ type: 'text', text }] },
+    session_id: CONV,
+    parent_tool_use_id: null,
+    uuid,
+    isReplay: true,
+    ...extra,
+  });
+  const prompts = (): Array<string | undefined> =>
+    feed.blocks(SID).filter((b) => b.kind === 'user').map((b) => b.text);
+
+  it('a second echo of the same delivery draws nothing — the duplicate acknowledgment', () => {
+    feed.offer(SID, echo('run the tests', U1));
+    feed.offer(SID, assistant([{ type: 'text', text: 'done' }]));
+    feed.offer(SID, echo('run the tests', U1));
+    expect(prompts()).toEqual(['run the tests']);
+    expect(kinds()).toEqual(['user', 'assistant']);
+  });
+
+  // THE CASE THE KEY MUST NOT GET WRONG: the same words, sent on purpose twice,
+  // are two deliveries with two fresh ids (`userMessage()` mints one per send)
+  it('the same words sent again are a new delivery, and draw', () => {
+    feed.offer(SID, echo('run the tests', U1));
+    feed.offer(SID, echo('run the tests', U2));
+    expect(prompts()).toEqual(['run the tests', 'run the tests']);
+  });
+
+  it('a resumed history remembers its lines: an echo of one already replayed draws nothing', () => {
+    feed.hydrateTranscript(SID, [
+      { type: 'user', uuid: U1, timestamp: '2026-10-31T10:00:00.000Z', message: { role: 'user', content: 'old prompt' } },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'old reply' }] } },
+    ]);
+    feed.offer(SID, echo('old prompt', U1));
+    feed.offer(SID, echo('new prompt', U2));
+    expect(prompts()).toEqual(['old prompt', 'new prompt']);
+  });
+
+  it('fail-open: no id, or a frame not marked as a replay, is drawn every time (as before)', () => {
+    feed.offer(SID, echo('a', undefined));
+    feed.offer(SID, echo('a', undefined));
+    feed.offer(SID, echo('b', U1, { isReplay: false }));
+    feed.offer(SID, echo('b', U1, { isReplay: false }));
+    expect(prompts()).toEqual(['a', 'a', 'b', 'b']);
+  });
+
+  it('a wipe forgets the ids with the blocks they spoke for', () => {
+    feed.offer(SID, echo('before the clear', U1));
+    feed.offer(SID, RESET('4d6adc68-394d-40ab-8250-ed44a4520a29'));
+    expect(feed.blocks(SID)).toHaveLength(0);
+    feed.offer(SID, echo('before the clear', U1));
+    expect(prompts()).toEqual(['before the clear']);
+  });
+
+  it('a wipe forgets the ids a resumed history remembered, too', () => {
+    feed.hydrateTranscript(SID, [{ type: 'user', uuid: U1, message: { role: 'user', content: 'old prompt' } }]);
+    feed.offer(SID, RESET('some-resumed-conversation'));
+    feed.offer(SID, echo('old prompt', U1));
+    expect(prompts()).toEqual(['old prompt']);
+  });
+
+  it('a REFUSED replay remembers nothing — it drew nothing', () => {
+    feed.offer(SID, echo('live first', U2));
+    expect(feed.hydrateTranscript(SID, [{ type: 'user', uuid: U1, message: { role: 'user', content: 'old' } }])).toBe(0);
+    feed.offer(SID, echo('old', U1));
+    expect(prompts()).toEqual(['live first', 'old']);
+  });
+
+  it('ids are per session', () => {
+    feed.offer(SID, echo('hi', U1));
+    feed.offer('other', echo('hi', U1));
+    expect(prompts()).toEqual(['hi']);
+    expect(feed.blocks('other').map((b) => b.text)).toEqual(['hi']);
+  });
+
+  it('a repeat is logged once per session, never per frame', () => {
+    const lines: string[] = [];
+    const logged = new ClaudeFedFeed({
+      debug: () => {},
+      info: (msg: string) => void lines.push(msg),
+      warn: () => {},
+      error: () => {},
+      child: () => {
+        throw new Error('unused');
+      },
+    });
+    for (let i = 0; i < 4; i++) logged.offer(SID, echo('again', U1));
+    expect(logged.blocks(SID)).toHaveLength(1);
+    expect(lines.filter((l) => l.includes('echoed again'))).toHaveLength(1);
+  });
+});

@@ -191,6 +191,43 @@ describe('assistant and user messages', () => {
     ).toEqual([{ type: 'message', role: 'user', unstreamed: false, derive: 'fn' }]);
   });
 
+  // #680: the `--replay-user-messages` echo names the delivery it hands back
+  describe('echoId — the echo of a message we sent', () => {
+    const U = '3f2b8c1e-0000-4000-8000-000000000001';
+    const echo = (extra: Record<string, unknown> = {}) => ({
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: 'run the tests' }] },
+      parent_tool_use_id: null,
+      uuid: U,
+      isReplay: true,
+      ...extra,
+    });
+    const id = (frame: Record<string, unknown>) => (translateClaudeFrame(frame)![0] as MessageEvent).echoId;
+
+    it("is an isReplay user frame's uuid", () => {
+      expect(id(echo())).toBe(U);
+    });
+
+    it('is absent on a frame the CLI did not mark as a replay', () => {
+      expect(id(echo({ isReplay: false }))).toBeUndefined();
+      expect(id(echo({ isReplay: undefined }))).toBeUndefined();
+      // `=== true`: another process's string is not a flag
+      expect(id(echo({ isReplay: 'true' }))).toBeUndefined();
+    });
+
+    it('is absent when the echo carries no usable uuid — no id, no de-duplication', () => {
+      expect(id(echo({ uuid: undefined }))).toBeUndefined();
+      expect(id(echo({ uuid: '' }))).toBeUndefined();
+      expect(id(echo({ uuid: 42 }))).toBeUndefined();
+      expect(translateClaudeFrame(echo({ uuid: undefined }))![0]).not.toHaveProperty('echoId');
+    });
+
+    it('is never on an assistant message, whatever it carries', () => {
+      const [, msg] = translateClaudeFrame(assistant({ uuid: U, isReplay: true }))!;
+      expect(msg).not.toHaveProperty('echoId');
+    });
+  });
+
   it('a sidechain message carries no content (#977); an assistant one is still activity', () => {
     expect(translateClaudeFrame(assistant({ parent_tool_use_id: 'tu-1' }))).toEqual([
       { type: 'activity', label: 'assistant', sidechain: true },

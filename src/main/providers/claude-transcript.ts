@@ -62,17 +62,39 @@ import {
  *    never true in a main transcript (#788), but an older transcript on disk is
  *    still a thing we replay;
  *  - `compactionSummary` is `compactionSummaryText` (#1374);
+ *  - `echoId` is a `user` line's `uuid` (#680), see below;
  *  - `derive` is `deriveIntents`.
+ *
+ * `echoId`: the CLI stores an inbound message under the uuid the host sent
+ * it with. Its at-most-once check is a lookup of that uuid in this very
+ * transcript (`cli_user_message_dedup_skipped` logs `exists_in_session`, PATH
+ * 2.1.312), and a `--replay-user-messages` echo of the same message carries the
+ * same uuid. So the line's uuid is the key a live echo would be matched on.
+ * `user` lines only, because only a user message is ever echoed. That is
+ * still MORE than the live side keeps: a tool result or an `isMeta` line is a
+ * `user` line too. Their uuids are the CLI's own and no echo carries them, so
+ * remembering them costs a few strings and changes nothing.
  */
 export function readClaudeTranscriptEntry(entry: Record<string, unknown>, origin?: BlockOrigin): ReplayEntry {
   const at = typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN;
   const summary = compactionSummaryText(entry);
+  const echoId = entry.type === 'user' ? nonEmptyString(entry.uuid) : undefined;
   return {
     ...(Number.isFinite(at) ? { at } : {}),
     origin: origin ?? { sidechain: entry.isSidechain === true },
     ...(summary !== null ? { compactionSummary: summary } : {}),
+    ...(echoId !== undefined ? { echoId } : {}),
     derive: (caps, ctx) => deriveIntents(entry, caps, ctx),
   };
+}
+
+/**
+ * A string that is not empty, or `undefined`. For an id read off another
+ * process's output (#680): `''` as an id would make every id-less message
+ * "the same one".
+ */
+export function nonEmptyString(v: unknown): string | undefined {
+  return typeof v === 'string' && v !== '' ? v : undefined;
 }
 
 /**

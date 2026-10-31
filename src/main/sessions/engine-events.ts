@@ -149,6 +149,20 @@ export interface MessageEvent {
    * request. Absent on every other message, and from an engine that sends none.
    */
   compactionSummary?: string;
+  /**
+   * The engine's id for a message it marked as a REPLAY (#680), and nothing
+   * else's. For Claude, a `user` frame with `isReplay: true` and its `uuid`.
+   * When the message is one the host sent (the `--replay-user-messages` echo
+   * of a prompt), that uuid is the one `userMessage()` minted for the send.
+   * When the CLI wrote it itself (a local command's output, say), it is the
+   * CLI's own fresh id, which matches nothing we sent. The Feed draws one
+   * block per id, so a second echo of the same send (the CLI acknowledging a
+   * turn it dropped as a duplicate) adds nothing.
+   *
+   * Absent on everything else (an engine's own replies, a tool result), and
+   * absent means no de-duplication at all: fail-open.
+   */
+  echoId?: string;
 }
 
 /**

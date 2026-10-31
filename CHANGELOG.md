@@ -174,6 +174,15 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   worked. This is groundwork for AIs whose history is not stored the way
   Claude Code stores it. Nothing changes on screen: a resumed Claude Code
   session shows exactly the same history as before.
+- **A prompt is shown once, however many times Claude Code hands it back.**
+  In a Direct session, every prompt you type reaches the Session view as
+  Claude Code's copy of it. Claude Code can send that copy more than once,
+  for example when it recognises a message it has already received. Each
+  prompt now carries the id it was sent with, and the Session view draws one
+  prompt per id. This also covers a resumed session's history. Typing the same
+  words twice is two sends with two ids, so both still show. Nothing should
+  change on screen, because switchboard never sends the same message twice.
+  This is a guard against Claude Code sending its copy twice.
 
 ## 0.8.135 — 2026-10-28
 

@@ -36,7 +36,7 @@
 // reading it as "the session started" would reset the session on every turn.
 // Readiness comes from the spawn succeeding, which is the pump's, not ours.
 // ---------------------------------------------------------------------------
-import { compactionSummaryText, deriveIntents } from './claude-transcript';
+import { compactionSummaryText, deriveIntents, nonEmptyString } from './claude-transcript';
 import { asDisplayString } from '../../shared/display-string';
 import type { CliCommand } from '../../shared/slash-commands';
 import { autonomyFromPermissionMode } from './claude-modes';
@@ -263,6 +263,7 @@ function messageEvent(role: 'assistant' | 'user', m: Record<string, unknown>): E
   // (`spike/findings/1026-not-for-the-live-view.md` §3). Carried beside the
   // message, not derived: whether it belongs to a divider is the Feed's call.
   const summary = role === 'user' ? compactionSummaryText(m) : null;
+  const echoId = role === 'user' ? echoIdOf(m) : undefined;
   return [
     {
       type: 'message',
@@ -270,8 +271,47 @@ function messageEvent(role: 'assistant' | 'user', m: Record<string, unknown>): E
       unstreamed: role === 'assistant' && wasNeverStreamed(m),
       derive: (caps, ctx) => deriveIntents(entry, caps, ctx),
       ...(summary === null ? {} : { compactionSummary: summary }),
+      ...(echoId === undefined ? {} : { echoId }),
     },
   ];
+}
+
+/**
+ * The id of a `user` frame the CLI marked as a REPLAY, or `undefined` (#680).
+ *
+ * `--replay-user-messages` (`claude.ts`) is how the Feed gets every Direct-mode
+ * prompt: the CLI hands each inbound message back as a `user` frame marked
+ * `isReplay: true`, carrying the `uuid` we sent it with. Read off the PATH
+ * binary (2.1.312, `grep -a -o`), the flag is a hard-coded literal at every
+ * site that builds one, and every one of those sites is about a message THIS
+ * PROCESS received: the turn's own echo, the acknowledgment for a message it
+ * dropped as a duplicate ("Sending acknowledgment for duplicate user message"),
+ * the members of a merged queue, a prompt absorbed mid-turn as a
+ * `queued_command`, a local command's output. None replays a `--resume`d
+ * transcript to stdout. That is half of why a resumed card's history and its
+ * live echoes cannot overlap; `StreamFeed.hydrate` has the other half.
+ *
+ * NOT EVERY REPLAY IS A MESSAGE WE SENT. The CLI marks some frames it wrote
+ * itself the same way: a local command's `<local-command-stdout>` (its own
+ * message, its own uuid; the command's INPUT echo is the one carrying ours),
+ * remote-bash input (`uuid` freshly minted). Their ids are the CLI's, fresh,
+ * and match nothing we sent, so carrying them costs nothing and saves this
+ * function from guessing which replays are "ours".
+ *
+ * What CAN happen is more than one echo of ONE delivery: the duplicate
+ * acknowledgment is the identical envelope, sent for a turn that did not run.
+ * An echo proves "heard", never "ran" (#666). So the key is the delivery's
+ * uuid, and only on a frame the CLI marked as a replay, which is the reference
+ * webview's own duplicate-suppression rule (`isReplay` AND a `uuid` it already
+ * holds). `userMessage()` mints a fresh `randomUUID()` per send, never derived
+ * from the text, so the same words sent twice are two deliveries and both draw.
+ *
+ * `=== true`, for `isMeta`'s reason: another process's output. A tool result
+ * is the CLI's own message and is never marked; the compaction summary is
+ * `isReplay: false` (`spike/findings/1026-not-for-the-live-view.md`).
+ */
+function echoIdOf(m: Record<string, unknown>): string | undefined {
+  return m.isReplay === true ? nonEmptyString(m.uuid) : undefined;
 }
 
 /**
@@ -416,7 +456,8 @@ export function translateClaudeFrame(
 
     case 'user':
       // Our own replay (`--replay-user-messages`) and tool results. Content,
-      // not lifecycle: no activity.
+      // not lifecycle: no activity. An echo names its delivery (#680,
+      // `echoIdOf`), so one delivery draws one prompt.
       return messageEvent('user', m);
 
     case 'result':
