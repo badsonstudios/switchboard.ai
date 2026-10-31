@@ -147,6 +147,16 @@ interface StreamedSession {
   deriveFailLogged?: boolean;
   /** a divider waiting for the first `conversation` event (#1294, `placeMarker`) */
   pendingMarker?: DerivedBlock;
+  /**
+   * The delivery ids this buffer has already drawn (#680): every
+   * `ReplayEntry.echoId` `hydrate` replayed and every
+   * `MessageEvent.echoId` `onMessage` derived. A live echo naming one of
+   * them is the same delivery again and draws nothing. Emptied with the buffer
+   * (`wipe`), so it never outlives the blocks it speaks for.
+   */
+  deliveries: Set<string>;
+  /** the one log line about a repeated delivery (#680) */
+  repeatLogged?: boolean;
 }
 
 export class StreamFeed {
@@ -199,6 +209,18 @@ export class StreamFeed {
    * between (the CLI writes nothing until its first turn — the S-07
    * measurement). Everything on disk lands below seq N; everything the stream
    * says lands above it.
+   *
+   * AND THE TWO CANNOT DRAW THE SAME PROMPT (#680). A Direct prompt reaches the
+   * Feed only as Claude's `--replay-user-messages` echo, so the question is
+   * whether a resumed CLI echoes the history this method just drew. It does
+   * not: every site in the PATH binary (2.1.312) that builds an `isReplay`
+   * frame is about a message the running process RECEIVED, and none replays a
+   * `--resume`d transcript to stdout (the list is on `echoIdOf`,
+   * `providers/claude-events.ts`). So the seam above is the whole of the
+   * ordering argument: history first, then only what this process is sent.
+   * Each replayed line's delivery id is remembered all the same, so if that
+   * ever changes, an echo of a message already on screen still draws nothing
+   * (`onMessage`). Pinned in `stream-feed.test.ts`.
    *
    * IT DOES NOT TOUCH `conversationId`. That field means "the conversation the
    * CLI last claimed", and it is how `/clear` is detected. Seeding it with the
@@ -253,6 +275,10 @@ export class StreamFeed {
           s.buffer.attachCompactionSummary(e.compactionSummary, e.origin);
           continue;
         }
+        // Remembered whatever it derives to, as `onMessage` does: the same
+        // message again derives to the same thing. (A superset of what the live
+        // side keeps: see `readClaudeTranscriptEntry`.)
+        if (e.echoId !== undefined) s.deliveries.add(e.echoId);
         if (e.at !== undefined) placeMarkersBefore(e.at);
         // The SAME derivation the live stream's messages run (for Claude,
         // `providers/claude-transcript.ts`), so a replayed turn cannot look
@@ -701,6 +727,7 @@ export class StreamFeed {
   private wipe(sessionId: string, s: StreamedSession, why: string): void {
     s.buffer.reset();
     s.assembling.clear();
+    s.deliveries.clear();
     this.log?.info('stream feed reset', { sessionId, why });
     for (const l of this.resetListeners) {
       try {
@@ -739,6 +766,29 @@ export class StreamFeed {
    */
   private onMessage(sessionId: string, ev: MessageEvent): void {
     const s = this.ensure(sessionId);
+    // ONE BLOCK PER DELIVERY (#680). A Direct prompt reaches the Feed only as
+    // the engine's echo of it, and the engine can echo one delivery more than
+    // once: Claude acknowledges a message it dropped as a duplicate with the
+    // identical envelope. `echoId` is set only on a message the engine marked
+    // as a replay; for a prompt it is the id the host minted for that one
+    // send, so a match is the same send and never the same words sent again.
+    // FIRST, ahead of the summary and the derive: a repeat contributes nothing
+    // at all. (The summary can never be the frame dropped here: Claude sends
+    // it `isReplay: false`, so it carries no id.) Why a resumed history and
+    // its live echoes cannot meet here in the first place: `hydrate`.
+    if (ev.echoId !== undefined) {
+      if (s.deliveries.has(ev.echoId)) {
+        if (!s.repeatLogged) {
+          s.repeatLogged = true;
+          this.log?.info('a delivery the Feed already drew was echoed again: not drawn twice', {
+            sessionId,
+            echoId: ev.echoId,
+          });
+        }
+        return;
+      }
+      s.deliveries.add(ev.echoId);
+    }
     const isAssistant = ev.role === 'assistant';
     // ⚠️ A MESSAGE NOTHING STREAMED MUST NOT CLAIM A STREAMED BLOCK (#978).
     // The full argument, and the two Claude markers it turns on, are on
@@ -959,6 +1009,7 @@ export class StreamFeed {
     const created: StreamedSession = {
       buffer: new FeedBuffer((b) => this.emitBlock(sessionId, b)),
       assembling: new Map(),
+      deliveries: new Set(),
     };
     this.sessions.set(sessionId, created);
     return created;

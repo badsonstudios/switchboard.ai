@@ -984,6 +984,19 @@ describe('readClaudeTranscriptEntry — one JSONL line as a neutral ReplayEntry 
     expect(e.derive(DISPLAY_CAPS, {})).toEqual([]);
   });
 
+  // #680: the key a live echo of the same message is matched on
+  it("a user line's uuid is its delivery id; nothing else's is", () => {
+    const U = '3f2b8c1e-0000-4000-8000-000000000001';
+    const prompt = { type: 'user', uuid: U, message: { role: 'user', content: 'hi' } };
+    expect(readClaudeTranscriptEntry(prompt).echoId).toBe(U);
+    // only a user message is ever echoed
+    expect('echoId' in readClaudeTranscriptEntry(said({ uuid: U }))).toBe(false);
+    // another process's output: no string, or an empty one, is no id
+    expect('echoId' in readClaudeTranscriptEntry({ ...prompt, uuid: undefined })).toBe(false);
+    expect('echoId' in readClaudeTranscriptEntry({ ...prompt, uuid: '' })).toBe(false);
+    expect('echoId' in readClaudeTranscriptEntry({ ...prompt, uuid: 7 })).toBe(false);
+  });
+
   it('passes the session context through to the derivation (#830)', () => {
     const marker = wrapInjectedContext({ body: 'their recent output', name: 'other', sessionId: 'sess-1', ref: 'r-1' });
     const line = { type: 'user', message: { role: 'user', content: `hi ${marker}` } };

@@ -448,6 +448,13 @@ export interface ReplayEntry {
    */
   compactionSummary?: string;
   /**
+   * The id of the delivery this line records, when it records one (#680): the
+   * same id a live echo of that message carries (`MessageEvent.echoId`).
+   * The Feed remembers it, so a live echo of a message already replayed here
+   * cannot draw it a second time. Absent: nothing remembered.
+   */
+  echoId?: string;
+  /**
    * What the line means for the Feed. The provider's code, so a throw costs
    * that line and never the replay (P6).
    */
