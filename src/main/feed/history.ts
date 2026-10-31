@@ -14,9 +14,11 @@
 //
 // WHAT IT DOES. Reads the conversation's own transcript ONCE, at session start
 // — and, since #1140, its subagent transcripts with it, merged in by time — and
-// hands the entries to `StreamFeed.hydrate`, which derives blocks with the same
-// `blocks.ts` derivation the watcher uses. The live stream then appends above
-// them in the same buffer, in the same seq space.
+// hands the entries to `StreamFeed.hydrate` — each one read by the session's
+// PROVIDER first (`transcripts.readEntry`, #1303), so the Feed never reads the
+// transcript format itself. For Claude that is the same derivation the watcher
+// uses. The live stream then appends above them in the same buffer, in the
+// same seq space.
 //
 // FAIL-OPEN THROUGHOUT (P6). No file, an unreadable file, a file full of
 // garbage: the session starts anyway with the empty Session view it has today.
@@ -28,7 +30,7 @@ import path from 'path';
 import { Logger } from '../log/logger';
 import { conversationFile } from '../transcripts/paths';
 import { agentOriginFor } from './agent-attribution';
-import type { BlockOrigin, HydrateOptions } from './blocks';
+import type { BlockOrigin, HistoryEntryReader, HydrateOptions, ReplayEntry } from './blocks';
 
 /**
  * How much of a transcript's TAIL is read back, in bytes.
@@ -55,7 +57,7 @@ export const HISTORY_MAX_LINES = 5_000;
  * Parse the tail of one JSONL transcript into entries, oldest first.
  *
  * Exported for its own tests. A line that does not parse is skipped rather than
- * counted: this is the same untrusted-output tolerance `deriveIntents` promises,
+ * counted: this is the same untrusted-output tolerance the derivation promises,
  * and the FIRST line is skipped outright when the read started mid-file, because
  * it is a fragment by construction.
  */
@@ -529,11 +531,7 @@ export function mergeHistory(
 
 /** Just enough of `StreamFeed` for this to be callable with a test double. */
 export interface HydratableFeed {
-  hydrate(
-    sessionId: string,
-    entries: readonly Record<string, unknown>[],
-    opts?: HydrateOptions
-  ): number;
+  hydrate(sessionId: string, entries: readonly ReplayEntry[], opts?: HydrateOptions): number;
 }
 
 export interface ReplayResumedHistoryArgs {
@@ -545,6 +543,12 @@ export interface ReplayResumedHistoryArgs {
   folder: string;
   /** the conversation being resumed (the plan's `resumeSessionId`) */
   nativeSessionId: string;
+  /**
+   * The provider's reader for one line of this history (`transcripts.readEntry`,
+   * #1303). Every entry goes through it on its way to the Feed; the Feed reads
+   * none of the transcript's own fields.
+   */
+  readEntry: HistoryEntryReader;
   /** the clock, for a test that needs the replay to have happened "then" */
   now?: () => number;
   /**
@@ -599,8 +603,8 @@ export function replayResumedHistory(
     const notBefore = cut ? firstTurnStamp(main.entries) : undefined;
     const backlog = readSidechains(file, { notBefore });
     const merged = mergeHistory(main.entries, backlog.files, notBefore);
-    const blocks = feed.hydrate(args.sessionId, merged.entries, {
-      origins: merged.origins,
+    const entries = merged.entries.map((e) => args.readEntry(e, merged.origins.get(e)));
+    const blocks = feed.hydrate(args.sessionId, entries, {
       sidechainBacklogBefore: replayedAt,
       markers: args.markers,
     });

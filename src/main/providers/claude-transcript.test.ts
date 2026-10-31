@@ -1,4 +1,5 @@
-// The shared block derivation (P2-E18-10).
+// Claude's block derivation (P2-E18-10; the Claude provider's since #1303,
+// when it moved here from `feed/blocks.test.ts` with every assertion intact).
 //
 // These cases used to be reachable only by writing a JSONL file and waiting out
 // a poll (watcher.test.ts still does that end to end, and should). Here they are
@@ -10,11 +11,11 @@ import {
   FULL_CAPS,
   DerivedBlock,
   IDENTITY_ONLY_CAPS,
-  deriveIntents,
   touchedPath,
   EmitIntent,
   ToolResultIntent,
-} from './blocks';
+} from '../feed/blocks';
+import { deriveIntents, readClaudeTranscriptEntry } from './claude-transcript';
 import { wrapInjectedContext } from '../../shared/injected-context';
 
 const blocks = (intents: ReturnType<typeof deriveIntents>): EmitIntent[] =>
@@ -936,5 +937,57 @@ describe('the fold facts stamped on a tool block (#1271)', () => {
   it('the identity-only pass carries no text here, as for every other field', () => {
     expect(toolBlock('mcp__github__get_issue', {}, IDENTITY_ONLY_CAPS).mcp).toEqual({ server: '', tool: '' });
     expect(toolBlock('WebSearch', { query: 'x' }, IDENTITY_ONLY_CAPS).web).toEqual({ kind: 'search', query: '' });
+  });
+});
+
+describe('readClaudeTranscriptEntry — one JSONL line as a neutral ReplayEntry (#1303)', () => {
+  const said = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    type: 'assistant',
+    timestamp: '2026-10-16T10:00:00.000Z',
+    message: { role: 'assistant', id: 'm1', content: [{ type: 'text', text: 'hello' }] },
+    ...over,
+  });
+
+  it('carries the time, the origin and EXACTLY the derivation the line always had', () => {
+    const line = said();
+    const e = readClaudeTranscriptEntry(line);
+    expect(e.at).toBe(Date.parse('2026-10-16T10:00:00.000Z'));
+    expect(e.origin).toEqual({ sidechain: false });
+    expect(e.compactionSummary).toBeUndefined();
+    expect(e.derive(DISPLAY_CAPS, {})).toEqual(deriveIntents(line, DISPLAY_CAPS, {}));
+    expect(e.derive(FULL_CAPS, {})).toEqual(deriveIntents(line, FULL_CAPS, {}));
+  });
+
+  it('no readable time is NO `at` — absent, not NaN', () => {
+    expect('at' in readClaudeTranscriptEntry(said({ timestamp: undefined }))).toBe(false);
+    expect('at' in readClaudeTranscriptEntry(said({ timestamp: 'yesterday-ish' }))).toBe(false);
+    expect('at' in readClaudeTranscriptEntry(said({ timestamp: 42 }))).toBe(false);
+  });
+
+  it("the line's own isSidechain, unless the caller knows the file it came out of", () => {
+    expect(readClaudeTranscriptEntry(said({ isSidechain: true })).origin).toEqual({ sidechain: true });
+    // `=== true`: a string from another process is not a flag
+    expect(readClaudeTranscriptEntry(said({ isSidechain: 'yes' })).origin).toEqual({ sidechain: false });
+    const fromFile = { sidechain: true, agentId: 'aaaaaa11', agentName: 'digger' };
+    expect(readClaudeTranscriptEntry(said(), fromFile).origin).toBe(fromFile);
+  });
+
+  it("a compaction's summary is carried as text, and still derives no block", () => {
+    const summary = {
+      type: 'user',
+      isCompactSummary: true,
+      isVisibleInTranscriptOnly: true,
+      message: { role: 'user', content: 'This session is being continued…' },
+    };
+    const e = readClaudeTranscriptEntry(summary);
+    expect(e.compactionSummary).toBe('This session is being continued…');
+    expect(e.derive(DISPLAY_CAPS, {})).toEqual([]);
+  });
+
+  it('passes the session context through to the derivation (#830)', () => {
+    const marker = wrapInjectedContext({ body: 'their recent output', name: 'other', sessionId: 'sess-1', ref: 'r-1' });
+    const line = { type: 'user', message: { role: 'user', content: `hi ${marker}` } };
+    const ctx = { isMintedRef: (r: string) => r === 'r-1' };
+    expect(readClaudeTranscriptEntry(line).derive(DISPLAY_CAPS, ctx)).toEqual(deriveIntents(line, DISPLAY_CAPS, ctx));
   });
 });

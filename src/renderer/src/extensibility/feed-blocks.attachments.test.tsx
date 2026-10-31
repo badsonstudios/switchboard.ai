@@ -4,7 +4,7 @@
 // Rendered through the REAL registry, the way `feed-blocks.a11y.test.tsx` does,
 // because the defect this guards is a whole-pipeline one: a block that carries
 // the counts and a renderer that never looks at them reads identically to the
-// bug. The derivation half is pinned in `main/feed/blocks.test.ts`; this half
+// bug. The derivation half is pinned in `main/providers/claude-transcript.test.ts`; this half
 // is "the user can see it".
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { act } from 'react';

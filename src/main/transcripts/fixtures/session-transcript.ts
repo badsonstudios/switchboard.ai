@@ -33,7 +33,7 @@
 //   * All 4,697 lines are present, in order, byte-for-byte in every field the
 //     Feed derivation or the watcher reads.
 //   * FOUR top-level keys are removed: `toolUseResult`, `snapshot`,
-//     `attachment`, `backup`. Nothing in `feed/blocks.ts`, `watcher.ts` or this
+//     `attachment`, `backup`. Nothing in `claude-transcript.ts`, `watcher.ts` or this
 //     engine reads any of them — `toolUseResult` is the CLI's own structured
 //     echo of a tool run, which the transcript ALSO carries as the
 //     `tool_result` content item that we do read. Dropping them took the file

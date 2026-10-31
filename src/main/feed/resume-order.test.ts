@@ -13,6 +13,8 @@ import { ClaudeFedFeed } from './fixtures/claude-fed-feed';
 import { firstTurnStamp, mergeHistory, readSidechains, replayResumedHistory } from './history';
 import { TranscriptWatcher, slugForCwd } from '../transcripts/watcher';
 import { LogSink, createLogger } from '../log/logger';
+import { FULL_CAPS } from './blocks';
+import { readClaudeTranscriptEntry } from '../providers/claude-transcript';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 const NATIVE = '0cd72f42-49fe-4d33-bb8d-45006df6dd06';
@@ -123,18 +125,20 @@ function resume(feed: ClaudeFedFeed): number {
     projectsRoot: root,
     log,
     pollMs: 25,
-    sidechainSink: (sessionId, entry, origin) => {
-      const c = (entry.message as { content?: Array<{ text?: string }> } | undefined)?.content;
-      offered.push(c?.[0]?.text ?? '');
-      return feed.absorbSidechain(sessionId, entry, origin);
+    sidechainSink: (sessionId, entry) => {
+      const first = entry.derive(FULL_CAPS, {})[0];
+      offered.push(first?.t === 'block' ? (first.block.text ?? '') : '');
+      return feed.absorbSidechain(sessionId, entry);
     },
   });
-  watcher.watch(SID, { cwd, nativeSessionId: NATIVE, deriveFeed: 'sidechains' });
+  // both halves read through the provider's reader, as `sessions:create` wires them (#1303)
+  watcher.watch(SID, { cwd, nativeSessionId: NATIVE, deriveFeed: 'sidechains', readEntry: readClaudeTranscriptEntry });
   return replayResumedHistory(feed, log, {
     sessionId: SID,
     projectsRoot: root,
     folder: cwd,
     nativeSessionId: NATIVE,
+    readEntry: readClaudeTranscriptEntry,
   });
 }
 
@@ -197,7 +201,7 @@ describe('a resumed Direct session and its subagent transcripts (#1140)', () => 
       message: { role: 'assistant', content: [{ type: 'text', text: 'the session speaks' }] },
     });
     const old = JSON.parse(said('SUBAGENT: old stamp', 2)) as Record<string, unknown>;
-    expect(feed.absorbSidechain(SID, old, { sidechain: true, agentId: 'aaaaaa11' })).toBe(true);
+    expect(feed.absorbTranscriptLine(SID, old, { sidechain: true, agentId: 'aaaaaa11' })).toBe(true);
     expect(textsOf(feed)).toEqual(['the session speaks', 'SUBAGENT: old stamp']);
   });
 });
@@ -214,26 +218,26 @@ describe('the backlog cutoff on its own (#1140)', () => {
 
   it('drops a line stamped AT the replay, keeps one a millisecond later', () => {
     const feed = new ClaudeFedFeed();
-    feed.hydrate(SID, [main], { sidechainBacklogBefore: T });
+    feed.hydrateTranscript(SID, [main], { sidechainBacklogBefore: T });
     // taken — TRUE — and not shown
-    expect(feed.absorbSidechain(SID, subLine('before', new Date(T - 1).toISOString()), origin)).toBe(true);
-    expect(feed.absorbSidechain(SID, subLine('at', new Date(T).toISOString()), origin)).toBe(true);
-    expect(feed.absorbSidechain(SID, subLine('after', new Date(T + 1).toISOString()), origin)).toBe(true);
+    expect(feed.absorbTranscriptLine(SID, subLine('before', new Date(T - 1).toISOString()), origin)).toBe(true);
+    expect(feed.absorbTranscriptLine(SID, subLine('at', new Date(T).toISOString()), origin)).toBe(true);
+    expect(feed.absorbTranscriptLine(SID, subLine('after', new Date(T + 1).toISOString()), origin)).toBe(true);
     expect(textsOf(feed)).toEqual(['replayed', 'after']);
   });
 
   it('lets a line with no readable timestamp through, as it always was', () => {
     const feed = new ClaudeFedFeed();
-    feed.hydrate(SID, [main], { sidechainBacklogBefore: T });
-    feed.absorbSidechain(SID, subLine('no stamp'), origin);
-    feed.absorbSidechain(SID, subLine('garbage stamp', 'yesterday-ish'), origin);
+    feed.hydrateTranscript(SID, [main], { sidechainBacklogBefore: T });
+    feed.absorbTranscriptLine(SID, subLine('no stamp'), origin);
+    feed.absorbTranscriptLine(SID, subLine('garbage stamp', 'yesterday-ish'), origin);
     expect(textsOf(feed)).toEqual(['replayed', 'no stamp', 'garbage stamp']);
   });
 
   it('a replay WITHOUT a cutoff (the old call shape) drops nothing', () => {
     const feed = new ClaudeFedFeed();
-    feed.hydrate(SID, [main]);
-    feed.absorbSidechain(SID, subLine('old', new Date(T - 1).toISOString()), origin);
+    feed.hydrateTranscript(SID, [main]);
+    feed.absorbTranscriptLine(SID, subLine('old', new Date(T - 1).toISOString()), origin);
     expect(textsOf(feed)).toEqual(['replayed', 'old']);
   });
 
@@ -241,17 +245,17 @@ describe('the backlog cutoff on its own (#1140)', () => {
   it('a REFUSED replay sets no cutoff', () => {
     const feed = new ClaudeFedFeed();
     feed.offer(SID, { type: 'assistant', message: { content: [{ type: 'text', text: 'live' }] } });
-    expect(feed.hydrate(SID, [main], { sidechainBacklogBefore: T })).toBe(0);
-    feed.absorbSidechain(SID, subLine('old', new Date(T - 1).toISOString()), origin);
+    expect(feed.hydrateTranscript(SID, [main], { sidechainBacklogBefore: T })).toBe(0);
+    feed.absorbTranscriptLine(SID, subLine('old', new Date(T - 1).toISOString()), origin);
     expect(textsOf(feed)).toEqual(['live', 'old']);
   });
 
   it('survives a cleared conversation: the old backlog stays out, new work comes in', () => {
     const feed = new ClaudeFedFeed();
-    feed.hydrate(SID, [main], { sidechainBacklogBefore: T });
+    feed.hydrateTranscript(SID, [main], { sidechainBacklogBefore: T });
     feed.offer(SID, { type: 'conversation_reset', session_id: NATIVE });
-    feed.absorbSidechain(SID, subLine('old', new Date(T - 1).toISOString()), origin);
-    feed.absorbSidechain(SID, subLine('new', new Date(T + 1).toISOString()), origin);
+    feed.absorbTranscriptLine(SID, subLine('old', new Date(T - 1).toISOString()), origin);
+    feed.absorbTranscriptLine(SID, subLine('new', new Date(T + 1).toISOString()), origin);
     expect(textsOf(feed)).toEqual(['new']);
   });
 
@@ -274,7 +278,7 @@ describe('the backlog cutoff on its own (#1140)', () => {
       [call('main-1', 1), result('main-1', 'MAIN RESULT', 5)],
       [[subCall, subResult].map((entry) => ({ entry, origin }))]
     );
-    feed.hydrate(SID, merged.entries, { origins: merged.origins });
+    feed.hydrateTranscript(SID, merged.entries, { origins: merged.origins });
     const blocks = feed.blocks(SID).sort((a, b) => a.seq - b.seq);
     expect(blocks.map((b) => [b.sidechain, JSON.stringify(b).includes('MAIN RESULT')])).toEqual([
       [false, true],

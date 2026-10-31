@@ -78,7 +78,7 @@ import type { SessionSummary } from './queries';
  * A profile of its own rather than `DISPLAY_CAPS`, because a handoff document
  * and a scrolling view want different things from the same line, and
  * `DerivationCaps` exists precisely so that wanting different things does not
- * mean writing a second extractor (see `blocks.ts`).
+ * mean writing a second extractor (see `providers/claude-transcript.ts`).
  *
  *  - `summary: 200` against the Feed's 120. The summary of a `Bash` block is
  *    the command, and 120 characters truncates a real one mid-flag — on screen

@@ -370,12 +370,29 @@ contract differs in three ways, each deliberate:
   indistinguishable from the bug it repairs, and both are one-time by
   construction, so a notice held only in memory behind a collapsed drawer is lost
   the first time the user quits without opening it.
-- **`transcripts` LOCATES transcripts; it does not abstract reading them.** The
-  sketch names a `TranscriptReader`. Our tolerant parser, tailer and block builder
-  stay host-side and are shared by every provider writing that shape; the adapter
-  says only where its conversations live and whether a given one is resumable. The
-  day a provider writes a different transcript FORMAT is the day the reader moves
-  behind the seam.
+- **`transcripts` LOCATES transcripts, and reads one LINE of them for the Feed**
+  *(the reader moved behind the seam in #1303, 2026-10-31)*. The sketch names a
+  `TranscriptReader`. Our tolerant file parser and tailer stay host-side and are
+  shared by every provider writing JSONL; the adapter says where its
+  conversations live, whether a given one is resumable, and — through the
+  optional `transcripts.readEntry` — what one line MEANS: a neutral `ReplayEntry`
+  (`at`, `origin`, `compactionSummary`, and `derive(caps, ctx)`, the same shape
+  as `message.derive` below). The Feed's history replay (`StreamFeed.hydrate`,
+  `absorbSidechain`) reads only that. Claude's reader and its block derivation
+  (`deriveIntents`, formerly `feed/blocks.ts`) are `providers/claude-transcript.ts`.
+  This was the day the bullet used to name — "the day a provider writes a
+  different transcript FORMAT is the day the reader moves behind the seam" —
+  because an ACP agent's history comes back as `session/load` replay, not a
+  JSONL on disk (`spike/findings/e40-codex-acp.md`, question 5). **No fallback**:
+  a provider that declares transcripts without a reader resumes with an empty
+  Feed and its subagent lines are not absorbed, rather than having its history
+  read as Claude's; after a reader's first throw (reported once) every later
+  line reads as one that makes no block. **Still host-side, on purpose:** the readers that are not the
+  Feed's replay — the watcher's own Feed, session find, the bus's rendered
+  transcript (`transcript-blocks.ts`) — read Claude's JSONL by definition and call
+  the derivation directly; `history.ts`'s subagent-file layout and timestamp
+  merge is Claude's layout too. `engine-seam.test.ts` lists those importers
+  exactly.
 - **`events` is a seventh capability** *(E40 item 03, #1286, 2026-10-16)* — the
   first half of the 2026-10-15 seam above. `events.createTranslator()` returns a
   per-session translator from the provider's wire frames to a NEUTRAL session
@@ -395,9 +412,9 @@ contract differs in three ways, each deliberate:
   host's. **Not moved, on purpose:** the control path (approvals, interrupt,
   model, mode, slash commands — the raw `onStreamMessage` subscribers and every
   `shared/stream-protocol` importer) is item 04 (#1287); and the transcript
-  replay into the Feed (`hydrate` / `absorbSidechain`) still reads Claude's
-  transcript format, under the `transcripts` bullet just above.
-  `engine-seam.test.ts` pins both lists exactly.
+  replay into the Feed (`hydrate` / `absorbSidechain`) read Claude's transcript
+  format until #1303 moved its reader behind the `transcripts` bullet just
+  above. `engine-seam.test.ts` pins both exactly.
 - **`controls` is an eighth capability** *(E40 item 04, #1287, 2026-10-16)* —
   the second half of the seam. `controls.createControls(session)` returns one
   session's `SessionControls` (`sessions/engine-controls.ts`): `approvals`

@@ -16,6 +16,7 @@ import { SessionIdentity } from './session-manager';
 import type { FeedDerivation } from '../transcripts/watcher';
 import type { EngineEvent } from './engine-events';
 import { ClaudeFedFeed } from '../feed/fixtures/claude-fed-feed';
+import { readClaudeTranscriptEntry } from '../providers/claude-transcript';
 import { Logger } from '../log/logger';
 import { MisplacedSkills, SlashCommand } from '../../shared/slash-commands';
 import { readAiTitle } from '../providers/claude';
@@ -2672,7 +2673,7 @@ describe('a resumed Direct session replays its history (#395)', () => {
   const NATIVE = '00000000-conv-4000-8000-000000000000';
   const capsWith = (rootDir: () => string): ProviderCapabilities =>
     ({
-      transcripts: { projectsRoot: () => rootDir() },
+      transcripts: { projectsRoot: () => rootDir(), readEntry: readClaudeTranscriptEntry },
       resume: { canResume: () => true },
     });
 
@@ -2712,6 +2713,28 @@ describe('a resumed Direct session replays its history (#395)', () => {
       'before the relaunch',
       'the reply you already read',
     ]);
+  });
+
+  // #1303: the Feed reads no transcript format itself. A provider that locates
+  // transcripts but declares no READER is not replayed as though it were Claude.
+  it('a provider with no history reader replays nothing — the card still starts', () => {
+    seedTranscript();
+    const streamFeed = new ClaudeFedFeed();
+    const h = harness(
+      { transcripts: { projectsRoot: () => root }, resume: { canResume: () => true } },
+      dir,
+      {
+        transport: 'stream',
+        liveIds: ['live-1'],
+        streamFeed,
+        prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
+      }
+    );
+
+    const res = h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' }) as { id?: string };
+
+    expect(res.id).toBe('live-1');
+    expect(streamFeed.blocks('live-1')).toEqual([]);
   });
 
   // "A TERMINAL session is left alone — the watcher replays it, as it always
@@ -2842,7 +2865,7 @@ describe('the resume link degrades but is never destroyed (#484)', () => {
   const B = '00000000-bbbb-4000-8000-000000000000'; // announced, never got a turn
 
   const claudeShaped = (): ProviderCapabilities => ({
-    transcripts: { projectsRoot: () => root },
+    transcripts: { projectsRoot: () => root, readEntry: readClaudeTranscriptEntry },
     resume: {
       canResume: ({ projectsRoot, folder, nativeSessionId }) =>
         conversationExists(projectsRoot, folder, nativeSessionId),
@@ -6675,6 +6698,31 @@ describe('sessions:switchAi — one card, one conversation per AI (#1294)', () =
       switchTo(h, 'generic');
       const back = start(h);
       // the ARRIVAL into Claude, placed once the AI has named its conversation
+      expect(feed.blocks(back.id)).toEqual([]);
+      feed.ingest(back.id, { type: 'conversation', id: 'claude-1' });
+      expect(dividers(feed, back.id)).toEqual([['Codex', 'Claude Code']]);
+    });
+
+    // #1303: a provider that LOCATES transcripts (so the watch is armed) but
+    // declares no reader gets no replay — and its divider takes the same
+    // fallback, rather than being lost with the replay that never ran.
+    it('a resume with transcripts but NO reader still gets its divider, after the conversation', () => {
+      const root = tempDir('sb-switch-ai-root-');
+      const feed = new ClaudeFedFeed();
+      const h = harness({ resume: { canResume: () => true }, transcripts: { projectsRoot: () => root } }, folder, {
+        prior: priorCard({ folder, nativeSessionId: 'claude-1' }),
+        registered: ['generic', 'other'],
+        providerName: (id) => names[id],
+        status: 'idle',
+        spawnIds: ['live-1', 'live-2', 'live-3', 'live-4', 'live-5'],
+        streamFeed: feed,
+      });
+      start(h);
+      switchTo(h, 'other');
+      const codex = start(h);
+      h.fireNativeId(codex.id, 'codex-1');
+      switchTo(h, 'generic');
+      const back = start(h);
       expect(feed.blocks(back.id)).toEqual([]);
       feed.ingest(back.id, { type: 'conversation', id: 'claude-1' });
       expect(dividers(feed, back.id)).toEqual([['Codex', 'Claude Code']]);

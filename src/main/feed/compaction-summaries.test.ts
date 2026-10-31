@@ -4,7 +4,8 @@ import { describe, it, expect } from 'vitest';
 import { CompactionSummaryStore, compactionSummaryAnswer } from './compaction-summaries';
 import { FeedBuffer } from './buffer';
 import { FeedPictureStore } from './pictures';
-import { compactionSummaryText, type DerivedBlock, type FeedBlock } from './blocks';
+import type { DerivedBlock, FeedBlock } from './blocks';
+import { compactionSummaryText } from '../providers/claude-transcript';
 
 const store = (budget = 1000): CompactionSummaryStore => {
   let n = 0;

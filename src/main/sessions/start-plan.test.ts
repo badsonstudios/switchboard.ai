@@ -802,6 +802,57 @@ describe('titles (P2-E7-06, §5.11)', () => {
   });
 });
 
+// #1303: the Feed's history replay reads each line through the provider.
+describe('the history reader (transcripts.readEntry, #1303)', () => {
+  const line = { type: 'assistant', timestamp: '2026-10-16T10:00:00.000Z' };
+  const read = (_l: Record<string, unknown>, origin?: { sidechain: boolean }) => ({
+    at: 1,
+    origin: origin ?? { sidechain: false },
+    derive: () => [],
+  });
+
+  it("hands the caller the provider's reader, origin passed through", () => {
+    const p = plan({
+      capabilitiesOf: () => fullCaps({ transcripts: { projectsRoot: () => '/r', readEntry: read } }),
+    });
+    expect(p.readEntry?.(line)).toMatchObject({ at: 1, origin: { sidechain: false } });
+    expect(p.readEntry?.(line, { sidechain: true })?.origin).toEqual({ sidechain: true });
+  });
+
+  it('no reader declared = no reader: nothing is read as Claude on its behalf', () => {
+    expect(plan({ capabilitiesOf: () => fullCaps() }).readEntry).toBeUndefined();
+    expect(plan().readEntry).toBeUndefined();
+  });
+
+  it('a reader that throws degrades for the session — reported ONCE, every line after makes no block', () => {
+    const onDegraded = vi.fn();
+    let calls = 0;
+    const p = plan({
+      onDegraded,
+      capabilitiesOf: () =>
+        fullCaps({
+          transcripts: {
+            projectsRoot: () => '/r',
+            readEntry: () => {
+              calls++;
+              throw new Error('boom');
+            },
+          },
+        }),
+    });
+    for (let i = 0; i < 50; i++) {
+      const e = p.readEntry!(line, { sidechain: true, agentId: 'a' });
+      expect(e.origin).toEqual({ sidechain: true, agentId: 'a' });
+      expect(e.derive({ text: 1, detail: 1, summary: 1, edit: 1, todos: 1 }, {})).toEqual([]);
+      expect(e.compactionSummary).toBeUndefined();
+    }
+    expect(calls).toBe(1); // not asked again
+    expect(onDegraded).toHaveBeenCalledTimes(1);
+    expect(onDegraded.mock.calls[0][0]).toContain('transcripts.readEntry');
+    expect(p.transcriptsRoot).toBe('/r'); // the transcript watch is untouched
+  });
+});
+
 // E40 item 11 (#1294): the briefing a first switch to an AI is handed (#1295
 // writes it). The rule lives in the plan so it can be tested here: only a
 // FRESH start is briefed — switching back to an AI the card has used resumes.

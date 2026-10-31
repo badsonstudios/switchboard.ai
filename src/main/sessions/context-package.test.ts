@@ -913,11 +913,15 @@ describe('no model runs on the default path', () => {
     'transcript-blocks.ts',
     'queries.ts',
     '../feed/blocks.ts',
-    // #704: `blocks.ts` asks it whether a user-role turn is the harness rather
+    // #1303: Claude's block derivation, which `transcript-blocks.ts` renders
+    // through. It moved out of `feed/blocks.ts` into the Claude provider; it
+    // is the same pure function it was, and it is held to the PURE bar below.
+    '../providers/claude-transcript.ts',
+    // #704: the derivation asks it whether a user-role turn is the harness rather
     // than the person. Pure string work over one line — a set membership test
     // and five regexes.
     '../feed/injected.ts',
-    // #1240: `blocks.ts` asks it which content items are pictures. Handed an
+    // #1240: the derivation asks it which content items are pictures. Handed an
     // array, answers a list; the store that KEEPS pictures is a different
     // module and is not on this path.
     '../feed/picture-data.ts',
@@ -951,6 +955,8 @@ describe('no model runs on the default path', () => {
     // answers a question about them.
     '../feed/injected.ts',
     '../feed/picture-data.ts',
+    // #1303: one transcript line in, intents out — no I/O, no state
+    '../providers/claude-transcript.ts',
   ] as const;
 
   const read = (name: string) => {
@@ -1003,9 +1009,19 @@ describe('no model runs on the default path', () => {
     expect(read('queries.ts').imports.length).toBeGreaterThan(2);
   });
 
+  /**
+   * The ONE provider module the default path may import (#1303), named
+   * exactly: Claude's transcript derivation, which used to be `feed/blocks.ts`
+   * and moved behind the provider seam unchanged. It is on `MODULES` and
+   * `PURE`, so it is scanned for spawns, fetches and I/O like the rest — the
+   * name check below exists to keep a provider's SPAWNING half off this path,
+   * and this module has none.
+   */
+  const PURE_PROVIDER_IMPORTS = new Set(['../providers/claude-transcript']);
+
   it.each(MODULES)('%s imports nothing that could run a program or open a connection', (name) => {
     const { imports } = read(name);
-    for (const spec of imports) {
+    for (const spec of imports.filter((s) => !PURE_PROVIDER_IMPORTS.has(s))) {
       expect(spec).not.toMatch(/child_process|net|http|https|dgram|worker_threads|provider/i);
       expect(spec).not.toMatch(/anthropic|claude|sdk|openai/i);
     }

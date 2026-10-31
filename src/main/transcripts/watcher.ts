@@ -14,7 +14,8 @@ import path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { Logger } from '../log/logger';
 import { BindingDiagnostics, BindingState, type ResetCause } from '../../shared/transcripts';
-import { BlockOrigin, DISPLAY_CAPS, FeedBlock, compactionSummaryText, deriveIntents, touchedPath } from '../feed/blocks';
+import { BlockOrigin, DISPLAY_CAPS, FeedBlock, HistoryEntryReader, ReplayEntry, touchedPath } from '../feed/blocks';
+import { compactionSummaryText, deriveIntents } from '../providers/claude-transcript';
 import type { ContextRefs } from '../feed/context-refs';
 import { agentOriginFor } from '../feed/agent-attribution';
 import { FeedBuffer } from '../feed/buffer';
@@ -391,6 +392,14 @@ interface WatchedSession {
    * is a per-session fact: one watcher serves cards on different adapters.
    */
   readTitle?: (line: Record<string, unknown>) => string | undefined;
+  /**
+   * This provider's reader for one history line (`transcripts.readEntry`,
+   * #1303): what a `'sidechains'` session's subagent lines are read through
+   * before they go to `sidechainSink`. Undefined = the provider declares none,
+   * and those lines go nowhere — they are not read as Claude's on its behalf.
+   * Per-SESSION for `readTitle`'s reason.
+   */
+  readEntry?: HistoryEntryReader;
 }
 
 /** After this long unbound, widen discovery beyond the slug prefilter. */
@@ -529,18 +538,16 @@ export interface TranscriptWatcherOptions {
    * conversation, and none of them was in `transcripts:blocks` — so they
    * vanished on any remount and a resumed card never saw them at all.
    *
-   * So the watcher hands the LINE over and the stream Feed pushes it, into the
-   * one buffer that session has. One seq space, one backlog, one reset to route
-   * — which is the same argument `hydrate` makes for doing the replay there.
+   * So the watcher hands the LINE over — read by the session's provider
+   * (`readEntry`, #1303), with the agent file it came out of as its origin —
+   * and the stream Feed pushes it, into the one buffer that session has. One
+   * seq space, one backlog, one reset to route — which is the same argument
+   * `hydrate` makes for doing the replay there.
    *
    * Returns false when nothing took it (no stream Feed for this session), in
    * which case the line is dropped rather than misfiled.
    */
-  sidechainSink?: (
-    sessionId: string,
-    entry: Record<string, unknown>,
-    origin: BlockOrigin
-  ) => boolean;
+  sidechainSink?: (sessionId: string, entry: ReplayEntry) => boolean;
   /**
    * #830's forgery guard — which injected-context markers this app minted.
    *
@@ -783,6 +790,10 @@ export class TranscriptWatcher {
       /** How this session's provider spells a conversation title (§5.11).
        *  Omitted = it has none, and no line is inspected for one. */
       readTitle?: (line: Record<string, unknown>) => string | undefined;
+      /** How this session's provider reads one history line (#1303). Omitted =
+       *  it has no reader, and its subagent lines are not handed to the stream
+       *  Feed. See `WatchedSession.readEntry`. */
+      readEntry?: HistoryEntryReader;
     }
   ): boolean {
     const root = session.projectsRoot ?? this.opts.projectsRoot ?? '';
@@ -865,6 +876,7 @@ export class TranscriptWatcher {
             ? 'sidechains'
             : session.deriveFeed,
       readTitle: session.readTitle,
+      readEntry: session.readEntry,
     });
     this.ensurePolling();
     return true;
@@ -2147,7 +2159,8 @@ export class TranscriptWatcher {
   /**
    * Derive Feed blocks (E12-06) from one transcript line.
    *
-   * The DERIVATION itself moved to `../feed/blocks.ts` in P2-E18-10, shared
+   * The DERIVATION itself moved to `../feed/blocks.ts` in P2-E18-10 (and on
+   * to the Claude provider, `../providers/claude-transcript.ts`, in #1303), shared
    * with the stream source so a block cannot look one way from a transcript and
    * another from a stream. What stays here is what only the watcher knows:
    * whether the line came from a subagent file, and whether this session's Feed
@@ -2170,8 +2183,9 @@ export class TranscriptWatcher {
     // upserts on seq, so a second source does not interleave — it OVERWRITES.
     if (w.deriveFeed === 'sidechains') {
       if (full === w.boundFile) return;
+      if (!w.readEntry) return;
       const origin: BlockOrigin = { sidechain: true, ...agentOriginFor(e, true, full) };
-      this.opts.sidechainSink?.(w.sessionId, e, origin);
+      this.opts.sidechainSink?.(w.sessionId, w.readEntry(e, origin));
       return;
     }
     const sidechain = full !== w.boundFile || e.isSidechain === true;

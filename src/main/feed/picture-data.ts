@@ -1,7 +1,8 @@
 // Which parts of a message are pictures (#1240): the pure half.
 //
-// Apart from the store (`pictures.ts`) on purpose. `blocks.ts` needs to know
-// which content items are pictures, and `blocks.ts` is on the session bus's
+// Apart from the store (`pictures.ts`) on purpose. The derivation
+// (`providers/claude-transcript.ts`, #1303) needs to know which content items are
+// pictures, and it is on the session bus's
 // default read path, which may import nothing that keeps state or touches the
 // system (`context-package.test.ts` walks it). This file is handed an array
 // and answers a question about it.

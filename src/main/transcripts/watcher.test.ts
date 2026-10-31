@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import type { BlockOrigin } from '../feed/blocks';
+import { FULL_CAPS, type BlockOrigin, type ReplayEntry } from '../feed/blocks';
+import { readClaudeTranscriptEntry } from '../providers/claude-transcript';
 import { compactionSummaries } from '../feed/compaction-summaries';
 import { TranscriptWatcher, slugForCwd, conversationExists } from './watcher';
 import { LogSink, createLogger } from '../log/logger';
@@ -104,6 +105,12 @@ function writeLines(file: string, lines: string[]): void {
 
 const entry = (over: Record<string, unknown> = {}) =>
   JSON.stringify({ type: 'assistant', sessionId: 'native-1', cwd, timestamp: new Date().toISOString(), ...over });
+
+/** The first block's text of a line the sink was handed, read the way the Feed reads it. */
+const firstText = (e: ReplayEntry): string => {
+  const first = e.derive(FULL_CAPS, {})[0];
+  return first?.t === 'block' ? (first.block.text ?? '') : '';
+};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -814,13 +821,12 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
       projectsRoot: root,
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
-      sidechainSink: (sessionId, e, origin) => {
-        const c = (e.message as { content?: Array<{ text?: string }> } | undefined)?.content;
-        taken.push({ sessionId, text: c?.[0]?.text ?? '', origin });
+      sidechainSink: (sessionId, e) => {
+        taken.push({ sessionId, text: firstText(e), origin: e.origin });
         return true;
       },
     });
-    w2.watch('s1', { cwd, deriveFeed: 'sidechains' });
+    w2.watch('s1', { cwd, deriveFeed: 'sidechains', readEntry: readClaudeTranscriptEntry });
     const file = path.join(projectDir(), 'native-1.jsonl');
     writeLines(file, [entry({ message: { content: [{ type: 'text', text: 'dispatching' }] } })]);
     await sleep(150);
@@ -851,6 +857,36 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
     expect(w2.blocks('s1')).toEqual([]);
   });
 
+  // #1303: the line goes through the session's PROVIDER on its way to the
+  // Feed. A provider that declares no reader gets nothing handed over — its
+  // subagent lines are not read as Claude's on its behalf — and the watcher
+  // still keeps none of them itself.
+  it('hands nothing over for a provider with no history reader (#1303)', async () => {
+    const taken: string[] = [];
+    const w2 = makeWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      sidechainSink: (sessionId) => {
+        taken.push(sessionId);
+        return true;
+      },
+    });
+    w2.watch('s1', { cwd, deriveFeed: 'sidechains' });
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [
+      entry({ message: { content: [{ type: 'text', text: 'dispatching' }] } }),
+    ]);
+    await sleep(150);
+    const subs = path.join(projectDir(), 'native-1', 'subagents');
+    fs.mkdirSync(subs, { recursive: true });
+    writeLines(path.join(subs, 'agent-aaaaaa11.jsonl'), [
+      entry({ message: { content: [{ type: 'text', text: 'agent' }] }, isSidechain: true, agentId: 'aaaaaa11' }),
+    ]);
+    await sleep(300);
+    expect(taken).toEqual([]);
+    expect(w2.blocks('s1')).toEqual([]);
+  });
+
   // The other half of the same claim, and a resumed card turns on it: an OLD
   // transcript can carry `isSidechain` lines in the MAIN file, and
   // `replayResumedHistory` already derives every entry of that file into the
@@ -867,7 +903,7 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
         return true;
       },
     });
-    w2.watch('s1', { cwd, deriveFeed: 'sidechains' });
+    w2.watch('s1', { cwd, deriveFeed: 'sidechains', readEntry: readClaudeTranscriptEntry });
     writeLines(path.join(projectDir(), 'native-1.jsonl'), [
       entry({ message: { content: [{ type: 'text', text: 'main' }] } }),
       entry({ message: { content: [{ type: 'text', text: 'old-style' }] }, isSidechain: true }),
@@ -902,12 +938,11 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
       log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
       pollMs: 25,
       sidechainSink: (_sid, e) => {
-        const c = (e.message as { content?: Array<{ text?: string }> } | undefined)?.content;
-        taken.push(c?.[0]?.text ?? '');
+        taken.push(firstText(e));
         return true;
       },
     });
-    w2.watch('s1', { cwd, deriveFeed: false });
+    w2.watch('s1', { cwd, deriveFeed: false, readEntry: readClaudeTranscriptEntry });
     writeLines(path.join(projectDir(), 'native-1.jsonl'), [
       entry({ message: { content: [{ type: 'text', text: 'main' }] } }),
     ]);

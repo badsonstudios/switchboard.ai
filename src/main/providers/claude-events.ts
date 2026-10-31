@@ -36,7 +36,7 @@
 // reading it as "the session started" would reset the session on every turn.
 // Readiness comes from the spawn succeeding, which is the pump's, not ours.
 // ---------------------------------------------------------------------------
-import { compactionSummaryText, deriveIntents } from '../feed/blocks';
+import { compactionSummaryText, deriveIntents } from './claude-transcript';
 import { asDisplayString } from '../../shared/display-string';
 import type { CliCommand } from '../../shared/slash-commands';
 import { autonomyFromPermissionMode } from './claude-modes';

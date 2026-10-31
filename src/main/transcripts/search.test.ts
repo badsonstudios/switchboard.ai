@@ -8,7 +8,8 @@
 import fs from 'fs';
 import path from 'path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { BLOCK_CAP, DETAIL_CAP, FeedBlock, TEXT_CAP, deriveIntents } from '../feed/blocks';
+import { BLOCK_CAP, DETAIL_CAP, FeedBlock, TEXT_CAP } from '../feed/blocks';
+import { deriveIntents } from '../providers/claude-transcript';
 import { FeedBuffer } from '../feed/buffer';
 import { ClaudeFedFeed } from '../feed/fixtures/claude-fed-feed';
 import { tempDir } from '../../test-temp-dirs';

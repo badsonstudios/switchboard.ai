@@ -7,7 +7,7 @@
 // that is something a person would call a prompt.
 //
 // ⚠️ A `user` BLOCK IS NOT ALWAYS SOMETHING THE USER TYPED (found in review; the
-// first cut of this file said it was). `blocks.ts` drops plumbing and turns a
+// first cut of this file said it was). The derivation drops plumbing and turns a
 // harness-injected turn into a `notice`, but these still arrive as `user`:
 //
 //   * a SLASH COMMAND, as `<command-name>` markup. Shown the way a person

@@ -4,7 +4,7 @@
 // Through the REAL registry, like the notice suite beside it: the block could
 // carry a perfect mark and still reach the screen as an empty markdown block
 // if the contribution were not registered. The derivation halves are pinned in
-// `main/feed/blocks.test.ts` (transcript) and `main/feed/stream-feed.test.ts`
+// `main/providers/claude-transcript.test.ts` (transcript) and `main/feed/stream-feed.test.ts`
 // (stream); the words in `lib/compaction-view.test.ts`.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { act } from 'react';

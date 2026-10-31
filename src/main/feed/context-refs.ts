@@ -74,7 +74,7 @@ export class ContextRefs {
    * Handed out as a closure because the derivation is per line and the session
    * is per call site — and because a `deriveIntents` that took the whole
    * register would be a pure function holding a reference to app state, which is
-   * the promise at the top of `blocks.ts`.
+   * the promise at the top of `providers/claude-transcript.ts` (#1303; it was `blocks.ts`).
    */
   guardFor(sessionId: string): (ref: string) => boolean {
     return (ref) => this.isMinted(sessionId, ref);

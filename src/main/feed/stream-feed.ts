@@ -16,8 +16,12 @@
 // CLI hands us the same content as it produces it, and `--include-partial-messages`
 // turns that into `stream_event` token deltas.
 //
-// What this class does NOT do is decide what a block IS. That is `blocks.ts`,
-// shared with the watcher, so the two sources cannot drift apart.
+// What this class does NOT do is decide what a block IS. That is the engine's:
+// a `message` event and a replayed `ReplayEntry` both carry a `derive`, and
+// for Claude both run the one derivation in `providers/claude-transcript.ts`,
+// shared with the watcher, so the sources cannot drift apart. Nor does it read
+// any engine's HISTORY format (#1303): `hydrate` and `absorbSidechain` take
+// entries the provider has already read.
 //
 // ---------------------------------------------------------------------------
 // THE ASSEMBLY RULE, and why it is not "render every message you see".
@@ -63,15 +67,13 @@ import { Logger } from '../log/logger';
 import { toolCategory } from '../../shared/tool-taxonomy';
 import {
   BlockIntent,
-  BlockOrigin,
   DerivationContext,
   DerivedBlock,
   DISPLAY_CAPS,
   FeedBlock,
   HydrateOptions,
+  ReplayEntry,
   TEXT_CAP,
-  compactionSummaryText,
-  deriveIntents,
 } from './blocks';
 import { compactionMark } from '../../shared/compaction';
 import type {
@@ -141,6 +143,8 @@ interface StreamedSession {
   sidechainBacklogBefore?: number;
   /** the one log line about the above has been written */
   backlogDropLogged?: boolean;
+  /** the one log line about a history entry whose `derive` threw (#1303) */
+  deriveFailLogged?: boolean;
   /** a divider waiting for the first `conversation` event (#1294, `placeMarker`) */
   pendingMarker?: DerivedBlock;
 }
@@ -163,7 +167,7 @@ export class StreamFeed {
     private readonly refs?: ContextRefs
   ) {}
 
-  /** What `deriveIntents` needs to know about this session, or nothing. */
+  /** What a derivation needs to know about this session, or nothing. */
   private ctx(sessionId: string): DerivationContext {
     return this.refs === undefined ? {} : { isMintedRef: this.refs.guardFor(sessionId) };
   }
@@ -208,7 +212,7 @@ export class StreamFeed {
    */
   hydrate(
     sessionId: string,
-    entries: readonly Record<string, unknown>[],
+    entries: readonly ReplayEntry[],
     opts: HydrateOptions = {}
   ): number {
     const s = this.ensure(sessionId);
@@ -243,39 +247,34 @@ export class StreamFeed {
       for (const e of entries) {
         // A compaction's summary is no block (#1026) but is kept beside the
         // divider the line before it drew, so a resumed card can still open it
-        // (#1374). The transcript's spelling: `isCompactSummary`. FIRST, before
-        // any marker is placed: a marker pushed between the two would break
-        // the pairing.
-        const summary = compactionSummaryText(e);
-        if (summary !== null) {
-          s.buffer.attachCompactionSummary(summary, opts.origins?.get(e) ?? { sidechain: e.isSidechain === true });
+        // (#1374). FIRST, before any marker is placed: a marker pushed between
+        // the two would break the pairing.
+        if (e.compactionSummary !== undefined) {
+          s.buffer.attachCompactionSummary(e.compactionSummary, e.origin);
           continue;
         }
-        const stamped = typeof e.timestamp === 'string' ? Date.parse(e.timestamp) : NaN;
-        if (Number.isFinite(stamped)) placeMarkersBefore(stamped);
-        // The SAME derivation the transcript watcher runs (`blocks.ts`), so a
-        // replayed turn cannot look different from the one that streamed live.
+        if (e.at !== undefined) placeMarkersBefore(e.at);
+        // The SAME derivation the live stream's messages run (for Claude,
+        // `providers/claude-transcript.ts`), so a replayed turn cannot look
+        // different from the one that streamed live.
         //
         // The entries are the main conversation AND its subagent transcripts,
         // already merged into the order they happened (#1140, `history.ts`).
         // Between #977 and #1140 the subagent half was left to the watcher,
         // which adopts those files on a resumed card and drained them in AFTER
         // this replay — under the newest message. See `absorbSidechain`.
-        for (const intent of deriveIntents(e, DISPLAY_CAPS, this.ctx(sessionId))) {
+        //
+        // The ORIGIN is the entry's: a subagent FILE's line arrives with it
+        // already worked out (#1140) — `history.ts` reads those files and is
+        // the only one that knows which entry came out of which — and a main
+        // line with what its provider read off it.
+        const intents = this.deriveOrSkip(s, sessionId, e);
+        for (const intent of intents) {
           if (intent.t === 'tool-result') {
             s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true, intent.pictures);
             continue;
           }
-          // A MAIN-transcript line gets no `agentId`, and not because it was
-          // overlooked: it was measured zero times there (#788, re-confirmed on
-          // 2.1.280 by #977), so a sidechain in the main file can only be a
-          // pre-2.1.226 line, which carries no id to group by either.
-          //
-          // A subagent FILE's line arrives with its origin already worked out
-          // (#1140): `history.ts` reads those files and is the only one that
-          // knows which entry came out of which.
-          const origin = opts.origins?.get(e) ?? { sidechain: e.isSidechain === true };
-          const block = s.buffer.push(intent.block, origin, intent.pictures);
+          const block = s.buffer.push(intent.block, e.origin, intent.pictures);
           if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
           n++;
         }
@@ -334,7 +333,9 @@ export class StreamFeed {
   }
 
   /**
-   * Take ONE subagent line from the transcript watcher (#977).
+   * Take ONE subagent line from the transcript watcher (#977), already read by
+   * the session's provider into a `ReplayEntry` whose origin names the agent
+   * file it came out of (#1303).
    *
    * ⚠️ THIS EXISTS SO THERE IS STILL ONE BUFFER PER SESSION, which is the whole
    * of `hydrate`'s argument one method up: two buffers feeding one renderer both
@@ -362,11 +363,7 @@ export class StreamFeed {
    * Returns false when this session has no stream Feed, so the caller can drop
    * the line rather than misfile it.
    */
-  absorbSidechain(
-    sessionId: string,
-    entry: Record<string, unknown>,
-    origin: BlockOrigin
-  ): boolean {
+  absorbSidechain(sessionId: string, entry: ReplayEntry): boolean {
     const s = this.sessions.get(sessionId);
     // NOT `ensure`: a session this Feed has never heard of is not one whose
     // subagent output anybody is waiting for, and creating state for it here
@@ -386,9 +383,8 @@ export class StreamFeed {
     //
     // A line with no readable timestamp is let through, which is what happened
     // to every line before this check existed.
-    if (s.sidechainBacklogBefore !== undefined) {
-      const at = typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN;
-      if (at <= s.sidechainBacklogBefore) {
+    if (s.sidechainBacklogBefore !== undefined && entry.at !== undefined) {
+      if (entry.at <= s.sidechainBacklogBefore) {
         // Said ONCE per session, so a report that subagent history went
         // missing after a restart has a line to find.
         if (!s.backlogDropLogged) {
@@ -400,20 +396,43 @@ export class StreamFeed {
     }
     // a subagent's own compaction summary, beside ITS divider (#1374), as
     // `hydrate` does for the same line after a restart
-    const summary = compactionSummaryText(entry);
-    if (summary !== null) {
-      s.buffer.attachCompactionSummary(summary, origin);
+    if (entry.compactionSummary !== undefined) {
+      s.buffer.attachCompactionSummary(entry.compactionSummary, entry.origin);
       return true;
     }
-    for (const intent of deriveIntents(entry, DISPLAY_CAPS, this.ctx(sessionId))) {
+    for (const intent of this.deriveOrSkip(s, sessionId, entry)) {
       if (intent.t === 'tool-result') {
         s.buffer.attachResult(intent.toolUseId, intent.out, intent.failed === true, intent.pictures);
         continue;
       }
-      const block = s.buffer.push(intent.block, origin, intent.pictures);
+      const block = s.buffer.push(intent.block, entry.origin, intent.pictures);
       if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
     }
     return true;
+  }
+
+  /**
+   * One history entry's intents, or none. `derive` is the provider's code, as
+   * `MessageEvent.derive` is on the live path, and a throw costs that entry —
+   * never the replay, never the session's Feed (P6). Claude's derivation is
+   * tolerant by construction and does not throw.
+   *
+   * Logged ONCE per session: a reader broken for one line is usually broken
+   * for all of them, and a replay is up to `HISTORY_MAX_LINES` lines.
+   */
+  private deriveOrSkip(s: StreamedSession, sessionId: string, entry: ReplayEntry): BlockIntent[] {
+    try {
+      return entry.derive(DISPLAY_CAPS, this.ctx(sessionId));
+    } catch (err) {
+      if (!s.deriveFailLogged) {
+        s.deriveFailLogged = true;
+        this.log?.error('history entry derivation threw: entry skipped', {
+          sessionId,
+          error: errorText(err),
+        });
+      }
+      return [];
+    }
   }
 
   /**
@@ -496,13 +515,13 @@ export class StreamFeed {
    * FROM THE ENGINE'S FRAME ONLY (Claude's `system:compact_boundary`), never
    * inferred: the CLI decides when to compact, and this draws what it said.
    * NOTHING IS WIPED — unlike a reset, the history above stays on screen, and
-   * the summary that follows on the wire is dropped by `deriveIntents` (#1026),
+   * the summary that follows on the wire is dropped by the derivation (#1026),
    * so it never becomes a prompt. Counts the engine did not send are left off
    * the mark, and the divider still draws (fail-open).
    *
    * After a restart the same divider comes from the transcript's
-   * `compact_boundary` line, through `hydrate` and the same `deriveIntents`
-   * every transcript reader runs; this is the live half only.
+   * `compact_boundary` line, through `hydrate` and the same derivation every
+   * transcript reader runs; this is the live half only.
    */
   private onCompaction(sessionId: string, ev: CompactionEvent): void {
     const s = this.ensure(sessionId);
@@ -908,8 +927,9 @@ export class StreamFeed {
    * addressable by session find (#458) from the instant it opens rather than
    * only once the message supersedes it — which for a long Bash call is the
    * whole of it. The message's own derivation sets the identical value
-   * (`blocks.ts`). Absent fails open: no `srcId` until the message lands, and
-   * the alignment still has every other anchor in the window. (For Claude the
+   * (`providers/claude-transcript.ts`). Absent fails open: no `srcId` until
+   * the message lands, and the alignment still has every other anchor in the
+   * window. (For Claude the
    * id is INFERRED from the streaming shape, not measured — see the
    * translator.)
    */

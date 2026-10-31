@@ -305,7 +305,7 @@ export interface FakeStreamHost {
 // EVERY call carries an `id`, including the three whose results never come
 // back. The real API never emits a `tool_use` without one, and a fake that
 // omitted them could not stitch a result onto more than one block even if a
-// test wanted it to — `blocks.ts` keys `toolUseId` off exactly this field.
+// test wanted it to — `claude-transcript.ts` keys `toolUseId` off exactly this field.
 // A fake missing something the real thing does is a fake that hides a bug.
 const DEFAULT_TOOL_CALLS: FakeToolCall[] = [
   {
@@ -460,7 +460,7 @@ export class FakeStreamProtocol {
    * that message through to both places we read it: the JSONL line and the
    * stream (the VS Code extension's own transcript→stream converter copies
    * `message` verbatim). Session find joins the file to the view on exactly
-   * that field for prose blocks (`blocks.ts` → `srcId`, #458), so a fake that
+   * that field for prose blocks (`claude-transcript.ts` → `srcId`, #458), so a fake that
    * omitted it left half that join with no end-to-end proof — the same
    * "a fake missing something the real thing does is a fake that hides a bug"
    * this file already argues for tool_use ids.
@@ -1119,7 +1119,7 @@ export class FakeStreamProtocol {
     // diff panes, a plain tool row, the TodoWrite checklist — existed only on
     // the transcript path at e2e level, because nothing on this transport ever
     // emitted a `tool_use`. `!perm` raises a control_request, which is a
-    // question, not a rendered block. So the whole of `blocks.ts`' rich half
+    // question, not a rendered block. So the whole of the derivation's rich half
     // was reachable from a JSONL file and from no stream anywhere.
     if (text === '!tools') {
       this.emitToolTurn();

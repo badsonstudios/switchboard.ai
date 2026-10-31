@@ -151,6 +151,17 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   check that cannot find the release list says so, and never says "you're up
   to date".
 
+### Internal
+
+- **A resumed session's history now reaches the Feed through its AI's own
+  reader.** When a Direct session resumes, switchboard replays the earlier
+  conversation into the Session view. That replay used to read Claude Code's
+  transcript format itself. Now the Claude Code adapter reads each line and
+  hands the Feed something AI-neutral, the same way the live stream already
+  worked. This is groundwork for AIs whose history is not stored the way
+  Claude Code stores it. Nothing changes on screen: a resumed Claude Code
+  session shows exactly the same history as before.
+
 ## 0.8.135 — 2026-10-28
 
 ### Fixed

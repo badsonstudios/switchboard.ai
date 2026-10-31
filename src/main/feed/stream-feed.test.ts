@@ -638,7 +638,7 @@ describe('`/clear` wipes the FIRST time (#748)', () => {
     // make a forked `--resume` id look like a clear and wipe the history it
     // just replayed. Sound, and it left a card full of replayed history
     // guaranteed to swallow its first `/clear`.
-    feed.hydrate(SID, [
+    feed.hydrateTranscript(SID, [
       { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'history' }] } },
     ]);
     expect(feed.blocks(SID)).toHaveLength(1);
@@ -863,7 +863,7 @@ describe('replaying a resumed conversation (#395)', () => {
   ];
 
   it('puts the prior conversation in the Feed before anything streams', () => {
-    expect(feed.hydrate(SID, history)).toBe(2);
+    expect(feed.hydrateTranscript(SID, history)).toBe(2);
     expect(feed.blocks(SID).map((b) => [b.kind, b.text])).toEqual([
       ['user', 'what did we decide?'],
       ['assistant', 'we decided to ship it'],
@@ -874,7 +874,7 @@ describe('replaying a resumed conversation (#395)', () => {
   });
 
   it('the live tail appends above it — no duplicate at the join, and no gap', () => {
-    feed.hydrate(SID, history);
+    feed.hydrateTranscript(SID, history);
     feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
     feed.offer(SID, {
       type: 'user',
@@ -905,7 +905,7 @@ describe('replaying a resumed conversation (#395)', () => {
   });
 
   it('replaying pushes nothing at the renderer — there is nobody there yet', () => {
-    feed.hydrate(SID, [
+    feed.hydrateTranscript(SID, [
       line('assistant', [
         { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls' } },
       ]),
@@ -922,7 +922,7 @@ describe('replaying a resumed conversation (#395)', () => {
 
   it('a thinking block left open by the old conversation is not timed against the new one', () => {
     // the resumed conversation ended mid-thought, yesterday
-    feed.hydrate(SID, [
+    feed.hydrateTranscript(SID, [
       {
         ...line('assistant', [{ type: 'thinking', thinking: 'where was I' }]),
         timestamp: new Date(Date.now() - 24 * 3600_000).toISOString(),
@@ -936,12 +936,12 @@ describe('replaying a resumed conversation (#395)', () => {
   });
 
   it('an isSidechain line replays as a sidechain, not as the main conversation', () => {
-    feed.hydrate(SID, [{ ...line('assistant', [{ type: 'text', text: 'subagent' }]), isSidechain: true }, ...history]);
+    feed.hydrateTranscript(SID, [{ ...line('assistant', [{ type: 'text', text: 'subagent' }]), isSidechain: true }, ...history]);
     expect(feed.blocks(SID).map((b) => b.sidechain)).toEqual([true, false, false]);
   });
 
   it('a tool result that was already on disk still attaches to its call', () => {
-    feed.hydrate(SID, [
+    feed.hydrateTranscript(SID, [
       line('assistant', [
         { type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'ls' } },
       ]),
@@ -951,7 +951,7 @@ describe('replaying a resumed conversation (#395)', () => {
   });
 
   it('the first system:init does NOT wipe it, even when --resume forked a new id', () => {
-    feed.hydrate(SID, history);
+    feed.hydrateTranscript(SID, history);
     // hydration must not have claimed a conversation id: the CLI's first init
     // is the only thing that may, and it is allowed to name a DIFFERENT
     // conversation than the one we asked to resume
@@ -967,7 +967,7 @@ describe('replaying a resumed conversation (#395)', () => {
     // that first turn had nothing to differ from and silently did nothing
     // (#748). The `conversation_reset` suite above owns that case; this one
     // pins that the older path still works underneath it.
-    feed.hydrate(SID, history);
+    feed.hydrateTranscript(SID, history);
     feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
     feed.offer(SID, { type: 'system', subtype: 'init', session_id: 'after-the-clear' });
     expect(feed.blocks(SID)).toEqual([]);
@@ -978,24 +978,56 @@ describe('replaying a resumed conversation (#395)', () => {
   });
 
   it('nothing to replay is an empty Feed, not an error (fail-open)', () => {
-    expect(feed.hydrate(SID, [])).toBe(0);
+    expect(feed.hydrateTranscript(SID, [])).toBe(0);
     expect(feed.blocks(SID)).toEqual([]);
   });
 
   it('refuses to replay twice — the past must not be appended onto the present', () => {
-    feed.hydrate(SID, history);
+    feed.hydrateTranscript(SID, history);
     feed.offer(SID, assistant([{ type: 'text', text: 'live' }]));
-    expect(feed.hydrate(SID, history)).toBe(0);
+    expect(feed.hydrateTranscript(SID, history)).toBe(0);
     expect(feed.blocks(SID)).toHaveLength(3);
   });
 
   it('ignores CLI-internal lines the transcript source ignores too', () => {
-    feed.hydrate(SID, [
+    feed.hydrateTranscript(SID, [
       { ...line('user', [{ type: 'text', text: 'meta' }]), isMeta: true },
       line('user', '<local-command-stdout>plumbing</local-command-stdout>'),
       line('user', [{ type: 'text', text: 'real' }]),
     ]);
     expect(feed.blocks(SID).map((b) => b.text)).toEqual(['real']);
+  });
+
+  // #1303: an entry's `derive` is the PROVIDER's code, as a live message's is.
+  // A throw costs that entry; the rest of the replay lands.
+  it('an entry whose derivation throws is skipped, never the replay (P6)', () => {
+    const lines: string[] = [];
+    const logged = new ClaudeFedFeed({
+      debug: () => {},
+      info: () => {},
+      warn: () => {},
+      error: (msg: string) => void lines.push(msg),
+      child: () => {
+        throw new Error('unused');
+      },
+    });
+    const ok = (text: string) => ({
+      origin: { sidechain: false },
+      derive: () => [{ t: 'block' as const, block: { kind: 'assistant' as const, text } }],
+    });
+    const broken = {
+      origin: { sidechain: false },
+      derive: () => {
+        throw new Error('bad reader');
+      },
+    };
+    expect(logged.hydrate(SID, [ok('before'), broken, broken, ok('after')])).toBe(2);
+    expect(logged.blocks(SID).map((b) => b.text)).toEqual(['before', 'after']);
+    // …and the live subagent path is held to the same rule
+    expect(logged.absorbSidechain(SID, broken)).toBe(true);
+    expect(logged.blocks(SID)).toHaveLength(2);
+    // said ONCE for the session, however many lines it cost
+    expect(lines).toEqual(['history entry derivation threw: entry skipped']);
   });
 });
 
@@ -1051,7 +1083,7 @@ describe('subagent lines from the transcript (#977)', () => {
   // renderer keys on them and a collision is a silent overwrite.
   it('shares the session\'s seq space rather than starting its own', () => {
     feed.offer(SID, assistant([{ type: 'text', text: 'the session speaks' }]));
-    feed.absorbSidechain(SID, subLine('the agent speaks'), origin);
+    feed.absorbTranscriptLine(SID, subLine('the agent speaks'), origin);
     feed.offer(SID, assistant([{ type: 'text', text: 'the session again' }]));
 
     const blocks = feed.blocks(SID);
@@ -1069,7 +1101,7 @@ describe('subagent lines from the transcript (#977)', () => {
 
   it('stamps the origin, which is what the caption and the grouping read', () => {
     known();
-    feed.absorbSidechain(SID, subLine('agent'), origin);
+    feed.absorbTranscriptLine(SID, subLine('agent'), origin);
     const b = feed.blocks(SID)[1];
     expect(b.sidechain).toBe(true);
     expect(b.agentId).toBe('aaaaaa11');
@@ -1081,13 +1113,13 @@ describe('subagent lines from the transcript (#977)', () => {
   // them in the watcher's buffer, which that channel never reads.
   it('lands in the BACKLOG, not only on the live push', () => {
     known();
-    feed.absorbSidechain(SID, subLine('agent'), origin);
+    feed.absorbTranscriptLine(SID, subLine('agent'), origin);
     expect(feed.blocks(SID).map((b) => b.text)).toEqual(['the session speaks', 'agent']);
   });
 
   it('after a replay, it continues the replayed history rather than colliding with it', () => {
-    feed.hydrate(SID, [mainLine('old prompt'), mainLine('old reply')]);
-    feed.absorbSidechain(SID, subLine('agent'), origin);
+    feed.hydrateTranscript(SID, [mainLine('old prompt'), mainLine('old reply')]);
+    feed.absorbTranscriptLine(SID, subLine('agent'), origin);
     const blocks = feed.blocks(SID);
     expect(blocks.map((b) => b.text)).toEqual(['old prompt', 'old reply', 'agent']);
     expect(new Set(blocks.map((b) => b.seq)).size).toBe(3);
@@ -1097,7 +1129,7 @@ describe('subagent lines from the transcript (#977)', () => {
   // subagent output anybody is waiting for, and creating state for it here would
   // leak an entry per stray line.
   it('answers false for a session it has never heard of, and creates nothing', () => {
-    expect(feed.absorbSidechain('never-seen', subLine('agent'), origin)).toBe(false);
+    expect(feed.absorbTranscriptLine('never-seen', subLine('agent'), origin)).toBe(false);
     expect(feed.blocks('never-seen')).toEqual([]);
   });
 });
@@ -1297,7 +1329,7 @@ describe('a compaction on the stream (#1026)', () => {
       isSidechain: false,
       ...more,
     });
-    feed.hydrate(
+    feed.hydrateTranscript(
       SID,
       [
         at('2026-10-18T10:00:00.000Z', { type: 'system', subtype: 'compact_boundary', compactMetadata: { trigger: 'auto' } }),
@@ -1354,7 +1386,7 @@ describe('a compaction on the stream (#1026)', () => {
       isSidechain: false,
       ...more,
     });
-    feed.hydrate(SID, [
+    feed.hydrateTranscript(SID, [
       line({ type: 'user', message: { role: 'user', content: 'first question' } }),
       line({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'first answer' }] } }),
       line({
@@ -1408,7 +1440,7 @@ describe('the AI-switch divider (#1294)', () => {
 
   it('lands in replayed history WHERE THE SWITCH HAPPENED, by time', () => {
     const at = '2026-10-16T10:30:00.000Z';
-    feed.hydrate(
+    feed.hydrateTranscript(
       SID,
       [said('before the switch', '2026-10-16T10:00:00.000Z'), said('after coming back', '2026-10-16T11:00:00.000Z')],
       { markers: [{ at: Date.parse(at), block: mark(at) }] }
@@ -1418,12 +1450,12 @@ describe('the AI-switch divider (#1294)', () => {
 
   it('a switch after the last entry lands at the bottom — and with no history at all, alone', () => {
     const at = '2026-10-16T12:00:00.000Z';
-    feed.hydrate(SID, [said('the last thing', '2026-10-16T10:00:00.000Z')], {
+    feed.hydrateTranscript(SID, [said('the last thing', '2026-10-16T10:00:00.000Z')], {
       markers: [{ at: Date.parse(at), block: mark(at) }],
     });
     expect(shape()).toEqual(['the last thing', `divider ${at}`]);
     const other = new ClaudeFedFeed();
-    other.hydrate('s2', [], { markers: [{ at: Date.parse(at), block: mark(at) }] });
+    other.hydrateTranscript('s2', [], { markers: [{ at: Date.parse(at), block: mark(at) }] });
     expect(other.blocks('s2').map((b) => b.kind)).toEqual(['ai-switch']);
   });
 

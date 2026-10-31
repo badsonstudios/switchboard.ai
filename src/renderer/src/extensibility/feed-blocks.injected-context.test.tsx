@@ -10,7 +10,7 @@
 // the renderer never decides what is injected. It draws the ranges main put on
 // the block, and main puts them there only for a ref it minted — which is pinned
 // in `shared/injected-context.test.ts`, `main/feed/context-refs.test.ts` and
-// `main/feed/blocks.test.ts`. The one case that IS here is the consequence: a
+// `main/providers/claude-transcript.test.ts`. The one case that IS here is the consequence: a
 // block with no ranges renders as plain text, marker prose and all.
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { act } from 'react';
