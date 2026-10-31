@@ -151,6 +151,15 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   check that cannot find the release list says so, and never says "you're up
   to date".
 
+### Fixed
+
+- **Typing a search in History and pressing Enter straight away opens the top
+  match.** In a session's **History** window, if the mouse had last rested on a
+  lower row, typing a few letters and pressing Enter quickly could do nothing
+  at all, or open a lower row instead of the first match.
+  The highlight now jumps to the first matching row the moment you type, so
+  Enter always opens the row that is highlighted at the top.
+
 ### Internal
 
 - **A resumed session's history now reaches the Feed through its AI's own

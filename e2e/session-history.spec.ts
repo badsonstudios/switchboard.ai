@@ -128,6 +128,12 @@ test.describe('session history (#836)', () => {
     // ── a pick made with the KEYBOARD, and an Enter too many ────────────────
     const search = w.locator('[data-history-search]');
     await expect(search).toBeFocused();
+    // ⚠️ TYPED AND ENTERED BACK TO BACK, WITH THE POINTER STILL ON ROW 2 (#1320).
+    // The click above left the highlight on the second row of the unfiltered
+    // list; this query leaves one row. The highlight used to be reset to the top
+    // one render AFTER the shorter list appeared, and an Enter landing in that
+    // gap read past the end of the list and was dropped — the confirm below
+    // never came. No wait goes between these two lines: the gap is the bug.
     await search.fill(TITLE.slice(0, 6));
     await w.keyboard.press('Enter');
     await expect(ask).toBeVisible({ timeout: 15_000 });
