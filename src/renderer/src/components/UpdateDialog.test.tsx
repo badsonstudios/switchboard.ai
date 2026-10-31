@@ -208,13 +208,13 @@ describe('the two faces a MANUAL check can produce', () => {
   });
 
   it('says WHICH kind of "could not check" — the point of distinguishing them', async () => {
-    // The checker goes to real trouble to tell a missing credential apart from
-    // an unreachable host (the 404-means-auth decision). Collapsing them here
-    // would give the likeliest failure on any machine but the maintainer's the
-    // wrong advice: "try again later" never fixes "there is no token".
+    // The checker goes to real trouble to tell a refused credential, an
+    // anonymous ask that found nothing (#1495) and an unreachable host apart.
+    // Collapsing them here would give the wrong advice: "try again later"
+    // never fixes a release list that is not there.
     const cases: Array<[string, string]> = [
-      ['no-token', en.update.unavailableNoToken],
       ['auth', en.update.unavailableAuth],
+      ['no-access', en.update.unavailableNoAccess],
       ['rate-limit', en.update.unavailableRateLimit],
       ['network', en.update.unavailableBody],
       ['bad-response', en.update.unavailableBody],
@@ -322,7 +322,6 @@ describe('the install faces (E19-04)', () => {
       // apart, because reporting the first as the second was the whole defect.
       ['no-offer', en.update.failedNoOffer],
       ['unsupported', en.update.failedUnsupported],
-      ['no-token', en.update.failedNoToken],
       ['auth', en.update.failedAuth],
       ['disk', en.update.failedDisk],
       ['launch', en.update.failedLaunch],

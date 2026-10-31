@@ -27,19 +27,20 @@ import { Markdown } from '../lib/markdown';
  * The checker goes to real trouble to tell a missing credential apart from an
  * unreachable host (§E19 decision 5 is the whole reason the endpoint is what it
  * is), and dropping that distinction here would waste it at the one place a
- * human ever looks. While the check requires a token (#1495), "no credentials"
- * is the LIKELY case on any machine without `gh` signed in, and "try again
- * later" is wrong advice for it.
+ * human ever looks. Since #1495 a machine with no token asks anonymously, so
+ * there is no "no credentials" sentence any more: `auth` is a token that was
+ * turned down, and `no-access` is an anonymous ask that could not find the
+ * list at all. Neither is "try again later".
  *
  * Every variant stays in the same gentle register: nothing here is the user's
  * fault, and nothing here is broken.
  */
 function unavailableKey(reason: UpdateStatus['result']['reason']): string {
   switch (reason) {
-    case 'no-token':
-      return 'update.unavailableNoToken';
     case 'auth':
       return 'update.unavailableAuth';
+    case 'no-access':
+      return 'update.unavailableNoAccess';
     case 'rate-limit':
       return 'update.unavailableRateLimit';
     default:
@@ -70,8 +71,6 @@ function installFailureKey(reason: UpdateInstallStatus['reason']): string {
       return 'update.failedNoOffer';
     case 'unsupported':
       return 'update.failedUnsupported';
-    case 'no-token':
-      return 'update.failedNoToken';
     case 'auth':
       return 'update.failedAuth';
     case 'disk':

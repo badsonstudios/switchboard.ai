@@ -4,8 +4,9 @@
 // THE RULE, borrowed from ClaudeMon and non-negotiable: **never embed a token
 // in the shipped app.** The repo was private when this was written, so the
 // check needed credentials — and the only acceptable credentials are ones
-// already on the machine. (It is public now, #1494; whether the check still
-// needs one at all is #1495.)
+// already on the machine. It is public now (#1494), so since #1495 a token is
+// an UPGRADE, not a requirement: 5,000 requests an hour instead of 60, and a
+// check that keeps working if the repo ever goes private again.
 //
 // The resolution order is an ORDERED SEAM, deliberately, so that adding a
 // source later is one entry in the array and not a rewrite:
@@ -19,8 +20,9 @@
 //   2. `gh auth token` — zero setup on Dan's machines, and the CLI already
 //      holds exactly the scope this needs. `gh` may not be installed: that is
 //      an ordinary outcome, not an error.
-//   3. nothing. Checks are silently disabled, and the app behaves exactly as
-//      it did before this feature existed.
+//   3. nothing. The update check and download then ask ANONYMOUSLY (#1495);
+//      they used to switch themselves off here. The problem reporter still
+//      needs one to file directly, and falls back to the browser without.
 //
 // Nothing here throws, and nothing here logs the token.
 import { execFile } from 'child_process';

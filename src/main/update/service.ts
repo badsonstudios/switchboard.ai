@@ -69,6 +69,8 @@ export interface UpdateServiceDeps {
    * which is the whole of #856: without it, a token the user pasted into
    * Help ▸ Report a problem… filed issues successfully while update checks went
    * on reporting that this machine has no credentials for the release list.
+   * (Since #1495 no token means an anonymous check, not none; a token is still
+   * preferred when one resolves.)
    *
    * It is also the seam that keeps a unit test off the machine's real `gh`.
    */

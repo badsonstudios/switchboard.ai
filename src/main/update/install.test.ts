@@ -243,10 +243,67 @@ describe('the refusals — every one of them fail-open', () => {
     expect(h.download).not.toHaveBeenCalled();
   });
 
-  it('refuses when no token can be resolved, rather than downloading anonymously', async () => {
+  it('downloads ANONYMOUSLY when no token can be resolved (#1495 — the repo is public)', async () => {
+    const texts: Array<{ token?: string | null }> = [];
+    const h = make({
+      skipToken: false,
+      tokenSources: [],
+      fetchTextImpl: async (o: { token?: string | null }) => {
+        texts.push(o);
+        return 'sidecar-text';
+      },
+    });
+    const final = await h.installer.install(offer());
+    expect(final.phase).toBe('launching');
+    expect(final.reason).toBeUndefined();
+    expect(h.download).toHaveBeenCalledTimes(1);
+    expect(h.download).toHaveBeenCalledWith(expect.objectContaining({ token: null }));
+    expect(texts).toEqual([expect.objectContaining({ token: null })]);
+  });
+
+  it('a token REFUSED for the installer is retried once without it, sidecar included', async () => {
+    const texts: Array<{ token?: string | null }> = [];
+    const h = make({
+      skipToken: false,
+      tokenSources: [{ id: 'credential-store', resolve: async () => 'ghp_stale' }],
+      fetchTextImpl: async (o: { token?: string | null }) => {
+        texts.push(o);
+        return 'sidecar-text';
+      },
+    });
+    const real = h.download.getMockImplementation()!;
+    h.download.mockImplementationOnce(async () => {
+      throw new DownloadError('auth', 'bad credentials');
+    });
+    h.download.mockImplementation(real);
+    const final = await h.installer.install(offer());
+    expect(final.phase).toBe('launching');
+    expect(h.download.mock.calls.map((c) => (c[0] as { token: unknown }).token)).toEqual([
+      'ghp_stale',
+      null,
+    ]);
+    expect(texts).toEqual([expect.objectContaining({ token: null })]);
+  });
+
+  it('an anonymous refusal is NOT retried — there is nothing left to drop', async () => {
     const h = make({ skipToken: false, tokenSources: [] });
-    expect(await h.installer.install(offer())).toMatchObject({ reason: 'no-token' });
-    expect(h.download).not.toHaveBeenCalled();
+    h.download.mockImplementation(async () => {
+      throw new DownloadError('auth', 'not found');
+    });
+    expect(await h.installer.install(offer())).toMatchObject({ phase: 'failed', reason: 'auth' });
+    expect(h.download).toHaveBeenCalledTimes(1);
+  });
+
+  it('a token download that fails for any OTHER reason is not retried', async () => {
+    const h = make({
+      skipToken: false,
+      tokenSources: [{ id: 'credential-store', resolve: async () => 'ghp_ok' }],
+    });
+    h.download.mockImplementation(async () => {
+      throw new DownloadError('network', 'reset');
+    });
+    expect(await h.installer.install(offer())).toMatchObject({ reason: 'network' });
+    expect(h.download).toHaveBeenCalledTimes(1);
   });
 
   it('downloads with the token the credential store answered (#856)', async () => {
@@ -441,7 +498,7 @@ describe('the stale offer — pressing Update on a release that is gone (#315)',
       { ...base, ok: true, state: 'up-to-date' },
       { ...base, ok: false, state: 'failed', reason: 'network' },
       { ...base, ok: false, state: 'failed', reason: 'auth' },
-      { ...base, ok: false, state: 'disabled', reason: 'no-token' },
+      { ...base, ok: false, state: 'disabled', reason: 'auto-check-off' },
     ];
     for (const result of states) {
       const decision = resolveOffer(result);

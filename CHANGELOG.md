@@ -140,6 +140,17 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.136 — unreleased
 
+### Changed
+
+- **Update checks work without a GitHub sign-in.** The project's releases are
+  public now, so switchboard.ai checks for new versions, and downloads them, on
+  any computer — no token and no GitHub command-line tool needed. Before, a
+  machine without either quietly never heard about a new release. If you are
+  signed in, that sign-in is still used (GitHub allows it far more checks an
+  hour), and if GitHub turns it down the check tries once more without it. A
+  check that cannot find the release list says so, and never says "you're up
+  to date".
+
 ## 0.8.135 — 2026-10-28
 
 ### Fixed

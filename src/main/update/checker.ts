@@ -1,16 +1,14 @@
 // The update check itself (P2-E19-03, plan §E19).
 //
-// One function, one network call, one plain result record — the `preflight.ts`
-// shape. It reports facts; what to DO about them is `service.ts`, and what the
-// user reads is the renderer's.
+// One function, one network call (two at most — see "a refused token" below),
+// one plain result record — the `preflight.ts` shape. It reports facts; what
+// to DO about them is `service.ts`, and what the user reads is the renderer's.
 //
 // ── THE ONE HARD PROBLEM, and why the endpoint is what it is ────────────────
 //
-// The repo was PRIVATE when this was written (it is public now — #1494; whether
-// the check still needs a token at all is #1495). On a private repo GitHub
-// answers **404** both for "you may not see this repo" and for "this repo has
-// no `latest` release", and ClaudeMon's checker —
-// which asked `/releases/latest` anonymously — read that 404 as "no releases,
+// The repo was PRIVATE when this was written (it is public now — #1494). On a
+// private repo GitHub answers **404** both for "you may not see this repo" and
+// for "this repo has no `latest` release", and ClaudeMon's checker — which asked `/releases/latest` anonymously — read that 404 as "no releases,
 // you're up to date" and would have said so forever (plan §E19 decision 5).
 //
 // So we do not ask that question. We ask `GET /repos/{owner}/{repo}/releases`,
@@ -18,11 +16,32 @@
 //
 //   • **200 with `[]`** — we can see the repo, and it has no releases yet.
 //     That is honestly "nothing to offer".
-//   • **404** — we cannot see the repo at all. That is an AUTH problem, and it
-//     is reported as one. Never as up to date.
+//   • **404** — we cannot see the repo at all. With a token, that is an AUTH
+//     problem, and it is reported as one. Never as up to date.
 //
 // The list endpoint costs one extra decision (pick `latest` ourselves, below)
 // and buys the distinction the item's done-when asks for.
+//
+// ── token first, anonymous otherwise (#1495) ────────────────────────────────
+//
+// The repo is public, so the list can be read with no credentials at all
+// (60 requests an hour per IP; automatic checks are once a day). A token, when
+// one resolves locally, is still sent: it raises that to 5,000 and keeps the
+// check working if the repo ever goes private again. With no token the check
+// asks ANONYMOUSLY — it used to switch itself off, which meant nobody without
+// `gh` signed in ever heard about a release.
+//
+// An anonymous 404 cannot be an auth problem — there were no credentials to be
+// wrong. It means the repo is gone or private again, and it is reported as its
+// own reason, `no-access`. Still never "up to date": decision 5's rule is about
+// what a 404 must not be read as, and that holds on both paths.
+//
+// **A refused token** (401, or a 403 that is not a rate limit) is retried ONCE
+// without it. A stale token pasted months ago must not switch updates off on a
+// public repo — fail-open. A token 404 is not retried: on a public repo a token
+// sees everything anonymous does, so the retry could only burn the shared
+// anonymous budget. If the anonymous retry cannot see the list either, the
+// answer is `auth` — the refused token is the thing the user can act on.
 //
 // ── what this may talk to ───────────────────────────────────────────────────
 //
@@ -114,7 +133,7 @@ function fail(
  * Ask the feed whether there is a newer build. Never throws.
  *
  * The result is a record in every case, including the ones that are nobody's
- * fault: no token, no network, no releases.
+ * fault: no network, no releases, a repo that cannot be seen.
  */
 export async function checkForUpdate(deps: CheckDeps): Promise<UpdateCheckResult> {
   const now = deps.now ?? (() => new Date());
@@ -133,14 +152,61 @@ export async function checkForUpdate(deps: CheckDeps): Promise<UpdateCheckResult
   if (!deps.skipToken) {
     const resolved = await resolveUpdateToken(deps.tokenSources);
     token = resolved.token;
-    if (!token) {
-      // THE done-when, verbatim: with no token the app behaves identically to
-      // today — no dialog, no error, ONE debug line.
-      deps.log?.('update check disabled: no token could be resolved locally');
-      return fail(currentVersion, checkedAt, 'disabled', 'no-token');
-    }
+    // #1495: no token is no longer "checks off". The repo is public; ask
+    // without one. One debug line, so the log says which way it went.
+    if (!token) deps.log?.('update check: no token resolved locally; asking anonymously');
   }
 
+  const first = await ask(endpoint, token, doFetch, deps);
+  if (first.kind === 'refused' && first.retryAnonymously) {
+    deps.log?.('update check: the token was refused; retrying once without it', {
+      status: first.status,
+    });
+    const second = await ask(endpoint, null, doFetch, deps);
+    if (second.kind === 'refused') {
+      // Anonymous cannot see it either — `no-access` would blame the repo, but
+      // the actionable fact is the token GitHub turned down.
+      const reason = second.reason === 'no-access' ? 'auth' : second.reason;
+      return fail(currentVersion, checkedAt, 'failed', reason);
+    }
+    return finish(second, currentVersion, checkedAt, deps);
+  }
+  return finish(first, currentVersion, checkedAt, deps);
+}
+
+/** One request's outcome, before it becomes a result record. */
+type Answer =
+  | { kind: 'list'; body: GithubRelease[] }
+  | { kind: 'failed'; reason: UpdateFailureReason }
+  | {
+      kind: 'refused';
+      status: number;
+      reason: UpdateFailureReason;
+      /** a token was sent and GitHub turned IT down (401, non-rate-limit 403) */
+      retryAnonymously: boolean;
+    };
+
+function finish(
+  a: Answer,
+  currentVersion: string,
+  checkedAt: string,
+  deps: CheckDeps
+): UpdateCheckResult {
+  if (a.kind === 'list') return decide(a.body, currentVersion, checkedAt, deps);
+  return fail(currentVersion, checkedAt, 'failed', a.reason);
+}
+
+/**
+ * One GET of the release list, with `token` or — when it is null — with no
+ * credentials at all. Never throws.
+ */
+async function ask(
+  endpoint: string,
+  token: string | null,
+  doFetch: typeof fetch,
+  deps: CheckDeps
+): Promise<Answer> {
+  const currentVersion = deps.currentVersion;
   const headers: Record<string, string> = {
     accept: 'application/vnd.github+json',
     'x-github-api-version': '2022-11-28',
@@ -167,13 +233,23 @@ export async function checkForUpdate(deps: CheckDeps): Promise<UpdateCheckResult
       res = await doFetch(endpoint, { headers, signal: abort.signal, redirect: 'follow' });
     } catch (err) {
       deps.log?.('update check could not reach the release host', { error: errorText(err) });
-      return fail(currentVersion, checkedAt, 'failed', 'network');
+      return { kind: 'failed', reason: 'network' };
     }
 
     if (!res.ok) {
-      const reason = statusReason(res);
-      deps.log?.('update check refused by the release host', { status: res.status, reason });
-      return fail(currentVersion, checkedAt, 'failed', reason);
+      const authenticated = token !== null;
+      const reason = statusReason(res, authenticated);
+      deps.log?.('update check refused by the release host', {
+        status: res.status,
+        reason,
+        authenticated,
+      });
+      // Nothing in a refusal is worth reading, and a retry may follow: let the
+      // socket go rather than leave it held by an unread body.
+      Promise.resolve(res.body?.cancel?.()).catch(() => {});
+      const refusedToken =
+        authenticated && (res.status === 401 || (res.status === 403 && reason !== 'rate-limit'));
+      return { kind: 'refused', status: res.status, reason, retryAnonymously: refusedToken };
     }
 
     let body: unknown;
@@ -183,13 +259,13 @@ export async function checkForUpdate(deps: CheckDeps): Promise<UpdateCheckResult
       // An aborted body read lands here too, which is right: a feed that stops
       // mid-answer told us nothing usable.
       deps.log?.('update check got a response it could not read', { error: errorText(err) });
-      return fail(currentVersion, checkedAt, 'failed', 'bad-response');
+      return { kind: 'failed', reason: 'bad-response' };
     }
     if (!Array.isArray(body)) {
       deps.log?.('update check got a non-list from the releases endpoint');
-      return fail(currentVersion, checkedAt, 'failed', 'bad-response');
+      return { kind: 'failed', reason: 'bad-response' };
     }
-    return decide(body as GithubRelease[], currentVersion, checkedAt, deps);
+    return { kind: 'list', body: body as GithubRelease[] };
   } finally {
     clearTimeout(timer);
   }
@@ -263,18 +339,34 @@ function eligible(r: GithubRelease, channel: ChannelOpts): r is GithubRelease & 
 /**
  * Which failure a non-2xx is.
  *
- * **404 is `auth`** — the whole point (decision 5). 401/403 are the same
- * family; a 403 with the rate-limit counter at zero is the one case worth
- * telling apart, because "ask again tomorrow" is genuinely different advice
- * from "your token cannot see this repo".
+ * **With a token, 404 is `auth`** — the whole point (decision 5). 401/403 are
+ * the same family; a 403 with the rate-limit counter at zero is the one case
+ * worth telling apart, because "ask again tomorrow" is genuinely different
+ * advice from "your token cannot see this repo".
+ *
+ * **Without one (#1495)**, 401/403/404 are `no-access`: there were no
+ * credentials to be wrong, so the repo is gone or private again. A rate limit
+ * is far likelier here — 60 an hour, shared by everything on this IP.
+ *
+ * On EITHER path GitHub's secondary limit answers 403 with `retry-after`
+ * rather than a zero counter, so that counts as a rate limit too. On the token
+ * path that matters twice: read as `auth`, it would trigger the anonymous
+ * retry, spending the smaller budget on a request GitHub just said to slow
+ * down, and then blame the token.
  */
-export function statusReason(res: {
-  status: number;
-  headers: { get(name: string): string | null };
-}): UpdateFailureReason {
+export function statusReason(
+  res: {
+    status: number;
+    headers: { get(name: string): string | null };
+  },
+  authenticated = true
+): UpdateFailureReason {
   if (res.status === 429) return 'rate-limit';
   if (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0') return 'rate-limit';
-  if (res.status === 401 || res.status === 403 || res.status === 404) return 'auth';
+  if (res.status === 403 && res.headers.get('retry-after') !== null) return 'rate-limit';
+  if (res.status === 401 || res.status === 403 || res.status === 404) {
+    return authenticated ? 'auth' : 'no-access';
+  }
   return 'bad-response';
 }
 

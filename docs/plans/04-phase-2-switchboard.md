@@ -1535,6 +1535,24 @@ forever.** Decisions:
    means *missing/insufficient auth* and must be reported as such internally
    (still silent to the user on automatic checks) — never "up to date".
 
+> **AMENDMENT 2026-10-31 (#1495) — the repo is public; a token is an upgrade,
+> not a requirement.** Decision 1's resolution order stands, but its last step
+> changes: *"→ **disabled, silently** (fail-open: no token means no update
+> checks …)"* now reads **→ ask anonymously**. The release list and the API
+> asset URLs answer without credentials (60 requests/hr per IP; checks are
+> daily), so a machine without `gh` signed in now hears about releases and can
+> download them. A token that resolves is still sent first (5,000/hr, and it
+> survives the repo going private again); a token GitHub REFUSES (401, or a
+> non-rate-limit 403) is retried once anonymously. The download follows the
+> same first-hop (`api.github.com` only) and redirect (absolute https) rules
+> with or without a token. Decision 5 stands for the token path (404 = `auth`,
+> never up to date) and a token 404 is not retried. An anonymous 404 is a new
+> reason, `no-access` — the repo is gone or private again — also never up to
+> date; anonymous rate limits (including a 403 with `retry-after`) are
+> `rate-limit` and wait for the next daily check. `no-token` is gone from both
+> the check and install failure reasons. The P2-E19-03 done-when *"with **no
+> token the app behaves identically to today**"* is superseded by this.
+
 Work items:
 
 - **P2-E19-01 · Packaging: electron-builder + Windows installer + version and

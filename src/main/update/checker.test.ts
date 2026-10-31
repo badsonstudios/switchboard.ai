@@ -25,6 +25,28 @@ function respond(
   })) as unknown as typeof fetch;
 }
 
+/** A `fetch` that answers each call with the next of these, in order. */
+function sequence(
+  ...answers: Array<{ status: number; body?: unknown; headers?: Record<string, string> }>
+): typeof fetch & { mock: { calls: unknown[][] } } {
+  let i = 0;
+  return vi.fn(async () => {
+    const a = answers[Math.min(i++, answers.length - 1)];
+    const headers = a.headers ?? {};
+    return {
+      ok: a.status >= 200 && a.status < 300,
+      status: a.status,
+      headers: { get: (n: string) => headers[n.toLowerCase()] ?? null },
+      json: async () => a.body,
+    };
+  }) as unknown as typeof fetch & { mock: { calls: unknown[][] } };
+}
+
+/** The `authorization` header each call carried, in order. */
+function authHeaders(f: { mock: { calls: unknown[][] } }): Array<string | undefined> {
+  return f.mock.calls.map((c) => (c[1] as { headers: Record<string, string> }).headers.authorization);
+}
+
 function release(tag: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     tag_name: tag,
@@ -83,6 +105,23 @@ describe('statusReason', () => {
     for (const status of [401, 403, 404]) {
       expect(statusReason({ status, headers: h() })).toBe('auth');
     }
+  });
+
+  it('ANONYMOUSLY, the same family is no-access — there were no credentials to be wrong (#1495)', () => {
+    for (const status of [401, 403, 404]) {
+      expect(statusReason({ status, headers: h() }, false)).toBe('no-access');
+    }
+  });
+
+  it('ANONYMOUSLY, a secondary rate limit (403 + retry-after) is a rate limit', () => {
+    expect(statusReason({ status: 403, headers: h({ 'retry-after': '60' }) }, false)).toBe(
+      'rate-limit'
+    );
+    expect(
+      statusReason({ status: 403, headers: h({ 'x-ratelimit-remaining': '0' }) }, false)
+    ).toBe('rate-limit');
+    expect(statusReason({ status: 429, headers: h() }, false)).toBe('rate-limit');
+    expect(statusReason({ status: 500, headers: h() }, false)).toBe('bad-response');
   });
 
   it('tells an exhausted rate limit apart from a bad token', () => {
@@ -168,9 +207,9 @@ describe('checkForUpdate — the happy path', () => {
   });
 });
 
-describe('checkForUpdate — fail-open, always a record', () => {
-  it('with NO token: disabled, one debug line, and nothing on the network', async () => {
-    const f = vi.fn();
+describe('checkForUpdate — anonymous when there is no token (#1495)', () => {
+  it('with NO token it still asks — anonymously, with no Authorization header', async () => {
+    const f = sequence({ status: 200, body: [release('v0.2.0')] });
     const log = vi.fn();
     const r = await checkForUpdate({
       currentVersion: '0.1.0',
@@ -178,11 +217,100 @@ describe('checkForUpdate — fail-open, always a record', () => {
       tokenSources: noToken,
       log,
     });
-    expect(r.state).toBe('disabled');
-    expect(r.reason).toBe('no-token');
-    expect(f).not.toHaveBeenCalled();
-    expect(log).toHaveBeenCalledTimes(1);
+    expect(r.state).toBe('available');
+    expect(r.latestVersion).toBe('0.2.0');
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(authHeaders(f)).toEqual([undefined]);
+    const init = f.mock.calls[0][1] as { headers: Record<string, string> };
+    // the headers GitHub requires go anonymously too
+    expect(init.headers['user-agent']).toContain('switchboard.ai/');
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('anonymously'));
   });
+
+  it('an anonymous 404 is no-access — NEVER up to date (decision 5, public-repo edition)', async () => {
+    const r = await checkForUpdate({
+      currentVersion: '0.1.0',
+      fetchImpl: sequence({ status: 404, body: { message: 'Not Found' } }),
+      tokenSources: noToken,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.state).toBe('failed');
+    expect(r.reason).toBe('no-access');
+    expect(r.state).not.toBe('up-to-date');
+  });
+
+  it('an anonymous rate limit is rate-limit, and is asked exactly once', async () => {
+    const f = sequence({ status: 403, headers: { 'x-ratelimit-remaining': '0' } });
+    const r = await checkForUpdate({ currentVersion: '0.1.0', fetchImpl: f, tokenSources: noToken });
+    expect(r.state).toBe('failed');
+    expect(r.reason).toBe('rate-limit');
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it('a token, when one resolves, is still used first — and only one request is made', async () => {
+    const f = sequence({ status: 200, body: [] });
+    await checkForUpdate({ currentVersion: '0.1.0', fetchImpl: f, tokenSources: token });
+    expect(authHeaders(f)).toEqual(['Bearer ghp_test']);
+  });
+
+  it('a REFUSED token (401) is retried once without it, and that answer is used', async () => {
+    const f = sequence(
+      { status: 401, body: { message: 'Bad credentials' } },
+      { status: 200, body: [release('v0.2.0')] }
+    );
+    const r = await checkForUpdate({ currentVersion: '0.1.0', fetchImpl: f, tokenSources: token });
+    expect(authHeaders(f)).toEqual(['Bearer ghp_test', undefined]);
+    expect(r.state).toBe('available');
+    expect(r.latestVersion).toBe('0.2.0');
+  });
+
+  it('a non-rate-limit 403 on the token is retried anonymously too', async () => {
+    const f = sequence({ status: 403, headers: { 'x-ratelimit-remaining': '4999' } }, {
+      status: 200,
+      body: [],
+    });
+    const r = await checkForUpdate({ currentVersion: '0.1.0', fetchImpl: f, tokenSources: token });
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(r.state).toBe('up-to-date');
+  });
+
+  it('refused, then not found anonymously: auth — the token is what the user can fix', async () => {
+    const f = sequence({ status: 401 }, { status: 404 });
+    const r = await checkForUpdate({ currentVersion: '0.1.0', fetchImpl: f, tokenSources: token });
+    expect(f).toHaveBeenCalledTimes(2);
+    expect(r.state).toBe('failed');
+    expect(r.reason).toBe('auth');
+  });
+
+  it('refused, then rate-limited anonymously: rate-limit', async () => {
+    const f = sequence({ status: 401 }, { status: 429 });
+    const r = await checkForUpdate({ currentVersion: '0.1.0', fetchImpl: f, tokenSources: token });
+    expect(r.reason).toBe('rate-limit');
+  });
+
+  it('a token 404 is NOT retried — decision 5 holds on the token path', async () => {
+    const f = sequence({ status: 404 }, { status: 200, body: [] });
+    const r = await checkForUpdate({ currentVersion: '0.1.0', fetchImpl: f, tokenSources: token });
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(r.reason).toBe('auth');
+  });
+
+  it('a token SECONDARY rate limit (403 + retry-after) is a rate limit, not a refused token', async () => {
+    const f = sequence({ status: 403, headers: { 'retry-after': '60' } }, { status: 404 });
+    const r = await checkForUpdate({ currentVersion: '0.1.0', fetchImpl: f, tokenSources: token });
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(r.reason).toBe('rate-limit');
+  });
+
+  it('a token rate limit is NOT retried anonymously — that budget is smaller, not larger', async () => {
+    const f = sequence({ status: 403, headers: { 'x-ratelimit-remaining': '0' } });
+    const r = await checkForUpdate({ currentVersion: '0.1.0', fetchImpl: f, tokenSources: token });
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(r.reason).toBe('rate-limit');
+  });
+});
+
+describe('checkForUpdate — fail-open, always a record', () => {
 
   it('a throwing fetch (offline, DNS, TLS) becomes a network failure', async () => {
     const r = await checkForUpdate({
@@ -262,8 +390,8 @@ describe('checkForUpdate — fail-open, always a record', () => {
         },
       ],
     });
-    expect(r.state).toBe('disabled');
-    expect(r.reason).toBe('no-token');
+    // #1495: a source with no token means an anonymous ask, not checks off
+    expect(r.state).toBe('up-to-date');
   });
 
   it('stamps every result with the version it compared against', async () => {
