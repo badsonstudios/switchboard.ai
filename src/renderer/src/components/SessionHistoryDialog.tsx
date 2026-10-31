@@ -196,6 +196,7 @@ export function SessionHistoryDialog(props: {
     // (rather than unmounting, which is the only reason it worked) came back
     // permanently blank. Freshness belongs to whatever opens it.
     setAnswer(null);
+    setSelected(0);
     void window.switchboard.transcripts
       .history({ scope, folder: props.folder })
       .then((a) => {
@@ -203,6 +204,7 @@ export function SessionHistoryDialog(props: {
         // #440: a refused channel resolves a TRUTHY brand, so reading `a`
         // directly would show the refusal object as if it were a listing.
         setAnswer(answered(a) ?? { status: 'unknown', reason: t('sessionHistory.openFailed') });
+        setSelected(0);
       })
       .catch(() => {
         if (live) setAnswer({ status: 'unknown', reason: t('sessionHistory.openFailed') });
@@ -259,10 +261,19 @@ export function SessionHistoryDialog(props: {
     setScope('folder');
   }, [props.open]);
 
-  // A fresh query never parks the selection past the end of the shorter list.
-  React.useEffect(() => {
+  // A FRESH LIST STARTS AT ITS TOP, IN THE SAME RENDER THAT SHOWS IT (#1320).
+  // The highlight goes back to the first row whenever the list it indexes
+  // changes — a query typed, the scope switched, a new answer — and it is reset
+  // by whatever made the change, alongside it, never by an effect afterwards.
+  // An effect is one render late: the render that first shows the shorter list
+  // still carries the old index, and an Enter pressed in that gap (type and hit
+  // Enter quickly on a loaded machine) read `rows[staleIndex]` — past the end
+  // of the list, so the pick was silently dropped, or a different row than the
+  // top match. The pointer had put it there: hovering a row sets the index.
+  const search = (q: string): void => {
+    setQuery(q);
     setSelected(0);
-  }, [query, scope, answer]);
+  };
   // Block-bodied on purpose: an expression body returns Chromium's promise,
   // React reads it as a cleanup function and the tree dies (pinned in
   // `e2e/palette.spec.ts` for the palette, and the same trap lives here).
@@ -524,7 +535,7 @@ export function SessionHistoryDialog(props: {
             // down, and a search box that takes typing but ignores Enter and the
             // arrows is a control that silently does nothing.
             disabled={asking}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => search(e.target.value)}
             placeholder={t('sessionHistory.placeholder')}
             aria-label={t('sessionHistory.placeholder')}
             role="combobox"
@@ -550,7 +561,10 @@ export function SessionHistoryDialog(props: {
           <button
             data-history-scope={scope}
             aria-pressed={scope === 'all'}
-            onClick={() => setScope((s) => (s === 'all' ? 'folder' : 'all'))}
+            onClick={() => {
+              setScope((s) => (s === 'all' ? 'folder' : 'all'));
+              setSelected(0);
+            }}
             disabled={asking}
             title={t('sessionHistory.scopeAllHint')}
             style={{
