@@ -3,7 +3,22 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 📋 PICKED 2026-10-31: the next FIFTEEN for an orchestration run — #1529, #1437, #1353, #651, #965, #1525, #671, #1394, #1465, #1261, #1323, #1319, #1056, #1218, #1369. **Nothing started.**
+> # 🔄 ORCHESTRATION RUN IN FLIGHT (started 2026-10-31 evening): the fifteen below, two workers, merge on green CI, NO RELEASE
+>
+> **Dan (2026-10-31):** `/orchestrate` with the fifteen. *"Two workers, merge on green CI. Do NOT cut a release. Skip anything labelled needs-discussion."* None of the fifteen carries it. **Merge policy: every PR, user-facing included, squash-merges on green CI on Dan's word.** Serial: #1437 → #1353 → #1394+#1465 (shared e2e fixture; #1394 and #1465 to ONE worker). #1323 then #1319. #965 last. #1261 reproduced on Linux via the WSL recipe. #1218 research only (findings note, no product code). Every Playwright run takes the e2e lock with the owner check.
+>
+> **Owner decisions (Dan, 2026-10-31):** #1323: the AI-switch divider shows both AIs' icons, as in the mockup. #1319: a strip pill's accessible name reads "<AI>, <status>" like the tab's; an inactive tab's status-ring track is tinted with the session colour.
+>
+> **Single-writer rule:** only the orchestrator session writes this file. Workers report through `.claude/work_files/orchestrator/<issue#>.md` handoffs (contract `worker-contract.md`, pointed at `0.8.137 — unreleased`); those are the inputs, this block is the output and the resume point.
+>
+> **Tracks:** Track A, `sb-wt-1`: #1437 → #1353 → #1394+#1465, then independents. Track B, `sb-wt-2`: #1529, then #1525, #1323 → #1319, #671, #651, #1261, #1056, #1218, #1369 as freed. #965 last, after everything else.
+>
+> | Issue | Worktree / branch | State |
+> |---|---|---|
+> | #1437 seeded row never renders | `sb-wt-1` / `feature/1437-seeded-row-never-renders` | dispatched |
+> | #1529 composer popup highlight one render late | `sb-wt-2` / `feature/1529-composer-popup-highlight-same-render` | dispatched |
+
+> # 📋 PICKED 2026-10-31: the next FIFTEEN for an orchestration run — #1529, #1437, #1353, #651, #965, #1525, #671, #1394, #1465, #1261, #1323, #1319, #1056, #1218, #1369. **Started: see the run block above.**
 >
 > **Dan (2026-10-31), after v0.8.136:** *"Pick five more tickets … Pick five that you think we should do"*, then *"I'm going to orchestrate. You want to give me five more so we can do ten."* None carries `needs-discussion`. **Why each:** #1529 (composer `/`/`@` popup resets its highlight one render late; same bug and fix as #1320, user-facing, S) · #1437 (a seeded session's row never renders for 25 s, seen in more than one spec; may be a real restored-session bug, as #1320 was) · #1353 (local e2e windows still open on Dan's main monitor; four holes listed in the body) · #651 (unit tests that redden only on a busy machine: the 5 s default and wall-clock budgets; members listed) · #965 (manual: audit the older pages against everything shipped, plus the busy-session and top-strip pictures; docs only, L) · #1525 (DESIGN §5.29 stale sentence, XS) · #671 (type-hygiene stragglers: 16 bare `vi.fn()` in `popout-windows.test.ts`, `SweepPort` method shorthand; XS) · #1394 + #1465 (two popout teardown races: dock-back on `composer-draft.spec.ts:71`, pop-out on `diff.spec.ts:677`; one investigation, may share a cause) · #1261 (ReadScope: a symlink out of scope and back still reveals whether an outside folder exists on POSIX, plus timing; reproduce in WSL). **Then *"Give me five more, too. Might as well do fifteen at once":*** #1323 (manual 20 still says "spends part of your Claude usage"; and `AiSwitchDivider` in `extensibility/feed-blocks.tsx` draws no AI icons, which mockup screen 3 shows) · #1319 (a strip pill's accessible name omits the AI; an inactive tab with no language badge shows no session colour) · #1056 (line-level staging: per-line zero-context hunks, NOT an edited hunk body; the body records why the naive rewrite is structurally wrong) · #1218 (research spike only: local text-to-speech engines, Piper and Kokoro, findings in `spike/findings/`; the OS voice picker already shipped as #1390; no product code unless the findings say so) · #1369 (`needs-you-sound.spec.ts:166` poll timeout in the held-approval sound timing, one sighting). **#1323 and #1319 carry owner decisions; Dan's answers go in the orchestrate prompt** (recorded below once given).
 >
