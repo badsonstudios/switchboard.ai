@@ -3,9 +3,9 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚀 RELEASING: v0.8.137, 2026-11-02 — #1529 only
+> # ✅ RELEASED: v0.8.137, 2026-11-02 (PR #1538, tag on `b4696809`, release run 41488005801) — #1529 only
 >
-> **Dan (2026-11-02):** *"go ahead and do 1529. Get that all done, and then we'll cut a release."* A **regular release, on his word.** Version, lock and dated notes land together (`0.8.138 — unreleased` is open). **In it:** #1529 (the composer's `/` and `@` lists put the highlight back on the top row in the same render, PR #1537, `63da0973`). **Not hand-tested:** dogfood row UNTESTED. **DO NOT CUT ANOTHER unless he asks.**
+> **Dan (2026-11-02):** *"go ahead and do 1529. Get that all done, and then we'll cut a release."* A **regular release, on his word.** Version, lock and dated notes land together (`0.8.138 — unreleased` is open). **In it:** #1529 (the composer's `/` and `@` lists put the highlight back on the top row in the same render, PR #1537, `63da0973`). The release PR merged on green CI (4/4), and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.137.exe` (105 MB) + `.sha256` as a normal release: `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.137` (published 17:19Z). The dogfood row now reads RELEASED. **Not hand-tested.** **DO NOT CUT ANOTHER unless he asks.**
 
 > # ⏸️ ORCHESTRATION RUN PAUSED 2026-11-02: #1529 merged, 14 of the fifteen plus #1536 NOT done, nothing running
 >
