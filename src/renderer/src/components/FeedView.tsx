@@ -3676,10 +3676,26 @@ const Composer = React.memo(function Composer({
       cancelled = true;
     };
   }, [couldMention, mentionWanted]);
-  React.useEffect(() => {
+  // A new completion starts at its top row, un-navigated, IN THE RENDER THAT
+  // SHOWS IT (#1529). This was an effect, which is one render late: the first
+  // commit after a keystroke still carried the old `selected` and `navigated`,
+  // so an Enter or Tab pressed fast after arrowing could accept the stale row
+  // (or, on a mention, complete where it should have sent) instead of the top
+  // match. The History dialog lost picks to the same gap (issue 1320).
+  //
+  // React's "adjust state while rendering" pattern, not a reset in a handler:
+  // `completionKey` moves on far more than one path — the textarea's change,
+  // the caret synced on key-up, the `pendingCaret` layout effect after a pick
+  // or a recall, a send clearing the draft, a dismissal being forgotten — and
+  // a reset beside each is one the next new path forgets. A state update made
+  // DURING render makes React throw this render away and run again before
+  // anything commits, so no commit ever shows the old highlight.
+  const [highlightFor, setHighlightFor] = React.useState(completionKey);
+  if (highlightFor !== completionKey) {
+    setHighlightFor(completionKey);
     setSelected(0);
     setNavigated(false);
-  }, [completionKey]);
+  }
   // A dismissal is FOR ONE `@`: forget it once that `@` is gone, or a different
   // one is being typed — otherwise deleting and retyping it would stay closed.
   const rawMentionAt = rawMention?.at ?? null;
@@ -3716,11 +3732,14 @@ const Composer = React.memo(function Composer({
    * There were four independent readings of `selected` before this item
    * (the `aria-` relation, `aria-selected`, the scroll ref, the background, and
    * Enter's pick) and only two of them clamped. For one commit after a
-   * keystroke NARROWS the list — the render happens before the effect that
-   * resets `selected` to 0 — the unclamped readings point past the end, so the
+   * keystroke NARROWS the list — the render happened before the effect that
+   * reset `selected` to 0 — the unclamped readings pointed past the end, so the
    * relation would name row 0 while no row was marked or highlighted. A screen
    * reader and the screen disagreeing is precisely the bug class this item
-   * exists to close (review). One value, one invariant.
+   * exists to close (review). One value, one invariant. (Since #1529 the reset
+   * happens in the same render, so that gap is gone; the clamp stays, because
+   * a list can still shrink under an unchanged key — the command or session
+   * list arriving fresh.)
    *
    * `-1` when there is no popup, so `i === activeIndex` is false for every row
    * without a second condition at each site.
