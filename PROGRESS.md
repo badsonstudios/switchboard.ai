@@ -3,6 +3,10 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 📋 FILED 2026-11-02: Orca comparison written up; seven candidates filed as #1540–#1546, all `needs-discussion`
+>
+> **Dan (2026-11-02)** asked for a comparison with stablyai/orca, then a document and tickets for everything recommended or worth considering. **Document:** `docs/competitive-review-orca-2026-11-02.md` (read from Orca's docs and source; nobody ran the app). **Tickets:** #1540 diff comments to the AI · #1541 scheduled runs · #1542 fan-out and compare (E24, waits on #1505 and #1506) · #1543 hibernation, measured first · #1544 AI status note · #1545 GitHub to session (waits on #832 and #830) · #1546 AI-line markers. All but #1542 are the new epic E41 in plan 06. **No automated run picks these up** until Dan has gone over each one. The paused orchestration run below is unchanged.
+
 > # ✅ RELEASED: v0.8.137, 2026-11-02 (PR #1538, tag on `b4696809`, release run 41488005801) — #1529 only
 >
 > **Dan (2026-11-02):** *"go ahead and do 1529. Get that all done, and then we'll cut a release."* A **regular release, on his word.** Version, lock and dated notes land together (`0.8.138 — unreleased` is open). **In it:** #1529 (the composer's `/` and `@` lists put the highlight back on the top row in the same render, PR #1537, `63da0973`). The release PR merged on green CI (4/4), and the release workflow (build + publish, both green) published `switchboard-Setup-0.8.137.exe` (105 MB) + `.sha256` as a normal release: `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.137` (published 17:19Z). The dogfood row now reads RELEASED. **Not hand-tested.** **DO NOT CUT ANOTHER unless he asks.**

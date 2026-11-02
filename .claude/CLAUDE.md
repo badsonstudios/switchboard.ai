@@ -46,6 +46,7 @@ item off this file. Read `PROGRESS.md`.**)*
 | `docs/plans/dogfood-testing.md` | What Dan has and hasn't hand-tested (standing rule below) |
 | `design_handoff_control_room/` | Visual design (mockup export + theme screenshots) |
 | `docs/manual/` | **User manual** (Markdown) — written as features ship; source for the future HTML manual |
+| `docs/competitive-review-orca-2026-11-02.md` | Orca compared with switchboard: what each has, what we filed from it (#1540–#1546) and what we deliberately left out. A dated snapshot, and nobody ran Orca |
 | `PROGRESS.md` (root) | **Live state** — current/next item, log. Always current |
 
 **Hard constraints (never violate):** subscription-first (local `claude` CLI,
