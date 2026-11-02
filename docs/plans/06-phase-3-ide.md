@@ -318,6 +318,19 @@ OpenCode/goose over the same engine.
 probe (#1285) and what follows it. The seam work (#1286 → #1287 → #1289) runs on
 a fake ACP agent and can start immediately.
 
+### E41 — Ideas from the Orca comparison *(filed 2026-11-02; not yet decided)*
+
+> **Filed at the owner's request; every item is `needs-discussion`.** The
+> comparison and the reasoning are in `docs/competitive-review-orca-2026-11-02.md`.
+> Nothing here is approved work, and none of it is an exit criterion.
+
+**#1540** comment on diff lines and send them to the AI · **#1541** scheduled
+runs with a precheck · **#1543** hibernate idle sessions, measured first ·
+**#1544** a status note the AI can set · **#1545** GitHub issues and PRs, start a
+session from one *(waits on the trust boundary, #832 and #830)* · **#1546**
+AI-line markers in the diff gutter. **#1542** (fan-out, compare, merge the winner)
+sits in E24 layer 3 and waits on #1505 and #1506.
+
 ---
 
 ## Order

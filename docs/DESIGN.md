@@ -6179,6 +6179,9 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
   GitHub mission control / Antigravity Manager made fleet dashboards the
   category standard; composes sessions rail + usage bars + attention queue +
   review dashboard)
+- *(Added 2026-11-02, undecided: seven candidates from the Orca comparison,
+  #1540–#1546, epic E41 in plan 06. Each is `needs-discussion`; none has passed
+  a design sitting. See `docs/competitive-review-orca-2026-11-02.md`.)*
 
 **Phase 4 — the ecosystem**
 - ~~Codex / Gemini / Aider adapters (PTY + whatever structure they expose)~~
