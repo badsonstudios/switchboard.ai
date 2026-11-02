@@ -3,7 +3,15 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔄 ORCHESTRATION RUN IN FLIGHT (started 2026-10-31 evening): the fifteen below, two workers, merge on green CI, NO RELEASE
+> # 🚀 RELEASING: v0.8.137, 2026-11-02 — #1529 only
+>
+> **Dan (2026-11-02):** *"go ahead and do 1529. Get that all done, and then we'll cut a release."* A **regular release, on his word.** Version, lock and dated notes land together (`0.8.138 — unreleased` is open). **In it:** #1529 (the composer's `/` and `@` lists put the highlight back on the top row in the same render, PR #1537, `63da0973`). **Not hand-tested:** dogfood row UNTESTED. **DO NOT CUT ANOTHER unless he asks.**
+
+> # ⏸️ ORCHESTRATION RUN PAUSED 2026-11-02: #1529 merged, 14 of the fifteen plus #1536 NOT done, nothing running
+>
+> **What happened:** the session ended on 2026-10-31 with both workers unfinished; they cannot be resumed. On 2026-11-02 Dan asked for #1529 and a release only, so nothing else was dispatched. **Resume only on his word.** **#1529:** a fresh worker verified and kept the WIP commits. Gate: lint, typecheck, unit 15,364 + 7 skipped, area e2e 24, full e2e 556 + 10 skipped, no re-runs. CI 4/4. **Flippable:** the highlight resets during render on every path, not in the change handler the issue suggested; paste, recall and mode switch have no test of their own. **#1437:** no finding recorded; `sb-wt-1` is on `feature/1437-seeded-row-never-renders`, no commits, one untracked `e2e/zz-probe-1437.spec.ts`. **#1536 (filed 2026-10-31, Dan's priority; local Playwright closes ding, `shell.beep()` ignores `SWITCHBOARD_MUTE_AUDIO`):** not started, cause unconfirmed; goes first on resume. **Orphan lock from the dead worker:** owner 1529, reused after 6 samples showed no electron, removed. **Lock-refresh hang:** `npm install --package-lock-only` in `sb-docs` never exited (killed at 30 min) though its lock edit was correct, cause unknown.
+>
+> # (the run's block as it stood) two workers, merge on green CI, NO RELEASE
 >
 > **Dan (2026-10-31):** `/orchestrate` with the fifteen. *"Two workers, merge on green CI. Do NOT cut a release. Skip anything labelled needs-discussion."* None of the fifteen carries it. **Merge policy: every PR, user-facing included, squash-merges on green CI on Dan's word.** Serial: #1437 → #1353 → #1394+#1465 (shared e2e fixture; #1394 and #1465 to ONE worker). #1323 then #1319. #965 last. #1261 reproduced on Linux via the WSL recipe. #1218 research only (findings note, no product code). Every Playwright run takes the e2e lock with the owner check.
 >
@@ -15,8 +23,8 @@
 >
 > | Issue | Worktree / branch | State |
 > |---|---|---|
-> | #1437 seeded row never renders | `sb-wt-1` / `feature/1437-seeded-row-never-renders` | dispatched |
-> | #1529 composer popup highlight one render late | `sb-wt-2` / `feature/1529-composer-popup-highlight-same-render` | dispatched |
+> | #1437 seeded row never renders | `sb-wt-1` / `feature/1437-seeded-row-never-renders` | worker lost, no commits |
+> | #1529 composer popup highlight one render late | `sb-wt-2` / `feature/1529-composer-popup-highlight-same-render` | **DONE: PR #1537 merged `63da0973`, issue closed** |
 
 > # 📋 PICKED 2026-10-31: the next FIFTEEN for an orchestration run — #1529, #1437, #1353, #651, #965, #1525, #671, #1394, #1465, #1261, #1323, #1319, #1056, #1218, #1369. **Started: see the run block above.**
 >
