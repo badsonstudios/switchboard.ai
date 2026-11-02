@@ -140,6 +140,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.137 — unreleased
 
+### Fixed
+
+- **A fast Tab or Enter in the `/` and `@` lists takes the top match.** After
+  moving down the list with the arrow keys, typing another letter puts the
+  highlight back on the first row — but for a split second it still sat on the
+  row you had arrowed to, and a Tab or Enter pressed in that moment could
+  insert that old row (or the last one) instead of the best match for what you
+  had just typed. The highlight now moves back to the top in the same instant
+  the list changes, however fast you type.
+
 ## 0.8.136 — 2026-10-31
 
 ### Changed
