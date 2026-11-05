@@ -140,6 +140,17 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.138 — unreleased
 
+### Fixed
+
+- **The way back from an older conversation is easy to find.** When you open
+  an older conversation from a session card's history, the conversation you
+  were just in now sits at the top of that card's list, marked "you were just
+  here", so one click takes you back. Before, it was in the list but looked
+  just like its neighbours (two conversations that start with the same command
+  read almost the same), and it was easy to pick the wrong one and lose your
+  place. The card's current conversation now says "open in this card" rather
+  than the "already open" shown for one another card has.
+
 ## 0.8.137 — 2026-11-02
 
 ### Fixed

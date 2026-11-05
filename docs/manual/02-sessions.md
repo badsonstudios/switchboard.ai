@@ -117,11 +117,21 @@ is the one case that opens a new card — a session belongs to its folder and
 cannot be moved to another one — and the session you clicked from carries on
 untouched.
 
-Two things the list will tell you rather than hide:
+**Getting back.** After you open an older conversation in a card, the one you
+were in is still there, at the **top** of that card's list and marked **"you
+were just here"**. Click it to go straight back. This matters most when
+several conversations start the same way (the same command, the same opening
+line): the mark tells you which one you just left without having to guess from
+the first words. It always points at the conversation you left with your most
+recent pick, so going back and forth between two conversations works the same
+in both directions.
 
-- **"already open"** beside a greyed-out conversation means a card in your
-  workspace already has it — including the one you are looking at, which shows
-  its own conversation this way. You cannot open it twice, because both cards
+What the list will tell you rather than hide:
+
+- **"open in this card"** beside a greyed-out conversation means it's the one
+  this card is in right now. There's nothing to pick.
+- **"already open"** beside a greyed-out conversation means another card in
+  your workspace already has it. You cannot open it twice, because both cards
   would write into the same conversation and tangle it. Go to the card that has
   it.
 - If a folder's conversations **can't be listed** — the folder has been moved,

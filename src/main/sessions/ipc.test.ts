@@ -1194,6 +1194,52 @@ describe('session history (P2-E20-01, §5.33)', () => {
       expect(move(h, 'mine')).toEqual({ ok: true, changed: true });
     });
 
+    it("…and the ASKING card's history says which row is the way back, first (#1550)", async () => {
+      seedConversation('mine', folder);
+      seedConversation('other', folder);
+      const h = harness(caps(), folder, { prior: own() });
+      move(h, 'other');
+      expect(h.cards.find((c) => c.id === 'card-1')?.leftNativeId).toBe('mine');
+      type Rows = { rows: { nativeId: string; here?: string }[] };
+      const asked = (await h.call('transcripts:history', { scope: 'folder', folder, cardId: 'card-1' })) as Rows;
+      expect(asked.rows[0]).toEqual(expect.objectContaining({ nativeId: 'mine', here: 'left' }));
+      expect(asked.rows.find((r) => r.nativeId === 'other')?.here).toBe('current');
+      // no card named, or one that does not exist: no marks
+      for (const cardId of [undefined, 'no-such-card', 42]) {
+        const plain = (await h.call('transcripts:history', { scope: 'folder', folder, cardId })) as Rows;
+        expect(plain.rows.every((r) => r.here === undefined)).toBe(true);
+      }
+      // ping-pong: going back makes the other one the way back
+      move(h, 'mine');
+      expect(h.cards.find((c) => c.id === 'card-1')?.leftNativeId).toBe('other');
+      const back = (await h.call('transcripts:history', { scope: 'folder', folder, cardId: 'card-1' })) as Rows;
+      expect(back.rows[0]).toEqual(expect.objectContaining({ nativeId: 'other', here: 'left' }));
+      expect(back.rows.find((r) => r.nativeId === 'mine')?.here).toBe('current');
+    });
+
+    it('a card on ANOTHER AI than the list is read from gets no marks (#1550)', async () => {
+      // The list is the default provider's; a card on another AI has none of its
+      // own conversations in it, so a mark could only point at the wrong one.
+      seedConversation('mine', folder);
+      const h = harness(caps(), folder, {
+        prior: own({ leftNativeId: 'mine', identity: { ...own().identity, providerId: 'codex' } }),
+      });
+      const a = (await h.call('transcripts:history', { scope: 'folder', folder, cardId: 'card-1' })) as {
+        rows: { here?: string }[];
+      };
+      expect(a.rows.length).toBeGreaterThan(0);
+      expect(a.rows.every((r) => r.here === undefined)).toBe(true);
+    });
+
+    it('a hand-edited `leftNativeId` that is not a conversation id marks nothing (#1550)', async () => {
+      seedConversation('mine', folder);
+      const h = harness(caps(), folder, { prior: own({ leftNativeId: '../../etc/passwd' }) });
+      const a = (await h.call('transcripts:history', { scope: 'folder', folder, cardId: 'card-1' })) as {
+        rows: { nativeId: string; here?: string }[];
+      };
+      expect(a.rows.map((r) => [r.nativeId, r.here])).toEqual([['mine', 'current']]);
+    });
+
     it('picking the conversation the card is already in changes nothing', () => {
       seedConversation('mine', folder);
       const h = harness(caps(), folder, { prior: own(), status: 'idle' });

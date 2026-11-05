@@ -97,6 +97,13 @@ export interface HistoryDeps {
    * guard.
    */
   claimed: () => string[];
+  /**
+   * The asking card's own conversations (#1550): the one it is in, and the one
+   * it left at its last history pick. Rows matching them say so, and the `left`
+   * row is moved to the top — it is the way back, and it was there all along
+   * looking exactly like its neighbours.
+   */
+  here?: { current?: string; left?: string };
 }
 
 /**
@@ -175,6 +182,7 @@ export function listHistory(req: ConversationHistoryRequest, deps: HistoryDeps):
     // `slugForCwd`'s output and not invertible.
     const folder = req.scope === 'all' ? d.folder : (req.folder ?? d.folder);
     if (!folder) continue;
+    const isClaimed = claimed.has(f.nativeId);
     // ...but the caller's authority stops at a transcript that SAYS it ran
     // somewhere else (#1487): `my_app` and `my-app` share a directory, and a
     // sibling's row opened here would resume in the wrong working tree.
@@ -185,9 +193,21 @@ export function listHistory(req: ConversationHistoryRequest, deps: HistoryDeps):
       description: d.description,
       descriptionFrom: d.descriptionFrom,
       lastActiveMs: f.mtimeMs,
-      claimed: claimed.has(f.nativeId),
+      claimed: isClaimed,
+      // A way back another card has taken since is no way back: it gets the
+      // ordinary "already open" row, not a mark pointing at a door that is shut.
+      ...(f.nativeId === deps.here?.current
+        ? { here: 'current' as const }
+        : f.nativeId === deps.here?.left && !isClaimed
+          ? { here: 'left' as const }
+          : {}),
     });
   }
+  // The way back goes FIRST (#1550). Only if the walk reached it: a left
+  // conversation is usually among the newest (the card was just in it), and one
+  // that was only looked at and is months old is not worth a second walk.
+  const back = rows.findIndex((r) => r.here === 'left');
+  if (back > 0) rows.unshift(...rows.splice(back, 1));
   return { status: 'ok', rows, truncated: found.truncated || sorted.length > visited };
 }
 

@@ -258,4 +258,81 @@ test.describe('session history (#836)', () => {
     await expect(w.locator('[data-history-dialog]')).toBeVisible({ timeout: 15_000 });
     await expect(w.locator('[data-history-row][aria-disabled="true"]')).toHaveCount(1);
   });
+
+  test('the conversation a card LEFT is one pick away: X → Y → X (#1550)', async () => {
+    test.setTimeout(180_000);
+    const folder = tempProjectFolder();
+    const home = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-hist-')));
+    const older = '22222222-3333-4444-5555-666666666666';
+    const dir = path.join(home, '.claude', 'projects', slug(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, `${older}.jsonl`),
+      [
+        JSON.stringify({
+          type: 'user',
+          isSidechain: false,
+          cwd: folder,
+          message: { role: 'user', content: 'the older conversation, Y' },
+          uuid: 'u1',
+        }),
+        JSON.stringify({ type: 'ai-title', aiTitle: TITLE, sessionId: older }),
+      ].join('\n') + '\n'
+    );
+
+    a = await launchApp({ seedFolder: folder, home, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+    const cardCount = async (): Promise<number> =>
+      ((await w.evaluate(() => window.switchboard.sessions.cards())) as unknown[]).length;
+
+    // ── X: the conversation the card is in, with something said in it ───────
+    const X_PROMPT = 'the current conversation, X';
+    const box = w.getByPlaceholder(/^Message .+…$/);
+    await box.click();
+    await box.fill(X_PROMPT);
+    await box.press('Enter');
+    await expect(w.getByText(X_PROMPT).first()).toBeVisible({ timeout: 25_000 });
+    await pollAsync(async () => {
+      const status = (await sessionStatuses(a)).get(title);
+      return status !== undefined && status !== 'working' && status !== 'starting' ? status : null;
+    }, 'X to finish its turn');
+
+    const dialog = w.locator('[data-history-dialog]');
+    const rowY = w.locator('[data-history-row]').filter({ hasText: TITLE });
+    const rowX = w.locator('[data-history-row]').filter({ hasText: X_PROMPT });
+
+    // ── X → Y ────────────────────────────────────────────────────────────────
+    await w.locator('[data-testid="card-history"]').first().click();
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    // X is listed already, as the one THIS card is in
+    await expect(rowX).toHaveCount(1, { timeout: 15_000 });
+    await expect(rowX).toHaveAttribute('aria-disabled', 'true');
+    await expect(rowX.locator('[data-history-here="current"]')).toHaveText('open in this card');
+    await rowY.first().click();
+    await expect(dialog).toHaveCount(0, { timeout: 15_000 });
+    await expect(w.getByText('the older conversation, Y')).toBeVisible({ timeout: 25_000 });
+
+    // ── Y → X: the way back ──────────────────────────────────────────────────
+    await w.locator('[data-testid="card-history"]').first().click();
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    // listed, and NOT inert: this card let go of it when it moved to Y
+    await expect(rowX).toHaveCount(1, { timeout: 15_000 });
+    await expect(rowX).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(rowY).toHaveAttribute('aria-disabled', 'true');
+    // ⚠️ AND IT SAYS SO, AT THE TOP. On the owner's laptop X was listed but
+    // opened with the same command as its neighbour, and he picked the twin.
+    await expect(w.locator('[data-history-row]').first()).toContainText(X_PROMPT);
+    await expect(rowX.locator('[data-history-here="left"]')).toHaveText('you were just here');
+    await rowX.first().click();
+    // the dialog closes only on main's yes; a refusal keeps it open with the reason
+    await expect(dialog).toHaveCount(0, { timeout: 15_000 });
+
+    // back in X, with its conversation intact, in the same card, running
+    await expect(w.getByText(X_PROMPT).first()).toBeVisible({ timeout: 25_000 });
+    await expect(w.getByText('the older conversation, Y')).toHaveCount(0);
+    expect(await cardCount()).toBe(1);
+    await expect(w.locator('[data-testid="card-overlay"]')).toHaveCount(0);
+  });
 });

@@ -375,6 +375,8 @@
     "scopeAllHint": "Show conversations from every project on this machine",
     "noDescription": "(no title or opening prompt)",
     "claimed": "already open",
+    "hereLeft": "you were just here",
+    "hereCurrent": "open in this card",
     "claimedHint": "A session card already has this conversation open. Opening it twice would write to one conversation from two places.",
     "unscannable": "These conversations can't be listed: {reason}",
     "truncated": "Showing the {count} most recent. Some projects were skipped.",

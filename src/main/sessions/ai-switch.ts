@@ -86,6 +86,9 @@ export function switchCardAi(
     model: back?.model,
     cliCost: back?.cliCost,
     conversationSettings: back?.conversationSettings,
+    // The way back from a history pick (#1550) was a conversation of the AI
+    // being left — not something the other AI can open. Gone with the switch.
+    leftNativeId: undefined,
     conversations: Object.keys(conversations).length > 0 ? conversations : undefined,
     aiSwitches: marks,
   };

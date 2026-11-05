@@ -33,6 +33,11 @@ describe('switchCardAi (#1294)', () => {
     expect(back.conversationSettings).toEqual(kept);
   });
 
+  it("drops the history pick's way back — it was the other AI's conversation (#1550)", () => {
+    const next = switchCardAi(card({ leftNativeId: 'c-old' }), claude, codex, '2026-10-16T10:00:00.000Z', 'm1');
+    expect(next.leftNativeId).toBeUndefined();
+  });
+
   it('parks the conversation it leaves, with its numbers, and starts the target fresh', () => {
     const next = switchCardAi(card(), claude, codex, '2026-10-16T10:00:00.000Z', 'm1');
     expect(next.identity.providerId).toBe('codex');

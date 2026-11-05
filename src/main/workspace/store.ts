@@ -125,6 +125,16 @@ export interface PersistedSession {
    * `sessions/lineage.ts` for why this is not part of the chain.
    */
   cededNativeIds?: string[];
+  /**
+   * The conversation this card was in before its last history pick (#1550) —
+   * what the history list marks "you were just here" and puts first.
+   *
+   * NOT part of the chain and never resumed from: the switch let go of that
+   * conversation on purpose, so another card may take it, and the list's
+   * `claimed` mark still decides whether it can be picked. Only a pointer for
+   * the way back, overwritten by the next switch. Narrowed where it is read.
+   */
+  leftNativeId?: string;
   suspendedAt: string;
   /** last-known token totals + model, so usage survives a resume/restart */
   // `thinking` is optional: every workspace.json written before #789 lacks it
