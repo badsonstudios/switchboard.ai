@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Session notes — mock-up</title>
+<style>
+  :root {
+    --bg: #242933; --panel: #2b313d; --panel2: #333a48; --border: #3b4252;
+    --chip: #39414f; --bar: #20252e; --text: #e5e9f0; --muted: #a5aec0;
+    --frame: #848ea5; --blue: #5e9fe6; --green: #8fbf7f; --amber: #ebcb8b; --red: #d97b84;
+    --paper: #ecd98f; --paper-edge: #d6c072; --ink: #2f2a17; --ink-muted: #6b6240;
+    --claude: #7aa7e0;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+    --sans: "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #15181e; color: var(--text); font: 13px/1.45 var(--sans); }
+  button { font: inherit; color: inherit; }
+
+  /* ---- mock-up chrome (not part of the design) ---- */
+  .mock-bar { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; padding: 10px 16px; background: #0f1115; border-bottom: 1px solid #000; }
+  .mock-bar h1 { font-size: 14px; margin: 0 8px 0 0; font-weight: 600; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button { background: transparent; border: 0; padding: 5px 11px; cursor: pointer; color: var(--muted); }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: var(--panel2); color: var(--text); }
+  .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-right: 6px; }
+  .act { background: var(--chip); border: 1px solid var(--border); border-radius: 6px; padding: 5px 11px; cursor: pointer; }
+  .act:hover { background: var(--panel2); }
+  .explain { margin: 14px 16px 0; padding: 10px 14px; background: #1b1f27; border: 1px dashed #3b4252; border-radius: 8px; color: var(--muted); max-width: 1180px; }
+  .explain b { color: var(--text); }
+
+  /* ---- the app ---- */
+  .app { display: flex; gap: 0; margin: 14px 16px 24px; height: 640px; max-width: 1180px; border: 1px solid #000; border-radius: 8px; overflow: hidden; background: var(--bg); }
+  .rail { width: 230px; background: var(--bar); border-right: 1px solid var(--border); padding: 10px 8px; display: flex; flex-direction: column; gap: 6px; }
+  .rail-h { font-size: 10.5px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; padding: 2px 6px 6px; }
+  .row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; background: var(--panel); border: 1px solid transparent; cursor: pointer; position: relative; }
+  .row.on { border-color: var(--frame); background: var(--panel2); }
+  .row .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .st { font-size: 11px; color: var(--muted); }
+  .marker { width: 14px; height: 14px; border-radius: 2px; background: var(--paper); flex-shrink: 0; position: relative; box-shadow: 0 1px 0 var(--paper-edge); }
+  .marker::after { content: ""; position: absolute; right: 0; bottom: 0; border-style: solid; border-width: 0 0 5px 5px; border-color: transparent transparent var(--paper-edge) transparent; }
+  .marker.claude { outline: 2px solid var(--claude); outline-offset: 1px; }
+  .marker .count { position: absolute; top: -6px; right: -7px; font-size: 9px; background: var(--chip); color: var(--text); border-radius: 6px; padding: 0 3px; line-height: 12px; }
+  .tip { display: none; position: absolute; left: 100%; top: 50%; transform: translate(8px, -50%); z-index: 20; width: 220px; background: var(--paper); color: var(--ink); padding: 8px 10px; border-radius: 3px; box-shadow: 0 6px 18px rgba(0,0,0,.45); font-size: 12px; }
+  .marker:hover + .tip, .tip:hover { display: block; }
+  .tip .who { color: var(--ink-muted); font-size: 10.5px; margin-top: 3px; }
+  .tip p { margin: 0 0 4px; }
+
+  .card { flex: 1; display: flex; flex-direction: column; margin: 10px; border: 1px solid var(--frame); border-radius: 8px; background: var(--panel); overflow: hidden; position: relative; }
+  .head { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border); background: var(--panel); position: relative; }
+  .head .badge { font: 600 10px var(--mono); padding: 2px 4px; border-radius: 3px; background: #3c4a3a; color: var(--green); }
+  .head .title { font-weight: 600; }
+  .pill { font-size: 11px; display: inline-flex; align-items: center; gap: 5px; color: var(--blue); }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .spacer { flex: 1; }
+  .ctx { font: 9.5px var(--mono); color: var(--muted); background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+  .hb { width: 24px; height: 22px; display: inline-grid; place-items: center; background: transparent; border: 1px solid transparent; border-radius: 4px; color: var(--muted); cursor: pointer; }
+  .hb:hover { background: var(--panel2); border-color: var(--border); color: var(--text); }
+  .hb.note-btn.has { color: var(--paper); }
+  .hb.note-btn.new { outline: 2px dashed var(--amber); outline-offset: 2px; }
+  .newtag { position: absolute; font-size: 9.5px; color: var(--amber); top: -1px; transform: translateY(-100%); white-space: nowrap; }
+
+  .feed { flex: 1; overflow: auto; padding: 12px 14px; font-family: var(--mono); font-size: 12px; position: relative; }
+  .feed .l { margin: 0 0 5px; }
+  .feed .l::before { content: "\25CF"; color: var(--muted); margin-right: 8px; font-size: 9px; }
+  .feed .you { color: var(--text); background: var(--panel2); border-radius: 6px; padding: 6px 9px; margin: 10px 0; font-family: var(--sans); }
+  .feed .you::before { content: none; }
+  .add { color: var(--green); } .del { color: var(--red); } .path { color: var(--blue); }
+
+  .composer { border-top: 1px solid var(--border); padding: 8px 10px; background: var(--panel); }
+  .composer .box { border: 1px solid var(--border); background: var(--bg); border-radius: 6px; padding: 9px 10px; color: var(--muted); min-height: 54px; }
+  .composer .meta { font-size: 11px; color: var(--muted); margin-top: 5px; display: flex; gap: 12px; }
+
+  /* ---- the sticky note itself ---- */
+  .paper { background: var(--paper); color: var(--ink); position: relative; box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+  .paper::after { content: ""; position: absolute; right: 0; bottom: 0; border-style: solid; border-width: 0 0 12px 12px; border-color: transparent transparent var(--paper-edge) #b9a35a; }
+  .note-line { display: flex; gap: 8px; align-items: flex-start; }
+  .note-line + .note-line { border-top: 1px dashed rgba(47,42,23,.25); padding-top: 6px; margin-top: 6px; }
+  .note-text { flex: 1; cursor: text; white-space: pre-wrap; }
+  .note-text:hover { text-decoration: underline dotted rgba(47,42,23,.5); }
+  .who { font-size: 10.5px; color: var(--ink-muted); white-space: nowrap; }
+  .who.claude { color: #2c5b93; font-weight: 600; }
+  .x { background: transparent; border: 0; color: var(--ink-muted); cursor: pointer; padding: 0 3px; border-radius: 3px; font-size: 13px; line-height: 18px; }
+  .x:hover { background: rgba(47,42,23,.12); color: var(--ink); }
+  .paper .tools { display: flex; gap: 6px; align-items: center; }
+  .paper .plus { background: transparent; border: 1px dashed rgba(47,42,23,.4); color: var(--ink-muted); border-radius: 3px; cursor: pointer; font-size: 11px; padding: 1px 7px; }
+  .paper .plus:hover { color: var(--ink); border-color: var(--ink); }
+  .claude-edge { box-shadow: inset 3px 0 0 var(--claude), 0 2px 6px rgba(0,0,0,.35); }
+
+  /* the editor */
+  .ed textarea { width: 100%; resize: none; border: 1px solid rgba(47,42,23,.35); background: rgba(255,255,255,.35); color: var(--ink); font: 13px var(--sans); border-radius: 3px; padding: 5px 7px; outline: none; }
+  .ed textarea:focus { border-color: var(--ink); }
+  .ed .picks { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
+  .ed .picks button { background: rgba(47,42,23,.1); border: 0; border-radius: 10px; padding: 2px 9px; font-size: 11.5px; cursor: pointer; color: var(--ink); }
+  .ed .picks button:hover { background: rgba(47,42,23,.2); }
+  .ed .hint { font-size: 10.5px; color: var(--ink-muted); margin-left: auto; }
+
+  /* A: band above the prompt */
+  .vA { margin: 0 10px 8px; padding: 8px 12px 9px 12px; border-radius: 3px; }
+  /* B: strip under the header */
+  .vB { padding: 6px 12px; border-bottom: 1px solid var(--paper-edge); }
+  .vB .more { background: transparent; border: 0; color: var(--ink-muted); font-size: 11px; cursor: pointer; text-decoration: underline; }
+  /* C: corner sticky */
+  .vC { position: absolute; top: 46px; right: 16px; width: 230px; padding: 10px 12px 12px; transform: rotate(-1.6deg); z-index: 5; border-radius: 2px; }
+  .vC::before { content: ""; position: absolute; top: -7px; left: 50%; width: 60px; height: 14px; transform: translateX(-50%) rotate(2deg); background: rgba(229,233,240,.35); }
+  .vC .note-line { flex-wrap: wrap; }
+  .vC .note-text { order: 3; flex-basis: 100%; }
+  .vC .who { flex: 1; }
+  .vC.stack { box-shadow: 4px 4px 0 -1px var(--paper-edge), 8px 8px 0 -2px #b9a35a, 0 2px 8px rgba(0,0,0,.4); }
+  /* D: chip in the header + popover */
+  .chipnote { display: inline-flex; align-items: center; gap: 6px; max-width: 260px; background: var(--paper); color: var(--ink); border-radius: 3px; padding: 1px 8px; font-size: 11.5px; cursor: pointer; border: 0; }
+  .chipnote span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chipnote .n { background: rgba(47,42,23,.18); border-radius: 6px; padding: 0 4px; font-size: 10px; }
+  .chipnote.claude { box-shadow: inset 3px 0 0 var(--claude); }
+  .pop { position: absolute; top: 36px; right: 70px; width: 290px; padding: 10px 12px 12px; z-index: 10; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="mock-bar">
+  <h1>Session notes — mock-up</h1>
+  <div><span class="lbl">Placement</span>
+    <span class="seg" id="segV">
+      <button data-v="A" class="on">A · Above the prompt</button>
+      <button data-v="B">B · Under the header</button>
+      <button data-v="C">C · Corner sticky</button>
+      <button data-v="D">D · Header chip</button>
+    </span></div>
+  <div><span class="lbl">Notes</span>
+    <span class="seg" id="segM">
+      <button data-m="one" class="on">One note</button>
+      <button data-m="stack">A stack</button>
+    </span></div>
+  <button class="act" id="claudeBtn">Simulate: Claude leaves a note</button>
+  <button class="act" id="resetBtn">Reset</button>
+</div>
+
+<div class="explain" id="explain"></div>
+
+<div class="app">
+  <div class="rail" id="rail"></div>
+  <div class="card" id="card"></div>
+</div>
+
+<script>
+  var VARIANTS = {
+    A: '<b>A &middot; Above the prompt</b> (your idea). The note sits between the conversation and the prompt box, right where your eyes land when you come back to type. Never scrolls away. Costs a strip of height while it is there.',
+    B: '<b>B &middot; Under the header.</b> A slim strip across the top of the session, under its title bar. The first thing you read when you open the session, and it takes one line. Further from where you type.',
+    C: '<b>C &middot; Corner sticky.</b> The literal &ldquo;slapped on&rdquo; sticky note, taped to the top-right corner of the conversation. Most obviously a note; it covers a corner of the text, so it is kept small.',
+    D: '<b>D &middot; Header chip.</b> The note shrinks to a yellow chip in the title bar next to the note button; click it to read, edit or delete. Takes no space at all, but it is the easiest to overlook.'
+  };
+  var COMMON = ' &nbsp;Click the <b>note button</b> (&#128221;, beside the history button) to add. Click the note text to edit, <b>&times;</b> to delete. Hover the yellow square on a session in the left list to read its note. A note Claude wrote carries a blue edge and says so.';
+  var PICKS = ['Waiting on Tanner', 'Need a PR review', 'Need more research', 'Blocked: '];
+
+  var state;
+  function reset() {
+    state = {
+      v: state ? state.v : 'A', m: state ? state.m : 'one', active: 0, editing: null, popOpen: false, expanded: false,
+      sessions: [
+        { name: 'switchboard.ai', st: 'working', color: '#5e9fe6', notes: [] },
+        { name: 'PropaneMon', st: 'idle', color: '#8fbf7f', notes: [{ text: 'Waiting on Tanner for the new sensor icons', by: 'you', at: 'Mon 4:12 PM' }] },
+        { name: 'BrainHarbor', st: 'done', color: '#b48ead', notes: [{ text: 'Blocked: need your call on keeping the v1 API or breaking it', by: 'claude', at: 'Tue 9:40 AM' }] },
+        { name: 'GpuMon', st: 'idle', color: '#d08770', notes: [{ text: 'Need a PR review (#212)', by: 'you', at: 'Sun 2:05 PM' }, { text: 'Need more research on NVML fan curves', by: 'you', at: 'Sun 2:30 PM' }] },
+        { name: 'ClaudeMon', st: 'idle', color: '#88c0d0', notes: [] }
+      ]
+    };
+    render();
+  }
+  function now() { var d = new Date(); return 'Today ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }); }
+  function esc(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function cur() { return state.sessions[state.active]; }
+  function visible(s) { return state.m === 'one' ? s.notes.slice(-1) : s.notes; }
+
+  function renderRail() {
+    var h = '<div class="rail-h">Sessions</div>';
+    state.sessions.forEach(function (s, i) {
+      var vis = visible(s), last = vis[vis.length - 1];
+      var marker = '';
+      if (last) {
+        var tip = vis.map(function (n) { return '<div style="margin-bottom:5px">' + esc(n.text) + '<div class="who">' + (n.by === 'claude' ? 'Claude' : 'You') + ' &middot; ' + n.at + '</div></div>'; }).join('');
+        marker = '<span class="marker' + (vis.some(function (n) { return n.by === 'claude'; }) ? ' claude' : '') + '">' +
+          (vis.length > 1 ? '<span class="count">' + vis.length + '</span>' : '') + '</span><div class="tip">' + tip + '</div>';
+      }
+      h += '<div class="row' + (i === state.active ? ' on' : '') + '" data-i="' + i + '"><span class="dot" style="background:' + s.color + '"></span>' +
+        '<span class="name">' + s.name + '</span>' + marker + '<span class="st">' + s.st + '</span></div>';
+    });
+    document.getElementById('rail').innerHTML = h;
+  }
+
+  function editor(initial) {
+    return '<div class="ed"><textarea id="ta" rows="2" placeholder="Where did you leave off?">' + esc(initial || '') + '</textarea>' +
+      '<div class="picks">' + PICKS.map(function (p) { return '<button data-pick="' + esc(p) + '">' + esc(p) + '</button>'; }).join('') +
+      '<span class="hint">Enter saves &middot; Esc cancels</span></div></div>';
+  }
+  function lines(list, offset) {
+    return list.map(function (n, k) {
+      var idx = offset + k;
+      if (state.editing === idx) return '<div class="note-line">' + editor(n.text) + '</div>';
+      return '<div class="note-line"><div class="note-text" data-edit="' + idx + '">' + esc(n.text) + '</div>' +
+        '<span class="who' + (n.by === 'claude' ? ' claude' : '') + '">' + (n.by === 'claude' ? '&#10022; Claude' : 'You') + ' &middot; ' + n.at + '</span>' +
+        '<button class="x" title="Delete this note" data-del="' + idx + '">&times;</button></div>';
+    }).join('');
+  }
+  function noteBody() {
+    var s = cur(), list = visible(s), offset = s.notes.length - list.length;
+    if (state.v === 'B' && state.m === 'stack' && !state.expanded && list.length > 1 && state.editing === null) {
+      var shown = list.slice(-1);
+      return lines(shown, s.notes.length - 1) + '<div style="margin-top:3px"><button class="more" id="more">+' + (list.length - 1) + ' earlier</button></div>';
+    }
+    var h = lines(list, offset);
+    if (state.editing === 'new') h += '<div class="note-line">' + editor('') + '</div>';
+    if (state.m === 'stack' && state.editing === null && list.length) h += '<div class="tools" style="margin-top:6px"><button class="plus" id="plus">+ add a line</button></div>';
+    return h;
+  }
+  function hasClaude() { return visible(cur()).some(function (n) { return n.by === 'claude'; }); }
+  function showing() { return visible(cur()).length > 0 || state.editing !== null; }
+
+  function renderCard() {
+    var s = cur(), list = visible(s), v = state.v;
+    var paperCls = 'paper' + (hasClaude() ? ' claude-edge' : '');
+    var chip = '';
+    if (v === 'D' && list.length) {
+      var last = list[list.length - 1];
+      chip = '<button class="chipnote' + (hasClaude() ? ' claude' : '') + '" id="chip" title="' + esc(last.text) + '"><span>' + esc(last.text) + '</span>' +
+        (list.length > 1 ? '<span class="n">' + list.length + '</span>' : '') + '</button>';
+    }
+    var h = '<div class="head"><span class="badge">TS</span><span class="title">' + s.name + '</span><span class="pill">' + s.st + '</span>' +
+      '<span class="spacer"></span>' + chip + '<span class="ctx">ctx</span>' +
+      '<span style="position:relative"><button class="hb note-btn new' + (list.length ? ' has' : '') + '" id="noteBtn" title="' + (list.length ? (state.m === 'one' ? 'Edit the note' : 'Add a note') : 'Add a note') + '">&#128221;</button></span>' +
+      '<button class="hb" title="Session history">&#10227;</button><button class="hb" title="Collapse">&#9601;</button></div>';
+    if (v === 'B' && showing()) h += '<div class="' + paperCls + ' vB">' + noteBody() + '</div>';
+    h += '<div class="feed">' +
+      '<div class="you">Make the poll interval configurable and add a test for the backoff.</div>' +
+      '<div class="l">Read <span class="path">src/sensors/poll.rs</span> (142 lines)</div>' +
+      '<div class="l">Edit <span class="path">src/sensors/poll.rs</span> <span class="add">+18</span> <span class="del">-6</span></div>' +
+      '<div class="l">Edit <span class="path">src/config.rs</span> <span class="add">+9</span></div>' +
+      '<div class="l">Bash cargo test backoff &middot; 4 passed</div>' +
+      '<div class="l" style="font-family:var(--sans)">Done. The interval now reads from <span class="path">poll_interval_ms</span> (default 2000), and the new test covers the 3-retry backoff. I did not touch the CI config; the PR is ready for review.</div>' +
+      '</div>';
+    if (v === 'C' && showing()) h += '<div class="' + paperCls + ' vC' + (state.m === 'stack' && list.length > 1 ? ' stack' : '') + '">' + noteBody() + '</div>';
+    if (v === 'D' && state.popOpen && showing()) h += '<div class="' + paperCls + ' pop">' + noteBody() + '</div>';
+    if (v === 'A' && showing()) h += '<div class="' + paperCls + ' vA">' + noteBody() + '</div>';
+    h += '<div class="composer"><div class="box">Type a prompt&hellip;</div><div class="meta"><span>Opus &middot; default</span><span>ctx 31.7k</span></div></div>';
+    document.getElementById('card').innerHTML = h;
+    var ta = document.getElementById('ta');
+    if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+  }
+
+  function render() {
+    document.getElementById('explain').innerHTML = VARIANTS[state.v] + COMMON;
+    document.querySelectorAll('#segV button').forEach(function (b) { b.classList.toggle('on', b.dataset.v === state.v); });
+    document.querySelectorAll('#segM button').forEach(function (b) { b.classList.toggle('on', b.dataset.m === state.m); });
+    renderRail(); renderCard();
+  }
+
+  function save(text) {
+    var s = cur(); text = text.trim();
+    if (state.editing === 'new') { if (text) { if (state.m === 'one') s.notes = []; s.notes.push({ text: text, by: 'you', at: now() }); } }
+    else if (typeof state.editing === 'number') {
+      if (text) { s.notes[state.editing].text = text; s.notes[state.editing].by = 'you'; s.notes[state.editing].at = now(); }
+      else s.notes.splice(state.editing, 1);
+    }
+    state.editing = null; render();
+  }
+  function startNote() {
+    var s = cur();
+    if (state.v === 'D') state.popOpen = true;
+    if (state.m === 'one' && s.notes.length) state.editing = s.notes.length - 1;
+    else state.editing = 'new';
+    render();
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('button, [data-edit], .row');
+    if (!t) { if (state.v === 'D' && state.popOpen && !e.target.closest('.pop') && state.editing === null) { state.popOpen = false; render(); } return; }
+    if (t.dataset.v) { state.v = t.dataset.v; state.editing = null; state.popOpen = false; render(); return; }
+    if (t.dataset.m) { state.m = t.dataset.m; state.editing = null; render(); return; }
+    if (t.classList.contains('row')) { state.active = +t.dataset.i; state.editing = null; state.popOpen = false; state.expanded = false; render(); return; }
+    if (t.id === 'noteBtn' || t.id === 'plus') { startNote(); if (t.id === 'plus') { state.editing = 'new'; render(); } return; }
+    if (t.id === 'chip') { state.popOpen = !state.popOpen; state.editing = null; render(); return; }
+    if (t.id === 'more') { state.expanded = true; render(); return; }
+    if (t.dataset.edit !== undefined) { state.editing = +t.dataset.edit; render(); return; }
+    if (t.dataset.del !== undefined) { cur().notes.splice(+t.dataset.del, 1); if (!cur().notes.length) state.popOpen = false; render(); return; }
+    if (t.dataset.pick) { var ta = document.getElementById('ta'); ta.value = t.dataset.pick; ta.focus(); return; }
+    if (t.id === 'claudeBtn') {
+      var s = cur(), n = { text: 'Blocked: need your decision on whether the retry limit should be configurable too', by: 'claude', at: now() };
+      if (state.m === 'one') s.notes = [n]; else s.notes.push(n);
+      state.editing = null; render(); return;
+    }
+    if (t.id === 'resetBtn') { reset(); return; }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.target.id !== 'ta') return;
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(e.target.value); }
+    if (e.key === 'Escape') { state.editing = null; render(); }
+  });
+  reset();
+</script>
+</body>
+</html>
