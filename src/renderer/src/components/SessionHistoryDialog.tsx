@@ -106,6 +106,12 @@ export function SessionHistoryDialog(props: {
    * why it is empty.
    */
   promptSession?: string;
+  /**
+   * The card this was opened from (#1550), so its own rows are marked: the
+   * conversation it is in, and the one it was in before its last pick — the way
+   * back, listed first.
+   */
+  cardId?: string;
   onClose: () => void;
   onPick: (pick: HistoryPick) => void;
   /**
@@ -198,7 +204,7 @@ export function SessionHistoryDialog(props: {
     setAnswer(null);
     setSelected(0);
     void window.switchboard.transcripts
-      .history({ scope, folder: props.folder })
+      .history({ scope, folder: props.folder, ...(props.cardId ? { cardId: props.cardId } : {}) })
       .then((a) => {
         if (!live) return;
         // #440: a refused channel resolves a TRUTHY brand, so reading `a`
@@ -217,7 +223,7 @@ export function SessionHistoryDialog(props: {
       // must not paint over the newer one.
       live = false;
     };
-  }, [props.open, props.folder, scope, t]);
+  }, [props.open, props.folder, props.cardId, scope, t]);
 
   // a LAYOUT effect: focused in the commit that shows it (#1171, `lib/modal-dismiss.ts`)
   React.useLayoutEffect(() => {
@@ -720,10 +726,23 @@ export function SessionHistoryDialog(props: {
                     </span>
                   )}
                 </span>
-                {row.claimed && (
-                  <span style={{ fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-                    {t('sessionHistory.claimed')}
+                {/* #1550: the card's own rows say whose they are. "already
+                    open" is true of the current one too, but it reads as some
+                    OTHER card, and the way back looked like every row near it. */}
+                {row.here === 'left' ? (
+                  <span data-history-here="left" style={{ fontSize: 10, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                    {t('sessionHistory.hereLeft')}
                   </span>
+                ) : row.here === 'current' ? (
+                  <span data-history-here="current" style={{ fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                    {t('sessionHistory.hereCurrent')}
+                  </span>
+                ) : (
+                  row.claimed && (
+                    <span style={{ fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                      {t('sessionHistory.claimed')}
+                    </span>
+                  )
                 )}
                 <span
                   title={t('sessionHistory.lastActive', { when: new Date(row.lastActiveMs).toLocaleString() })}

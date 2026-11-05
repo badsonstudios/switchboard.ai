@@ -197,6 +197,29 @@ describe('SessionHistoryDialog', () => {
     expect(h.picked).toEqual([]);
   });
 
+  it("opened from a card, asks for that card's marks and shows them (#1550)", async () => {
+    answer = {
+      status: 'ok',
+      truncated: false,
+      rows: [
+        row({ nativeId: 'left', description: '/start-ticket SK-950', descriptionFrom: 'prompt', here: 'left' }),
+        row({ nativeId: 'now', claimed: true, here: 'current' }),
+        row({ nativeId: 'twin', description: '/start-ticket SK-955', descriptionFrom: 'prompt' }),
+      ],
+    } satisfies ConversationHistory;
+    const h = await mount({ cardId: 'card-1' });
+    expect(calls).toEqual([{ scope: 'folder', folder: 'C:/work/app', cardId: 'card-1' }]);
+    const [left, now, twin] = rows();
+    expect(left.querySelector('[data-history-here="left"]')?.textContent).toBe('you were just here');
+    // the card's own conversation says so, instead of the "some other card" words
+    expect(now.querySelector('[data-history-here="current"]')?.textContent).toBe('open in this card');
+    expect(now.textContent).not.toContain('already open');
+    expect(twin.querySelector('[data-history-here]')).toBeNull();
+    // the way back is a normal, pickable row
+    await click(left);
+    expect(h.picked.map((p) => p.nativeId)).toEqual(['left']);
+  });
+
   it('picking one answers with the conversation AND its own folder', async () => {
     // Its own folder, not the picker's: once the list is widened, the row's
     // folder is the one the new card has to open in.

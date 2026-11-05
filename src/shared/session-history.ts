@@ -64,6 +64,21 @@ export interface ConversationRow {
    * failure, so the row carries the answer and main refuses the pick as well.
    */
   claimed: boolean;
+  /**
+   * Where this conversation stands to the card that ASKED (#1550), when one did:
+   *
+   *  - `current` — the conversation the card is in now;
+   *  - `left`    — the one it was in before its last history pick, which the
+   *                list puts FIRST.
+   *
+   * Why `left` exists at all: the owner switched a card to an older
+   * conversation and then could not find his way back. The row was there, but
+   * it opened with the same `/start-ticket SK-95…` command as the conversation
+   * from before his `/clear`, nothing said which one he had just been in, and he
+   * picked the look-alike. A first prompt is not a name; the card's own memory
+   * of where it just was is.
+   */
+  here?: 'current' | 'left';
 }
 
 /**
@@ -96,6 +111,8 @@ export interface ConversationHistoryRequest {
   scope: 'folder' | 'all';
   folder?: string;
   limit?: number;
+  /** the card asking, so its own rows can say `here` (#1550); absent = no marks */
+  cardId?: string;
 }
 
 /**

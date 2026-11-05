@@ -3082,6 +3082,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 folder={folder}
                 // the second tab: this session's own prompts (#1237)
                 promptSession={live?.id ?? ''}
+                cardId={cardId ?? undefined}
                 notice={historyNotice}
                 onClose={() => {
                   setHistoryStop(null);

@@ -3256,6 +3256,25 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // wired into `main/index.ts`: the root and the title reader are read off the
   // capabilities the session IPC already holds, so there is no second source for
   // them to disagree with.
+  // Which rows are the asking card's own (#1550): the conversation it is in and
+  // the one it left at its last history pick. Ids off the workspace file are
+  // narrowed here, where they are used — it is hand-editable.
+  //
+  // Never throws: like `claimed`, a failed read costs the marks, not the list.
+  // And no marks for a card on another AI than the one the list is read from
+  // (see below): its conversations are not in this list at all.
+  const hereFor = (cardId: unknown): { current?: string; left?: string } | undefined => {
+    if (typeof cardId !== 'string' || !cardId) return undefined;
+    try {
+      const card = deps.persist.list().find((s) => s.id === cardId);
+      if (!card || card.identity.providerId !== deps.defaultProviderId()) return undefined;
+      const id = (v: unknown): string | undefined => (typeof v === 'string' && isConversationId(v) ? v : undefined);
+      return { current: id(card.nativeSessionId), left: id(card.leftNativeId) };
+    } catch (err) {
+      log.warn('transcripts:history could not read the asking card', { error: errorText(err) });
+      return undefined;
+    }
+  };
   broker.handle('transcripts:history', async (_e, req: unknown) => {
     const r = (req ?? {}) as Partial<ConversationHistoryRequest>;
     // §5.29 — narrow at the boundary. An unknown scope is the folder one, not a
@@ -3301,6 +3320,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
             deps.persist
               .list()
               .flatMap((s) => heldNativeIds(s)),
+          here: hereFor(r.cardId),
         }
       );
     } catch (err) {
@@ -3673,6 +3693,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         nativeSessionLineage: undefined,
         // `undefined`, never `[]` — the shape the store loads (see `recordNativeId`)
         cededNativeIds: ceded.length > 0 ? ceded : undefined,
+        // …and the way back (#1550): the history list marks this row and puts
+        // it first. The conversation is otherwise let go of, exactly as above.
+        leftNativeId: fresh.nativeSessionId ?? fresh.leftNativeId,
         // The numbers were the conversation it left. `sessions:create` hands a
         // card's stored usage back as the strip's starting point, so keeping
         // them would show the old conversation's totals over the new one until

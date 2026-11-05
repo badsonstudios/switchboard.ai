@@ -272,6 +272,60 @@ describe('listHistory — one folder', () => {
     expect(rows[0].claimed).toBe(true);
   });
 
+  it("marks the asking card's own rows and puts the one it LEFT first (#1550)", () => {
+    // The owner's laptop, 2026-11-05: the conversation he had just left and the
+    // one from before his `/clear` opened with the same command.
+    seed('C:/work/app', 'before-clear', [...preamble, userLine('C:/work/app', '/start-ticket SK-955 Context')], {
+      mtimeMs: 1_000_000,
+    });
+    seed('C:/work/app', 'left', [...preamble, userLine('C:/work/app', '/start-ticket SK-950 Context')], {
+      mtimeMs: 5_000_000,
+    });
+    seed('C:/work/app', 'now', [...preamble, titleLine('the older one he picked')], { mtimeMs: 9_000_000 });
+    const rows = ok(
+      listHistory(
+        { scope: 'folder', folder: 'C:/work/app' },
+        deps({ claimed: () => ['now'], here: { current: 'now', left: 'left' } })
+      )
+    ).rows;
+    expect(rows.map((r) => [r.nativeId, r.here])).toEqual([
+      ['left', 'left'],
+      ['now', 'current'],
+      ['before-clear', undefined],
+    ]);
+    // the mark is not a claim: the way back stays pickable
+    expect(rows[0].claimed).toBe(false);
+  });
+
+  it('a way back ANOTHER card has taken since is an ordinary claimed row, not pinned (#1550)', () => {
+    seed('C:/work/app', 'left', [...preamble, titleLine('left')], { mtimeMs: 1_000_000 });
+    seed('C:/work/app', 'now', [...preamble, titleLine('now')], { mtimeMs: 9_000_000 });
+    const rows = ok(
+      listHistory(
+        { scope: 'folder', folder: 'C:/work/app' },
+        deps({ claimed: () => ['now', 'left'], here: { current: 'now', left: 'left' } })
+      )
+    ).rows;
+    expect(rows.map((r) => [r.nativeId, r.here, r.claimed])).toEqual([
+      ['now', 'current', true],
+      ['left', undefined, true],
+    ]);
+  });
+
+  it('no asking card, or a left conversation the walk never reached, changes nothing (#1550)', () => {
+    seed('C:/work/app', 'a', [...preamble, titleLine('a')], { mtimeMs: 1_000_000 });
+    seed('C:/work/app', 'b', [...preamble, titleLine('b')], { mtimeMs: 9_000_000 });
+    const plain = ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).rows;
+    expect(plain.map((r) => [r.nativeId, r.here])).toEqual([
+      ['b', undefined],
+      ['a', undefined],
+    ]);
+    const gone = ok(
+      listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps({ here: { left: 'not-on-disk' } }))
+    ).rows;
+    expect(gone.map((r) => r.nativeId)).toEqual(['b', 'a']);
+  });
+
   it('a `claimed` lookup that THROWS costs the marking, not the listing (P6)', () => {
     seed('C:/work/app', 'x', [...preamble, titleLine('t')]);
     const rows = ok(
