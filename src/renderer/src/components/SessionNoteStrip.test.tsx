@@ -7,8 +7,20 @@ import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../../../shared/i18n/locales/en.json';
 import type { SessionNote, SessionNoteChange } from '../../../shared/session-note';
-import { resetSessionNotesForTests, startEditingNote } from '../lib/session-notes';
-import { SessionNoteStrip, noteMeta, pickText } from './SessionNoteStrip';
+import {
+  notePlacementOf,
+  resetSessionNotesForTests,
+  setNotePlacement,
+  startEditingNote,
+} from '../lib/session-notes';
+import {
+  SessionNoteChip,
+  SessionNoteCorner,
+  SessionNoteLine,
+  SessionNoteStrip,
+  noteMeta,
+  pickText,
+} from './SessionNoteStrip';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -173,6 +185,112 @@ describe('SessionNoteStrip', () => {
     await act(async () => type(box, 'new'));
     await key(box, 'Enter');
     expect(q('[data-note-text]')?.textContent).toBe('old');
+  });
+});
+
+describe('placements (part 2)', () => {
+  async function renderAll(): Promise<void> {
+    await act(async () => {
+      root.render(
+        <>
+          <SessionNoteStrip cardId={CARD} />
+          <SessionNoteLine cardId={CARD} />
+          <SessionNoteCorner cardId={CARD} />
+          <SessionNoteChip cardId={CARD} />
+        </>
+      );
+    });
+  }
+  const placements = (): string[] =>
+    Array.from(host.querySelectorAll('[data-session-note]')).map((e) => e.getAttribute('data-note-placement') ?? '');
+
+  it('draws the note in exactly one place, the chosen one, and moves when the choice does', async () => {
+    stored = { text: 'Need a PR review', by: 'user', at: AT };
+    await renderAll();
+    expect(placements()).toEqual(['band']);
+    await act(async () => setNotePlacement('header'));
+    expect(placements()).toEqual(['line']);
+    await act(async () => setNotePlacement('corner'));
+    expect(placements()).toEqual(['corner']);
+    // D draws a chip, and the note itself only once the chip is clicked
+    await act(async () => setNotePlacement('chip'));
+    expect(placements()).toEqual([]);
+    expect(q('[data-note-chip]')?.textContent).toBe('Need a PR review');
+  });
+
+  it('D: the chip opens the note in a popover; Esc and a click elsewhere close it', async () => {
+    stored = { text: 'Waiting on Tanner', by: 'user', at: AT };
+    setNotePlacement('chip');
+    await renderAll();
+    const chip = q<HTMLButtonElement>('[data-note-chip]')!;
+    await act(async () => chip.click());
+    expect(placements()).toEqual(['popover']);
+    expect(chip.getAttribute('aria-expanded')).toBe('true');
+    await key(q('[data-note-text]')!, 'Escape');
+    expect(placements()).toEqual([]);
+    await act(async () => chip.click());
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    });
+    expect(placements()).toEqual([]);
+  });
+
+  it('D: the 📝 button opens the editor in the popover even with no note yet', async () => {
+    setNotePlacement('chip');
+    await renderAll();
+    expect(q('[data-note-chip]')).toBeNull();
+    await act(async () => startEditingNote(CARD));
+    expect(placements()).toEqual(['popover']);
+    expect(q('[data-note-input]')).not.toBeNull();
+  });
+
+  it('D: Esc closes the popover with focus still on the chip', async () => {
+    stored = { text: 'Waiting on Tanner', by: 'user', at: AT };
+    setNotePlacement('chip');
+    await renderAll();
+    const chip = q<HTMLButtonElement>('[data-note-chip]')!;
+    await act(async () => chip.click());
+    expect(placements()).toEqual(['popover']);
+    await key(chip, 'Escape');
+    expect(placements()).toEqual([]);
+  });
+
+  it('D: a note deleted elsewhere closes its popover, and the next note does not reopen it', async () => {
+    stored = { text: 'first', by: 'user', at: AT };
+    setNotePlacement('chip');
+    await renderAll();
+    await act(async () => q<HTMLButtonElement>('[data-note-chip]')!.click());
+    await act(async () => push?.({ cardId: CARD }));
+    expect(placements()).toEqual([]);
+    await act(async () => push?.({ cardId: CARD, note: { text: 'second', by: 'ai', at: AT } }));
+    expect(placements()).toEqual([]);
+    expect(q('[data-note-chip]')?.textContent).toBe('second');
+  });
+
+  it('D: switching placement away and back does not bring an open popover back', async () => {
+    stored = { text: 'n', by: 'user', at: AT };
+    setNotePlacement('chip');
+    await renderAll();
+    await act(async () => q<HTMLButtonElement>('[data-note-chip]')!.click());
+    await act(async () => setNotePlacement('header'));
+    await act(async () => setNotePlacement('chip'));
+    expect(placements()).toEqual([]);
+  });
+
+  it('B: a long note is one line, and its whole text is on hover', async () => {
+    const long = 'x'.repeat(180);
+    stored = { text: long, by: 'user', at: AT };
+    setNotePlacement('header');
+    await renderAll();
+    const text = q<HTMLElement>('[data-note-text]')!;
+    expect(text.style.whiteSpace).toBe('nowrap');
+    expect(text.title).toBe(long);
+  });
+
+  it('reads a stored placement it does not know as the default', () => {
+    expect(notePlacementOf('corner')).toBe('corner');
+    expect(notePlacementOf('sideways')).toBe('prompt');
+    expect(notePlacementOf(undefined)).toBe('prompt');
   });
 });
 

@@ -3,6 +3,10 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS 2026-11-06: #1544 PART 2 of 4 — placements B/C/D, the placement setting, rail marker (`feature/1544-note-placements`)
+>
+> **Dan (2026-11-06):** *"so far, so good. Continue"*. He is on 0.8.138, and part 1's hand-test steps 1–3 pass. Part 2 = placements B (under the header), C (corner sticky) and D (header chip + popover); a Settings ▸ Appearance choice, default A; and a mint marker on the sessions-rail row with the note on hover (blue ring for an AI note). Parts 3–4 not started.
+
 > # ✅ RELEASED: v0.8.138, 2026-11-06 (PR #1558, tag on `7033a3e9`, release run 42248664795): #1544 part 1 and #1550
 >
 > **Dan (2026-11-06):** *"when the PR is all done and everything's good, go ahead and cut a release."* A **regular release, on his word.** Version, lock and dated notes landed together, and `0.8.139 — unreleased` is open. The lock's two version lines were edited by hand, since the refresh hung last time; the diff was those two lines. **In it:** #1544 part 1 (the session sticky note, PR #1554) and #1550 (history marks the conversation you just left, PR #1552). The release PR merged on green CI (4/4), and the release workflow (build and publish, both green) published `switchboard-Setup-0.8.138.exe` (105 MB) and its `.sha256` as a normal release: `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.138` (published 16:15Z). Both dogfood rows read RELEASED. **Not hand-tested.** **Asked the same day:** can release notes in the update dialog carry screenshots? Not today, because CSP `img-src 'self' sb-doc-image:` blocks remote images. The recommended route: main downloads the release's own image assets, using the installer's host checks, and serves them locally. **Not filed; waiting on Dan.** **DO NOT CUT ANOTHER unless he asks.**

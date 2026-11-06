@@ -2439,8 +2439,16 @@ Consequences worth designing for, not discovering:
      needs-you signal), and it clears when the next prompt is sent.
 
   **As built, part 1:** the note, its storage, the button and placement A.
-  Parts 2–4 (the other placements and the rail marker; the MCP tool and "Let
-  Claude write it"; the waiting note) are recorded on the issue.
+  **Part 2:** placements B, C and D.
+  - The choice is renderer-only: a ui-blob key, `notePlacement`, read by the
+    note store, and chosen under Settings ▸ Appearance.
+  - B shows on every tab. A and C show on the Session tab only.
+  - D's chip opens a popover, which also holds the editor.
+  - The rail row carries a mint marker with the note on hover, and the row's
+    spoken name includes the note.
+
+  Parts 3 and 4 (the MCP tool and "Let Claude write it"; the waiting note) are
+  recorded on the issue.
 
 ### 5.12 Events — what needs the operator NOW
 

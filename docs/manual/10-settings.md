@@ -26,7 +26,7 @@ It is organised in **seven tabs** along the top:
 
 | Tab | Holds |
 |---|---|
-| **Appearance** | Theme, where the Sessions list goes, how a working session looks, the context meter, task label size |
+| **Appearance** | Theme, where the Sessions list goes, how a working session looks, the context meter, task label size, where a session's note sits |
 | **General** | Language, automatic update checks, AI status-page checks |
 | **AIs** | Which AI new sessions start on, the AIs found on this computer and their sign-in, adding another AI — see [Settings → AIs](24-ais.md) |
 | **Notifications** | The needs-you sound, quiet hours, phone push & webhooks |

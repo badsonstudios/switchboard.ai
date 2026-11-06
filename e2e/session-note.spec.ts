@@ -86,6 +86,61 @@ test.describe('session sticky note (#1544)', () => {
     await expect(noteButton(w)).toBeFocused();
   });
 
+  test('the placement setting moves the note; the rail marks it (part 2)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const first = a;
+    const w = first.window;
+    await noteButton(w).click({ timeout: 25_000 });
+    await noteBox(w).fill('Need a PR review');
+    await noteBox(w).press('Enter');
+    await expect(strip(w)).toHaveAttribute('data-note-placement', 'band');
+
+    // the rail marks the session, with the note on hover
+    const marker = w.locator('[data-rail-note]').first();
+    await expect(marker).toBeVisible();
+    await expect(marker).toHaveAttribute('title', 'Note: Need a PR review');
+
+    const pick = async (p: string): Promise<void> => {
+      await w.keyboard.press('Control+,');
+      const dialog = w.getByRole('dialog', { name: 'Settings' });
+      await expect(dialog).toBeVisible();
+      await dialog.locator(`[data-note-placement-option="${p}"]`).check();
+      await w.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+    };
+
+    // B: under the title bar, and still there on the Changes tab
+    await pick('header');
+    await expect(strip(w)).toHaveCount(1);
+    await expect(strip(w)).toHaveAttribute('data-note-placement', 'line');
+    await w.getByRole('tab', { name: 'Changes' }).first().click();
+    await expect(strip(w)).toBeVisible();
+    await w.getByRole('tab', { name: 'Session' }).first().click();
+
+    // C: the corner sticky over the conversation
+    await pick('corner');
+    await expect(strip(w)).toHaveAttribute('data-note-placement', 'corner');
+    await expect(strip(w)).toBeVisible();
+
+    // D: a chip in the title bar that opens the note
+    await pick('chip');
+    await expect(strip(w)).toHaveCount(0);
+    const chip = w.locator('[data-note-chip]');
+    await expect(chip).toHaveText('Need a PR review');
+    await chip.click();
+    await expect(strip(w)).toHaveAttribute('data-note-placement', 'popover');
+    await noteText(w).click();
+    await noteBox(w).fill('Need more research');
+    await noteBox(w).press('Enter');
+    await expect(chip).toHaveText('Need more research');
+
+    // the choice survives a relaunch
+    await first.close();
+    a = await launchApp({ home: first.home });
+    await expect(a.window.locator('[data-note-chip]')).toHaveText('Need more research', { timeout: 25_000 });
+  });
+
   test('saving empty text deletes the note', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });

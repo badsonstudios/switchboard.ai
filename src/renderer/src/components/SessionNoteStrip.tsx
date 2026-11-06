@@ -10,7 +10,15 @@ import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 import { NOTE_QUICK_PICK_KEYS, SESSION_NOTE_MAX, type SessionNote } from '../../../shared/session-note';
 import { switchWhen } from '../lib/ai-switch-view';
-import { cancelEditingNote, deleteNote, saveNote, startEditingNote, useSessionNote } from '../lib/session-notes';
+import {
+  cancelEditingNote,
+  deleteNote,
+  saveNote,
+  setNotePopoverOpen,
+  startEditingNote,
+  useNotePlacement,
+  useSessionNote,
+} from '../lib/session-notes';
 
 export interface SessionNoteStripProps {
   cardId: string;
@@ -50,68 +58,133 @@ export function pickText(label: string): string {
  * so a keyboard user is not dropped onto the page body. Found in the strip's
  * own document: a popped-out card has its own.
  */
-function refocusButton(from: Element | null, cardId: string): void {
+function refocusButton(from: Element | null, cardId: string, preferChip = false): void {
   const doc = from?.ownerDocument ?? document;
   requestAnimationFrame(() => {
-    const btn = Array.from(doc.querySelectorAll<HTMLElement>('[data-note-button]')).find(
-      (b) => b.getAttribute('data-note-button') === cardId
-    );
-    btn?.focus();
+    const find = (attr: string): HTMLElement | undefined =>
+      Array.from(doc.querySelectorAll<HTMLElement>(`[${attr}]`)).find((b) => b.getAttribute(attr) === cardId);
+    ((preferChip ? find('data-note-chip') : undefined) ?? find('data-note-button'))?.focus();
   });
 }
 
-export function SessionNoteStrip(props: SessionNoteStripProps): React.JSX.Element | null {
+/** How the paper is laid out in each placement. */
+type Variant = 'band' | 'line' | 'corner' | 'popover';
+
+const VARIANT_STYLE: Record<Variant, React.CSSProperties> = {
+  // A: a band between the conversation and the prompt box
+  band: { marginInline: 10, marginBlock: 6, paddingBlock: 7, borderRadius: 3 },
+  // B: a full-width strip under the title bar, one line while it is read
+  line: { paddingBlock: 5, borderRadius: 0 },
+  // C: a small sticky taped over the conversation's top-right corner
+  corner: {
+    position: 'absolute',
+    // below the conversation's own toolbar row (quiet / normal / firehose),
+    // which sits at the top right and must stay clickable
+    insetBlockStart: 44,
+    insetInlineEnd: 16,
+    inlineSize: 240,
+    maxInlineSize: 'calc(100% - 32px)',
+    paddingBlock: 9,
+    borderRadius: 2,
+    transform: 'rotate(-1.4deg)',
+    boxShadow: 'var(--window-shadow)',
+    zIndex: 5,
+  },
+  // D: the chip's popover, under the title bar at the card's right
+  popover: {
+    position: 'absolute',
+    insetBlockStart: 'calc(100% + 4px)',
+    insetInlineEnd: 0,
+    inlineSize: 300,
+    maxInlineSize: '90vw',
+    paddingBlock: 9,
+    borderRadius: 3,
+    boxShadow: 'var(--window-shadow)',
+    zIndex: 30,
+  },
+};
+
+/**
+ * The note on its paper: its words (click to edit), who wrote it and when,
+ * and ×; or the editor. Every placement draws this; only the paper differs.
+ */
+function NotePaper(
+  props: SessionNoteStripProps & { variant: Variant; onClose?: () => void; maxWidth?: number }
+): React.JSX.Element | null {
   const { t, i18n } = useTranslation();
   const { note, editing } = useSessionNote(props.cardId);
   const self = React.useRef<HTMLDivElement>(null);
   if (!note && !editing) return null;
   const ai = note?.by === 'ai';
+  const oneLine = props.variant === 'line';
+  // in the tight placements the words go under the byline instead of beside it
+  const stacked = props.variant === 'corner' || props.variant === 'popover';
+  const done = (): void => {
+    refocusButton(self.current, props.cardId, props.variant === 'popover');
+    props.onClose?.();
+  };
   return (
     <div
       ref={self}
       role="note"
       aria-label={t('sessionNote.region')}
       data-session-note={props.cardId}
+      data-note-placement={props.variant}
       data-note-by={note?.by ?? ''}
+      onKeyDown={(e) => {
+        // a popover that is only being read closes on Esc
+        if (e.key === 'Escape' && !editing && props.onClose) {
+          e.stopPropagation();
+          done();
+        }
+      }}
       style={{
         position: 'relative',
-        marginInline: 10,
-        marginBlock: 6,
-        paddingBlock: 7,
         paddingInlineStart: ai ? 12 : 10,
         paddingInlineEnd: 8,
         background: 'var(--note-paper)',
         color: 'var(--note-ink)',
-        borderRadius: 3,
         // the paper's folded edge along the bottom, and the AI's blue down the left
         borderBlockEnd: '2px solid var(--note-paper-edge)',
         borderInlineStart: ai ? '3px solid var(--note-ai)' : undefined,
         fontFamily: 'var(--font-ui)',
         fontSize: 12.5,
         flexShrink: 0,
+        boxSizing: 'border-box',
+        ...VARIANT_STYLE[props.variant],
+        ...(props.maxWidth !== undefined ? { maxInlineSize: props.maxWidth } : {}),
       }}
     >
       {editing ? (
         <NoteEditor
           initial={note?.text ?? ''}
           onSave={(text) => {
-            refocusButton(self.current, props.cardId);
+            done();
             void saveNote(props.cardId, text);
           }}
           onCancel={() => {
-            refocusButton(self.current, props.cardId);
+            done();
             cancelEditingNote(props.cardId);
           }}
         />
       ) : note ? (
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: stacked ? 'wrap' : undefined,
+            alignItems: oneLine ? 'center' : 'flex-start',
+            gap: stacked ? '4px 8px' : 8,
+          }}
+        >
           <button
             type="button"
             data-note-text=""
             onClick={() => startEditingNote(props.cardId)}
-            title={t('sessionNote.editHint')}
+            // where the line is cut short, the whole note is one hover away
+            title={oneLine ? note.text : t('sessionNote.editHint')}
             style={{
-              flex: 1,
+              flex: stacked ? '1 1 100%' : 1,
+              order: stacked ? 3 : undefined,
               minInlineSize: 0,
               textAlign: 'start',
               background: 'transparent',
@@ -120,8 +193,9 @@ export function SessionNoteStrip(props: SessionNoteStripProps): React.JSX.Elemen
               color: 'inherit',
               font: 'inherit',
               cursor: 'text',
-              whiteSpace: 'pre-wrap',
-              overflowWrap: 'anywhere',
+              ...(oneLine
+                ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+                : { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }),
             }}
           >
             {/* plain text, always: React escapes it, and nothing here is ever
@@ -133,9 +207,10 @@ export function SessionNoteStrip(props: SessionNoteStripProps): React.JSX.Elemen
             style={{
               fontSize: 10.5,
               whiteSpace: 'nowrap',
+              flex: stacked ? 1 : undefined,
               color: ai ? 'var(--note-ai-ink)' : 'var(--note-ink-muted)',
               fontWeight: ai ? 600 : undefined,
-              paddingBlockStart: 1,
+              paddingBlockStart: oneLine ? 0 : 1,
             }}
           >
             {noteMeta(note, t, Date.now(), i18n.language, props.aiName)}
@@ -144,7 +219,7 @@ export function SessionNoteStrip(props: SessionNoteStripProps): React.JSX.Elemen
             type="button"
             data-note-delete=""
             onClick={() => {
-              refocusButton(self.current, props.cardId);
+              done();
               void deleteNote(props.cardId);
             }}
             title={t('sessionNote.delete')}
@@ -164,6 +239,119 @@ export function SessionNoteStrip(props: SessionNoteStripProps): React.JSX.Elemen
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Placement A: above the prompt box (the Session tab draws this). */
+export function SessionNoteStrip(props: SessionNoteStripProps): React.JSX.Element | null {
+  return useNotePlacement() === 'prompt' ? <NotePaper {...props} variant="band" /> : null;
+}
+
+/** Placement B: a one-line strip under the card's title bar, on every tab. */
+export function SessionNoteLine(props: SessionNoteStripProps): React.JSX.Element | null {
+  return useNotePlacement() === 'header' ? <NotePaper {...props} variant="line" /> : null;
+}
+
+/** Placement C: a sticky over the top-right corner of the conversation. */
+export function SessionNoteCorner(props: SessionNoteStripProps): React.JSX.Element | null {
+  return useNotePlacement() === 'corner' ? <NotePaper {...props} variant="corner" /> : null;
+}
+
+/**
+ * Placement D: a chip in the title bar holding the note's words; clicking it
+ * opens the note in a popover. The popover also holds the editor, so the 📝
+ * button has somewhere to open it. Its parent must be `position: relative`.
+ */
+export function SessionNoteChip(props: SessionNoteStripProps): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const placement = useNotePlacement();
+  const { note, editing, open } = useSessionNote(props.cardId);
+  const box = React.useRef<HTMLSpanElement>(null);
+  const showPop = editing || (open && !!note);
+  // The popover hangs from the chip's right edge, so it may be no wider than
+  // the room between the card's left edge and there; 300px otherwise.
+  const [room, setRoom] = React.useState<number | undefined>(undefined);
+  React.useLayoutEffect(() => {
+    if (!showPop || !box.current) return;
+    const header = box.current.closest('[data-testid="card-header"]');
+    if (!header) return;
+    const right = box.current.getBoundingClientRect().right;
+    setRoom(Math.max(160, Math.floor(right - header.getBoundingClientRect().left - 8)));
+  }, [showPop]);
+  // a click anywhere else closes a popover that is only being read
+  React.useEffect(() => {
+    if (placement !== 'chip' || !open || editing) return;
+    const doc = box.current?.ownerDocument ?? document;
+    const away = (e: MouseEvent): void => {
+      const target = e.target as { nodeType?: number } | null;
+      if (box.current && target && target.nodeType && !box.current.contains(target as Node)) {
+        setNotePopoverOpen(props.cardId, false);
+      }
+    };
+    doc.addEventListener('mousedown', away);
+    return () => doc.removeEventListener('mousedown', away);
+    // `box.current?.ownerDocument` too: a card popped out with its popover open
+    // moves to another window's document
+  }, [placement, open, editing, props.cardId, box.current?.ownerDocument]);
+  if (placement !== 'chip') return null;
+  if (!note && !showPop) return null;
+  const ai = note?.by === 'ai';
+  return (
+    <span
+      ref={box}
+      data-note-chip-box=""
+      // Esc closes a popover that is only being read, wherever focus is in it,
+      // the chip included
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && open && !editing) {
+          e.preventDefault();
+          e.stopPropagation();
+          setNotePopoverOpen(props.cardId, false);
+        }
+      }}
+      style={{ position: 'relative', display: 'flex', minInlineSize: 0, flex: '0 1 auto' }}
+    >
+      {note && (
+        <button
+          type="button"
+          data-note-chip={props.cardId}
+          data-no-maximize
+          aria-expanded={showPop}
+          aria-haspopup="dialog"
+          onClick={() => setNotePopoverOpen(props.cardId, !open)}
+          title={note.text}
+          aria-label={t('sessionNote.chipLabel', { note: note.text })}
+          style={{
+            display: 'inline-block',
+            flex: '0 1 auto',
+            minInlineSize: 0,
+            maxInlineSize: 220,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            background: 'var(--note-paper)',
+            color: 'var(--note-ink)',
+            border: 'none',
+            borderInlineStart: ai ? '3px solid var(--note-ai)' : undefined,
+            borderRadius: 3,
+            padding: '1px 8px',
+            fontSize: 11.5,
+            fontFamily: 'var(--font-ui)',
+            cursor: 'pointer',
+          }}
+        >
+          {note.text}
+        </button>
+      )}
+      {showPop && (
+        <NotePaper
+          {...props}
+          variant="popover"
+          maxWidth={room}
+          onClose={() => setNotePopoverOpen(props.cardId, false)}
+        />
+      )}
+    </span>
   );
 }
 
