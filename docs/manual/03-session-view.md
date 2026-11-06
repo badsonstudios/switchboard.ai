@@ -540,14 +540,36 @@ conversation, so it costs nothing and Claude does not see it. It stays on the
 session when you quit and reopen switchboard, and when the session is resumed.
 Adding or changing a note never sets off a notification.
 
-Notes are capped at 200 characters and are always one line of plain text. The
-note sits on the **Session** tab, above the prompt. It does not show on the
-**Changes** tab.
+Notes are capped at 200 characters and are always one line of plain text.
 
-> TODO: placements other than "above the prompt", the marker in the sessions
-> list, notes Claude writes ("Let Claude write it"), and the automatic
-> "waiting" note are coming in later updates. Document them here when they
-> ship.
+### Where the note sits
+
+You choose where every session shows its note, in **Settings ▸ Appearance ▸
+Session notes** (press **`Ctrl+,`**). All sessions move their notes the moment
+you pick.
+
+- **Above the prompt** (the default): a strip just above the prompt box, where
+  your eyes land when you come back to type. It shows on the **Session** tab.
+- **Under the title bar:** one line across the top of the session, on every
+  tab. A long note is cut short with "…"; hover over it to read the whole
+  note, or click it to edit.
+- **Corner sticky:** a small note taped to the top-right corner of the
+  conversation, slightly tilted. It covers a corner of the text, so it is kept
+  small. It shows on the **Session** tab.
+- **Chip in the title bar:** the note shrinks to a small mint chip beside
+  **📝**. Click the chip to read the whole note in a small pop-up, where you
+  can change it or delete it. **Esc**, or a click anywhere else, closes the
+  pop-up. This takes no room at all, but it is the easiest to miss.
+
+### In the sessions list
+
+A session with a note shows a small mint square on its row in the sessions
+list. Hover over the square to read the note. A screen reader reads the note
+as part of the row's name.
+
+> TODO: notes Claude writes ("Let Claude write it", and a blue edge and ring
+> for a note Claude wrote) and the automatic "waiting" note are coming in later
+> updates. Document them here when they ship.
 
 ## Talking to the session
 

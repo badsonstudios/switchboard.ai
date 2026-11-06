@@ -12,6 +12,25 @@
 // call is a no-op and every card simply has no note.
 import * as React from 'react';
 import type { SessionNote, SessionNoteChange } from '../../../shared/session-note';
+import { uiGet, uiSet } from './ui-state';
+
+/**
+ * Where a card draws its note (#1544 part 2), one choice for every card:
+ *   prompt  A, a band above the prompt box (the default)
+ *   header  B, a one-line strip under the card's title bar
+ *   corner  C, a small tilted sticky in the conversation's top-right corner
+ *   chip    D, a chip in the title bar that opens the note in a popover
+ */
+export const NOTE_PLACEMENTS = ['prompt', 'header', 'corner', 'chip'] as const;
+export type NotePlacement = (typeof NOTE_PLACEMENTS)[number];
+export const DEFAULT_NOTE_PLACEMENT: NotePlacement = 'prompt';
+/** the ui-blob key the choice is stored under */
+export const NOTE_PLACEMENT_KEY = 'notePlacement';
+
+/** What was stored, as a placement; anything else reads as the default. */
+export function notePlacementOf(raw: unknown): NotePlacement {
+  return NOTE_PLACEMENTS.includes(raw as NotePlacement) ? (raw as NotePlacement) : DEFAULT_NOTE_PLACEMENT;
+}
 
 interface NoteApi {
   note(cardId: string): Promise<SessionNote | null>;
@@ -23,9 +42,12 @@ interface CardNoteState {
   note: SessionNote | undefined;
   /** the editor is open for this card */
   editing: boolean;
+  /** placement D: the chip's popover is open on the note (not editing it) */
+  open: boolean;
 }
 
-const EMPTY: CardNoteState = { note: undefined, editing: false };
+const EMPTY: CardNoteState = { note: undefined, editing: false, open: false };
+let placement: NotePlacement = DEFAULT_NOTE_PLACEMENT;
 
 const cards = new Map<string, CardNoteState>();
 const fetched = new Set<string>();
@@ -56,7 +78,8 @@ function listen(): void {
     unsubscribePush = a.onNoteChanged((c) => {
       if (!c || typeof c.cardId !== 'string') return;
       fetched.add(c.cardId);
-      patch(c.cardId, { note: c.note });
+      // a note deleted elsewhere takes its open popover with it
+      patch(c.cardId, { note: c.note, ...(c.note ? {} : { open: false }) });
     });
   } catch {
     /* fail-open: no live updates, the fetch still works */
@@ -97,12 +120,41 @@ export function cancelEditingNote(cardId: string): void {
   patch(cardId, { editing: false });
 }
 
+/** Placement D: open or close the chip's popover on the note. */
+export function setNotePopoverOpen(cardId: string, open: boolean): void {
+  patch(cardId, { open });
+}
+
+/** Read the stored placement, once the ui blob has loaded (App calls this). */
+export function initNotePlacement(): void {
+  placement = notePlacementOf(uiGet<unknown>(NOTE_PLACEMENT_KEY, undefined));
+  emit();
+}
+
+/** Settings ▸ Appearance: every card moves its note at once. */
+export function setNotePlacement(next: NotePlacement): void {
+  placement = notePlacementOf(next);
+  // a popover open under the old placement must not reappear later
+  for (const [id, st] of cards) if (st.open) cards.set(id, { ...st, open: false });
+  uiSet(NOTE_PLACEMENT_KEY, placement);
+  emit();
+}
+
+/** React binding for the placement. */
+export function useNotePlacement(): NotePlacement {
+  return React.useSyncExternalStore(
+    subscribe,
+    () => placement,
+    () => DEFAULT_NOTE_PLACEMENT
+  );
+}
+
 /**
  * Save what was typed: empty text deletes the note. Closes the editor at once
  * and shows main's answer when it comes. Resolves when the save is settled.
  */
 export async function saveNote(cardId: string, text: string): Promise<void> {
-  patch(cardId, { editing: false });
+  patch(cardId, { editing: false, ...(text.trim() ? {} : { open: false }) });
   const a = api();
   if (!a) return;
   try {
@@ -135,6 +187,7 @@ export function resetSessionNotesForTests(): void {
   cards.clear();
   fetched.clear();
   listeners.clear();
+  placement = DEFAULT_NOTE_PLACEMENT;
   unsubscribePush?.();
   unsubscribePush = null;
 }

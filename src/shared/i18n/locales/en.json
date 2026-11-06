@@ -184,6 +184,8 @@
     "rowLabel": "{title} — {state}",
     "rowLabelPinned": "{title} — pinned, {state}",
     "rowDetail": "{detail}, {state}",
+    "rowNote": "{label}, note: {note}",
+    "rowNoteAi": "{label}, note from the AI: {note}",
     "waitingHint": "{count, plural, one {# message from another session is waiting here — open it to read and send} other {# messages from other sessions are waiting here — open it to read and send}}",
     "rowWaiting": "{count, plural, one {# message waiting from another session} other {# messages waiting from other sessions}}, {state}",
     "waitingChip": "{count, plural, one {# message} other {# messages}}",
@@ -366,6 +368,9 @@
     "editHint": "Click to edit",
     "delete": "Delete this note",
     "deleteIcon": "×",
+    "chipLabel": "Session note: {note}",
+    "railHint": "Note: {note}",
+    "railHintAi": "Note from the AI: {note}",
     "byYou": "You",
     "byAi": "✦ {ai}",
     "byAiUnnamed": "✦ AI",
@@ -1998,6 +2003,18 @@
     "mediumNote": "Up to two lines. A compromise when you are running a lot of sessions.",
     "compact": "Compact",
     "compactNote": "One line, trimmed with an ellipsis — exactly how labels looked before this setting existed."
+  },
+  "notePlacement": {
+    "title": "Session notes",
+    "blurb": "Where a session’s sticky note sits. Every session moves its note the moment you pick.",
+    "prompt": "Above the prompt",
+    "promptNote": "A strip just above the prompt box, where your eyes land when you come back to type. The default.",
+    "header": "Under the title bar",
+    "headerNote": "One line across the top of the session, on every tab. Hover it to read a long note in full.",
+    "corner": "Corner sticky",
+    "cornerNote": "A small note taped to the top-right corner of the conversation. It covers a corner of the text.",
+    "chip": "Chip in the title bar",
+    "chipNote": "A small chip beside the 📝 button. Click it to read, change or delete the note. Takes no room, but is the easiest to miss."
   },
   "dispatchRetire": {
     "title": "Finished dispatched sessions",

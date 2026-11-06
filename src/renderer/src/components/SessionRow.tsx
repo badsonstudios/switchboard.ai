@@ -22,6 +22,7 @@ import { useShownStatus } from '../lib/use-shown-status';
 import { dismissWaiting, isDismissClick } from '../lib/seen';
 import { tint } from '../lib/tint';
 import { AiBadge } from './AiBadge';
+import { useSessionNote } from '../lib/session-notes';
 import { DEFAULT_TASK_LABEL_SIZE, LABEL_LINES } from '../../../shared/task-label-size';
 
 /**
@@ -219,6 +220,8 @@ export function SessionRow(props: {
   const accent = s.accent ?? 'var(--faint)';
   const selected = props.selected;
   const isPinned = props.pinned;
+  // the card's sticky note, for the marker and the spoken name (#1544)
+  const rowNote = useSessionNote(s.id).note;
   const waiting = props.waiting;
   const depth = props.depth;
   const indent = railDepthIndent(depth);
@@ -402,11 +405,14 @@ export function SessionRow(props: {
             // exactly as `rowDetail` already does for the task label — and it
             // has to be here at all because the mark beside the row is
             // `aria-hidden` decoration like every other glyph on the row.
-            aria-label={
-              props.folded
-                ? t('strip.pillFolded', { name: sessionSpokenName(t, s, isPinned, waiting) })
-                : sessionSpokenName(t, s, isPinned, waiting)
-            }
+            aria-label={((): string => {
+              const name = sessionSpokenName(t, s, isPinned, waiting);
+              // the sticky note (#1544) is said too: its marker is decoration
+              const said = rowNote
+                ? t(rowNote.by === 'ai' ? 'rail.rowNoteAi' : 'rail.rowNote', { label: name, note: rowNote.text })
+                : name;
+              return props.folded ? t('strip.pillFolded', { name: said }) : said;
+            })()}
             // "this is the session the grid is showing" — a fact about the
             // rail's own list, which is what aria-current is for
             aria-current={selected ? 'true' : undefined}
@@ -569,6 +575,27 @@ export function SessionRow(props: {
               screen reader — the fact is folded into the row button's own
               accessible name above, where it is read as part of "this
               session" rather than as a loose glyph beside it. */}
+          {/* The sticky note's marker (#1544): a small square of the note's mint
+              paper, the note on hover, a blue ring when the AI wrote it.
+              Decoration to a screen reader — the note is in the row's name. */}
+          {rowNote && (
+            <span
+              aria-hidden
+              data-rail-note={s.id}
+              data-note-by={rowNote.by}
+              title={t(rowNote.by === 'ai' ? 'sessionNote.railHintAi' : 'sessionNote.railHint', { note: rowNote.text })}
+              style={{
+                inlineSize: 11,
+                blockSize: 11,
+                flexShrink: 0,
+                borderRadius: 2,
+                background: 'var(--note-paper)',
+                boxShadow: 'inset 0 -2px 0 var(--note-paper-edge)',
+                outline: rowNote.by === 'ai' ? '2px solid var(--note-ai)' : undefined,
+                outlineOffset: 1,
+              }}
+            />
+          )}
           {isPinned && (
             <span
               aria-hidden

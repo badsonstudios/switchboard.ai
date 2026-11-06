@@ -140,6 +140,16 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.139 — unreleased
 
+### Added
+
+- **Choose where a session's sticky note sits.** **Settings ▸ Appearance ▸
+  Session notes** has four places: above the prompt box (as before), one line
+  under the session's title bar, a small sticky in the corner of the
+  conversation, or a chip in the title bar that opens the note when you click
+  it. Every session moves its note the moment you pick.
+- **The sessions list marks sessions that have a note.** A small mint square
+  sits on the row. Hover over it to read the note.
+
 ## 0.8.138 — 2026-11-06
 
 ### Added

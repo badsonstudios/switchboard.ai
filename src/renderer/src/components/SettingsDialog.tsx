@@ -47,6 +47,7 @@ import {
 } from '../lib/settings-sections';
 import { SettingsButton } from './settings/controls';
 import { ThemeSection } from './settings/ThemeSection';
+import { NotePlacementSection } from './settings/NotePlacementSection';
 import { TaskLabelSizeSection } from './settings/TaskLabelSizeSection';
 import { SessionsPlacementSection } from './settings/SessionsPlacementSection';
 import type { SessionsPlacement } from '../lib/sessions-placement';
@@ -374,6 +375,7 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
               size={props.taskLabelSize}
               onSet={props.onSetTaskLabelSize}
             />
+            <NotePlacementSection />
           </div>
         )}
 
