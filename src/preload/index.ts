@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ContextMenuLabels } from '../shared/context-menu';
+import type { SessionNote, SessionNoteChange } from '../shared/session-note';
 import type { MisplacedSkills, SlashCommand } from '../shared/slash-commands';
 import type { MentionPrompt } from '../shared/mention-prompt';
 import type { ContextOffer } from '../shared/context-drop';
@@ -829,6 +830,17 @@ const api = {
     /** Switch it. Resolves the state main now holds, not the one asked for. */
     setAcceptFromSiblings: (cardId: string, on: boolean): Promise<boolean> =>
       ipcRenderer.invoke('sessions:setAcceptFromSiblings', cardId, on),
+    /** A card's sticky note (#1544), or null. Never sent to the AI. */
+    note: (cardId: string): Promise<SessionNote | null> => ipcRenderer.invoke('sessions:note', cardId),
+    /** Write it; empty text deletes it. Resolves what main now holds. */
+    setNote: (cardId: string, text: string): Promise<SessionNote | null> =>
+      ipcRenderer.invoke('sessions:setNote', cardId, text),
+    /** A card's note changed, by this window or anyone else. */
+    onNoteChanged: (cb: (c: SessionNoteChange) => void): (() => void) => {
+      const h = (_e: unknown, c: SessionNoteChange) => cb(c);
+      ipcRenderer.on('sessions:noteChanged', h);
+      return () => ipcRenderer.removeListener('sessions:noteChanged', h);
+    },
     onExited: (cb: (e: { sessionId: string; code: number; crashed: boolean }) => void): (() => void) => {
       const h = (_e: unknown, x: { sessionId: string; code: number; crashed: boolean }) => cb(x);
       ipcRenderer.on('sessions:exited', h);

@@ -356,6 +356,28 @@
     "none": "There is no other session open to hand it to.",
     "cancel": "Cancel"
   },
+  "sessionNote": {
+    "add": "Add a note: where you left off in this session",
+    "edit": "Edit this session's note",
+    "buttonIcon": "📝",
+    "region": "Session note",
+    "placeholder": "Where did you leave off?",
+    "hint": "Enter saves · Esc cancels",
+    "editHint": "Click to edit",
+    "delete": "Delete this note",
+    "deleteIcon": "×",
+    "byYou": "You",
+    "byAi": "✦ {ai}",
+    "byAiUnnamed": "✦ AI",
+    "meta": "{who} · {when}",
+    "today": "Today {time}",
+    "pick": {
+      "waiting": "Waiting on…",
+      "review": "Need a PR review",
+      "research": "Need more research",
+      "blocked": "Blocked: "
+    }
+  },
   "sessionHistory": {
     "open": "History: previous conversations, and the prompts you sent in this one",
     "openIcon": "🕘",

@@ -140,6 +140,15 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.138 — unreleased
 
+### Added
+
+- **A sticky note on a session.** Click **📝** in a session's title bar to
+  leave yourself a one-line note about where you left off ("Waiting on Tanner",
+  "Need a PR review"). It sits on mint-green paper just above the prompt box,
+  with quick picks for the common ones. Click the words to change it, and **×**
+  to delete it. The note stays with the session through a restart or a resume,
+  and it is never sent to Claude.
+
 ### Fixed
 
 - **The way back from an older conversation is easy to find.** When you open

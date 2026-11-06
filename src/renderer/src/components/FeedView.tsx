@@ -2,9 +2,11 @@
 // built from transcript-derived blocks. Assistant prose renders as sanitized
 // markdown; tool calls are one-line collapsed rows (click to expand); thinking
 // is folded; sidechain (subagent) blocks indent behind a dashed border.
-// Guardrail (Â§5.10 Non-Goals): no input surface of any kind lives here.
+// Guardrail (Â§5.10 Non-Goals): the conversation itself takes no input; the
+// composer and the session note's editor (#1544) sit below it, outside it.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { SessionNoteStrip } from './SessionNoteStrip';
 import { blockVisible, FEED_VIEW_CAP, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
 import { composerName } from '../lib/card-title';
@@ -1957,6 +1959,10 @@ export function FeedView(props: {
           </button>
         </div>
       )}
+      {/* The session's sticky note, placement A: above the prompt (#1544). Where
+          the eye lands on coming back to type. Keyed on the CARD, which survives
+          a resume; the session id does not. */}
+      {props.cardId && <SessionNoteStrip cardId={props.cardId} aiName={sessionAiName || undefined} />}
       {/* the working banner â€” LOUD by request (Dan, twice): full-width tinted
           bar, bold LEFT-aligned label, staggered pulse dots to its right
           (Dan round 4: text left, dots right of the text, no ellipsis) */}

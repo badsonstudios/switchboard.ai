@@ -933,6 +933,76 @@ describe('suppressed notifications', () => {
   });
 });
 
+describe('the sticky note on a card (#1544)', () => {
+  const note = { text: 'Waiting on Tanner', by: 'user' as const, at: '2026-11-06T14:18:00.000Z' };
+
+  it('has none until one is set, and none for a card that does not exist', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    expect(st.cardNote('one')).toBeUndefined();
+    expect(st.cardNote('nope')).toBeUndefined();
+  });
+
+  it('sets, replaces and deletes, answering what it now holds', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    expect(st.setCardNote('one', note)).toEqual(note);
+    expect(st.setCardNote('one', { ...note, text: 'Need a PR review' })?.text).toBe('Need a PR review');
+    expect(st.setCardNote('one', undefined)).toBeUndefined();
+    expect('note' in st.listSessions()[0]).toBe(false);
+  });
+
+  it('refuses an unknown card', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.setCardNote('ghost', note)).toBeUndefined();
+  });
+
+  it('survives quit -> relaunch', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession(sess('one'));
+    a.setCardNote('one', note);
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.cardNote('one')).toEqual(note);
+  });
+
+  it('is kept when the card is rewritten by a spread-then-override upsert (a resume)', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    st.setCardNote('one', note);
+    const prior = st.listSessions()[0];
+    st.upsertSession({ ...prior, nativeSessionId: 'new-conversation' });
+    expect(st.cardNote('one')).toEqual(note);
+  });
+
+  it('cleans a hand-edited note on load, and drops one with no usable text', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession({ ...sess('one'), note: { ...note, text: ` two${String.fromCharCode(10)}lines ` } });
+    a.upsertSession({ ...sess('two'), note: { ...note, text: '   ' } });
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.cardNote('one')?.text).toBe('two lines');
+    expect(b.cardNote('two')).toBeUndefined();
+  });
+
+  it('hands out copies', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    st.setCardNote('one', note);
+    st.cardNote('one')!.text = 'mutated';
+    expect(st.cardNote('one')?.text).toBe(note.text);
+  });
+});
+
 describe('accept messages from other sessions automatically (P2-E11-05, §5.4)', () => {
   it('is OFF for a card nobody has touched, and for a card that does not exist', () => {
     const st = makeStore(file);

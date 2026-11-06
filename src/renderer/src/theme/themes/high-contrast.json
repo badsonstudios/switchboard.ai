@@ -95,5 +95,11 @@
   "--btn-primary-bg": "#2ea043",
   "--btn-primary-text": "#000000",
   "--btn-secondary-bg": "#7cc4ff",
-  "--btn-secondary-text": "#000000"
+  "--btn-secondary-text": "#000000",
+  "--note-paper": "#d3ecca",
+  "--note-paper-edge": "#5f8a54",
+  "--note-ink": "#0c140b",
+  "--note-ink-muted": "#2e3d29",
+  "--note-ai": "#2f6fc4",
+  "--note-ai-ink": "#173f73"
 }

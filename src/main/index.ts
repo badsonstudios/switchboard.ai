@@ -128,6 +128,7 @@ import { SiblingDelivery } from './sessions/delivery';
 import { Blackboard } from './sessions/blackboard';
 import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
 import { registerDispatchIpc } from './sessions/dispatch-ipc';
+import { registerNoteIpc } from './sessions/note-ipc';
 import { DispatchResults } from './sessions/dispatch-results';
 import { runPreflight } from './preflight';
 import { slashCommandsFor, slashHintsFor } from './slash-commands-for';
@@ -2987,6 +2988,15 @@ app
       store: workspace,
       knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
       delivery: siblingDelivery,
+    });
+    // A card's sticky note (#1544). Main window only, like the sibling push:
+    // a popout renders in the opener's realm, so one push reaches both.
+    registerNoteIpc({
+      broker,
+      log: createLogger(sink, 'notes'),
+      store: workspace,
+      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+      push: (change) => broker.send(currentWindow, 'sessions:noteChanged', change),
     });
     // The e2e seam (#765). Non-packaged builds only, like every other one. The
     // fake provider declares no `mcp` capability, so no bus child ever runs in

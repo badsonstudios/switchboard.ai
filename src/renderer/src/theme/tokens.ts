@@ -166,6 +166,14 @@ export const TOKEN_GROUPS: readonly TokenGroup[] = [
       '--btn-secondary-text',
     ],
   },
+  {
+    // a session's sticky note (#1544): paper, its folded edge, the ink on it,
+    // and the blue that marks a note an AI wrote
+    id: 'note',
+    layer: 2,
+    kind: 'color',
+    tokens: ['--note-paper', '--note-paper-edge', '--note-ink', '--note-ink-muted', '--note-ai', '--note-ai-ink'],
+  },
 ];
 
 /** The tokens of one kind — the drift test validates each theme's values by it. */
