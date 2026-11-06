@@ -2424,6 +2424,23 @@ Consequences worth designing for, not discovering:
   label leaves card, rail and toast at once, a label the user TYPED is never
   hidden (those are the user's words, not the CLI's), and flipping back restores
   instantly from a value that was never thrown away.
+- **Session sticky note (#1544, designed with Dan 2026-11-05, amended
+  2026-11-06).** One short plain-text note per CARD saying where the user left
+  off, stored on the card in `workspace.json` (`PersistedSession.note`), so it
+  survives restart and resume. It is never sent to the AI and raises no
+  attention event. The 📝 button in the card header adds or edits it, × deletes
+  it, and there are four placements behind a setting (A, above the prompt, is
+  the default). The full design is on the issue. **Two amendments, 2026-11-06
+  (Dan):**
+  1. **Colour.** The sticky note is **mint paper, not yellow**: yellow means
+     "a session needs you" (#1165), and a note you left yourself does not.
+  2. **A second, automatic "waiting" note.** It sits behind an on/off setting.
+     The AI writes it when it stops waiting on you, it is **yellow** (it is a
+     needs-you signal), and it clears when the next prompt is sent.
+
+  **As built, part 1:** the note, its storage, the button and placement A.
+  Parts 2–4 (the other placements and the rail marker; the MCP tool and "Let
+  Claude write it"; the waiting note) are recorded on the issue.
 
 ### 5.12 Events — what needs the operator NOW
 

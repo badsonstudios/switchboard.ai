@@ -561,6 +561,10 @@ export const CHANNEL_CAPABILITIES = {
   // consumer allowed only to observe must not be able to forge one.
   'sessions:siblingMessageAck': 'sessions.write',
   'sessions:setTaskLabel': 'sessions.write',
+  // A card's sticky note (#1544): the user's own label on the card, never sent
+  // to the AI. Read/write like the task label beside it.
+  'sessions:note': 'sessions.read',
+  'sessions:setNote': 'sessions.write',
   'sessions:slashCommands': 'sessions.read',
   // why some skills are missing from that popup (#1328): file names only
   'sessions:slashHints': 'sessions.read',
@@ -715,6 +719,8 @@ export const CHANNEL_CAPABILITIES = {
   // a card's task label moved, and the renderer did not do it (P2-E7-06) —
   // carries the new value, because its two readers have nothing to re-read
   'sessions:taskLabel': 'sessions.read',
+  // a card's note moved (#1544) — carries the new value, like the task label
+  'sessions:noteChanged': 'sessions.read',
   'sessions:usage': 'sessions.read',
   // which model a session is running, the moment it moves (#746) — the footer's
   // source, and the same capability as the pull it complements

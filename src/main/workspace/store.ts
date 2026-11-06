@@ -70,6 +70,7 @@ import { isUsableQuietWindow } from '../../shared/quiet-hours';
 import type { AutonomyMode } from '../../shared/sessions';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../shared/transport';
 import type { NotificationPrefs } from '../../shared/notifications';
+import { sanitizeNote, type SessionNote } from '../../shared/session-note';
 
 /**
  * The settings an engine asked the host to keep with one conversation (#1317):
@@ -209,6 +210,13 @@ export interface PersistedSession {
    * gate open. Stored per CARD so a deliberate pipeline survives a resume.
    */
   acceptFromSiblings?: boolean;
+  /**
+   * The card's sticky note (#1544): one short line saying where the user left
+   * off. **Absent means no note**, which is every card written before it.
+   * Stored per CARD, so it survives restart and resume; never sent to the AI.
+   * No version bump: an older build saves an unknown field through untouched.
+   */
+  note?: SessionNote;
   /**
    * The conversations this card has with the AIs it is NOT on (E40 item 11,
    * #1294), keyed by provider id — parked by a switch, put back by switching
@@ -994,9 +1002,14 @@ export class WorkspaceStore {
         withAis.conversationSettings === undefined
           ? withAis
           : { ...withAis, conversationSettings: sanitizeConversationSettings(withAis.conversationSettings) };
-      if (!withSettings.groupId || groupIds.has(withSettings.groupId)) return withSettings;
-      orphaned.push(withSettings.id);
-      return { ...withSettings, groupId: undefined };
+      // The sticky note (#1544): a hand-edited one is cleaned or dropped, so the
+      // card never shows text the setter would have refused. Silent: absence is
+      // the normal state.
+      const withNote =
+        withSettings.note === undefined ? withSettings : { ...withSettings, note: sanitizeNote(withSettings.note) };
+      if (!withNote.groupId || groupIds.has(withNote.groupId)) return withNote;
+      orphaned.push(withNote.id);
+      return { ...withNote, groupId: undefined };
     });
     // TWO CARDS, ONE CONVERSATION — untied here, once, at the only moment the
     // whole card list is in one place (#539). The policy and every reason for
@@ -1690,6 +1703,26 @@ export class WorkspaceStore {
     else delete s.acceptFromSiblings;
     this.saveSoon();
     return s.acceptFromSiblings === true;
+  }
+
+  /** The card's sticky note (#1544), or undefined: an unknown card has none. */
+  cardNote(cardId: string): SessionNote | undefined {
+    const n = this.state.sessions.find((s) => s.id === cardId)?.note;
+    return n ? { ...n } : undefined;
+  }
+
+  /**
+   * Write it, or delete it with `undefined`. Answers what the store now holds,
+   * so a refused write (an unknown card) reads back as the truth. The caller
+   * has already cleaned the text (`cleanNoteText`); this does not re-check.
+   */
+  setCardNote(cardId: string, note: SessionNote | undefined): SessionNote | undefined {
+    const s = this.state.sessions.find((x) => x.id === cardId);
+    if (!s) return undefined;
+    if (note) s.note = { ...note };
+    else delete s.note;
+    this.saveSoon();
+    return this.cardNote(cardId);
   }
 
   /** The USER rules (P2-E14-03). The built-ins are not in here — see the field. */

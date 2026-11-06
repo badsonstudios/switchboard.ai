@@ -514,6 +514,41 @@ If you have two cards open on the *same folder*, expect the second one to spend
 a little longer on "Looking for…" — switchboard waits until it can tell the two
 conversations apart rather than guessing and showing you the wrong one.
 
+## Leaving yourself a note
+
+When you park a session to work on another one, you can stick a short note on
+it saying where you left off: "Waiting on Tanner", "Need a PR review", "Need
+more research". When you come back to the session, the note tells you at a
+glance why you stopped.
+
+- **To add a note,** click **📝** in the session's title bar, next to **🕘**.
+  A strip of mint-green paper opens just above the prompt box, with the cursor
+  in it. Type your note and press **Enter**.
+- **Quick picks** under the box fill in a common start for you: **Waiting
+  on…**, **Need a PR review**, **Need more research** and **Blocked:**. Click
+  one, finish the sentence if it needs it, and press **Enter**.
+- **To change the note,** click its words, or click **📝** again. **Enter**
+  saves your change and **Esc** puts the note back the way it was.
+- **To remove the note,** click **×** at its right-hand end. It is deleted,
+  not hidden. Saving the note with nothing in it deletes it too.
+
+Each session has one note. Writing a new one replaces the old one. The note
+shows who wrote it and when ("You · Today 2:18 PM").
+
+The note is yours. It is **never sent to Claude** and is not part of the
+conversation, so it costs nothing and Claude does not see it. It stays on the
+session when you quit and reopen switchboard, and when the session is resumed.
+Adding or changing a note never sets off a notification.
+
+Notes are capped at 200 characters and are always one line of plain text. The
+note sits on the **Session** tab, above the prompt. It does not show on the
+**Changes** tab.
+
+> TODO: placements other than "above the prompt", the marker in the sessions
+> list, notes Claude writes ("Let Claude write it"), and the automatic
+> "waiting" note are coming in later updates. Document them here when they
+> ship.
+
 ## Talking to the session
 
 ![The prompt box with a request typed in, and the row of chips under it](img/prompt-box.png)

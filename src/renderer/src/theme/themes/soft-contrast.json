@@ -86,5 +86,11 @@
   "--btn-primary-bg": "#2f9e46",
   "--btn-primary-text": "#08120a",
   "--btn-secondary-bg": "#79b8f5",
-  "--btn-secondary-text": "#08120a"
+  "--btn-secondary-text": "#08120a",
+  "--note-paper": "#d3ecca",
+  "--note-paper-edge": "#5f8a54",
+  "--note-ink": "#0c140b",
+  "--note-ink-muted": "#2e3d29",
+  "--note-ai": "#2f6fc4",
+  "--note-ai-ink": "#173f73"
 }

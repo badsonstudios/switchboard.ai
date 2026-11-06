@@ -324,6 +324,23 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s: filled buttons'
   });
 });
 
+// --- The sticky note's ink on its paper, in EVERY shipped theme (#1544) -----
+//
+// The note is the same paper in every theme, so its words are measured against
+// the paper and nothing else: AAA for the note's text, AA for the author line
+// and the AI label, 3:1 for the AI edge (a non-text object carrying meaning).
+describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s: the session note', (id, theme) => {
+  const tokens = resolved(theme);
+  it.each([
+    ['--note-ink', 7],
+    ['--note-ink-muted', 4.5],
+    ['--note-ai-ink', 4.5],
+    ['--note-ai', 3],
+  ] as const)('%s on --note-paper clears %s:1', (ink, min) => {
+    expect(ratio(tokens[ink], tokens['--note-paper']), `${id}: ${tokens[ink]} on paper`).toBeGreaterThanOrEqual(min);
+  });
+});
+
 /** the rules that fill OPAQUELY with a color and write on it, and the floor
  *  each owes. Tinted fills are the same promise measured differently — see
  *  "Text on a TINTED fill" below. */

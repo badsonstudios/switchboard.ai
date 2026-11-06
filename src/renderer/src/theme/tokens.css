@@ -253,6 +253,20 @@
   --status-crashed: #f85149;
   --status-waiting: #afc653;
 
+  /* A session's sticky note (#1544). The SAME mint paper in every theme, on
+     purpose: a sticky note reads as one only when it looks like paper, and
+     paper does not change colour with the room. MINT, NOT YELLOW (Dan,
+     2026-11-06): yellow means "a session needs you" (#1165), and a note you
+     left yourself does not. The ink is dark on it in every theme, so the pair
+     carries its own contrast (asserted in tokens.drift.test.ts) whatever is
+     drawn around it. The blue is the "an AI wrote this" edge and label. */
+  --note-paper: #d3ecca;
+  --note-paper-edge: #98bf8d;
+  --note-ink: #1d2a1b;
+  --note-ink-muted: #46573f;
+  --note-ai: #4a7fc4;
+  --note-ai-ink: #24518a;
+
   /* Ink for text sitting ON the needs-permission FILL, as opposed to
      `--status-needs-permission-ink`, which is that status written on a panel.
      A status hue is normally a dot, a ring or a hairline; the preflight banner

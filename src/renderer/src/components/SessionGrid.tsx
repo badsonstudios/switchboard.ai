@@ -18,6 +18,7 @@ import 'dockview-react/dist/styles/dockview.css';
 // AFTER dockview's own sheet: binds every --dv-* variable to our tokens so the
 // shell, popups and popout windows can't fall back to a foreign theme (#84)
 import '../theme/dockview-tokens.css';
+import { startEditingNote, useSessionNote } from '../lib/session-notes';
 import { nativeAlert, nativeConfirm } from '../lib/native-dialog';
 import { placeMenuAtBox, type MenuPlacement } from '../lib/menu-placement';
 import { EmptyWorkspace, EmptyWorkspaceActions } from './EmptyWorkspace';
@@ -3062,6 +3063,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 fallbackFocus={() => contextChip.current}
               />
             )}
+            {cardId && (
+              // the note lives on the Session tab: show it first, or the editor
+              // would open hidden behind Changes
+              <NoteButton cardId={cardId} onOpen={() => setView(DEFAULT_PANEL_ID)} />
+            )}
             <button
               data-testid="card-history"
               data-no-maximize
@@ -3985,6 +3991,34 @@ const cheadPrompt: React.CSSProperties = {
   borderRadius: 'var(--radius-chip)',
   paddingInline: 6,
 };
+
+/**
+ * The card's 📝 button (#1544): adds the sticky note, or edits the one there.
+ * Its own component so only it re-renders when a note moves.
+ */
+function NoteButton(props: { cardId: string; onOpen: () => void }): React.JSX.Element {
+  const { t } = useTranslation();
+  const { note, editing } = useSessionNote(props.cardId);
+  const label = note ? t('sessionNote.edit') : t('sessionNote.add');
+  return (
+    <button
+      data-testid="card-note"
+      data-note-button={props.cardId}
+      data-no-maximize
+      data-has-note={note ? 'true' : 'false'}
+      aria-expanded={editing}
+      onClick={() => {
+        props.onOpen();
+        startEditingNote(props.cardId);
+      }}
+      title={label}
+      aria-label={label}
+      style={cheadBtn}
+    >
+      {t('sessionNote.buttonIcon')}
+    </button>
+  );
+}
 
 const cheadBtn: React.CSSProperties = {
   background: 'transparent',
