@@ -1632,6 +1632,112 @@ describe("a hand-made group's name and count are readable in every colour it can
   });
 });
 
+// --- Group styles in the sessions list (#1556) -------------------------------
+//
+// Every style but Classic draws a group's frame in the GROUP'S colour, which is
+// data. It is held the way `.rail-group-ink` is: the colour can only come from
+// GROUP_PALETTE, and `--g-frame` blends it toward the theme's extreme, so the
+// whole space is eight colours by four themes and is simply measured. The bar
+// is the one `--group-frame` makes for Classic (WCAG 1.4.11, 3:1), against the
+// canvas outside the frame and the card inside it.
+describe('the group styles keep a group visible and its header readable in every colour (#1556)', () => {
+  // Called INSIDE each case, for the reason the #685 block gives.
+  const frameRule = (scheme: string): { pct: number; toward: string } => {
+    const selector =
+      scheme === 'light'
+        ? ":root[data-color-scheme='light'] [data-group-style] [data-group-card] {"
+        : '\n[data-group-style] [data-group-card] {';
+    const m = /--g-frame:\s*color-mix\(in srgb,\s*var\(--g\)\s*([\d.]+)%,\s*(#[0-9a-f]{6})\)/i.exec(
+      block(selector)
+    );
+    expect(m, `${selector} must blend var(--g) toward a #rrggbb`).not.toBeNull();
+    return { pct: Number(m![1]) / 100, toward: m![2] };
+  };
+  // the folder tab's fill, read from its rule: the colour at N% over the card
+  const tabPct = (): number => {
+    const m = /background:\s*color-mix\(in srgb,\s*var\(--g\)\s*([\d.]+)%,\s*var\(--rail-card\)\)/.exec(
+      block("[data-group-style='folder'] [data-group-card] > .rail-head {")
+    );
+    expect(m, 'the folder tab must fill with var(--g) over var(--rail-card)').not.toBeNull();
+    return Number(m![1]) / 100;
+  };
+  // what the header's second line can be written in: quiet, or the roll-up
+  // lead's ink (rail-view's ROLLUP_TOKEN, plus working)
+  const SUMMARY_INKS = [
+    '--muted',
+    '--status-working-ink',
+    '--status-waiting-ink',
+    '--status-needs-input-ink',
+    '--status-needs-permission-ink',
+    '--status-crashed-ink',
+  ];
+
+  it('paints the waiting chip the way this measures it (SessionsRail.tsx)', () => {
+    const rail = fs.readFileSync(path.join(__dirname, '..', 'components', 'SessionsRail.tsx'), 'utf8');
+    expect(rail).toContain("background: 'color-mix(in srgb, var(--status-working) 14%, var(--rail-card))'");
+  });
+
+  it('writes a made group\'s name and count in the text colour on the tab', () => {
+    expect(block("[data-group-style='folder'] [data-group-kind='group'] > .rail-head .rail-group-ink {")).toMatch(
+      /color:\s*var\(--text\)/
+    );
+  });
+
+  describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s', (_id, theme) => {
+    const tokens = resolved(theme);
+    const card = tokens['--rail-card'];
+    const canvas = tokens['--rail-canvas'];
+
+    it.each([...GROUP_PALETTE])('%s: the frame clears 3:1 on the canvas and the card', (color) => {
+      const rule = frameRule(theme.colorScheme);
+      const frame = mix(color, rule.toward, rule.pct);
+      expect(ratio(frame, canvas), 'outside the frame').toBeGreaterThanOrEqual(3);
+      expect(ratio(frame, card), 'inside the frame').toBeGreaterThanOrEqual(3);
+    });
+
+    it('an automatic group\'s frame clears 3:1 on the canvas and on its own head and body', () => {
+      const rule = frameRule(theme.colorScheme);
+      const autoInk = tokens['--auto-ink'];
+      const frame = mix(autoInk, rule.toward, rule.pct);
+      // `--auto-head` / `--auto-surface` are derived in tokens.css: the auto
+      // ink at N% over the card. Read the N, never restate it.
+      const pctOf = (name: string): number => {
+        const m = new RegExp(`${name}:\\s*color-mix\\(in srgb,\\s*var\\(--auto-ink\\)\\s*([\\d.]+)%,\\s*var\\(--rail-card\\)\\)`).exec(css);
+        expect(m, `${name} must be the auto ink over the card`).not.toBeNull();
+        return Number(m![1]) / 100;
+      };
+      expect(ratio(frame, canvas), 'outside').toBeGreaterThanOrEqual(3);
+      expect(ratio(frame, mix(autoInk, card, pctOf('--auto-head'))), 'the tab').toBeGreaterThanOrEqual(3);
+      expect(ratio(frame, mix(autoInk, card, pctOf('--auto-surface'))), 'the body').toBeGreaterThanOrEqual(3);
+    });
+
+    // "Ungrouped" has no fill in the folder style, so its header sits straight
+    // on the canvas, where Classic had it on a tinted card
+    it("Ungrouped's dashed edge, name, count and summary read on the canvas", () => {
+      const muted = tokens['--muted'];
+      expect(ratio(muted, canvas), 'the dashed edge').toBeGreaterThanOrEqual(3);
+      expect(ratio(muted, canvas), 'the name').toBeGreaterThanOrEqual(4.5);
+      expect(ratio(muted, mix(muted, canvas, 0.12)), 'the count').toBeGreaterThanOrEqual(4.5);
+      for (const ink of SUMMARY_INKS) expect(ratio(tokens[ink], canvas), ink).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it.each([...GROUP_PALETTE])('%s: the folder tab\'s name, count and summary clear 4.5:1', (color) => {
+      const tab = mix(color, card, tabPct());
+      expect(ratio(tokens['--text'], tab), 'the name').toBeGreaterThanOrEqual(4.5);
+      // the count's backplate is the colour at 12% over the tab (SessionsRail)
+      expect(ratio(tokens['--text'], mix(color, tab, 0.12)), 'the count').toBeGreaterThanOrEqual(4.5);
+      for (const ink of SUMMARY_INKS) {
+        expect(ratio(tokens[ink], tab), ink).toBeGreaterThanOrEqual(4.5);
+      }
+      // the waiting chip paints its own opaque backplate, whatever header it is on
+      expect(
+        ratio(tokens['--status-working-ink'], mix(tokens['--status-working'], card, 0.14)),
+        'the waiting chip'
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+  });
+});
+
 // --- "A notice keeps its height" moved out (#274) ----------------------------
 //
 // #241 pinned `.preflight-banner`'s `flex-shrink: 0` here, because a rule in

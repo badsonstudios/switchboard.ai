@@ -30,6 +30,9 @@ import { NO_ORDER } from '../lib/rail-order';
 import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../../../shared/i18n/locales/en.json';
 import { uiDelete } from '../lib/ui-state';
+import { resetGroupStyleForTests } from '../lib/group-style';
+import fs from 'node:fs';
+import path from 'node:path';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -117,6 +120,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  resetGroupStyleForTests();
 });
 
 describe('the pinned rows of a bucket become one sticky block (#295)', () => {
@@ -173,7 +177,8 @@ describe('the pinned rows of a bucket become one sticky block (#295)', () => {
     expect(painted()).toEqual(['b', 'a', 'c', 'd']);
   });
 
-  it('paints an auto-group block on the auto surface, not the card one', async () => {
+  it('paints an auto-group block on the auto surface, not the card one (Classic)', async () => {
+    resetGroupStyleForTests('classic');
     // two sessions in ONE folder is what makes an emergent group (E12-05)
     const shared = { ...session('a'), folder: 'C:\\p\\shared' };
     const other = { ...session('b'), folder: 'C:\\p\\shared' };
@@ -184,7 +189,8 @@ describe('the pinned rows of a bucket become one sticky block (#295)', () => {
 });
 
 describe('the card must not clip, or the sticky block is measured against nothing', () => {
-  it('leaves the group card unclipped and rounds the header instead', async () => {
+  it('leaves the group card unclipped and rounds the header instead (Classic)', async () => {
+    resetGroupStyleForTests('classic');
     await mount({
       sessions: [session('a', 'g1')],
       groups: [backend],
@@ -198,6 +204,57 @@ describe('the card must not clip, or the sticky block is measured against nothin
     // the corners the clip used to round, rounded by the header itself
     expect(head.style.borderStartStartRadius).toBe('7px');
     expect(head.style.borderStartEndRadius).toBe('7px');
+  });
+});
+
+// Every style but Classic draws the card in CSS (#1556), so the block cannot
+// copy an inline value: it paints `var(--rail-surface)`, and the style's own
+// rule names that surface on the body, for every kind of card. Read from the
+// stylesheet, so a style that forgets one kind fails here.
+describe('the folder tab keeps the sticky block opaque and the card unclipped (#1556)', () => {
+  const css = fs
+    .readFileSync(path.join(__dirname, '..', 'theme', 'tokens.css'), 'utf8')
+    .split(String.fromCharCode(13))
+    .join('');
+  const surfaceOf = (kind: string | null): string | undefined => {
+    const sel =
+      kind === null
+        ? "[data-group-style='folder'] [data-group-card] > [data-rail-body] {"
+        : `[data-group-style='folder'] [data-group-kind='${kind}'] > [data-rail-body] {`;
+    const at = css.indexOf(sel);
+    if (at < 0) return undefined;
+    return /--rail-surface:\s*([^;]+);/.exec(css.slice(at, css.indexOf('}', at)))?.[1];
+  };
+
+  it('paints the surface the body names, in a group, an automatic group and No group', async () => {
+    // two sessions in ONE folder make an automatic group
+    const shared = { ...session('x'), folder: 'C:/p/shared' };
+    const other = { ...session('y'), folder: 'C:/p/shared' };
+    await mount({
+      sessions: [session('a', 'g1'), shared, other, session('d')],
+      groups: [backend],
+      pinned: ['a', 'y', 'd'],
+    });
+    expect(host.querySelector('nav')!.getAttribute('data-group-style')).toBe('folder');
+    expect(blocks()).toHaveLength(3);
+    for (const b of blocks()) expect(b.style.background).toBe('var(--rail-surface, var(--rail-card))');
+    expect(surfaceOf(null)).toBe('var(--rail-card)');
+    expect(surfaceOf('auto')).toBe('var(--auto-surface)');
+    // No group has no fill of its own, so the block paints what is behind it
+    expect(surfaceOf('ungrouped')).toBe('var(--rail-canvas)');
+  });
+
+  it('leaves the card unclipped, inline and in the stylesheet', async () => {
+    await mount({ sessions: [session('a', 'g1')], groups: [backend], pinned: ['a'] });
+    const card = host.querySelector<HTMLElement>('.rail-head')!.parentElement!;
+    expect(card.style.overflow).toBe('');
+    // the whole #1556 section, shared rules included
+    const start = css.indexOf('/* ---- Group styles in the sessions list (#1556)');
+    expect(start).toBeGreaterThan(-1);
+    const section = css.slice(start, css.indexOf('/* ----', start + 10));
+    expect(section).toContain("[data-group-style='folder']");
+    // a declaration, not the word: the section's own comment explains why there is none
+    expect(section).not.toMatch(/overflow(-[xy])?\s*:/);
   });
 });
 
