@@ -138,24 +138,27 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ---
 
-## 0.8.140 — unreleased
+## 0.8.141 — unreleased
+
+## 0.8.140 — 2026-11-07
 
 ### Changed
 
 - **Groups in the Sessions list stand out from each other, and from sessions
-  in no group.** Each group now looks like a folder: its name sits on a tab,
-  and the whole group is outlined in its own colour. **Ungrouped** has a dashed
-  grey outline and no fill, so it no longer looks like one more group. Prefer
-  the old look? Pick **Classic** in **Settings ▸ Appearance ▸ Group style**.
-- **Three more group styles** in **Settings ▸ Appearance ▸ Group style**:
-  **Coloured frame** (each group outlined in its colour), **Colour spine** (a
-  thick coloured bar down the side, sessions indented) and **Solid header**
-  (the header filled with the group's colour).
-- **And four more, so all nine are in:** **Tree with guide line** (no boxes,
-  sessions hang off a coloured line), **Wells and raised sessions** (groups as
-  sunken trays, sessions as raised cards), **Two outline colours** (a thick
-  coloured outline round the group, a thin grey one round each session) and
-  **Heading bar** (a heading with a coloured underline over an indented panel).
+  in no group.** Each group now looks like a folder by default: its name sits
+  on a tab, and the whole group is outlined in its own colour. **Ungrouped**
+  has a dashed grey outline and no fill, so it no longer looks like one more
+  group.
+- **Pick how groups look:** **Settings ▸ Appearance ▸ Group style** has nine
+  looks, and the list changes the moment you pick one. **Classic** is the look
+  from before. The others are **Coloured frame**, **Colour spine** (a coloured
+  bar down the side), **Solid header** (the header filled with the group's
+  colour), **Folder tab** (the default), **Tree with guide line** (no boxes),
+  **Wells and raised sessions** (groups as sunken trays, sessions as raised
+  cards), **Two outline colours** (a thick coloured outline round the group, a
+  thin grey one round each session) and **Heading bar** (a coloured underline
+  over an indented panel). Only the Sessions list changes; the strip across the
+  top and the session windows keep their look.
 
 ## 0.8.139 — 2026-11-07
 
