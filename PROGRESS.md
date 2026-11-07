@@ -3,6 +3,18 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE: #1544 PART 4 of 4 — the automatic waiting note. #1544 COMPLETE AND CLOSED (PR #1564 merged `329f4da7`, NOT RELEASED)
+>
+> **Dan (2026-11-06):** *"Continue."* **What shipped:** a separate per-card yellow `waitingNote`, written by the agent's `set_waiting_note` only while the workspace switch `waitingNotes` is on (OFF by default; the tool refuses while off). The switch is under Settings ▸ Appearance ▸ Waiting notes.
+>
+> **How the agent is told:** the `UserPromptSubmit` hook's reply carries `hookSpecificOutput.additionalContext` (`WAITING_NOTE_CONTEXT`; the schema was read from the PATH binary). We did NOT use `--append-system-prompt`, because `--system-prompt-snapshot` (on by default) freezes a conversation's system prompt at its first request, resumes included.
+>
+> **Clearing:** `SessionManager.onPromptSent` (any source) plus the hook (the turn really starting, which closes the queued-prompt race), and × in the window.
+>
+> **Colour and permissions:** painted with `var(--status-needs-input)`; `SessionNoteStrip.tsx` and `SessionRow.tsx` were added to #1165's allow-list. The Claude recipe now passes `--allowedTools` for the two note tools only.
+>
+> **Gate:** lint, typecheck, unit 15,476 + 7 skipped, full e2e 564 + 10 skipped (no failures), `check:bus` PASS, CI 4/4 (run 42328195674). Review: one blocker (a duplicate `rail.rowWaiting` i18n key, now renamed `rowWaitingNote`) and four should-fixes, all fixed except `set_session_note` staying pre-allowed (a judgment call recorded in the PR). **Not hand-tested, and the real CLI has not been driven:** whether real Claude leaves the note when it should is Dan's test 1. **Follow-up idea, not filed:** an i18n duplicate-key guard (JSON.parse silently keeps the last key).
+
 > # ✅ DONE: #1544 PART 3 of 4 — `set_session_note` tool, AI-written notes, "Let Claude write it" (PR #1562, issue stays OPEN, NOT RELEASED)
 >
 > **Dan (2026-11-06):** *"Continue."* **The tool:** `set_session_note`, whose only argument is `text`. The card is the CALLER's, from the bus token through `cardIdForLive`, so no session can write another's note. Same cleaning and cap as the window, written as `'ai'`. The receipt says when the text was cut or replaced a user note, and the description tells the agent not to overwrite the user's note unasked. **The button:** `sessions:askForNote` sends `NOTE_REQUEST_PROMPT` as an ordinary prompt and calls `clearDispatched` like a typed prompt; a session with no bus endpoint is refused (`no-tools`). The editor asks first unless the session is idle or done, and keeps a half-typed draft. **E2E seam:** `SWITCHBOARD_E2E_NOTE_BUS` (non-packaged only). **Gate:** lint, typecheck, unit 15,453 + 7 skipped, full e2e 563 + 10 skipped (no failures), `check:bus` PASS (with a round trip of the new tool), CI 4/4 (run 42317770815). Review: no blockers; every trust check passed; two should-fixes and two nits applied. **Not hand-tested, and the real CLI was never driven**: whether real Claude calls the tool when asked (and whether it asks for tool approval the first time) is Dan's test 1. **NEXT (not started):** part 4, the automatic YELLOW waiting note: a separate note behind an on/off setting, cleared on the next prompt. The open question is how the AI is told to write it (likely a setting-gated `--append-system-prompt`, which nothing uses yet; check `docs/reference-implementations.md` first).
