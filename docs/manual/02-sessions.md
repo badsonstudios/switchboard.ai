@@ -471,6 +471,21 @@ the same two lines; they just have no buttons.
 heading is tinted in the most urgent state's colour, so a closed group still
 tells you something inside it is waiting.
 
+**How groups look is up to you.** Open **Settings ▸ Appearance ▸ Group style**.
+The list changes the moment you pick, in every theme:
+
+- **4 · Folder tab** (the default). Each group looks like a folder: the name
+  sits on a tab, and the group is outlined in its own colour. A folded group
+  is just the tab. **Ungrouped** has a dashed grey outline and no fill, because
+  it isn't a group: it's what is left over.
+- **Classic** is the look from before: every group in the same thin grey
+  frame, with a faint tint of its colour behind the name.
+
+The number is the style's place in a longer list. More styles are coming, and
+they'll appear here as they do. TODO: list them as they ship. Only the
+Sessions list follows this setting. The strip across the top and the session
+windows keep their own look.
+
 **A finished session leaves N finished when you look at it.** It still says
 **waiting** until you dismiss that (see above). Any of these counts as
 looking:

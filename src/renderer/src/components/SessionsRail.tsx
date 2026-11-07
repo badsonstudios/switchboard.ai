@@ -110,6 +110,7 @@ import { SessionRow } from './SessionRow';
 import { FolderGlyph } from './FolderGlyph';
 import { directionOf } from '../lib/writing-direction';
 import { srOnly } from './sr-only';
+import { useGroupStyle } from '../lib/group-style';
 
 export type { RailSession, RailGroup } from '../model/types';
 
@@ -298,6 +299,11 @@ export function SessionsRail(props: {
   const menuAnchor = React.useRef<HTMLElement | null>(null);
   // collapsed group ids — persisted UI state (E12-08; localStorage resets
   // per launch in packaged builds because the loopback origin's port churns)
+  // How group cards look (#1556). Classic is the inline styles below, applied
+  // only while it is on; every other style is CSS keyed on the <nav>'s
+  // `data-group-style` (tokens.css, "group styles in the sessions list").
+  const groupStyle = useGroupStyle();
+  const classic = groupStyle === 'classic';
   const [collapsed, setCollapsed] = React.useState<Set<string>>(
     () => new Set(uiGet<string[]>('railCollapsed', []))
   );
@@ -1157,18 +1163,25 @@ export function SessionsRail(props: {
           const from = props.sessions.find((s) => s.id === cardId)?.groupId ?? null;
           if (from !== to) props.onMoveToGroup(cardId, to);
         }}
+        data-collapsed={isCollapsed ? 'true' : undefined}
         style={{
+          // the group's colour, for the group styles' frames and tints (#1556)
+          ['--g' as string]: opts.color,
           // the post-jump beat, on a group whose row for that session may not
           // be drawn: the focus accent, as on a row
           ...(flashHere ? { outline: '2px solid var(--status-working-ink)', outlineOffset: -2 } : {}),
-          // an auto-group gets its own surface, not just its own icon — a card
-          // you cannot drop into should not look like one you can
-          background: isAuto ? 'var(--auto-surface)' : 'var(--rail-card)',
-          // the same edge the grid's session groups get — one container
-          // treatment across the app
-          border: '1px solid var(--group-frame)',
-          borderRadius: 8,
-          marginBlockEnd: 9,
+          ...(classic
+            ? {
+                // an auto-group gets its own surface, not just its own icon — a
+                // card you cannot drop into should not look like one you can
+                background: isAuto ? 'var(--auto-surface)' : 'var(--rail-card)',
+                // the same edge the grid's session groups get — one container
+                // treatment across the app
+                border: '1px solid var(--group-frame)',
+                borderRadius: 8,
+                marginBlockEnd: 9,
+              }
+            : {}),
           // for the group drop line below, which sits in the gap between cards
           position: 'relative',
           // NO `overflow: hidden` here, and that is load-bearing (#295):
@@ -1178,9 +1191,16 @@ export function SessionsRail(props: {
           // corners would have pinned the pinned rows to a box that never
           // scrolls, i.e. to nothing. The header rounds its own two corners
           // instead (`.rail-head` below); no other child reaches an edge.
-          boxShadow: isDropTarget
-            ? `0 0 0 2px ${opts.color}, var(--group-lift)`
-            : 'var(--group-lift)',
+          // the other styles draw their own edges, and a lift under a card
+          // that is not a box (the folder's tab beside empty space) would
+          // outline nothing; the drop ring stays, in every style
+          boxShadow: classic
+            ? isDropTarget
+              ? `0 0 0 2px ${opts.color}, var(--group-lift)`
+              : 'var(--group-lift)'
+            : isDropTarget
+              ? `0 0 0 2px ${opts.color}`
+              : undefined,
         }}
       >
         {g && groupDropAt?.groupId === g.id && (
@@ -1266,19 +1286,24 @@ export function SessionsRail(props: {
               gridTemplateColumns: 'auto auto minmax(0, 1fr) auto',
               alignItems: 'center',
               rowGap: 4,
-              padding: '8px 9px 8px 10px',
-              background: isAuto ? 'var(--auto-head)' : tint(opts.color, 7),
-              // what the card's `overflow: hidden` used to do for it (#295).
-              // 7px, not 8: the radius of the INSIDE of a 1px border.
-              borderStartStartRadius: 7,
-              borderStartEndRadius: 7,
-              // ...and when the group is COLLAPSED the body is display:none, so
-              // this strip is the card's bottom edge too and owes it the other
-              // two. Without them a collapsed card wears two square nubs over
-              // its own rounded corners.
-              borderEndStartRadius: isCollapsed ? 7 : 0,
-              borderEndEndRadius: isCollapsed ? 7 : 0,
-              borderBlockEnd: '1px solid var(--rail-divider)',
+              ...(classic
+                ? {
+                    padding: '8px 9px 8px 10px',
+                    background: isAuto ? 'var(--auto-head)' : tint(opts.color, 7),
+                    // what the card's `overflow: hidden` used to do for it
+                    // (#295). 7px, not 8: the radius of the INSIDE of a 1px
+                    // border.
+                    borderStartStartRadius: 7,
+                    borderStartEndRadius: 7,
+                    // ...and when the group is COLLAPSED the body is
+                    // display:none, so this strip is the card's bottom edge too
+                    // and owes it the other two. Without them a collapsed card
+                    // wears two square nubs over its own rounded corners.
+                    borderEndStartRadius: isCollapsed ? 7 : 0,
+                    borderEndEndRadius: isCollapsed ? 7 : 0,
+                    borderBlockEnd: '1px solid var(--rail-divider)',
+                  }
+                : {}),
               // for the waiting edge below, and the looks' layers
               position: 'relative',
               // the group's own colour, for whichever "working" look is in force
@@ -1637,7 +1662,11 @@ export function SessionsRail(props: {
                   paddingBlock: 2,
                   borderRadius: 7,
                   color: 'var(--status-working-ink)',
-                  background: tint('var(--status-working)', 18),
+                  // OPAQUE, over the card (#1556): see-through, it took on
+                  // whatever header it sat on, and measured 4.40:1 on
+                  // Classic's tint and 4.10:1 on the folder tab. Over the card
+                  // it clears 4.5:1 in every theme (tokens.drift.test.ts)
+                  background: 'color-mix(in srgb, var(--status-working) 14%, var(--rail-card))',
                 }}
               >
                 {t('rail.waitingChip', { count: waitingHere })}
@@ -1712,7 +1741,19 @@ export function SessionsRail(props: {
               {t('rail.groupEmpty')}
             </div>
           ) : (
-            bucketRows(opts.members, opts.key, isAuto ? 'var(--auto-surface)' : 'var(--rail-card)')
+            bucketRows(
+              opts.members,
+              opts.key,
+              // every other style paints the body itself and names its surface
+              // `--rail-surface`, so the pinned block matches it (#295)
+              // (the fallback: a style that forgot to name one still paints
+              // an opaque block, never rows sliding visibly under the pins)
+              classic
+                ? isAuto
+                  ? 'var(--auto-surface)'
+                  : 'var(--rail-card)'
+                : 'var(--rail-surface, var(--rail-card))'
+            )
           )}
         </div>
       </div>
@@ -1753,6 +1794,7 @@ export function SessionsRail(props: {
   return (
     <nav
       ref={navRef}
+      data-group-style={groupStyle}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes(DND_TYPE) && !getDraggedCard()) return;
         // the ungroup target, and therefore the same command as the group
@@ -1905,7 +1947,9 @@ export function SessionsRail(props: {
                 members: order.loose,
                 kind: 'ungrouped',
               })
-            : // no groups at all: the sessions ARE the list, so skip the header
+            : // no groups at all: the sessions ARE the list, so skip the header.
+              // The same box in every group style (#1556): with no groups there
+              // is nothing for a style to tell apart.
               (
                 <div
                   key="ungrouped"

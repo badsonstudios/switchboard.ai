@@ -1403,6 +1403,95 @@ mark[data-feed-match-current] {
   color: color-mix(in srgb, var(--g) 55%, #0d1424);
 }
 
+/* ---- Group styles in the sessions list (#1556) -----------------------------
+ *
+ * Settings ▸ Appearance ▸ Group style. The rail puts the choice on its own
+ * <nav> as `data-group-style`; each card carries its group's colour as `--g`
+ * (an automatic group's is `--auto-ink`, "No group"'s is `--muted`). CLASSIC
+ * IS NOT HERE: it is the rail's inline styles, applied only while it is on.
+ * The numbers are the mockup's (`mockups/rail-groups.html`).
+ *
+ * THE FRAME COLOUR IS DATA, so it gets the same mechanism as the name ink
+ * above: a blend per scheme, toward the theme's extreme, held for every colour
+ * in GROUP_PALETTE. tokens.drift.test.ts measures all of them at 3:1 against
+ * the canvas outside and the card inside (WCAG 1.4.11, the promise
+ * `--group-frame` makes for Classic).
+ *
+ * Every style keeps the rules the rail's cues depend on: no `overflow` on the
+ * card (#295, sticky pins), the cues on `.rail-head`, and a body that names
+ * its surface `--rail-surface` so the pinned block can paint it. */
+[data-group-style] [data-group-card] {
+  --g-frame: color-mix(in srgb, var(--g) 80%, #ffffff);
+}
+:root[data-color-scheme='light'] [data-group-style] [data-group-card] {
+  --g-frame: color-mix(in srgb, var(--g) 80%, #0d1424);
+}
+
+/* 4 · Folder tab (the default). The header is a tab on top of a framed
+ * folder: it overlaps the body's top edge by the frame's width, so the two
+ * read as one shape. */
+[data-group-style='folder'] [data-group-card] {
+  margin-block-end: 12px;
+  /* so the drop ring and the after-jump outline, drawn on the card, round
+     their corners like the folder they surround */
+  border-radius: 8px;
+}
+[data-group-style='folder'] [data-group-card] > .rail-head {
+  inline-size: fit-content;
+  min-inline-size: 78%;
+  max-inline-size: 100%;
+  box-sizing: border-box;
+  padding: 4px 9px 4px 8px;
+  /* 14%, not the mockup's 28%: the header's second line is written in the
+     status inks. 14% is the strongest tint where all of them still clear
+     4.5:1; at 16% the crashed ink and --muted fail on nordic
+     (tokens.drift.test.ts measures every palette colour) */
+  background: color-mix(in srgb, var(--g) 14%, var(--rail-card));
+  border: 2px solid var(--g-frame);
+  border-block-end: 0;
+  border-start-start-radius: 7px;
+  border-start-end-radius: 7px;
+  inset-block-start: 2px;
+}
+[data-group-style='folder'] [data-group-card] > [data-rail-body] {
+  --rail-surface: var(--rail-card);
+  background: var(--rail-surface);
+  border: 2px solid var(--g-frame);
+  border-radius: 8px;
+  border-start-start-radius: 0;
+}
+/* closed: the tab is all there is, so it closes itself */
+[data-group-style='folder'] [data-group-card][data-collapsed='true'] > .rail-head {
+  /* the width only: the style and colour come from the rules above, so a
+     closed "No group" stays dashed grey all the way round */
+  border-block-end-width: 2px;
+  border-block-end-style: solid;
+  border-block-end-color: var(--g-frame);
+  border-radius: 7px;
+  inset-block-start: 0;
+}
+/* a group you made: its name and count in the text colour, on the stronger tint */
+[data-group-style='folder'] [data-group-kind='group'] > .rail-head .rail-group-ink {
+  color: var(--text);
+}
+/* an automatic group keeps the measured header and surface it has in Classic */
+[data-group-style='folder'] [data-group-kind='auto'] > .rail-head {
+  background: var(--auto-head);
+}
+[data-group-style='folder'] [data-group-kind='auto'] > [data-rail-body] {
+  --rail-surface: var(--auto-surface);
+}
+/* "No group" is an absence, not a group: dashed, grey, no fill */
+[data-group-style='folder'] [data-group-kind='ungrouped'] > :is(.rail-head, [data-rail-body]),
+[data-group-style='folder'] [data-group-kind='ungrouped'][data-collapsed='true'] > .rail-head {
+  border-style: dashed;
+  border-color: var(--muted);
+  background: transparent;
+}
+[data-group-style='folder'] [data-group-kind='ungrouped'] > [data-rail-body] {
+  --rail-surface: var(--rail-canvas);
+}
+
 /* ---- Events drawer rows (§5.12, #268) --------------------------------------
  *
  * A row you have already dealt with — kind `ready` — is the log tail rather

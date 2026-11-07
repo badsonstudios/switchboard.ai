@@ -140,6 +140,15 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.140 — unreleased
 
+### Changed
+
+- **Groups in the Sessions list stand out from each other, and from sessions
+  in no group.** Each group now looks like a folder: its name sits on a tab,
+  and the whole group is outlined in its own colour. **Ungrouped** has a dashed
+  grey outline and no fill, so it no longer looks like one more group. Prefer
+  the old look? Pick **Classic** in **Settings ▸ Appearance ▸ Group style**.
+  More styles are on the way.
+
 ## 0.8.139 — 2026-11-07
 
 ### Added

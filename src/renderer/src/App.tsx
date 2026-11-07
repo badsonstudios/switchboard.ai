@@ -89,6 +89,7 @@ import {
   workingLookOf,
   type WorkingLook,
 } from './lib/working-look';
+import { initGroupStyle } from './lib/group-style';
 import {
   CONTEXT_METER_KEY,
   DEFAULT_CONTEXT_METER_FORM,
@@ -730,6 +731,7 @@ export function App(): React.JSX.Element {
       setSessionsPlacement(sessionsPlacementOf(uiGet<unknown>(SESSIONS_PLACEMENT_KEY, undefined)));
       setWorkingLook(workingLookOf(uiGet<unknown>(WORKING_LOOK_KEY, undefined)));
       initNotePlacement(); // where every card draws its sticky note (#1544)
+      initGroupStyle(); // how groups look in the sessions list (#1556)
       setContextMeter(contextMeterFormOf(uiGet<unknown>(CONTEXT_METER_KEY, undefined)));
       applyTabRows(loadTabRows()); // multi-row tab strip, default on (#84)
       setUiReady(true);
