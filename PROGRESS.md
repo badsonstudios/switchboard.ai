@@ -3,6 +3,10 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ RELEASED: v0.8.139, 2026-11-07 (PR #1566, tag on `a60b8dc2`, release run 42380702986): #1544 parts 2–4
+>
+> **Dan (2026-11-07)**, once the sticky note was complete, picked "Cut a release" over resuming the paused run or taking the next ticket. A **regular release, on his word.** Version, lock and dated notes landed together, and `0.8.140 — unreleased` is open. The lock's two version lines were edited by hand, as for 0.8.138. **In it:** the note placements and rail marker (PR #1560), notes Claude writes and "Let Claude write it" (PR #1562), and the automatic waiting note plus pre-allowed note tools (PR #1564). The release PR merged on green CI (4/4), and the tag was pushed from the merge commit. The release workflow (build and publish, both green) published `switchboard-Setup-0.8.139.exe` (105 MB) and its `.sha256` as a normal release: `prerelease=false`, `draft=false`, and `releases/latest` answers `v0.8.139` (published 14:27Z). The three dogfood rows read RELEASED. **Not hand-tested.** **The paused orchestration run (2026-11-02) is still paused; resume only on his word.** **DO NOT CUT ANOTHER unless he asks.**
+
 > # ✅ DONE: #1544 PART 4 of 4 — the automatic waiting note. #1544 COMPLETE AND CLOSED (PR #1564 merged `329f4da7`, NOT RELEASED)
 >
 > **Dan (2026-11-06):** *"Continue."* **What shipped:** a separate per-card yellow `waitingNote`, written by the agent's `set_waiting_note` only while the workspace switch `waitingNotes` is on (OFF by default; the tool refuses while off). The switch is under Settings ▸ Appearance ▸ Waiting notes.
