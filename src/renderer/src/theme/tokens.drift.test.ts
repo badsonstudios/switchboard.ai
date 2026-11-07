@@ -1841,6 +1841,124 @@ describe('options 1-3 keep every group readable in every colour (#1556 part 2)',
   });
 });
 
+// Part 3 of #1556: options 5-8. Their headers sit on the canvas or on a
+// surface mixed from it, not on the card, so every word is measured again on
+// the surface really behind it. Read from the rules.
+describe('options 5-8 keep every group readable in every colour (#1556 part 3)', () => {
+  const pctOver = (selector: string, prop: string, under: string): number => {
+    const m = new RegExp(
+      `${prop}:\\s*color-mix\\(in srgb,\\s*var\\(--g\\)\\s*([\\d.]+)%,\\s*var\\(${under}\\)\\)`
+    ).exec(block(selector));
+    expect(m, `${selector} must mix var(--g) over var(${under})`).not.toBeNull();
+    return Number(m![1]) / 100;
+  };
+  const wellRule = (scheme: string): { pct: number; toward: string } => {
+    const sel =
+      scheme === 'light'
+        ? ":root[data-color-scheme='light'] [data-group-style]:not([data-group-style='classic']) {"
+        : "\n[data-group-style]:not([data-group-style='classic']) {";
+    const m = /--rail-well:\s*color-mix\(in srgb,\s*var\(--rail-canvas\)\s*([\d.]+)%,\s*(#[0-9a-f]{6})\)/i.exec(
+      block(sel)
+    );
+    expect(m, '--rail-well must mix the canvas toward a #rrggbb').not.toBeNull();
+    return { pct: Number(m![1]) / 100, toward: m![2] };
+  };
+  const inkRule = (scheme: string): { pct: number; toward: string } => {
+    const sel = scheme === 'light' ? ":root[data-color-scheme='light'] .rail-group-ink {" : '\n.rail-group-ink {';
+    const m = /color-mix\(in srgb,\s*var\(--g\)\s*([\d.]+)%,\s*(#[0-9a-f]{6})\)/i.exec(block(sel));
+    expect(m).not.toBeNull();
+    return { pct: Number(m![1]) / 100, toward: m![2] };
+  };
+  const frameRule = (scheme: string): { pct: number; toward: string } => {
+    const sel =
+      scheme === 'light'
+        ? ":root[data-color-scheme='light'] [data-group-style]:not([data-group-style='classic']) [data-group-card] {"
+        : "\n[data-group-style]:not([data-group-style='classic']) [data-group-card] {";
+    const m = /--g-frame:\s*color-mix\(in srgb,\s*var\(--g\)\s*([\d.]+)%,\s*(#[0-9a-f]{6})\)/i.exec(block(sel));
+    expect(m).not.toBeNull();
+    return { pct: Number(m![1]) / 100, toward: m![2] };
+  };
+  const WORDS = [
+    '--muted',
+    '--status-working-ink',
+    '--status-waiting-ink',
+    '--status-needs-input-ink',
+    '--status-needs-permission-ink',
+    '--status-crashed-ink',
+  ];
+
+  describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s', (_id, theme) => {
+    const tokens = resolved(theme);
+    const canvas = tokens['--rail-canvas'];
+    const well = (): string => {
+      const r = wellRule(theme.colorScheme);
+      return mix(canvas, r.toward, r.pct);
+    };
+    /** the surface behind each style's header, for one group colour */
+    const heads = (color: string): Record<string, string> => ({
+      tree: canvas,
+      wells: well(),
+      outlines: mix(
+        color,
+        canvas,
+        pctOver("[data-group-style='outlines'] [data-group-card] {", '--rail-surface', '--rail-canvas')
+      ),
+      heading: mix(
+        color,
+        tokens['--rail-card'],
+        pctOver("[data-group-style='heading'] [data-group-card] > .rail-head {", 'background', '--rail-card')
+      ),
+    });
+    // a made group's name: the text colour where its style says so, else the ink
+    const nameOn = (style: string, color: string): string => {
+      if (style === 'outlines' || style === 'heading') return tokens['--text'];
+      const r = inkRule(theme.colorScheme);
+      return mix(color, r.toward, r.pct);
+    };
+
+    it.each([...GROUP_PALETTE])('%s: the name, count and summary read on every style\'s header', (color) => {
+      for (const [style, head] of Object.entries(heads(color))) {
+        expect(ratio(nameOn(style, color), head), `${style}: the name`).toBeGreaterThanOrEqual(4.5);
+        // the count: the name's ink on the colour at 12% over the header
+        expect(ratio(nameOn(style, color), mix(color, head, 0.12)), `${style}: the count`).toBeGreaterThanOrEqual(4.5);
+        for (const w of WORDS) expect(ratio(tokens[w], head), `${style}: ${w}`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    // Only the NAME: an automatic group's count is its own ink on a 12% tint
+    // of itself, the same self-tint gap as its header in Classic, folder and
+    // frame. That is #1573, which covers the count in every style.
+    it("an automatic group's name reads on every style's header", () => {
+      const auto = tokens['--auto-ink'];
+      // the heading bar draws an automatic group's bar on the plain card
+      expect(block("[data-group-style='heading'] [data-group-kind='auto'] > .rail-head {")).toMatch(
+        /background:\s*var\(--rail-card\)/
+      );
+      const h = { ...heads(auto), heading: tokens['--rail-card'] };
+      for (const [style, head] of Object.entries(h)) {
+        expect(ratio(auto, head), style).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    it.each([...GROUP_PALETTE])('%s: the frame clears 3:1 on the well and the outlines tray', (color) => {
+      const r = frameRule(theme.colorScheme);
+      const frame = mix(color, r.toward, r.pct);
+      const h = heads(color);
+      expect(ratio(frame, h.wells), 'wells').toBeGreaterThanOrEqual(3);
+      expect(ratio(frame, h.outlines), 'outlines').toBeGreaterThanOrEqual(3);
+    });
+
+    // the raised sessions: a row's card against the tray it sits in, so it
+    // reads as a separate thing (its 1px edge is decoration on top)
+    it.each([...GROUP_PALETTE])('%s: a session row stands apart from the well and the tray', (color) => {
+      const h = heads(color);
+      const card = tokens['--rail-card'];
+      expect(ratio(card, h.wells), 'wells').toBeGreaterThan(1.05);
+      expect(card, 'outlines').not.toBe(h.outlines);
+    });
+  });
+});
+
 // --- "A notice keeps its height" moved out (#274) ----------------------------
 //
 // #241 pinned `.preflight-banner`'s `flex-shrink: 0` here, because a rule in

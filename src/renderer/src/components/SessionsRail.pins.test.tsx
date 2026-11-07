@@ -234,12 +234,30 @@ describe('every group style keeps the sticky block opaque and the card unclipped
   };
   const styles = AVAILABLE_GROUP_STYLES.filter((s) => s !== 'classic');
 
-  it.each(styles)('%s: names an opaque surface for a group, an automatic group and Ungrouped', (style) => {
-    expect(surfaceOf(style, 'group')).toBe('var(--rail-card)');
-    expect(surfaceOf(style, 'auto')).toBe('var(--auto-surface)');
-    // Ungrouped is unfilled in every style but the solid header, so its block
-    // paints what is behind it
-    expect(surfaceOf(style, 'ungrouped')).toBe(style === 'solid' ? 'var(--rail-card)' : 'var(--rail-canvas)');
+  // what each style's block must paint, by kind of card: the surface that is
+  // really behind the rows there. An unfilled card's block paints the canvas.
+  const OUTLINE_TRAY = 'color-mix(in srgb, var(--g) 6%, var(--rail-canvas))';
+  const EXPECTED: Record<string, { group: string; auto: string; ungrouped: string }> = {
+    folder: { group: 'var(--rail-card)', auto: 'var(--auto-surface)', ungrouped: 'var(--rail-canvas)' },
+    frame: { group: 'var(--rail-card)', auto: 'var(--auto-surface)', ungrouped: 'var(--rail-canvas)' },
+    spine: { group: 'var(--rail-card)', auto: 'var(--auto-surface)', ungrouped: 'var(--rail-canvas)' },
+    // Ungrouped keeps a filled card on the solid header
+    solid: { group: 'var(--rail-card)', auto: 'var(--auto-surface)', ungrouped: 'var(--rail-card)' },
+    tree: { group: 'var(--rail-canvas)', auto: 'var(--rail-canvas)', ungrouped: 'var(--rail-canvas)' },
+    wells: { group: 'var(--rail-well)', auto: 'var(--rail-well)', ungrouped: 'var(--rail-canvas)' },
+    outlines: { group: OUTLINE_TRAY, auto: OUTLINE_TRAY, ungrouped: 'var(--rail-canvas)' },
+    heading: { group: 'var(--rail-card)', auto: 'var(--auto-surface)', ungrouped: 'var(--rail-card)' },
+  };
+
+  it('has an expectation for every built style', () => {
+    expect(Object.keys(EXPECTED).sort()).toEqual([...styles].sort());
+  });
+
+  it.each(styles)('%s: names the surface behind the rows, for every kind of card', (style) => {
+    const want = EXPECTED[style];
+    for (const kind of ['group', 'auto', 'ungrouped'] as const) {
+      expect(surfaceOf(style, kind), `${style} ${kind}`).toBe(want[kind]);
+    }
   });
 
   it.each(styles)('%s: the pinned blocks paint the named surface', async (style) => {
