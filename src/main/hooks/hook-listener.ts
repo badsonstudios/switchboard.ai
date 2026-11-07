@@ -69,6 +69,20 @@ export interface HookListenerOptions {
    *  produce reliably and `sweepBudgetMs: 0` cannot reach at all. Mirrors
    *  `sweepOrphanSessionStateDirs`'s `now`. Absent = `Date.now`. */
   sweepNow?: () => number;
+  /**
+   * Extra context for a session's `UserPromptSubmit` hook, or undefined for
+   * none (#1544 part 4, waiting notes). The CLI reads the hook's stdout as
+   * `hookSpecificOutput.additionalContext` (an optional string in its own zod
+   * schema, read from the PATH binary). Absent = every hook acks `{}` as before.
+   */
+  promptContext?: (sessionId: string) => string | undefined;
+  /**
+   * A turn really STARTED on this session: its `UserPromptSubmit` hook fired
+   * (#1544 part 4 clears the waiting note here). Later than the moment a
+   * prompt is sent, which is the point: a prompt queued behind a running turn
+   * starts only after that turn may have left a waiting note.
+   */
+  onPromptStarted?: (sessionId: string) => void;
 }
 
 // `PermissionRequest` is NO LONGER RE-EXPORTED from here (#952). It lives in
@@ -455,11 +469,35 @@ export class HookListener {
       // hook event and no beep, and only everything else acked. `PreToolUse` is
       // no longer registered, so there is nothing to park and status is all that
       // arrives.
-      res.end('{}');
+      res.end(this.replyFor(sessionId, body));
       this.ingest(sessionId, body);
     });
   }
 
+
+  /**
+   * The hook's stdout. `{}` (a no-op) for everything but a `UserPromptSubmit`
+   * that `promptContext` has something to say about. FAIL-OPEN: any trouble
+   * here answers `{}`, because a hook reply must never be what breaks a turn.
+   */
+  private replyFor(sessionId: string, body: string): string {
+    const context = this.opts.promptContext ?? ((): undefined => undefined);
+    if (!body.includes('UserPromptSubmit')) return '{}';
+    try {
+      const e = JSON.parse(body) as { hook_event_name?: unknown };
+      if (e.hook_event_name !== 'UserPromptSubmit') return '{}';
+      try {
+        this.opts.onPromptStarted?.(sessionId);
+      } catch {
+        /* fail-open: a failed clear never costs the turn its context */
+      }
+      const text = context(sessionId);
+      if (!text) return '{}';
+      return JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: text } });
+    } catch {
+      return '{}';
+    }
+  }
 
   private ingest(sessionId: string, body: string): void {
     let e: Record<string, unknown> = {};

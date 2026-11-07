@@ -6,8 +6,23 @@
 // directly instead of threading a prop through App.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { NOTE_PLACEMENTS, setNotePlacement, useNotePlacement, type NotePlacement } from '../../lib/session-notes';
-import { SettingItem } from './controls';
+import {
+  NOTE_PLACEMENTS,
+  setNotePlacement,
+  useNotePlacement,
+  type NotePlacement,
+} from '../../lib/session-notes';
+import { SettingCheckbox, SettingItem } from './controls';
+
+interface WaitingNotesApi {
+  getWaitingNotes?: () => Promise<boolean>;
+  setWaitingNotes?: (on: boolean) => Promise<boolean>;
+}
+
+function waitingApi(): WaitingNotesApi | undefined {
+  return (globalThis as { window?: { switchboard?: { settings?: WaitingNotesApi } } }).window?.switchboard
+    ?.settings;
+}
 
 export function NotePlacementSection(): React.JSX.Element {
   const { t } = useTranslation();
@@ -40,16 +55,64 @@ export function NotePlacementSection(): React.JSX.Element {
       <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t(`notePlacement.${p}Note`)}</span>
     </label>
   );
+  // Automatic waiting notes (#1544 part 4): MAIN's switch, because main is
+  // what tells the AI. Read on mount, and the box shows what main answered.
+  // null until main has answered: the box is disabled rather than showing a
+  // guess a click could act on (an "off" that is really on)
+  const [waiting, setWaiting] = React.useState<boolean | null>(null);
+  React.useEffect(() => {
+    let alive = true;
+    const read = waitingApi()?.getWaitingNotes;
+    // no bridge: off, and usable, which is main's default too
+    if (typeof read !== 'function') {
+      setWaiting(false);
+      return;
+    }
+    void read()
+      .then((on) => {
+        if (alive) setWaiting(on === true);
+      })
+      .catch(() => {
+        // fail-safe: shows off, which is main's default
+        if (alive) setWaiting(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const flipWaiting = (on: boolean): void => {
+    setWaiting(on);
+    void waitingApi()
+      ?.setWaitingNotes?.(on)
+      .then((now) => setWaiting(now === true))
+      .catch(() => setWaiting(!on));
+  };
   return (
-    <SettingItem item="note-placement" label={t('notePlacement.title')} blurb={t('notePlacement.blurb')}>
-      <div
-        data-settings-block="note-placement"
-        role="radiogroup"
-        aria-label={t('notePlacement.title')}
-        style={{ display: 'grid', gap: 12 }}
+    <>
+      <SettingItem
+        item="waiting-notes"
+        label={t('notePlacement.waitingTitle')}
+        blurb={t('notePlacement.waitingBlurb')}
       >
-        {NOTE_PLACEMENTS.map(option)}
-      </div>
-    </SettingItem>
+        <SettingCheckbox
+          field="waitingNotes"
+          checked={waiting === true}
+          disabled={waiting === null}
+          onChange={flipWaiting}
+        >
+          {t('notePlacement.waiting')}
+        </SettingCheckbox>
+      </SettingItem>
+      <SettingItem item="note-placement" label={t('notePlacement.title')} blurb={t('notePlacement.blurb')}>
+        <div
+          data-settings-block="note-placement"
+          role="radiogroup"
+          aria-label={t('notePlacement.title')}
+          style={{ display: 'grid', gap: 12 }}
+        >
+          {NOTE_PLACEMENTS.map(option)}
+        </div>
+      </SettingItem>
+    </>
   );
 }

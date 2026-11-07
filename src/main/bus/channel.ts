@@ -53,6 +53,8 @@ export const BUS_OPS = [
   'blackboard_remove',
   // the caller's OWN card note (#1544): the token decides whose, never an argument
   'set_session_note',
+  // the caller's own automatic WAITING note (#1544 part 4), same token rule
+  'set_waiting_note',
 ] as const;
 
 export type BusOp = (typeof BUS_OPS)[number];

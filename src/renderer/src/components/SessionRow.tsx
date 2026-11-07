@@ -221,7 +221,7 @@ export function SessionRow(props: {
   const selected = props.selected;
   const isPinned = props.pinned;
   // the card's sticky note, for the marker and the spoken name (#1544)
-  const rowNote = useSessionNote(s.id).note;
+  const { note: rowNote, waiting: rowWaiting } = useSessionNote(s.id);
   const waiting = props.waiting;
   const depth = props.depth;
   const indent = railDepthIndent(depth);
@@ -408,9 +408,11 @@ export function SessionRow(props: {
             aria-label={((): string => {
               const name = sessionSpokenName(t, s, isPinned, waiting);
               // the sticky note (#1544) is said too: its marker is decoration
-              const said = rowNote
+              const noted = rowNote
                 ? t(rowNote.by === 'ai' ? 'rail.rowNoteAi' : 'rail.rowNote', { label: name, note: rowNote.text })
                 : name;
+              // the waiting note (#1544 part 4) leads: it is what the AI needs
+              const said = rowWaiting ? t('rail.rowWaitingNote', { label: noted, note: rowWaiting.text }) : noted;
               return props.folded ? t('strip.pillFolded', { name: said }) : said;
             })()}
             // "this is the session the grid is showing" — a fact about the
@@ -578,6 +580,23 @@ export function SessionRow(props: {
           {/* The sticky note's marker (#1544): a small square of the note's mint
               paper, the note on hover, a blue ring when the AI wrote it.
               Decoration to a screen reader — the note is in the row's name. */}
+          {/* The waiting note's marker (#1544 part 4): the "needs you" yellow,
+              because the AI stopped needing something from you. */}
+          {rowWaiting && (
+            <span
+              aria-hidden
+              data-rail-waiting-note={s.id}
+              title={t('sessionNote.railWaitingHint', { note: rowWaiting.text })}
+              style={{
+                inlineSize: 11,
+                blockSize: 11,
+                flexShrink: 0,
+                borderRadius: 2,
+                background: 'color-mix(in srgb, var(--status-needs-input) 42%, white)',
+                boxShadow: 'inset 0 -2px 0 var(--status-needs-input)',
+              }}
+            />
+          )}
           {rowNote && (
             <span
               aria-hidden

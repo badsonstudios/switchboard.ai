@@ -45,6 +45,9 @@ export type AskForNoteAnswer = { ok: true } | { ok: false; reason: 'no-session' 
 
 interface NoteApi {
   askForNote?(liveId: string): Promise<AskForNoteAnswer>;
+  waitingNote?(cardId: string): Promise<SessionNote | null>;
+  dismissWaitingNote?(cardId: string): Promise<boolean>;
+  onWaitingNoteChanged?(cb: (c: SessionNoteChange) => void): () => void;
   note(cardId: string): Promise<SessionNote | null>;
   setNote(cardId: string, text: string): Promise<SessionNote | null>;
   onNoteChanged(cb: (c: SessionNoteChange) => void): () => void;
@@ -56,9 +59,11 @@ interface CardNoteState {
   editing: boolean;
   /** placement D: the chip's popover is open on the note (not editing it) */
   open: boolean;
+  /** the automatic waiting note (#1544 part 4): the AI's, yellow, separate */
+  waiting: SessionNote | undefined;
 }
 
-const EMPTY: CardNoteState = { note: undefined, editing: false, open: false };
+const EMPTY: CardNoteState = { note: undefined, editing: false, open: false, waiting: undefined };
 let placement: NotePlacement = DEFAULT_NOTE_PLACEMENT;
 
 const cards = new Map<string, CardNoteState>();
@@ -88,12 +93,22 @@ function listen(): void {
   const a = api();
   if (!a || typeof a.onNoteChanged !== 'function') return;
   try {
-    unsubscribePush = a.onNoteChanged((c) => {
+    const offWaiting =
+      typeof a.onWaitingNoteChanged === 'function'
+        ? a.onWaitingNoteChanged((c) => {
+            if (c && typeof c.cardId === 'string') patch(c.cardId, { waiting: c.note });
+          })
+        : undefined;
+    const offNote = a.onNoteChanged((c) => {
       if (!c || typeof c.cardId !== 'string') return;
       fetched.add(c.cardId);
       // a note deleted elsewhere takes its open popover with it
       patch(c.cardId, { note: c.note, ...(c.note ? {} : { open: false }) });
     });
+    unsubscribePush = () => {
+      offNote();
+      offWaiting?.();
+    };
   } catch {
     /* fail-open: no live updates, the fetch still works */
   }
@@ -111,6 +126,14 @@ function ensure(cardId: string): void {
     .catch(() => {
       /* fail-open: the card shows no note */
     });
+  if (typeof a.waitingNote === 'function') {
+    void a
+      .waitingNote(cardId)
+      .then((n) => patch(cardId, { waiting: n ?? undefined }))
+      .catch(() => {
+        /* fail-open: no waiting note shown */
+      });
+  }
 }
 
 function subscribe(l: () => void): () => void {
@@ -121,6 +144,19 @@ function subscribe(l: () => void): () => void {
 /** The note state for one card (fetched on first use). */
 export function noteStateOf(cardId: string): CardNoteState {
   return cards.get(cardId) ?? EMPTY;
+}
+
+/** × on the waiting note (#1544 part 4): gone at once, main confirms. */
+export async function dismissWaitingNote(cardId: string): Promise<void> {
+  const before = noteStateOf(cardId).waiting;
+  patch(cardId, { waiting: undefined });
+  const a = api();
+  if (!a || typeof a.dismissWaitingNote !== 'function') return;
+  try {
+    if (!(await a.dismissWaitingNote(cardId))) patch(cardId, { waiting: before });
+  } catch {
+    patch(cardId, { waiting: before });
+  }
 }
 
 /** Open the editor on a card: edits the note, or starts a new one. */

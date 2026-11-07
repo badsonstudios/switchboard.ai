@@ -4,7 +4,7 @@
 // each handler DECIDES. A refusal is `null` plus one log line, never a throw,
 // and the note's words never reach the log.
 import { describe, it, expect } from 'vitest';
-import { NOTE_REQUEST_PROMPT, busNotes, registerNoteIpc } from './note-ipc';
+import { NOTE_REQUEST_PROMPT, WAITING_NOTE_CONTEXT, busNotes, clearWaitingNote, registerNoteIpc } from './note-ipc';
 import { IpcBroker } from '../ipc/broker';
 import { LogFields, Logger } from '../log/logger';
 import type { SessionNote, SessionNoteChange } from '../../shared/session-note';
@@ -237,5 +237,99 @@ describe('sessions:askForNote, "Let Claude write it" (#1544)', () => {
   it('fails open: a send that fails or throws is an answer, not a throw', async () => {
     expect(await asker({ sent: false }).call('live-1')).toEqual({ ok: false, reason: 'not-sent' });
     expect(await asker({ sent: 'throw' }).call('live-1')).toEqual({ ok: false, reason: 'not-sent' });
+  });
+});
+
+describe('the automatic waiting note (#1544 part 4)', () => {
+  function rig(on = true) {
+    let enabled = on;
+    const waitingStore = new Map<string, SessionNote>();
+    const pushes: SessionNoteChange[] = [];
+    const waiting = {
+      on: () => enabled,
+      setOn: (v: boolean) => {
+        enabled = v;
+      },
+      store: {
+        cardWaitingNote: (id: string) => waitingStore.get(id),
+        setCardWaitingNote: (id: string, n: SessionNote | undefined) => {
+          if (n) waitingStore.set(id, n);
+          else waitingStore.delete(id);
+          return waitingStore.get(id);
+        },
+      },
+      push: (c: SessionNoteChange) => void pushes.push(c),
+    };
+    const log: Logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {}, child: () => log };
+    const b = busNotes({
+      store: { cardNote: () => undefined, setCardNote: () => undefined },
+      push: () => {},
+      now: () => NOW,
+      log,
+      cardFor: (id) => (id === 'live-1' ? CARD : null),
+      waiting,
+    });
+    const handlers = new Map<string, Handler>();
+    registerNoteIpc({
+      broker: { handle: (c: string, fn: Handler) => handlers.set(c, fn) } as unknown as IpcBroker,
+      log,
+      store: { cardNote: () => undefined, setCardNote: () => undefined },
+      knownCard: (id) => id === CARD,
+      push: () => {},
+      waiting,
+    });
+    const call = (ch: string, ...args: unknown[]): unknown => handlers.get(ch)!(null, ...args);
+    return { b, waitingStore, pushes, waiting, call, isOn: () => enabled };
+  }
+
+  it('the AI leaves a waiting note on its own card, separate from the sticky note', () => {
+    const r = rig();
+    expect(r.b.setWaiting('live-1', 'Need your call: keep v1?')).toEqual({ ok: true, value: { text: 'Need your call: keep v1?' } });
+    expect(r.waitingStore.get(CARD)).toEqual({ text: 'Need your call: keep v1?', by: 'ai', at: NOW.toISOString() });
+    expect(r.pushes).toEqual([{ cardId: CARD, note: r.waitingStore.get(CARD) }]);
+  });
+
+  it('is refused while the switch is off, saying the agent need not try', () => {
+    const r = rig(false);
+    const out = r.b.setWaiting('live-1', 'x');
+    expect(out).toMatchObject({ ok: false });
+    expect(JSON.stringify(out)).toMatch(/turned off/);
+    expect(r.waitingStore.size).toBe(0);
+  });
+
+  it('refuses empty text, a stranger, and a non-string', () => {
+    const r = rig();
+    expect(r.b.setWaiting('live-1', '  ')).toMatchObject({ ok: false });
+    expect(r.b.setWaiting('stranger', 'x')).toMatchObject({ ok: false });
+    expect(r.b.setWaiting('live-1', 3)).toMatchObject({ ok: false });
+    expect(r.waitingStore.size).toBe(0);
+  });
+
+  it('clearWaitingNote removes it and tells the window, and is quiet when there is none', () => {
+    const r = rig();
+    r.b.setWaiting('live-1', 'x');
+    r.pushes.length = 0;
+    clearWaitingNote(r.waiting, CARD);
+    expect(r.waitingStore.has(CARD)).toBe(false);
+    expect(r.pushes).toEqual([{ cardId: CARD }]);
+    clearWaitingNote(r.waiting, CARD);
+    expect(r.pushes).toHaveLength(1);
+  });
+
+  it('the window can read it, dismiss it, and flip the switch (a real boolean only)', () => {
+    const r = rig(false);
+    expect(r.call('settings:getWaitingNotes')).toBe(false);
+    expect(r.call('settings:setWaitingNotes', 'yes')).toBe(false);
+    expect(r.call('settings:setWaitingNotes', true)).toBe(true);
+    r.b.setWaiting('live-1', 'x');
+    expect((r.call('sessions:waitingNote', CARD) as SessionNote).text).toBe('x');
+    expect(r.call('sessions:dismissWaitingNote', CARD)).toBe(true);
+    expect(r.call('sessions:waitingNote', CARD)).toBeNull();
+    expect(r.call('sessions:dismissWaitingNote', 'other')).toBe(false);
+  });
+
+  it('the instruction names the tool and asks for nothing when nothing is needed', () => {
+    expect(WAITING_NOTE_CONTEXT).toMatch(/set_waiting_note/);
+    expect(WAITING_NOTE_CONTEXT).toMatch(/If you need nothing, do not call it/);
   });
 });

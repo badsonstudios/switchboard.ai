@@ -843,6 +843,17 @@ const api = {
       liveId: string
     ): Promise<{ ok: true } | { ok: false; reason: 'no-session' | 'no-tools' | 'not-sent' }> =>
       ipcRenderer.invoke('sessions:askForNote', liveId),
+    /** The card's automatic waiting note (#1544 part 4), or null. */
+    waitingNote: (cardId: string): Promise<SessionNote | null> => ipcRenderer.invoke('sessions:waitingNote', cardId),
+    /** × on the waiting note: delete it. */
+    dismissWaitingNote: (cardId: string): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:dismissWaitingNote', cardId),
+    /** A card's waiting note was left, dismissed, or cleared by a new prompt. */
+    onWaitingNoteChanged: (cb: (c: SessionNoteChange) => void): (() => void) => {
+      const h = (_e: unknown, c: SessionNoteChange) => cb(c);
+      ipcRenderer.on('sessions:waitingNoteChanged', h);
+      return () => ipcRenderer.removeListener('sessions:waitingNoteChanged', h);
+    },
     /** A card's note changed, by this window or anyone else. */
     onNoteChanged: (cb: (c: SessionNoteChange) => void): (() => void) => {
       const h = (_e: unknown, c: SessionNoteChange) => cb(c);
@@ -1084,6 +1095,9 @@ const api = {
      * moment a turn ends, which is the only moment it can authorise a run.
      */
     getAiLabels: (): Promise<boolean> => ipcRenderer.invoke('settings:getAiLabels'),
+    /** Automatic waiting notes on/off (#1544 part 4). Resolves what main now holds. */
+    getWaitingNotes: (): Promise<boolean> => ipcRenderer.invoke('settings:getWaitingNotes'),
+    setWaitingNotes: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setWaitingNotes', on),
     setAiLabels: (on: boolean): Promise<boolean> =>
       ipcRenderer.invoke('settings:setAiLabels', on),
     /**

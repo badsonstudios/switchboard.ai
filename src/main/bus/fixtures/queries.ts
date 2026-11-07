@@ -148,5 +148,10 @@ export function stubNotes(): BusNotes & { notes: Map<string, string> } {
       else notes.delete(caller);
       return { ok: true, value: text.trim() ? { cleared: false, text: text.trim() } : { cleared: true } };
     },
+    setWaiting(caller, text) {
+      if (typeof text !== 'string' || !text.trim()) return { ok: false, reason: 'say what you are waiting on' };
+      notes.set(`waiting:${caller}`, text.trim());
+      return { ok: true, value: { text: text.trim() } };
+    },
   };
 }

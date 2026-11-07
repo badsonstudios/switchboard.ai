@@ -122,6 +122,7 @@ export class SessionManager {
    */
   private readonly sessionControls = new Map<string, { controls: SessionControls; ai: string }>();
   private readonly engineEventListeners = new Set<(sessionId: string, ev: EngineEvent) => void>();
+  private readonly promptSentListeners = new Set<(sessionId: string) => void>();
   private permissionHoldSuppressor:
     | ((sessionId: string, ev: PermissionRequestEvent) => boolean)
     | null = null;
@@ -912,7 +913,24 @@ export class SessionManager {
     // We know the turn began because WE started it — no round trip, unlike the
     // PTY path waiting on a UserPromptSubmit hook.
     this.apply(id, { kind: 'prompt-sent' });
+    for (const l of this.promptSentListeners) {
+      try {
+        l(id);
+      } catch (err) {
+        this.log.error('prompt-sent listener threw', { sessionId: id, error: errorText(err) });
+      }
+    }
     return true;
+  }
+
+  /**
+   * A prompt reached a session, from ANY source: the composer, a sibling's
+   * accepted message, a dispatch, "Let Claude write it" (#1544 part 4 clears
+   * the waiting note here). Each listener is isolated, like `onEngineEvent`.
+   */
+  onPromptSent(l: (sessionId: string) => void): () => void {
+    this.promptSentListeners.add(l);
+    return () => this.promptSentListeners.delete(l);
   }
 
   /**

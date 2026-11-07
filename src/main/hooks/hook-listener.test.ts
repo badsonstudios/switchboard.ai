@@ -549,3 +549,92 @@ describe('hook-token files follow their session (#282)', () => {
     expect(logged.some((l) => l.msg === 'swept orphaned hook tokens')).toBe(false);
   });
 });
+
+// #1544 part 4: the prompt hook's reply carries the waiting-notes instruction.
+describe('the UserPromptSubmit reply (#1544 waiting notes)', () => {
+  let own: HookListener;
+  let ownPort: number;
+  let answer: string | undefined;
+  let askedFor: string[];
+  let started: string[];
+
+  beforeEach(async () => {
+    answer = 'leave a waiting note';
+    askedFor = [];
+    started = [];
+    own = new HookListener({
+      stateDir: tempDir('sb-hooks-ctx-'),
+      log: createLogger(new LogSink({ dir }), 'hooks'),
+      manager: { apply: () => {}, setNativeSessionId: () => {} },
+      onPromptStarted: (sid) => {
+        started.push(sid);
+        if (answer === 'throw-start') throw new Error('clear failed');
+      },
+      promptContext: (sid) => {
+        askedFor.push(sid);
+        if (answer === 'throw') throw new Error('boom');
+        return answer;
+      },
+    });
+    ownPort = await own.start();
+  });
+  afterEach(() => own.stop());
+
+  function reply(sessionId: string, event: string): Promise<string> {
+    const { tokenPath } = own.registerSession(sessionId);
+    const token = fs.readFileSync(tokenPath, 'utf8');
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port: ownPort,
+          path: '/hook',
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
+        },
+        (res) => {
+          let out = '';
+          res.on('data', (d) => (out += d));
+          res.on('end', () => resolve(out));
+        }
+      );
+      req.on('error', reject);
+      req.end(JSON.stringify({ hook_event_name: event, session_id: 'native-1' }));
+    });
+  }
+
+  it('answers a prompt hook with the context, in the shape the CLI reads', async () => {
+    const out: unknown = JSON.parse(await reply('s1', 'UserPromptSubmit'));
+    expect(out).toEqual({
+      hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'leave a waiting note' },
+    });
+    expect(askedFor).toEqual(['s1']);
+  });
+
+  it('a prompt hook is the turn really starting: it is reported, and only for that hook', async () => {
+    await reply('s1', 'UserPromptSubmit');
+    await reply('s1', 'Stop');
+    expect(started).toEqual(['s1']);
+  });
+
+  it('a start listener that throws still gets the turn its context', async () => {
+    answer = 'throw-start';
+    const out: unknown = JSON.parse(await reply('s1', 'UserPromptSubmit'));
+    expect(out).toMatchObject({ hookSpecificOutput: { additionalContext: 'throw-start' } });
+  });
+
+  it('answers {} for every other hook, and asks nothing', async () => {
+    expect(await reply('s1', 'Stop')).toBe('{}');
+    expect(askedFor).toEqual([]);
+  });
+
+  it('answers {} when there is nothing to add (the switch is off)', async () => {
+    answer = undefined;
+    expect(await reply('s1', 'UserPromptSubmit')).toBe('{}');
+  });
+
+  it('fails open: a context that throws still answers {}', async () => {
+    answer = 'throw';
+    expect(await reply('s1', 'UserPromptSubmit')).toBe('{}');
+  });
+});

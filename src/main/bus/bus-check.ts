@@ -372,7 +372,7 @@ async function main(): Promise<void> {
   const toolNames = tools.map((t) => String(t.name)).sort().join(',');
   check('tools/list offers every bus tool, and nothing else',
     toolNames === 'blackboard_publish,blackboard_read,blackboard_remove,get_session_context,' +
-      'get_session_diff,get_session_output,list_sessions,send_to_session,set_session_note',
+      'get_session_diff,get_session_output,list_sessions,send_to_session,set_session_note,set_waiting_note',
     toolNames);
 
   // ── the round trip, over a real endpoint ─────────────────────────────────
@@ -625,6 +625,10 @@ async function main(): Promise<void> {
     noteStore.get('card-caller')?.by === 'ai', resultText(noteSet));
   const noteCleared = await peer.request('tools/call', { name: 'set_session_note', arguments: { text: '' } });
   check('…and empty text clears it', !isError(noteCleared) && !noteStore.has('card-caller'), resultText(noteCleared));
+  // #1544 part 4: with no waiting-notes switch wired (off), the call is refused and says why
+  const waitingOff = await peer.request('tools/call', { name: 'set_waiting_note', arguments: { text: 'Need your call' } });
+  check('set_waiting_note is refused while waiting notes are off', isError(waitingOff) &&
+    /turned off/.test(resultText(waitingOff)), resultText(waitingOff));
 
   // ── #796: the blackboard, end to end over the real pipe ──────────────────
   const pub = await peer.request('tools/call', {

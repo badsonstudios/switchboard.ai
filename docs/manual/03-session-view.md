@@ -595,9 +595,33 @@ Claude.
 If a session's AI cannot reach switchboard's tools, the button says so and
 you can type the note yourself.
 
-> TODO: the automatic "waiting" note (a separate, yellow note Claude leaves
-> by itself when a setting is on, which clears when you send the next prompt)
-> is coming in a later update. Document it here when it ships.
+### Waiting notes: Claude says what it needs
+
+Turn on **Settings ▸ Appearance ▸ Waiting notes ▸ The AI leaves a note when it
+is waiting on you** (press **`Ctrl+,`**). From then on, when Claude stops
+because it needs something from you (an answer, a decision, a review, an
+approval), it leaves a short **yellow** note on the session saying what it needs
+and, briefly, what is done. For example: "Need your call: keep the v1 API or
+break it? Tests pass." When you come back to a parked session, you can see at a
+glance what Claude needs from you.
+
+- **It is a separate note from your sticky note.** A session can show both: the
+  yellow waiting note and your mint sticky note. Each goes in the place you
+  picked under **Where the note sits**. With the chip in the title bar, the
+  waiting note gets its own yellow chip.
+- **It goes away by itself** when you send the session its next prompt.
+  You can also dismiss it yourself with **×**.
+- **You cannot edit it.** It is Claude's own word on what it needs. If you want
+  to keep something, write your own sticky note.
+- **In the sessions list,** a session with a waiting note shows a small yellow
+  square. Hover over it to read "Waiting on you: …".
+- **Yellow means a session needs you,** which is why this note is yellow and
+  your own note is not.
+
+Turning the setting on or off takes effect from the next prompt you send. It
+asks Claude to do a little extra at the end of a turn where it needs you, and
+it is off until you turn it on. Like the sticky note, a waiting note is never
+read back to Claude and never sets off a notification.
 
 ## Talking to the session
 

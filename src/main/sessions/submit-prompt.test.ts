@@ -537,6 +537,21 @@ describe('SessionManager.submitPrompt (P2-E18-06)', () => {
 
   // No round trip: we know the turn began because we began it. The PTY path
   // waits on a UserPromptSubmit hook to learn the same thing.
+  it('tells prompt-sent listeners, isolated from each other (#1544 clears the waiting note here)', () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    const heard: string[] = [];
+    mgr.onPromptSent(() => {
+      throw new Error('a broken listener');
+    });
+    const off = mgr.onPromptSent((id) => heard.push(id));
+    expect(mgr.submitPrompt(rec.id, 'hello')).toBe(true);
+    expect(heard).toEqual([rec.id]);
+    off();
+    mgr.submitPrompt(rec.id, 'again');
+    expect(heard).toEqual([rec.id]);
+  });
+
   it('marks the session working immediately', () => {
     const mgr = streamManager();
     const rec = mgr.create(identity);

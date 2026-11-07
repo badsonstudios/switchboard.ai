@@ -64,6 +64,8 @@ describe('the tool surface', () => {
       // #1544: a write whose reach is exactly ONE card, the caller's own; the
       // host takes it from the token and the schema has no way to name another
       'set_session_note',
+      // #1544 part 4: the automatic waiting note, the same one-card reach
+      'set_waiting_note',
       'blackboard_read',
       // #861, and it is a THIRD category rather than another write: the only
       // tool on this surface that destroys something, and one whose reach
