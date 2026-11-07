@@ -486,12 +486,21 @@ The list changes the moment you pick, in every theme:
   darker, so the white words on it are easy to read). While a folded group has
   a session working, its header goes back to a light tint, so the working
   animation shows clearly. **Ungrouped** keeps a plain grey header.
+- **5 · Tree with guide line.** No boxes, like a file tree: each group's
+  sessions hang off a line in its colour. Sessions in no group sit flush left,
+  under a small grey **UNGROUPED** caption.
+- **6 · Wells and raised sessions.** Each group is a sunken tray, and each
+  session is a raised card inside one. The session you have open is outlined
+  in the highlight colour.
+- **7 · Two outline colours.** A thick outline in the group's colour round the
+  group, and a thin grey outline round each session. The session you have
+  open is outlined in the highlight colour.
+- **8 · Heading bar, indented sessions.** Each group is a heading with a
+  coloured line under it, over an indented panel of its sessions.
 - **Classic** is the look from before: every group in the same thin grey
   frame, with a faint tint of its colour behind the name.
 
-The number is the style's place in a longer list. Four more styles are coming
-and will appear here as they do. TODO: options 5 to 8. Only the Sessions list
-follows this setting. The strip across the top and the session
+Only the Sessions list follows this setting. The strip across the top and the session
 windows keep their own look.
 
 **A finished session leaves N finished when you look at it.** It still says

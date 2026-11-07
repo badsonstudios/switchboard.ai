@@ -151,6 +151,11 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   **Coloured frame** (each group outlined in its colour), **Colour spine** (a
   thick coloured bar down the side, sessions indented) and **Solid header**
   (the header filled with the group's colour).
+- **And four more, so all nine are in:** **Tree with guide line** (no boxes,
+  sessions hang off a coloured line), **Wells and raised sessions** (groups as
+  sunken trays, sessions as raised cards), **Two outline colours** (a thick
+  coloured outline round the group, a thin grey one round each session) and
+  **Heading bar** (a heading with a coloured underline over an indented panel).
 
 ## 0.8.139 — 2026-11-07
 

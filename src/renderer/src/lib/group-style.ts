@@ -38,11 +38,11 @@ export const GROUP_STYLES = [
 export type GroupStyle = (typeof GROUP_STYLES)[number];
 
 /**
- * The styles that are BUILT. The rest land in later parts of #1556; until then
- * Settings does not offer them, because a choice that changes nothing is a
- * broken setting.
+ * The styles that are BUILT, which Settings offers: a choice that changes
+ * nothing is a broken setting. Since #1556 part 3 that is all of them; kept
+ * separate so a tenth style can land the same way, one part at a time.
  */
-export const AVAILABLE_GROUP_STYLES: readonly GroupStyle[] = ['classic', 'frame', 'spine', 'solid', 'folder'];
+export const AVAILABLE_GROUP_STYLES: readonly GroupStyle[] = GROUP_STYLES;
 
 /** option 4, Dan's pick */
 export const DEFAULT_GROUP_STYLE: GroupStyle = 'folder';

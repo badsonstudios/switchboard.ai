@@ -78,13 +78,14 @@ describe('the group style values (#1556)', () => {
     expect(GROUP_STYLES.map(groupStyleNumber).slice(1)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
   });
 
-  it('reads anything that is not a built style as the default', () => {
-    expect(groupStyleOf('classic')).toBe('classic');
+  it('reads every built style as itself, and anything else as the default', () => {
+    for (const s of AVAILABLE_GROUP_STYLES) expect(groupStyleOf(s)).toBe(s);
     expect(groupStyleOf(undefined)).toBe('folder');
     expect(groupStyleOf('nonsense')).toBe('folder');
-    for (const s of GROUP_STYLES) {
-      if (!AVAILABLE_GROUP_STYLES.includes(s)) expect(groupStyleOf(s)).toBe('folder');
-    }
+  });
+
+  it('offers all nine', () => {
+    expect([...AVAILABLE_GROUP_STYLES]).toEqual([...GROUP_STYLES]);
   });
 
   it('has words for every style, built or not', () => {
@@ -97,7 +98,7 @@ describe('the group style values (#1556)', () => {
 });
 
 describe('Settings ▸ Appearance ▸ Group style (#1556)', () => {
-  it('offers only the styles that are built, with the folder tab ticked by default', async () => {
+  it('offers the built styles in order, with the folder tab ticked by default', async () => {
     await mount();
     expect(radios().map((r) => r.dataset.groupStyleOption)).toEqual([...AVAILABLE_GROUP_STYLES]);
     expect(radios().find((r) => r.checked)?.dataset.groupStyleOption).toBe('folder');

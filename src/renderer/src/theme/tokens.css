@@ -1644,6 +1644,187 @@ mark[data-feed-match-current] {
   --rail-surface: var(--rail-canvas);
 }
 
+/* 5 · Tree with guide line. No boxes, like a file tree: each group's sessions
+ * hang off a line in its colour, and Ungrouped's sit flush left with no line
+ * and no header. Everything sits on the canvas. */
+[data-group-style='tree'] [data-group-card] {
+  --rail-surface: var(--rail-canvas);
+  margin-block-end: 4px;
+  padding-block-end: 6px;
+  border-block-end: 1px solid var(--rail-divider);
+}
+[data-group-style='tree'] [data-group-card] > .rail-head {
+  padding: 6px 4px;
+  border-radius: 6px;
+}
+[data-group-style='tree'] [data-group-card] > [data-rail-body] {
+  margin-inline-start: 8px;
+  border-inline-start: 2px solid var(--g-frame);
+  padding: 0 0 0 6px;
+}
+[data-group-style='tree'] [data-group-kind='ungrouped'] {
+  border-block-end: 0;
+}
+[data-group-style='tree'] [data-group-kind='ungrouped'] > [data-rail-body] {
+  margin-inline-start: 0;
+  border-inline-start: 0;
+  padding: 4px 0 0;
+}
+
+/* 6 · Wells and raised sessions. Each group is a sunken tray, each session a
+ * raised card inside one, so a group and a session can never be mistaken. */
+[data-group-style]:not([data-group-style='classic']) {
+  --rail-well: color-mix(in srgb, var(--rail-canvas) 92%, #000000);
+}
+:root[data-color-scheme='light'] [data-group-style]:not([data-group-style='classic']) {
+  --rail-well: color-mix(in srgb, var(--rail-canvas) 97%, #0d1424);
+}
+[data-group-style='wells'] [data-group-card] {
+  --rail-surface: var(--rail-well);
+  margin-block-end: 11px;
+  background: var(--rail-surface);
+  border: 1px solid var(--g-frame);
+  border-radius: 10px;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+:root[data-color-scheme='light'] [data-group-style='wells'] [data-group-card]:not([data-group-kind='ungrouped']) {
+  box-shadow: inset 0 2px 5px rgba(20, 30, 50, 0.12);
+}
+[data-group-style='wells'] [data-group-card] > .rail-head {
+  border-start-start-radius: 9px;
+  border-start-end-radius: 9px;
+}
+[data-group-style='wells'] [data-group-card][data-collapsed='true'] > .rail-head {
+  border-radius: 9px;
+}
+[data-group-style='wells'] [data-group-card] > [data-rail-body] {
+  padding: 0 6px 6px;
+}
+[data-group-style='wells'] [data-group-kind='ungrouped'] {
+  --rail-surface: var(--rail-canvas);
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+[data-group-style='wells'] [data-group-kind='ungrouped'] > [data-rail-body] {
+  padding: 0;
+}
+
+/* Ungrouped in the tree and the wells: the mockup draws it with no header at
+ * all, but the header holds its only fold control (and its count), so it
+ * stays, as a quiet caption in small capitals. */
+:is([data-group-style='tree'], [data-group-style='wells']) [data-group-kind='ungrouped'] > .rail-head {
+  padding: 4px 2px;
+}
+:is([data-group-style='tree'], [data-group-style='wells']) [data-group-kind='ungrouped'] > .rail-head .rail-head-toggle {
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+/* 7 · Two outline colours (Dan's idea). A thick outline in the group's colour
+ * round the group, a thin neutral one round each session. Ungrouped keeps the
+ * thin outlines under a plain caption. */
+[data-group-style='outlines'] [data-group-card] {
+  --rail-surface: color-mix(in srgb, var(--g) 6%, var(--rail-canvas));
+  margin-block-end: 12px;
+  background: var(--rail-surface);
+  border: 2px solid var(--g-frame);
+  border-radius: 10px;
+}
+[data-group-style='outlines'] [data-group-card] > .rail-head {
+  padding-block-end: 5px;
+  border-start-start-radius: 8px;
+  border-start-end-radius: 8px;
+}
+[data-group-style='outlines'] [data-group-card][data-collapsed='true'] > .rail-head {
+  border-radius: 8px;
+}
+[data-group-style='outlines'] [data-group-card] > [data-rail-body] {
+  padding: 0 6px 6px;
+}
+[data-group-style='outlines'] [data-group-kind='group'] > .rail-head .rail-group-ink {
+  color: var(--text);
+}
+[data-group-style='outlines'] [data-group-kind='ungrouped'] {
+  --rail-surface: var(--rail-canvas);
+  background: transparent;
+  border: 0;
+}
+[data-group-style='outlines'] [data-group-kind='ungrouped'] > .rail-head {
+  padding-inline-start: 2px;
+}
+[data-group-style='outlines'] [data-group-kind='ungrouped'] > .rail-head .rail-head-toggle {
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+[data-group-style='outlines'] [data-group-kind='ungrouped'] > [data-rail-body] {
+  padding: 0;
+}
+
+/* The sessions as cards of their own, in the wells and the two outlines.
+ * A row's fill, corner radius and gap are inline (SessionRow), so those three
+ * are forced; the open session loses its tint and is said by an outline in
+ * the focus accent instead. The working looks that repaint a row are more
+ * specific, so they still win. */
+:is([data-group-style='wells'], [data-group-style='outlines']) [data-group-card] .rail-row {
+  background: var(--rail-card) !important;
+  border: 1px solid var(--control-edge);
+  border-radius: 6px !important;
+  margin-block-end: 4px !important;
+}
+[data-group-style='wells'] [data-group-card] .rail-row {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+/* ...but not during the post-jump beat, an inset ring in the same colour that
+   the outline would swallow */
+:is([data-group-style='wells'], [data-group-style='outlines']) [data-group-card] .rail-row[data-selected='true']:not([data-flash='true']) {
+  outline: 2px solid var(--status-working-ink);
+  outline-offset: -1px;
+}
+
+/* 8 · Heading bar, indented sessions. A heading with an underline in the
+ * group's colour, over an indented panel of its sessions. Reads like an
+ * outline. */
+[data-group-style='heading'] [data-group-card] {
+  margin-block-end: 14px;
+}
+[data-group-style='heading'] [data-group-card] > .rail-head {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--g) 12%, var(--rail-card));
+  box-shadow: inset 0 -2px 0 var(--g-frame);
+}
+[data-group-style='heading'] [data-group-card] > [data-rail-body] {
+  --rail-surface: var(--rail-card);
+  margin-block-start: 4px;
+  margin-inline-start: 14px;
+  background: var(--rail-surface);
+  border: 1px solid var(--group-frame);
+  border-radius: 6px;
+}
+[data-group-style='heading'] [data-group-kind='group'] > .rail-head .rail-group-ink {
+  color: var(--text);
+}
+[data-group-style='heading'] [data-group-kind='auto'] > [data-rail-body] {
+  --rail-surface: var(--auto-surface);
+}
+/* an automatic group's bar is on the plain card: its folder ink on a tint of
+   itself is under 4.5:1 (3.87 on nordic), and on the card it clears */
+[data-group-style='heading'] [data-group-kind='auto'] > .rail-head {
+  background: var(--rail-card);
+}
+[data-group-style='heading'] [data-group-kind='ungrouped'] > .rail-head {
+  background: transparent;
+  box-shadow: inset 0 -1px 0 var(--rail-divider);
+}
+[data-group-style='heading'] [data-group-kind='ungrouped'] > .rail-head .rail-head-toggle {
+  font-weight: 500;
+}
+[data-group-style='heading'] [data-group-kind='ungrouped'] > [data-rail-body] {
+  margin-inline-start: 0;
+}
+
 /* ---- Events drawer rows (§5.12, #268) --------------------------------------
  *
  * A row you have already dealt with — kind `ready` — is the log tail rather
