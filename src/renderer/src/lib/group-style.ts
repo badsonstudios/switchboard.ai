@@ -42,7 +42,7 @@ export type GroupStyle = (typeof GROUP_STYLES)[number];
  * Settings does not offer them, because a choice that changes nothing is a
  * broken setting.
  */
-export const AVAILABLE_GROUP_STYLES: readonly GroupStyle[] = ['classic', 'folder'];
+export const AVAILABLE_GROUP_STYLES: readonly GroupStyle[] = ['classic', 'frame', 'spine', 'solid', 'folder'];
 
 /** option 4, Dan's pick */
 export const DEFAULT_GROUP_STYLE: GroupStyle = 'folder';

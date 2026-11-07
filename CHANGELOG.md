@@ -147,7 +147,10 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   and the whole group is outlined in its own colour. **Ungrouped** has a dashed
   grey outline and no fill, so it no longer looks like one more group. Prefer
   the old look? Pick **Classic** in **Settings ▸ Appearance ▸ Group style**.
-  More styles are on the way.
+- **Three more group styles** in **Settings ▸ Appearance ▸ Group style**:
+  **Coloured frame** (each group outlined in its colour), **Colour spine** (a
+  thick coloured bar down the side, sessions indented) and **Solid header**
+  (the header filled with the group's colour).
 
 ## 0.8.139 — 2026-11-07
 

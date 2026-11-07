@@ -1645,8 +1645,8 @@ describe('the group styles keep a group visible and its header readable in every
   const frameRule = (scheme: string): { pct: number; toward: string } => {
     const selector =
       scheme === 'light'
-        ? ":root[data-color-scheme='light'] [data-group-style] [data-group-card] {"
-        : '\n[data-group-style] [data-group-card] {';
+        ? ":root[data-color-scheme='light'] [data-group-style]:not([data-group-style='classic']) [data-group-card] {"
+        : "\n[data-group-style]:not([data-group-style='classic']) [data-group-card] {";
     const m = /--g-frame:\s*color-mix\(in srgb,\s*var\(--g\)\s*([\d.]+)%,\s*(#[0-9a-f]{6})\)/i.exec(
       block(selector)
     );
@@ -1734,6 +1734,109 @@ describe('the group styles keep a group visible and its header readable in every
         ratio(tokens['--status-working-ink'], mix(tokens['--status-working'], card, 0.14)),
         'the waiting chip'
       ).toBeGreaterThanOrEqual(4.5);
+    });
+  });
+});
+
+// Part 2 of #1556: options 1-3. Same space (8 colours by 4 themes), read from
+// the rules, never restated.
+describe('options 1-3 keep every group readable in every colour (#1556 part 2)', () => {
+  const inkRule = (scheme: string): { pct: number; toward: string } => {
+    const sel = scheme === 'light' ? ":root[data-color-scheme='light'] .rail-group-ink {" : '\n.rail-group-ink {';
+    const m = /color-mix\(in srgb,\s*var\(--g\)\s*([\d.]+)%,\s*(#[0-9a-f]{6})\)/i.exec(block(sel));
+    expect(m).not.toBeNull();
+    return { pct: Number(m![1]) / 100, toward: m![2] };
+  };
+  const solidRule = (): { pct: number; toward: string } => {
+    const m = /--g-solid:\s*color-mix\(in srgb,\s*var\(--g\)\s*([\d.]+)%,\s*(#[0-9a-f]{6})\)/i.exec(
+      block("\n[data-group-style]:not([data-group-style='classic']) [data-group-card] {")
+    );
+    expect(m, '--g-solid must blend var(--g) toward a #rrggbb').not.toBeNull();
+    return { pct: Number(m![1]) / 100, toward: m![2] };
+  };
+  // a header's light tint, read from its style's rule
+  const headPct = (style: string): number => {
+    const m = /background:\s*color-mix\(in srgb,\s*var\(--g\)\s*([\d.]+)%,\s*var\(--rail-card\)\)/.exec(
+      block(`[data-group-style='${style}'] [data-group-card] > .rail-head {`)
+    );
+    expect(m, `${style}: the header must tint var(--g) over var(--rail-card)`).not.toBeNull();
+    return Number(m![1]) / 100;
+  };
+  const SUMMARY = [
+    '--muted',
+    '--status-working-ink',
+    '--status-waiting-ink',
+    '--status-needs-input-ink',
+    '--status-needs-permission-ink',
+    '--status-crashed-ink',
+  ];
+
+  // the solid header's words and the count's backplate, read from the rules
+  const SOLID =
+    "[data-group-style='solid'] [data-group-kind]:not([data-group-kind='ungrouped']) > .rail-head:not([data-session-status='working'])";
+  const solidInk = (): string => {
+    const at = css.indexOf(`${SOLID} :is(.rail-head-toggle,`);
+    expect(at, 'the solid header must recolour its words').toBeGreaterThan(-1);
+    const m = /color:\s*(#[0-9a-f]{6})\s*!important/i.exec(css.slice(at, css.indexOf('}', at)));
+    expect(m, 'the solid header words must be a #rrggbb').not.toBeNull();
+    return m![1];
+  };
+  const countPlate = (): { shade: string; pct: number } => {
+    const m = /color-mix\(in srgb,\s*(#[0-9a-f]{6})\s*([\d.]+)%,\s*transparent\)/i.exec(
+      block(`${SOLID} [data-rail-group-count] {`)
+    );
+    expect(m, "the count's backplate must be a #rrggbb over the header").not.toBeNull();
+    return { shade: m![1], pct: Number(m![2]) / 100 };
+  };
+
+  // The focus ring, the closed group's state edge and the approval ring are
+  // drawn in their own colours, which sink into the dark fill (the focus ring
+  // was 1.09:1 on daylight's teal). Each is lined in the words' own white,
+  // which the cases below hold at 4.5:1 on every fill.
+  it('lines the focus ring, the state edge and the approval ring in the words\' white', () => {
+    const white = solidInk().toLowerCase();
+    const kinds = "[data-group-style='solid'] [data-group-kind]:not([data-group-kind='ungrouped'])";
+    const rules = [
+      `${SOLID} :is(.rail-head-toggle, .rail-dot, .rail-x):focus-visible {`,
+      `${kinds}[data-collapsed='true'][data-flash='true'] {`,
+      `${SOLID} [data-rail-group-edge] {`,
+      `${kinds} > .rail-head[data-needs-approval='true']::after {`,
+    ];
+    for (const r of rules) expect(block(r).toLowerCase(), r).toContain(white);
+  });
+
+  it('fills the solid header with --g-solid', () => {
+    expect(block(`${SOLID} {`)).toMatch(/background:\s*var\(--g-solid\)/);
+  });
+
+  describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s', (_id, theme) => {
+    const tokens = resolved(theme);
+    const card = tokens['--rail-card'];
+
+    it.each([...GROUP_PALETTE, 'auto'])('%s: the words clear 4.5:1 on the solid header and its count', (c) => {
+      const color = c === 'auto' ? tokens['--auto-ink'] : c;
+      const r = solidRule();
+      const fill = mix(color, r.toward, r.pct);
+      const ink = solidInk();
+      const plate = countPlate();
+      expect(ratio(ink, fill), 'the header').toBeGreaterThanOrEqual(4.5);
+      expect(ratio(ink, mix(plate.shade, fill, plate.pct)), 'the count').toBeGreaterThanOrEqual(4.5);
+    });
+
+    it.each([...GROUP_PALETTE])('%s: the frame and the working solid header read at their tint', (color) => {
+      for (const style of ['frame', 'solid']) {
+        const head = mix(color, card, headPct(style));
+        // frame writes the name in --text; a working solid header keeps the ink
+        const rule = inkRule(theme.colorScheme);
+        const name = style === 'frame' ? tokens['--text'] : mix(color, rule.toward, rule.pct);
+        expect(ratio(name, head), `${style}: the name`).toBeGreaterThanOrEqual(4.5);
+        for (const ink of SUMMARY) expect(ratio(tokens[ink], head), `${style}: ${ink}`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    it.each([...GROUP_PALETTE])('%s: the spine\'s name reads on the plain card', (color) => {
+      const rule = inkRule(theme.colorScheme);
+      expect(ratio(mix(color, rule.toward, rule.pct), card)).toBeGreaterThanOrEqual(4.5);
     });
   });
 });
