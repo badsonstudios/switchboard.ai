@@ -30,7 +30,7 @@ import { NO_ORDER } from '../lib/rail-order';
 import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../../../shared/i18n/locales/en.json';
 import { uiDelete } from '../lib/ui-state';
-import { resetGroupStyleForTests } from '../lib/group-style';
+import { AVAILABLE_GROUP_STYLES, resetGroupStyleForTests } from '../lib/group-style';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -208,25 +208,42 @@ describe('the card must not clip, or the sticky block is measured against nothin
 });
 
 // Every style but Classic draws the card in CSS (#1556), so the block cannot
-// copy an inline value: it paints `var(--rail-surface)`, and the style's own
-// rule names that surface on the body, for every kind of card. Read from the
-// stylesheet, so a style that forgets one kind fails here.
-describe('the folder tab keeps the sticky block opaque and the card unclipped (#1556)', () => {
+// copy an inline value: it paints `var(--rail-surface, …)`, and each style's
+// rules name that surface for every kind of card. Read from the stylesheet,
+// for EVERY built style, so a style that forgets one kind fails here.
+describe('every group style keeps the sticky block opaque and the card unclipped (#1556)', () => {
   const css = fs
     .readFileSync(path.join(__dirname, '..', 'theme', 'tokens.css'), 'utf8')
     .split(String.fromCharCode(13))
     .join('');
-  const surfaceOf = (kind: string | null): string | undefined => {
-    const sel =
-      kind === null
-        ? "[data-group-style='folder'] [data-group-card] > [data-rail-body] {"
-        : `[data-group-style='folder'] [data-group-kind='${kind}'] > [data-rail-body] {`;
+  const declared = (sel: string): string | undefined => {
     const at = css.indexOf(sel);
     if (at < 0) return undefined;
     return /--rail-surface:\s*([^;]+);/.exec(css.slice(at, css.indexOf('}', at)))?.[1];
   };
+  /** what --rail-surface comes to on a card of this kind: a kind's own rule
+   *  over the style's general one, the body's over the card's */
+  const surfaceOf = (style: string, kind: string): string | undefined => {
+    const s = `[data-group-style='${style}']`;
+    return (
+      declared(`${s} [data-group-kind='${kind}'] > [data-rail-body] {`) ??
+      declared(`${s} [data-group-kind='${kind}'] {`) ??
+      declared(`${s} [data-group-card] > [data-rail-body] {`) ??
+      declared(`${s} [data-group-card] {`)
+    );
+  };
+  const styles = AVAILABLE_GROUP_STYLES.filter((s) => s !== 'classic');
 
-  it('paints the surface the body names, in a group, an automatic group and No group', async () => {
+  it.each(styles)('%s: names an opaque surface for a group, an automatic group and Ungrouped', (style) => {
+    expect(surfaceOf(style, 'group')).toBe('var(--rail-card)');
+    expect(surfaceOf(style, 'auto')).toBe('var(--auto-surface)');
+    // Ungrouped is unfilled in every style but the solid header, so its block
+    // paints what is behind it
+    expect(surfaceOf(style, 'ungrouped')).toBe(style === 'solid' ? 'var(--rail-card)' : 'var(--rail-canvas)');
+  });
+
+  it.each(styles)('%s: the pinned blocks paint the named surface', async (style) => {
+    resetGroupStyleForTests(style);
     // two sessions in ONE folder make an automatic group
     const shared = { ...session('x'), folder: 'C:/p/shared' };
     const other = { ...session('y'), folder: 'C:/p/shared' };
@@ -235,13 +252,9 @@ describe('the folder tab keeps the sticky block opaque and the card unclipped (#
       groups: [backend],
       pinned: ['a', 'y', 'd'],
     });
-    expect(host.querySelector('nav')!.getAttribute('data-group-style')).toBe('folder');
+    expect(host.querySelector('nav')!.getAttribute('data-group-style')).toBe(style);
     expect(blocks()).toHaveLength(3);
     for (const b of blocks()) expect(b.style.background).toBe('var(--rail-surface, var(--rail-card))');
-    expect(surfaceOf(null)).toBe('var(--rail-card)');
-    expect(surfaceOf('auto')).toBe('var(--auto-surface)');
-    // No group has no fill of its own, so the block paints what is behind it
-    expect(surfaceOf('ungrouped')).toBe('var(--rail-canvas)');
   });
 
   it('leaves the card unclipped, inline and in the stylesheet', async () => {
@@ -252,7 +265,7 @@ describe('the folder tab keeps the sticky block opaque and the card unclipped (#
     const start = css.indexOf('/* ---- Group styles in the sessions list (#1556)');
     expect(start).toBeGreaterThan(-1);
     const section = css.slice(start, css.indexOf('/* ----', start + 10));
-    expect(section).toContain("[data-group-style='folder']");
+    for (const st of styles) expect(section).toContain(`[data-group-style='${st}']`);
     // a declaration, not the word: the section's own comment explains why there is none
     expect(section).not.toMatch(/overflow(-[xy])?\s*:/);
   });

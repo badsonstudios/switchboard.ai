@@ -1420,11 +1420,163 @@ mark[data-feed-match-current] {
  * Every style keeps the rules the rail's cues depend on: no `overflow` on the
  * card (#295, sticky pins), the cues on `.rail-head`, and a body that names
  * its surface `--rail-surface` so the pinned block can paint it. */
-[data-group-style] [data-group-card] {
+[data-group-style]:not([data-group-style='classic']) [data-group-card] {
   --g-frame: color-mix(in srgb, var(--g) 80%, #ffffff);
+  /* 3 · Solid header's fill, in every scheme: dark enough for white words */
+  --g-solid: color-mix(in srgb, var(--g) 52%, #0d1424);
 }
-:root[data-color-scheme='light'] [data-group-style] [data-group-card] {
+:root[data-color-scheme='light'] [data-group-style]:not([data-group-style='classic']) [data-group-card] {
   --g-frame: color-mix(in srgb, var(--g) 80%, #0d1424);
+}
+
+/* What every style but Classic starts from: Classic's own spacing, moved out
+ * of the inline styles it keeps for itself. A style overrides what it needs. */
+[data-group-style]:not([data-group-style='classic']) [data-group-card] > .rail-head {
+  padding: 8px 9px 8px 10px;
+}
+[data-group-style]:not([data-group-style='classic']) [data-group-card] > [data-rail-body] {
+  padding: 5px;
+}
+
+/* 1 · Coloured frame. The whole card outlined in the group's colour, a
+ * stronger header tint (14%, the ceiling the folder tab measured), and the
+ * name in the text colour. */
+[data-group-style='frame'] [data-group-card] {
+  --rail-surface: var(--rail-card);
+  margin-block-end: 9px;
+  background: var(--rail-surface);
+  border: 2px solid var(--g-frame);
+  border-radius: 9px;
+}
+[data-group-style='frame'] [data-group-card] > .rail-head {
+  background: color-mix(in srgb, var(--g) 14%, var(--rail-card));
+  border-start-start-radius: 7px;
+  border-start-end-radius: 7px;
+}
+[data-group-style='frame'] [data-group-card][data-collapsed='true'] > .rail-head {
+  border-radius: 7px;
+}
+[data-group-style='frame'] [data-group-kind='group'] > .rail-head .rail-group-ink {
+  color: var(--text);
+}
+[data-group-style='frame'] [data-group-kind='auto'] {
+  --rail-surface: var(--auto-surface);
+}
+[data-group-style='frame'] [data-group-kind='auto'] > .rail-head {
+  background: var(--auto-head);
+}
+[data-group-style='frame'] [data-group-kind='ungrouped'] {
+  --rail-surface: var(--rail-canvas);
+  background: transparent;
+  border: 1px dashed var(--muted);
+}
+[data-group-style='frame'] [data-group-kind='ungrouped'] > .rail-head {
+  background: transparent;
+}
+
+/* 2 · Colour spine. No outline: a thick bar in the group's colour down the
+ * card's start edge, the name in small capitals, the sessions indented. */
+[data-group-style='spine'] [data-group-card] {
+  --rail-surface: var(--rail-card);
+  margin-block-end: 14px;
+  background: var(--rail-surface);
+  border-inline-start: 5px solid var(--g-frame);
+  border-start-start-radius: 3px;
+  border-end-start-radius: 3px;
+  border-start-end-radius: 8px;
+  border-end-end-radius: 8px;
+}
+[data-group-style='spine'] [data-group-card] > .rail-head {
+  padding-inline-start: 8px;
+  /* invisible while the header is transparent; it matters when a working
+     look or the approval ring paints it. The start side meets the spine. */
+  border-start-end-radius: 8px;
+}
+[data-group-style='spine'] [data-group-card][data-collapsed='true'] > .rail-head {
+  border-end-end-radius: 8px;
+}
+[data-group-style='spine'] [data-group-card] > .rail-head .rail-head-toggle {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+[data-group-style='spine'] [data-group-card] > [data-rail-body] {
+  padding-inline-start: 15px;
+}
+[data-group-style='spine'] [data-group-kind='auto'] {
+  --rail-surface: var(--auto-surface);
+}
+[data-group-style='spine'] [data-group-kind='ungrouped'] {
+  --rail-surface: var(--rail-canvas);
+  background: transparent;
+  border-inline-start-color: transparent;
+}
+
+/* 3 · Solid header. The header filled with the group's colour, darkened so
+ * white words read on it in every theme (tokens.drift.test.ts measures every
+ * palette colour), and a thin frame round the card. Ungrouped keeps a quiet
+ * grey header: it is not a group.
+ *
+ * WHILE A CLOSED GROUP IS WORKING the header goes back to a light tint and its
+ * words to their usual colours: three of the six working looks repaint the
+ * header with a light wash (!important), and white words on that would vanish.
+ * The waiting chip and a washed summary carry their own opaque backplates and
+ * keep their own ink. */
+[data-group-style='solid'] [data-group-card] {
+  --rail-surface: var(--rail-card);
+  margin-block-end: 9px;
+  background: var(--rail-surface);
+  border: 1px solid var(--g-frame);
+  border-radius: 8px;
+}
+[data-group-style='solid'] [data-group-card] > .rail-head {
+  background: color-mix(in srgb, var(--g) 14%, var(--rail-card));
+  border-start-start-radius: 7px;
+  border-start-end-radius: 7px;
+}
+[data-group-style='solid'] [data-group-card][data-collapsed='true'] > .rail-head {
+  border-radius: 7px;
+}
+[data-group-style='solid'] [data-group-kind]:not([data-group-kind='ungrouped']) > .rail-head:not([data-session-status='working']) {
+  background: var(--g-solid);
+}
+[data-group-style='solid'] [data-group-kind]:not([data-group-kind='ungrouped']) > .rail-head:not([data-session-status='working']) :is(.rail-head-toggle, .rail-group-ink, .rail-x, [data-rail-group-count], [data-rail-group-folder], [data-rail-group-folded], [data-rail-group-chevron], [data-rail-group-auto], [data-rail-group-summary]:not([data-washed])) {
+  color: #ffffff !important;
+}
+[data-group-style='solid'] [data-group-kind]:not([data-group-kind='ungrouped']) > .rail-head:not([data-session-status='working']) :is([data-rail-group-folded], [data-rail-group-auto]) {
+  border-color: #ffffff !important;
+}
+/* the count's backplate: darker than the header, never a tint of white */
+[data-group-style='solid'] [data-group-kind]:not([data-group-kind='ungrouped']) > .rail-head:not([data-session-status='working']) [data-rail-group-count] {
+  background: color-mix(in srgb, #000000 22%, transparent) !important;
+}
+/* The cues drawn in their own colours would sink into the dark fill: the
+ * focus ring (the working ink, 1.09:1 on daylight's teal), the closed group's
+ * state edge and the approval ring. Each gets white, which the words already
+ * prove at 4.5:1 on every fill. */
+[data-group-style='solid'] [data-group-kind]:not([data-group-kind='ungrouped']) > .rail-head:not([data-session-status='working']) :is(.rail-head-toggle, .rail-dot, .rail-x):focus-visible {
+  outline-color: #ffffff;
+}
+[data-group-style='solid'] [data-group-kind]:not([data-group-kind='ungrouped'])[data-collapsed='true'][data-flash='true'] {
+  outline-color: #ffffff !important;
+}
+[data-group-style='solid'] [data-group-kind]:not([data-group-kind='ungrouped']) > .rail-head:not([data-session-status='working']) [data-rail-group-edge] {
+  box-shadow: 0 0 0 1px #ffffff;
+}
+[data-group-style='solid'] [data-group-kind]:not([data-group-kind='ungrouped']) > .rail-head[data-needs-approval='true']::after {
+  box-shadow: inset 0 0 0 2px var(--status-needs-permission), inset 0 0 0 3px #ffffff;
+}
+/* the dot sits on its own colour: outline it so it is still there */
+[data-group-style='solid'] [data-group-kind='group'] > .rail-head:not([data-session-status='working']) .rail-dot {
+  box-shadow: 0 0 0 1.5px #ffffff;
+}
+[data-group-style='solid'] [data-group-kind='auto'] {
+  --rail-surface: var(--auto-surface);
+}
+[data-group-style='solid'] [data-group-kind='ungrouped'] {
+  border-color: var(--group-frame);
+}
+[data-group-style='solid'] [data-group-kind='ungrouped'] > .rail-head {
+  background: var(--rail-canvas);
 }
 
 /* 4 · Folder tab (the default). The header is a tab on top of a framed

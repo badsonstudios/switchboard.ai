@@ -478,12 +478,20 @@ The list changes the moment you pick, in every theme:
   sits on a tab, and the group is outlined in its own colour. A folded group
   is just the tab. **Ungrouped** has a dashed grey outline and no fill, because
   it isn't a group: it's what is left over.
+- **1 · Coloured frame.** Each group is outlined in its own colour, with a
+  stronger tint behind the name. **Ungrouped** is a dashed grey outline.
+- **2 · Colour spine.** No outline: a thick bar in the group's colour runs down
+  its left side, the name is in capitals, and the sessions are indented.
+- **3 · Solid header.** The header is filled with the group's colour (a little
+  darker, so the white words on it are easy to read). While a folded group has
+  a session working, its header goes back to a light tint, so the working
+  animation shows clearly. **Ungrouped** keeps a plain grey header.
 - **Classic** is the look from before: every group in the same thin grey
   frame, with a faint tint of its colour behind the name.
 
-The number is the style's place in a longer list. More styles are coming, and
-they'll appear here as they do. TODO: list them as they ship. Only the
-Sessions list follows this setting. The strip across the top and the session
+The number is the style's place in a longer list. Four more styles are coming
+and will appear here as they do. TODO: options 5 to 8. Only the Sessions list
+follows this setting. The strip across the top and the session
 windows keep their own look.
 
 **A finished session leaves N finished when you look at it.** It still says

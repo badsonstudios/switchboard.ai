@@ -1199,7 +1199,9 @@ export function SessionsRail(props: {
               ? `0 0 0 2px ${opts.color}, var(--group-lift)`
               : 'var(--group-lift)'
             : isDropTarget
-              ? `0 0 0 2px ${opts.color}`
+              ? // a 1px gap first: against a frame in the same colour, a ring
+                // touching it read as a slightly thicker frame
+                `0 0 0 1px var(--rail-canvas), 0 0 0 3px ${opts.color}`
               : undefined,
         }}
       >
@@ -1335,6 +1337,7 @@ export function SessionsRail(props: {
           )}
           <span
             aria-hidden
+            data-rail-group-chevron
             style={{
               gridColumn: 1,
               gridRow: 1,
@@ -1388,6 +1391,7 @@ export function SessionsRail(props: {
             // solid, in the auto color, at the same size a group's dot occupies
             // — "this one is a directory, and I made it, not you"
             <span
+              data-rail-group-folder
               style={{
                 gridColumn: 2,
                 gridRow: 1,
@@ -1571,6 +1575,7 @@ export function SessionsRail(props: {
             {opts.members.length > 0 && (
               <span
                 className={ink}
+                data-rail-group-count
                 style={{
                   fontFamily: 'var(--font-mono)',
                   fontWeight: 600,
@@ -1589,6 +1594,7 @@ export function SessionsRail(props: {
               // the word, so nothing is left to infer from styling alone
               <span
                 title={t('rail.autoGroupHint')}
+                data-rail-group-auto
                 style={{
                   fontFamily: 'var(--font-mono)',
                   fontSize: 8.5,
@@ -1613,6 +1619,9 @@ export function SessionsRail(props: {
             )}
             <span
               data-rail-group-summary={opts.key}
+              // its own opaque wash, in the state's ink: a group style that
+              // recolours the header's words must leave this one alone (#1556)
+              data-washed={washHead && leadToken ? 'true' : undefined}
               style={{
                 fontFamily: 'var(--font-ui)',
                 fontWeight: lead && lead !== 'working' ? 700 : 600,
@@ -1735,7 +1744,14 @@ export function SessionsRail(props: {
         {/* Always in the DOM so the header's `aria-controls` always resolves;
             `hidden` (display:none) when collapsed, so nothing is rendered,
             measured or focusable — the members themselves are still skipped. */}
-        <div id={bodyId} data-rail-body hidden={isCollapsed} style={{ padding: 5 }}>
+        <div
+          id={bodyId}
+          data-rail-body
+          hidden={isCollapsed}
+          // Classic's padding inline; every other style sets it in CSS (#1556),
+          // where an inline value would beat the style's own indent
+          style={classic ? { padding: 5 } : undefined}
+        >
           {isCollapsed ? null : opts.members.length === 0 && opts.showEmpty ? (
             <div style={{ color: 'var(--muted)', fontSize: 10, padding: '4px 8px' }}>
               {t('rail.groupEmpty')}
