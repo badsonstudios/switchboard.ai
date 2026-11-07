@@ -20,7 +20,7 @@ import 'dockview-react/dist/styles/dockview.css';
 import '../theme/dockview-tokens.css';
 import { setNoteSession, startEditingNote, useSessionNote } from '../lib/session-notes';
 import { useSessionAi } from '../lib/session-ai';
-import { SessionNoteChip, SessionNoteCorner, SessionNoteLine } from './SessionNoteStrip';
+import { SessionNoteChip, SessionNoteCorner, SessionNoteLine, SessionWaitingChip } from './SessionNoteStrip';
 import { nativeAlert, nativeConfirm } from '../lib/native-dialog';
 import { placeMenuAtBox, type MenuPlacement } from '../lib/menu-placement';
 import { EmptyWorkspace, EmptyWorkspaceActions } from './EmptyWorkspace';
@@ -3077,6 +3077,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               />
             )}
             {/* the sticky note, placement D: a chip that opens it in a popover */}
+            {/* and the automatic waiting note's own yellow chip (#1544 part 4) */}
+            {cardId && <SessionWaitingChip cardId={cardId} aiName={noteAiName || undefined} />}
             {cardId && <SessionNoteChip cardId={cardId} />}
             {cardId && (
               // placements A and C live on the Session tab: show it first, or
@@ -3611,7 +3613,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             </span>
           </div>
           {/* the sticky note, placement B: one line under the title bar (#1544) */}
-          {cardId && <SessionNoteLine cardId={cardId} />}
+          {cardId && <SessionNoteLine cardId={cardId} aiName={noteAiName || undefined} />}
           {/* view tabs (.vtabs). Order/default per DESIGN §5.10: Feed is the
               first tab and the eventual default view — it's a "soon" placeholder
               until the Feed renderer lands (E12), so Terminal is the interim
@@ -3742,7 +3744,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           {/* active view */}
           <div style={{ flex: 1, minBlockSize: 0, position: 'relative' }}>
             {/* the sticky note, placement C: taped over the conversation's corner */}
-            {cardId && active?.id === DEFAULT_PANEL_ID && <SessionNoteCorner cardId={cardId} />}
+            {cardId && active?.id === DEFAULT_PANEL_ID && (
+              <SessionNoteCorner cardId={cardId} aiName={noteAiName || undefined} />
+            )}
             {panels.map((p) =>
               // keepMounted panels stay in the tree and hide; everything else
               // mounts only while it is the active tab. Nothing claims the flag

@@ -186,6 +186,7 @@
     "rowDetail": "{detail}, {state}",
     "rowNote": "{label}, note: {note}",
     "rowNoteAi": "{label}, note from the AI: {note}",
+    "rowWaitingNote": "{label}, waiting on you: {note}",
     "waitingHint": "{count, plural, one {# message from another session is waiting here — open it to read and send} other {# messages from other sessions are waiting here — open it to read and send}}",
     "rowWaiting": "{count, plural, one {# message waiting from another session} other {# messages waiting from other sessions}}, {state}",
     "waitingChip": "{count, plural, one {# message} other {# messages}}",
@@ -369,6 +370,12 @@
     "delete": "Delete this note",
     "deleteIcon": "×",
     "chipLabel": "Session note: {note}",
+    "waitingRegion": "What {ai} is waiting on",
+    "waitingRegionUnnamed": "What the AI is waiting on",
+    "waitingMeta": "{who} is waiting · {when}",
+    "waitingDismiss": "Dismiss this waiting note (it also goes away when you send the next prompt)",
+    "waitingChipLabel": "Waiting on you: {note}",
+    "railWaitingHint": "Waiting on you: {note}",
     "ask": "✦ Let {ai} write it",
     "askUnnamed": "✦ Let the AI write it",
     "askHint": "Asks this session's AI to set the note to what it is waiting on. It sends the session one short prompt, which shows in the conversation.",
@@ -2025,7 +2032,10 @@
     "corner": "Corner sticky",
     "cornerNote": "A small note taped to the top-right corner of the conversation. It covers a corner of the text.",
     "chip": "Chip in the title bar",
-    "chipNote": "A small chip beside the 📝 button. Click it to read, change or delete the note. Takes no room, but is the easiest to miss."
+    "chipNote": "A small chip beside the 📝 button. Click it to read, change or delete the note. Takes no room, but is the easiest to miss.",
+    "waitingTitle": "Waiting notes",
+    "waiting": "The AI leaves a note when it is waiting on you",
+    "waitingBlurb": "When a session's AI stops because it needs something from you (an answer, a decision, a review), it leaves a short yellow note saying what, beside your own sticky note. It goes away by itself when you send the next prompt. This asks the AI to do a little extra at the end of such a turn."
   },
   "dispatchRetire": {
     "title": "Finished dispatched sessions",

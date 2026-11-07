@@ -283,6 +283,30 @@ export const TOOLS: readonly ToolDescriptor[] = [
     },
   },
   {
+    name: 'set_waiting_note',
+    // ONLY WHEN ASKED: switchboard says so at the start of a turn when the user
+    // has waiting notes on, and refuses the call otherwise (#1544 part 4).
+    description:
+      'Leave a short note on YOUR OWN switchboard session saying what you are waiting on from ' +
+      'the user, when you end a turn needing something from them: an answer, a decision, a ' +
+      'review, an approval. Say what you need and, briefly, what is done ("Need your call: keep ' +
+      'the v1 API or break it? Tests pass."). Use it only when switchboard has told you that ' +
+      'waiting notes are on. It is separate from the sticky note the user writes, it is cleared ' +
+      'automatically when the user sends the next prompt, and it notifies nobody. Plain text ' +
+      `on one line, up to ${SESSION_NOTE_MAX} characters.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        [NOTE_TEXT_ARG]: {
+          type: 'string',
+          description: 'What you need from the user, and briefly what is done, on one line.',
+        },
+      },
+      required: [NOTE_TEXT_ARG],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'blackboard_read',
     description:
       'Read what other switchboard sessions have left on the shared blackboard — the workspace ' +
@@ -759,6 +783,17 @@ export function renderNote(payload: unknown): string {
   return `Your session's note now reads: "${text}".${cut}${over} The user sees it; nobody was notified.`;
 }
 
+/** What became of a `set_waiting_note` (#1544 part 4), for the agent that left it. */
+export function renderWaitingNote(payload: unknown): string {
+  const p = asRecord(payload);
+  const text = asText(p.text, '');
+  const cut = p.truncated === true ? ` It was cut to ${SESSION_NOTE_MAX} characters.` : '';
+  return (
+    `Your waiting note is on the session: "${text}".${cut} It clears when the user sends the ` +
+    'next prompt. Nobody was notified; you can end the turn.'
+  );
+}
+
 /**
  * What became of a `blackboard_remove` (#861), for the agent that did it.
  *
@@ -1039,6 +1074,12 @@ const RENDERERS: Record<string, Renderer> = Object.assign(
         'the blackboard. Read the key back before publishing it again',
     },
     blackboard_read: { field: 'board', render: (r) => renderBlackboard(r.board) },
+    set_waiting_note: {
+      field: 'note',
+      render: (r) => renderWaitingNote(r.note),
+      refused: 'Your waiting note was NOT left',
+      failed: 'switchboard could not confirm whether your waiting note was left. You can end the turn anyway',
+    },
     set_session_note: {
       field: 'note',
       render: (r) => renderNote(r.note),

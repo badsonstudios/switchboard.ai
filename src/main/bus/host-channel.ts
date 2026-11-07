@@ -70,6 +70,8 @@ export type BusQueries = Pick<
  */
 export interface BusNotes {
   set(callerLiveId: string, text: unknown): { ok: true; value: unknown } | { ok: false; reason: string };
+  /** `set_waiting_note` (#1544 part 4): the caller's own automatic waiting note. */
+  setWaiting(callerLiveId: string, text: unknown): { ok: true; value: unknown } | { ok: false; reason: string };
 }
 
 export interface BusHostOptions {
@@ -1024,6 +1026,12 @@ export class BusHost {
           // session can write exactly one note, its own, and there is no
           // argument through which it could name another (#1544).
           const result = this.opts.notes.set(caller, args[NOTE_TEXT_ARG]);
+          if (!result.ok) return { ok: false, reason: result.reason };
+          return { ok: true, callerId: caller, note: result.value };
+        }
+        case 'set_waiting_note': {
+          // `caller` from the token, for `set_session_note`'s reason (#1544)
+          const result = this.opts.notes.setWaiting(caller, args[NOTE_TEXT_ARG]);
           if (!result.ok) return { ok: false, reason: result.reason };
           return { ok: true, callerId: caller, note: result.value };
         }

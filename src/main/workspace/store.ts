@@ -218,6 +218,14 @@ export interface PersistedSession {
    */
   note?: SessionNote;
   /**
+   * The automatic WAITING note (#1544 part 4): what this card's AI said it is
+   * waiting on when it last stopped, written only through its own
+   * `set_waiting_note` and only while the workspace's `waitingNotes` is on.
+   * Separate from `note` (the user's sticky note), shown in yellow, and
+   * cleared the moment the next prompt is sent. Absent = none.
+   */
+  waitingNote?: SessionNote;
+  /**
    * The conversations this card has with the AIs it is NOT on (E40 item 11,
    * #1294), keyed by provider id — parked by a switch, put back by switching
    * back. The AI it IS on keeps its conversation in the fields above, exactly as
@@ -378,6 +386,13 @@ export interface WorkspaceState {
    * fills a blank label exactly as it does today.
    */
   aiLabels: boolean;
+  /**
+   * Automatic waiting notes (#1544 part 4). When on, each prompt's hook tells
+   * the session's AI to leave a one-line note with `set_waiting_note` if it
+   * ends the turn needing something from the user. OFF by default: it changes
+   * what the AI is asked to do, and costs a little on every prompt.
+   */
+  waitingNotes: boolean;
   /**
    * How much task label is shown (#877) — `full` (3 lines), `medium` (2) or
    * `compact` (1, which is exactly the pre-#877 behaviour).
@@ -641,6 +656,8 @@ const EMPTY: WorkspaceState = {
   // ON as of #883 (owner, 2026-09-20), reversing #758's opt-in. See the field's
   // note for why he changed it after using it.
   aiLabels: true,
+  // #1544 part 4: off until the owner turns it on
+  waitingNotes: false,
   // #877: the owner asked for the space filled by default, with smaller sizes
   // available for anyone who wants the rail dense instead.
   taskLabelSize: DEFAULT_TASK_LABEL_SIZE,
@@ -1005,8 +1022,12 @@ export class WorkspaceStore {
       // The sticky note (#1544): a hand-edited one is cleaned or dropped, so the
       // card never shows text the setter would have refused. Silent: absence is
       // the normal state.
-      const withNote =
+      const withSticky =
         withSettings.note === undefined ? withSettings : { ...withSettings, note: sanitizeNote(withSettings.note) };
+      const withNote =
+        withSticky.waitingNote === undefined
+          ? withSticky
+          : { ...withSticky, waitingNote: sanitizeNote(withSticky.waitingNote) };
       if (!withNote.groupId || groupIds.has(withNote.groupId)) return withNote;
       orphaned.push(withNote.id);
       return { ...withNote, groupId: undefined };
@@ -1135,6 +1156,8 @@ export class WorkspaceStore {
       // predates the feature (and every fresh install) gets it ON. A file
       // that says `false` is a choice and is honoured.
       aiLabels: raw.aiLabels !== false,
+      // only a literal true turns it on: it changes what the AI is asked to do
+      waitingNotes: raw.waitingNotes === true,
       // Tolerant by design: an unreadable size is one nobody chose, so it
       // lands on the default rather than on the smallest. See the helper.
       taskLabelSize: taskLabelSizeOf(raw.taskLabelSize),
@@ -1912,6 +1935,32 @@ export class WorkspaceStore {
 
   getAiLabels(): boolean {
     return this.state.aiLabels;
+  }
+
+  getWaitingNotes(): boolean {
+    return this.state.waitingNotes;
+  }
+
+  setWaitingNotes(on: boolean): void {
+    this.state.waitingNotes = on;
+    this.saveSoon();
+  }
+
+  /** The card's automatic waiting note (#1544 part 4), or undefined. */
+  cardWaitingNote(cardId: string): SessionNote | undefined {
+    const n = this.state.sessions.find((s) => s.id === cardId)?.waitingNote;
+    return n ? { ...n } : undefined;
+  }
+
+  /** Write it, or delete it with `undefined`; answers what is now held. */
+  setCardWaitingNote(cardId: string, note: SessionNote | undefined): SessionNote | undefined {
+    const s = this.state.sessions.find((x) => x.id === cardId);
+    if (!s) return undefined;
+    if (!note && !s.waitingNote) return undefined; // nothing to clear: no save
+    if (note) s.waitingNote = { ...note };
+    else delete s.waitingNote;
+    this.saveSoon();
+    return this.cardWaitingNote(cardId);
   }
 
   setAiLabels(on: boolean): void {

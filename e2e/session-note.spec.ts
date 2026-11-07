@@ -3,7 +3,8 @@
 // note surviving a relaunch. Unit tests pin each decision; this proves the
 // whole path through main and the workspace file, in the real window.
 import { test, expect, Page } from '@playwright/test';
-import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import path from 'path';
+import { launchApp, LaunchedApp, streamPrompter, tempProjectFolder } from './fixtures/app';
 
 const noteButton = (w: Page) => w.getByTestId('card-note');
 const strip = (w: Page) => w.locator('[data-session-note]');
@@ -227,5 +228,94 @@ test.describe('the AI writes the note (#1544 part 3)', () => {
     await expect(w.locator('[data-feed-block="user"]', { hasText: 'set_session_note' })).toBeVisible({
       timeout: 25_000,
     });
+  });
+});
+
+// Part 4 (#1544): the automatic waiting note. The fake AI has no hooks and no
+// bus, so the spec plays the agent's `set_waiting_note` through the production
+// handler (the non-packaged seam) and sends a real prompt through the composer
+// path to prove the clear.
+test.describe('the automatic waiting note (#1544 part 4)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  const waitingSets = (app: LaunchedApp, liveId: string, text: string): Promise<{ ok: boolean }> =>
+    app.app.evaluate(
+      (_e, [id, t]) =>
+        (
+          globalThis as unknown as { __switchboardSetWaitingNote: (i: string, t: string) => { ok: boolean } }
+        ).__switchboardSetWaitingNote(id, t),
+      [liveId, text] as const
+    );
+
+  async function liveId(app: LaunchedApp): Promise<string> {
+    for (let i = 0; i < 100; i++) {
+      const cards = (await app.window.evaluate(() => window.switchboard.sessions.cards())) as Array<{ liveId?: string }>;
+      if (cards[0]?.liveId) return cards[0].liveId;
+      await app.window.waitForTimeout(200);
+    }
+    throw new Error('no live session');
+  }
+
+  async function setWaitingNotes(app: LaunchedApp, on: boolean): Promise<void> {
+    const w = app.window;
+    await w.keyboard.press('Control+,');
+    const dialog = w.getByRole('dialog', { name: 'Settings' });
+    await expect(dialog).toBeVisible();
+    const box = dialog.locator('[data-settings-field="waitingNotes"]');
+    // wait for main's answer: the box is disabled until it has one
+    await expect(box).toBeEnabled();
+    if (on) await box.check();
+    else await box.uncheck();
+    if (on) await expect(box).toBeChecked();
+    else await expect(box).not.toBeChecked();
+    await w.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  }
+
+  test('off by default; on, it shows yellow beside the sticky note, and the next prompt clears it', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_E2E_NOTE_BUS: '1' },
+    });
+    const w = a.window;
+    const id = await liveId(a);
+    const waiting = w.locator('[data-waiting-note]');
+
+    // OFF by default: the agent's call is refused and nothing shows
+    expect((await waitingSets(a, id, 'Need your call')).ok).toBe(false);
+    await expect(waiting).toHaveCount(0);
+
+    await setWaitingNotes(a, true);
+    // a sticky note of the user's own, to prove the two are separate
+    await noteButton(w).click();
+    await noteBox(w).fill('my own note');
+    await noteBox(w).press('Enter');
+
+    expect((await waitingSets(a, id, 'Need your call: keep the v1 API or break it?')).ok).toBe(true);
+    await expect(waiting).toBeVisible();
+    await expect(w.locator('[data-waiting-text]')).toHaveText('Need your call: keep the v1 API or break it?');
+    await expect(noteText(w)).toHaveText('my own note');
+    await expect(w.locator('[data-rail-waiting-note]').first()).toHaveAttribute(
+      'title',
+      'Waiting on you: Need your call: keep the v1 API or break it?'
+    );
+
+    // the next prompt clears the waiting note, and only it
+    await streamPrompter(a)(path.basename(folder), 'keep v1');
+    await expect(waiting).toHaveCount(0, { timeout: 25_000 });
+    await expect(w.locator('[data-rail-waiting-note]')).toHaveCount(0);
+    await expect(noteText(w)).toHaveText('my own note');
+
+    // × dismisses one by hand
+    await waitingSets(a, id, 'Need a review');
+    await expect(waiting).toBeVisible();
+    await w.locator('[data-waiting-dismiss]').click();
+    await expect(waiting).toHaveCount(0);
+
+    // and switched off again, the agent is refused
+    await setWaitingNotes(a, false);
+    expect((await waitingSets(a, id, 'x')).ok).toBe(false);
   });
 });

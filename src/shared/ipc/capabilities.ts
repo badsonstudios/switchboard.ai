@@ -568,6 +568,9 @@ export const CHANNEL_CAPABILITIES = {
   // "Let Claude write it" (#1544): SENDS THE SESSION A PROMPT, so `sessions.write`,
   // the same word as `sessions:submitPrompt`
   'sessions:askForNote': 'sessions.write',
+  // the automatic waiting note (#1544 part 4): read it, and × it
+  'sessions:waitingNote': 'sessions.read',
+  'sessions:dismissWaitingNote': 'sessions.write',
   'sessions:slashCommands': 'sessions.read',
   // why some skills are missing from that popup (#1328): file names only
   'sessions:slashHints': 'sessions.read',
@@ -602,6 +605,9 @@ export const CHANNEL_CAPABILITIES = {
   // can start, reach or read a session.
   'settings:getAiLabels': 'settings.read',
   'settings:setAiLabels': 'settings.write',
+  // waiting notes on/off (#1544 part 4)
+  'settings:getWaitingNotes': 'settings.read',
+  'settings:setWaitingNotes': 'settings.write',
   // How much task label is shown (#877) — a rendering preference; nothing on
   // this channel can start, reach or read a session.
   'settings:getTaskLabelSize': 'settings.read',
@@ -724,6 +730,7 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:taskLabel': 'sessions.read',
   // a card's note moved (#1544) — carries the new value, like the task label
   'sessions:noteChanged': 'sessions.read',
+  'sessions:waitingNoteChanged': 'sessions.read',
   'sessions:usage': 'sessions.read',
   // which model a session is running, the moment it moves (#746) — the footer's
   // source, and the same capability as the pull it complements

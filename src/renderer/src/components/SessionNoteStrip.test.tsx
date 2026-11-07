@@ -20,6 +20,7 @@ import {
   SessionNoteCorner,
   SessionNoteLine,
   SessionNoteStrip,
+  SessionWaitingChip,
   noteMeta,
   pickText,
 } from './SessionNoteStrip';
@@ -37,6 +38,9 @@ let stored: SessionNote | null;
 let push: ((c: SessionNoteChange) => void) | null;
 const setNote = vi.fn();
 const askForNote = vi.fn();
+let waitingStored: SessionNote | null;
+let pushWaiting: ((c: SessionNoteChange) => void) | null;
+const dismissWaitingNote = vi.fn();
 
 beforeAll(async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -49,6 +53,10 @@ beforeEach(() => {
   push = null;
   setNote.mockReset();
   askForNote.mockReset();
+  waitingStored = null;
+  pushWaiting = null;
+  dismissWaitingNote.mockReset();
+  dismissWaitingNote.mockResolvedValue(true);
   askForNote.mockResolvedValue({ ok: true });
   setNote.mockImplementation(async (_card: string, text: string) => {
     const clean = text.trim();
@@ -60,6 +68,14 @@ beforeEach(() => {
       note: async () => stored,
       setNote,
       askForNote,
+      waitingNote: async () => waitingStored,
+      dismissWaitingNote,
+      onWaitingNoteChanged: (cb: (c: SessionNoteChange) => void) => {
+        pushWaiting = cb;
+        return () => {
+          pushWaiting = null;
+        };
+      },
       onNoteChanged: (cb: (c: SessionNoteChange) => void) => {
         push = cb;
         return () => {
@@ -366,6 +382,79 @@ describe('"Let Claude write it" (part 3)', () => {
     await act(async () => askButton()!.click());
     expect(q('[data-note-ask-error]')?.textContent).toBe(en.sessionNote.askFailed['no-tools']);
     expect(q('[data-note-input]')).not.toBeNull();
+  });
+});
+
+describe('the automatic waiting note (part 4)', () => {
+  const waitingIn = (): string[] =>
+    Array.from(host.querySelectorAll('[data-waiting-note]')).map((e) => e.getAttribute('data-note-placement') ?? '');
+
+  async function renderAll(): Promise<void> {
+    await act(async () => {
+      root.render(
+        <>
+          <SessionNoteStrip cardId={CARD} aiName="Claude" />
+          <SessionNoteLine cardId={CARD} aiName="Claude" />
+          <SessionNoteCorner cardId={CARD} aiName="Claude" />
+          <SessionWaitingChip cardId={CARD} aiName="Claude" />
+          <SessionNoteChip cardId={CARD} />
+        </>
+      );
+    });
+  }
+
+  it('shows beside the sticky note, as a separate note, in the chosen placement only', async () => {
+    stored = { text: 'my sticky', by: 'user', at: AT };
+    waitingStored = { text: 'Need your call: keep v1?', by: 'ai', at: AT };
+    await renderAll();
+    expect(waitingIn()).toEqual(['band']);
+    expect(q('[data-waiting-text]')?.textContent).toBe('Need your call: keep v1?');
+    expect(q('[data-waiting-meta]')?.textContent).toMatch(/^✦ Claude is waiting · /);
+    expect(q('[data-note-text]')?.textContent).toBe('my sticky');
+    await act(async () => setNotePlacement('header'));
+    expect(waitingIn()).toEqual(['line']);
+    await act(async () => setNotePlacement('corner'));
+    expect(waitingIn()).toEqual(['corner']);
+    // D: its own yellow chip, which opens it
+    await act(async () => setNotePlacement('chip'));
+    expect(waitingIn()).toEqual([]);
+    await act(async () => q<HTMLButtonElement>('[data-waiting-chip]')!.click());
+    expect(waitingIn()).toEqual(['popover']);
+  });
+
+  it('the corner shows the waiting note even with no sticky note', async () => {
+    waitingStored = { text: 'Need a review', by: 'ai', at: AT };
+    setNotePlacement('corner');
+    await renderAll();
+    expect(waitingIn()).toEqual(['corner']);
+    expect(q('[data-session-note]')).toBeNull();
+  });
+
+  it('× dismisses it; a push from main (a new prompt cleared it) removes it too', async () => {
+    waitingStored = { text: 'Need a review', by: 'ai', at: AT };
+    await renderAll();
+    await act(async () => q<HTMLButtonElement>('[data-waiting-dismiss]')!.click());
+    expect(dismissWaitingNote).toHaveBeenCalledWith(CARD);
+    expect(waitingIn()).toEqual([]);
+    await act(async () => pushWaiting?.({ cardId: CARD, note: { text: 'again', by: 'ai', at: AT } }));
+    expect(waitingIn()).toEqual(['band']);
+    await act(async () => pushWaiting?.({ cardId: CARD }));
+    expect(waitingIn()).toEqual([]);
+  });
+
+  it('a dismiss main refuses puts the note back', async () => {
+    waitingStored = { text: 'Need a review', by: 'ai', at: AT };
+    dismissWaitingNote.mockResolvedValue(false);
+    await renderAll();
+    await act(async () => q<HTMLButtonElement>('[data-waiting-dismiss]')!.click());
+    expect(waitingIn()).toEqual(['band']);
+  });
+
+  it('is never editable: clicking its words opens no editor', async () => {
+    waitingStored = { text: 'Need a review', by: 'ai', at: AT };
+    await renderAll();
+    await act(async () => (q('[data-waiting-text]') as HTMLElement).click());
+    expect(q('[data-note-input]')).toBeNull();
   });
 });
 

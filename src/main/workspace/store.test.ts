@@ -933,6 +933,37 @@ describe('suppressed notifications', () => {
   });
 });
 
+describe('the automatic waiting note and its switch (#1544 part 4)', () => {
+  const note = { text: 'Need your call', by: 'ai' as const, at: '2026-11-06T14:18:00.000Z' };
+
+  it('the switch is OFF on a fresh workspace, and only a literal true turns it on at load', () => {
+    const a = makeStore(file);
+    a.load();
+    expect(a.getWaitingNotes()).toBe(false);
+    a.setWaitingNotes(true);
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.getWaitingNotes()).toBe(true);
+  });
+
+  it('a waiting note is its own slot: it survives a relaunch and leaves the sticky note alone', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession(sess('one'));
+    a.setCardNote('one', { ...note, text: 'mine', by: 'user' });
+    a.setCardWaitingNote('one', note);
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.cardWaitingNote('one')).toEqual(note);
+    expect(b.cardNote('one')?.text).toBe('mine');
+    b.setCardWaitingNote('one', undefined);
+    expect(b.cardWaitingNote('one')).toBeUndefined();
+    expect(b.cardNote('one')?.text).toBe('mine');
+  });
+});
+
 describe('the sticky note on a card (#1544)', () => {
   const note = { text: 'Waiting on Tanner', by: 'user' as const, at: '2026-11-06T14:18:00.000Z' };
 

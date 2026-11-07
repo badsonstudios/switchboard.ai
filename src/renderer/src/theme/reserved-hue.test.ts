@@ -160,6 +160,10 @@ describe('who paints with the "needs you" colours', () => {
     'components/EventsPanel.tsx',
     'components/FeedView.tsx',
     'components/QuestionPanel.tsx',
+    // the automatic WAITING note (#1544 part 4): the AI stopped needing
+    // something from the user, which is this list's whole subject
+    'components/SessionNoteStrip.tsx',
+    'components/SessionRow.tsx',
     'components/SessionsRail.tsx',
     'components/SessionsStrip.tsx',
     'extensibility/status-bar-items.tsx',

@@ -149,6 +149,25 @@ describe('claudeAdapter.capabilities.mcp (P2-E11-03)', () => {
 });
 
 describe('claudeAdapter.buildSpawn — --mcp-config (P2-E11-03)', () => {
+  it('pre-allows exactly the two note tools when the bus is attached, and nothing without one (#1544)', () => {
+    withCliOnPath();
+    const withBus = claudeAdapter.buildSpawn({
+      cwd: tmp,
+      sessionId: 'sess-1',
+      stateDir: path.join(tmp, 'state'),
+      mcpConfig: { mcpServers: {} },
+    });
+    const i = withBus.args.indexOf('--allowedTools');
+    expect(withBus.args[i + 1]).toBe('mcp__switchboard__set_session_note,mcp__switchboard__set_waiting_note');
+    // every other bus tool still goes through the CLI's own permission prompt
+    expect(withBus.args[i + 1]).not.toMatch(/send_to_session|blackboard/);
+    // the flag is variadic: what follows its one value must be another option,
+    // or a later positional argument would be read as a tool name
+    expect(withBus.args[i + 2]).toMatch(/^--/);
+    const noBus = claudeAdapter.buildSpawn({ cwd: tmp, sessionId: 'sess-2', stateDir: path.join(tmp, 'state') });
+    expect(noBus.args).not.toContain('--allowedTools');
+  });
+
   it('points at a real, PARSEABLE file', () => {
     withCliOnPath();
     const servers = { mcpServers: { switchboard: { type: 'stdio', command: 'x', args: [], env: {} } } };

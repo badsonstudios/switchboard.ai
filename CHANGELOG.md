@@ -155,6 +155,15 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   is busy you are asked first. You can also just ask Claude to leave a note. A
   note Claude wrote has a blue edge and says **✦ Claude**. Claude can only
   write its own session's note.
+- **Waiting notes: Claude says what it needs from you.** Turn on **Settings ▸
+  Appearance ▸ Waiting notes**. When Claude stops because it needs something
+  from you, it leaves a short yellow note saying what, beside your own sticky
+  note, and a yellow square in the sessions list. The note goes away by itself
+  when you send the next prompt, and **×** dismisses it. Off until you turn it
+  on.
+- **switchboard's note tools no longer ask for permission.** Claude can set a
+  session's note without an approval prompt. These tools can only change that
+  session's own on-screen note.
 
 ## 0.8.138 — 2026-11-06
 

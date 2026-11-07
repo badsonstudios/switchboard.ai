@@ -128,7 +128,7 @@ import { SiblingDelivery } from './sessions/delivery';
 import { Blackboard } from './sessions/blackboard';
 import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
 import { registerDispatchIpc } from './sessions/dispatch-ipc';
-import { busNotes, registerNoteIpc } from './sessions/note-ipc';
+import { WAITING_NOTE_CONTEXT, busNotes, clearWaitingNote, registerNoteIpc } from './sessions/note-ipc';
 import type { SessionNoteChange } from '../shared/session-note';
 import { DispatchResults } from './sessions/dispatch-results';
 import { runPreflight } from './preflight';
@@ -1859,10 +1859,20 @@ app
     manager.onEngineEvent((sessionId, ev) => health.noteEvent(sessionId, ev));
     // A session that is gone stops corroborating anything.
     manager.onSessionExit((e) => health.forgetSession(e.sessionId));
+    // late-bound: assigned once the bus host exists, and no hook fires before then
+    let hasNoteBus: (liveId: string) => boolean = () => false;
+    let clearWaitingForLive: (liveId: string) => void = () => {};
     const hooks = new HookListener({
       stateDir,
       manager,
       log: createLogger(sink, 'hooks'),
+      // waiting notes (#1544 part 4): each prompt's hook carries the one line
+      // that asks the AI to leave one, while the switch is on and the session
+      // has the tool to do it with. Read per prompt, so a flip applies at once.
+      promptContext: (sessionId) =>
+        workspace.getWaitingNotes() && hasNoteBus(sessionId) ? WAITING_NOTE_CONTEXT : undefined,
+      // ...and a turn that really starts clears the last one's waiting note
+      onPromptStarted: (sessionId) => clearWaitingForLive(sessionId),
       // NOTHING ABOUT PERMISSIONS (#952). This used to pass `autonomyFor`,
       // `cwdFor`, `transportFor` and `hasLiveWindow` for the hold policy. The
       // listener is a STATUS channel now — `Stop` is the done authority (S-06) —
@@ -3012,7 +3022,28 @@ app
     const blackboard = new Blackboard({ sessions: () => sessionQueries.listSessions() });
     const notesLog = createLogger(sink, 'notes');
     const pushNote = (change: SessionNoteChange): void => broker.send(currentWindow, 'sessions:noteChanged', change);
-    const aiNotes = busNotes({ store: workspace, push: pushNote, log: notesLog, cardFor: (id) => cardIdForLive(id) });
+    // the automatic waiting note (#1544 part 4): its own store slot, its own push
+    const waitingNotes = {
+      on: () => workspace.getWaitingNotes(),
+      setOn: (on: boolean) => workspace.setWaitingNotes(on),
+      store: workspace,
+      push: (change: SessionNoteChange) => broker.send(currentWindow, 'sessions:waitingNoteChanged', change),
+    };
+    // a prompt to a session, from ANY source, clears its waiting note
+    clearWaitingForLive = (liveId) => {
+      const cardId = cardIdForLive(liveId);
+      if (cardId) clearWaitingNote(waitingNotes, cardId);
+    };
+    // when a prompt is sent; the hook clears it again when the turn starts
+    manager.onPromptSent((liveId) => clearWaitingForLive(liveId));
+    hasNoteBus = (liveId) => busHost.endpointFor(liveId) !== null;
+    const aiNotes = busNotes({
+      store: workspace,
+      push: pushNote,
+      log: notesLog,
+      cardFor: (id) => cardIdForLive(id),
+      waiting: waitingNotes,
+    });
     const busHost = new BusHost({
       stateDir,
       queries: sessionQueries,
@@ -3032,6 +3063,11 @@ app
     if (e2eNoteBus) {
       (globalThis as { __switchboardSetSessionNote?: BusNotes['set'] }).__switchboardSetSessionNote = (liveId, text) =>
         aiNotes.set(liveId, text);
+      // and the agent's `set_waiting_note` (#1544 part 4), refused while the switch is off
+      (globalThis as { __switchboardSetWaitingNote?: BusNotes['setWaiting'] }).__switchboardSetWaitingNote = (
+        liveId,
+        text
+      ) => aiNotes.setWaiting(liveId, text);
     }
     // A card's sticky note (#1544). Main window only, like the sibling push:
     // a popout renders in the opener's realm, so one push reaches both.
@@ -3041,6 +3077,7 @@ app
       store: workspace,
       knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
       push: pushNote,
+      waiting: waitingNotes,
       // "Let Claude write it": only a session whose AI has the switchboard tools
       ask: {
         cardFor: (liveId) => cardIdForLive(liveId),

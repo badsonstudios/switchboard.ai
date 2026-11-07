@@ -225,7 +225,10 @@ async function main(): Promise<void> {
     stateDir,
     log,
     // never called: this script sends no prompt, so no tool can run
-    notes: { set: () => ({ ok: false, reason: 'mcp-attach-check never sets a note' }) },
+    notes: {
+      set: () => ({ ok: false, reason: 'mcp-attach-check never sets a note' }),
+      setWaiting: () => ({ ok: false, reason: 'mcp-attach-check never sets a note' }),
+    },
     queries: {
       listSessions: (): QueryResult<SessionSummary[]> => ({ ok: true, value: SESSIONS }),
       // This script never calls a tool — it only proves the CLI LISTS our

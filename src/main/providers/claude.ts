@@ -11,6 +11,9 @@ import os from 'os';
 import path from 'path';
 import { ProviderAdapter, SpawnOptions, SpawnRecipe } from '../extensibility/contributions';
 import { BUS_SERVER_NAME } from '../bus/bus-paths';
+
+/** The bus tools the CLI may run without asking (#1544): they only write the caller's own note. */
+const NOTE_TOOLS = ['set_session_note', 'set_waiting_note'] as const;
 import type { BusLaunch } from '../bus/launch';
 import { SlashCommand } from '../../shared/slash-commands';
 // The transcript LOCATION is Claude's, so the check for "is this conversation
@@ -471,6 +474,13 @@ export const claudeAdapter: ProviderAdapter = {
       try {
         const mcpPath = writeSessionMcpConfig(options.stateDir, options.sessionId, options.mcpConfig);
         args.push('--mcp-config', mcpPath);
+        // THE TWO NOTE TOOLS ARE PRE-ALLOWED (#1544): all either can touch is
+        // the caller's own on-screen note, so a permission prompt for them would
+        // be friction with nothing to protect, and for the automatic waiting
+        // note it would turn every waiting turn into an approval request. The
+        // CLI decides with this, as the Agent SDK's own argument builder passes
+        // it (`--allowedTools a,b`); every other bus tool still asks.
+        args.push('--allowedTools', NOTE_TOOLS.map((t) => `mcp__${BUS_SERVER_NAME}__${t}`).join(','));
       } catch {
         /* no bus for this session; it still starts */
       }

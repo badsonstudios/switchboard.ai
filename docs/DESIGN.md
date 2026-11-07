@@ -2460,7 +2460,27 @@ Consequences worth designing for, not discovering:
     that is not idle or done, the window asks first. A session without a bus
     endpoint is refused with "cannot write notes".
 
-  Part 4 (the waiting note) is recorded on the issue.
+  **Part 4, the automatic waiting note:**
+  - **Storage:** a separate `PersistedSession.waitingNote`, written only by
+    the agent's `set_waiting_note` while the workspace switch `waitingNotes`
+    is on. The switch is OFF by default. When it is off, the tool refuses and
+    tells the agent it need not try.
+  - **How the agent is told:** NOT by `--append-system-prompt`. The CLI's
+    `--system-prompt-snapshot` (on by default) records a conversation's system
+    prompt on its first request and reuses it on every resume, so a flag added
+    later would never reach a running conversation, and one removed later
+    would never leave it. Instead the `UserPromptSubmit` hook's reply carries
+    `hookSpecificOutput.additionalContext` (an optional string in the CLI's
+    own zod schema, read from the PATH binary). It is read per prompt, so the
+    switch applies from the next prompt, resumed sessions included.
+  - **Clearing:** any prompt sent through `SessionManager.submitPrompt`
+    clears it (`onPromptSent`), whatever sent it. × also dismisses it.
+  - **Colour:** yellow, painted with `--status-needs-input` itself.
+    `SessionNoteStrip.tsx` and `SessionRow.tsx` are added to #1165's
+    allow-list, because a waiting note IS a session needing you.
+  - **Permissions:** the Claude recipe passes `--allowedTools` for the two
+    note tools only (as the Agent SDK's argument builder does), so neither
+    raises a permission prompt. Every other bus tool still asks.
 
 ### 5.12 Events — what needs the operator NOW
 

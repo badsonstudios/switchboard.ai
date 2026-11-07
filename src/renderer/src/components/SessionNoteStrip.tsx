@@ -15,6 +15,7 @@ import {
   askAiForNote,
   cancelEditingNote,
   deleteNote,
+  dismissWaitingNote,
   sessionIsBusy,
   useNoteSession,
   saveNote,
@@ -38,11 +39,7 @@ export function noteMeta(
   locale?: string,
   aiName?: string
 ): string {
-  const at = Date.parse(note.at);
-  const sameDay = new Date(at).toDateString() === new Date(nowMs).toDateString();
-  const when = sameDay
-    ? t('sessionNote.today', { time: switchWhen(at, nowMs, locale) })
-    : switchWhen(at, nowMs, locale);
+  const when = noteWhen(note, t, nowMs, locale);
   const who =
     note.by === 'ai'
       ? aiName
@@ -50,6 +47,18 @@ export function noteMeta(
         : t('sessionNote.byAiUnnamed')
       : t('sessionNote.byYou');
   return t('sessionNote.meta', { who, when });
+}
+
+/** "Today 2:18 PM", or a date and time for an older note. */
+export function noteWhen(
+  note: SessionNote,
+  t: (key: string, vars?: Record<string, string>) => string,
+  nowMs: number,
+  locale?: string
+): string {
+  const at = Date.parse(note.at);
+  const sameDay = new Date(at).toDateString() === new Date(nowMs).toDateString();
+  return sameDay ? t('sessionNote.today', { time: switchWhen(at, nowMs, locale) }) : switchWhen(at, nowMs, locale);
 }
 
 /** What a quick pick puts in the box: its words, ready to be continued. */
@@ -81,18 +90,11 @@ const VARIANT_STYLE: Record<Variant, React.CSSProperties> = {
   line: { paddingBlock: 5, borderRadius: 0 },
   // C: a small sticky taped over the conversation's top-right corner
   corner: {
-    position: 'absolute',
-    // below the conversation's own toolbar row (quiet / normal / firehose),
-    // which sits at the top right and must stay clickable
-    insetBlockStart: 44,
-    insetInlineEnd: 16,
-    inlineSize: 240,
-    maxInlineSize: 'calc(100% - 32px)',
+    inlineSize: '100%',
     paddingBlock: 9,
     borderRadius: 2,
     transform: 'rotate(-1.4deg)',
     boxShadow: 'var(--window-shadow)',
-    zIndex: 5,
   },
   // D: the chip's popover, under the title bar at the card's right
   popover: {
@@ -248,19 +250,219 @@ function NotePaper(
   );
 }
 
+/**
+ * The automatic WAITING note (#1544 part 4): what the session's AI said it is
+ * waiting on when it stopped. YELLOW, because it IS a session needing you
+ * (the #1165 rule's own subject; this file is on its allow-list for exactly
+ * this). Not editable, since it is the AI's word on what it needs: × dismisses
+ * it, and the next prompt clears it by itself.
+ */
+function WaitingPaper(props: SessionNoteStripProps & { variant: Variant }): React.JSX.Element | null {
+  const { t, i18n } = useTranslation();
+  const { waiting } = useSessionNote(props.cardId);
+  if (!waiting) return null;
+  const oneLine = props.variant === 'line';
+  const stacked = props.variant === 'corner' || props.variant === 'popover';
+  const ai = props.aiName || undefined;
+  return (
+    <div
+      role="note"
+      aria-label={ai ? t('sessionNote.waitingRegion', { ai }) : t('sessionNote.waitingRegionUnnamed')}
+      data-waiting-note={props.cardId}
+      data-note-placement={props.variant}
+      style={{
+        position: 'relative',
+        paddingInline: 10,
+        background: 'color-mix(in srgb, var(--status-needs-input) 42%, white)',
+        color: 'var(--note-ink)',
+        borderBlockEnd: '2px solid var(--status-needs-input)',
+        fontFamily: 'var(--font-ui)',
+        fontSize: 12.5,
+        flexShrink: 0,
+        boxSizing: 'border-box',
+        ...VARIANT_STYLE[props.variant],
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: stacked ? 'wrap' : undefined,
+          alignItems: oneLine ? 'center' : 'flex-start',
+          gap: stacked ? '4px 8px' : 8,
+        }}
+      >
+        <span
+          data-waiting-text=""
+          title={waiting.text}
+          style={{
+            flex: stacked ? '1 1 100%' : 1,
+            order: stacked ? 3 : undefined,
+            minInlineSize: 0,
+            ...(oneLine
+              ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+              : { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }),
+          }}
+        >
+          {/* plain text, always: the AI wrote it */}
+          {waiting.text}
+        </span>
+        <span
+          data-waiting-meta=""
+          style={{
+            fontSize: 10.5,
+            whiteSpace: 'nowrap',
+            fontWeight: 600,
+            // in a narrow sticky the byline gives way, so × stays on its row
+            ...(stacked ? { flex: 1, minInlineSize: 0, overflow: 'hidden', textOverflow: 'ellipsis' } : {}),
+          }}
+        >
+          {t('sessionNote.waitingMeta', {
+            who: ai ? t('sessionNote.byAi', { ai }) : t('sessionNote.byAiUnnamed'),
+            when: noteWhen(waiting, t, Date.now(), i18n.language),
+          })}
+        </span>
+        <button
+          type="button"
+          data-waiting-dismiss=""
+          onClick={() => void dismissWaitingNote(props.cardId)}
+          title={t('sessionNote.waitingDismiss')}
+          aria-label={t('sessionNote.waitingDismiss')}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--note-ink)',
+            cursor: 'pointer',
+            fontSize: 14,
+            lineHeight: 1,
+            padding: '0 3px',
+          }}
+        >
+          {t('sessionNote.deleteIcon')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Placement A: above the prompt box (the Session tab draws this). */
 export function SessionNoteStrip(props: SessionNoteStripProps): React.JSX.Element | null {
-  return useNotePlacement() === 'prompt' ? <NotePaper {...props} variant="band" /> : null;
+  if (useNotePlacement() !== 'prompt') return null;
+  return (
+    <>
+      <WaitingPaper {...props} variant="band" />
+      <NotePaper {...props} variant="band" />
+    </>
+  );
 }
 
 /** Placement B: a one-line strip under the card's title bar, on every tab. */
 export function SessionNoteLine(props: SessionNoteStripProps): React.JSX.Element | null {
-  return useNotePlacement() === 'header' ? <NotePaper {...props} variant="line" /> : null;
+  if (useNotePlacement() !== 'header') return null;
+  return (
+    <>
+      <WaitingPaper {...props} variant="line" />
+      <NotePaper {...props} variant="line" />
+    </>
+  );
 }
 
 /** Placement C: a sticky over the top-right corner of the conversation. */
 export function SessionNoteCorner(props: SessionNoteStripProps): React.JSX.Element | null {
-  return useNotePlacement() === 'corner' ? <NotePaper {...props} variant="corner" /> : null;
+  const placement = useNotePlacement();
+  const { note, editing, waiting } = useSessionNote(props.cardId);
+  if (placement !== 'corner' || (!note && !editing && !waiting)) return null;
+  return (
+    <div
+      data-note-corner=""
+      style={{
+        position: 'absolute',
+        // below the conversation's own toolbar row (quiet / normal / firehose),
+        // which sits at the top right and must stay clickable
+        insetBlockStart: 44,
+        insetInlineEnd: 16,
+        inlineSize: 240,
+        maxInlineSize: 'calc(100% - 32px)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        zIndex: 5,
+      }}
+    >
+      <WaitingPaper {...props} variant="corner" />
+      <NotePaper {...props} variant="corner" />
+    </div>
+  );
+}
+
+/**
+ * Placement D's waiting chip: yellow, beside the sticky note's chip. Clicking
+ * it opens the waiting note in its own popover.
+ */
+export function SessionWaitingChip(props: SessionNoteStripProps): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const placement = useNotePlacement();
+  const { waiting } = useSessionNote(props.cardId);
+  const [open, setOpen] = React.useState(false);
+  const box = React.useRef<HTMLSpanElement>(null);
+  // a waiting note that went away takes its open popover with it, so the next
+  // one arrives closed
+  React.useEffect(() => {
+    if (!waiting) setOpen(false);
+  }, [waiting]);
+  React.useEffect(() => {
+    if (!open) return;
+    const doc = box.current?.ownerDocument ?? document;
+    const away = (e: MouseEvent): void => {
+      const target = e.target as { nodeType?: number } | null;
+      if (box.current && target && target.nodeType && !box.current.contains(target as Node)) setOpen(false);
+    };
+    doc.addEventListener('mousedown', away);
+    return () => doc.removeEventListener('mousedown', away);
+  }, [open]);
+  if (placement !== 'chip' || !waiting) return null;
+  return (
+    <span
+      ref={box}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && open) {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen(false);
+        }
+      }}
+      style={{ position: 'relative', display: 'flex', minInlineSize: 0, flex: '0 1 auto' }}
+    >
+      <button
+        type="button"
+        data-waiting-chip={props.cardId}
+        data-no-maximize
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        title={waiting.text}
+        aria-label={t('sessionNote.waitingChipLabel', { note: waiting.text })}
+        style={{
+          display: 'inline-block',
+          flex: '0 1 auto',
+          minInlineSize: 0,
+          maxInlineSize: 200,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          background: 'color-mix(in srgb, var(--status-needs-input) 42%, white)',
+          color: 'var(--note-ink)',
+          border: 'none',
+          borderRadius: 3,
+          padding: '1px 8px',
+          fontSize: 11.5,
+          fontFamily: 'var(--font-ui)',
+          cursor: 'pointer',
+        }}
+      >
+        {waiting.text}
+      </button>
+      {open && <WaitingPaper {...props} variant="popover" />}
+    </span>
+  );
 }
 
 /**
@@ -323,7 +525,6 @@ export function SessionNoteChip(props: SessionNoteStripProps): React.JSX.Element
           data-note-chip={props.cardId}
           data-no-maximize
           aria-expanded={showPop}
-          aria-haspopup="dialog"
           onClick={() => setNotePopoverOpen(props.cardId, !open)}
           title={note.text}
           aria-label={t('sessionNote.chipLabel', { note: note.text })}
