@@ -32,7 +32,19 @@ export function notePlacementOf(raw: unknown): NotePlacement {
   return NOTE_PLACEMENTS.includes(raw as NotePlacement) ? (raw as NotePlacement) : DEFAULT_NOTE_PLACEMENT;
 }
 
+/** What "Let Claude write it" needs to know about a card's live session. */
+export interface NoteSession {
+  liveId: string;
+  /** the session's status: anything but idle or done means "busy, ask first" */
+  status: string;
+  /** the AI's name, for the button's words */
+  aiName?: string;
+}
+
+export type AskForNoteAnswer = { ok: true } | { ok: false; reason: 'no-session' | 'no-tools' | 'not-sent' };
+
 interface NoteApi {
+  askForNote?(liveId: string): Promise<AskForNoteAnswer>;
   note(cardId: string): Promise<SessionNote | null>;
   setNote(cardId: string, text: string): Promise<SessionNote | null>;
   onNoteChanged(cb: (c: SessionNoteChange) => void): () => void;
@@ -52,6 +64,7 @@ let placement: NotePlacement = DEFAULT_NOTE_PLACEMENT;
 const cards = new Map<string, CardNoteState>();
 const fetched = new Set<string>();
 const listeners = new Set<() => void>();
+const liveOf = new Map<string, NoteSession>();
 let unsubscribePush: (() => void) | null = null;
 
 function api(): NoteApi | undefined {
@@ -140,6 +153,44 @@ export function setNotePlacement(next: NotePlacement): void {
   emit();
 }
 
+/** The card reports its live session (or none) — SessionGrid does this. */
+export function setNoteSession(cardId: string, s: NoteSession | null): void {
+  const prev = liveOf.get(cardId);
+  if (!s) {
+    if (!prev) return;
+    liveOf.delete(cardId);
+  } else {
+    if (prev && prev.liveId === s.liveId && prev.status === s.status && prev.aiName === s.aiName) return;
+    liveOf.set(cardId, s);
+  }
+  emit();
+}
+
+/** The card's live session, for "Let Claude write it"; undefined when none. */
+export function useNoteSession(cardId: string): NoteSession | undefined {
+  return React.useSyncExternalStore(
+    subscribe,
+    () => liveOf.get(cardId),
+    () => undefined
+  );
+}
+
+/** A session that is mid-turn or waiting on an answer: ask before sending it a prompt. */
+export function sessionIsBusy(status: string): boolean {
+  return status !== 'idle' && status !== 'done';
+}
+
+/** Send the prompt that asks the session's AI to write the note. Fail-open. */
+export async function askAiForNote(liveId: string): Promise<AskForNoteAnswer> {
+  const a = api();
+  if (!a || typeof a.askForNote !== 'function') return { ok: false, reason: 'no-tools' };
+  try {
+    return await a.askForNote(liveId);
+  } catch {
+    return { ok: false, reason: 'not-sent' };
+  }
+}
+
 /** React binding for the placement. */
 export function useNotePlacement(): NotePlacement {
   return React.useSyncExternalStore(
@@ -186,6 +237,7 @@ export function useSessionNote(cardId: string | undefined): CardNoteState {
 export function resetSessionNotesForTests(): void {
   cards.clear();
   fetched.clear();
+  liveOf.clear();
   listeners.clear();
   placement = DEFAULT_NOTE_PLACEMENT;
   unsubscribePush?.();

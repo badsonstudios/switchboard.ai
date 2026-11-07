@@ -149,6 +149,12 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   it. Every session moves its note the moment you pick.
 - **The sessions list marks sessions that have a note.** A small mint square
   sits on the row. Hover over it to read the note.
+- **Claude can write a session's note.** In the note editor, **✦ Let Claude
+  write it** asks the session's Claude to set the note to what it is waiting on.
+  It sends one short prompt, which you see in the conversation, and if Claude
+  is busy you are asked first. You can also just ask Claude to leave a note. A
+  note Claude wrote has a blue edge and says **✦ Claude**. Claude can only
+  write its own session's note.
 
 ## 0.8.138 — 2026-11-06
 

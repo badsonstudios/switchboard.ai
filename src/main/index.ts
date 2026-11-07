@@ -116,7 +116,7 @@ import { SecretStore } from './secrets/store';
 import { GitService } from './git/git-service';
 import { isCommitRef, isLogQuery, isRev } from './git/git-log';
 import { type GitWriteResult, asPathList } from './git/git-write';
-import { BusHost } from './bus/host-channel';
+import { BusHost, type BusNotes } from './bus/host-channel';
 import { SessionQueries, summariesFrom } from './sessions/queries';
 import { resolveMentionsWithHandoffs } from './sessions/mention-handoff';
 import { HandoffRequests } from './sessions/handoff-request';
@@ -128,7 +128,8 @@ import { SiblingDelivery } from './sessions/delivery';
 import { Blackboard } from './sessions/blackboard';
 import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
 import { registerDispatchIpc } from './sessions/dispatch-ipc';
-import { registerNoteIpc } from './sessions/note-ipc';
+import { busNotes, registerNoteIpc } from './sessions/note-ipc';
+import type { SessionNoteChange } from '../shared/session-note';
 import { DispatchResults } from './sessions/dispatch-results';
 import { runPreflight } from './preflight';
 import { slashCommandsFor, slashHintsFor } from './slash-commands-for';
@@ -2989,15 +2990,6 @@ app
       knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
       delivery: siblingDelivery,
     });
-    // A card's sticky note (#1544). Main window only, like the sibling push:
-    // a popout renders in the opener's realm, so one push reaches both.
-    registerNoteIpc({
-      broker,
-      log: createLogger(sink, 'notes'),
-      store: workspace,
-      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
-      push: (change) => broker.send(currentWindow, 'sessions:noteChanged', change),
-    });
     // The e2e seam (#765). Non-packaged builds only, like every other one. The
     // fake provider declares no `mcp` capability, so no bus child ever runs in
     // the e2e suite — and without this the only things a spec could drive are
@@ -3018,12 +3010,49 @@ app
     // list through the SAME query core the bus answers `list_sessions` from, so
     // a publisher's name on the board and in that list cannot disagree.
     const blackboard = new Blackboard({ sessions: () => sessionQueries.listSessions() });
+    const notesLog = createLogger(sink, 'notes');
+    const pushNote = (change: SessionNoteChange): void => broker.send(currentWindow, 'sessions:noteChanged', change);
+    const aiNotes = busNotes({ store: workspace, push: pushNote, log: notesLog, cardFor: (id) => cardIdForLive(id) });
     const busHost = new BusHost({
       stateDir,
       queries: sessionQueries,
       delivery: siblingDelivery,
       blackboard,
+      // a session's AI writes its OWN card's note (#1544); `cardIdForLive` is
+      // late-bound, and no bus call can arrive before a session exists
+      notes: aiNotes,
       log: busLog,
+    });
+    // The e2e seam for the AI's half of the note (#1544), like #765's above:
+    // the fake provider has no bus, so a spec plays the agent's tool call here,
+    // through the production handler. `SWITCHBOARD_E2E_NOTE_BUS` also tells
+    // "Let Claude write it" that the session has the tools, so its prompt is
+    // really sent. Non-packaged builds only.
+    const e2eNoteBus = !app.isPackaged && !!process.env.SWITCHBOARD_E2E_NOTE_BUS;
+    if (e2eNoteBus) {
+      (globalThis as { __switchboardSetSessionNote?: BusNotes['set'] }).__switchboardSetSessionNote = (liveId, text) =>
+        aiNotes.set(liveId, text);
+    }
+    // A card's sticky note (#1544). Main window only, like the sibling push:
+    // a popout renders in the opener's realm, so one push reaches both.
+    registerNoteIpc({
+      broker,
+      log: notesLog,
+      store: workspace,
+      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+      push: pushNote,
+      // "Let Claude write it": only a session whose AI has the switchboard tools
+      ask: {
+        cardFor: (liveId) => cardIdForLive(liveId),
+        hasBus: (liveId) => e2eNoteBus || busHost.endpointFor(liveId) !== null,
+        submit: (liveId, text) => {
+          // a click on the card is a person watching it, exactly as a typed
+          // prompt is (`sessions:submitPrompt`): a dispatched session stops
+          // being treated as unattended (P2-E13-03)
+          streamPermissions.clearDispatched(liveId);
+          return Promise.resolve(manager.submitPrompt(liveId, text));
+        },
+      },
     });
 
     broker.handle('git:status', (_e, folder: string, withStats?: unknown) =>

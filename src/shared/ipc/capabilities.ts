@@ -565,6 +565,9 @@ export const CHANNEL_CAPABILITIES = {
   // to the AI. Read/write like the task label beside it.
   'sessions:note': 'sessions.read',
   'sessions:setNote': 'sessions.write',
+  // "Let Claude write it" (#1544): SENDS THE SESSION A PROMPT, so `sessions.write`,
+  // the same word as `sessions:submitPrompt`
+  'sessions:askForNote': 'sessions.write',
   'sessions:slashCommands': 'sessions.read',
   // why some skills are missing from that popup (#1328): file names only
   'sessions:slashHints': 'sessions.read',

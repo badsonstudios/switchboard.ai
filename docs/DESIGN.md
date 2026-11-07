@@ -2447,8 +2447,20 @@ Consequences worth designing for, not discovering:
   - The rail row carries a mint marker with the note on hover, and the row's
     spoken name includes the note.
 
-  Parts 3 and 4 (the MCP tool and "Let Claude write it"; the waiting note) are
-  recorded on the issue.
+  **Part 3:** the `set_session_note` bus tool.
+  - Its only argument is `text`, and the card is the CALLER's, resolved from
+    the bus token, so a session can write no note but its own.
+  - The text goes through the window's cleaning and cap, written as `'ai'`.
+  - The receipt says when the text was cut and when it replaced a note the
+    user wrote. The tool's description tells the agent not to overwrite the
+    user's note unasked.
+  - **"Let Claude write it"** sends the session one ordinary prompt
+    (`NOTE_REQUEST_PROMPT`) rather than running a separate request: the
+    session already holds the context, and the turn is visible. On a session
+    that is not idle or done, the window asks first. A session without a bus
+    endpoint is refused with "cannot write notes".
+
+  Part 4 (the waiting note) is recorded on the issue.
 
 ### 5.12 Events — what needs the operator NOW
 

@@ -18,7 +18,8 @@ import 'dockview-react/dist/styles/dockview.css';
 // AFTER dockview's own sheet: binds every --dv-* variable to our tokens so the
 // shell, popups and popout windows can't fall back to a foreign theme (#84)
 import '../theme/dockview-tokens.css';
-import { startEditingNote, useSessionNote } from '../lib/session-notes';
+import { setNoteSession, startEditingNote, useSessionNote } from '../lib/session-notes';
+import { useSessionAi } from '../lib/session-ai';
 import { SessionNoteChip, SessionNoteCorner, SessionNoteLine } from './SessionNoteStrip';
 import { nativeAlert, nativeConfirm } from '../lib/native-dialog';
 import { placeMenuAtBox, type MenuPlacement } from '../lib/menu-placement';
@@ -1383,6 +1384,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   );
   // the header's word and ring as SHOWN: a held question is "question" (#1351)
   const shownStatus = useShownStatus(cardId, status);
+  // the note editor's "Let Claude write it" needs the live session (#1544)
+  const noteAiName = useSessionAi(live?.providerId).name;
+  React.useEffect(() => {
+    if (!cardId) return;
+    setNoteSession(cardId, live ? { liveId: live.id, status, aiName: noteAiName || undefined } : null);
+  }, [cardId, live, status, noteAiName]);
+  React.useEffect(() => {
+    return () => {
+      if (cardId) setNoteSession(cardId, null);
+    };
+  }, [cardId]);
   // ...and a session whose process has gone says "ended", not the "waiting"
   // its leftover `done` status would read as (#1351) — by the rule the tab,
   // the row and the pill follow (#1362, `headerPillFor`)

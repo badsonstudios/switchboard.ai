@@ -3,6 +3,10 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS 2026-11-06: #1544 PART 3 of 4 — `set_session_note` MCP tool, the AI look, "Let Claude write it" (`feature/1544-ai-note`)
+>
+> **Dan (2026-11-06):** *"Continue."* Part 3 = the switchboard bus tool that sets or clears the CALLER's own card note (resolved from the bus token), the blue AI treatment end to end, and the editor's "Let Claude write it" (a prompt sent to the session; asks first on a busy one). Part 4 not started.
+
 > # ✅ DONE: #1544 PART 2 of 4 — note placements B/C/D, the placement setting, rail marker (PR #1560 merged `13171b9d`, issue stays OPEN, NOT RELEASED)
 >
 > **Dan (2026-11-06):** *"so far, so good. Continue"* (he is on 0.8.138; part 1's hand-test steps 1–3 pass). **In part 2:** Settings ▸ Appearance ▸ Session notes (`notePlacement` in the ui blob; prompt|header|corner|chip, default prompt), kept in `lib/session-notes.ts`. B shows under the title bar on every tab. C is a corner sticky on the Session tab, below the feed toolbar (the first try covered quiet/normal/firehose, caught in a screenshot). D is a title-bar chip plus a popover that also hosts the editor. Rail row: a mint marker with the note on hover, and the note in the row's spoken name ("from the AI" for an AI note). **Gate:** lint, typecheck, unit 15,438 + 7 skipped. Full e2e 560 + 10 skipped + 1 failure (`attention.spec.ts:74`, a setup timeout during a concurrent review run; it passed alone and 3 of 3 with `--repeat-each`). 44 area specs pass after the review fixes. CI 4/4 (run 42286863690). Review: no blockers; four should-fixes and two nits applied. **NEXT (not started):** part 3, the `set_session_note` MCP tool, the blue AI treatment and "Let Claude write it" (send the session a prompt; ask first on a busy session). Then part 4, the automatic yellow waiting note. **Not hand-tested.**

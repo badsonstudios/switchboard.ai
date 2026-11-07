@@ -155,3 +155,77 @@ test.describe('session sticky note (#1544)', () => {
     await expect(strip(w)).toHaveCount(0);
   });
 });
+
+// Part 3 (#1544): the session's AI writes the note through its switchboard
+// tool, and "Let Claude write it" asks it to. The fake AI has no bus, so the
+// spec plays the tool call through the production handler (a non-packaged
+// seam), and the seam's flag tells the button the session has the tools.
+test.describe('the AI writes the note (#1544 part 3)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  async function liveIdOf(app: LaunchedApp): Promise<string> {
+    for (let i = 0; i < 100; i++) {
+      const cards = (await app.window.evaluate(() => window.switchboard.sessions.cards())) as Array<{
+        liveId?: string;
+      }>;
+      if (cards[0]?.liveId) return cards[0].liveId;
+      await app.window.waitForTimeout(200);
+    }
+    throw new Error('no live session');
+  }
+
+  const aiSets = (app: LaunchedApp, liveId: string, text: string): Promise<unknown> =>
+    app.app.evaluate(
+      (_e, [id, t]) =>
+        (globalThis as unknown as { __switchboardSetSessionNote: (i: string, t: string) => unknown }).__switchboardSetSessionNote(
+          id,
+          t
+        ),
+      [liveId, text] as const
+    );
+
+  test("an AI's note shows as the AI's, in blue, on the card and the rail; editing makes it yours", async () => {
+    a = await launchApp({
+      seedFolder: tempProjectFolder(),
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_E2E_NOTE_BUS: '1' },
+    });
+    const w = a.window;
+    const liveId = await liveIdOf(a);
+    await aiSets(a, liveId, 'Blocked: need your call on the retry limit');
+    await expect(noteText(w)).toHaveText('Blocked: need your call on the retry limit');
+    await expect(strip(w)).toHaveAttribute('data-note-by', 'ai');
+    await expect(w.locator('[data-note-meta]')).toContainText('✦');
+    await expect(w.locator('[data-rail-note]').first()).toHaveAttribute('data-note-by', 'ai');
+    await expect(w.locator('[data-rail-note]').first()).toHaveAttribute(
+      'title',
+      'Note from the AI: Blocked: need your call on the retry limit'
+    );
+    // edit it, and it becomes the user's
+    await noteText(w).click();
+    await noteBox(w).fill('Decided: keep it at three');
+    await noteBox(w).press('Enter');
+    await expect(strip(w)).toHaveAttribute('data-note-by', 'user');
+    // and the AI can clear it
+    await aiSets(a, liveId, '');
+    await expect(strip(w)).toHaveCount(0);
+  });
+
+  test('"Let Claude write it" sends the session one prompt that asks for the note', async () => {
+    a = await launchApp({
+      seedFolder: tempProjectFolder(),
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_E2E_NOTE_BUS: '1' },
+    });
+    const w = a.window;
+    await liveIdOf(a);
+    await noteButton(w).click({ timeout: 25_000 });
+    const ask = w.locator('[data-note-ask-ai]');
+    await expect(ask).toBeVisible();
+    await ask.click();
+    // the editor closes, and the request is a visible turn in the conversation
+    await expect(noteBox(w)).toHaveCount(0);
+    await expect(w.locator('[data-feed-block="user"]', { hasText: 'set_session_note' })).toBeVisible({
+      timeout: 25_000,
+    });
+  });
+});

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import {
+  renderNote,
   CONTENT_FENCE,
   SLOW_TOOLS,
   SLOW_TOOL_TIMEOUT_MS,
@@ -60,6 +61,9 @@ describe('the tool surface', () => {
       // #796's pair. `blackboard_publish` is the SECOND tool here that writes,
       // and the first whose write reaches nobody — see `renderPublish`.
       'blackboard_publish',
+      // #1544: a write whose reach is exactly ONE card, the caller's own; the
+      // host takes it from the token and the schema has no way to name another
+      'set_session_note',
       'blackboard_read',
       // #861, and it is a THIRD category rather than another write: the only
       // tool on this surface that destroys something, and one whose reach
@@ -69,6 +73,22 @@ describe('the tool surface', () => {
       // quietly.
       'blackboard_remove',
     ]);
+  });
+
+  it('set_session_note can only say what to write, never whose note (#1544)', () => {
+    const tool = TOOLS.find((t) => t.name === 'set_session_note')!;
+    expect(Object.keys((tool.inputSchema as { properties: object }).properties)).toEqual(['text']);
+    // the two things an agent gets wrong unless told
+    expect(tool.description).toMatch(/YOUR OWN/);
+    expect(tool.description).toMatch(/REPLACES it, including a note the user wrote/);
+  });
+
+  it('the note receipt says what is on the card now, a cut, and a user note replaced', () => {
+    expect(renderNote({ cleared: false, text: 'Waiting on you' })).toContain('now reads: "Waiting on you"');
+    expect(renderNote({ cleared: false, text: 'x', truncated: true })).toMatch(/cut to 200 characters/);
+    expect(renderNote({ cleared: false, text: 'x', replaced: 'user' })).toMatch(/replaced a note the user had written/);
+    expect(renderNote({ cleared: true })).toBe('The note on your session is cleared.');
+    expect(renderNote({ cleared: true, replaced: 'user' })).toMatch(/note the user had written/);
   });
 
   it('every tool is also a host op, and every host op is a tool', () => {

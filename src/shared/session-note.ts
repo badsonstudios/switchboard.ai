@@ -45,6 +45,17 @@ export const SESSION_NOTE_MAX = 200;
  * which every caller reads as "delete the note".
  */
 export function cleanNoteText(raw: unknown): string {
+  const points = Array.from(oneLine(raw));
+  return points.length > SESSION_NOTE_MAX ? points.slice(0, SESSION_NOTE_MAX).join('').trimEnd() : points.join('');
+}
+
+/** Would `cleanNoteText` cut this text at the cap? (The AI's receipt says so.) */
+export function noteWouldBeCut(raw: unknown): boolean {
+  return Array.from(oneLine(raw)).length > SESSION_NOTE_MAX;
+}
+
+/** Every cleaning step except the cap. */
+function oneLine(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   let out = '';
   for (const ch of raw) {
@@ -53,9 +64,7 @@ export function cleanNoteText(raw: unknown): string {
     else if (code < 32 || code === 127 || (code >= 128 && code < 160)) continue;
     else out += ch;
   }
-  const one = out.replace(/ {2,}/g, ' ').trim();
-  const points = Array.from(one);
-  return points.length > SESSION_NOTE_MAX ? points.slice(0, SESSION_NOTE_MAX).join('').trimEnd() : one;
+  return out.replace(/ {2,}/g, ' ').trim();
 }
 
 /**

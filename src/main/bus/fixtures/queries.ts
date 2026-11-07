@@ -11,7 +11,7 @@
 // that refused by default would make every test that forgot to override it pass
 // for the wrong reason. A test that cares about a refusal states it.
 import { Blackboard } from '../../sessions/blackboard';
-import type { BusQueries } from '../host-channel';
+import type { BusNotes, BusQueries } from '../host-channel';
 import type { SessionSummary } from '../../sessions/queries';
 import type { BusDelivery } from '../../sessions/delivery';
 
@@ -131,5 +131,22 @@ export function stubQueries(over: Partial<BusQueries> = {}): BusQueries {
       },
     }),
     ...over,
+  };
+}
+
+/**
+ * `set_session_note`'s host side (#1544), in memory: one note per caller,
+ * recorded so a test can say what the agent set.
+ */
+export function stubNotes(): BusNotes & { notes: Map<string, string> } {
+  const notes = new Map<string, string>();
+  return {
+    notes,
+    set(caller, text) {
+      if (typeof text !== 'string') return { ok: false, reason: 'text must be a string (use "" to clear the note)' };
+      if (text.trim()) notes.set(caller, text.trim());
+      else notes.delete(caller);
+      return { ok: true, value: text.trim() ? { cleared: false, text: text.trim() } : { cleared: true } };
+    },
   };
 }

@@ -567,9 +567,37 @@ A session with a note shows a small mint square on its row in the sessions
 list. Hover over the square to read the note. A screen reader reads the note
 as part of the row's name.
 
-> TODO: notes Claude writes ("Let Claude write it", and a blue edge and ring
-> for a note Claude wrote) and the automatic "waiting" note are coming in later
-> updates. Document them here when they ship.
+### Notes Claude writes
+
+Claude can leave the note too: "Blocked: need your call on the retry limit",
+or "Done; ready for review". A note Claude wrote has a **blue edge** down its
+left side and says **✦ Claude** instead of **You**. In the sessions list, its
+mint square gets a blue ring, and hovering it reads "Note from the AI: …".
+
+- **Let Claude write it.** When you open the note editor (**📝**), the button
+  **✦ Let Claude write it** asks the session's Claude to set the note to what
+  it is waiting on. It does this by sending the session one short prompt, so
+  you will see that request, and Claude's reply, in the conversation. A moment
+  later the note appears.
+- **If Claude is busy,** switchboard asks before sending: the request waits
+  until Claude finishes what it is doing. Say no and nothing is sent.
+- **You can also just ask.** Type something like "leave a note on this session
+  saying what you need from me", and Claude sets it.
+- **There is still one note per session.** Whoever writes last wins: a note
+  Claude writes replaces yours, and when you edit Claude's note, it becomes
+  yours. Claude is told not to overwrite your note unless you ask it to.
+
+Claude can only ever write the note on its *own* session, never on another
+one. What Claude writes is shown as plain text, capped at 200 characters, and
+setting it never sets off a notification. The note is still never read back to
+Claude.
+
+If a session's AI cannot reach switchboard's tools, the button says so and
+you can type the note yourself.
+
+> TODO: the automatic "waiting" note (a separate, yellow note Claude leaves
+> by itself when a setting is on, which clears when you send the next prompt)
+> is coming in a later update. Document it here when it ships.
 
 ## Talking to the session
 

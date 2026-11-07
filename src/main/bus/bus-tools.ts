@@ -13,7 +13,8 @@
 // text of the whole child bundle, because the value is not that it is true
 // today but that it stays true after everyone stops looking.
 import { errorText } from '../../shared/error-text';
-import { DETAIL_ARG, MESSAGE_ARG, SESSION_ARG } from './channel';
+import { DETAIL_ARG, MESSAGE_ARG, NOTE_TEXT_ARG, SESSION_ARG } from './channel';
+import { SESSION_NOTE_MAX } from '../../shared/session-note';
 // A constant-only module with no imports of its own, so it is safe in the child
 // graph for the reason `sibling-message` is — and the levels an agent is OFFERED
 // must be the levels `SessionQueries` accepts.
@@ -248,6 +249,36 @@ export const TOOLS: readonly ToolDescriptor[] = [
         },
       },
       required: [KEY_ARG, VALUE_ARG],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'set_session_note',
+    // WHO SEES IT, AND WHAT IT REPLACES, are the two things an agent gets wrong
+    // without being told (#1544). The note is for the PERSON, on the card, and
+    // is never read back to the agent; and with one note per session the last
+    // writer wins, so an unasked call can wipe out what the user wrote.
+    description:
+      'Set or clear the sticky note on YOUR OWN switchboard session: one short line the user ' +
+      'sees on this session\'s card and in their sessions list, saying where things stand ' +
+      '("Waiting on your decision about the retry limit", "Done; ready for review"). It is ' +
+      'for the person, not for other sessions, and it is never sent back to you. Use it when ' +
+      'the user asks you to leave or update a note. There is ONE note per session and writing ' +
+      'REPLACES it, including a note the user wrote themselves, so do not overwrite one they ' +
+      'did not ask you to. Plain text on one line, up to ' +
+      `${SESSION_NOTE_MAX} characters; anything longer is cut. Empty text clears the note. ` +
+      'Setting it notifies nobody.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        [NOTE_TEXT_ARG]: {
+          type: 'string',
+          description:
+            'The note, as plain text on one line. Say what the session is waiting on or where it ' +
+            'stands, briefly. An empty string clears the note.',
+        },
+      },
+      required: [NOTE_TEXT_ARG],
       additionalProperties: false,
     },
   },
@@ -709,6 +740,26 @@ export function renderPublish(payload: unknown): string {
 }
 
 /**
+ * What became of a `set_session_note` (#1544), for the agent that set it.
+ *
+ * Says what is on the card NOW (the stored text, after the cap), so an agent
+ * whose note was cut short knows, and says when it replaced a note the USER
+ * wrote, so the agent can own up to that instead of it passing unseen.
+ */
+export function renderNote(payload: unknown): string {
+  const p = asRecord(payload);
+  if (p.cleared === true) {
+    return p.replaced === 'user'
+      ? 'The note on your session is cleared. It was a note the user had written.'
+      : 'The note on your session is cleared.';
+  }
+  const text = asText(p.text, '');
+  const cut = p.truncated === true ? ` It was cut to ${SESSION_NOTE_MAX} characters.` : '';
+  const over = p.replaced === 'user' ? ' It replaced a note the user had written.' : '';
+  return `Your session's note now reads: "${text}".${cut}${over} The user sees it; nobody was notified.`;
+}
+
+/**
  * What became of a `blackboard_remove` (#861), for the agent that did it.
  *
  * ── THE RECEIPT IS THE SAFETY MECHANISM, SO IT NAMES THE CASUALTY ───────────
@@ -988,6 +1039,12 @@ const RENDERERS: Record<string, Renderer> = Object.assign(
         'the blackboard. Read the key back before publishing it again',
     },
     blackboard_read: { field: 'board', render: (r) => renderBlackboard(r.board) },
+    set_session_note: {
+      field: 'note',
+      render: (r) => renderNote(r.note),
+      refused: 'Your note was NOT set',
+      failed: 'switchboard could not confirm whether your note was set. Do not assume either way',
+    },
     blackboard_remove: {
       field: 'removal',
       render: (r) => renderRemove(r.removal),

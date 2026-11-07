@@ -51,6 +51,8 @@ export const BUS_OPS = [
   'blackboard_publish',
   'blackboard_read',
   'blackboard_remove',
+  // the caller's OWN card note (#1544): the token decides whose, never an argument
+  'set_session_note',
 ] as const;
 
 export type BusOp = (typeof BUS_OPS)[number];
@@ -81,6 +83,9 @@ export const SESSION_ARG = 'session';
 
 /** `send_to_session`'s text argument — one constant for the same reason. */
 export const MESSAGE_ARG = 'message';
+
+/** `set_session_note`'s one argument: the note's text; empty clears it (#1544). */
+export const NOTE_TEXT_ARG = 'text';
 
 /**
  * `get_session_context`'s fidelity argument (#800) — one constant, same reason.

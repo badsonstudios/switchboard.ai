@@ -45,6 +45,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { BusHost } from './host-channel';
+import { busNotes } from '../sessions/note-ipc';
+import type { SessionNote } from '../../shared/session-note';
 import { busLaunch, busServerPath } from './launch';
 import { LineReader } from './protocol';
 // The fence is asserted rather than retyped: #796's blackboard hands one
@@ -310,7 +312,23 @@ async function main(): Promise<void> {
   // attribution this asserts is resolved the same way production resolves it,
   // and a note from `Gone` really does report a session that has exited.
   const blackboard = new Blackboard({ sessions: () => queries.listSessions() });
-  const host = new BusHost({ stateDir, log, queries, delivery, blackboard });
+  // THE REAL NOTE HANDLER (#1544), over a one-card in-memory store: the caller's
+  // card comes from the token's session id, exactly as production resolves it
+  const noteStore = new Map<string, SessionNote>();
+  const notes = busNotes({
+    store: {
+      cardNote: (id) => noteStore.get(id),
+      setCardNote: (id, n) => {
+        if (n) noteStore.set(id, n);
+        else noteStore.delete(id);
+        return noteStore.get(id);
+      },
+    },
+    push: () => {},
+    log,
+    cardFor: (liveId) => (liveId === 'sb-caller' ? 'card-caller' : null),
+  });
+  const host = new BusHost({ stateDir, log, queries, delivery, blackboard, notes });
   const sessionId = 'sb-caller';
   const endpoint = await host.registerSession(sessionId);
   console.log(`[bus-check]      endpoint ${endpoint.pipePath}`);
@@ -354,7 +372,7 @@ async function main(): Promise<void> {
   const toolNames = tools.map((t) => String(t.name)).sort().join(',');
   check('tools/list offers every bus tool, and nothing else',
     toolNames === 'blackboard_publish,blackboard_read,blackboard_remove,get_session_context,' +
-      'get_session_diff,get_session_output,list_sessions,send_to_session',
+      'get_session_diff,get_session_output,list_sessions,send_to_session,set_session_note',
     toolNames);
 
   // ── the round trip, over a real endpoint ─────────────────────────────────
@@ -596,6 +614,17 @@ async function main(): Promise<void> {
   check('an exited session (status "done") is refused, not delivered to',
     isError(toGone) && /has exited/.test(resultText(toGone)), resultText(toGone));
   check('…and nothing was pushed or submitted for it', pushed.length === 1 && submitted.length === 1);
+
+  // ── #1544: the caller's own note, end to end over the real pipe ──────────
+  const noteSet = await peer.request('tools/call', {
+    name: 'set_session_note',
+    arguments: { text: 'Waiting on your call about the retry limit' },
+  });
+  check('set_session_note round-trips onto the CALLER\'s card', !isError(noteSet) &&
+    noteStore.get('card-caller')?.text === 'Waiting on your call about the retry limit' &&
+    noteStore.get('card-caller')?.by === 'ai', resultText(noteSet));
+  const noteCleared = await peer.request('tools/call', { name: 'set_session_note', arguments: { text: '' } });
+  check('…and empty text clears it', !isError(noteCleared) && !noteStore.has('card-caller'), resultText(noteCleared));
 
   // ── #796: the blackboard, end to end over the real pipe ──────────────────
   const pub = await peer.request('tools/call', {

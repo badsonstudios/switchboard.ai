@@ -10,9 +10,11 @@ import type { SessionNote, SessionNoteChange } from '../../../shared/session-not
 import {
   notePlacementOf,
   resetSessionNotesForTests,
+  setNoteSession,
   setNotePlacement,
   startEditingNote,
 } from '../lib/session-notes';
+import * as nativeDialog from '../lib/native-dialog';
 import {
   SessionNoteChip,
   SessionNoteCorner,
@@ -34,6 +36,7 @@ let root: Root;
 let stored: SessionNote | null;
 let push: ((c: SessionNoteChange) => void) | null;
 const setNote = vi.fn();
+const askForNote = vi.fn();
 
 beforeAll(async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -45,6 +48,8 @@ beforeEach(() => {
   stored = null;
   push = null;
   setNote.mockReset();
+  askForNote.mockReset();
+  askForNote.mockResolvedValue({ ok: true });
   setNote.mockImplementation(async (_card: string, text: string) => {
     const clean = text.trim();
     stored = clean ? { text: clean, by: 'user', at: AT } : null;
@@ -54,6 +59,7 @@ beforeEach(() => {
     sessions: {
       note: async () => stored,
       setNote,
+      askForNote,
       onNoteChanged: (cb: (c: SessionNoteChange) => void) => {
         push = cb;
         return () => {
@@ -291,6 +297,75 @@ describe('placements (part 2)', () => {
     expect(notePlacementOf('corner')).toBe('corner');
     expect(notePlacementOf('sideways')).toBe('prompt');
     expect(notePlacementOf(undefined)).toBe('prompt');
+  });
+});
+
+describe('"Let Claude write it" (part 3)', () => {
+  const askButton = (): HTMLButtonElement | null => q<HTMLButtonElement>('[data-note-ask-ai]');
+
+  it('is not offered when the card has no live session', async () => {
+    await render();
+    await act(async () => startEditingNote(CARD));
+    expect(askButton()).toBeNull();
+  });
+
+  it('on an idle session, sends the request at once and closes the editor', async () => {
+    await render();
+    await act(async () => setNoteSession(CARD, { liveId: 'live-1', status: 'idle', aiName: 'Claude' }));
+    await act(async () => startEditingNote(CARD));
+    expect(askButton()?.textContent).toBe('✦ Let Claude write it');
+    const confirm = vi.spyOn(nativeDialog, 'nativeConfirm');
+    await act(async () => askButton()!.click());
+    expect(confirm).not.toHaveBeenCalled();
+    expect(askForNote).toHaveBeenCalledWith('live-1');
+    expect(q('[data-note-input]')).toBeNull();
+    confirm.mockRestore();
+  });
+
+  it('on a busy session, asks first, and a No sends nothing', async () => {
+    await render();
+    await act(async () => setNoteSession(CARD, { liveId: 'live-1', status: 'working', aiName: 'Claude' }));
+    await act(async () => startEditingNote(CARD));
+    const confirm = vi.spyOn(nativeDialog, 'nativeConfirm').mockReturnValue(false);
+    await act(async () => askButton()!.click());
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(askForNote).not.toHaveBeenCalled();
+    expect(q('[data-note-input]')).not.toBeNull();
+    confirm.mockReturnValue(true);
+    await act(async () => askButton()!.click());
+    expect(askForNote).toHaveBeenCalledWith('live-1');
+    confirm.mockRestore();
+  });
+
+  it('keeps a half-typed note when the request is sent, and says what happens next', async () => {
+    await render();
+    await act(async () => setNoteSession(CARD, { liveId: 'live-1', status: 'idle' }));
+    await act(async () => startEditingNote(CARD));
+    const box = q<HTMLTextAreaElement>('[data-note-input]')!;
+    await act(async () => type(box, 'my own words'));
+    await act(async () => askButton()!.click());
+    expect(askForNote).toHaveBeenCalledWith('live-1');
+    expect(q<HTMLTextAreaElement>('[data-note-input]')?.value).toBe('my own words');
+    expect(q('[data-note-ask-error]')?.textContent).toBe(en.sessionNote.askSent);
+  });
+
+  it('an answer it does not know reads as "could not be sent", never a raw key', async () => {
+    askForNote.mockResolvedValue({ ok: false, reason: 'something-new' });
+    await render();
+    await act(async () => setNoteSession(CARD, { liveId: 'live-1', status: 'idle' }));
+    await act(async () => startEditingNote(CARD));
+    await act(async () => askButton()!.click());
+    expect(q('[data-note-ask-error]')?.textContent).toBe(en.sessionNote.askFailed['not-sent']);
+  });
+
+  it('says why when it cannot, and keeps the editor open to type it instead', async () => {
+    askForNote.mockResolvedValue({ ok: false, reason: 'no-tools' });
+    await render();
+    await act(async () => setNoteSession(CARD, { liveId: 'live-1', status: 'idle' }));
+    await act(async () => startEditingNote(CARD));
+    await act(async () => askButton()!.click());
+    expect(q('[data-note-ask-error]')?.textContent).toBe(en.sessionNote.askFailed['no-tools']);
+    expect(q('[data-note-input]')).not.toBeNull();
   });
 });
 
