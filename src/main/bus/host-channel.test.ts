@@ -16,7 +16,7 @@ import {
 } from './host-channel';
 import { busPipePath, busTokenPath } from './bus-paths';
 import { CHANNEL_VERSION } from './channel';
-import { stubBlackboard, stubDelivery, stubQueries } from './fixtures/queries';
+import { stubBlackboard, stubDelivery, stubNotes, stubQueries } from './fixtures/queries';
 import { Blackboard } from '../sessions/blackboard';
 import { BLACKBOARD_VALUE_CHAR_CAP } from '../../shared/blackboard';
 import { askHost } from './pipe-client';
@@ -88,7 +88,8 @@ beforeEach(() => {
   // the wrong list would resolve every publisher as "no longer running" and
   // make the attribution assertions pass or fail for the wrong reason.
   blackboard = stubBlackboard(SESSIONS);
-  host = new BusHost({ stateDir, log, queries: queries(), delivery: delivery(), blackboard });
+  host = new BusHost({
+      notes: stubNotes(), stateDir, log, queries: queries(), delivery: delivery(), blackboard });
 });
 
 afterEach(() => {
@@ -394,6 +395,7 @@ describe('the round trip', () => {
         ackTimeoutMs: 5_000,
       });
       const slow = new BusHost({
+      notes: stubNotes(),
         stateDir,
         log,
         queries: queries(),
@@ -770,6 +772,7 @@ describe('the round trip', () => {
       // Driven with a real clock on a deliberately tiny deadline: fake timers do
       // not drive libuv, which is the same trap the reply-linger test records.
       const slow = new BusHost({
+      notes: stubNotes(),
         stateDir,
         log,
         idleTimeoutMs: 40,
@@ -804,6 +807,7 @@ describe('the round trip', () => {
       // "remove the idle deadline". `sock.setTimeout(0)` fires only once a
       // complete request has been read; a silent client never gets there.
       const short = new BusHost({
+      notes: stubNotes(),
         stateDir,
         log,
         idleTimeoutMs: 60,
@@ -843,6 +847,7 @@ describe('the round trip', () => {
       // host closed the connection without answering", which is true and
       // useless. This names the operation, from the only layer that knows.
       const stuck = new BusHost({
+      notes: stubNotes(),
         stateDir,
         log,
         answerDeadlineMs: 80,
@@ -869,6 +874,7 @@ describe('the round trip', () => {
       // holding stays in the set. Measured through `connectionCount`, which is
       // the observable the reclaim work added for exactly this reason.
       const stuck = new BusHost({
+      notes: stubNotes(),
         stateDir,
         log,
         answerDeadlineMs: 60,
@@ -906,6 +912,7 @@ describe('the round trip', () => {
       let release!: () => void;
       const held = new Promise<void>((r) => (release = r));
       const slow = new BusHost({
+      notes: stubNotes(),
         stateDir,
         log,
         delivery: delivery(),
@@ -1067,6 +1074,7 @@ describe('authentication (the done-when: the pipe refuses an unauthenticated cli
     // teardown, and it passed against a mutant with the reclaim removed
     // entirely.
     const short = new BusHost({
+      notes: stubNotes(),
       stateDir,
       log,
       replyLingerMs: 60,
@@ -1283,6 +1291,7 @@ describe('the in-flight bound (#772)', () => {
     let release!: () => void;
     const held = new Promise<void>((r) => (release = r));
     const stuck = new BusHost({
+      notes: stubNotes(),
       stateDir,
       log,
       answerDeadlineMs: 60,
@@ -1325,6 +1334,7 @@ describe('the in-flight bound (#772)', () => {
     // on, and bury that signal — while the counts stayed right, since the
     // slot is only given back once. So assert on the log, not the count.
     const quick = new BusHost({
+      notes: stubNotes(),
       stateDir,
       log,
       answerBackstopMs: 120,
@@ -1411,6 +1421,7 @@ describe('the in-flight bound (#772)', () => {
     let release!: () => void;
     const held = new Promise<void>((r) => (release = r));
     const stuck = new BusHost({
+      notes: stubNotes(),
       stateDir,
       log,
       answerDeadlineMs: 60,
@@ -1562,6 +1573,7 @@ describe('the idle deadline', () => {
     // session's socket set until the session ends, and the endpoint is
     // reachable by any process running as this user.
     const short = new BusHost({
+      notes: stubNotes(),
       stateDir,
       log,
       idleTimeoutMs: 60,

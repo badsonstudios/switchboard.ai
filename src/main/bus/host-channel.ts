@@ -38,6 +38,7 @@ import {
   DETAIL_ARG,
   KEY_ARG,
   MESSAGE_ARG,
+  NOTE_TEXT_ARG,
   SESSION_ARG,
   VALUE_ARG,
   isBusOp,
@@ -62,6 +63,15 @@ export type BusQueries = Pick<
   'listSessions' | 'sessionOutput' | 'sessionDiff' | 'sessionContextFor'
 >;
 
+/**
+ * `set_session_note`'s host side (#1544). Takes the CALLER's live id, from the
+ * token, and the text as the agent sent it; the implementation owns every
+ * check and the cap (`main/sessions/note-ipc.ts`).
+ */
+export interface BusNotes {
+  set(callerLiveId: string, text: unknown): { ok: true; value: unknown } | { ok: false; reason: string };
+}
+
 export interface BusHostOptions {
   /** Same directory `HookListener` writes `hook-token` into. */
   stateDir: string;
@@ -85,6 +95,12 @@ export interface BusHostOptions {
    * the whole suite green. Required makes that a compile error.
    */
   blackboard: Blackboard;
+  /**
+   * The caller's own card note (#1544). REQUIRED for `delivery`'s reason: an
+   * optional field left out in `main/index.ts` would ship a tool that refuses
+   * every call with the whole suite green.
+   */
+  notes: BusNotes;
   log: Logger;
   /**
    * How long a replied-to connection may linger. Absent = `REPLY_LINGER_MS`.
@@ -229,6 +245,7 @@ type HostReply =
   | { ok: true; callerId: string; board: unknown }
   | { ok: true; callerId: string; removal: unknown }
   | { ok: true; callerId: string; delivery: unknown }
+  | { ok: true; callerId: string; note: unknown }
   /**
    * `uncertain` (#765 review): this refusal is "I gave up waiting", not "the
    * answer is no". For a read the two cost the same; for a WRITE they differ —
@@ -1001,6 +1018,14 @@ export class BusHost {
           const result = this.opts.blackboard.remove(caller, args[KEY_ARG]);
           if (!result.ok) return { ok: false, reason: result.reason };
           return { ok: true, callerId: caller, removal: result.value };
+        }
+        case 'set_session_note': {
+          // `caller`, FROM THE TOKEN, and that IS the whole permission model: a
+          // session can write exactly one note, its own, and there is no
+          // argument through which it could name another (#1544).
+          const result = this.opts.notes.set(caller, args[NOTE_TEXT_ARG]);
+          if (!result.ok) return { ok: false, reason: result.reason };
+          return { ok: true, callerId: caller, note: result.value };
         }
         case 'send_to_session': {
           // `caller`, from the TOKEN — never anything the child said about

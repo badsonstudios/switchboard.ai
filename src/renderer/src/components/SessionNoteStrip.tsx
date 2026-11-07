@@ -10,9 +10,13 @@ import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 import { NOTE_QUICK_PICK_KEYS, SESSION_NOTE_MAX, type SessionNote } from '../../../shared/session-note';
 import { switchWhen } from '../lib/ai-switch-view';
+import { nativeConfirm } from '../lib/native-dialog';
 import {
+  askAiForNote,
   cancelEditingNote,
   deleteNote,
+  sessionIsBusy,
+  useNoteSession,
   saveNote,
   setNotePopoverOpen,
   startEditingNote,
@@ -157,6 +161,8 @@ function NotePaper(
     >
       {editing ? (
         <NoteEditor
+          cardId={props.cardId}
+          aiName={props.aiName}
           initial={note?.text ?? ''}
           onSave={(text) => {
             done();
@@ -356,6 +362,8 @@ export function SessionNoteChip(props: SessionNoteStripProps): React.JSX.Element
 }
 
 function NoteEditor(props: {
+  cardId: string;
+  aiName?: string;
   initial: string;
   onSave: (text: string) => void;
   onCancel: () => void;
@@ -363,6 +371,37 @@ function NoteEditor(props: {
   const { t } = useTranslation();
   const [text, setText] = React.useState(props.initial);
   const box = React.useRef<HTMLTextAreaElement>(null);
+  const live = useNoteSession(props.cardId);
+  const ai = props.aiName || live?.aiName;
+  const [asking, setAsking] = React.useState(false);
+  const [askError, setAskError] = React.useState<string | null>(null);
+  // "Let Claude write it" (#1544): sends the session one ordinary prompt asking
+  // its AI to set the note. A busy session is asked about first, never sent to
+  // without a yes. The note arrives later, by the AI's own tool call.
+  const askAi = async (): Promise<void> => {
+    if (!live || asking) return;
+    const win = box.current?.ownerDocument.defaultView ?? undefined;
+    if (sessionIsBusy(live.status)) {
+      const yes = nativeConfirm(
+        ai ? t('sessionNote.askBusy', { ai }) : t('sessionNote.askBusyUnnamed'),
+        win
+      );
+      if (!yes) return;
+    }
+    setAsking(true);
+    setAskError(null);
+    const answer = await askAiForNote(live.liveId);
+    setAsking(false);
+    // a half-typed note is the user's words: keep the editor open on it
+    // rather than throw it away, and say what happens next
+    if (answer.ok) {
+      if (text.trim() && text !== props.initial) setAskError(t('sessionNote.askSent'));
+      else props.onCancel();
+    } else {
+      const known = ['no-session', 'no-tools', 'not-sent'].includes(answer.reason) ? answer.reason : 'not-sent';
+      setAskError(t(`sessionNote.askFailed.${known}`));
+    }
+  };
   React.useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -438,10 +477,36 @@ function NoteEditor(props: {
             {t(key)}
           </button>
         ))}
+        {live && (
+          <button
+            type="button"
+            data-note-ask-ai=""
+            disabled={asking}
+            onClick={() => void askAi()}
+            title={t('sessionNote.askHint')}
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--note-ai)',
+              borderRadius: 10,
+              padding: '1px 9px',
+              fontSize: 11.5,
+              color: 'var(--note-ai-ink)',
+              fontWeight: 600,
+              cursor: asking ? 'progress' : 'pointer',
+            }}
+          >
+            {ai ? t('sessionNote.ask', { ai }) : t('sessionNote.askUnnamed')}
+          </button>
+        )}
         <span style={{ marginInlineStart: 'auto', fontSize: 10.5, color: 'var(--note-ink-muted)' }}>
           {t('sessionNote.hint')}
         </span>
       </div>
+      {askError && (
+        <div data-note-ask-error="" role="status" style={{ fontSize: 11, color: 'var(--note-ink)', marginBlockStart: 4 }}>
+          {askError}
+        </div>
+      )}
     </div>
   );
 }

@@ -835,6 +835,14 @@ const api = {
     /** Write it; empty text deletes it. Resolves what main now holds. */
     setNote: (cardId: string, text: string): Promise<SessionNote | null> =>
       ipcRenderer.invoke('sessions:setNote', cardId, text),
+    /**
+     * "Let Claude write it" (#1544): send the live session the prompt that asks
+     * its AI to set the note. The window asks first when the session is busy.
+     */
+    askForNote: (
+      liveId: string
+    ): Promise<{ ok: true } | { ok: false; reason: 'no-session' | 'no-tools' | 'not-sent' }> =>
+      ipcRenderer.invoke('sessions:askForNote', liveId),
     /** A card's note changed, by this window or anyone else. */
     onNoteChanged: (cb: (c: SessionNoteChange) => void): (() => void) => {
       const h = (_e: unknown, c: SessionNoteChange) => cb(c);

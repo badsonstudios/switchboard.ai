@@ -13,7 +13,7 @@ import net from 'net';
 import os from 'os';
 import path from 'path';
 import { BusHost } from './host-channel';
-import { stubBlackboard, stubDelivery, stubQueries } from './fixtures/queries';
+import { stubBlackboard, stubDelivery, stubNotes, stubQueries } from './fixtures/queries';
 import { busEndpointFor, busPipePath, busTokenPath, BUS_TOKEN_FILE } from './bus-paths';
 import type { Logger } from '../log/logger';
 import type { SessionSummary } from '../sessions/queries';
@@ -55,6 +55,7 @@ beforeEach(() => {
   stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-bus-attach-'));
   log = fakeLog();
   host = new BusHost({
+      notes: stubNotes(),
     stateDir,
     log,
     queries: stubQueries({ listSessions: () => ({ ok: true, value: SESSIONS }) }),
@@ -275,6 +276,7 @@ describe('BusHost.attachSession (P2-E11-03)', () => {
     // build artifact into a session that will not start at all — the exact
     // inversion of P6.
     const noServer = new BusHost({
+      notes: stubNotes(),
       stateDir,
       log,
       queries: stubQueries({ listSessions: () => ({ ok: true, value: [] }) }),

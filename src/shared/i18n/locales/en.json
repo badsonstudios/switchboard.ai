@@ -369,6 +369,17 @@
     "delete": "Delete this note",
     "deleteIcon": "×",
     "chipLabel": "Session note: {note}",
+    "ask": "✦ Let {ai} write it",
+    "askUnnamed": "✦ Let the AI write it",
+    "askHint": "Asks this session's AI to set the note to what it is waiting on. It sends the session one short prompt, which shows in the conversation.",
+    "askBusy": "{ai} is busy in this session right now. Send the request anyway? It will wait until the current step finishes.",
+    "askSent": "Asked. The note will appear here when it arrives, replacing what you typed unless you save it first.",
+    "askBusyUnnamed": "This session's AI is busy right now. Send the request anyway? It will wait until the current step finishes.",
+    "askFailed": {
+      "no-session": "This session is not running, so there is nobody to ask.",
+      "no-tools": "This session's AI cannot write notes. Type the note yourself.",
+      "not-sent": "The request could not be sent to this session. Type the note yourself."
+    },
     "railHint": "Note: {note}",
     "railHintAi": "Note from the AI: {note}",
     "byYou": "You",
