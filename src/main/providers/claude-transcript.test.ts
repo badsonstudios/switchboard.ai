@@ -335,6 +335,23 @@ describe('local slash-command output (#156)', () => {
     expect(deriveIntents({ type: 'system', subtype: 'local_command' })).toEqual([]);
   });
 
+  // #1440: `/compact`'s own "Compacted" line is NOT one of these. A real
+  // transcript (CLI 2.1.288, read 2026-11-08) stores it as a `user` line whose
+  // content is the wrapper, not as `system:local_command`, and a `user` line
+  // that is `<local-command-…>` plumbing is no block at all. If a later CLI
+  // moved it to `system:local_command`, it would become an assistant block
+  // reading "Compacted", and a dispatched reviewer that ended on `/compact`
+  // would send that word back as part of its report: this test fails first.
+  it("/compact's Compacted line, as the transcript really stores it, is no block (#1440)", () => {
+    const measured = {
+      type: 'user',
+      version: '2.1.288',
+      timestamp: '2026-11-08T10:00:00.000Z',
+      message: { role: 'user', content: '<local-command-stdout>Compacted </local-command-stdout>' },
+    };
+    expect(deriveIntents(measured)).toEqual([]);
+  });
+
   it('other system subtypes are still ignored', () => {
     expect(deriveIntents({ type: 'system', subtype: 'init', content: 'x' })).toEqual([]);
   });

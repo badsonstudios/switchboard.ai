@@ -143,6 +143,12 @@ export class Notifier {
        *  Without it, `isFocused()` — which a refused `focus()` on that window
        *  leaves saying true, silencing the flash for every event after it */
       isFront?: (win: BrowserWindow) => boolean;
+      /** `SWITCHBOARD_MUTE_AUDIO` (#1536): the e2e suite's mute switch. The
+       *  renderer sink and the cue fallback honoured it; this beep did not, so
+       *  every local run that raised an attention event went "ding". Muted
+       *  makes no noise and changes nothing else: the flash and the rules
+       *  still run, exactly as for a real user. */
+      muted?: boolean;
     }
   ) {}
 
@@ -180,7 +186,7 @@ export class Notifier {
       //
       // #1267: the same for the needs-you cue, decided per EVENT rather than
       // per pref, because that rule only matches some of them.
-      if (!prefs.sounds && !replacesBeep) shell.beep();
+      if (!prefs.sounds && !replacesBeep && !this.opts.muted) shell.beep();
       const win = this.opts.getWindow();
       const inFront = (w: BrowserWindow) => (this.opts.isFront ? this.opts.isFront(w) : w.isFocused());
       // until the person arrives, and never twice over — the one flash every

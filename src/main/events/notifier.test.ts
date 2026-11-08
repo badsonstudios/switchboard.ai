@@ -137,6 +137,25 @@ describe('the beep steps aside for per-session cues', () => {
     expect(beeps.count).toBe(1);
   });
 
+  it('does NOT beep when the e2e mute switch is on, and still runs the rules (#1536)', () => {
+    beeps.count = 0;
+    const handled: FeedEvent[] = [];
+    const n = new Notifier({
+      getWindow: () => null,
+      getPrefs: () => ({ enabled: true }),
+      muted: true,
+      rules: {
+        fire: (e) => {
+          handled.push(e);
+          return { replacesBeep: false };
+        },
+      },
+    });
+    n.handle(ev('done'));
+    expect(beeps.count).toBe(0);
+    expect(handled).toHaveLength(1);
+  });
+
   it('does NOT beep while cues are on', () => {
     beeps.count = 0;
     const { n, handled } = notifier({ enabled: true, sounds: true });
