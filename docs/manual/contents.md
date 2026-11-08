@@ -19,8 +19,8 @@ page at a time.
 
 | Page | What it covers |
 |---|---|
-| [Sessions](02-sessions.md) | Creating, resuming, opening a conversation you had before, suspending, closing sessions, and how sessions read each other's work and send each other messages |
-| [The session view](03-session-view.md) | Reading the conversation, the prompt box, detail levels |
+| [Sessions](02-sessions.md) | Creating, naming, resuming, opening a conversation you had before, what each status word means and dismissing 'waiting', group headings and group styles, suspending, closing sessions, and how sessions read each other's work and send each other messages |
+| [The session view](03-session-view.md) | Reading the conversation, folded steps, pictures and mock-ups in replies, Prompt History, sticky notes and waiting notes, the prompt box, detail levels, cost and the context meter |
 | [Approvals & autonomy](04-approvals-and-autonomy.md) | Allowing/denying tool use, answering Claude's questions, the four autonomy modes |
 | [Slash commands](05-slash-commands.md) | `/clear`, `/compact`, autocomplete, the Clear and Compact buttons, the ⋯ menu |
 | [Direct mode](12-direct-mode.md) | How sessions talk to Claude: fixes the `.claude` double-prompt, costs you the terminal |
@@ -43,10 +43,10 @@ page at a time.
 
 | Page | What it covers |
 |---|---|
-| [Organizing your workspace](07-workspace.md) | The Sessions list (down the left or across the top), groups, pop-out windows, layout, arranging cards with one click |
+| [Organizing your workspace](07-workspace.md) | The Sessions list (down the left or across the top), groups, pop-out windows, layout, arranging cards with one click, the tab's right-click menu, bringing the window to the front |
 | [Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette |
-| [Notifications & events](09-notifications.md) | Sounds, the Events drawer, who needs you, when you get told what |
-| [Settings](10-settings.md) | The Settings window (`Ctrl+,`), the chips that stayed on the title bar, and why |
+| [Notifications & events](09-notifications.md) | Sounds, the Events drawer, who needs you, the announcement voice, when you get told what |
+| [Settings](10-settings.md) | The Settings window (`Ctrl+,`) and what is on each of its seven tabs, the chips that stayed on the title bar, and why |
 | [Settings → AIs](24-ais.md) | Which AI new sessions start on, the AIs found on this computer and whether they are signed in, Log in, installing the ones not found, and adding another AI |
 | [MCP servers](17-mcp-servers.md) | `/mcp`: what tools a session is wired to, which scope each comes from, adding and removing them, and why one is waiting on you |
 

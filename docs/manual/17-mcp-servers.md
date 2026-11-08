@@ -99,6 +99,10 @@ broken. You're seeing what's on disk rather than what the session has.
 | **turned off** | Switched off for this project — by you with **Turn off**, or by declining a shared server |
 | **status unknown** | We haven't heard back yet, or couldn't tell |
 
+A server with a long name, such as `plugin:atlassian:atlassian`, has its name
+cut short with "…" so the state beside it stays readable. Hover over the name
+to see it in full.
+
 **Seeing everything say "connecting…" right after you start a session is
 expected.** Servers connect a few seconds after the session comes up, and the
 panel re-checks on its own until they settle — you don't need to close and

@@ -40,18 +40,18 @@ anywhere else.
 |---|---|---|
 | [00 — Day one](00-day-one.md) | **Start here if you have never seen the app.** Install, open a project, start a session, answer approvals, review and commit — one page, with links to the rest | draft |
 | [01 — Getting started](01-getting-started.md) | Installing, first launch, opening your first session | draft |
-| [02 — Sessions](02-sessions.md) | Creating, resuming, opening a conversation you had before, suspending, closing sessions, and how sessions read each other's work and send each other messages | draft |
-| [03 — The session view](03-session-view.md) | Reading the conversation, the prompt box, detail levels | draft |
+| [02 — Sessions](02-sessions.md) | Creating, naming, resuming, opening a conversation you had before, what each status word means and dismissing 'waiting', group headings and group styles, suspending, closing sessions, and how sessions read each other's work and send each other messages | draft |
+| [03 — The session view](03-session-view.md) | Reading the conversation, folded steps, pictures and mock-ups in replies, Prompt History, sticky notes and waiting notes, the prompt box, detail levels, cost and the context meter | draft |
 | [04 — Approvals & autonomy](04-approvals-and-autonomy.md) | Allowing/denying tool use, answering Claude's questions, the four autonomy modes | draft |
 | [05 — Slash commands](05-slash-commands.md) | `/clear`, `/compact`, autocomplete, the Clear and Compact buttons, the ⋯ menu | draft |
 | [06 — Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette | draft |
-| [07 — Organizing your workspace](07-workspace.md) | The Sessions list (down the left or across the top), groups, pop-out windows, layout, arranging cards with one click | draft |
+| [07 — Organizing your workspace](07-workspace.md) | The Sessions list (down the left or across the top), groups, pop-out windows, layout, arranging cards with one click, the tab's right-click menu, bringing the window to the front | draft |
 | [08 — Changes & git](08-changes-and-git.md) | The Changes tab: the four groups, name-first rows, per-file line counts, the branch and push/pull line, filtering, giving a diff its own panel or window, syntax colouring | draft |
-| [09 — Notifications & events](09-notifications.md) | Sounds, the Events drawer, who needs you, when you get told what | draft |
-| [10 — Settings](10-settings.md) | The Settings window (`Ctrl+,`), the chips that stayed on the title bar, and why | current |
+| [09 — Notifications & events](09-notifications.md) | Sounds, the Events drawer, who needs you, the announcement voice, when you get told what | draft |
+| [10 — Settings](10-settings.md) | The Settings window (`Ctrl+,`) and what is on each of its seven tabs, the chips that stayed on the title bar, and why | current |
 | [11 — Troubleshooting](11-troubleshooting.md) | The Help menu; when a session won't start, hangs, or vanishes; sending a problem report; asking for a feature | draft |
 | [12 — Direct mode](12-direct-mode.md) | How sessions talk to Claude: fixes the `.claude` double-prompt, costs you the terminal | draft |
-| [13 — Updates](13-updates.md) | When it checks for a new version, what the release box offers, what Skip means | draft |
+| [13 — Updates](13-updates.md) | When it checks for a new version, what the release box offers, what Skip means, beta releases | draft |
 | [14 — Is it me or is it them?](14-provider-status.md) | The status dot, provider incidents, and the "several sessions just hit errors" strip | draft |
 | [15 — Reading files in the app](15-document-viewer.md) | Opening a file, rendered Markdown, source view, find, reading this manual in the app, what won't be shown | draft |
 | [16 — Finding something](16-find.md) | `Ctrl+F` over a session: the find bar, the results list, what it searches that you can't see | draft |

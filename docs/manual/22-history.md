@@ -5,7 +5,7 @@
 > Status: draft — the tab works and this page describes what it does. The
 > Pull/Push buttons on the incoming and outgoing rows are still to come.
 >
-> TODO: screenshots · right-click operations on a commit.
+> TODO: right-click operations on a commit.
 
 ## What it is
 

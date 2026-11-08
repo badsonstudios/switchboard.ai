@@ -178,21 +178,31 @@ session you have and what each one is doing. It works the same whether you keep
 it down the left or
 [across the top](07-workspace.md#listing-sessions-across-the-top-instead).
 
-Each session is a row, or a pill when the list is across the top, and each one
-carries a mark for what that session is doing right now:
+![A busy workspace: three sessions in the list. One is working, with its ring spinning; one is waiting on an approval, its row edged in orange with the time it has left; one has finished and is waiting for you. The open session shows Claude Code is working above the prompt box](img/busy-session.png)
+
+*Several sessions at work, and the one that needs you stands out.*
+
+Each session is a row, or a pill when the list is across the top. It carries
+the icon of the session's AI, with a ring round it in the colour of what
+the session is doing, and a word after the name:
 
 | You see | It means |
 |---|---|
-| a spinning ring, **working** in blue, and the row or pill marked as busy in the session's own colour | working. How a busy session is marked is your choice: see [How a working session looks](10-settings.md#how-a-working-session-looks) |
-| the words **needs you** in orange, with a **?** or a **!** | it needs you |
-| a tick | done |
-| a dash | idle |
-| an **✕** mark | it crashed |
-| the word **suspended** | suspended |
+| the ring spinning, **working** in blue, and the row or pill marked as busy in the session's own colour | working. How a busy session is marked is your choice: see [How a working session looks](10-settings.md#how-a-working-session-looks) |
+| **approval** in orange, with the time it has left, such as **approval · <5m** | it is waiting for you to allow or refuse something |
+| **question** in yellow | it has asked you a question |
+| **waiting for you** in a softer gold | it finished its turn, and the next prompt is yours |
+| no word, and a grey ring | calm: nothing is happening |
+| **ended** in grey | its AI closed, without crashing |
+| **crashed** | it crashed |
+| **suspended** | kept, but not running |
+
+The full list, and how to dismiss a **waiting** you have seen, is in
+[Sessions › Status at a glance](02-sessions.md#status-at-a-glance).
 
 Yellow and orange are used for nothing else in the app, so anything in those
-colours is a session waiting for you; and the words **needs you** say it without
-the colour at all. A session that has simply **finished** is not one of them:
+colours is a session waiting for you; and the word says it without the colour
+at all. A session that has simply **finished** is not one of them:
 it has its own, quieter count, **"N finished"**, and it clears when you look at
 it (see [Which ones need you, and which have
 finished](02-sessions.md#which-ones-need-you-and-which-have-finished)). The

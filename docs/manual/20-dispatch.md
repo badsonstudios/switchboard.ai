@@ -16,8 +16,6 @@ yourself. You pick a role, say in one line what the work was meant to do, and
 switchboard starts a new session that has been handed precisely that and nothing
 else.
 
-<!-- screenshot: the Dispatch dialog with Code Reviewer selected -->
-
 ## Sending work off
 
 ![The Dispatch box: three roles to choose from, the task the new session will be told, and the Dispatch button](img/dispatch.png)
@@ -223,7 +221,9 @@ messages waiting as it can hold — the row tells you why and **keeps the button
 A click that landed badly never costs you the findings.
 
 The report is the reviewer's last reply — the findings themselves, not a summary
-switchboard wrote. If it's very long it's shortened, and the row says so.
+switchboard wrote. If it's very long it's shortened, and the row says so. If
+Claude Code compacted the reviewer's conversation in the middle of that last
+reply, you still get the whole reply, both halves of it, as one report.
 
 **The row does not count the findings.** A review is prose, and different runs
 number their points in different ways — or don't number them at all — so any

@@ -22,13 +22,13 @@ On a Mac, use **⌘** everywhere this page says **Ctrl**.
    view jumps to the first match.
 4. **`Enter`** goes to the next match, **`Shift+Enter`** to the previous one.
    It wraps around at either end.
-5. The count next to the box tells you where you are — **`3 of 14`**.
+5. The count next to the box tells you where you are — **`3 of 14`**. When
+   there is nothing to step through, the previous and next buttons and the
+   results list are greyed out.
 6. **`Esc`** closes the bar and puts your cursor back where it was.
 
 The box has two toggles beside it: **`Aa`** matches case, and **`ab|`** matches
 whole words only. Both stay on until you turn them off.
-
-<!-- screenshot: the find bar open over a session, showing "3 of 14" -->
 
 ## It searches things you can't see
 
