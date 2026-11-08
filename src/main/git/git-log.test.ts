@@ -23,6 +23,7 @@ import { EMPTY_TREE } from './repo-config-guard';
 // by this test only — the component cannot import a main-process module, so the
 // test is the one place the two can be compared at all.
 import { HISTORY_PAGE, MAX_HISTORY } from '../../renderer/src/lib/git-log-dto';
+import { growth, medianMs } from '../../test-growth';
 
 /**
  * Build one record the way git frames it.
@@ -243,11 +244,19 @@ describe('parseLog — the framing', () => {
     // command budget could not save it. A commit message is a thing a session
     // writes, and "our breakage never blocks a session" is a hard constraint.
     const body = `subject\n\nbody${' '.repeat(240_000)}\n`;
-    const started = Date.now();
     const [c] = parseLog(record({ id: SHA_A, parents: SHA_B, body }));
-    expect(Date.now() - started).toBeLessThan(1_000);
     expect(c.message).toBe('subject\n\nbody');
-  });
+    // HOW IT GROWS, not a stopwatch (#651: a 1 s budget is spent by machine
+    // load alone). Eight times the whitespace costs about eight times as much
+    // when the trim is linear and sixty-four times when it is quadratic; the
+    // medians of a few runs keep one slow moment from deciding it. A quadratic
+    // trim would also blow this test's timeout long before the ratio is read.
+    const cost = (n: number): number => {
+      const b = `subject\n\nbody${' '.repeat(n)}\n`;
+      return medianMs(() => parseLog(record({ id: SHA_A, parents: SHA_B, body: b })));
+    };
+    expect(growth(cost(30_000), cost(240_000))).toBeLessThan(24);
+  }, 60_000);
 
   it('a sha-shaped-but-not-hex id is refused', () => {
     const out = record({ id: 'z'.repeat(40), parents: SHA_B });

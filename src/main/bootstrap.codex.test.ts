@@ -24,7 +24,12 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe('registerBuiltinContributions', () => {
+// Each case cold-imports the whole bootstrap graph (`vi.resetModules()`), up to
+// three times. ~0.8 s alone; past the 5 s default with three workers beside it
+// (#651, #1370), so it says what it needs.
+const COLD_IMPORT_MS = 30_000;
+
+describe('registerBuiltinContributions', { timeout: COLD_IMPORT_MS }, () => {
   it('with no npx on PATH: Claude alone, exactly as before Codex existed', async () => {
     const empty = tempDir('sb-boot-nonpx-');
     expect(await registeredIds({ PATH: empty })).toEqual(['claude-code']);

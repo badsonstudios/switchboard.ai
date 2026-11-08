@@ -836,9 +836,9 @@ describe('shutdownAll: what app quit waits on (#719)', () => {
   });
 
   it('resolves at once with nothing running', async () => {
-    const t0 = Date.now();
-    await svc.shutdownAll(5_000);
-    expect(Date.now() - t0).toBeLessThan(500);
+    // A ten-minute grace: waiting any of it would time the test out, so
+    // resolving at all is the assertion. No stopwatch for load to spend (#651).
+    await svc.shutdownAll(600_000);
   });
 
   it('lets CLIs that honour EOF end themselves, without waiting out the grace', async () => {
@@ -846,10 +846,9 @@ describe('shutdownAll: what app quit waits on (#719)', () => {
     const b = run(exitsOnEof, 'b');
     await until(() => a.pid > 0 && b.pid > 0);
 
-    const t0 = Date.now();
-    await svc.shutdownAll(10_000);
+    // a ten-minute grace, for the reason the case above gives (#651)
+    await svc.shutdownAll(600_000);
 
-    expect(Date.now() - t0).toBeLessThan(5_000);
     expect(a.exitCode).toBe(0); // their own exit, not a kill
     expect(b.exitCode).toBe(0);
   }, 20_000);
@@ -863,8 +862,9 @@ describe('shutdownAll: what app quit waits on (#719)', () => {
 
     await svc.shutdownAll(300);
 
-    await until(() => s.exitCode !== null, 2_000);
-  });
+    // the kill is carried out; the exit's arrival is the OS's (#651)
+    await until(() => s.exitCode !== null, 10_000);
+  }, 20_000);
 
   it('also finishes a session removed a moment before quit, still inside its grace', async () => {
     // A 30 s kill grace: left to its own timer this child would outlive the
@@ -876,8 +876,8 @@ describe('shutdownAll: what app quit waits on (#719)', () => {
 
     await svc.shutdownAll(300);
 
-    await until(() => s.exitCode !== null, 2_000);
-  });
+    await until(() => s.exitCode !== null, 10_000);
+  }, 20_000);
 
   // Windows: the survivor sits behind a cmd.exe launcher, as a real CLI does,
   // and by the time shutdownAll resolves, the tree kill has been CARRIED OUT,
