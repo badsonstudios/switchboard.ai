@@ -4544,9 +4544,10 @@ specified BEFORE the first listener ships — not hardening-later items.
   read path to the renderer** (the IPC surface writes credentials and answers
   with booleans — there is no `getSecret`, so a compromised renderer cannot
   exfiltrate one), and **no value in any log line**. `update/token.ts` reserved
-  a slot for this store before it existed; the slot is still empty because
-  nothing yet asks the user to paste a GitHub token in, but the store it named
-  is now real.
+  a slot for this store before it existed. #815 filled it
+  (`credentialStoreTokenFrom`), and #856 wired it to every consumer: the update
+  checker, the installer and Report a problem all read the store first. (This
+  sentence said the slot was still empty until #1525.)
 - **Mobile companion WebSocket (Phase 4)**: the near-isomorphic precedent is
   Cline's local Kanban WebSocket (CVE-2026-44211, CVSS 9.7): no origin check,
   no auth token → any webpage the developer visited received a full workspace

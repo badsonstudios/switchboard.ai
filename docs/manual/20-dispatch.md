@@ -121,7 +121,7 @@ app itself.
 You can also do this from the command palette (`Ctrl+K`): type *dispatch* and
 you'll see one entry per role. They open the same box with that role already
 chosen. There's no keyboard shortcut for it on purpose — dispatching starts a
-session and spends part of your Claude usage, so it shouldn't be one mistyped
+session and spends part of that AI's usage, so it shouldn't be one mistyped
 chord away.
 
 ## Read the task line before you send it
