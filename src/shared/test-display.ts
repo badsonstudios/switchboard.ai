@@ -225,6 +225,64 @@ export function pickTestDisplay(
   return r.kind === 'display' ? { primary: r.primary, target: r.target } : null;
 }
 
+/**
+ * The same rectangle, on another display: shifted by the two work areas'
+ * offset, then clamped so it still fits if the target screen is smaller.
+ * Shared since #1353, because main now places the first window with it and the
+ * fixture still uses it for the fallback move; one definition, so the two
+ * cannot place a window differently.
+ */
+export function translateToDisplay(bounds: Box, from: Box, to: Box): Box {
+  const width = Math.min(bounds.width, to.width);
+  const height = Math.min(bounds.height, to.height);
+  const clamp = (v: number, lo: number, hi: number): number =>
+    Math.round(Math.min(Math.max(v, lo), hi));
+  return {
+    x: clamp(bounds.x - from.x + to.x, to.x, to.x + to.width - width),
+    y: clamp(bounds.y - from.y + to.y, to.y, to.y + to.height - height),
+    width,
+    height,
+  };
+}
+
+/**
+ * Where the app's FIRST window should be created under the e2e suite's
+ * test-screen setting (#1353): `null` for "leave it where it was going".
+ *
+ * The window used to be created on its normal spot (the primary) and moved by
+ * the fixture afterwards, so every launch flashed onto the developer's working
+ * screen first, and a move that lost its reply left it there. Main now asks
+ * this before the window exists. `bounds` is where it would have gone; with no
+ * saved position (`x`/`y` absent) Electron would centre it on the primary, so
+ * that centred box is the starting point. `matching` is the display the box
+ * is on now (main's `screen.getDisplayMatching`), and the box is moved from
+ * there, which keeps a relaunch on the test screen where it was.
+ */
+export function placeOnTestDisplay(
+  bounds: { width: number; height: number; x?: number; y?: number },
+  displays: DisplayInfo[],
+  primaryId: number,
+  monitor: string | undefined,
+  matching: (box: Box) => number
+): Box | null {
+  const picked = pickTestDisplay(displays, primaryId, monitor);
+  if (!picked) return null;
+  const p = picked.primary.workArea;
+  const box: Box =
+    bounds.x === undefined || bounds.y === undefined
+      ? {
+          x: Math.round(p.x + (p.width - bounds.width) / 2),
+          y: Math.round(p.y + (p.height - bounds.height) / 2),
+          width: bounds.width,
+          height: bounds.height,
+        }
+      : { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+  const onId = matching(box);
+  if (onId === picked.target.id) return null;
+  const from = displays.find((d) => d.id === onId)?.workArea ?? p;
+  return translateToDisplay(box, from, picked.target.workArea);
+}
+
 // ── What Settings shows and writes ──────────────────────────────────────────
 
 /** One display as main reads it off `screen.getAllDisplays()`. */

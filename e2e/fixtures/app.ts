@@ -19,6 +19,7 @@ import {
   E2E_SETTINGS_FILE,
   noActivateOn,
   pickTestDisplay,
+  translateToDisplay,
   readSettingsKey,
   type Box,
   type Point,
@@ -412,29 +413,22 @@ function applyActivationMode(env: Record<string, string>): void {
 }
 
 /**
- * The same rectangle, on another display: shifted by the two work areas'
- * offset, then clamped so it still fits if the target screen is smaller.
- *
- * Shift rather than centre, so a window that was centred stays centred and the
- * relative geometry a spec asserts is untouched — with one exception worth
- * stating, because it is a real behaviour change and not a rounding one: a
- * SMALLER target display shrinks the window to fit, and a responsive assertion
- * measured against a width (document-peek's cramped/roomy thresholds are the
- * ones in this suite) can legitimately answer differently there than it does on
- * the primary. Fitting beats hanging off the edge, but it is not free.
+ * Hand the test-screen setting to the app (#1353), so main creates its first
+ * window ALREADY on that screen and it never shows on the developer's working
+ * one, not even for a frame. The app cannot read `~/.switchboard-e2e.env`
+ * itself: its HOME is the isolated profile. Absent when off, so the CI path's
+ * environment is the one it always was. The fixture's own move still runs
+ * after launch, and finds nothing to do.
  */
-export function translateToDisplay(bounds: Box, from: Box, to: Box): Box {
-  const width = Math.min(bounds.width, to.width);
-  const height = Math.min(bounds.height, to.height);
-  const clamp = (v: number, lo: number, hi: number): number =>
-    Math.round(Math.min(Math.max(v, lo), hi));
-  return {
-    x: clamp(bounds.x - from.x + to.x, to.x, to.x + to.width - width),
-    y: clamp(bounds.y - from.y + to.y, to.y, to.y + to.height - height),
-    width,
-    height,
-  };
+function applyMonitorSetting(env: Record<string, string>): void {
+  const monitor = monitorSetting()?.trim();
+  if (monitor) env[E2E_MONITOR_ENV] = monitor;
+  else delete env[E2E_MONITOR_ENV];
 }
+
+// `translateToDisplay` lives in `src/shared/test-display.ts` since #1353: main
+// places the first window with it too. Re-exported for the specs that use it.
+export { translateToDisplay };
 
 /**
  * Run an IDEMPOTENT main-process call, re-issuing it if Playwright loses the
@@ -742,6 +736,13 @@ async function moveToTestDisplay(app: ElectronApplication): Promise<Point> {
     const from = info.displays.find((d) => d.id === info.onId)?.workArea;
     if (!from) return NO_OFFSET; // same reasoning as the branch above
     if (info.onId !== picked.target.id) {
+      // Since #1353 main creates the window ON the test screen, so reaching
+      // here means it did not: said on EVERY launch, not once per worker, so
+      // "it showed on my main screen again" is one grep of the run's output.
+      console.warn(
+        `[fixture] ${E2E_MONITOR_ENV}=${monitor}: the window was born on display ${String(info.onId)}, ` +
+          `not the test screen ${picked.target.id}; moving it now`
+      );
       const box = translateToDisplay(info.bounds, from, picked.target.workArea);
       await retryLostReply(() =>
         app.evaluate(
@@ -852,6 +853,7 @@ export async function launchSecondInstance(
   env.SWITCHBOARD_MUTE_TOASTS = '1'; // the same as `launchApp` (#1338)
   env.SWITCHBOARD_FAKE_PROVIDER = '1';
   applyActivationMode(env); // the same as `launchApp`, so the env matches (#1332)
+  applyMonitorSetting(env); // and the same screen (#1353)
   applyIsolatedPaths(env, home);
 
   // `--no-sandbox` on Linux, because that is what every OTHER app in this suite
@@ -1051,6 +1053,7 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     env.SWITCHBOARD_FAKE_PROVIDER = '1';
   }
   applyActivationMode(env);
+  applyMonitorSetting(env); // born on the test screen (#1353)
   applyIsolatedPaths(env, home);
   if (opts.seedFolder) env.SWITCHBOARD_SEED_SESSION = opts.seedFolder;
   if (opts.seedDocument) env.SWITCHBOARD_SEED_DOCUMENT = opts.seedDocument;

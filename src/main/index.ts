@@ -13,6 +13,7 @@ import {
   session,
   shell,
 } from 'electron';
+import { E2E_MONITOR_ENV, placeOnTestDisplay } from '../shared/test-display';
 import path from 'path';
 import fs from 'fs';
 import {
@@ -667,6 +668,32 @@ function scheduleForcedExit(): void {
   timer.unref?.();
 }
 
+/**
+ * The e2e suite's test screen (#1353): the first window is CREATED there, so it
+ * never appears on the developer's working screen first. The fixture hands the
+ * setting over as `SWITCHBOARD_E2E_MONITOR` (the app cannot read the per-machine
+ * file; its HOME is the isolated profile). NON-PACKAGED ONLY, the rule every
+ * e2e switch follows: a stray variable must never move the shipped app's window.
+ * Fail-open: any trouble leaves the options as they were.
+ */
+function bornOnTestDisplay<O extends { width: number; height: number; x?: number; y?: number }>(opts: O): O {
+  const monitor = process.env[E2E_MONITOR_ENV];
+  if (app.isPackaged || !monitor?.trim()) return opts;
+  try {
+    const box = placeOnTestDisplay(
+      opts,
+      screen.getAllDisplays().map((d) => ({ id: d.id, workArea: d.workArea })),
+      screen.getPrimaryDisplay().id,
+      monitor,
+      (b) => screen.getDisplayMatching(b).id
+    );
+    return box ? { ...opts, ...box } : opts;
+  } catch (err) {
+    log.app.warn('could not place the window on the test screen', { error: errorText(err) });
+    return opts;
+  }
+}
+
 function createWindow(): BrowserWindow {
   // A window can close WITHOUT the app quitting (macOS keeps running; the dock
   // icon reopens one). Reset the close-time state or the second window would
@@ -678,7 +705,7 @@ function createWindow(): BrowserWindow {
   snapshotPopoutBoxes();
   const state: WindowState = workspace.restoreWindow(workAreas());
   const win = new BrowserWindow({
-    ...windowOptionsFrom(state),
+    ...bornOnTestDisplay(windowOptionsFrom(state)),
     minWidth: 800,
     minHeight: 600,
     show: false,
