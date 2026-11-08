@@ -129,6 +129,11 @@ stops if Claude Code takes the request back itself (it does that when its turn
 is interrupted): the bar closes on its own and the session no longer counts as
 needing you.
 
+**A session that asks for two things at once keeps saying so until both are
+answered.** Answering the first does not make the card say *working* while the
+second is still waiting; it goes on showing **approval** until you have
+answered the last one.
+
 **You can also press Stop (■) while a bar is up.** It sits beside the send
 button, as it does while Claude is working. Pressing it interrupts the turn:
 Claude Code takes the request back, the bar (or the question) closes, and the
@@ -142,7 +147,10 @@ main reply has finished. That one is genuinely waiting, and it is handled like
 any other: it waits for your answer, and an approval is still declined for you
 when its five minutes run out. Pressing Stop on it stops the helper, and the
 session goes back to finished (it used to be left saying "working" with nothing
-running).
+running). **Deny**, or letting it run out, does the same: the session goes back
+to *waiting* (or *calm*). **Allow** lets the helper carry on, so the session
+says *working* until it is done, then *waiting* once Claude Code reports that
+no background work is left.
 
 **If your system is set to reduce motion**, nothing pulses. The row is drawn
 with the outline at its strongest, held, and the outline gets thicker in the

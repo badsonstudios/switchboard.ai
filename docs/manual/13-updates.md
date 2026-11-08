@@ -8,7 +8,6 @@ switchboard.ai can tell you when a newer version has been released, show you
 what changed, and — with one click — download, check and install it. It never
 installs anything without asking.
 
-<!-- screenshot: the "There's a new release" dialog with notes and three buttons -->
 <!-- screenshot: the same dialog mid-download, showing the progress bar and Cancel -->
 
 ## When it checks

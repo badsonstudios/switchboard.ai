@@ -634,7 +634,9 @@ type, it says which session that is: **Message Switchboard.ai - for tickets…**
 A very long name is cut short with an `…`. A screen reader hears the whole
 name, then the keys below.
 
-- **Enter** sends. **Shift+Enter** starts a new line.
+- **Enter** sends. **Shift+Enter** starts a new line. Only a fresh press of
+  Enter sends: holding the key down, or an Enter still held from a button you
+  pressed a moment before, does not.
 - The box grows to fit what you have written — including long text that wraps
   onto several lines by itself, so a pasted paragraph is never half-hidden. It
   stops growing at twelve lines and scrolls inside itself after that, and it

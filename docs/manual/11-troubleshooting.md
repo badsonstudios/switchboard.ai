@@ -422,6 +422,14 @@ monitor that was. If one comes back somewhere else — drifted, or sitting acros
 two monitors — that's a bug worth reporting with your log; it isn't something
 you need to work around.
 
+**The main window disappeared, or moved, after the monitors slept.**
+When the monitors wake, switchboard waits for them and their taskbars to
+settle and then moves the window once. A window whose title bar would be off
+the screen is nudged back within reach, and one left where no screen shows it
+is brought back to the main monitor. If it still goes missing, send a report
+with your log: every minimize, restore, hide, show and move of the main window
+is recorded there, with its position and monitor.
+
 ## Where the logs are
 
 Useful when reporting a problem — they record what each session did, with

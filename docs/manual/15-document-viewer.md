@@ -12,8 +12,6 @@ and squinting at a wall of `**`, `|` and backticks.
 It opens any text file too, with syntax colouring, and it is **read-only** on
 purpose. switchboard.ai is not an editor and is not becoming one.
 
-<!-- screenshot: PROGRESS.md open in the viewer, rendered, with the outline on the left -->
-
 ## Opening a file
 
 ![The Files tab on the left with README.md picked, and the file shown rendered on the right](img/document-viewer.png)

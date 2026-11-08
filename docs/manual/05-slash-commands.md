@@ -21,6 +21,11 @@ Type **`/`** at the start of a line and a list appears:
   runs `/usage`; there's nothing left to complete.
 - **Esc** to dismiss.
 
+Typing another letter always moves the highlight back to the top row, the best
+match for what you have typed so far, even if you had arrowed down the list.
+It moves in the same instant the list changes, so a Tab or Enter pressed
+straight after typing takes the top match, however fast you type.
+
 The list covers Claude Code's built-in commands *and* your own — project
 commands and skills from the folder this session is running in, plus your
 personal ones. Each row is tagged with where it came from: **CLI**,

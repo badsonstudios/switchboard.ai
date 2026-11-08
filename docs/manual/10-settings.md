@@ -26,10 +26,10 @@ It is organised in **seven tabs** along the top:
 
 | Tab | Holds |
 |---|---|
-| **Appearance** | Theme, where the Sessions list goes, how a working session looks, the context meter, task label size, where a session's note sits |
-| **General** | Language, automatic update checks, AI status-page checks |
+| **Appearance** | Theme, where the Sessions list goes, how groups look in it, how a working session looks, the context meter, task label size, where a session's note sits, and waiting notes |
+| **General** | Language, automatic update checks and beta releases, AI status-page checks |
 | **AIs** | Which AI new sessions start on, the AIs found on this computer and their sign-in, adding another AI — see [Settings → AIs](24-ais.md) |
-| **Notifications** | The needs-you sound, quiet hours, phone push & webhooks |
+| **Notifications** | The needs-you sound, the voice that reads announcements out, quiet hours, phone push & webhooks |
 | **Sessions** | What happens to a finished dispatched session |
 | **Diagnostics** | Detailed performance capture, and the file it writes — see [When it feels slow](19-performance.md) |
 | **Advanced** | Fork sessions (experimental), and which screen switchboard's own automated tests use — see [Testing](#testing-which-screen-the-automated-tests-use) |
@@ -255,6 +255,29 @@ session; there is no Save button.
 Whichever you choose, it is plain grey below 60%, blue from 60% and red from
 80%.
 
+## Group style
+
+**Settings ▸ Appearance ▸ Group style.** Nine looks for the groups in the
+Sessions list: **Folder tab** (the default), **Coloured frame**, **Colour
+spine**, **Solid header**, **Tree with guide line**, **Wells and raised
+sessions**, **Two outline colours**, **Heading bar, indented sessions**, and
+**Classic**, the look from before. The list changes the moment you pick. Only
+the Sessions list follows it; the strip across the top and the session windows
+keep their own look. What each one looks like is in
+[Sessions › Which ones need you, and which have finished](02-sessions.md#which-ones-need-you-and-which-have-finished).
+
+## Session notes and waiting notes
+
+**Settings ▸ Appearance ▸ Session notes** chooses where a session's sticky note
+sits: **Above the prompt** (the default), **Under the title bar**, **Corner
+sticky**, or **Chip in the title bar**. Every session moves its note the moment
+you pick.
+
+**Waiting notes**, just under it, is off until you tick it. On, a session's AI
+leaves a short yellow note saying what it needs when it stops because it is
+waiting on you. See
+[The session view › Leaving yourself a note](03-session-view.md#leaving-yourself-a-note).
+
 ## Task label size
 
 *This changes one thing: how big each session's task label is. To make
@@ -279,10 +302,18 @@ that are already open.
 ## What's remembered
 
 Your theme, language, notification setting, auto-label setting, **AI-label
-setting** (on unless you turn it off), **task label size**, autonomy default, what cards do on
-submit (global, per group and per session), what a session may do when it needs
-you (global and per session), layout, groups, sessions, per-session detail
-level, and window position all persist across restarts, stored on your machine.
+setting** (on unless you turn it off), **task label size**, group style, where
+notes sit, what a session may do when it needs you (global
+and per session), layout, groups, sessions, each session's note, per-session
+detail level, and window position all persist across restarts, stored on your
+machine. (There is no mode setting for new sessions any more: every new session
+starts at **ask**. See [Approvals & autonomy](04-approvals-and-autonomy.md#autonomy-modes).)
+
+**A crash cannot wipe it.** Each save is written all the way to the disk before
+it replaces the last one, and the save before it is kept as a backup. If the
+main file is ever unreadable, switchboard opens the backup instead of an empty
+workspace, so at worst you redo your last change. See
+[When your workspace can't be saved](07-workspace.md#when-your-workspace-cant-be-saved).
 
 ## When another session needs you
 
@@ -291,6 +322,14 @@ switchboard, a session you're not in that asks for permission or asks you a
 question plays a sound of its own, and an approval plays it once more with a
 minute left. **Play it** lets you hear it. Full walk-through in
 [Notifications](09-notifications.md#when-another-session-needs-you).
+
+## Announcement voice
+
+**Settings ▸ Notifications ▸ Announcement voice.** The voice that says out loud
+which session needs you, when **🗣 announce** is on. Pick one of the voices
+installed on your computer and press **Preview** to hear it. If it later goes
+missing, the system default speaks instead. Full walk-through in
+[Notifications › Choosing the voice](09-notifications.md#choosing-the-voice).
 
 ## Quiet hours
 

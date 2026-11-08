@@ -16,17 +16,24 @@ this session in*, and *which sessions are waiting on me*.
 
 Each session is one row: a colored bar down its left edge (that stripe is the
 session's identity — the same color follows it onto its card), its name, and
-underneath, whatever it's currently doing. On the right of the row, a **✕** to
-close it and a small indicator of its state:
+underneath, whatever it's currently doing. On the right of the row are a **✕**
+to close it and the icon of the session's AI, with a ring round it in the
+colour of what the session is doing (see
+[Which AI a session is on](02-sessions.md#which-ai-a-session-is-on)):
 
 | You see | It means |
 |---|---|
-| a spinning ring (or bouncing bars), and the whole row marked as busy | working, or still starting up — nothing needed from you. How a busy row is marked is your choice: see [How a working session looks](10-settings.md#how-a-working-session-looks) |
-| **?** | it asked you a question |
-| **!** | it wants permission to do something |
-| **✓** | it finished, and you haven't looked yet |
-| **–** | calm: nothing has run in it yet; or, with the word **ended** beside its name, Claude Code has closed and the session needs a **Restart** |
-| **✕** | it crashed |
+| the ring spinning (or bouncing bars), and the whole row marked as busy | working, or still starting up — nothing needed from you. How a busy row is marked is your choice: see [How a working session looks](10-settings.md#how-a-working-session-looks) |
+| an orange ring and **approval** | it wants permission to do something |
+| a yellow ring and **question** | it asked you a question |
+| a gold ring and **waiting for you** | it finished its turn, and the next prompt is yours |
+| a grey ring and no word | calm: nothing has run in it yet, or you have dismissed its "waiting" |
+| a grey ring and **ended** | its AI has closed, and the session needs a **Restart** |
+| **crashed** | it crashed |
+
+A small mint square on a row means the session has a sticky note; rest the
+pointer on it to read the note. A yellow square means its AI has left a
+[waiting note](03-session-view.md#waiting-notes-claude-says-what-it-needs).
 
 **When a session is waiting on you, the row says so in words.** It tints
 itself in that state's colour, its edge bar takes the same colour, and the word
@@ -66,8 +73,10 @@ where it was. See [Getting a session out of the way](#getting-a-session-out-of-t
 
 Click a row to jump to that session. Double-click to rename it — `Esc`, or Enter
 on an empty box, leaves the name alone. Right-click for
-**Open changes**, **Rename…**, **Pin session**, **Close session** and
-**Move to group**. (What a session does when it needs you is not on this menu
+**Open changes**, **Rename…**, **Pin session**, **Close session**, **Mark as
+seen** (on a session that has finished and you have not looked at yet) and
+**Move to group**. The same menu, with a few more entries, is on the session's
+tab: see [Right-click a tab](#right-click-a-tab). (What a session does when it needs you is not on this menu
 any more; it is on the card's own **⋯** menu. See
 [When a session interrupts you](#when-a-session-interrupts-you).)
 
@@ -147,6 +156,9 @@ always reachable, and the menu never covers the **⋯** you opened it from.
 
 ### Listing sessions across the top instead
 
+![The sessions listed in a strip across the top of the window: groups as boxes with what is inside them, sessions in no group as pills, and the open session below taking the full width](img/sessions-strip.png)
+
+*Settings ▸ Appearance ▸ Sessions list ▸ Across the top.*
 
 The list does not have to live on the left. Next to **▸ commands** in the bar
 along the top of the window there is a two-part button, **◧ left** and
@@ -336,7 +348,10 @@ stays open and the session's row is outlined too.
 ## Groups
 
 Groups are folders for sessions, and they stay put even when empty. Each one is
-a card with its own color and a **colored dot** beside its name.
+a card with its own color and a **colored dot** beside its name. Out of the box
+each group looks like a folder: its name on a tab, and the whole group outlined
+in its colour. **Settings ▸ Appearance ▸ Group style** has eight other looks;
+see [Which ones need you, and which have finished](02-sessions.md#which-ones-need-you-and-which-have-finished).
 
 - **Make one:** click **+ group**.
 - **Rename:** double-click its name. The same rules as a session's name: `Esc`

@@ -67,7 +67,9 @@ newest first.
    requests switchboard itself makes in the background to write each
    session's task label. (Those used to be saved alongside your own
    conversations, and could outnumber them.)
-2. Start typing to narrow the list down. It searches the descriptions.
+2. Start typing to narrow the list down. It searches the descriptions. The
+   highlight jumps to the first match the moment you type, wherever the mouse
+   is resting, so **Enter** straight away opens the top match.
 3. Click the one you want, or move to it with the arrow keys and press Enter.
 
 It opens **in the session you clicked from**. The card stays where it is, under
@@ -454,14 +456,13 @@ it is on the left, on its first line when it is across the top. The counts and
 the highlighted rows always match.
 
 **A group's heading has two lines.** The first is the group's **name**. On a
-group you made, its three buttons sit at the right of that line (the
-presentation setting, **⊕** for a new session in the group, and **✕** to delete
-it). The second line, starting under the name, holds everything else: how many
+group you made, its two buttons sit at the right of that line: **⊕** for a new
+session in the group, and **✕** to delete it. The second line, starting under the name, holds everything else: how many
 sessions are in it, what they are doing, how many are folded away, any messages
 left for them, and the **AUTO** badge on a folder group. The name has the first
 line to itself, so it stays readable however many of those chips there are and
 however narrow you make the list. A name too long for the line ends in "…", and
-hovering it shows it in full. **No group** and the automatic folder groups use
+hovering it shows it in full. **Ungrouped** and the automatic folder groups use
 the same two lines; they just have no buttons.
 
 **Each group's heading says what is inside it**: **"1 approval · 2 waiting"**
