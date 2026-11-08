@@ -2354,7 +2354,9 @@ describe('content cannot NAME one of the app’s own controls (#654)', () => {
 });
 
 describe('there is exactly one markdown pipeline', () => {
-  it('no other production file imports marked or dompurify', () => {
+  // reads every production source file, so its time is the disk's, and a busy
+  // machine took it past the 5 s default once (#651)
+  it('no other production file imports marked or dompurify', { timeout: 30_000 }, () => {
     // §5.30 states the shared renderer as a REQUIREMENT: "The viewer uses the
     // same module and the same sanitizer configuration — stated as a
     // requirement because two pipelines would drift, and the security
