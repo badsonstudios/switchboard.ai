@@ -3,9 +3,20 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS: a batch Dan picked (2026-11-08): #1536, #1440, #1525 + #1323, #671, #1353, #717, #651, #965, in that order
+> # ✅ DONE (all but #717): the batch Dan picked on 2026-11-08: #1536, #1440, #1525 + #1323, #671, #1353, #651, #965 merged and closed; #717 WAITING ON DAN'S PICK (NOT RELEASED)
 >
-> **Dan (2026-11-08)** asked for ten candidates and picked these. The order is mine: smallest first, and the manual audit (#965) last so it covers what the others change. **#1323 decision (Dan, 2026-11-08):** the AI-switch divider gets the two AIs' icons. **How it runs:** one PR per ticket, merged on green CI. Each item's PROGRESS and dogfood close-out rides in the NEXT item's PR, and the last item gets its own close-out PR, so every commit still goes through a PR. **Status:** #1536 in progress (the Notifier's `shell.beep()` ignored `SWITCHBOARD_MUTE_AUDIO`; it now takes `muted`, and the cue fallback checks the mute too).
+> **Dan (2026-11-08)** asked for ten candidates and picked these. The order is mine: smallest first, and the manual audit (#965) last so it covers what the others change. **#1323 decision (Dan, 2026-11-08):** the AI-switch divider gets the two AIs' icons. **How it runs:** one PR per ticket, merged on green CI. Each item's PROGRESS and dogfood close-out rides in the NEXT item's PR, and the last item gets its own close-out PR, so every commit still goes through a PR. **Outcomes, one PR each, merged on green CI:**
+- **#1536** (PR #1578): the Notifier takes `muted`, so local e2e runs no longer beep.
+- **#1440** (PR #1579): verified NOT a bug on CLI 2.1.288. A real transcript stores "Compacted" as a `user` plumbing line, so it is never a block. Pinned by two tests.
+- **#1323 + #1525** (PR #1580): the AI-switch divider shows each AI's icon beside its name. Fixed the stale DESIGN §5.29 sentence and the dispatch manual's "Claude usage".
+- **#671** (PR #1581): typed the bare spies; `SweepPort` uses property signatures.
+- **#1353** (PR #1582): main creates the first window ON the test screen (`placeOnTestDisplay`, non-packaged only), three specs use `onTestDisplay`, and a guard test was added. Hole 4 was already closed in code.
+- **#651** (PR #1583): wall-clock budgets replaced by a scope check, growth ratios (`src/test-growth.ts`) and explicit timeouts. `npm test` passed 3/3 beside an e2e run.
+- **#965** (PR #1584): a subagent audited the manual against 0.8.119–0.8.141 and found 18 rows stale, missing or partial, now fixed. Added the busy-session and sessions-strip pictures, and re-took the core pictures. The group style notes now say Ungrouped. The coverage table is on the issue.
+
+**#717 is WAITING ON DAN:** `mockups/turn-boundary.html` is committed on the local branch `feature/717-turn-boundary` (not pushed), with 0 · Today, A · Band, B · Inverted card and C · A colour of its own. Implement his pick, with the contrast tests in all four themes.
+
+**Found, not filed:** the Events drawer and the push hint still say "needs input / needs permission / Done. / Ready"; everything else moved to approval / question / waiting in 0.8.125. Raise it with Dan.
 
 > # ✅ RELEASED: v0.8.140, 2026-11-07 (PR #1576, tag on `b0aadf28`, release run 42426915240): #1556, all nine group styles
 >
