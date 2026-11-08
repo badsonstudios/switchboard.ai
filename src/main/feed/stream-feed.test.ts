@@ -9,6 +9,7 @@ import { ClaudeFedFeed } from './fixtures/claude-fed-feed';
 import { STREAM_COALESCE_MS } from './buffer';
 import { compactionSummaries } from './compaction-summaries';
 import { FeedBlock } from './blocks';
+import { finalReport } from '../sessions/dispatch-results';
 import {
   LOCAL_COMMAND_TEXT,
   localCommandFrame,
@@ -1298,6 +1299,18 @@ describe('a compaction on the stream (#1026)', () => {
     expect(feed.blocks(SID).filter((b) => b.kind === 'user')).toHaveLength(2);
     // ...and it is not a `/clear`: nothing was wiped
     expect(resets).toEqual([]);
+  });
+
+  // #1440: a dispatched reviewer whose conversation ends on a manual
+  // `/compact`. The CLI's "Compacted" line is a replayed `user` frame of
+  // `<local-command-stdout>` plumbing, so it is no block, the divider is
+  // transparent to the report, and the report is exactly the review.
+  it('a reviewer that ends on /compact reports only its review (#1440)', () => {
+    feed.offer(SID, userFrame('review this change', { isReplay: true }));
+    feed.offer(SID, assistant([{ type: 'text', text: 'The change is correct. One nit.' }]));
+    for (const frame of compaction()) feed.offer(SID, frame);
+    expect(JSON.stringify(feed.blocks(SID))).not.toContain('Compacted');
+    expect(finalReport(feed.blocks(SID)).text).toBe('The change is correct. One nit.');
   });
 
   // #1374: the summary is still no block, but it is kept BESIDE the divider,
