@@ -125,6 +125,8 @@ test.describe('send_to_session — the delivery policy, end to end (#765)', () =
     await box.press('Enter');
     await expect(userTurn(w, MESSAGE)).toBeVisible({ timeout: 20_000 });
     await expect(userTurn(w, MESSAGE)).toContainText(`"${alpha}"`);
+    // the attribution is in the header, folded away until opened (#717)
+    await userTurn(w, MESSAGE).locator('[data-feed-expander]').click();
     await expect(userTurn(w, MESSAGE)).toContainText('The user reviewed it and sent it on to you');
     await expect(heldBlock(w, MESSAGE)).toHaveCount(0);
     // the mark goes with the message it was about
@@ -145,6 +147,8 @@ test.describe('send_to_session — the delivery policy, end to end (#765)', () =
     const receipt = await send(from.liveId, beta, MESSAGE);
     expect(receipt).toMatchObject({ ok: true, value: { outcome: 'submitted' } });
     await expect(userTurn(w, MESSAGE)).toBeVisible({ timeout: 20_000 });
+    // the attribution is in the header, folded away until opened (#717)
+    await userTurn(w, MESSAGE).locator('[data-feed-expander]').click();
     await expect(userTurn(w, MESSAGE)).toContainText('delivered automatically');
     // …and it never passed through the composer.
     await expect(heldBlock(w, MESSAGE)).toHaveCount(0);

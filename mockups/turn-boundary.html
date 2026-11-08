@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Conversation: making your own prompts easy to find (mock-up, #717)</title>
+<style>
+  /* the real nordic (dark) and daylight (light) values from tokens.css */
+  :root, .dark {
+    --bg: #242933; --panel: #2b313d; --panel2: #333a48; --text: #e5e9f0; --muted: #a5aec0;
+    --border: #3b4252; --code: #232833;
+    /* option B's ink-on-light "inverted" card */
+    --inv-bg: #e5e9f0; --inv-ink: #1b2230; --inv-edge: #c3cad6;
+    /* option C's own prompt hue: a slate-indigo that is no status colour and is
+       not one of the session accents; measured 4.5:1+ for the words on it */
+    --prompt-bg: #313a5c; --prompt-edge: #7b8cd6; --prompt-ink: #e8ebff; --prompt-cap: #aab6f0;
+  }
+  .light {
+    --bg: #eef1f5; --panel: #ffffff; --panel2: #f4f6f9; --text: #1b2230; --muted: #5b6470;
+    --border: #dfe3ea; --code: #f1f3f6;
+    --inv-bg: #2b313d; --inv-ink: #f2f4f8; --inv-edge: #1b2230;
+    --prompt-bg: #e6e9fb; --prompt-edge: #4a5bb5; --prompt-ink: #1b2230; --prompt-cap: #3b4aa0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.5 "Segoe UI", system-ui, sans-serif; }
+  .bar { display: flex; gap: 16px; align-items: center; padding: 10px 16px; background: rgba(0,0,0,.25); position: sticky; top: 0; z-index: 5; }
+  .bar h1 { font-size: 14px; margin: 0; }
+  .bar button { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .bar .hint { color: var(--muted); font-size: 12px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 22px; padding: 16px; }
+  .cell { width: 420px; }
+  .cap { margin: 0 0 8px; min-height: 74px; }
+  .cap b { display: block; font-size: 13px; }
+  .cap span { color: var(--muted); font-size: 12px; }
+  .feed { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px 14px; height: 640px; overflow: hidden; }
+  .reply p { margin: 6px 0; }
+  .reply code { background: var(--code); padding: 0 4px; border-radius: 3px; font-size: 12px; }
+  .tool { font: 11.5px ui-monospace, Consolas, monospace; color: var(--muted); border-left: 2px solid var(--border); padding: 2px 8px; margin: 6px 0; }
+
+  /* ---- today (#640): rule + NEW PROMPT, a 7% tint for the prompt ---- */
+  .v0 .div { color: var(--muted); border-top: 2px solid currentColor; margin: 22px 0 8px; padding: 5px 8px 0; font-size: 9px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+  .v0 .prompt { background: color-mix(in srgb, var(--text) 7%, var(--panel2)); border: 1px solid color-mix(in srgb, var(--text) 22%, transparent); border-radius: 10px; padding: 6px 10px; }
+
+  /* ---- A: band across the conversation ---- */
+  .vA .div { display: none; }
+  .vA .turn { margin: 22px -14px 8px; padding: 8px 14px 10px; background: var(--panel2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); box-shadow: inset 4px 0 0 var(--text); }
+  .vA .turn .label { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+  .vA .prompt { font-weight: 600; font-size: 13.5px; }
+
+  /* ---- B: inverted card ---- */
+  .vB .div { color: var(--muted); margin: 22px 0 6px; font-size: 9px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; display: flex; align-items: center; gap: 8px; }
+  .vB .div::after { content: ''; flex: 1; border-top: 1px solid var(--border); }
+  .vB .prompt { background: var(--inv-bg); color: var(--inv-ink); border: 1px solid var(--inv-edge); border-radius: 10px; padding: 8px 12px; font-weight: 500; }
+
+  /* ---- C: a colour of its own ---- */
+  .vC .div { color: var(--prompt-cap); border-top: 2px solid var(--prompt-edge); margin: 22px 0 8px; padding: 5px 8px 0; font-size: 9px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+  .vC .prompt { background: var(--prompt-bg); color: var(--prompt-ink); border: 1px solid var(--prompt-edge); border-left-width: 4px; border-radius: 8px; padding: 7px 11px; }
+</style>
+</head>
+<body class="dark">
+<div class="bar">
+  <h1>Your prompts in the conversation (#717)</h1>
+  <button id="theme">Switch to light theme</button>
+  <span class="hint">The same conversation four ways. Scroll with your eyes: how fast do you find the three prompts you sent?</span>
+</div>
+<div class="grid" id="grid"></div>
+<script>
+  var VARIANTS = [
+    ['v0', '0 · Today', 'A grey rule with NEW PROMPT, and your prompt in a box one shade off the background. Your verdict: "an off shade of the theme", it reads as more conversation.'],
+    ['vA', 'A · Band across the conversation', 'Your prompt becomes a full-width band edge to edge, with a thick bar at its start and the words in bold. No new colour: it is structure, so it can never be mistaken for a session that needs you.'],
+    ['vB', 'B · Inverted card', 'Your prompt is drawn in the opposite of the theme: a light card in the dark themes, a dark one in the light themes. The strongest contrast there is, and still no colour of its own.'],
+    ['vC', 'C · A colour of its own', 'Your prompts get their own colour, a slate indigo that is no status colour and none of the session colours, with a matching rule above. Easiest to spot; it is one more colour in the app.']
+  ];
+  var TURNS = [
+    ['Why does the sessions list flicker when a session finishes?', ['The flicker comes from <code>SessionsRail</code> re-sorting on every status push.', 'I will debounce the sort and keep the scroll position.'], ['Read SessionsRail.tsx', 'Edit rail-order.ts']],
+    ['Good. Now add a test that fails without the debounce.', ['Added <code>rail-order.test.ts</code>: it pushes five statuses in one tick and expects one sort.', 'It fails on main and passes with the change.'], ['Write rail-order.test.ts', 'Bash npm test -- rail-order']],
+    ['Ship it, then look at the history pane next.', ['Committed and pushed; CI is running.', 'The history pane: the search box loses focus when results arrive. Want me to take that next?'], ['Bash git push']]
+  ];
+  function feed(v) {
+    var h = '<div class="feed ' + v + '">';
+    h += '<div class="reply"><p>…the end of an earlier answer, where you were scrolling from.</p></div>';
+    TURNS.forEach(function (t) {
+      h += '<div class="turn"><div class="div">New prompt</div>';
+      if (v === 'vA') h += '<div class="label">You</div>';
+      h += '<div class="prompt">' + t[0] + '</div></div>';
+      h += '<div class="reply">';
+      t[2].forEach(function (x) { h += '<div class="tool">' + x + '</div>'; });
+      t[1].forEach(function (p) { h += '<p>' + p + '</p>'; });
+      h += '</div>';
+    });
+    return h + '</div>';
+  }
+  document.getElementById('grid').innerHTML = VARIANTS.map(function (v) {
+    return '<div class="cell"><p class="cap"><b>' + v[1] + '</b><span>' + v[2] + '</span></p>' + feed(v[0]) + '</div>';
+  }).join('');
+  document.getElementById('theme').addEventListener('click', function (e) {
+    var light = document.body.classList.toggle('light');
+    document.body.classList.toggle('dark', !light);
+    e.target.textContent = light ? 'Switch to dark theme' : 'Switch to light theme';
+  });
+</script>
+</body>
+</html>

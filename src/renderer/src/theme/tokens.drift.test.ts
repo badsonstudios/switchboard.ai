@@ -341,6 +341,29 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s: the session not
   });
 });
 
+// #717: the prompt's landmark colours. The rule above it and the prompt's
+// edge are a non-text object that marks a boundary (1.4.11, 3:1 against the
+// panel beside them); the caption is also the colour of the fold arrow and the
+// "click to expand" hint INSIDE the prompt, so it is measured on the fill too.
+describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s: your prompt (#717)', (id, theme) => {
+  const tokens = resolved(theme);
+  it('its edge and rule clear 3:1 against the panel', () => {
+    expect(ratio(tokens['--prompt-edge'], tokens['--panel']), id).toBeGreaterThanOrEqual(3);
+  });
+  it('its caption and hint clear 4.5:1 on its fill', () => {
+    expect(ratio(tokens['--prompt-cap'], tokens['--prompt-bg']), id).toBeGreaterThanOrEqual(4.5);
+  });
+  // the "N files attached" marker inside a prompt is 9.5px grey on the fill
+  it('the grey text inside it (the attachment marker) clears 4.5:1 on its fill', () => {
+    expect(ratio(tokens['--muted'], tokens['--prompt-bg']), id).toBeGreaterThanOrEqual(4.5);
+  });
+  it('its fill is not a reserved "needs you" hue (#1165)', () => {
+    for (const t of ['--prompt-bg', '--prompt-edge', '--prompt-cap']) {
+      expect(isReservedColor(tokens[t]), `${id} ${t}`).toBe(false);
+    }
+  });
+});
+
 /** the rules that fill OPAQUELY with a color and write on it, and the floor
  *  each owes. Tinted fills are the same promise measured differently — see
  *  "Text on a TINTED fill" below. */
@@ -356,11 +379,14 @@ const FILLED_RULES: Array<[string, number]> = [
   // claim dies is silently: swap the ink back for `--border` and the rule is
   // 1.30:1 on nordic again, which is the defect #640 was filed over rather than
   // a subtler take on it. AA rather than 1.4.11's 3:1 because the caption is
-  // real text (9px), and the rule itself is `currentColor`, so this one number
-  // covers both halves of the divider.
+  // real text (9px). Since #717 the rule is its own colour (`--prompt-edge`),
+  // measured at 3:1 against the panel in "your prompt (#717)" above.
   ['.turn-divider', 4.5],
-  // The subagent run caption (#788). Same ink and the same pair as the turn
-  // divider, and on the list for the same reason plus one of its own: it is the
+  // Your own prompt (#717): the words on the prompt's own fill.
+  ['.feed-prompt', 4.5],
+  // The subagent run caption (#788). The turn divider's old neutral ink (the
+  // divider took the prompt's colour in #717; this stays `--muted`), and on the
+  // list for the turn divider's reason plus one of its own: it is the
   // ONLY place in the app that says which of several concurrent agents is
   // speaking. A caption at 1.3:1 does not degrade to a subtler hint, it
   // degrades to the interleaved-anonymous-run bug this item was filed over.

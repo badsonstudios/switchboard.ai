@@ -167,6 +167,15 @@ export const TOKEN_GROUPS: readonly TokenGroup[] = [
     ],
   },
   {
+    // your own prompt in the conversation (#717): its fill, its edge and rule,
+    // the words on it, and the NEW PROMPT caption. Per theme, because it is a
+    // landmark you scan for and has to stand out from each theme's own feed
+    id: 'prompt',
+    layer: 1,
+    kind: 'color',
+    tokens: ['--prompt-bg', '--prompt-edge', '--prompt-ink', '--prompt-cap'],
+  },
+  {
     // a session's sticky note (#1544): paper, its folded edge, the ink on it,
     // and the blue that marks a note an AI wrote
     id: 'note',

@@ -324,6 +324,21 @@ export function formatSiblingPrompt(
 }
 
 /**
+ * The sender and the words of a prompt `formatSiblingPrompt` built, or `null`
+ * for any other prompt (#717). For DISPLAY only: the conversation folds a
+ * prompt longer than one line to its first line, and a forwarded message's
+ * first line is the bracketed header, so the folded line shows who it is from
+ * and what they said instead. Never a trust decision: a prompt that merely
+ * looks like one is folded the same way, and its full text is one click away.
+ */
+export function siblingMessageParts(prompt: string): { name: string; text: string } | null {
+  const m = /^\[Message ([0-9a-z]+) from another switchboard session, "(.*?)" \(session id [^)]*\)\. [^\n]*\]\n([\s\S]*)\n\[End of message \1 from "\2"\.\]$/.exec(
+    prompt
+  );
+  return m ? { name: m[2], text: m[3] } : null;
+}
+
+/**
  * The marker reference for a delivery — the first stretch of an id the sender
  * was never told (`deliveryId` in the renderer, a fresh UUID on main's
  * automatic path). Eight hex characters: unguessable for this purpose, short

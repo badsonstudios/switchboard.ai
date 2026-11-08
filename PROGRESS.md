@@ -3,7 +3,7 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ DONE (all but #717): the batch Dan picked on 2026-11-08: #1536, #1440, #1525 + #1323, #671, #1353, #651, #965 merged and closed; #717 WAITING ON DAN'S PICK (NOT RELEASED)
+> # ✅ DONE: the batch Dan picked on 2026-11-08: #1536, #1440, #1525 + #1323, #671, #1353, #651, #965 and #717, all merged and closed (NOT RELEASED)
 >
 > **Dan (2026-11-08)** asked for ten candidates and picked these. The order is mine: smallest first, and the manual audit (#965) last so it covers what the others change. **#1323 decision (Dan, 2026-11-08):** the AI-switch divider gets the two AIs' icons. **How it runs:** one PR per ticket, merged on green CI. Each item's PROGRESS and dogfood close-out rides in the NEXT item's PR, and the last item gets its own close-out PR, so every commit still goes through a PR. **Outcomes, one PR each, merged on green CI:**
 - **#1536** (PR #1578): the Notifier takes `muted`, so local e2e runs no longer beep.
@@ -14,7 +14,7 @@
 - **#651** (PR #1583): wall-clock budgets replaced by a scope check, growth ratios (`src/test-growth.ts`) and explicit timeouts. `npm test` passed 3/3 beside an e2e run.
 - **#965** (PR #1584): a subagent audited the manual against 0.8.119–0.8.141 and found 18 rows stale, missing or partial, now fixed. Added the busy-session and sessions-strip pictures, and re-took the core pictures. The group style notes now say Ungrouped. The coverage table is on the issue.
 
-**#717 is WAITING ON DAN:** `mockups/turn-boundary.html` is committed on the local branch `feature/717-turn-boundary` (not pushed), with 0 · Today, A · Band, B · Inverted card and C · A colour of its own. Implement his pick, with the contrast tests in all four themes.
+**#717** (merged with this close-out in its PR): Dan picked C from `mockups/turn-boundary.html`. Your prompts have their own slate-indigo colour (`--prompt-bg/-edge/-ink/-cap`, per theme, measured in the drift test), and so does the NEW PROMPT rule. He also asked for click to expand: a prompt with a line break, or over `ONE_LINE_CHARS` (100) characters, folds to its first line. A forwarded sibling message folds to `From "name": words` (`siblingMessageParts`). **Not width-measured:** the first cut measured the wrap, and the feed's content-visibility skipping (#740) made the fold flip off screen, which failed `feed-skipping.spec.ts` 3 times in 3.
 
 **Found, not filed:** the Events drawer and the push hint still say "needs input / needs permission / Done. / Ready"; everything else moved to approval / question / waiting in 0.8.125. Raise it with Dan.
 

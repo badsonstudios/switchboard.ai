@@ -3,6 +3,7 @@ import { describe, it, expect } from 'vitest';
 import {
   cleanSenderName,
   formatSiblingPrompt,
+  siblingMessageParts,
   hasUnsafeControl,
   isSiblingAck,
   markerRef,
@@ -39,6 +40,29 @@ describe('isSiblingAck', () => {
     [{ placed: false, reason: 'busy' }],
   ])('refuses %j', (v) => {
     expect(isSiblingAck(v)).toBe(false);
+  });
+});
+
+// #717: the conversation folds a forwarded message to its sender and words,
+// so the reader must agree with the formatter, round trip, for every shape.
+describe('siblingMessageParts reads back what formatSiblingPrompt wrote', () => {
+  const from = { id: 'card-7', name: 'PropaneMon' };
+  const NL = String.fromCharCode(10);
+  it.each([
+    ['one line', 'check the regulator'],
+    ['several lines', `first line${NL}second line${NL}${NL}third`],
+    ['a name with a quote in it', 'ok'],
+  ])('%s', (_label, text) => {
+    for (const how of ['user', 'automatic'] as const) {
+      const prompt = formatSiblingPrompt(from, text, how, 'ab12cd34');
+      expect(siblingMessageParts(prompt)).toEqual({ name: 'PropaneMon', text });
+    }
+  });
+
+  it('is null for an ordinary prompt, and for a header with no matching end line', () => {
+    expect(siblingMessageParts('just a question')).toBeNull();
+    const prompt = formatSiblingPrompt(from, 'hi', 'user', 'ab12cd34');
+    expect(siblingMessageParts(prompt.replace('[End of message ab12cd34', '[End of message ffffffff'))).toBeNull();
   });
 });
 

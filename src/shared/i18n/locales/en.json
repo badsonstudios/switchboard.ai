@@ -1292,6 +1292,8 @@
     "workingStrip": "{ai} is working",
     "workingStripUnnamed": "Working",
     "expandHint": "click to expand",
+    "collapseHint": "click to collapse",
+    "forwardedLabel": "From \"{name}\": {text}",
     "collapsedIcon": "▸",
     "expandedIcon": "▾",
     "failed": "failed",
