@@ -27,6 +27,7 @@ import {
   onTestDisplay,
   openEventsDrawer,
   openSettings,
+  openSettingsTab,
   registerTempDir,
   setTheme,
   streamPrompter,
@@ -310,6 +311,20 @@ async function annotate(w: Page, callouts: Callout[]): Promise<void> {
 
 async function clearAnnotations(w: Page): Promise<void> {
   await w.evaluate(() => document.getElementById('manual-shot-annotations')?.remove());
+}
+
+/**
+ * `!hang` is the fake CLI's word for "start a turn and never finish it", the
+ * only way to hold a session WORKING for a picture. It shows as the prompt and
+ * the task label, so it is reworded on screen, the way `tidy` rewords hashes.
+ */
+async function renameHang(w: Page): Promise<void> {
+  await w.evaluate(() => {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (n.nodeValue?.trim() === '!hang') n.nodeValue = n.nodeValue.replace('!hang', 'Rewrite the install guide');
+    }
+  });
 }
 
 /** One picture: annotate, shoot (the whole window, or a region), clean up. */
@@ -596,6 +611,46 @@ test.describe('manual screenshots (#1082)', () => {
       { target: w.locator('.dv-tab', { hasText: 'billing-api' }), label: 'The session you are looking at', side: 'right' },
       { target: composer, label: 'Talk to it here', side: 'top', alignEnd: true },
     ]);
+
+    // ── a busy workspace, and the same sessions listed across the top (#965) ──
+    // A third session, held WORKING by the fake CLI's `!hang` (a turn that is
+    // started and never finished), beside the two that are waiting on you.
+    const docs = plainProject(parent, 'docs-site', '# Docs site\n\nThe public documentation.\n');
+    await a.app.evaluate(({ dialog }, d) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
+    }, docs);
+    await newSession.click();
+    await expect(w.getByText('docs-site').first()).toBeVisible({ timeout: 25_000 });
+    await streamPrompter(a)('docs-site', '!hang');
+    const workingRow = w.locator('nav .rail-row[data-session-status="working"]').first();
+    await expect(workingRow).toBeVisible({ timeout: 30_000 });
+    await w.waitForTimeout(800);
+    await tidy(w, parent);
+    await renameHang(w);
+    await shot(w, 'busy-session', [
+      { target: workingRow, label: 'Working right now', side: 'right' },
+      { target: approvalWord, label: 'Waiting for your approval', side: 'right' },
+      { target: waitingWord, label: 'Finished, waiting for you', side: 'right' },
+    ]);
+
+    // the same three, across the top: Settings ▸ Appearance ▸ sessions on top
+    const settings = await openSettingsTab(w, 'appearance');
+    await settings.locator('[data-sessions-placement="top"]').check();
+    await closeSettings(w);
+    const strip = w.getByTestId('sessions-strip');
+    await expect(strip).toBeVisible({ timeout: 10_000 });
+    await w.waitForTimeout(500);
+    await tidy(w, parent);
+    await renameHang(w);
+    const stripBox = await strip.boundingBox();
+    await shot(
+      w,
+      'sessions-strip',
+      [{ target: strip, label: 'Every session, one line across the top', side: 'bottom' }],
+      stripBox
+        ? { x: 0, y: Math.max(0, stripBox.y - 8), width: WINDOW.width, height: Math.min(260, stripBox.height + 120) }
+        : undefined
+    );
   });
   // ── five things that shipped without a picture (0.8.117, 0.8.118) ──────────
   //
