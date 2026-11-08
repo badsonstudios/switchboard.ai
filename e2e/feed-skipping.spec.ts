@@ -35,9 +35,17 @@ const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
  * not changed. The #740 probe shipped exactly that bug on its first run and
  * reported "a 954px -> 525px narrowing changes the content height by 0.0%".
  */
+//
+// TWO SENTENCES' WORTH (#717). The narrowing case needs prose that REWRAPS
+// between the two widths, and on Windows CI's ~1024px screen those widths are
+// close: at one sentence the reply landed on the same number of lines at both,
+// and only the long PROMPTS above them rewrapped. Since #717 a long prompt folds
+// to one line, so the replies have to carry the premise themselves.
 const PROSE =
   'the quick brown fox jumps over the lazy dog while the sun sets behind a ' +
-  'row of quiet houses and somebody somewhere is still typing into a box ';
+  'row of quiet houses and somebody somewhere is still typing into a box, ' +
+  'and the kettle in the kitchen has been whistling for a while now, but ' +
+  'nobody has got up to see to it because the film is at the good part ';
 
 interface Exactness {
   /** `scrollHeight` as the app has it, with off-screen blocks skipped */
