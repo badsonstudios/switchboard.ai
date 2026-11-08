@@ -113,3 +113,24 @@ describe('"see what it was told" and the feed keyboard rule (#1439)', () => {
     }
   });
 });
+
+// #1323, the owner's call: each AI's icon beside its name in the divider. The
+// sentence is one translation; the names are found by placeholder, so the
+// words and their order are the translation's, and the label still says it all.
+describe("the divider shows each AI's icon beside its name (#1323)", () => {
+  it('puts an icon with each name, in the sentence order, and leaves the label whole', () => {
+    const host = draw([divider(mark({}))]);
+    const label = host.querySelector<HTMLElement>('[data-ai-switch-label]')!;
+    const ais = Array.from(label.querySelectorAll<HTMLElement>('[data-ai-switch-ai]'));
+    expect(ais).toHaveLength(2);
+    expect(ais[0].textContent).toContain('Claude');
+    expect(ais[1].textContent).toContain('Codex');
+    // an icon in each: the shared AiIcon, its image or its initial tile
+    for (const a of ais) expect(a.children.length).toBeGreaterThan(0);
+    // the screen-reader sentence is unchanged, with no placeholder in it
+    const aria = label.getAttribute('aria-label') ?? '';
+    expect(aria).toMatch(/^Claude → Codex · /);
+    expect(aria.includes(String.fromCharCode(1)) || aria.includes(String.fromCharCode(2))).toBe(false);
+    expect(label.textContent?.includes(String.fromCharCode(1))).toBe(false);
+  });
+});

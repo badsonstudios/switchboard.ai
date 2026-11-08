@@ -140,6 +140,11 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.141 — unreleased
 
+### Changed
+
+- **The line that marks a switch to another AI shows both AIs' icons**, each
+  beside its name, like everywhere else in the app.
+
 ## 0.8.140 — 2026-11-07
 
 ### Changed

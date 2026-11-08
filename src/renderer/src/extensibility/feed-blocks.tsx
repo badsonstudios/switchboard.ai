@@ -45,6 +45,8 @@ import { FEED_THUMB_HEIGHT, FEED_THUMB_WIDTH, feedPictureUrl } from '../../../sh
 import { Markdown } from '../lib/markdown';
 import { handleMarkdownLinkClick, openExternalBridge } from '../lib/markdown-links';
 import { briefingRefOf, dividerCopy, earlierTurnsCopy } from '../lib/ai-switch-view';
+import { aiLook, getAisState, subscribeAis, type AiLook } from '../lib/ais-store';
+import { AiIcon } from '../components/AiIcon';
 import { compactionCopy } from '../lib/compaction-view';
 import { BriefingDialog } from '../components/BriefingDialog';
 
@@ -693,20 +695,60 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
  * with the task id and the output-file path — which is also what keeps the
  * summary checkable rather than a claim.
  */
+/** Where each AI's name goes in the divider's sentence: two characters no
+ *  translation contains, so the sentence can be split around them (#1323). */
+const DIVIDER_FROM = String.fromCharCode(1);
+const DIVIDER_TO = String.fromCharCode(2);
+
+/**
+ * The divider's words with each AI's icon beside its name (#1323, the owner's
+ * call: "add the icons"). The sentence is ONE translation, so the names cannot
+ * be wrapped in markup directly: it is translated with a placeholder in each
+ * name's place, split around them, and each placeholder becomes icon + name.
+ * The order is the translation's, so a language that puts `to` first still
+ * gets each icon beside the right name. Decoration: the words carry it all.
+ */
+function dividerWithIcons(
+  shaped: string,
+  from: { look: AiLook; name: string },
+  to: { look: AiLook; name: string }
+): React.ReactNode[] {
+  const named = (who: { look: AiLook; name: string }, key: string): React.JSX.Element => (
+    <span key={key} data-ai-switch-ai style={{ display: 'inline-flex', alignItems: 'center', gap: 4, verticalAlign: 'middle' }}>
+      <AiIcon look={who.look} size={12} />
+      {who.name}
+    </span>
+  );
+  return shaped
+    .split(new RegExp(`(${DIVIDER_FROM}|${DIVIDER_TO})`))
+    .filter((part) => part !== '')
+    .map((part, i) =>
+      part === DIVIDER_FROM ? named(from, `f${i}`) : part === DIVIDER_TO ? named(to, `t${i}`) : part
+    );
+}
+
 /**
  * Where this card was switched from one AI to another (#1294). A rule across the
  * conversation with the two AIs and the time, in the "conversation cleared"
- * marker's look — the other divider the Feed draws. Words only, so it reads
- * without colour; #1295 adds "handed a summary of N turns" and "see what it was
- * told", and `dividerCopy` claims a briefing only when the mark records one.
+ * marker's look — the other divider the Feed draws. The words read without
+ * colour; each AI's icon sits beside its name (#1323). #1295 adds "handed a
+ * summary of N turns" and "see what it was told", and `dividerCopy` claims a
+ * briefing only when the mark records one.
  */
 function AiSwitchDivider({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
   const { t, i18n } = useTranslation();
   const [viewing, setViewing] = React.useState(false);
+  const ais = React.useSyncExternalStore(subscribeAis, getAisState);
   const mark = b.aiSwitch;
   if (!mark) return null;
   const copy = dividerCopy(mark, Date.now(), i18n.language);
   const text = t(copy.key, copy.vars);
+  const shaped = t(copy.key, { ...copy.vars, from: DIVIDER_FROM, to: DIVIDER_TO });
+  const visible = dividerWithIcons(
+    shaped,
+    { look: aiLook(ais, mark.from.providerId, mark.from.name), name: String(copy.vars.from) },
+    { look: aiLook(ais, mark.to.providerId, mark.to.name), name: String(copy.vars.to) }
+  );
   // #1295: the briefing's exact text, offered only when one was sent AND kept
   const ref = briefingRefOf(mark);
   // …and the faint line for the turns that happened with the other AI. Not
@@ -747,7 +789,7 @@ function AiSwitchDivider({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
           title={new Date(mark.at).toLocaleString(i18n.language || undefined)}
           data-ai-switch-label
         >
-          <span aria-hidden>{text}</span>
+          <span aria-hidden>{visible}</span>
         </span>
         {ref && (
           // A stop on the conversation's arrow-key walk, not a Tab stop of its
