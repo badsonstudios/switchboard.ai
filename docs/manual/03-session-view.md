@@ -51,10 +51,16 @@ again to put the layout back.
 
 This is the conversation, rendered to be read rather than scrolled past:
 
-- **Your prompts** appear as tinted boxes. Each one starts a new turn, and the
-  conversation says so: a full-width rule with **NEW PROMPT** under it, with a
-  gap above. It's there so you can scroll a long session and find where each
-  exchange began without reading a word of it.
+- **Your prompts** have a colour of their own: an indigo box with a thicker
+  edge on its left, under an indigo rule with **NEW PROMPT** on it. No other
+  part of the conversation uses that colour, so you can scroll a long session
+  and spot each of your prompts without reading a word of it. (It is never one
+  of the colours that mean a session needs you.)
+- **A prompt longer than one line is folded to its first line**, with
+  **click to expand** at the end. "Longer than one line" means it has a line
+  break in it, or more than about a hundred characters. Click that line to read the whole prompt, and
+  click it again (**click to collapse**) to fold it back, the same way a
+  command box opens and closes. A short prompt is simply shown in full.
 - **Claude's replies** are formatted text, with no marker in the left margin —
   they're the answer, not something that happened, so they sit clean.
 - **Anything Claude *did*** — running a command, editing a file, reading

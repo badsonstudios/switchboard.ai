@@ -46,6 +46,7 @@ import { Markdown } from '../lib/markdown';
 import { handleMarkdownLinkClick, openExternalBridge } from '../lib/markdown-links';
 import { briefingRefOf, dividerCopy, earlierTurnsCopy } from '../lib/ai-switch-view';
 import { aiLook, getAisState, subscribeAis, type AiLook } from '../lib/ais-store';
+import { siblingMessageParts } from '../../../shared/sibling-message';
 import { AiIcon } from '../components/AiIcon';
 import { compactionCopy } from '../lib/compaction-view';
 import { BriefingDialog } from '../components/BriefingDialog';
@@ -1556,6 +1557,9 @@ function InjectedContextRow({
   );
 }
 
+/** About one line of a prompt at a normal session width (#717): longer folds. */
+export const ONE_LINE_CHARS = 100;
+
 /**
  * The user's prompt in a tinted pill (Dan #2). Long payloads — skill
  * invocations dump the whole skill body as a user message — collapse to a
@@ -1618,20 +1622,36 @@ function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // rule, both readers" true rather than merely intended.
   const cmd = isCommandPlumbing(text) ? (commandInvocation(text) ?? undefined) : undefined;
   const long = text.length > 500;
-  const expandable = !!(cmd || long);
-  const label = cmd ?? `${text.slice(0, 160).split(String.fromCharCode(10))[0]}…`;
+  // MORE THAN ONE LINE FOLDS TO ITS FIRST (#717, the owner: "click on it to
+  // read the full prompt if it's more than one line, and click again to
+  // collapse it", like a command box). "More than one line" is a line break,
+  // or more words than one line holds at a normal session width.
+  //
+  // ⚠️ DELIBERATELY NOT MEASURED. The first cut measured the wrap against the
+  // box's width, and the feed skips laying out off-screen blocks (#740): the
+  // fold then flipped as a block left and re-entered layout, so its height
+  // never held still under the heights the feed had written, and the feed's
+  // narrow-window exactness check failed 3 in 3. A rule on the TEXT gives
+  // every block one height at a given width. The cost, stated: in a very
+  // narrow pane a prompt just under the limit wraps to two lines unfolded.
+  // judged on the words without stray line breaks at either end, which would
+  // otherwise fold a one-line prompt behind an empty first line (review)
+  const words = text.trim();
+  const multiLine = words.includes(String.fromCharCode(10));
+  const expandable = !!(cmd || long || multiLine || words.length > ONE_LINE_CHARS);
+  // a message forwarded from another session folds to WHO and WHAT, not to its
+  // bracketed header line (the #830 lesson: a header must not hide the words)
+  const forwarded = cmd ? null : siblingMessageParts(words);  const label =
+    cmd ??
+    (forwarded
+      ? t('feedView.forwardedLabel', {
+          name: forwarded.name,
+          text: forwarded.text.trim().split(String.fromCharCode(10))[0],
+        })
+      : words.split(String.fromCharCode(10))[0]
+    ).slice(0, 300);
   return (
-    <div
-      style={{
-        background: 'color-mix(in srgb, var(--text) 7%, var(--panel2))',
-        border: '1px solid color-mix(in srgb, var(--text) 22%, transparent)',
-        borderRadius: 10,
-        padding: '6px 10px',
-        whiteSpace: 'pre-wrap',
-        color: 'var(--text)',
-        overflowWrap: 'break-word',
-      }}
-    >
+    <div className="feed-prompt" style={{ whiteSpace: 'pre-wrap' }}>
       {b.attachments && <AttachmentMarker attachments={b.attachments} />}
       {/* ...and the pictures themselves (#1240), under the count. The count
           stays: it also covers documents, and a picture past the limit. */}
@@ -1663,26 +1683,31 @@ function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
           controls={open ? bodyId : undefined}
           style={{ display: 'flex', gap: 6, alignItems: 'baseline', inlineSize: '100%' }}
         >
-          <span style={{ fontSize: 8, color: 'var(--muted)' }}>
+          <span style={{ fontSize: 8, color: 'var(--prompt-cap)' }}>
             {open ? t('feedView.expandedIcon') : t('feedView.collapsedIcon')}
           </span>
-          <span
-            style={{
-              fontFamily: cmd ? 'var(--font-mono)' : 'var(--font-ui)',
-              fontWeight: cmd ? 700 : 400,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              minInlineSize: 0,
-            }}
-          >
-            {label}
-          </span>
-          {!open && (
-            <span style={{ fontSize: 9.5, color: 'var(--muted)', flexShrink: 0 }}>
-              {t('feedView.expandHint')}
+          {/* OPEN, the words are right below in full, so the header does not
+              repeat their first line (#717); a command keeps its name, which
+              is not in the body */}
+          {open && !cmd ? (
+            <span style={{ flex: 1 }} />
+          ) : (
+            <span
+              style={{
+                fontFamily: cmd ? 'var(--font-mono)' : 'var(--font-ui)',
+                fontWeight: cmd ? 700 : 400,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minInlineSize: 0,
+              }}
+            >
+              {label}
             </span>
           )}
+          <span data-prompt-hint style={{ fontSize: 9.5, color: 'var(--prompt-cap)', flexShrink: 0 }}>
+            {open ? t('feedView.collapseHint') : t('feedView.expandHint')}
+          </span>
         </FeedExpander>
       )}
       {/* `text !== ''` is the attachment-only turn (#491): a screenshot sent

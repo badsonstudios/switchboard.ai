@@ -142,6 +142,11 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ### Changed
 
+- **Your own prompts stand out in the conversation.** They have a colour of
+  their own (indigo), with a matching **NEW PROMPT** line above them, so you
+  can scroll back and find what you asked at a glance. A prompt longer than one
+  line folds to its first line: click it to read it all, and click again to
+  fold it.
 - **The line that marks a switch to another AI shows both AIs' icons**, each
   beside its name, like everywhere else in the app.
 

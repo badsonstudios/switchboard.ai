@@ -127,6 +127,11 @@ describe('injected context folds, the user’s own question does not', () => {
     // with no `context` at all.
     const host = draw({ seq: 2, kind: 'user', sidechain: false, text: PROMPT });
     expect(boxes(host)).toEqual([]);
+    // A prompt longer than one line starts folded to its first line (#717), so
+    // open it the way a person would: one click on its first line.
+    const fold = host.querySelector<HTMLElement>('[aria-expanded="false"]');
+    expect(fold).not.toBeNull();
+    act(() => fold!.click());
     // Nothing is hidden: the marker prose renders as the words it is.
     expect(host.textContent).toContain('from another switchboard session');
     expect(host.textContent).toContain('the build went green');

@@ -169,6 +169,16 @@
   --ai-kimi-ink: #ea85c5;
   --ai-cline-ink: #ea8aa7;
   --ai-factory-droid-ink: #9aa8bb;
+  /* Your own prompt in the conversation (#717, the owner's pick: "C, a colour
+     of its own"). A slate indigo: no status colour (yellow, gold and orange
+     mean "a session needs you", #1165) and not a session accent, so a prompt
+     reads as a landmark and never as an alarm. The ink and caption are
+     measured on the fill, and the edge against the panel, in
+     tokens.drift.test.ts. */
+  --prompt-bg: #313a5c;
+  --prompt-edge: #7b8cd6;
+  --prompt-ink: #e8ebff;
+  --prompt-cap: #aab6f0;
 }
 
 :root[data-theme='daylight'] {
@@ -239,6 +249,16 @@
   --ai-kimi-ink: #d92697;
   --ai-cline-ink: #d9265c;
   --ai-factory-droid-ink: #667b99;
+  /* Your own prompt in the conversation (#717, the owner's pick: "C, a colour
+     of its own"). A slate indigo: no status colour (yellow, gold and orange
+     mean "a session needs you", #1165) and not a session accent, so a prompt
+     reads as a landmark and never as an alarm. The ink and caption are
+     measured on the fill, and the edge against the panel, in
+     tokens.drift.test.ts. */
+  --prompt-bg: #e6e9fb;
+  --prompt-edge: #4a5bb5;
+  --prompt-ink: #1b2230;
+  --prompt-cap: #3b4aa0;
 }
 
 /* ---- Layer 2: semantic, theme-independent --------------------------------- */
@@ -559,33 +579,25 @@ button[data-dismiss-waiting]:focus-visible {
  * A full-bleed 2px rule, a caption in the same ink, and roughly triple the
  * vertical air. The whitespace is doing as much work as the line is.
  *
- * NEUTRAL ON PURPOSE. A turn boundary is static structure, not an alarm, and
- * #640 asks for a boundary rather than a wall: spending a status hue on it
- * would put permanent colour exactly where the eye is trained to look for "this
- * session wants you" (#528's signal system), and this appears on EVERY turn,
- * where the working strip appears on one. A §5.11 identity accent is out for a
- * second reason — #269 measured the eight accents at 1.80-3.11:1 on daylight,
- * so a rule painted in one would be the prominent divider that fails contrast
- * on one theme, i.e. a regression rather than a win.
+ * IT WAS NEUTRAL (#640: `--muted`, the rule in `currentColor`) and the owner
+ * twice found it too quiet (#717). Round 3 gave the boundary and the prompt
+ * under it a colour of their own, the owner's pick of three mocked looks
+ * (`mockups/turn-boundary.html`): a slate indigo that is no status colour, so
+ * it still cannot be read as "this session wants you" (#528, #1165), and is
+ * not a session accent either. Its own tokens (`--prompt-*`), per theme.
  *
- * `--muted` is the app's SECONDARY INK and the only neutral that clears AA on
- * the feed's surface in all four themes: 5.85:1 nordic, 6.00:1 daylight,
- * 15.57:1 high contrast, 8.76:1 soft contrast. The two obvious alternatives do
- * not — `--border` is a hairline value (1.30:1) and `--group-frame`, the app's
- * "make the split obvious" edge, lands at 2.91:1 on nordic, under 1.4.11's 3:1.
- *
- * THE LOOK LIVES HERE rather than inline for the #206 reason: the pair carries
+ * THE LOOK LIVES HERE rather than inline for the #206 reason: each pair carries
  * a contrast promise and tokens.drift.test.ts has to be able to read it. The
- * LINE is `currentColor` so the caption's measured ink is the rule's ink too —
- * a second value there could drift away from the one the test checks.
+ * caption is measured on the panel (FILLED_RULES); the rule, its own colour,
+ * at 1.4.11's 3:1 against the panel beside it.
  * `background` names `--panel` because that is what `--card-bg` resolves to,
  * i.e. what the feed really paints on; move the conversation onto another
  * surface and this declaration has to move with it, or the promise measures a
  * fiction. */
 .turn-divider {
-  color: var(--muted);
+  color: var(--prompt-cap);
   background: var(--panel);
-  border-block-start: 2px solid currentColor;
+  border-block-start: 2px solid var(--prompt-edge);
   margin-block: 22px 8px;
   padding-block-start: 5px;
   padding-inline: 8px;
@@ -594,6 +606,19 @@ button[data-dismiss-waiting]:focus-visible {
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+/* Your prompt itself (#717): the fill, the words and a thicker start edge in
+ * the prompt's colour, the same landmark as the rule above it. A class rather than inline styles so the drift test can
+ * read the pair it promises. */
+.feed-prompt {
+  color: var(--prompt-ink);
+  background: var(--prompt-bg);
+  border: 1px solid var(--prompt-edge);
+  border-inline-start-width: 4px;
+  border-radius: 8px;
+  padding: 7px 11px;
+  overflow-wrap: break-word;
 }
 
 /* The caption that opens a subagent's run in the Feed (#788, §5.10 "folded
