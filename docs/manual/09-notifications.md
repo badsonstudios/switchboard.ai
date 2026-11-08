@@ -178,7 +178,7 @@ session you have and what each one is doing. It works the same whether you keep
 it down the left or
 [across the top](07-workspace.md#listing-sessions-across-the-top-instead).
 
-![A busy workspace: several sessions working, each with its ring spinning, and one session waiting on an approval, its row tinted orange with the time it has left, and its approval bar open over the prompt box](img/busy-session.png)
+![A busy workspace: three sessions in the list. One is working, with its ring spinning; one is waiting on an approval, its row edged in orange with the time it has left; one has finished and is waiting for you. The open session shows Claude Code is working above the prompt box](img/busy-session.png)
 
 *Several sessions at work, and the one that needs you stands out.*
 

@@ -156,7 +156,7 @@ always reachable, and the menu never covers the **⋯** you opened it from.
 
 ### Listing sessions across the top instead
 
-![The sessions listed in a strip across the top of the window: groups as boxes with what is inside them, sessions in no group as pills, and the open session below taking the full width](img/sessions-strip.png)
+![The sessions listed in a strip across the top of the window: three sessions as pills, one waiting, one waiting on an approval, one working, with the 1 needs you count beside + group and + session, and the open session below taking the full width](img/sessions-strip.png)
 
 *Settings ▸ Appearance ▸ Sessions list ▸ Across the top.*
 
