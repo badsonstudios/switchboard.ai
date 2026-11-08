@@ -63,6 +63,7 @@ import {
   type DisplayInfo,
   type LaunchedApp,
 } from './app';
+import { placeOnTestDisplay, type Box } from '../../src/shared/test-display';
 
 /**
  * A stand-in `ElectronApplication`.
@@ -1300,5 +1301,64 @@ describe('pretendForeground — states "the user is in this window" to the rules
   it('throws when the app has no seam, instead of letting the spec carry on', async () => {
     delete g.__switchboardForeground;
     await expect(pretendForeground(appWith([win(1)]))).rejects.toThrow(/no seam/);
+  });
+});
+
+// #1353: the first window is CREATED on the test screen, by main, from the same
+// resolver the fixture uses. Pure, so its four cases are units here.
+describe('placeOnTestDisplay: where main creates the first window (#1353)', () => {
+  const displays = [PRIMARY, RIGHT];
+  const matching = (b: Box): number =>
+    displays.find((d) => b.x >= d.workArea.x && b.x < d.workArea.x + d.workArea.width)?.id ?? PRIMARY.id;
+
+  it('does nothing with the switch off', () => {
+    expect(placeOnTestDisplay({ width: 1280, height: 800 }, displays, PRIMARY.id, undefined, matching)).toBeNull();
+    expect(placeOnTestDisplay({ width: 1280, height: 800 }, displays, PRIMARY.id, '1', matching)).toBeNull();
+  });
+
+  it('with no saved position, puts the centred window on the test screen', () => {
+    const box = placeOnTestDisplay({ width: 1280, height: 800 }, displays, PRIMARY.id, 'right', matching)!;
+    expect(box).not.toBeNull();
+    expect(matching(box)).toBe(RIGHT.id);
+    expect({ width: box.width, height: box.height }).toEqual({ width: 1280, height: 800 });
+  });
+
+  it('moves a saved position from the primary across', () => {
+    const box = placeOnTestDisplay({ x: 40, y: 40, width: 1100, height: 760 }, displays, PRIMARY.id, 'right', matching)!;
+    expect(box).toEqual(translateToDisplay({ x: 40, y: 40, width: 1100, height: 760 }, PRIMARY.workArea, RIGHT.workArea));
+  });
+
+  it('leaves a window that is already there alone (a relaunch)', () => {
+    const there = translateToDisplay({ x: 40, y: 40, width: 1100, height: 760 }, PRIMARY.workArea, RIGHT.workArea);
+    expect(placeOnTestDisplay(there, displays, PRIMARY.id, 'right', matching)).toBeNull();
+  });
+});
+
+// #1353, hole 3: a spec that parks the window at a LITERAL screen position
+// drags it back onto the developer's working screen. Every such box goes
+// through `onTestDisplay`. Flagged: `setBounds({ x: <digits>` and
+// `setPosition(<digits>`, which is what an untranslated box looks like; a box
+// built from the window's own bounds (`x: b.x`) or wrapped in `onTestDisplay`
+// is not. A deliberate exception names itself here with its reason.
+describe('no spec parks a window at a literal screen position (#1353)', () => {
+  const EXCEPTIONS: Record<string, string> = {};
+  const specs = fs.readdirSync(path.join(__dirname, '..')).filter((f) => f.endsWith('.spec.ts'));
+
+  it('reads the specs', () => {
+    expect(specs.length).toBeGreaterThan(50);
+  });
+
+  it('finds no untranslated absolute box', () => {
+    const hits: string[] = [];
+    for (const f of specs) {
+      if (EXCEPTIONS[f]) continue;
+      const text = fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+      text.split(/\r?\n/).forEach((line, i) => {
+        if (/setBounds\(\s*\{\s*x:\s*-?\d/.test(line) || /setPosition\(\s*-?\d/.test(line)) {
+          hits.push(`${f}:${i + 1}: ${line.trim()}`);
+        }
+      });
+    }
+    expect(hits).toEqual([]);
   });
 });

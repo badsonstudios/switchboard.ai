@@ -10,6 +10,11 @@ import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { readAiTitle } from '../providers/claude';
 import { CapturedTitles, LATE, REPEAT_HEAVY, REVISED, rebuild, titlesOf } from './fixtures/ai-title';
 
+// These cases wait on REAL file-system events, whose arrival is the disk's and
+// the OS's: a Windows runner's fs.watch latency took one past the 5 s default
+// (#1244, folded into #651). A budget a busy machine cannot spend.
+vi.setConfig({ testTimeout: 20_000 });
+
 let root: string;
 let logDir: string;
 let cwd: string;

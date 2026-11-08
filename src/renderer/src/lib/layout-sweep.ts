@@ -34,6 +34,11 @@ export interface SweepRequest {
 }
 
 /** Everything a sweep touches that is not this file's business. */
+// EVERY MEMBER IS A PROPERTY SIGNATURE, not a method shorthand (#671). A
+// method shorthand is checked BIVARIANTLY, so an implementer whose parameter is
+// narrower than `Req` would typecheck and then be handed a request it cannot
+// take. Property signatures are checked strictly. `aborted` says why it was
+// first (#663); the other five followed in #671.
 export interface SweepPort<Req extends SweepRequest> {
   /**
    * May anything sweep at all right now?
@@ -42,19 +47,19 @@ export interface SweepPort<Req extends SweepRequest> {
    * sweep is forbidden — teardown, a boot restore still placing panels — is
    * usually something that started while the previous sweep was running.
    */
-  ready(): boolean;
+  ready: () => boolean;
   /**
    * Would this request produce any work? The cheap early-out, asked before the
    * card list is built: reactive triggers arrive on every status push (several a
    * second while agents stream) and under the default mode there is nothing for
    * any of them to do.
    */
-  needed(req: Req): boolean;
+  needed: (req: Req) => boolean;
   /** The moves to make. Computed HERE, at the moment the sweep runs, never at
    *  the moment it was asked for — see the coalescing note on `createSweeper`. */
-  plan(req: Req): readonly LayoutMove[];
+  plan: (req: Req) => readonly LayoutMove[];
   /** Make one move. Awaited; see `runMoves`. */
-  applyMove(move: LayoutMove, req: Req): Promise<void> | void;
+  applyMove: (move: LayoutMove, req: Req) => Promise<void> | void;
   /**
    * Abandon the rest of the plan (teardown began underneath it).
    *
@@ -69,7 +74,7 @@ export interface SweepPort<Req extends SweepRequest> {
   aborted: () => boolean;
   /** Fail-open: a layout mode is a convenience, never a reason to throw out of
    *  an event handler and leave the workspace half-swept. */
-  onError(err: unknown): void;
+  onError: (err: unknown) => void;
 }
 
 export interface Sweeper<Req extends SweepRequest> {

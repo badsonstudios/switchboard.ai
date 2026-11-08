@@ -18,7 +18,7 @@
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { launchApp, LaunchedApp, pollAsync, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, pollAsync, tempProjectFolder, onTestDisplay } from './fixtures/app';
 
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
 const ATL = 'mcp__plugin_atlassian_atlassian__';
@@ -187,9 +187,10 @@ test.describe('MCP calls, web calls and same-file edits fold (#1271)', () => {
     const w = app.window;
     const title = path.basename(folder);
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
-    await app.app.evaluate(({ BrowserWindow }, wd) => {
-      BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, width: wd, height: 760 });
-    }, width);
+    // on the test screen, not the primary (#1353)
+    await app.app.evaluate(({ BrowserWindow }, box) => {
+      BrowserWindow.getAllWindows()[0]?.setBounds(box);
+    }, onTestDisplay(app, { x: 40, y: 40, width, height: 760 }));
     const liveId = await pollAsync(async () => {
       const cards = (await w.evaluate(() => window.switchboard.sessions.cards())) as Array<{
         title: string;

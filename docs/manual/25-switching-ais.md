@@ -20,7 +20,8 @@ conversation, exactly where it stopped.
 3. Click another AI. The card's session closes and a session on the new AI
    starts in the same card.
 4. A line across the conversation marks the switch, for example
-   **Claude Code → Codex · 2:41 PM · handed a summary of 14 turns**.
+   **Claude Code → Codex · 2:41 PM · handed a summary of 14 turns**, with each
+   AI's icon beside its name.
 
 You can also use the keyboard. Tab to the chip and press Enter. The arrow keys
 move through the list, Enter picks an AI, and Escape closes the menu.

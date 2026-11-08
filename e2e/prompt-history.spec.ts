@@ -13,7 +13,7 @@
 // not cost what was already typed there.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, tempProjectFolder, onTestDisplay } from './fixtures/app';
 
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
 const composer = (w: Page) => w.getByPlaceholder(/^Message .+…$/);
@@ -46,9 +46,10 @@ test.describe('Prompt History (#1203)', () => {
     a = await launchApp({ seedFolder: folder, env: DIRECT });
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    await a.app.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, width: 1100, height: 760 });
-    });
+    // on the test screen, not the primary (#1353)
+    await a.app.evaluate(({ BrowserWindow }, box) => {
+      BrowserWindow.getAllWindows()[0]?.setBounds(box);
+    }, onTestDisplay(a, { x: 40, y: 40, width: 1100, height: 760 }));
 
     // ONE WAY IN: the button of its own is gone from the conversation
     await expect(w.locator('[data-prompt-history-open]')).toHaveCount(0);
