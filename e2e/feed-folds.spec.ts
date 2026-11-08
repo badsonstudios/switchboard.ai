@@ -13,7 +13,7 @@
 // claim is about the Feed's handling of a run, not about any tool being run.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, pollAsync, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, pollAsync, tempProjectFolder, onTestDisplay } from './fixtures/app';
 
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
 
@@ -68,9 +68,10 @@ test.describe('a burst of looking around folds into one row (#1130)', () => {
     const w = app.window;
     const title = path.basename(folder);
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
-    await app.app.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, width: 1100, height: 760 });
-    });
+    // on the test screen, not the primary (#1353)
+    await app.app.evaluate(({ BrowserWindow }, box) => {
+      BrowserWindow.getAllWindows()[0]?.setBounds(box);
+    }, onTestDisplay(app, { x: 40, y: 40, width: 1100, height: 760 }));
     const liveId = await pollAsync(async () => {
       const cards = (await w.evaluate(() => window.switchboard.sessions.cards())) as Array<{
         title: string;

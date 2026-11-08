@@ -16,6 +16,7 @@ import {
   laneColumn,
   type LaneCommit,
 } from './git-lanes';
+import { growth, medianMs } from '../../../test-growth';
 
 /** `['a', 'b c', …]` → commits. A space-separated parent list keeps the fixtures readable. */
 function history(spec: Record<string, string>): LaneCommit[] {
@@ -232,12 +233,21 @@ describe('allocateLanes — the cost', () => {
       id: String(i).padStart(40, 'a'),
       parentIds: [String(i + 1).padStart(40, 'a')],
     }));
-    const started = Date.now();
     const layout = allocateLanes(chain);
-    expect(Date.now() - started).toBeLessThan(200);
     expect(layout.lanes).toBe(1);
     expect(layout.rows).toHaveLength(n);
-  });
+    // HOW IT GROWS, not a 200 ms stopwatch (#651): eight times the commits
+    // costs about eight times as much when the walk is linear, sixty-four
+    // when it is quadratic. Medians, so one slow moment does not decide it.
+    const chainOf = (len: number): { id: string; parentIds: string[] }[] =>
+      Array.from({ length: len }, (_, i) => ({
+        id: String(i).padStart(40, 'a'),
+        parentIds: [String(i + 1).padStart(40, 'a')],
+      }));
+    const small = chainOf(n);
+    const large = chainOf(n * 8);
+    expect(growth(medianMs(() => allocateLanes(small)), medianMs(() => allocateLanes(large)))).toBeLessThan(24);
+  }, 30_000);
 
   it('⚠️ AND THE PATHOLOGICAL SHAPE IS O(n·k) WITH k = n, which a test found by timing out', () => {
     // Two thousand commits sharing one parent is two thousand LANES, and the
