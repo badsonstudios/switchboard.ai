@@ -2658,7 +2658,11 @@ app
       soundFor: (cardId) => (cardId ? workspace.cardSound(cardId).id : DEFAULT_SOUND.id),
       // The beep the notifier stopped making while cues are on. Without it, an
       // event whose cue reached nobody would be completely silent.
-      fallback: () => shell.beep(),
+      // muted (#1536): a muted sink never sends anything here, but a fallback
+      // is exactly the path a later change could reach without the sink
+      fallback: () => {
+        if (!audioMuted()) shell.beep();
+      },
       // The spoken announcement follows the language chip too (#471) — it would
       // otherwise be the only notification channel left in English.
       t: i18n.t,
@@ -2814,6 +2818,8 @@ app
       // a different time of day is the kind of bug nobody would think to look
       // for (P2-E14-05b).
       now: clock,
+      // the e2e suite's mute switch reaches the beep too (#1536)
+      muted: audioMuted(),
     });
     // #756: which of our windows held the foreground a moment before a session
     // called. Read HERE, at event time, and never at raise time — see

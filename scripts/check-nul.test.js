@@ -333,19 +333,16 @@ describe('run', () => {
   });
 
   it('stays cheap enough to sit in front of every lint', () => {
-    // Measured on this repo (597 files): ~70ms warm, ~500ms on a cold file
-    // cache, plus node's own startup. The ceiling is deliberately far above
-    // that — it is a smoke test for a SCOPE regression (someone pointing the
-    // scan at node_modules or `out/`, which is seconds), not a benchmark. A
-    // tight bound here would flake on a loaded CI runner and teach nobody
-    // anything.
-    //
-    // Its 5000 used to BE the enclosing test timeout as well, so a run that
-    // blew the budget died as a timeout instead of naming the budget it blew.
-    // The suite ceiling (#512) now sits above it, and this line is the verdict.
-    const started = Date.now();
-    run(ROOT);
-    expect(Date.now() - started).toBeLessThan(5000);
+    // What this guards is SCOPE, not speed: someone pointing the scan at
+    // node_modules or `out/` would make it seconds instead of ~70 ms. It used
+    // to say so with a 5 s wall-clock budget, which machine load alone spent
+    // (#651: a full npm test beside a build, 1.4 s for a 0.13 s job). So it
+    // asks the scope question directly: what is scanned, and how much of it.
+    const files = filesToScan(ROOT) ?? [];
+    const outside = files.filter((f) => /(^|[\\/])(node_modules|out|dist)[\\/]/.test(f));
+    expect(outside, 'the scan reaches into a build or dependency folder').toEqual([]);
+    // the repo is ~1,800 text files; node_modules alone is tens of thousands
+    expect(files.length).toBeLessThan(20_000);
   });
 }, SUBPROCESS_TIMEOUT_MS);
 
