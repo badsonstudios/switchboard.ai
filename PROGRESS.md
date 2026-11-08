@@ -3,6 +3,10 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS: a batch Dan picked (2026-11-08): #1536, #1440, #1525 + #1323, #671, #1353, #717, #651, #965, in that order
+>
+> **Dan (2026-11-08)** asked for ten candidates and picked these. The order is mine: smallest first, and the manual audit (#965) last so it covers what the others change. **#1323 decision (Dan, 2026-11-08):** the AI-switch divider gets the two AIs' icons. **How it runs:** one PR per ticket, merged on green CI. Each item's PROGRESS and dogfood close-out rides in the NEXT item's PR, and the last item gets its own close-out PR, so every commit still goes through a PR. **Status:** #1536 in progress (the Notifier's `shell.beep()` ignored `SWITCHBOARD_MUTE_AUDIO`; it now takes `muted`, and the cue fallback checks the mute too).
+
 > # ✅ RELEASED: v0.8.140, 2026-11-07 (PR #1576, tag on `b0aadf28`, release run 42426915240): #1556, all nine group styles
 >
 > **Dan (2026-11-07):** *"Go ahead and fire release off for this."* A **regular release, on his word.** The version, lock and dated notes landed together, and `0.8.141 — unreleased` is open. The lock's two version lines were edited by hand, as for 0.8.138 and 0.8.139. The three notes written as the parts landed were folded into one entry, because the update dialog shows them. **In it:** the Sessions list group style (PRs #1569, #1571, #1574). Published as Latest with `switchboard-Setup-0.8.140.exe` and its `.sha256`. **Next up:** still Dan's pick; #1573 is the small follow-on.

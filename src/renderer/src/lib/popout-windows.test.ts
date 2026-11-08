@@ -122,9 +122,9 @@ describe('the popout registry (issue 227)', () => {
 
 describe('the popout registry: telling its consumers (issue 227)', () => {
   it('names the window both ways, and says a change happened', () => {
-    const added = vi.fn();
-    const removed = vi.fn();
-    const changed = vi.fn();
+    const added = vi.fn<(win: Window) => void>();
+    const removed = vi.fn<(win: Window) => void>();
+    const changed = vi.fn<() => void>();
     subscribePopoutWindows({ added, removed, changed });
     const win = fakePopout();
 
@@ -142,7 +142,7 @@ describe('the popout registry: telling its consumers (issue 227)', () => {
     // theme on every announcement. A window dockview reuses is a fresh document
     // with no flags on it, so swallowing the repeat would leave it unthemed —
     // while a repeated `changed` would put a second notice in the same popout.
-    const listener = { added: vi.fn(), changed: vi.fn() };
+    const listener = { added: vi.fn<(win: Window) => void>(), changed: vi.fn<() => void>() };
     const win = fakePopout();
     addPopoutWindow(win);
     subscribePopoutWindows(listener);
@@ -155,7 +155,7 @@ describe('the popout registry: telling its consumers (issue 227)', () => {
   });
 
   it('is silent about a window it never had', () => {
-    const listener = { removed: vi.fn(), changed: vi.fn() };
+    const listener = { removed: vi.fn<(win: Window) => void>(), changed: vi.fn<() => void>() };
     subscribePopoutWindows(listener);
 
     removePopoutWindow(fakePopout());
@@ -183,7 +183,7 @@ describe('the popout registry: telling its consumers (issue 227)', () => {
   });
 
   it('stops telling a consumer that unsubscribed', () => {
-    const added = vi.fn();
+    const added = vi.fn<(win: Window) => void>();
     subscribePopoutWindows({ added })();
     addPopoutWindow(fakePopout());
     expect(added).not.toHaveBeenCalled();
@@ -211,7 +211,7 @@ describe('the popout registry: telling its consumers (issue 227)', () => {
   it('does not tell a consumer that subscribed while the event was being delivered', () => {
     // the same guarantee DOM dispatch makes (it snapshots the listener list),
     // and what keeps a handler that opens something from re-entering forever
-    const late = vi.fn();
+    const late = vi.fn<(win: Window) => void>();
     subscribePopoutWindows({
       added: () => subscribePopoutWindows({ added: late }),
     });
@@ -245,7 +245,7 @@ describe('the popout registry: telling its consumers (issue 227)', () => {
   it('gives useSyncExternalStore the plain subscribe it wants', () => {
     // one stable module-level function, or React resubscribes every commit
     expect(subscribePopoutChange).toBe(subscribePopoutChange);
-    const onChange = vi.fn();
+    const onChange = vi.fn<() => void>();
     const off = subscribePopoutChange(onChange);
     const win = fakePopout();
 
@@ -268,8 +268,8 @@ describe('the popout registry: windows that die without saying so (issue 279)', 
   });
 
   it('drops a window found closed, and says so exactly as a normal close does', () => {
-    const removed = vi.fn();
-    const changed = vi.fn();
+    const removed = vi.fn<(win: Window) => void>();
+    const changed = vi.fn<() => void>();
     const dead = fakePopout();
     const alive = fakePopout();
     addPopoutWindow(dead);
@@ -347,7 +347,7 @@ describe('the popout registry: windows that die without saying so (issue 279)', 
     const win = fakePopout();
     addPopoutWindow(win);
     const id = getPopoutWindows()[0].id;
-    const listener = { added: vi.fn(), removed: vi.fn(), changed: vi.fn() };
+    const listener = { added: vi.fn<(win: Window) => void>(), removed: vi.fn<(win: Window) => void>(), changed: vi.fn<() => void>() };
     subscribePopoutWindows(listener);
 
     addPopoutWindow(win);
@@ -368,7 +368,7 @@ describe('the popout registry: windows that die without saying so (issue 279)', 
       },
     } as unknown as Window;
     addPopoutWindow(unreachable);
-    const removed = vi.fn();
+    const removed = vi.fn<(win: Window) => void>();
     subscribePopoutWindows({ removed });
 
     addPopoutWindow(fakePopout()); // walks the list, asks, is refused an answer
@@ -385,7 +385,7 @@ describe('the popout registry: windows that die without saying so (issue 279)', 
     vi.useFakeTimers();
     const dead = fakePopout();
     addPopoutWindow(dead);
-    const removed = vi.fn();
+    const removed = vi.fn<(win: Window) => void>();
     subscribePopoutWindows({ removed });
 
     dead.closed = true;
@@ -401,7 +401,7 @@ describe('the popout registry: windows that die without saying so (issue 279)', 
     vi.useFakeTimers();
     addPopoutWindow(fakePopout());
     const snapshot = getPopoutWindows();
-    const changed = vi.fn();
+    const changed = vi.fn<() => void>();
     subscribePopoutChange(changed);
 
     vi.advanceTimersByTime(LIVENESS_SWEEP_MS * 20);
@@ -440,7 +440,7 @@ describe('the popout registry: windows that die without saying so (issue 279)', 
     // for a window the registry does not have
     const win = fakePopout();
     addPopoutWindow(win);
-    const removed = vi.fn();
+    const removed = vi.fn<(win: Window) => void>();
     subscribePopoutWindows({ removed });
 
     win.closed = true;
