@@ -3,6 +3,10 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ RELEASED: v0.8.141, 2026-11-08 (PR #1587, tag on `94471eeb`, release run 42541184380): the 2026-11-08 batch
+>
+> **Dan (2026-11-08):** *"Cut a release."* A **regular release, on his word.** The version, lock and dated notes landed together, and `0.8.142 — unreleased` is open. The lock's two version lines were edited by hand. One line about the manual was added to the notes. **In it:** your prompts in their own colour, folding to one line (#717, PR #1586); the AI-switch icons (#1323, PR #1580); the manual caught up (#965, PR #1584); and the internal fixes #1536, #1440, #671, #1353 and #651. Published as Latest with `switchboard-Setup-0.8.141.exe` and its `.sha256`. **Next up:** Dan's pick.
+
 > # ✅ DONE: the batch Dan picked on 2026-11-08: #1536, #1440, #1525 + #1323, #671, #1353, #651, #965 and #717, all merged and closed (NOT RELEASED)
 >
 > **Dan (2026-11-08)** asked for ten candidates and picked these. The order is mine: smallest first, and the manual audit (#965) last so it covers what the others change. **#1323 decision (Dan, 2026-11-08):** the AI-switch divider gets the two AIs' icons. **How it runs:** one PR per ticket, merged on green CI. Each item's PROGRESS and dogfood close-out rides in the NEXT item's PR, and the last item gets its own close-out PR, so every commit still goes through a PR. **Outcomes, one PR each, merged on green CI:**
