@@ -1577,6 +1577,37 @@ export function skipPopoutOnLinux(): void {
   );
 }
 
+/**
+ * Click a control that CLOSES THE WINDOW IT IS IN — a popout's dock-back
+ * (#1592; #1394 and #1465 were this).
+ *
+ * dockview's dock-back moves the group home and closes the popout from inside
+ * the click's own handler. Playwright's click is not over when the mouse comes
+ * up: it still waits on the page for the input to be acknowledged. When the
+ * window is gone first — which load makes more likely, and nothing orders — the
+ * click rejects with "Target page, context or browser has been closed", even
+ * though it did exactly what it was for.
+ *
+ * So the one error that IS the expected outcome is not a failure: the click
+ * stands if the window it was in has closed. Anything else still throws, and
+ * the window closing is still REQUIRED — this waits for it, and a dock-back
+ * that leaves its window open fails here as it did before.
+ */
+export async function clickClosingItsWindow(target: Locator, timeoutMs = 15_000): Promise<void> {
+  const page = target.page();
+  const closed = page.isClosed() ? Promise.resolve() : page.waitForEvent('close', { timeout: timeoutMs });
+  // a rejection here is judged below, by whether the window went
+  closed.catch(() => undefined);
+  try {
+    await target.click();
+  } catch (err) {
+    // the rejection can arrive a beat before Playwright marks the page closed
+    await closed.catch(() => undefined);
+    if (!page.isClosed()) throw err;
+  }
+  await closed;
+}
+
 // `showTerminal` lived here: one click on the Terminal tab, which every spec
 // that needed an xterm went through. The tab was removed (#873) and no surface
 // renders a PTY any more, so there is nothing for it to switch to and it has no

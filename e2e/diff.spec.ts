@@ -45,7 +45,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir, skipPopoutOnLinux, setTheme } from './fixtures/app';
+import { clickClosingItsWindow, launchApp, LaunchedApp, registerTempDir, skipPopoutOnLinux, setTheme } from './fixtures/app';
 
 /** Committed at HEAD. Multi-line and non-empty — see the trap above. */
 const COMMITTED = [
@@ -701,7 +701,7 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     const dockBack = win.locator('[data-testid="git-diff-popout"]');
     await expect(dockBack).toBeVisible({ timeout: 20_000 });
     await expect(dockBack).toHaveAttribute('aria-label', /back in the main window/);
-    await dockBack.click();
+    await clickClosingItsWindow(dockBack);
     await expect.poll(() => app.windows().length, { timeout: 20_000 }).toBe(before);
     await expect(w.locator('.git-diff-view')).toBeVisible({ timeout: 15_000 });
   });
