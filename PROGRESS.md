@@ -6,7 +6,8 @@
 > # 🔄 IN PROGRESS: the batch Dan picked on 2026-11-09: #1591, #1319, #675, #1592, then #1573
 >
 > **Dan (2026-11-09):** one PR per ticket, merged on green CI, in the order #1591, #1319, #675, #1592. **Decisions asked up front (Dan, 2026-11-09):** #1573 **fix it** (retune the auto ink so the folder group name and AUTO badge clear 4.5:1, add the measurement), added as the fifth item; #1319 (a) the strip pill's screen-reader label **names its AI**; (b) an inactive tab with no language badge shows its session colour by **tinting the status ring's track**. **How it runs:** each item's PROGRESS and dogfood close-out rides in the NEXT item's PR; the last gets its own close-out PR.
-- **#1591** (in this PR): the Events drawer rows and the missed-events digest read the sessions list's `status.*` words through `eventKindKey` (rail-view); `events.kind` keeps only dispatch-result. The push hint says approvals, questions, crashes. **Not changed:** the OS toast, phone body, webhook body and spoken sentences (`notification.kind/speak`); the webhook body is a machine contract.
+- **#1591** (PR #1593, merged): the Events drawer rows and the missed-events digest read the sessions list's `status.*` words through `eventKindKey` (rail-view); `events.kind` keeps only dispatch-result. The push hint says approvals, questions, crashes. **Not changed:** the OS toast, phone body, webhook body and spoken sentences (`notification.kind/speak`); the webhook body is a machine contract.
+- **#1319** (in this PR): `sessionSpokenName` takes the AI's name (`useAiName`, left out when unknown), so the strip pill AND the sessions-list row say "title, AI — state" (one function for both, the #1143 rule). `AiBadge` takes `accent`: a 30% disc inside the ring, inset 2px past both ring borders; the tab passes the session accent, active tab included.
 
 > # ✅ DONE: #1589, the turn caption says PROMPT, not NEW PROMPT (NOT RELEASED)
 >

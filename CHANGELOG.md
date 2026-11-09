@@ -148,6 +148,11 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   entries now say **approval**, **question**, **waiting**, **calm** and
   **crashed** instead of "needs permission", "needs input", "Done." and
   "Ready", and so does the phone-push setting's description.
+- **Every tab shows its session's colour again**, as a faint fill inside the
+  ring around the AI's icon, so a tab you are not looking at still says which
+  session it is.
+- **A screen reader now names a session's AI** on its row in the Sessions list
+  and its pill on the strip.
 
 ## 0.8.141 — 2026-11-08
 
