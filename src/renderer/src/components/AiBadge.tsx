@@ -32,6 +32,10 @@ import { tint } from '../lib/tint';
 
 /** the badge's box — the old glyph tile's size, so nothing around it moves */
 export const AI_BADGE_SIZE = 16;
+/** how much of the session's colour fills the inside of the ring (#1319) */
+export const TRACK_PCT = 30;
+/** where that fill starts, from the badge's edge: past the widest ring border */
+export const TRACK_INSET = 2;
 /**
  * The icon inside the ring, with a CLEAR GAP between the two (#1326). The icon
  * is drawn in its AI's colour now, and every AI colour sits near some ramp
@@ -43,6 +47,19 @@ export const AI_BADGE_SIZE = 16;
  * AiBadge.test.tsx measures it.
  */
 const ICON_SIZE = 10;
+
+/**
+ * The display name of the AI a session runs on, as its badge names it: what a
+ * control that stands for the session says out loud (#1319), so the row and
+ * the pill name the AI their badge only shows.
+ */
+export function useAiName(providerId: string | undefined): string | undefined {
+  const ais = React.useSyncExternalStore(subscribeAis, getAisState);
+  // undefined, not the badge's placeholder "AI": a label that says "AI" about
+  // a session whose AI is not known yet tells a listener nothing
+  const name = aiLook(ais, providerId, '').name;
+  return name || undefined;
+}
 
 export function AiBadge(props: {
   /** the provider the session is on; absent = not known yet (neutral glyph) */
@@ -62,6 +79,14 @@ export function AiBadge(props: {
    * second popup for one hover.
    */
   decorative?: boolean;
+  /**
+   * The session's colour, painted INSIDE the ring as a faint disc behind the
+   * icon (#1319, the owner's pick). For the tab: the old dot carried the
+   * session's colour, the AI icon that replaced it did not, so an inactive tab
+   * said nothing about which session it was. Inside the border, never under
+   * it: the ring's status ink keeps the surface its contrast was measured on.
+   */
+  accent?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const ais = React.useSyncExternalStore(subscribeAis, getAisState);
@@ -96,6 +121,19 @@ export function AiBadge(props: {
           justifyContent: 'center',
         }}
       >
+        {props.accent ? (
+          <span
+            aria-hidden
+            data-ai-track
+            style={{
+              position: 'absolute',
+              // clear of BOTH rings: the still one is 1.5px, the spinner 1.6px
+              inset: TRACK_INSET,
+              borderRadius: '50%',
+              background: tint(props.accent, TRACK_PCT),
+            }}
+          />
+        ) : null}
         {spinning ? (
           <span
             aria-hidden

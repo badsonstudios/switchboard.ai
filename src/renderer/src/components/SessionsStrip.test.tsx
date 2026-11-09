@@ -355,6 +355,13 @@ describe('sessions that are not in a group', () => {
     expect(pill(host, 'c').dataset.pinned).toBe('true');
   });
 
+  it('name the AI they run on, as the badge shows it (#1319)', async () => {
+    const host = await mount({ groups: [], sessions: [s('a', { providerId: 'gemini-x' })] });
+    const label = pill(host, 'a').getAttribute('aria-label') ?? '';
+    expect(label).toBe('a, gemini-x — calm');
+    expect(label).toBe(sessionSpokenName(i18next.t.bind(i18next), s('a', { providerId: 'gemini-x' }), false, 0, 'gemini-x'));
+  });
+
   it('are called what a row in the list is called', async () => {
     const host = await mount({ groups: [], sessions: [s('a', { taskLabel: 'Tray icon redraw' })] });
     const session = s('a', { taskLabel: 'Tray icon redraw' });

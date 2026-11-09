@@ -21,7 +21,7 @@ import { useApprovalWatch } from '../lib/use-approval-watch';
 import { useShownStatus } from '../lib/use-shown-status';
 import { dismissWaiting, isDismissClick } from '../lib/seen';
 import { tint } from '../lib/tint';
-import { AiBadge } from './AiBadge';
+import { AiBadge, useAiName } from './AiBadge';
 import { useSessionNote } from '../lib/session-notes';
 import { DEFAULT_TASK_LABEL_SIZE, LABEL_LINES } from '../../../shared/task-label-size';
 
@@ -102,23 +102,27 @@ export function sessionSpokenName(
   t: TFunction,
   s: RailSession,
   isPinned: boolean,
-  waiting: number
+  waiting: number,
+  /** the AI it runs on (#1319): the badge shows it, and the badge is hidden
+   *  from a screen reader inside a labelled control */
+  ai?: string
 ): string {
   // #1434 added ", allowing all without asking" here, to go with a ✓✓ mark
   // beside the row. Dan removed the mark (#1462), and the words went with it:
   // the mode chip under the prompt box is the one place that is said.
-  return baseSpokenName(t, s, isPinned, waiting);
+  return baseSpokenName(t, s, isPinned, waiting, ai);
 }
 
 function baseSpokenName(
   t: TFunction,
   s: RailSession,
   isPinned: boolean,
-  waiting: number
+  waiting: number,
+  ai?: string
 ): string {
   const p = presentStatus(s.status);
   return t(isPinned ? 'rail.rowLabelPinned' : 'rail.rowLabel', {
-    title: s.title,
+    title: ai ? t('rail.rowTitleAi', { title: s.title, ai }) : s.title,
     state: ((): string => {
       // #877: the label is announced WHENEVER there is one, including
       // on a row that needs you. It used to be dropped in exactly
@@ -220,6 +224,7 @@ export function SessionRow(props: {
   const accent = s.accent ?? 'var(--faint)';
   const selected = props.selected;
   const isPinned = props.pinned;
+  const aiName = useAiName(s.providerId);
   // the card's sticky note, for the marker and the spoken name (#1544)
   const { note: rowNote, waiting: rowWaiting } = useSessionNote(s.id);
   const waiting = props.waiting;
@@ -406,7 +411,7 @@ export function SessionRow(props: {
             // has to be here at all because the mark beside the row is
             // `aria-hidden` decoration like every other glyph on the row.
             aria-label={((): string => {
-              const name = sessionSpokenName(t, s, isPinned, waiting);
+              const name = sessionSpokenName(t, s, isPinned, waiting, aiName);
               // the sticky note (#1544) is said too: its marker is decoration
               const noted = rowNote
                 ? t(rowNote.by === 'ai' ? 'rail.rowNoteAi' : 'rail.rowNote', { label: name, note: rowNote.text })

@@ -1063,6 +1063,8 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
               needsYou={needsYou}
               // the tab's name stays the session's name (see the prop)
               decorative
+              // the session's colour, which the dot this replaced carried (#1319)
+              accent={accent}
             />
           ) : undefined
         }

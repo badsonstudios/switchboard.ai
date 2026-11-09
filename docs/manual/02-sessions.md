@@ -338,6 +338,14 @@ stays still. There is always
 a little space between the ring and the icon, so an orange ring around Claude's
 coral icon, or a blue one around Gemini's, still reads as two things.
 
+**On a tab, the inside of the ring is the session's own colour**, faintly, so
+even a tab you are not looking at says which session it is. The ring itself
+stays the status colour.
+
+**A screen reader names the AI too.** A session's row in the list and its pill
+on the strip are read as its name, its AI and its state, for example
+"switchboard, Claude Code — working".
+
 **The colour is never the only sign.** The status is still written in a word
 next to it: on the row, on the strip, and in the pill at the right of the card
 header.
