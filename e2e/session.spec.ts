@@ -1,6 +1,7 @@
 import { test, expect, Locator, Page } from '@playwright/test';
 import path from 'path';
 import {
+  clickClosingItsWindow,
   launchApp,
   LaunchedApp,
   registeredPopouts,
@@ -407,7 +408,7 @@ test.describe('a session card', () => {
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(2);
     const popout = app.windows().find((w) => w !== window)!;
     // click the SAME control in the popped-out window to dock it back IN
-    await popout.getByTitle('Pop back into the main window').click();
+    await clickClosingItsWindow(popout.getByTitle('Pop back into the main window'));
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(1);
     // Docked back ALIVE (button toggle, not a window-close). The proof used to
     // be typing into the card's terminal; with no terminal surface left (#873)

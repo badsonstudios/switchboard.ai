@@ -43,6 +43,7 @@ import path from 'path';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 import {
+  clickClosingItsWindow,
   LaunchedApp,
   launchApp,
   skipPopoutOnLinux,
@@ -165,7 +166,7 @@ test.describe('docking back from a popout (#558)', () => {
     ).toBe(false);
 
     // ...and now the survivor, which is where it went wrong
-    await popout.getByTitle('Pop back into the main window').click();
+    await clickClosingItsWindow(popout.getByTitle('Pop back into the main window'));
     await expect.poll(() => a!.app.windows().length, { timeout: 25_000 }).toBe(1);
     await w.waitForTimeout(2_000);
 
@@ -224,7 +225,7 @@ test.describe('docking back from a popout (#558)', () => {
     expect(cGroup!.cards.length, 'the popout-born card claimed a slot of its own').toBeGreaterThan(1);
 
     // ...then the opener, which is now alone in its window
-    await popout.getByTitle('Pop back into the main window').click();
+    await clickClosingItsWindow(popout.getByTitle('Pop back into the main window'));
     await expect.poll(() => a!.app.windows().length, { timeout: 25_000 }).toBe(1);
     await w.waitForTimeout(2_000);
     const after = await groups(w);
@@ -315,7 +316,7 @@ test.describe('docking back from a popout (#558)', () => {
     const popout = await popoutWindow(a);
     await expect(tabs(popout)).toHaveCount(1, { timeout: 15_000 });
 
-    await popout.getByTitle('Pop back into the main window').click();
+    await clickClosingItsWindow(popout.getByTitle('Pop back into the main window'));
     await expect.poll(() => a!.app.windows().length, { timeout: 25_000 }).toBe(1);
     await w.waitForTimeout(2_000);
 
@@ -419,7 +420,7 @@ test.describe('a popout window emptied the other ways (#657)', () => {
     const { g, popout, nameC } = await orphanedSurvivor();
     const w = g.a.window;
 
-    await popout.getByTitle('Pop back into the main window').click();
+    await clickClosingItsWindow(popout.getByTitle('Pop back into the main window'));
     await expect.poll(() => g.a.app.windows().length, { timeout: 25_000 }).toBe(1);
     await w.waitForTimeout(2_000);
 
@@ -529,7 +530,7 @@ test.describe('docking back alone keeps the persistent group (#656)', () => {
     await popButton(w, member, 'Pop out into its own window').click();
     const popout = await popoutWindow(app);
     await expect(tabs(popout)).toHaveCount(1, { timeout: 15_000 });
-    await popout.getByTitle('Pop back into the main window').click();
+    await clickClosingItsWindow(popout.getByTitle('Pop back into the main window'));
     await expect.poll(() => app.app.windows().length, { timeout: 25_000 }).toBe(1);
     await w.waitForTimeout(2_000);
 

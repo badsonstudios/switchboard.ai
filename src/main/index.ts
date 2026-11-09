@@ -169,6 +169,7 @@ import {
 import { dialog } from 'electron';
 import { buildIdentity, isReleaseBuild, windowTitle } from '../shared/build-identity';
 import { clearDeadHttpCache } from './http-cache';
+import { retryFailedRendererLoad } from './renderer-load-retry';
 import { acquireInstanceLock, focusRunningWindow, sleepSync } from './single-instance';
 import {
   childWindowOptions,
@@ -987,13 +988,16 @@ function createWindow(): BrowserWindow {
     if (!origin || !url.startsWith(origin)) event.preventDefault();
   });
 
-  if (DEV_URL) {
-    void win.loadURL(DEV_URL);
-  } else if (RENDERER_ORIGIN) {
-    void win.loadURL(`${RENDERER_ORIGIN}/index.html`);
-  } else {
-    void win.loadFile(path.join(__dirname, '../renderer/index.html')); // fallback
-  }
+  // A load that fails leaves Chromium's error page in the window, and with it
+  // a blank app (#1592): log why, and load the page again. The rejection is
+  // swallowed here because `did-fail-load` is where it is reported.
+  const loadPage = (): Promise<void> => {
+    if (DEV_URL) return win.loadURL(DEV_URL);
+    if (RENDERER_ORIGIN) return win.loadURL(`${RENDERER_ORIGIN}/index.html`);
+    return win.loadFile(path.join(__dirname, '../renderer/index.html')); // fallback
+  };
+  retryFailedRendererLoad(win.webContents, { load: loadPage, log: log.ui });
+  loadPage().catch(() => undefined);
   return win;
 }
 

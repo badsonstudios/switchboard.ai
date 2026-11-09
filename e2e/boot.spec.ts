@@ -67,4 +67,33 @@ test.describe('app boots', () => {
     // the workspace blob at all, which is the whole locale mechanism.
     expect(parsed.language).toBe('en');
   });
+
+  test('a window whose page failed to load gets it again, and the log says why (#1592)', async () => {
+    // The CI sighting behind this: a window that came up showing Chromium's
+    // error page — no rail, no renderer log line, for 30 s. Nothing can make
+    // OUR loopback load fail on demand, so the failure is made the honest way:
+    // main itself sends the window to a port Chromium refuses outright
+    // (ERR_UNSAFE_PORT, -312). That is a real failed main-frame load, through
+    // the real `did-fail-load`, and the page must come back on its own.
+    a = await launchApp();
+    const w = a.window;
+    await expect(w.getByRole('button', { name: '+ session' })).toBeVisible();
+    await a.app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win.loadURL('http://127.0.0.1:1/index.html').catch(() => undefined);
+    });
+    // Main says the retry landed — waited for FIRST, because the old page's
+    // button is still on screen until the failed load replaces it
+    const log = await poll(() => {
+      const f = findFile(a.home, 'switchboard.log');
+      const text = f ? fs.readFileSync(f, 'utf8') : '';
+      return text.includes('the window loaded its page on a retry') ? text : null;
+    });
+    // ...and the window is back on our own page, with the shell drawn
+    expect(w.url()).toMatch(/^http:\/\/127\.0\.0\.1:\d+\//);
+    await expect(w.getByRole('button', { name: '+ session' })).toBeVisible();
+    const failed = log.split('\n').find((l) => l.includes('the window failed to load its page'));
+    expect(failed, 'the failure was never logged').toBeTruthy();
+    expect(JSON.parse(failed!)).toMatchObject({ errorCode: -312, url: 'http://127.0.0.1:1/index.html' });
+  });
 });

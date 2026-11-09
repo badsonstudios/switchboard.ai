@@ -30,6 +30,7 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
 import path from 'path';
 import {
+  clickClosingItsWindow,
   launchApp,
   LaunchedApp,
   skipPopoutOnLinux,
@@ -99,7 +100,7 @@ test.describe('the composer draft survives (#485)', () => {
     // ...and back again. Docking in is a rebuild too, and a draft that only
     // survived one direction would be a draft you lose by putting the card
     // back where it came from.
-    await popout.getByTitle('Pop back into the main window').click();
+    await clickClosingItsWindow(popout.getByTitle('Pop back into the main window'));
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(1);
     await expect(w.getByPlaceholder(/^Message .+…$/)).toHaveValue(DRAFT, {
       timeout: 20_000,
