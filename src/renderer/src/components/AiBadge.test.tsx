@@ -122,6 +122,29 @@ describe('the AI badge (#1293)', () => {
     expect(badge.getAttribute('data-ring')).toBe('crashed');
   });
 
+  it("fills the inside of the ring with the session's colour when given one, never the ring itself (#1319)", async () => {
+    resetAisStoreForTests(WITH_LIST);
+    let badge = await render(<AiBadge providerId="claude-code" status="idle" needsYou={false} accent="var(--status-crashed)" decorative />);
+    const track = badge.querySelector<HTMLElement>('[data-ai-track]')!;
+    expect(track).not.toBeNull();
+    expect(track.style.background).toContain('var(--status-crashed)');
+    // INSIDE the ring's border, so the status ink keeps the surface it is measured on
+    const ring = badge.querySelector<HTMLElement>('[data-ai-ring]')!;
+    expect(parseFloat(track.style.inset)).toBeGreaterThanOrEqual(parseFloat(ring.style.border));
+    expect(ring.style.border).not.toContain('var(--status-crashed)');
+    // drawn BEFORE the ring and the icon, so both sit on top of it
+    expect(badge.firstElementChild).toBe(track);
+    // and clear of the SPINNING ring, whose border is a little wider
+    badge = await render(<AiBadge providerId="claude-code" status="working" needsYou={false} accent="var(--status-crashed)" />);
+    const spinner = badge.querySelector<HTMLElement>('.status-ring')!;
+    expect(parseFloat(badge.querySelector<HTMLElement>('[data-ai-track]')!.style.inset)).toBeGreaterThanOrEqual(
+      parseFloat(spinner.style.border)
+    );
+    // no accent, no disc: every surface but the tab
+    badge = await render(<AiBadge providerId="claude-code" status="idle" needsYou={false} />);
+    expect(badge.querySelector('[data-ai-track]')).toBeNull();
+  });
+
   it('spins while busy where the mark always spun, and carries the look-6 bars beside it', async () => {
     resetAisStoreForTests(WITH_LIST);
     const badge = await render(<AiBadge providerId="claude-code" status="working" needsYou={false} />);

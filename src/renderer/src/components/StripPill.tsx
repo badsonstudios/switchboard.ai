@@ -23,7 +23,7 @@ import { useShownStatus } from '../lib/use-shown-status';
 import { dismissWaiting, isDismissClick } from '../lib/seen';
 import { tint } from '../lib/tint';
 import { sessionSpokenName } from './SessionRow';
-import { AiBadge } from './AiBadge';
+import { AiBadge, useAiName } from './AiBadge';
 
 export function StripPill(props: {
   session: RailSession;
@@ -72,7 +72,10 @@ export function StripPill(props: {
   const hue = `var(--status-${paint.token})`;
   const ink = `var(--status-${paint.token}-ink)`;
   const accent = s.accent ?? 'var(--faint)';
-  const spoken = sessionSpokenName(t, s, props.pinned, props.waiting);
+  // the AI too (#1319, the owner's call): the badge shows it, and the badge is
+  // hidden inside this button's label like everything else on the pill
+  const aiName = useAiName(s.providerId);
+  const spoken = sessionSpokenName(t, s, props.pinned, props.waiting, aiName);
   // SELECTION OWNS THE FILL AND THE EDGE (#1405). #1351 let a waiting session
   // outrank selection here, so two waiting pills were the same gold and the
   // strip could not say which one you had open — the tab strip's defect, and

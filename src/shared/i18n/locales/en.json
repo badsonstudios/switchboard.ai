@@ -182,6 +182,7 @@
     "lineageMark": "↳",
     "pinnedHint": "Pinned — sorts first, and bulk actions skip it",
     "rowLabel": "{title} — {state}",
+    "rowTitleAi": "{title}, {ai}",
     "rowLabelPinned": "{title} — pinned, {state}",
     "rowDetail": "{detail}, {state}",
     "rowNote": "{label}, note: {note}",
