@@ -140,6 +140,11 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.142 — unreleased
 
+### Changed
+
+- **The line above each of your prompts now says PROMPT**, not NEW PROMPT,
+  which sounded as if the session had been cleared.
+
 ## 0.8.141 — 2026-11-08
 
 ### Changed

@@ -3,6 +3,10 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE: #1589, the turn caption says PROMPT, not NEW PROMPT (NOT RELEASED)
+>
+> **Dan (2026-11-09)**, on 0.8.141: he likes the colour and the fold, but *"new prompt ... makes it sound like I've cleared the session."* `feedView.turnMarker` is now "Prompt", drawn in upper case. Updated `FeedView.turns.test.tsx`, the manual (03) and the CHANGELOG; no e2e read the caption. Merged with this close-out in its own PR. **Next up:** Dan's pick.
+
 > # ✅ RELEASED: v0.8.141, 2026-11-08 (PR #1587, tag on `94471eeb`, release run 42541184380): the 2026-11-08 batch
 >
 > **Dan (2026-11-08):** *"Cut a release."* A **regular release, on his word.** The version, lock and dated notes landed together, and `0.8.142 — unreleased` is open. The lock's two version lines were edited by hand. One line about the manual was added to the notes. **In it:** your prompts in their own colour, folding to one line (#717, PR #1586); the AI-switch icons (#1323, PR #1580); the manual caught up (#965, PR #1584); and the internal fixes #1536, #1440, #671, #1353 and #651. Published as Latest with `switchboard-Setup-0.8.141.exe` and its `.sha256`. **Next up:** Dan's pick.

@@ -1263,7 +1263,7 @@
       "summaryLoading": "Loading the summary…",
       "summaryGone": "This summary is no longer available here. It is still in the saved conversation."
     },
-    "turnMarker": "New prompt",
+    "turnMarker": "Prompt",
     "fold": {
       "title": "Explored the code",
       "shellTitle": "Ran",

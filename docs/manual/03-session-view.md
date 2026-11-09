@@ -52,7 +52,7 @@ again to put the layout back.
 This is the conversation, rendered to be read rather than scrolled past:
 
 - **Your prompts** have a colour of their own: an indigo box with a thicker
-  edge on its left, under an indigo rule with **NEW PROMPT** on it. No other
+  edge on its left, under an indigo rule with **PROMPT** on it. No other
   part of the conversation uses that colour, so you can scroll a long session
   and spot each of your prompts without reading a word of it. (It is never one
   of the colours that mean a session needs you.)
@@ -999,8 +999,8 @@ The row also carries a word on the right saying how it went: **completed**,
 happened rather than ending. **failed** and **killed** are shown in red.
 
 **Why this has its own row.** These are not messages from you, and until now
-they looked like they were: each one arrived under a **New prompt** line, in
-the tinted box your own prompts use, showing the raw code the job sent. That
+they looked like they were: each one arrived under the line that marks your
+prompts, in the box your own prompts use, showing the raw code the job sent. That
 made a long session hard to read back — the turn markers you scan for were
 landing on things you never said.
 
