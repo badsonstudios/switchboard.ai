@@ -127,13 +127,13 @@ afterEach(async () => {
 });
 
 describe('a finished dispatch, on the author’s row', () => {
-  it('names the role and the session that wore it, not "Done."', async () => {
+  it('names the role and the session that wore it, not "waiting"', async () => {
     await render([row(result())]);
-    // "Done." would be a statement about the AUTHOR, which is the one session
+    // "waiting" would be a statement about the AUTHOR, which is the one session
     // this row is not about.
     expect(host.textContent).toContain('Code Reviewer');
     expect(host.textContent).toContain('Review of Alpha');
-    expect(host.textContent).not.toContain(en.events.kind.done);
+    expect(host.textContent).not.toContain(en.status.done);
   });
 
   it('shows the first line the reviewer wrote, and no invented count', async () => {

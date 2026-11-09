@@ -23,9 +23,10 @@ ID.
   **"N need you"** count — the tab's number and the Sessions list's group
   headers and total all drop by one, and the total disappears altogether at
   zero.
-- Entries read **needs permission**, **needs input**, **crashed**, or **Done.**
-  A finished session relaxes from **Done.** to **Ready** once you've looked at
-  it.
+- Entries use the same words as the Sessions list: **approval** (Claude wants
+  permission to run something), **question** (Claude has asked you something),
+  **crashed**, or **waiting** (it finished its turn). A finished session relaxes
+  from **waiting** to **calm** once you've looked at it.
 - When nothing is outstanding it says **Nothing needs you right now**.
 
 **Dismissing is not answering.** It takes the item off your plate; it does not
@@ -97,16 +98,16 @@ is shut and the tab is off the edge of your attention.
 Entries aren't listed newest-first — they're listed **in the order you should
 deal with them**:
 
-1. **Needs permission** — Claude is blocked on your answer.
-2. **Needs input** — Claude has asked you something.
-3. **Crashed** — the session died.
-4. **Done.** — finished, and you haven't looked yet.
+1. **approval** — Claude is blocked on your answer.
+2. **question** — Claude has asked you something.
+3. **crashed** — the session died.
+4. **waiting** — finished, and you haven't looked yet.
 
 Within each group, whoever has been waiting longest is higher up. Sessions
-you've already reviewed (**Ready**) sink to the bottom and go quiet — the row
+you've already reviewed (**calm**) sink to the bottom and go quiet — the row
 settles a shade into the background and its title is written in the softer grey
 the app uses for secondary text. They're history at that point, not work. Quiet,
-but still readable: the title, the session's task and the word **Ready** are all
+but still readable: the title, the session's task and the word **calm** are all
 held to the same legibility floor as the rest of the app. (The timestamp in the
 corner is deliberately fainter than that, here and everywhere else.)
 
@@ -162,7 +163,7 @@ The three buttons under the drawer's heading change what's listed:
 
 - **All** — everything, in to-do order (the list described above).
 - **Needed** — only the entries still waiting on you. Sessions you've already
-  looked at (**Ready**) are hidden, unless one still has a question or
+  looked at (**calm**) are hidden, unless one still has a question or
   permission open, in which case it stays so its buttons stay in reach.
 - **By session** — everything, but in the same order as your Sessions list
   (pinned first, groups together) instead of by urgency. Use it when you're
@@ -597,11 +598,11 @@ the public ntfy.sh.
 
 ### What gets sent, and when
 
-You get a push for **needs permission**, **needs input**, and **crashes** —
+You get a push for **approvals**, **questions**, and **crashes** —
 and only while you're **away from switchboard**. If you're sitting in front of
 the app, your pocket stays quiet: the screen already told you.
 
-A finished turn (**Done.**) does *not* push. That's what the per-session
+A finished turn (**waiting**) does *not* push. That's what the per-session
 **Notify when done** checkbox above is for.
 
 The message is the same one a desktop pop-up would have shown: the session's
@@ -622,7 +623,7 @@ my webhook**. **Send test** POSTs one immediately so you can check the other end
 is listening.
 
 Unlike the phone push, a webhook fires **whatever the window is doing** and
-includes **Done.** — a program isn't distracted by being looked at, and a
+includes finished turns — a program isn't distracted by being looked at, and a
 dashboard wants the whole picture.
 
 The body looks like this:
@@ -738,9 +739,9 @@ the top of the drawer says so:
 
 > **3 notifications were held while it was quiet**
 > across 2 sessions
-> TradingApp — needs permission     03:14
-> Switchboard.ai — Done.            04:02
-> TradingApp — needs input          06:41
+> TradingApp — approval            03:14
+> Switchboard.ai — waiting          04:02
+> TradingApp — question             06:41
 
 It shows the six most recent by name and counts the rest ("and 12 more"), so a
 long weekend is a few lines rather than a screen you have to scroll. Each line

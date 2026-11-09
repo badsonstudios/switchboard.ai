@@ -507,7 +507,7 @@ describe('events panel rows (issue 197)', () => {
     const host = await mountEvents();
     const first = host.querySelector<HTMLElement>('[data-event-open]')!;
     expect(name(first)).toContain('switchboard');
-    expect(name(first)).toContain(en.events.kind['needs-permission']);
+    expect(name(first)).toContain(en.status['needs-permission']);
   });
 
   it('keeps Dismiss reachable — a sibling of the open button, not inside it', async () => {

@@ -185,16 +185,17 @@ test.describe('inline approval bar (E10-04)', () => {
     expect(parseVerdict(verdict).hookSpecificOutput, 'the question was HELD').toBeUndefined();
     await expect(w.getByText('Allow AskUserQuestion?')).toHaveCount(0);
 
-    // the shipped machinery does the rest: an Events entry saying it needs you.
+    // the shipped machinery does the rest: an Events entry saying it needs you —
+    // in the sessions list's word, "question", since #1591.
     // The drawer holding that entry is collapsed by default (P2-E14-01), so it
     // is opened here — the row below is the whole point of the assertion, and
     // it does not exist in the DOM until it is.
     await openEventsDrawer(w);
-    await expect(w.locator('aside').getByText('needs input')).toBeVisible({ timeout: 15_000 });
+    await expect(w.getByTestId('events-drawer').getByText(/^question/)).toBeVisible({ timeout: 15_000 });
 
     // and answering it lets the turn resume
     await hook({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion' });
-    await expect(w.locator('aside').getByText('needs input')).toHaveCount(0, { timeout: 15_000 });
+    await expect(w.getByTestId('events-drawer').getByText(/^question/)).toHaveCount(0, { timeout: 15_000 });
   });
 
   // ── "A CRASHED RENDERER RELEASES THE HOLD" — MOVED, NOT LOST (#952) ───────

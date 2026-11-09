@@ -3,6 +3,11 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔄 IN PROGRESS: the batch Dan picked on 2026-11-09: #1591, #1319, #675, #1592, then #1573
+>
+> **Dan (2026-11-09):** one PR per ticket, merged on green CI, in the order #1591, #1319, #675, #1592. **Decisions asked up front (Dan, 2026-11-09):** #1573 **fix it** (retune the auto ink so the folder group name and AUTO badge clear 4.5:1, add the measurement), added as the fifth item; #1319 (a) the strip pill's screen-reader label **names its AI**; (b) an inactive tab with no language badge shows its session colour by **tinting the status ring's track**. **How it runs:** each item's PROGRESS and dogfood close-out rides in the NEXT item's PR; the last gets its own close-out PR.
+- **#1591** (in this PR): the Events drawer rows and the missed-events digest read the sessions list's `status.*` words through `eventKindKey` (rail-view); `events.kind` keeps only dispatch-result. The push hint says approvals, questions, crashes. **Not changed:** the OS toast, phone body, webhook body and spoken sentences (`notification.kind/speak`); the webhook body is a machine contract.
+
 > # ✅ DONE: #1589, the turn caption says PROMPT, not NEW PROMPT (NOT RELEASED)
 >
 > **Dan (2026-11-09)**, on 0.8.141: he likes the colour and the fold, but *"new prompt ... makes it sound like I've cleared the session."* `feedView.turnMarker` is now "Prompt", drawn in upper case. Updated `FeedView.turns.test.tsx`, the manual (03) and the CHANGELOG; no e2e read the caption. Merged with this close-out in its own PR. **Next up:** Dan's pick.

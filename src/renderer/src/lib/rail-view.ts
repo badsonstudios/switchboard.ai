@@ -221,6 +221,36 @@ export function presentStatus(status?: string): StatusPresentation {
 }
 
 /**
+ * The word an Events-drawer row (and the missed-events digest) prints for an
+ * attention event's kind. #1591: these said "needs input", "needs permission",
+ * "Done." and "Ready" long after the sessions list moved to question /
+ * approval / waiting / calm in 0.8.125, so one state had two names side by
+ * side. They now read the SAME `status.*` keys the row's word does — one
+ * vocabulary, one place to change it.
+ *
+ * `ready` is a `done` the user has since looked at, which is exactly what the
+ * sessions list calls calm. `dispatch-result` has no session-state word (it
+ * is a statement about another session) and keeps its own key. Anything else
+ * fails open to its own key under `events.kind`.
+ */
+export function eventKindKey(kind: string): string {
+  switch (kind) {
+    case 'needs-input':
+      return 'status.needs-input';
+    case 'needs-permission':
+      return 'status.needs-permission';
+    case 'done':
+      return 'status.done';
+    case 'ready':
+      return 'status.idle';
+    case 'crashed':
+      return 'status.crashed';
+    default:
+      return `events.kind.${kind}`;
+  }
+}
+
+/**
  * The two var() strings a status-colored surface paints with: the HUE (dots,
  * rings, tints, edges) and the INK (the word itself, tuned per theme so it
  * clears AA on the surface it lands on — #221).
