@@ -162,7 +162,7 @@ describe('the turn boundary (#640)', () => {
     const divider = host.querySelector<HTMLElement>('.turn-divider')!;
     // the caption is i18n, never a literal — an empty divider is the hairline
     // #640 replaced, wearing the new class
-    expect(divider.textContent?.trim()).toBe('New prompt');
+    expect(divider.textContent?.trim()).toBe('Prompt');
     // ...and it is furniture for the eye: the prompt below is already
     // announced as the user's own words
     expect(divider.getAttribute('aria-hidden')).toBe('true');
