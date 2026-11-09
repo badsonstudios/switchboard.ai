@@ -133,8 +133,12 @@
 
   /* Emergent auto-groups (E12-05). Deliberately NOT a group-palette hue and
      not a status hue: an auto-group is a category, not an individual, and its
-     look has to say "the app made this, you can't drop into it". */
-  --auto-ink: #8b9bc4;
+     look has to say "the app made this, you can't drop into it".
+     #1573: lifted from #8b9bc4, same hue and saturation, so the group's name
+     and AUTO badge clear 4.5:1 on --auto-head, a tint of THIS ink and the
+     tightest surface it is written on (3.64:1 before, 4.58:1 now). Any
+     lighter and the head it tints fails --muted. */
+  --auto-ink: #9eacce;
 
   /* EACH AI'S ICON COLOUR (#1326), keyed by its catalog id. The icon is a CSS
      mask painted in this ink (`AiIcon.tsx`), so it is the AI's colour in every
@@ -413,7 +417,9 @@
   --titlebar-bg: var(--bar);
   /* an auto-group's own surface, derived so it tracks both themes for free */
   --auto-surface: color-mix(in srgb, var(--auto-ink) 7%, var(--rail-card));
-  --auto-head: color-mix(in srgb, var(--auto-ink) 16%, var(--rail-card));
+  /* 12%, was 16% (#1573): a colour on a tint of itself loses contrast, and at
+     16% no nordic --auto-ink cleared 4.5:1 on it while --muted still did */
+  --auto-head: color-mix(in srgb, var(--auto-ink) 12%, var(--rail-card));
   /* A SMALL CONTROL'S EDGE (#1009), and it is deliberately NOT `--border`.
    *
    * `--border` is a hairline: it measures 1.13:1 against the composer's own

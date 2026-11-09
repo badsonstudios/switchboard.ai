@@ -1463,7 +1463,7 @@ describe('the secondary ink is readable wherever words are written in it (#685)'
   // group header below; the status pills in TINTED_RULES).
   const SURFACES = ['--bg', '--panel', '--panel2', '--chip', '--rail-card'];
   // the two auto-group fills are mixed from tokens, so they are resolved from
-  // the file per theme; `--auto-head` is the tight one (4.52:1 on nordic)
+  // the file per theme; `--auto-head` is the tight one (4.67:1 on nordic since #1573)
   const DERIVED = ['--auto-surface', '--auto-head'];
 
   describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s', (id, theme) => {
@@ -1477,6 +1477,13 @@ describe('the secondary ink is readable wherever words are written in it (#685)'
     it.each(DERIVED)('--muted on %s clears 4.5:1', (surface) => {
       expect(tokens['--muted'], '--muted must be #rrggbb to be measured').toMatch(/^#[0-9a-f]{6}$/i);
       expect(ratio(tokens['--muted'], derivedSurface(surface, id, tokens))).toBeGreaterThanOrEqual(4.5);
+    });
+    // #1573: an automatic group writes its NAME, folder icon and AUTO badge in
+    // --auto-ink ON --auto-head, a tint of that same ink. A colour on a tint of
+    // itself loses contrast, and nordic measured about 3.7:1. --muted was
+    // measured here; the ink the header is actually written in never was.
+    it.each(DERIVED)('--auto-ink on %s clears 4.5:1', (surface) => {
+      expect(ratio(tokens['--auto-ink'], derivedSurface(surface, id, tokens))).toBeGreaterThanOrEqual(4.5);
     });
   });
 });
