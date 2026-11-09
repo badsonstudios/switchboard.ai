@@ -580,8 +580,9 @@ describe('eventKindKey', () => {
 
   it('resolves to the words the sessions list prints', async () => {
     const { eventKindKey } = await import('./rail-view');
-    const en = (await import('../../../shared/i18n/locales/en.json')).default as Record<string, any>;
-    const word = (k: string) => k.split('.').reduce((o: any, p) => o?.[p], en);
+    const en: unknown = (await import('../../../shared/i18n/locales/en.json')).default;
+    const word = (k: string): unknown =>
+      k.split('.').reduce<unknown>((o, p) => (o as Record<string, unknown> | undefined)?.[p], en);
     expect(['needs-permission', 'needs-input', 'done', 'ready', 'crashed'].map((k) => word(eventKindKey(k)))).toEqual([
       'approval',
       'question',
