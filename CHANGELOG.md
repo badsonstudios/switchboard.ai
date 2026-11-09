@@ -154,6 +154,12 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 - **A screen reader now names a session's AI** on its row in the Sessions list
   and its pill on the strip.
 
+### Fixed
+
+- **Allow and Deny work on a pop-up that has moved into the Windows
+  notification centre.** Before, pressing them there did nothing. If
+  switchboard has been closed since, pressing one opens switchboard.
+
 ## 0.8.141 — 2026-11-08
 
 ### Changed
