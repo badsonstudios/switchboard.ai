@@ -159,6 +159,9 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 - **Allow and Deny work on a pop-up that has moved into the Windows
   notification centre.** Before, pressing them there did nothing. If
   switchboard has been closed since, pressing one opens switchboard.
+- **A window that fails to load comes back by itself.** Rarely, a window
+  could open blank and stay that way. It now loads its page again, and the
+  log says why it failed.
 
 ## 0.8.141 — 2026-11-08
 
