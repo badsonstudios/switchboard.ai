@@ -162,6 +162,8 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 - **A window that fails to load comes back by itself.** Rarely, a window
   could open blank and stay that way. It now loads its page again, and the
   log says why it failed.
+- **A folder group's name and AUTO badge are easier to read** on their
+  header in the Sessions list, mostly on the dark theme.
 
 ## 0.8.141 — 2026-11-08
 
