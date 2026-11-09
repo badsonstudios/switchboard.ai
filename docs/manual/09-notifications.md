@@ -484,7 +484,7 @@ one honestly differs by platform:
 
 | | What you get |
 |---|---|
-| **Windows 10/11** | **Allow** and **Deny** buttons on the pop-up. In an installed build these work as described. Running switchboard from a development checkout, Windows may show the pop-up without its buttons — it only offers them to apps it has a Start-menu registration for — in which case clicking the pop-up still takes you straight to the request. |
+| **Windows 10/11** | **Allow** and **Deny** buttons on the pop-up. In an installed build these work as described. Running switchboard from a development checkout, Windows may show the pop-up without its buttons — it only offers them to apps it has a Start-menu registration for — in which case clicking the pop-up still takes you straight to the request. **Allow** and **Deny** also work on a pop-up that has already slid away into the notification centre (the panel the bell or the date in the taskbar opens). If switchboard has been closed since, pressing either just opens switchboard: the request died with it. |
 | **macOS** | **Allow** and **Deny** buttons, on a signed build. An unsigned local build gets a plain pop-up; clicking it still takes you to the request. |
 | **Linux** | No buttons — Electron doesn't offer notification actions there. Clicking the pop-up brings switchboard forward onto the card that's asking, which is still one gesture. |
 

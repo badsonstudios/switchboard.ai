@@ -169,5 +169,9 @@ module.exports = {
     // A dogfooding tool that deletes its own workspace/session state on
     // uninstall would be a nasty surprise; %APPDATA%\switchboard stays.
     deleteAppDataOnUninstall: false,
+    // #675: registers the toast activator's COM server (HKCU), so a press on a
+    // toast in the Action Center can start the app. The CLSID is pinned to
+    // app-identity.ts by packaging.test.ts.
+    include: 'build/installer.nsh',
   },
 };

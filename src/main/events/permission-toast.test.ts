@@ -16,7 +16,9 @@ import {
   decideButtonActions,
   PermissionToasts,
   permissionSummary,
+  activationTag,
   toastActionsSupported,
+  toastTag,
 } from './permission-toast';
 import { createMainI18n } from '../i18n';
 import type { LanguageChoice, Translate } from '../../shared/i18n';
@@ -509,5 +511,90 @@ describe('a toast is composed in the user language (#471)', () => {
     expect(permissionSummary(bash(), t)).toContain('⟦');
     lang = 'en';
     expect(permissionSummary(bash(), t)).toBe('Allow Bash? npm run build');
+  });
+});
+
+// #675: a press in the Action Center arrives as a COM activation, a string
+// Electron builds from its toast template (`type=action&action=<i>&tag=<tag>`,
+// read out of electron.exe 43.1.1), not as an event on the toast object.
+describe('PermissionToasts — a press from the Action Center (#675)', () => {
+  const REQ = 'stream:6f1c0a52-7d0e-4c55-9d47-2a7c9c3e1b11:toolu_01ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const press = (index: number, req = REQ) => ({
+    type: 'action',
+    actionIndex: index,
+    arguments: `type=action&action=${index}&tag=${toastTag(req)}`,
+  });
+
+  it('gives each request a short, stable tag Windows will accept', () => {
+    expect(toastTag(REQ)).toBe(toastTag(REQ));
+    expect(toastTag(REQ)).not.toBe(toastTag(REQ + 'x'));
+    // a Windows toast Tag is at most 64 characters; the request id is longer
+    expect(REQ.length).toBeGreaterThan(64);
+    expect(toastTag(REQ).length).toBeLessThanOrEqual(64);
+    expect(activationTag(`type=action&action=0&tag=${toastTag(REQ)}`)).toBe(toastTag(REQ));
+    expect(activationTag('type=click')).toBeUndefined();
+  });
+
+  it('Allow and Deny from the Action Center reach the one decision path', () => {
+    const { toasts, decide } = harness();
+    toasts.track(REQ, fakeToast(), 'card-1');
+    toasts.activated(press(0));
+    expect(decide).toHaveBeenCalledWith(REQ, 'allow');
+    toasts.track('other', fakeToast(), 'card-2');
+    toasts.activated(press(1, 'other'));
+    expect(decide).toHaveBeenCalledWith('other', 'deny');
+  });
+
+  it('a click on the body raises the card it was about, and decides nothing', () => {
+    const { toasts, decide, reveal } = harness();
+    toasts.track(REQ, fakeToast(), 'card-1');
+    toasts.activated({ type: 'click', arguments: `type=click&tag=${toastTag(REQ)}` });
+    expect(reveal).toHaveBeenCalledWith('card-1');
+    expect(decide).not.toHaveBeenCalled();
+  });
+
+  it('one press reported twice is ONE verdict, and does not raise the window', () => {
+    // Electron reports a press on a live toast to its object AND here
+    const { toasts, decide, reveal } = harness();
+    toasts.track(REQ, fakeToast(), 'card-1');
+    toasts.press(REQ, 0); // the object's own 'action' got there first
+    expect(toasts.isLive(REQ)).toBe(false);
+    toasts.activated(press(0));
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(reveal).not.toHaveBeenCalled();
+  });
+
+  it('...and the other order: the Action Center report first, the object event second', () => {
+    const { toasts, decide, reveal } = harness();
+    toasts.track(REQ, fakeToast(), 'card-1');
+    toasts.activated(press(1));
+    toasts.pressed(REQ, 1);
+    toasts.clicked(REQ, 'card-1');
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(decide).toHaveBeenCalledWith(REQ, 'deny');
+    expect(reveal).not.toHaveBeenCalled();
+  });
+
+  it("ignores a toast that is not a permission toast (Electron's own tag)", () => {
+    const { toasts, decide, reveal } = harness();
+    toasts.activated({ type: 'click', arguments: 'type=click&tag=6b1d0d3e-0f5e-4a1e-9e1a-1f2b3c4d5e6f' });
+    toasts.activated({ type: 'click', arguments: '' });
+    expect(decide).not.toHaveBeenCalled();
+    expect(reveal).not.toHaveBeenCalled();
+  });
+
+  it('a toast from an earlier run raises the app and decides nothing', () => {
+    // its request died with that run; a cold start from the Action Center lands here too
+    const { toasts, decide, reveal } = harness();
+    toasts.activated(press(0, 'stream:gone:toolu_old'));
+    expect(decide).not.toHaveBeenCalled();
+    expect(reveal).toHaveBeenCalledWith(null);
+  });
+
+  it('an index this build never attached still decides nothing', () => {
+    const { toasts, decide } = harness();
+    toasts.track(REQ, fakeToast());
+    toasts.activated(press(7));
+    expect(decide).not.toHaveBeenCalled();
   });
 });

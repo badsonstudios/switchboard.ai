@@ -14,7 +14,12 @@ import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import { APP_USER_MODEL_ID } from '../shared/app-identity';
+import {
+  APP_USER_MODEL_ID,
+  DEV_TOAST_ACTIVATOR_CLSID,
+  START_MENU_SHORTCUT_NAME,
+  TOAST_ACTIVATOR_CLSID,
+} from '../shared/app-identity';
 import { BUNDLED_INTO_MAIN } from '../build/bundled-deps';
 import { MANUAL_ENTRY_PAGE } from '../shared/ipc/fs';
 import { bundledManualDir, MANUAL_RESOURCE_DIR } from './fs/manual-dir';
@@ -102,6 +107,28 @@ describe('packaging config (P2-E19-01)', () => {
     expect(read(path.join('src', 'main', 'index.ts'))).toContain(
       'app.setAppUserModelId(APP_USER_MODEL_ID)'
     );
+  });
+
+  it('the installer registers the SAME toast activator the app claims and stamps (#675)', () => {
+    // Three places carry one CLSID: the running app (setToastActivatorCLSID),
+    // the Start-menu shortcut the app stamps at boot, and the COM server the
+    // installer registers. If the installer's drifts, a press in the Action
+    // Center starts nothing when the app is closed, on Windows only, in a path
+    // no automated test can press.
+    expect(nsis.include).toBe('build/installer.nsh');
+    const nsh = read(path.join('build', 'installer.nsh'));
+    expect(nsh).toContain(`!define SB_TOAST_ACTIVATOR_CLSID "${TOAST_ACTIVATOR_CLSID}"`);
+    expect(nsh).toContain('!macro customInstall');
+    expect(nsh).toContain('!macro customUnInstall');
+    expect(nsh).toContain('LocalServer32');
+    // the shortcut the app stamps is the one the installer names
+    expect(nsis.shortcutName).toBe(START_MENU_SHORTCUT_NAME);
+    // braces, because that is how the registry key is spelled
+    expect(TOAST_ACTIVATOR_CLSID).toMatch(/^[{][0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}[}]$/);
+    expect(DEV_TOAST_ACTIVATOR_CLSID).not.toBe(TOAST_ACTIVATOR_CLSID);
+    const main = read(path.join('src', 'main', 'index.ts'));
+    expect(main).toContain('app.setToastActivatorCLSID(toastActivatorClsid)');
+    expect(main).toContain('Notification.handleActivation(');
   });
 
   it('installs PER-USER, which is what makes it UAC-free', () => {

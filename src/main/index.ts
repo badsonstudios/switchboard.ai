@@ -100,11 +100,18 @@ import {
   PermissionToasts,
   permissionSummary,
   toastActionsSupported,
+  toastTag,
 } from './events/permission-toast';
+import { stampToastActivator, startMenuShortcutPath } from './toast-shortcut';
 import { notificationBody, sessionNameAmong } from './events/notification-text';
 import { createMainI18n } from './i18n';
 import { languageFromUi } from '../shared/i18n';
-import { APP_USER_MODEL_ID } from '../shared/app-identity';
+import {
+  APP_USER_MODEL_ID,
+  DEV_TOAST_ACTIVATOR_CLSID,
+  START_MENU_SHORTCUT_NAME,
+  TOAST_ACTIVATOR_CLSID,
+} from '../shared/app-identity';
 import { registerRulesIpc } from './events/rules-ipc';
 import { registerDigestIpc } from './events/digest-ipc';
 import { DEFAULT_SOUND } from '../shared/sounds';
@@ -268,6 +275,19 @@ app.enableSandbox();
 // A no-op everywhere but win32 — Electron ignores it on the other platforms, so
 // there is no platform branch to get wrong.
 app.setAppUserModelId(APP_USER_MODEL_ID);
+// #675: the COM class Windows calls for a toast pressed in the Action Center.
+// FIXED, where Electron would pick a random one per run (and leave a registry
+// key behind each time). Before any toast, which is what bakes it in. The
+// installed app and an unpackaged run claim different ones, so a dev run never
+// answers for the installed app's toasts. `app-identity.ts` has the rest.
+const toastActivatorClsid = app.isPackaged ? TOAST_ACTIVATOR_CLSID : DEV_TOAST_ACTIVATOR_CLSID;
+if (process.platform === 'win32') {
+  try {
+    app.setToastActivatorCLSID(toastActivatorClsid);
+  } catch {
+    // fail-open: the Action Center path is lost, the on-screen toast is not
+  }
+}
 
 function logsDir(): string {
   try {
@@ -2450,6 +2470,34 @@ app
     streamPermissions.onPermissionResolved((requestId) =>
       permissionToasts.withdraw(requestId)
     );
+    // #675: a press in the Action Center, after the toast left the screen,
+    // arrives HERE (COM, through the activator CLSID above) and nowhere else.
+    // Electron also reports presses on live toasts here; `activated` and the
+    // `isLive` guards on the toast's own events make one press one verdict.
+    if (process.platform === 'win32') {
+      try {
+        Notification.handleActivation((details) => permissionToasts.activated(details));
+      } catch (err) {
+        rulesLog.warn('could not listen for Action Center presses', { error: errorText(err) });
+      }
+      // ...and the Start-menu shortcut has to name that CLSID, which the
+      // installer cannot write. An installed build only: a dev run has no
+      // shortcut of its own, and must not touch the installed app's.
+      if (app.isPackaged) {
+        const outcome = stampToastActivator(
+          {
+            read: (file) => shell.readShortcutLink(file),
+            // the link's OWN fields go back with ours: `target` is required by the
+            // type, and an empty one is not guaranteed to mean 'leave it'
+            update: (file, fields, link) => shell.writeShortcutLink(file, 'update', { ...link, ...fields }),
+          },
+          startMenuShortcutPath(app.getPath('appData'), START_MENU_SHORTCUT_NAME),
+          toastActivatorClsid,
+          APP_USER_MODEL_ID
+        );
+        rulesLog.info('toast activator on the Start-menu shortcut', { outcome });
+      }
+    }
 
     const ruleActions = new RuleActionRegistry(rulesLog);
     ruleActions.register(ACTION_OS_TOAST, (action, ctx) => {
@@ -2487,6 +2535,8 @@ app
       let muted = false;
       if (shown) {
         const toast = new Notification({
+          // the Windows Tag an Action Center press names us by (#675)
+          ...(req ? { id: toastTag(req.requestId) } : {}),
           title: ctx.title,
           body: ctx.body,
           silent: true, // the Notifier's beep is the sound cue
@@ -2506,16 +2556,17 @@ app
           // `details.actionIndex` rather than the positional argument, which
           // electron.d.ts marks deprecated.
           if (decidable) {
-            toast.on('action', (details) => permissionToasts.press(requestId, details.actionIndex));
+            // ...unless the COM report of the same press got there first (#675)
+            toast.on('action', (details) => permissionToasts.pressed(requestId, details.actionIndex));
           }
           // Clicking the BODY is a shortcut, never a verdict — wired on every
           // platform, because it is the whole gesture on Linux and the fallback
           // wherever the buttons do not render.
-          toast.on('click', () => permissionToasts.activate(requestId, ctx.cardId));
+          toast.on('click', () => permissionToasts.clicked(requestId, ctx.cardId ?? null));
           // Deliberately NOT unhooked on `close`: a Windows toast that times
           // out fires `close` and then sits in the Action Center, where
           // `close()` still removes it. See `PermissionToasts.withdraw`.
-          permissionToasts.track(requestId, toast);
+          permissionToasts.track(requestId, toast, ctx.cardId ?? null);
         }
         // the one `show()` in main — muted under e2e, everything above still ran
         muted = showOsToast(toast, { muted: toastMuted }).muted;
