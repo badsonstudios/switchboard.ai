@@ -144,6 +144,10 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 - **The line above each of your prompts now says PROMPT**, not NEW PROMPT,
   which sounded as if the session had been cleared.
+- **The Events drawer speaks the same language as the Sessions list.** Its
+  entries now say **approval**, **question**, **waiting**, **calm** and
+  **crashed** instead of "needs permission", "needs input", "Done." and
+  "Ready", and so does the phone-push setting's description.
 
 ## 0.8.141 — 2026-11-08
 

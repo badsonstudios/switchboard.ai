@@ -396,7 +396,7 @@ describe('a reviewed row recedes by token, never by opacity', () => {
     // measures. A token named here again would be a second opinion about it.
     const [, reviewed] = await rowsFor([evt(1, 'needs-input'), evt(2, 'ready')]);
     const words = [...reviewed.querySelectorAll<HTMLElement>('span')];
-    const state = words.find((w) => w.textContent?.startsWith(en.events.kind.ready));
+    const state = words.find((w) => w.textContent?.startsWith(en.status.idle));
     expect(state, 'the reviewed row stopped saying what state it is in').toBeDefined();
     expect(
       state!.style.color,

@@ -959,11 +959,6 @@
       "row": "{title} — {kind}"
     },
     "kind": {
-      "done": "Done.",
-      "ready": "Ready",
-      "needs-input": "needs input",
-      "needs-permission": "needs permission",
-      "crashed": "crashed",
       "dispatch-result": "finished"
     },
     "dispatch": {
@@ -1080,7 +1075,7 @@
     "webhookUrl": "URL",
     "webhookUrlHint": "Every event is POSTed here as JSON. Treated as a secret, because webhook URLs usually are.",
     "enablePush": "Send events to my phone",
-    "enablePushHint": "Needs permission, needs input, and crashes — only while you are away from switchboard.",
+    "enablePushHint": "Approvals, questions, and crashes — only while you are away from switchboard.",
     "enableWebhook": "POST events to my webhook",
     "enableWebhookHint": "All four events, whatever the window is doing: a program is not distracted by being looked at. Quiet hours do NOT stop it — a webhook has no ears. The 🔔 switch does.",
     "set": "· saved",

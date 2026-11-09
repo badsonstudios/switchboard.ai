@@ -37,6 +37,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { RailSession } from './SessionsRail';
 import { nextInQueue } from '../lib/queue';
+import { eventKindKey } from '../lib/rail-view';
 import {
   EVENTS_FILTERS,
   EventsFilter,
@@ -781,7 +782,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                       may have been renamed, closed or re-labelled since 03:00,
                       and a digest that re-derived its text would report last
                       night's event under this morning's name. */}
-                  {t('events.digest.row', { title: r.title, kind: t(`events.kind.${r.kind}`) })}
+                  {t('events.digest.row', { title: r.title, kind: t(eventKindKey(r.kind)) })}
                 </span>
                 <span style={{ color: 'var(--muted)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                   {/* The DATE as well, for anything not from today. The cap is
@@ -1027,7 +1028,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                     }}
                   >
                     {/* A dispatch-result's row is on the AUTHOR's card, so the
-                        one word every other kind prints ("Done.") would be a
+                        session-state word every other kind prints ("waiting", "approval") would be a
                         statement about the wrong session. It names the role and
                         the session that wore it instead. */}
                     {e.kind === 'dispatch-result' && e.dispatch
@@ -1035,7 +1036,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                           role: e.dispatch.templateName,
                           session: e.dispatch.reviewerName,
                         })
-                      : t(`events.kind.${e.kind}`)}
+                      : t(eventKindKey(e.kind))}
                     {isNext && (
                       <span
                         title={t('events.nextUpHint')}

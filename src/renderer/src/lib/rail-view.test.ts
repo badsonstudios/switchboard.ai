@@ -565,3 +565,29 @@ describe("the tab's word (#1351, #1362)", () => {
     for (const s of ['idle', 'suspended', 'not-started', undefined]) expect(word(s), String(s)).toBeUndefined();
   });
 });
+
+// #1591: the Events drawer used its own words for a session's state.
+describe('eventKindKey', () => {
+  it('borrows the sessions list word for every attention kind', async () => {
+    const { eventKindKey } = await import('./rail-view');
+    expect(eventKindKey('needs-permission')).toBe('status.needs-permission');
+    expect(eventKindKey('needs-input')).toBe('status.needs-input');
+    expect(eventKindKey('done')).toBe('status.done');
+    expect(eventKindKey('ready')).toBe('status.idle');
+    expect(eventKindKey('crashed')).toBe('status.crashed');
+    expect(eventKindKey('dispatch-result')).toBe('events.kind.dispatch-result');
+  });
+
+  it('resolves to the words the sessions list prints', async () => {
+    const { eventKindKey } = await import('./rail-view');
+    const en = (await import('../../../shared/i18n/locales/en.json')).default as Record<string, any>;
+    const word = (k: string) => k.split('.').reduce((o: any, p) => o?.[p], en);
+    expect(['needs-permission', 'needs-input', 'done', 'ready', 'crashed'].map((k) => word(eventKindKey(k)))).toEqual([
+      'approval',
+      'question',
+      'waiting',
+      'calm',
+      'crashed',
+    ]);
+  });
+});
