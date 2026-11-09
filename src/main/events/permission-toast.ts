@@ -15,6 +15,7 @@
 // the routing, the withdrawal and the dead-session case be unit-tested without
 // a desktop, which matters because the one thing NO automated test can do is
 // press a button on a real OS toast.
+import { createHash } from 'node:crypto';
 import { errorText } from '../../shared/error-text';
 import type { Logger } from '../log/logger';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
@@ -32,6 +33,38 @@ export type ToastDecision = 'allow' | 'deny';
  * which is why the labels are derived from it rather than written twice.
  */
 export const DECIDE_BUTTONS: readonly ToastDecision[] = ['allow', 'deny'];
+
+/**
+ * The toast's id (its Windows Tag), derived from the request it asks about
+ * (#675).
+ *
+ * A press in the Action Center reaches the app through COM, as a string
+ * Electron builds from its own toast template: `type=action&action=<index>&tag=<tag>`.
+ * The tag is the only part that says WHICH toast, so it has to lead back to the
+ * request. Not the request id itself: that is `stream:<session>:<native id>`,
+ * longer than the 64 characters Windows allows a Tag. A hash is short, made of
+ * characters that need no escaping in that string, and the same every time.
+ */
+const TAG_PREFIX = 'sb';
+export function toastTag(requestId: string): string {
+  return TAG_PREFIX + createHash('sha256').update(requestId).digest('hex').slice(0, 30);
+}
+
+/** What Electron hands `Notification.handleActivation` (its ActivationArguments). */
+export interface ToastActivation {
+  type: string;
+  actionIndex?: number;
+  arguments: string;
+}
+
+/** the tag a COM activation names, if it names one */
+export function activationTag(args: string): string | undefined {
+  try {
+    return new URLSearchParams(args).get('tag') || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * The catalog key for each button's label (#471).
@@ -120,6 +153,10 @@ export interface PermissionToastDeps {
  */
 export class PermissionToasts {
   private readonly open = new Map<string, ClosableToast>();
+  /** tag → the request and card it asks about, for an Action Center press (#675) */
+  private readonly byTag = new Map<string, { requestId: string; cardId: string | null }>();
+  /** every tag this run has shown: a few dozen strings a day, kept for the run */
+  private readonly shown = new Set<string>();
 
   constructor(private readonly deps: PermissionToastDeps) {}
 
@@ -134,9 +171,79 @@ export class PermissionToasts {
    * one at the OS level anyway, so keeping the stale handle would mean
    * withdrawing the wrong object.
    */
-  track(requestId: string, toast: ClosableToast): void {
+  track(requestId: string, toast: ClosableToast, cardId: string | null = null): void {
     this.open.get(requestId)?.close?.();
     this.open.set(requestId, toast);
+    const tag = toastTag(requestId);
+    this.byTag.set(tag, { requestId, cardId });
+    this.shown.add(tag);
+  }
+
+  /** is a toast for this request still out there (not yet decided or withdrawn) */
+  isLive(requestId: string): boolean {
+    return this.open.has(requestId);
+  }
+
+  /**
+   * The toast OBJECT's own `action` event. Electron may report the same press
+   * through `activated` as well (#675), in either order; whichever is second
+   * finds nothing live and does nothing. Never a second verdict.
+   */
+  pressed(requestId: string, index: number): void {
+    if (this.isLive(requestId)) this.press(requestId, index);
+  }
+
+  /** the toast object's own `click` event, under the same one-press rule */
+  clicked(requestId: string, cardId: string | null): void {
+    if (this.isLive(requestId)) this.activate(requestId, cardId);
+  }
+
+  /**
+   * A toast was pressed and Windows told us through COM (#675) — the only way
+   * a press in the Action Center arrives, and ALSO, per Electron's docs, a
+   * second report of a press whose `Notification` object is still alive. So
+   * this and the object's own `action`/`click` events can both fire for one
+   * press; whichever comes second finds the request no longer live and does
+   * nothing. Never a second verdict.
+   *
+   * A tag this run never showed is a toast from before a restart: the request
+   * it asked about died with that run. The press still means "take me there",
+   * so it raises the window, and decides nothing.
+   */
+  activated(details: ToastActivation): void {
+    const tag = activationTag(details.arguments);
+    // Not a permission toast (an ordinary rule's toast has Electron's own
+    // random tag): none of this module's business, and a click on one did
+    // nothing before #675 either.
+    if (!tag || !tag.startsWith(TAG_PREFIX)) return;
+    const known = tag ? this.byTag.get(tag) : undefined;
+    if (!known) {
+      // Ours, and already settled: the object's own event got there first, or
+      // the request was answered elsewhere. Nothing left to do, and raising the
+      // window now would answer an Allow with a window in your face.
+      const ours = tag !== undefined && this.shown.has(tag);
+      this.deps.log?.info('a toast was pressed that nothing is waiting on', {
+        type: details.type,
+        tag: tag ?? '',
+        settledThisRun: ours,
+      });
+      // From an earlier run (or a cold start from the Action Center): show the app.
+      if (!ours) this.reveal(null);
+      return;
+    }
+    if (details.type === 'action') {
+      this.press(known.requestId, details.actionIndex ?? -1);
+    } else {
+      this.activate(known.requestId, known.cardId);
+    }
+  }
+
+  private reveal(cardId: string | null): void {
+    try {
+      this.deps.reveal(cardId);
+    } catch (err) {
+      this.deps.log?.warn('raising the window from a toast failed', { error: errorText(err) });
+    }
   }
 
   /**
@@ -241,6 +348,7 @@ export class PermissionToasts {
     // here, and almost none of them had a toast. Nothing to log, nothing to do.
     if (!toast) return;
     this.open.delete(requestId);
+    this.byTag.delete(toastTag(requestId));
     // The e2e proof that a verdict from another surface really takes the toast
     // down (`e2e/permission-toast.spec.ts`) — and, in the field, the line that
     // says a stale Allow button was cleaned up rather than left live.
