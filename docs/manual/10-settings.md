@@ -266,6 +266,21 @@ the Sessions list follows it; the strip across the top and the session windows
 keep their own look. What each one looks like is in
 [Sessions › Which ones need you, and which have finished](02-sessions.md#which-ones-need-you-and-which-have-finished).
 
+## Group colours
+
+**Settings ▸ Appearance ▸ Group colours**, just under **Group style**, is on
+until you untick **Show each group in its own colour**. Off, every group you
+made is drawn in plain grey in the Sessions list: its dot, its header and
+whatever outline, bar, tab or line its group style gives it. The groups still
+look like groups; they just aren't colour-coded. Sessions that are working use
+the ordinary working colour instead of their group's.
+
+Nothing else loses its colour: what a session is doing (working, waiting, an
+approval), the automatic folder groups, and the selected session look the same
+as before. The colour you picked for each group is kept. Tick the box again
+and every group comes back in its own colour. Like the group style, only the
+Sessions list follows it.
+
 ## Session notes and waiting notes
 
 **Settings ▸ Appearance ▸ Session notes** chooses where a session's sticky note

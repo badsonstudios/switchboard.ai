@@ -35,6 +35,9 @@ import { hueOf, isReservedColor, RESERVED_HUE_TO } from '../../../shared/reserve
 // #946: the §5.11 palette's other home. See the drift assertion further down.
 import { ACCENTS } from '../../../shared/accents';
 import { GROUP_PALETTE } from '../../../shared/group-palette';
+// #1599: with group colours off, a group you made is drawn in the theme's
+// `--group-frame` grey; every check that holds a palette colour holds it too
+const NEUTRAL = 'neutral (group colours off)';
 // #1326: the one place a catalog id becomes its icon ink's token name
 import { aiInk, aiInkToken } from '../lib/ai-ink';
 
@@ -1623,8 +1626,8 @@ describe("a hand-made group's name and count are readable in every colour it can
 
   it('paints the tints this measures (SessionsRail.tsx)', () => {
     const rail = fs.readFileSync(path.join(__dirname, '..', 'components', 'SessionsRail.tsx'), 'utf8');
-    expect(rail).toContain(`tint(opts.color, ${HEADER_PCT})`);
-    expect(rail).toContain(`background: tint(opts.color, ${COUNT_PCT})`);
+    expect(rail).toContain(`tint(color, ${HEADER_PCT})`);
+    expect(rail).toContain(`background: tint(color, ${COUNT_PCT})`);
     expect(rail).toContain("'rail-group-ink'");
   });
 
@@ -1632,14 +1635,16 @@ describe("a hand-made group's name and count are readable in every colour it can
     const tokens = resolved(theme);
     const card = tokens['--rail-card'];
 
-    it.each([...GROUP_PALETTE])('%s: the name clears 4.5:1 on its header', (color) => {
+    it.each([...GROUP_PALETTE, NEUTRAL])('%s: the name clears 4.5:1 on its header', (c) => {
+      const color = c === NEUTRAL ? tokens['--group-frame'] : c;
       const rule = ruleFor(theme.colorScheme);
       const ink = mix(color, rule.toward, rule.pct);
       const header = mix(color, card, HEADER_TINT);
       expect(ratio(ink, header)).toBeGreaterThanOrEqual(4.5);
     });
 
-    it.each([...GROUP_PALETTE])('%s: the 9px count clears 4.5:1 on its backplate', (color) => {
+    it.each([...GROUP_PALETTE, NEUTRAL])('%s: the 9px count clears 4.5:1 on its backplate', (c) => {
+      const color = c === NEUTRAL ? tokens['--group-frame'] : c;
       const rule = ruleFor(theme.colorScheme);
       const ink = mix(color, rule.toward, rule.pct);
       const backplate = mix(color, mix(color, card, HEADER_TINT), COUNT_TINT);
@@ -1649,7 +1654,8 @@ describe("a hand-made group's name and count are readable in every colour it can
     // The SAME group, drawn on the strip across the top: its member count sits
     // on the colour at 18%, a heavier tint than the header's. `--muted` there
     // was 4.27:1 for the teal on nordic, so the count is written in `--text`.
-    it.each([...GROUP_PALETTE])('%s: the strip count clears 4.5:1 on its 18% tint', (color) => {
+    it.each([...GROUP_PALETTE, NEUTRAL])('%s: the strip count clears 4.5:1 on its 18% tint', (c) => {
+      const color = c === NEUTRAL ? tokens['--group-frame'] : c;
       expect(ratio(tokens['--text'], mix(color, card, STRIP_COUNT_PCT / 100))).toBeGreaterThanOrEqual(4.5);
     });
   });
@@ -1721,7 +1727,8 @@ describe('the group styles keep a group visible and its header readable in every
     const card = tokens['--rail-card'];
     const canvas = tokens['--rail-canvas'];
 
-    it.each([...GROUP_PALETTE])('%s: the frame clears 3:1 on the canvas and the card', (color) => {
+    it.each([...GROUP_PALETTE, NEUTRAL])('%s: the frame clears 3:1 on the canvas and the card', (c) => {
+      const color = c === NEUTRAL ? tokens['--group-frame'] : c;
       const rule = frameRule(theme.colorScheme);
       const frame = mix(color, rule.toward, rule.pct);
       expect(ratio(frame, canvas), 'outside the frame').toBeGreaterThanOrEqual(3);
@@ -1754,7 +1761,8 @@ describe('the group styles keep a group visible and its header readable in every
       for (const ink of SUMMARY_INKS) expect(ratio(tokens[ink], canvas), ink).toBeGreaterThanOrEqual(4.5);
     });
 
-    it.each([...GROUP_PALETTE])('%s: the folder tab\'s name, count and summary clear 4.5:1', (color) => {
+    it.each([...GROUP_PALETTE, NEUTRAL])('%s: the folder tab\'s name, count and summary clear 4.5:1', (c) => {
+      const color = c === NEUTRAL ? tokens['--group-frame'] : c;
       const tab = mix(color, card, tabPct());
       expect(ratio(tokens['--text'], tab), 'the name').toBeGreaterThanOrEqual(4.5);
       // the count's backplate is the colour at 12% over the tab (SessionsRail)
@@ -1856,7 +1864,8 @@ describe('options 1-3 keep every group readable in every colour (#1556 part 2)',
       expect(ratio(ink, mix(plate.shade, fill, plate.pct)), 'the count').toBeGreaterThanOrEqual(4.5);
     });
 
-    it.each([...GROUP_PALETTE])('%s: the frame and the working solid header read at their tint', (color) => {
+    it.each([...GROUP_PALETTE, NEUTRAL])('%s: the frame and the working solid header read at their tint', (c) => {
+      const color = c === NEUTRAL ? tokens['--group-frame'] : c;
       for (const style of ['frame', 'solid']) {
         const head = mix(color, card, headPct(style));
         // frame writes the name in --text; a working solid header keeps the ink
@@ -1867,7 +1876,8 @@ describe('options 1-3 keep every group readable in every colour (#1556 part 2)',
       }
     });
 
-    it.each([...GROUP_PALETTE])('%s: the spine\'s name reads on the plain card', (color) => {
+    it.each([...GROUP_PALETTE, NEUTRAL])('%s: the spine\'s name reads on the plain card', (c) => {
+      const color = c === NEUTRAL ? tokens['--group-frame'] : c;
       const rule = inkRule(theme.colorScheme);
       expect(ratio(mix(color, rule.toward, rule.pct), card)).toBeGreaterThanOrEqual(4.5);
     });
@@ -1949,7 +1959,8 @@ describe('options 5-8 keep every group readable in every colour (#1556 part 3)',
       return mix(color, r.toward, r.pct);
     };
 
-    it.each([...GROUP_PALETTE])('%s: the name, count and summary read on every style\'s header', (color) => {
+    it.each([...GROUP_PALETTE, NEUTRAL])('%s: the name, count and summary read on every style\'s header', (c) => {
+      const color = c === NEUTRAL ? tokens['--group-frame'] : c;
       for (const [style, head] of Object.entries(heads(color))) {
         expect(ratio(nameOn(style, color), head), `${style}: the name`).toBeGreaterThanOrEqual(4.5);
         // the count: the name's ink on the colour at 12% over the header
@@ -1973,7 +1984,8 @@ describe('options 5-8 keep every group readable in every colour (#1556 part 3)',
       }
     });
 
-    it.each([...GROUP_PALETTE])('%s: the frame clears 3:1 on the well and the outlines tray', (color) => {
+    it.each([...GROUP_PALETTE, NEUTRAL])('%s: the frame clears 3:1 on the well and the outlines tray', (c) => {
+      const color = c === NEUTRAL ? tokens['--group-frame'] : c;
       const r = frameRule(theme.colorScheme);
       const frame = mix(color, r.toward, r.pct);
       const h = heads(color);
@@ -1983,7 +1995,8 @@ describe('options 5-8 keep every group readable in every colour (#1556 part 3)',
 
     // the raised sessions: a row's card against the tray it sits in, so it
     // reads as a separate thing (its 1px edge is decoration on top)
-    it.each([...GROUP_PALETTE])('%s: a session row stands apart from the well and the tray', (color) => {
+    it.each([...GROUP_PALETTE, NEUTRAL])('%s: a session row stands apart from the well and the tray', (c) => {
+      const color = c === NEUTRAL ? tokens['--group-frame'] : c;
       const h = heads(color);
       const card = tokens['--rail-card'];
       expect(ratio(card, h.wells), 'wells').toBeGreaterThan(1.05);
@@ -2167,7 +2180,8 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))('%s: words on the wa
   // colour over the card. The name on it is `.rail-group-ink` (a hand-made
   // group) or `--auto-ink`; both must still read, at the heaviest of the
   // three (the default look's 20%).
-  it.each([...GROUP_PALETTE])('a %s group: its name on the default working look', (color) => {
+  it.each([...GROUP_PALETTE, NEUTRAL])('a %s group: its name on the default working look', (c) => {
+      const color = c === NEUTRAL ? tokens['--group-frame'] : c;
     const rule = /color-mix\(in srgb,\s*var\(--g\)\s*([\d.]+)%,\s*(#[0-9a-f]{6})\)/i.exec(
       theme.colorScheme === 'light'
         ? block(":root[data-color-scheme='light'] .rail-group-ink {")

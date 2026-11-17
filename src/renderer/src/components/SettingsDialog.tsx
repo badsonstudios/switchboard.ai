@@ -48,6 +48,7 @@ import {
 import { SettingsButton } from './settings/controls';
 import { ThemeSection } from './settings/ThemeSection';
 import { NotePlacementSection } from './settings/NotePlacementSection';
+import { GroupColoursSection } from './settings/GroupColoursSection';
 import { GroupStyleSection } from './settings/GroupStyleSection';
 import { TaskLabelSizeSection } from './settings/TaskLabelSizeSection';
 import { SessionsPlacementSection } from './settings/SessionsPlacementSection';
@@ -371,6 +372,7 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
               onSet={props.onSetSessionsPlacement}
             />
             <GroupStyleSection />
+            <GroupColoursSection />
             <WorkingLookSection look={props.workingLook} onSet={props.onSetWorkingLook} />
             <ContextMeterSection form={props.contextMeter} onSet={props.onSetContextMeter} />
             <TaskLabelSizeSection
