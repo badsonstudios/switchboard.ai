@@ -48,6 +48,13 @@ export const RUNNABLE_EXTENSIONS: ReadonlySet<string> = new Set([
   'ade', 'adp', 'mda', 'mdb', 'mde', 'accde', 'accdb', 'accda', 'accdr',
   // misc Windows handlers
   'grp', 'crt', 'cer', 'der', 'mof',
+  // review (#1611): more that run or reach out when opened: Windows Sandbox
+  // configs (LogonCommand), remote-desktop files, Office add-in installers,
+  // themes (fetch a remote path), macro-enabled Office files, web queries and
+  // SYLK, and MHTML archives
+  'wsb', 'rdp', 'vsto', 'theme', 'themepack', 'deskthemepack',
+  'xlsm', 'xlsb', 'xltm', 'docm', 'dotm', 'pptm', 'potm', 'ppsm', 'sldm',
+  'iqy', 'slk', 'mht', 'mhtml',
 ]);
 
 /**
