@@ -50,6 +50,7 @@ import { ThemeSection } from './settings/ThemeSection';
 import { NotePlacementSection } from './settings/NotePlacementSection';
 import { GroupColoursSection } from './settings/GroupColoursSection';
 import { GroupStyleSection } from './settings/GroupStyleSection';
+import { NoteColoursSection } from './settings/NoteColoursSection';
 import { TaskLabelSizeSection } from './settings/TaskLabelSizeSection';
 import { SessionsPlacementSection } from './settings/SessionsPlacementSection';
 import type { SessionsPlacement } from '../lib/sessions-placement';
@@ -380,6 +381,7 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
               onSet={props.onSetTaskLabelSize}
             />
             <NotePlacementSection />
+            <NoteColoursSection />
           </div>
         )}
 

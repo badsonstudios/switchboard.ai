@@ -2029,6 +2029,14 @@
     "onNote": "Each group in the Sessions list is drawn in the colour picked for it.",
     "offNote": "Groups are drawn in plain grey. The colour picked for each one is kept, and comes back when you turn this on."
   },
+  "noteColours": {
+    "title": "Note colours",
+    "blurb": "The colour of the yellow waiting note and the green session note. The words on a note are coloured to stay readable on whatever you pick, and a waiting note keeps its yellow edge so you can still tell it means you are needed.",
+    "waiting": "Waiting note",
+    "session": "Session note",
+    "sample": "Sample note",
+    "reset": "Reset to default"
+  },
   "groupStyle": {
     "title": "Group style",
     "blurb": "How groups look in the Sessions list. The list changes the moment you pick. The strip across the top and the session windows keep their own look.",

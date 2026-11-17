@@ -10,6 +10,7 @@
 // which row is being renamed and what has been typed into it so far are facts
 // about the LIST the row is in, so they arrive as props: the rail and the
 // strip answer them differently.
+import { useNoteVars } from '../lib/note-colours';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -227,6 +228,9 @@ export function SessionRow(props: {
   const aiName = useAiName(s.providerId);
   // the card's sticky note, for the marker and the spoken name (#1544)
   const { note: rowNote, waiting: rowWaiting } = useSessionNote(s.id);
+  // #1601: the markers wear the picked note colours too
+  const waitingVars = useNoteVars('waiting');
+  const noteVars = useNoteVars('session');
   const waiting = props.waiting;
   const depth = props.depth;
   const indent = railDepthIndent(depth);
@@ -597,7 +601,8 @@ export function SessionRow(props: {
                 blockSize: 11,
                 flexShrink: 0,
                 borderRadius: 2,
-                background: 'color-mix(in srgb, var(--status-needs-input) 42%, white)',
+                ...waitingVars,
+                background: 'var(--waiting-paper, color-mix(in srgb, var(--status-needs-input) 42%, white))',
                 boxShadow: 'inset 0 -2px 0 var(--status-needs-input)',
               }}
             />
@@ -613,6 +618,7 @@ export function SessionRow(props: {
                 blockSize: 11,
                 flexShrink: 0,
                 borderRadius: 2,
+                ...noteVars,
                 background: 'var(--note-paper)',
                 boxShadow: 'inset 0 -2px 0 var(--note-paper-edge)',
                 outline: rowNote.by === 'ai' ? '2px solid var(--note-ai)' : undefined,
