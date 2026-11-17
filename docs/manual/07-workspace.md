@@ -203,7 +203,8 @@ group is one box:
 - how many sessions it holds,
 - underneath, what is inside it — **1 approval · 2 waiting**, **2 working**,
   **calm** or **empty** — the same words the list on the left uses,
-- **⊕** to open a new session in that group (not on automatic groups),
+- **⊕** to open a new session in that group (on an automatic group, in its
+  folder),
 - a tinted **▾** at the end.
 
 **Click a group** and a list of its sessions drops down. They are the same
@@ -285,8 +286,9 @@ session's own card, in its **⋯** menu: see
 - **Delete group** removes the group. Its sessions are not closed; they are
   simply no longer in a group.
 
-An automatic group only has **Open all in the workspace**: it is a folder the
-app noticed, so there is nothing of it to rename, recolour or delete.
+An automatic group only has **New session in this folder** and **Open all in
+the workspace**: it is a folder the app noticed, so there is nothing of it to
+rename, recolour or delete.
 
 **On an empty part of the strip** (including the line with **+ group** and
 **+ session**): **Sessions on the left** / **Sessions across the top**, with a
@@ -314,8 +316,9 @@ from the keyboard: see the end of the next section.
   hold the row over the end cell to scroll to it, the list closes; keep
   holding, and drop on the group when it comes into view.)
 - **Drag a pill onto a group** to put the session in that group. The group's
-  edge lights up while you hold it there. Automatic groups do not take a
-  session this way, and do not light up. You can drag a session's tab up from
+  edge lights up while you hold it there. Dropping one on an automatic group
+  makes that group yours (see [Automatic groups](#automatic-groups)). You can
+  drag a session's tab up from
   the workspace onto a group, too.
 
 The line and the lit edge only appear where letting go would really change
@@ -395,13 +398,18 @@ see [Which ones need you, and which have finished](02-sessions.md#which-ones-nee
 
 Sessions in the same repository or folder also cluster on their own, with no
 setup. These look deliberately different from the groups you make: a **solid
-folder icon**, a tinted card, and the word **AUTO** in the header. No dot, and
-no **⊕** or **✕** — there's nothing to configure.
+folder icon**, a tinted card, and the word **AUTO** in the header. No dot and
+no **✕**: there's nothing to configure.
 
-**You can't drag a session into an automatic group,** and it will show you a
-"no drop" cursor if you try. That isn't a bug: membership is worked out from
-where the session's folder is, so there's nothing a drop could change. To move
-a session, drop it on one of *your* groups, or on empty space to ungroup it.
+**The ⊕ starts a new session in that folder.** It doesn't ask you to pick a
+folder, because the group already is one, and the new session joins the group.
+
+**Drop a session on an automatic group and it becomes a group of your own.**
+It keeps the folder's name and the sessions it had, in the same order, takes
+the one you dropped, and loses its **AUTO** badge. From then on it's an
+ordinary group: rename it, recolour it, move it, or delete it. If the session
+you drop already belongs to that folder and is only sitting in another group,
+the drop just takes it out of that group, and it rejoins the automatic one.
 
 An automatic group disappears on its own when it's down to one session, and
 putting a session into a real group always wins over the automatic clustering.

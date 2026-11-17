@@ -238,3 +238,31 @@ export function groupChangeLanded(what: string, result: unknown): boolean {
   }
   return true;
 }
+
+/**
+ * What a session dropped on an AUTOMATIC folder group does (#1603, Dan
+ * 2026-11-17: "yes, convert it").
+ *
+ *   none     it is already in the group, or it cannot be regrouped at all
+ *            (a card main has never heard of, #687)
+ *   ungroup  it belongs to this folder but sits in a group you made: taking
+ *            it out of that group is all it needs, and the folder rule puts it
+ *            back in this one
+ *   promote  anything else: the automatic group becomes a group you own, with
+ *            its members in their order and the dropped session last
+ *
+ * One function for the rail and the strip, so the two lists cannot answer the
+ * same drop differently.
+ */
+export type AutoDrop = 'none' | 'ungroup' | 'promote';
+
+export function autoGroupDrop(
+  dragged: (AutoGroupable & { status?: string }) | undefined,
+  group: { key: string; memberIds: readonly string[] }
+): AutoDrop {
+  if (!dragged || dragged.status === 'not-started') return 'none';
+  if (group.memberIds.includes(dragged.id)) return 'none';
+  const key = dragged.autoKey ?? dragged.folder;
+  if (dragged.groupId && key === group.key) return 'ungroup';
+  return 'promote';
+}

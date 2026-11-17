@@ -465,7 +465,8 @@ the highlighted rows always match.
 
 **A group's heading has two lines.** The first is the group's **name**. On a
 group you made, its two buttons sit at the right of that line: **⊕** for a new
-session in the group, and **✕** to delete it. The second line, starting under the name, holds everything else: how many
+session in the group, and **✕** to delete it. A folder group has only the
+**⊕**, which starts a session in its folder. The second line, starting under the name, holds everything else: how many
 sessions are in it, what they are doing, how many are folded away, any messages
 left for them, and the **AUTO** badge on a folder group. The name has the first
 line to itself, so it stays readable however many of those chips there are and

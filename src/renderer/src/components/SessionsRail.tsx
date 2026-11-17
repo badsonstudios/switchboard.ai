@@ -66,7 +66,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
-import { autoGroupName, railOrder } from '../lib/groups';
+import { autoGroupDrop, autoGroupName, railOrder } from '../lib/groups';
 import {
   LOOSE_BUCKET,
   ManualOrder,
@@ -236,6 +236,14 @@ export function SessionsRail(props: {
   onMoveGroup?: (id: string, beforeId: string | null) => void;
   /** open a NEW session inside this group (E12-03) */
   onOpenInGroup: (id: string) => void;
+  /** an AUTOMATIC group's ⊕ (#1603): a new session in its folder, no picker */
+  onOpenInFolder?: (folder: string) => void;
+  /**
+   * A session dropped on an AUTOMATIC group (#1603): make it a group you own,
+   * holding its members in order and then the dropped one. Without it, an
+   * automatic group refuses drops as it always did.
+   */
+  onPromoteAutoGroup?: (name: string, memberIds: string[], cardId: string) => void;
   /** move a session between groups / to ungrouped (E12-04, rail DnD) */
   onMoveToGroup: (cardId: string, groupId: string | null) => void;
   /**
@@ -1012,6 +1020,8 @@ export function SessionsRail(props: {
     kind: 'group' | 'auto' | 'ungrouped';
     title?: string;
     showEmpty?: boolean;
+    /** an automatic group's folder key (#1603) */
+    autoKey?: string;
   }): React.JSX.Element => {
     const isCollapsed = collapsed.has(opts.key);
     // WHAT IS INSIDE, BY STATE (#1351, #1196): "1 approval · 1 waiting", else
@@ -1059,10 +1069,19 @@ export function SessionsRail(props: {
       : false;
     const g = opts.group;
     const isAuto = opts.kind === 'auto';
-    // Membership in an auto-group is DERIVED from the session's folder, so
-    // there is nothing a drop could change. Advertising it as a target and
-    // then doing nothing is what wasted Dan's time.
-    const droppable = !isAuto;
+    // Membership in an auto-group is DERIVED from the session's folder, so a
+    // drop there either takes a same-folder session out of its group or turns
+    // the auto-group into one you own (#1603). Which, if either, is asked of
+    // the session in flight: `autoDrop` below. With no way to promote, it
+    // refuses, as it always did.
+    const droppable = !isAuto || !!props.onPromoteAutoGroup;
+    const autoDrop = (cardId: string | null) =>
+      cardId && isAuto && opts.autoKey !== undefined
+        ? autoGroupDrop(
+            props.sessions.find((s) => s.id === cardId),
+            { key: opts.autoKey, memberIds: opts.members.map((m) => m.id) }
+          )
+        : 'none';
     // only a real group's color is user data needing the per-theme darkening;
     // the other two already use theme tokens
     const ink = opts.kind === 'group' ? 'rail-group-ink' : undefined;
@@ -1116,7 +1135,11 @@ export function SessionsRail(props: {
           // DRAGGED and `droppable` is computed at render, before any drag
           // exists. Same refusal, same reason: a target that lights up and then
           // does nothing is what wasted Dan's time the first time.
-          if (!droppable || !draggedCanRegroup()) {
+          if (
+            !droppable ||
+            !draggedCanRegroup() ||
+            (isAuto && autoDrop(dragCard.current ?? getDraggedCard()) === 'none')
+          ) {
             // Swallow it WITHOUT preventDefault: the browser only fires `drop`
             // where dragover was prevented, so this gives a real no-drop
             // cursor. stopPropagation matters just as much — the nav behind us
@@ -1156,7 +1179,14 @@ export function SessionsRail(props: {
           setDraggedCard(null);
           setDropTarget(null);
           if (!cardId) return;
-          // dropping on Ungrouped/auto means exactly that: no membership
+          if (isAuto) {
+            const what = autoDrop(cardId);
+            if (what === 'ungroup') props.onMoveToGroup(cardId, null);
+            else if (what === 'promote')
+              props.onPromoteAutoGroup?.(opts.name, opts.members.map((m) => m.id), cardId);
+            return;
+          }
+          // dropping on Ungrouped means exactly that: no membership
           const to = g?.id ?? null;
           // a drop back into the group it already belongs to is a no-op, not a
           // round trip through IPC and a grid reshuffle
@@ -1702,6 +1732,34 @@ export function SessionsRail(props: {
               </span>
             )}
           </span>
+          {isAuto && opts.autoKey !== undefined && props.onOpenInFolder && (
+            // an automatic group's ⊕ (#1603): the same place and look as a
+            // made group's, with no ✕ beside it (there is nothing to delete)
+            <span
+              style={{
+                gridColumn: 4,
+                gridRow: 1,
+                display: 'flex',
+                flexShrink: 0,
+                alignItems: 'center',
+                marginInlineStart: 7,
+              }}
+            >
+              <button
+                className="rail-x"
+                data-rail-open-in-folder
+                onClick={(e) => {
+                  e.stopPropagation();
+                  props.onOpenInFolder?.(opts.autoKey!);
+                }}
+                title={t('rail.openInFolder')}
+                aria-label={t('rail.openInFolder')}
+                style={{ fontSize: 10 }}
+              >
+                {t('rail.openInGroupIcon')}
+              </button>
+            </span>
+          )}
           {g && (
             // line 1's right end (#1455): last in the DOM, so last in tab
             // order as before, but placed beside the name
@@ -1952,6 +2010,7 @@ export function SessionsRail(props: {
             members: ag.members,
             kind: 'auto',
             title: t('rail.autoGroupHint'),
+            autoKey: ag.key,
           })
         )}
         {order.loose.length > 0 &&
