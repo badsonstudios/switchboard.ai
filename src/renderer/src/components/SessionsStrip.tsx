@@ -1065,7 +1065,8 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
       // it has no name to change, no colour and nothing to delete. A new
       // session in its folder (#1603) and opening what it holds is all there is.
       if (groupId === undefined) {
-        const folder = e.autoKey;
+        // a member's REAL folder, not the key (lower-cased repo root)
+        const folder = e.autoKey !== undefined ? e.members.find((m) => m.folder)?.folder : undefined;
         const items: RailGroupMenuItem[] =
           folder !== undefined && props.onOpenInFolder
             ? [
@@ -1516,7 +1517,8 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
                         // an automatic group's ⊕ (#1603): its folder, no picker
                         onOpenInGroup: () => {
                           close(false);
-                          props.onOpenInFolder?.(e.autoKey!);
+                          const folder = e.members.find((m) => m.folder)?.folder;
+                          if (folder) props.onOpenInFolder?.(folder);
                         },
                         openInLabel: t('rail.openInFolder'),
                       }

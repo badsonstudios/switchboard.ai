@@ -1750,7 +1750,10 @@ export function SessionsRail(props: {
                 data-rail-open-in-folder
                 onClick={(e) => {
                   e.stopPropagation();
-                  props.onOpenInFolder?.(opts.autoKey!);
+                  // a member's REAL folder, not the key: the key is the repo
+                  // root, lower-cased, and may not be where the sessions work
+                  const folder = opts.members.find((m) => m.folder)?.folder;
+                  if (folder) props.onOpenInFolder?.(folder);
                 }}
                 title={t('rail.openInFolder')}
                 aria-label={t('rail.openInFolder')}

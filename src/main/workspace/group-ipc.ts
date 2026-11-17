@@ -136,11 +136,16 @@ export function registerGroupIpc(store: WorkspaceStore, broker: IpcBroker, log: 
     const ids = opts?.cardIds;
     if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === 'string'))
       return refuse('groups:createWithSessions', 'cardIds must be a non-empty list of strings');
+    // only sessions main knows, checked BEFORE anything is written, so a
+    // refusal leaves no empty group behind
+    const known = new Set(store.listSessions().map((s) => s.id));
+    const members = (ids as string[]).filter((id) => known.has(id));
+    if (members.length === 0) return refuse('groups:createWithSessions', 'none of those sessions exists');
     const color = GROUP_PALETTE[store.listGroups().length % GROUP_PALETTE.length];
     const group: PersistedGroup = { id: randomUUID(), name, color };
     store.upsertGroup(group);
-    for (const id of ids) store.setSessionGroup(id, group.id);
-    log.info('automatic group made a group', { groupId: group.id, sessions: ids.length });
+    for (const id of members) store.setSessionGroup(id, group.id);
+    log.info('automatic group made a group', { groupId: group.id, sessions: members.length });
     return group;
   });
 

@@ -471,6 +471,8 @@ export function App(): React.JSX.Element {
   // holds, which are loose, and the order `Ctrl+1..9` counts in — one object,
   // so the strip draws from exactly what the keyboard jumps by.
   const railOrderNow = useSyncExternalStore(subscribeStore, () => sessionStore.getRailOrder());
+  // automatic groups being promoted right now (#1603), so a second drop waits
+  const promoting = React.useRef(new Set<string>());
   const urgency = useSyncExternalStore(subscribeStore, () => sessionStore.getState().urgency);
   const expireUrgency = React.useCallback(() => sessionStore.expireUrgency(), []);
   // #320: the marks that have just been PAINTED — that is where their 1.5s
@@ -2566,6 +2568,11 @@ export function App(): React.JSX.Element {
   // the folder's name, its members in their order, the dropped one last. One
   // call to main, so a refusal leaves everything as it was.
   const promoteAutoGroup = (name: string, memberIds: string[], cardId: string): void => {
+    // a second drop while the first is still on its way would make a second
+    // group of the same name; the members say which auto group this is
+    const key = [...memberIds].sort().join('|');
+    if (promoting.current.has(key)) return;
+    promoting.current.add(key);
     const ids = [...memberIds.filter((id) => id !== cardId), cardId];
     void bridge.groups?.createWithSessions?.({ name, cardIds: ids }).then((made) => {
       const group = answered(made);
@@ -2577,7 +2584,7 @@ export function App(): React.JSX.Element {
       }
       void refreshGroups();
       void refreshSessions();
-    });
+    }).finally(() => promoting.current.delete(key));
   };
   const moveGroup = (id: string, beforeId: string | null): void => {
     // #1144. The order lives in main; the list redraws from what main
