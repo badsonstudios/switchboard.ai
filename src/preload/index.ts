@@ -1299,6 +1299,21 @@ const api = {
      * the type of the file the path RESOLVES to.
      */
     openViewable: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:openViewable', p),
+    /**
+     * Open a path a reply in the conversation named (#1611): a folder in the
+     * file manager, a file in its associated app. Anything that can be RUN is
+     * never run: main shows it in its folder instead. Resolves what main did,
+     * or false when it refused.
+     */
+    openFromReply: (p: string): Promise<'opened' | 'folder' | 'revealed' | false> =>
+      ipcRenderer.invoke('fs:openFromReply', p),
+    /**
+     * Which of these paths are files, which are folders, and which are neither
+     * (null) — inside the read scope only, at most `MAX_LINK_STATS` per call
+     * (#1611). What decides whether a path in a reply is drawn as a link.
+     */
+    statForLinks: (paths: readonly string[]): Promise<Array<'file' | 'dir' | null>> =>
+      ipcRenderer.invoke('fs:statForLinks', paths),
     /** Show the file in the OS file manager. Scope-checked like `openPath`. */
     reveal: (p: string): Promise<boolean> => ipcRenderer.invoke('fs:reveal', p),
     /**

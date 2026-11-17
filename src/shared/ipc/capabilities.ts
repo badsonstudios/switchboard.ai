@@ -291,6 +291,13 @@ export const CHANNEL_CAPABILITIES = {
   'fs:openPath': 'shell.openPath',
   // a picture or a page a reply offered (#1235): the same hand-off, type-checked in main
   'fs:openViewable': 'shell.openPath',
+  // a path a reply named (#1611): a folder or an ordinary file opens, and a
+  // runnable one is only ever SHOWN in its folder. Scope- and type-checked in main
+  'fs:openFromReply': 'shell.openPath',
+  // is a path a reply named a file, a folder, or nothing (#1611)? Existence and
+  // type and nothing else, which is `fs.probe`'s word, and narrower than it:
+  // answered only inside the read scope
+  'fs:statForLinks': 'fs.probe',
   // a picture from the conversation, by the handle main minted for it (#1240):
   // main writes its own copy and hands THAT to the system's viewer
   'feed:openPicture': 'shell.openPath',

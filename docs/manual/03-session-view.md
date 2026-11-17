@@ -479,11 +479,44 @@ the text of an answer is written by whatever the session was reading, so a link
 in it is not automatically something worth trusting, and "nothing happened" is
 the right answer for anything that isn't plainly a web page.
 
-Two other things a link in an answer can't do, for the same reason: a link to a
-file path (`./notes.md`) doesn't open anything from the conversation — open it
-in the [document viewer](15-document-viewer.md) instead, where links between
-files do work — and a link that just points at a spot in a page (`#somewhere`)
-does nothing, because a conversation isn't a document with places to jump to.
+One other thing a link in an answer can't do, for the same reason: a link that
+just points at a spot in a page (`#somewhere`) does nothing, because a
+conversation isn't a document with places to jump to. A link to a **file** on
+your computer is different, and has its own section, next.
+
+### Opening a file the AI mentions
+
+When the AI names a file or a folder in its answer, **you can click the name to
+open it.** That works however it was written: in code type
+(`` `.claude/work_files/plan.md` ``), in an ordinary sentence
+(`see docs/notes.md.`), or as a link to a file. A path can start
+from the session's own folder, which is how the AI usually writes them, or be a
+full one like `C:\Projects\app\notes.md`. A line number on the end
+(`src/app.ts:42`) is fine; the file still opens.
+
+Where it opens:
+
+- **A Markdown file** (`.md`) opens in switchboard's own
+  [document viewer](15-document-viewer.md), beside the session.
+- **A folder** opens in File Explorer (Finder on a Mac).
+- **Any other file** opens in the program your computer normally uses for it:
+  a spreadsheet in Excel, a picture in your picture viewer, and so on.
+- **A program or a script is never run.** Clicking a `.exe`, `.bat`, `.ps1`,
+  `.cmd`, `.js`, `.msi`, a shortcut, or anything else that could run opens
+  **the folder it is in**, with the file selected. There's no "run it anyway"
+  button, on purpose: the AI may be repeating text from a web page or a file it
+  read, and one click on that should never start a program. If you do want to
+  run it, it's right there in the folder for you to double-click.
+
+Only names that really exist are clickable, so a file the AI mentions but
+hasn't written yet stays plain text (it becomes clickable a little later, once
+the file is there). Only files inside the session's folder, or another place
+you've opened in switchboard, can be opened this way; a path anywhere else, or
+on another computer on the network, stays plain text. Paths inside a block of
+code are left alone, so you can still select and copy them.
+
+From the keyboard: walk to the name with `↑` and `↓` (see below) and press
+`Enter`.
 
 ### …without the mouse
 

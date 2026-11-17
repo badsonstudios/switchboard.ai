@@ -168,6 +168,15 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.142 — 2026-11-17
 
+### Added
+
+- **Click a file the AI mentions to open it.** A file or folder named in an
+  answer, in code type, in a sentence or as a link, is now clickable. Markdown
+  opens in the document viewer, a folder opens in File Explorer, and any other
+  file opens in the program your computer uses for it. Programs and scripts
+  are never run: clicking one opens the folder it is in, with the file
+  selected.
+
 ### Changed
 
 - **The line above each of your prompts now says PROMPT**, not NEW PROMPT,

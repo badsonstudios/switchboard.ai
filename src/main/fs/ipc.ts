@@ -24,7 +24,10 @@ import {
   DirListResult,
   FileReadResult,
   FileWatchResult,
+  LinkPathKind,
+  MAX_LINK_STATS,
 } from '../../shared/ipc/fs';
+import { isRunnableFile } from '../../shared/runnable-file';
 import { isAllowedLinkUrl } from '../../shared/link-schemes';
 import { readCappedText } from './read-file';
 import { ReadScope, isWithinRoot } from './read-scope';
@@ -93,6 +96,30 @@ function isUncPath(candidate: string): boolean {
   return candidate.length > 1 && isSep(candidate[0]) && isSep(candidate[1]);
 }
 
+/**
+ * Must a click on a path from a reply SHOW this in its folder rather than open
+ * it (#1611)? Pure, so it can be tested as a table on any machine.
+ *
+ *  - a runnable type by name (`shared/runnable-file.ts`), on the spelling the
+ *    reply used OR on the real path;
+ *  - on Linux and macOS, any FILE with an execute bit, whatever its name: a
+ *    script called `notes` with a shebang runs when opened there;
+ *  - a FOLDER whose name is a runnable type: a macOS `.app` is a folder that
+ *    launches when opened.
+ */
+export function revealsInsteadOfOpening(
+  asked: string,
+  real: string,
+  kind: 'file' | 'dir',
+  mode: number,
+  platform: NodeJS.Platform
+): boolean {
+  if (isRunnableFile(asked) || isRunnableFile(real)) return true;
+  // 0o111: the owner, group and other execute bits of a POSIX mode
+  if (kind === 'file' && platform !== 'win32' && (mode & 0o111) !== 0) return true;
+  return false;
+}
+
 export interface FsIpcDeps {
   broker: IpcBroker;
   log: Logger;
@@ -113,6 +140,8 @@ export interface FsIpcDeps {
   manualDir?: () => string | null;
   /** the Files tab's entry cap, overridable for tests (#521 layer 2) */
   dirCap?: number;
+  /** the OS `fs:openFromReply` decides "runnable" for; tests pin both (#1611) */
+  platform?: NodeJS.Platform;
   /** timing + injection knobs for the live-re-render watch (P2-E16-04) */
   watch?: Pick<
     FileWatchDeps,
@@ -195,6 +224,7 @@ export function registerFsIpc(deps: FsIpcDeps): FsIpcHandle {
 
   // --- P2-E16-02: the viewer's three doors out of the app ------------------
   const sh = deps.shell ?? electronFsShell;
+  const platform = deps.platform ?? process.platform;
 
   /**
    * `Open file…` — the ONE thing that widens the read scope, and it widens it
@@ -374,6 +404,100 @@ export function registerFsIpc(deps: FsIpcDeps): FsIpcHandle {
       if (err) deps.log.warn('fs:openViewable could not open the file', { path: real, error: err });
     });
     return true;
+  });
+
+  /**
+   * Where a reply's path really is, and what it is, or undefined when it is not
+   * one a click may act on. The checks `fs:openViewable` makes, in its order,
+   * minus the type allow-list: the type decides what a click DOES, not whether.
+   */
+  const linkTarget = (
+    target: unknown,
+    refuse?: (reason: string) => void
+  ): { real: string; kind: 'file' | 'dir'; stat: fs.Stats } | undefined => {
+    const no = (reason: string): undefined => {
+      refuse?.(reason);
+      return undefined;
+    };
+    if (typeof target !== 'string' || target.length === 0) return no('invalid-path');
+    if (isNetworkPath(target)) {
+      const lexical = path.resolve(target);
+      if (!deps.scope.roots().some((root) => isWithinRoot(root, lexical))) return no('out-of-scope');
+    }
+    const decision = deps.scope.resolve(target);
+    if (!decision.ok) return no(decision.reason);
+    const real = decision.path;
+    // a colon after the drive's own: `notes.txt:payload.exe`, a stream
+    if (real.slice(2).includes(':') || target.slice(2).includes(':')) return no('alternate-data-stream');
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(real);
+    } catch {
+      return no('not-found');
+    }
+    if (stat.isFile()) return { real, kind: 'file', stat };
+    if (stat.isDirectory()) return { real, kind: 'dir', stat };
+    return no('not-a-file');
+  };
+
+  /**
+   * Is a reply's path something to OFFER as a link (#1611)? One answer per
+   * path: 'file', 'dir', or null.
+   *
+   * The renderer decorates synchronously, so it keeps a cache and asks this in
+   * batches for the paths it has not seen. Every path goes through the same
+   * three checks the open does (a network path refused as a string, the read
+   * scope, no alternate data stream), so a link is only ever drawn for a path
+   * `fs:openFromReply` would act on.
+   *
+   * NOT LOGGED PER PATH: a reply that names twenty files that are not there is
+   * the ordinary case, and twenty warn lines per reply would bury the refusals
+   * that mean something. A malformed CALL is logged.
+   */
+  deps.broker.handle('fs:statForLinks', (_e, paths: unknown): LinkPathKind[] => {
+    if (!Array.isArray(paths)) {
+      deps.log.warn('fs:statForLinks refused: invalid-path', { type: typeof paths });
+      return [];
+    }
+    return paths.slice(0, MAX_LINK_STATS).map((p) => linkTarget(p)?.kind ?? null);
+  });
+
+  /**
+   * Open a path a reply in the conversation named (#1611), the way Dan asked:
+   * a folder opens in the file manager, a file opens in its associated app,
+   * and ANYTHING THAT CAN BE RUN IS NEVER RUN. For those the click opens the
+   * folder with the file selected, and there is no "run it anyway" (Dan,
+   * 2026-11-17).
+   *
+   * `fs:openPath`'s third sibling, for `fs:openViewable`'s reason: this is one
+   * click on text an agent wrote, and the agent may be relaying a web page or
+   * a file it read. So everything `fs:openViewable` checks is checked here
+   * (`linkTarget`), and the runnable test (`revealsInsteadOfOpening`) is asked
+   * of the spelling the reply used AND of the real path: `notes.txt` can be a
+   * symlink to `setup.bat`, and `shell.openPath` runs what a path resolves to.
+   *
+   * Answers what it did: 'opened', 'folder' or 'revealed', or false when it
+   * refused (and logged why).
+   */
+  deps.broker.handle('fs:openFromReply', (_e, target: unknown): 'opened' | 'folder' | 'revealed' | false => {
+    const found = linkTarget(target, (reason) => {
+      deps.log.warn(`fs:openFromReply refused: ${reason}`, {
+        path: (typeof target === 'string' ? target : String(target)).slice(0, 500),
+      });
+    });
+    if (!found) return false;
+    const asked = target as string;
+    if (revealsInsteadOfOpening(asked, found.real, found.kind, found.stat.mode, platform)) {
+      deps.log.info('fs:openFromReply showed a runnable file in its folder instead of opening it', {
+        path: found.real,
+      });
+      sh.showItemInFolder(found.real);
+      return 'revealed';
+    }
+    void sh.openPath(found.real).then((err) => {
+      if (err) deps.log.warn('fs:openFromReply could not open it', { path: found.real, error: err });
+    });
+    return found.kind === 'dir' ? 'folder' : 'opened';
   });
 
   // --- P2-E16-04: following the open file ----------------------------------

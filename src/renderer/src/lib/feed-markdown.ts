@@ -29,6 +29,7 @@
 import { DOC_DECORATION, FEED_DECORATION, stripDecorationNamespace } from './decoration-guard';
 import { decorateFeedCodeFences, type FeedCodeLabels } from './feed-code';
 import { decorateFeedImages, type FeedImageLabels, type WrittenPage } from './feed-images';
+import { decorateFeedPaths, type DecorateFeedPathsOptions } from './feed-paths';
 
 /**
  * Sanitized HTML in, decorated HTML out — the feed's surface pass.
@@ -75,11 +76,19 @@ export function decorateFeedMarkdown(
     doc = document,
     streaming = false,
     images,
+    paths,
   }: {
     doc?: Document;
     streaming?: boolean;
     /** the words for pictures, the folder a relative path is relative to, the pages the conversation wrote, and where this reply is in it */
     images?: { labels: FeedImageLabels; folder?: string; pages?: readonly WrittenPage[]; at?: number };
+    /**
+     * the paths a reply names, made clickable (#1611): the folder, the words,
+     * what main has said so far, and where to report every path the reply
+     * NAMED (so the caller can ask main about the new ones). Absent while
+     * streaming, or where there is no folder: nothing is decorated.
+     */
+    paths?: DecorateFeedPathsOptions & { named?: (paths: string[]) => void };
   } = {}
 ): string {
   const template = doc.createElement('template');
@@ -89,5 +98,8 @@ export function decorateFeedMarkdown(
   stripDecorationNamespace(template.content, DOC_DECORATION);
   if (!streaming) decorateFeedCodeFences(template.content, labels);
   if (images) decorateFeedImages(template.content, images.labels, { folder: images.folder, streaming, pages: images.pages, at: images.at });
+  // AFTER the pictures, so a link the picture pass already answers (a local
+  // page, #1235) is left to it; and after the guard, like everything else.
+  if (paths && !streaming) paths.named?.(decorateFeedPaths(template.content, paths));
   return template.innerHTML;
 }

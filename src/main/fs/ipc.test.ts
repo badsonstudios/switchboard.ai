@@ -13,7 +13,8 @@ import path from 'path';
 import { tempDir } from '../../test-temp-dirs';
 import { Logger } from '../log/logger';
 import { FileReadResult, MANUAL_ENTRY_PAGE } from '../../shared/ipc/fs';
-import { FsIpcHandle, registerFsIpc } from './ipc';
+import { FsIpcHandle, registerFsIpc, revealsInsteadOfOpening } from './ipc';
+import { MAX_LINK_STATS } from '../../shared/ipc/fs';
 import { ReadScope } from './read-scope';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
@@ -93,6 +94,8 @@ describe('fs:read', () => {
       'fs:openPath',
       'fs:reveal',
       'fs:openViewable',
+      'fs:statForLinks',
+      'fs:openFromReply',
       'fs:watch',
       'fs:unwatch',
     ]);
@@ -420,6 +423,171 @@ describe('the document viewer’s shell channels (P2-E16-02)', () => {
     it('`fs:openPath` is untouched: the viewer’s own button still opens any file in the scope', async () => {
       expect(await bus.call('fs:openPath', path.join(ROOT, 'PROGRESS.md'))).toBe(true);
       expect(sh.calls).toHaveLength(1);
+    });
+  });
+
+  describe('fs:openFromReply: a path a reply named (#1611)', () => {
+    // Dan, 2026-11-17: a folder opens, a file opens in its associated app, and
+    // anything that can be RUN is never run: the click shows it in its folder,
+    // and there is no "run it anyway". Reached from one click on text an agent
+    // wrote, so every check `fs:openViewable` makes is made here too.
+    const DIR = path.join(ROOT, 'reply-paths');
+    fs.mkdirSync(DIR, { recursive: true });
+    const file = (name: string, body = 'x'): string => {
+      const p = path.join(DIR, name);
+      fs.writeFileSync(p, body);
+      return p;
+    };
+    const refused = (reason: string): number =>
+      rec.lines.filter((l) => l.msg === `fs:openFromReply refused: ${reason}`).length;
+    const BS = String.fromCharCode(92);
+
+    // THE TABLE: type × spelling → what the click does
+    const OPENS = ['notes.md', 'plan.markdown', 'log.txt', 'shot.png', 'data.csv', 'report.PDF', 'page.html'];
+    const REVEALS = [
+      'setup.exe', 'run.bat', 'go.cmd', 'tool.ps1', 'mod.psm1', 'x.vbs', 'x.vbe', 'a.js', 'a.jse',
+      'a.wsf', 'a.wsh', 'pkg.msi', 'patch.msp', 'link.lnk', 'saver.scr', 'app.hta', 'keys.reg',
+      'old.com', 'x.pif', 'panel.cpl', 'lib.jar', 'build.sh', 'b.bash', 'fmt.ps1xml',
+      'click.appref-ms', 'site.url', 'cmd.scf', 'setup.inf', 'one.application', 'g.gadget', 'con.msc',
+      // case and Windows' own trailing-dot rule are not a way round it
+      'LOUD.EXE', 'Mixed.Bat',
+    ];
+
+    it.each(OPENS)('opens %s in its associated app, by its RESOLVED path', async (name) => {
+      expect(await bus.call('fs:openFromReply', file(name))).toBe('opened');
+      expect(sh.calls).toHaveLength(1);
+      expect(sh.calls[0].what).toBe('openPath');
+      expect(sh.calls[0].arg.toLowerCase().endsWith(name.toLowerCase())).toBe(true);
+    });
+
+    it.each(REVEALS)('⚠️ never runs %s: it is shown in its folder instead', async (name) => {
+      expect(await bus.call('fs:openFromReply', file(name, 'echo pwned'))).toBe('revealed');
+      expect(sh.calls.map((c) => c.what)).toEqual(['reveal']);
+    });
+
+    it('the same, spelled with forward slashes, a ../ inside the scope, and mixed case', async () => {
+      const exe = file('fwd.exe');
+      const spellings = [
+        exe.split(BS).join('/'),
+        path.join(DIR, '..', 'reply-paths', 'fwd.exe'),
+        ...(process.platform === 'win32' ? [exe.toUpperCase()] : []),
+      ];
+      for (const s of spellings) {
+        expect(await bus.call('fs:openFromReply', s), s).toBe('revealed');
+      }
+      expect(sh.calls.every((c) => c.what === 'reveal')).toBe(true);
+    });
+
+    it('a FOLDER opens in the file manager', async () => {
+      fs.mkdirSync(path.join(DIR, 'work_files'), { recursive: true });
+      expect(await bus.call('fs:openFromReply', path.join(DIR, 'work_files'))).toBe('folder');
+      expect(sh.calls.map((c) => c.what)).toEqual(['openPath']);
+    });
+
+    it('⚠️ a folder named like a program (a macOS .app) is shown, not opened', async () => {
+      fs.mkdirSync(path.join(DIR, 'Thing.app'), { recursive: true });
+      expect(await bus.call('fs:openFromReply', path.join(DIR, 'Thing.app'))).toBe('revealed');
+      expect(sh.calls.map((c) => c.what)).toEqual(['reveal']);
+    });
+
+    it('⚠️ a harmless name that is really a LINK TO A PROGRAM is shown, not run', async () => {
+      const program = file('payload.bat', 'echo pwned');
+      const disguised = path.join(DIR, 'readme.txt');
+      try {
+        fs.symlinkSync(program, disguised);
+      } catch {
+        return; // this machine cannot make a symlink (no Developer Mode): nothing to prove here
+      }
+      expect(await bus.call('fs:openFromReply', disguised)).toBe('revealed');
+      expect(sh.calls.map((c) => c.what)).toEqual(['reveal']);
+    });
+
+    it('refuses a path outside the scope, and a ../ climb out of it', async () => {
+      const outside = path.join(OUTSIDE, 'notes.txt');
+      fs.writeFileSync(outside, 'x');
+      expect(await bus.call('fs:openFromReply', outside)).toBe(false);
+      expect(await bus.call('fs:openFromReply', path.join(ROOT, '..', 'secrets', 'notes.txt'))).toBe(false);
+      expect(await bus.call('fs:openFromReply', OUTSIDE)).toBe(false);
+      expect(sh.calls).toEqual([]);
+      expect(refused('out-of-scope')).toBe(3);
+    });
+
+    it('⚠️ a network path is refused AS A STRING: nobody is asked where it really is', async () => {
+      const resolve = vi.spyOn(scope, 'resolve');
+      for (const p of [`${BS}${BS}evil.example${BS}share${BS}a.txt`, '//evil.example/share/a.exe']) {
+        expect(await bus.call('fs:openFromReply', p), p).toBe(false);
+      }
+      expect(resolve).not.toHaveBeenCalled();
+      expect(sh.calls).toEqual([]);
+    });
+
+    it('refuses a file that is not there, and what is not a path at all', async () => {
+      expect(await bus.call('fs:openFromReply', path.join(DIR, 'never-written.md'))).toBe(false);
+      expect(refused('not-found')).toBe(1);
+      for (const bad of [undefined, null, 42, '', { path: 'a.md' }, 'relative/a.md']) {
+        expect(await bus.call('fs:openFromReply', bad)).toBe(false);
+      }
+      expect(sh.calls).toEqual([]);
+    });
+
+    it('⚠️ refuses a stream hidden behind a file’s name', async () => {
+      file('host.txt');
+      expect(await bus.call('fs:openFromReply', path.join(DIR, 'host.txt:payload.exe'))).toBe(false);
+      expect(await bus.call('fs:openFromReply', path.join(DIR, 'host.txt:notes.txt'))).toBe(false);
+      expect(sh.calls).toEqual([]);
+    });
+
+    it('`revealsInsteadOfOpening` on Linux and macOS: an execute bit is a program whatever its name', () => {
+      // a script called `notes` with a shebang runs when it is opened there
+      expect(revealsInsteadOfOpening('/p/notes', '/p/notes', 'file', 0o100755, 'linux')).toBe(true);
+      expect(revealsInsteadOfOpening('/p/notes', '/p/notes', 'file', 0o100744, 'darwin')).toBe(true);
+      expect(revealsInsteadOfOpening('/p/notes', '/p/notes', 'file', 0o100644, 'linux')).toBe(false);
+      // a folder's execute bit means "may enter", not "runs"
+      expect(revealsInsteadOfOpening('/p/dir', '/p/dir', 'dir', 0o40755, 'linux')).toBe(false);
+      // Windows has no execute bit to read: the name decides
+      expect(revealsInsteadOfOpening('C:\\p\\a.txt', 'C:\\p\\a.txt', 'file', 0o100777, 'win32')).toBe(false);
+      // either spelling being a program is enough
+      expect(revealsInsteadOfOpening('C:\\p\\a.txt', 'C:\\p\\b.exe', 'file', 0o100666, 'win32')).toBe(true);
+      expect(revealsInsteadOfOpening('C:\\p\\a.exe.', 'C:\\p\\a.exe', 'file', 0o100666, 'win32')).toBe(true);
+      expect(revealsInsteadOfOpening('C:\\p\\a.exe ', 'C:\\p\\x', 'file', 0o100666, 'win32')).toBe(true);
+    });
+  });
+
+  describe('fs:statForLinks: which paths a reply named are really there (#1611)', () => {
+    const DIR = path.join(ROOT, 'stat-links');
+    fs.mkdirSync(path.join(DIR, 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(DIR, 'a.md'), '# a');
+    fs.writeFileSync(path.join(DIR, 'tool.exe'), 'x');
+    fs.writeFileSync(path.join(OUTSIDE, 'b.md'), '# b');
+
+    it('answers file, dir or null for each path, in order', async () => {
+      const answer = await bus.call('fs:statForLinks', [
+        path.join(DIR, 'a.md'),
+        path.join(DIR, 'sub'),
+        path.join(DIR, 'missing.md'),
+        path.join(OUTSIDE, 'b.md'),
+        path.join(DIR, 'tool.exe'),
+        '//evil.example/share/x.md',
+        42,
+        'relative.md',
+        path.join(DIR, 'a.md:hidden'),
+      ]);
+      // a program IS a file: whether a click runs it is the open's decision
+      expect(answer).toEqual(['file', 'dir', null, null, 'file', null, null, null, null]);
+      expect(sh.calls).toEqual([]);
+    });
+
+    it('looks at no more than MAX_LINK_STATS paths per call', async () => {
+      const many = Array.from({ length: MAX_LINK_STATS + 10 }, () => path.join(DIR, 'a.md'));
+      const answer = (await bus.call('fs:statForLinks', many)) as unknown as unknown[];
+      expect(answer).toHaveLength(MAX_LINK_STATS);
+    });
+
+    it('a malformed call answers nothing, and is logged', async () => {
+      for (const bad of [undefined, null, 'C:\\a.md', { 0: 'a' }]) {
+        expect(await bus.call('fs:statForLinks', bad)).toEqual([]);
+      }
+      expect(rec.lines.filter((l) => l.msg === 'fs:statForLinks refused: invalid-path')).toHaveLength(4);
     });
   });
 
