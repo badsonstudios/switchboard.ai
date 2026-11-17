@@ -59,6 +59,7 @@ import type { WorkingLook } from '../lib/working-look';
 import { ContextMeterSection } from './settings/ContextMeterSection';
 import type { ContextMeterForm } from '../lib/context-meter';
 import { QuietHoursSection } from './settings/QuietHoursSection';
+import { AppBadgeSection } from './settings/AppBadgeSection';
 import { NeedsYouSoundSection } from './settings/NeedsYouSoundSection';
 import { SpeakVoiceSection } from './settings/SpeakVoiceSection';
 import { PushSection } from './settings/PushSection';
@@ -432,6 +433,7 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
           'attention',
           <>
             <NeedsYouSoundSection open={props.open} />
+            <AppBadgeSection />
             <SpeakVoiceSection open={props.open} />
             <QuietHoursSection
               open={props.open}

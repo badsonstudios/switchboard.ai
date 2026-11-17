@@ -273,6 +273,14 @@ By default, when a session needs permission, needs input, finishes, or crashes:
 - **The taskbar icon flashes** — but only if the switchboard window is in the
   background. It stops as soon as you come back.
 
+**The taskbar icon also shows how many sessions need you.** A small yellow
+circle with the number sits on switchboard's taskbar icon: the same number as
+**N need you** in the window, so you can see it with switchboard minimised or
+behind something else. It changes as sessions start and stop needing you, shows
+**9+** past nine, and goes away when nothing needs you. It makes no sound and
+doesn't move. To turn it off, untick **Settings ▸ Attention ▸ Count on the app
+icon**. On a Mac the count is the Dock's red badge instead.
+
 **Desktop pop-up notifications are off by default.** The sound plus the Events
 panel is the calm default; pop-ups are opt-in.
 
