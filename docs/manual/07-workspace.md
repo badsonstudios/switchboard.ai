@@ -916,6 +916,12 @@ list has, plus a few things that are about the tab:
 - **Rename…** puts a box in the tab itself. `Enter` keeps the new name, and
   the tab, the Sessions list and the strip all show it; `Esc`, or clicking
   away, leaves the old one. It is greyed out for a session that never started.
+- **Open folder in editor** opens the session's folder in your editor (VS
+  Code, Cursor, Zed or VSCodium, whichever switchboard finds, or the one you
+  picked in **Settings ▸ General ▸ Editor**). It is in the session's menu in the
+  Sessions list and on the strip too, in the **⋯** menu on the session's card,
+  and in the command list (`Ctrl+Shift+P`, type *editor*). It has no keyboard
+  shortcut of its own. Greyed out when no editor is set up.
 - **Duplicate session** starts a **new, fresh** session in the same folder,
   in the same group, as a tab next to this one. It asks for a name first,
   with the usual suggestion filled in (*myproject-2* and so on). It does not
