@@ -164,6 +164,10 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   Dropping a session from another folder onto an automatic group turns it into
   a group of your own, named after the folder, with its sessions kept in order.
   The strip across the top does the same.
+- **Claude waits less on switchboard after each tool it uses.** The small
+  helper switchboard runs to follow a session's progress now starts directly
+  instead of through a shell, and the ones Claude has no reason to wait for run
+  in the background.
 
 ### Fixed
 
