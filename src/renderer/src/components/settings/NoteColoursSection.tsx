@@ -35,7 +35,7 @@ export function NoteColoursSection(): React.JSX.Element {
           data-note-colour={kind}
           value={value}
           onChange={(e) => setNoteColour(kind, e.currentTarget.value)}
-          style={{ inlineSize: 36, blockSize: 22, padding: 0, border: '1px solid var(--border)', background: 'none' }}
+          style={{ inlineSize: 36, blockSize: 22, padding: 0, border: '1px solid var(--control-edge)', background: 'none' }}
         />
         <span
           aria-hidden
