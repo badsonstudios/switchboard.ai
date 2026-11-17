@@ -3,7 +3,7 @@ import fs from 'fs';
 import http from 'http';
 import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
-import { HookListener } from './hook-listener';
+import { HookListener, versionAtLeast } from './hook-listener';
 import { LogSink, createLogger, Logger, LogFields } from '../log/logger';
 import { SessionEvent } from '../sessions/state-machine';
 
@@ -19,6 +19,7 @@ beforeEach(async () => {
   nativeIds = [];
   listener = new HookListener({
     stateDir: dir,
+    cliVersion: () => Promise.resolve('2.1.322'),
     log: createLogger(new LogSink({ dir }), 'hooks'),
     manager: {
       apply: (sessionId, ev) => applied.push({ sessionId, ev }),
@@ -26,6 +27,7 @@ beforeEach(async () => {
     },
   });
   port = await listener.start();
+  await listener.versionChecked;
 });
 
 // The FILE-level teardown, so it runs LAST: vitest works `afterEach` hooks from
@@ -330,10 +332,44 @@ describe('buildHookSettings', () => {
       .filter(([, e]) => e[0].hooks[0].async === true)
       .map(([ev]) => ev)
       .sort();
-    expect(asyncOnes).toEqual(['Notification', 'PostToolUse', 'SubagentStop']);
-    // these answer (UserPromptSubmit), are awaited by /clear (SessionStart), or
-    // are the done signal (Stop)
-    for (const ev of ['UserPromptSubmit', 'SessionStart', 'Stop']) expect(settings.hooks[ev][0].hooks[0].async).toBeUndefined();
+    expect(asyncOnes).toEqual(['PostToolUse', 'SubagentStop']);
+    // these answer (UserPromptSubmit), are awaited by /clear (SessionStart), are
+    // the done signal (Stop), or must not race a PostToolUse (Notification)
+    for (const ev of ['UserPromptSubmit', 'SessionStart', 'Stop', 'Notification'])
+      expect(settings.hooks[ev][0].hooks[0].async).toBeUndefined();
+  });
+
+  it('an older or unknown CLI gets the shell string and nothing async', async () => {
+    for (const v of [Promise.resolve('2.1.300'), Promise.resolve(undefined), Promise.reject(new Error('no cli'))]) {
+      const d = tempDir('sb-hooks-old-');
+      const old = new HookListener({
+        stateDir: d,
+        cliVersion: () => v,
+        log: createLogger(new LogSink({ dir: d }), 'hooks'),
+        manager: { apply: () => {}, setNativeSessionId: () => {} },
+      });
+      try {
+        await old.start();
+        await old.versionChecked;
+        const s = old.buildHookSettings('o1') as { hooks: Record<string, Array<{ hooks: HookEntry[] }>> };
+        for (const entries of Object.values(s.hooks)) {
+          const h = entries[0].hooks[0];
+          expect(h.args).toBeUndefined();
+          expect(h.async).toBeUndefined();
+          expect(h.command).toContain('hook-forwarder.cjs');
+        }
+      } finally {
+        old.stop();
+      }
+    }
+  });
+
+  it('versionAtLeast compares dotted versions as numbers', () => {
+    expect(versionAtLeast('2.1.322', '2.1.322')).toBe(true);
+    expect(versionAtLeast('2.1.400', '2.1.322')).toBe(true);
+    expect(versionAtLeast('2.2.0', '2.1.322')).toBe(true);
+    expect(versionAtLeast('2.1.99', '2.1.322')).toBe(false);
+    expect(versionAtLeast('garbage', '2.1.322')).toBe(false);
   });
 
   it('the forwarder stamps when it started', () => {

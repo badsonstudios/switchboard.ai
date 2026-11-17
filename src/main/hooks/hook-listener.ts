@@ -65,10 +65,40 @@ const STATUS_EVENTS = [
  * nothing to correct it. The forwarder stamps when it STARTED, and `ingest`
  * drops a background event that started before the last synchronous one did.
  */
-const ASYNC_EVENTS: ReadonlySet<string> = new Set(['PostToolUse', 'Notification', 'SubagentStop']);
+const ASYNC_EVENTS: ReadonlySet<string> = new Set(['PostToolUse', 'SubagentStop']);
+// `Notification` is NOT here, though it only records (review, #1612): it says
+// "blocked on a permission prompt", and two background events are not ordered
+// against EACH OTHER. A late PostToolUse landing after it would show the card
+// working while it waits on you.
+
+/**
+ * The oldest CLI exec form and `async` are used with: the one they were
+ * verified on (#1612). An older or unknown CLI keeps the shell string, which
+ * is what every CLI understands; a CLI without `args` would otherwise start a
+ * bare `node` that reads the hook payload as a script, and every status hook
+ * would fail.
+ */
+export const EXEC_FORM_MIN_CLI = '2.1.322';
+
+/** `a >= b` for dotted version numbers (`2.1.322`); false if either is not one. */
+export function versionAtLeast(a: string, b: string): boolean {
+  const pa = /^(\d+)\.(\d+)\.(\d+)/.exec(a);
+  const pb = /^(\d+)\.(\d+)\.(\d+)/.exec(b);
+  if (!pa || !pb) return false;
+  for (let i = 1; i <= 3; i++) {
+    const d = Number(pa[i]) - Number(pb[i]);
+    if (d !== 0) return d > 0;
+  }
+  return true;
+}
 
 export interface HookListenerOptions {
   stateDir: string;
+  /**
+   * The CLI's version (#1612), asked once at start, in the background. Exec
+   * form is used only once this has answered `EXEC_FORM_MIN_CLI` or later.
+   */
+  cliVersion?: () => Promise<string | undefined>;
   manager: Pick<SessionManager, 'apply' | 'setNativeSessionId'>;
   log: Logger;
   // NO HOLD OPTIONS SINCE #952. `autonomyFor`, `cwdFor`, `holdTimeoutMs`,
@@ -183,6 +213,10 @@ export class HookListener {
   private nodeCommand: string | null = null;
   /** `node` on PATH, raw: the exec-form hook's `command` (#1612), else null */
   private nodeExec: string | null = null;
+  /** the CLI is new enough for exec form and `async` (#1612); off until known */
+  private execForm = false;
+  /** settles when the version check has answered (tests wait on it) */
+  versionChecked: Promise<void> = Promise.resolve();
   /** per session, when the last SYNCHRONOUS hook's forwarder started (#1612) */
   private lastSyncBorn = new Map<string, number>();
 
@@ -198,6 +232,17 @@ export class HookListener {
     // Windows (S-02 finding), so an env-prefix works.
     const nodeOnPath = findNodeOnPath();
     this.nodeExec = nodeOnPath;
+    if (this.opts.cliVersion) {
+      this.versionChecked = this.opts
+        .cliVersion()
+        .then((v) => {
+          this.execForm = !!v && versionAtLeast(v, EXEC_FORM_MIN_CLI);
+          this.opts.log.info('hook form', { cli: v ?? 'unknown', exec: this.execForm });
+        })
+        .catch(() => {
+          /* fail-open: the shell form every CLI understands */
+        });
+    }
     this.nodeCommand = nodeOnPath
       ? `"${nodeOnPath}"`
       : `ELECTRON_RUN_AS_NODE=1 "${process.execPath}"`;
@@ -451,12 +496,13 @@ export class HookListener {
     //
     // The run-as-node fallback stays a shell command: it needs the
     // ELECTRON_RUN_AS_NODE env prefix, and a hook has no field to set env.
-    const base = this.nodeExec
-      ? { type: 'command', timeout: 10, command: this.nodeExec, args: [this.forwarderPath, String(this.port), tokenPath] }
+    const exec = this.nodeExec !== null && this.execForm;
+    const base = exec
+      ? { type: 'command', timeout: 10, command: this.nodeExec!, args: [this.forwarderPath, String(this.port), tokenPath] }
       : { type: 'command', timeout: 10, command: `${this.nodeCommand} "${this.forwarderPath}" ${this.port} "${tokenPath}"` };
     const hooks: Record<string, unknown> = {};
     for (const ev of STATUS_EVENTS) {
-      hooks[ev] = [{ hooks: [ASYNC_EVENTS.has(ev) ? { ...base, async: true } : base] }];
+      hooks[ev] = [{ hooks: [exec && ASYNC_EVENTS.has(ev) ? { ...base, async: true } : base] }];
     }
     // NO `PreToolUse` ENTRY SINCE #952, and this is the line that makes the
     // deletion real rather than merely unreachable: the CLI is no longer asked to

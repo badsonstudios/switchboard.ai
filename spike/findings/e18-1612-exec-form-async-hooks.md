@@ -51,10 +51,13 @@ owner's hand test.
 - Exec form for every status hook when `node` is on PATH. The run-as-node
   fallback (`ELECTRON_RUN_AS_NODE=1 <app>`) stays a shell command, because it
   needs an env prefix and a hook has no field for env.
-- `async: true` on `PostToolUse`, `Notification` and `SubagentStop`.
-  `UserPromptSubmit` answers (the waiting-note line), `SessionStart(clear)` is
-  awaited by `/clear`, and `Stop` is the done authority, so those three stay
-  synchronous.
+- `async: true` on `PostToolUse` and `SubagentStop` only. `UserPromptSubmit`
+  answers (the waiting-note line), `SessionStart(clear)` is awaited by `/clear`,
+  `Stop` is the done authority, and `Notification` ("blocked on a permission")
+  must not race a background `PostToolUse` (review), so those stay synchronous.
+- Only on a CLI the listener has seen answer `--version` with 2.1.322 or later
+  (the version verified here); older or unknown CLIs keep the shell string,
+  because a CLI without `args` would start a bare `node` and lose every hook.
 - A background event could in principle arrive after the next synchronous one
   (a slow spawn, then a fast `Stop`), and a late `PostToolUse` would turn a
   finished session back to "working". The forwarder now sends when it started
