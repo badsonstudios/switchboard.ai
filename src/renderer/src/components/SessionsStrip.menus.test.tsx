@@ -162,6 +162,7 @@ describe('right-click on a session', () => {
     // (the tick on the choice in force is decoration; `aria-checked` says it)
     expect(labels(host).map((l) => l.replace('✓', ''))).toEqual([
       i18next.t('rail.menuDiff'),
+      i18next.t('editor.openFolder'),
       i18next.t('rail.menuRename'),
       i18next.t('rail.menuPin'),
       i18next.t('rail.menuClose'),
