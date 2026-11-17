@@ -35,12 +35,33 @@ export interface Rate {
   cacheCreate: number;
 }
 
-// Order matters: `fable`/`mythos` must be tested before the generic families,
-// and `opus` before anything that could also match it.
+// Order matters: a VERSION row comes before its family's row, `fable`/`mythos`
+// before the generic families, and `opus` before anything that could also
+// match it.
+//
+// The version rows (#1606) are the first step toward the version table DESIGN
+// sec. 5.13 asks for (E26). They exist because a newer version of a family is
+// not always priced like the last one, and the family row was overcharging:
+// Fable 5.2 is $8/$40, not Fable 5.1's $10/$50. Checked on 2026-11-17 against
+// Anthropic's pricing page (platform.claude.com/docs/en/about-claude/pricing).
+// `cacheCreate` is the 5-minute write rate; see `claudeEstimateCostUsd`.
+//
+// Haiku 5.5 has two tiers, by the size of each PROMPT: the rates below are for
+// prompts up to 100K tokens; above that it is $0.50/$2.50. The totals here
+// cannot tell one prompt from another, so the lower tier is used, which keeps
+// the estimate a floor, as it already is for cache writes.
 const RATES: ReadonlyArray<{ match: RegExp; rate: Rate }> = [
+  { match: /(fable|mythos)-5[-.]2(?!\d)/i, rate: { input: 8, output: 40, cacheRead: 0.2, cacheCreate: 10 } },
+  // Fable 5 / Mythos 5 themselves: cache reads are $1, four times 5.1's
+  { match: /(fable|mythos)-5(?![-.]?\d)/i, rate: { input: 10, output: 50, cacheRead: 1, cacheCreate: 12.5 } },
   { match: /fable|mythos/i, rate: { input: 10, output: 50, cacheRead: 0.25, cacheCreate: 12.5 } },
+  { match: /opus-5[-.]5(?!\d)/i, rate: { input: 4, output: 20, cacheRead: 0.2, cacheCreate: 5 } },
   { match: /opus/i, rate: { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 } },
+  { match: /haiku-5[-.]5(?!\d)/i, rate: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheCreate: 0.125 } },
   { match: /haiku/i, rate: { input: 1, output: 5, cacheRead: 0.1, cacheCreate: 1.25 } },
+  { match: /sonnet-5[-.]5(?!\d)/i, rate: { input: 2, output: 10, cacheRead: 0.1, cacheCreate: 2.5 } },
+  // Sonnet 4.x is still on the old $3/$15 list, not Sonnet 5's
+  { match: /sonnet-4(?!\d)/i, rate: { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } },
   { match: /sonnet/i, rate: { input: 2, output: 10, cacheRead: 0.2, cacheCreate: 2.5 } },
 ];
 
