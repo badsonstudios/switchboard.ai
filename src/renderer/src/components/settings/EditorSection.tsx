@@ -4,7 +4,7 @@
 // it, so "Opens with" is main's answer, not a guess made here.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { chooseEditor, refreshEditor, useEditorState } from '../../lib/editor';
+import { chooseEditor, pickCustomEditor, refreshEditor, useEditorState } from '../../lib/editor';
 import { SettingItem } from './controls';
 
 const KNOWN = ['code', 'cursor', 'zed', 'codium'] as const;
@@ -13,14 +13,10 @@ export function EditorSection(props: { open: boolean }): React.JSX.Element {
   const { t } = useTranslation();
   const state = useEditorState();
   const fieldId = React.useId();
-  const [custom, setCustom] = React.useState('');
   // ask main again each time the dialog opens: an editor may have been installed
   React.useEffect(() => {
     if (props.open) void refreshEditor();
   }, [props.open]);
-  React.useEffect(() => {
-    setCustom(state?.customPath ?? '');
-  }, [state?.customPath]);
   const choice = state?.choice ?? 'auto';
   const installed = state?.installed ?? [];
   const autoLabel =
@@ -32,7 +28,7 @@ export function EditorSection(props: { open: boolean }): React.JSX.Element {
         data-settings-field="editor"
         aria-label={t('editor.title')}
         value={choice}
-        onChange={(e) => void chooseEditor(e.currentTarget.value, e.currentTarget.value === 'custom' ? custom : undefined)}
+        onChange={(e) => void chooseEditor(e.currentTarget.value)}
         style={{ maxInlineSize: 340, fontSize: 12 }}
       >
         <option value="auto">{autoLabel}</option>
@@ -45,21 +41,18 @@ export function EditorSection(props: { open: boolean }): React.JSX.Element {
       </select>
       {choice === 'custom' && (
         <div style={{ display: 'grid', gap: 4 }}>
-          <label htmlFor={`${fieldId}path`} style={{ fontSize: 11.5 }}>
-            {t('editor.customLabel')}
-          </label>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <input
-              id={`${fieldId}path`}
-              data-settings-field="editorPath"
-              value={custom}
-              onChange={(e) => setCustom(e.currentTarget.value)}
-              spellCheck={false}
-              style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 11.5 }}
-            />
-            <button type="button" onClick={() => void chooseEditor('custom', custom.trim())} style={{ fontSize: 11 }}>
-              {t('editor.save')}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button
+              type="button"
+              data-settings-field="editorPick"
+              onClick={() => void pickCustomEditor()}
+              style={{ fontSize: 11 }}
+            >
+              {t('editor.pick')}
             </button>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, overflowWrap: 'anywhere' }}>
+              {state?.customPath ?? ''}
+            </span>
           </div>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{t('editor.customHint')}</span>
         </div>

@@ -20,7 +20,8 @@ export interface EditorState {
 
 type EditorBridge = {
   get(): Promise<EditorState>;
-  set(pref: { choice: string; customPath?: string }): Promise<boolean>;
+  set(pref: { choice: string }): Promise<boolean>;
+  pickCustom(): Promise<boolean>;
   openFolder(cardId: string): Promise<'opened' | 'no-editor' | 'no-folder'>;
 };
 
@@ -52,9 +53,18 @@ export async function refreshEditor(): Promise<void> {
 }
 
 /** Settings: store a choice, then show what it resolves to. */
-export async function chooseEditor(choice: string, customPath?: string): Promise<void> {
+export async function chooseEditor(choice: string): Promise<void> {
   try {
-    await bridge()?.set({ choice, ...(customPath ? { customPath } : {}) });
+    await bridge()?.set({ choice });
+  } finally {
+    await refreshEditor();
+  }
+}
+
+/** Settings: main's own dialog picks the program for "Another program". */
+export async function pickCustomEditor(): Promise<void> {
+  try {
+    await bridge()?.pickCustom();
   } finally {
     await refreshEditor();
   }

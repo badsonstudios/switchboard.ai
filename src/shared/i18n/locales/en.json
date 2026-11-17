@@ -2043,11 +2043,10 @@
     "codium": "VSCodium",
     "custom": "Another program…",
     "notInstalled": "{name} (not found)",
-    "customLabel": "Program",
-    "customHint": "The full path to the editor's program, for example C:\\Program Files\\Sublime Text\\sublime_text.exe. It is started with the folder as its only argument.",
+    "customHint": "Pick the editor's program file, for example sublime_text.exe. It is started with the folder as its only argument.",
     "customBad": "That isn't a program switchboard can start. It has to be the full path to an .exe (on a Mac or Linux, to a program file).",
     "willOpen": "Opens with: {path}",
-    "save": "Use this program"
+    "pick": "Choose program\u2026"
   },
   "appBadge": {
     "title": "Count on the app icon",

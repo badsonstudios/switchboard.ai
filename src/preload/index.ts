@@ -282,7 +282,10 @@ const api = {
   editor: {
     get: (): Promise<{ choice: string; customPath?: string; installed: string[]; resolved: string | null }> =>
       ipcRenderer.invoke('editor:get'),
-    set: (pref: { choice: string; customPath?: string }): Promise<boolean> => ipcRenderer.invoke('editor:set', pref),
+    /** a CHOICE only; a custom program is set by `pickCustom`, never sent */
+    set: (pref: { choice: string }): Promise<boolean> => ipcRenderer.invoke('editor:set', pref),
+    /** main's own file dialog for a custom program; resolves whether one was set */
+    pickCustom: (): Promise<boolean> => ipcRenderer.invoke('editor:pickCustom'),
     openFolder: (cardId: string): Promise<'opened' | 'no-editor' | 'no-folder'> =>
       ipcRenderer.invoke('editor:openFolder', cardId),
   },
