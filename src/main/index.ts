@@ -1912,7 +1912,7 @@ app
     manager.onSessionExit((e) => health.forgetSession(e.sessionId));
     // late-bound: assigned once the bus host exists, and no hook fires before then
     let hasNoteBus: (liveId: string) => boolean = () => false;
-    let clearWaitingForLive: (liveId: string) => void = () => {};
+    let clearWaitingForLive: (liveId: string, source: 'prompt-sent' | 'prompt-started') => void = () => {};
     const hooks = new HookListener({
       stateDir,
       manager,
@@ -1923,7 +1923,7 @@ app
       promptContext: (sessionId) =>
         workspace.getWaitingNotes() && hasNoteBus(sessionId) ? WAITING_NOTE_CONTEXT : undefined,
       // ...and a turn that really starts clears the last one's waiting note
-      onPromptStarted: (sessionId) => clearWaitingForLive(sessionId),
+      onPromptStarted: (sessionId) => clearWaitingForLive(sessionId, 'prompt-started'),
       // NOTHING ABOUT PERMISSIONS (#952). This used to pass `autonomyFor`,
       // `cwdFor`, `transportFor` and `hasLiveWindow` for the hold policy. The
       // listener is a STATUS channel now — `Stop` is the done authority (S-06) —
@@ -3118,12 +3118,19 @@ app
       push: (change: SessionNoteChange) => broker.send(currentWindow, 'sessions:waitingNoteChanged', change),
     };
     // a prompt to a session, from ANY source, clears its waiting note
-    clearWaitingForLive = (liveId) => {
+    // Logged both ways (#1600): a note that stayed up after a send could not be
+    // told apart from one that was cleared and set again, or from a session
+    // with no card to clear.
+    clearWaitingForLive = (liveId, source) => {
       const cardId = cardIdForLive(liveId);
-      if (cardId) clearWaitingNote(waitingNotes, cardId);
+      if (!cardId) {
+        notesLog.info('waiting note not cleared: no card for the session', { liveId, source });
+        return;
+      }
+      if (clearWaitingNote(waitingNotes, cardId)) notesLog.info('waiting note cleared', { cardId, source });
     };
     // when a prompt is sent; the hook clears it again when the turn starts
-    manager.onPromptSent((liveId) => clearWaitingForLive(liveId));
+    manager.onPromptSent((liveId) => clearWaitingForLive(liveId, 'prompt-sent'));
     hasNoteBus = (liveId) => busHost.endpointFor(liveId) !== null;
     const aiNotes = busNotes({
       store: workspace,
