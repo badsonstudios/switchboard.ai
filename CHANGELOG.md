@@ -140,6 +140,13 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.143 — unreleased
 
+### Added
+
+- **Turn group colours off:** **Settings ▸ Appearance ▸ Group colours**. Off,
+  the groups in the Sessions list are drawn in plain grey in every group style,
+  and still look like groups. The colour you picked for each one is kept for
+  when you turn it back on.
+
 ### Changed
 
 - **Automatic folder groups now have the ⊕ and accept a dropped session.**
