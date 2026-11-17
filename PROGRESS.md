@@ -3,6 +3,14 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS: the batch Dan picked on 2026-11-17 (release 0.8.142, then #1600, #1606, #1603, #1599, #1601, #1611, #1612, #1605, #1608)
+>
+> **Dan (2026-11-17):** one PR per ticket, merged on green CI, in this order; each item's PROGRESS and dogfood close-out rides in the NEXT item's PR, and the last gets its own close-out PR. **Decisions asked up front (Dan, 2026-11-17):** #1603 a session dropped on an AUTOMATIC folder group **turns it into a normal group he owns**; #1601 the colour picker covers **both** notes (waiting and session). **Approved the same day:** #1606, #1612, #1605, #1608 (`needs-discussion` removed, approval noted on each). **Held, not in this batch:** the "create a project instead of a session" ticket, #1607, #1613, #1610, #1609, #1614, #1615, #1616.
+- **0. Release 0.8.142** (PR #1617, tag on `9da40b13`): regular release on Dan's word. Ships the 2026-11-09 batch (#1591, #1319, #675, #1592, #1573) and #1589. `0.8.143 — unreleased` is open.
+- **1. Housekeeping:** #1551 closed (it was only the log attachment for #1550). #716 left alone (tentatively fixed).
+- **2. #1600** (this PR): NOT reproduced. An e2e sends a prompt with Enter and with the send arrow in each of the four note placements, and the waiting note clears in all of them with the test AI. The main/renderer paths are shared by all placements. Main now logs `waiting note cleared` with its source (`prompt-sent` / `prompt-started`), or `not cleared: no card for the session`, so the next sighting says which side failed. Dogfood row → RE-TEST with that log.
+- **Built on local branches, shipping in order:** #1606, #1603, #1599, #1601, #1612, #1605; #1611 being built in `sb-wt-1`; #1608 not started.
+
 > # ✅ DONE: the batch Dan picked on 2026-11-09: #1591, #1319, #675, #1592 and #1573, all merged (NOT RELEASED)
 >
 > **Dan (2026-11-09):** one PR per ticket, merged on green CI, in the order #1591, #1319, #675, #1592. **Decisions asked up front (Dan, 2026-11-09):** #1573 **fix it** (retune the auto ink so the folder group name and AUTO badge clear 4.5:1, add the measurement), added as the fifth item; #1319 (a) the strip pill's screen-reader label **names its AI**; (b) an inactive tab with no language badge shows its session colour by **tinting the status ring's track**. **How it runs:** each item's PROGRESS and dogfood close-out rides in the NEXT item's PR; the last gets its own close-out PR.

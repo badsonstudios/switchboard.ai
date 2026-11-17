@@ -94,11 +94,13 @@ export interface WaitingNoteDeps {
 /**
  * Clear a card's waiting note because a prompt was sent to it (#1544 part 4):
  * "it goes away when you type another prompt". Quiet when there was none.
+ * Answers whether there was one to clear.
  */
-export function clearWaitingNote(waiting: WaitingNoteDeps, cardId: string): void {
-  if (!waiting.store.cardWaitingNote(cardId)) return;
+export function clearWaitingNote(waiting: WaitingNoteDeps, cardId: string): boolean {
+  if (!waiting.store.cardWaitingNote(cardId)) return false;
   waiting.store.setCardWaitingNote(cardId, undefined);
   waiting.push({ cardId });
+  return true;
 }
 
 /** What `sessions:askForNote` answers: sent, or why not. */

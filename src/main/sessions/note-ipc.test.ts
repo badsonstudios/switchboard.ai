@@ -309,10 +309,10 @@ describe('the automatic waiting note (#1544 part 4)', () => {
     const r = rig();
     r.b.setWaiting('live-1', 'x');
     r.pushes.length = 0;
-    clearWaitingNote(r.waiting, CARD);
+    expect(clearWaitingNote(r.waiting, CARD)).toBe(true);
     expect(r.waitingStore.has(CARD)).toBe(false);
     expect(r.pushes).toEqual([{ cardId: CARD }]);
-    clearWaitingNote(r.waiting, CARD);
+    expect(clearWaitingNote(r.waiting, CARD)).toBe(false);
     expect(r.pushes).toHaveLength(1);
   });
 
