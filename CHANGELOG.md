@@ -140,6 +140,13 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.143 — unreleased
 
+### Fixed
+
+- **Cost estimates for the newest Claude models are right.** Claude Fable 5.2
+  was estimated at the older Fable price, about a quarter too high. Opus 5.5,
+  Sonnet 5.5, Haiku 5.5, Fable 5 and Sonnet 4.x are now each priced at their
+  own rates as well.
+
 ## 0.8.142 — 2026-11-17
 
 ### Changed
