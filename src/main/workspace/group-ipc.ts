@@ -139,7 +139,7 @@ export function registerGroupIpc(store: WorkspaceStore, broker: IpcBroker, log: 
     // only sessions main knows, checked BEFORE anything is written, so a
     // refusal leaves no empty group behind
     const known = new Set(store.listSessions().map((s) => s.id));
-    const members = (ids as string[]).filter((id) => known.has(id));
+    const members = ids.filter((id) => known.has(id));
     if (members.length === 0) return refuse('groups:createWithSessions', 'none of those sessions exists');
     const color = GROUP_PALETTE[store.listGroups().length % GROUP_PALETTE.length];
     const group: PersistedGroup = { id: randomUUID(), name, color };
