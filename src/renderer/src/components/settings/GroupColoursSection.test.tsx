@@ -17,6 +17,9 @@ import {
   useGroupColours,
 } from '../../lib/group-colours';
 import { uiDelete, uiGet, uiSet } from '../../lib/ui-state';
+import { GROUP_PALETTE } from '../../../../shared/group-palette';
+
+const PICKED = GROUP_PALETTE[0];
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -28,7 +31,7 @@ let host: HTMLElement;
 /** stands in for the rail: what it reads, and the colour it draws a group in */
 function Reader(): React.JSX.Element {
   const on = useGroupColours();
-  return <nav data-group-colours={on ? 'on' : 'off'} data-drawn={drawnGroupColour('group', '#3aa675', on)} />;
+  return <nav data-group-colours={on ? 'on' : 'off'} data-drawn={drawnGroupColour('group', PICKED, on)} />;
 }
 
 async function mount(): Promise<void> {
@@ -73,8 +76,8 @@ describe('group colours (#1599)', () => {
   });
 
   it('only a group you made loses its colour; automatic groups and "No group" keep their tokens', () => {
-    expect(drawnGroupColour('group', '#3aa675', true)).toBe('#3aa675');
-    expect(drawnGroupColour('group', '#3aa675', false)).toBe(NEUTRAL_GROUP_COLOUR);
+    expect(drawnGroupColour('group', PICKED, true)).toBe(PICKED);
+    expect(drawnGroupColour('group', PICKED, false)).toBe(NEUTRAL_GROUP_COLOUR);
     expect(drawnGroupColour('auto', 'var(--auto-ink)', false)).toBe('var(--auto-ink)');
     expect(drawnGroupColour('ungrouped', 'var(--muted)', false)).toBe('var(--muted)');
   });
@@ -86,14 +89,14 @@ describe('group colours (#1599)', () => {
   it('the checkbox turns it off and on live, stores only the switch, and the group colour comes back exactly', async () => {
     await mount();
     expect(box().checked).toBe(true);
-    expect(nav().getAttribute('data-drawn')).toBe('#3aa675');
+    expect(nav().getAttribute('data-drawn')).toBe(PICKED);
     await act(async () => box().click());
     expect(nav().getAttribute('data-group-colours')).toBe('off');
     expect(nav().getAttribute('data-drawn')).toBe(NEUTRAL_GROUP_COLOUR);
     expect(uiGet(GROUP_COLOURS_KEY, undefined)).toBe(false);
     expect(host.querySelector('[data-group-colours-hint]')!.textContent).toMatch(/kept/);
     await act(async () => box().click());
-    expect(nav().getAttribute('data-drawn')).toBe('#3aa675');
+    expect(nav().getAttribute('data-drawn')).toBe(PICKED);
     expect(uiGet(GROUP_COLOURS_KEY, undefined)).toBe(true);
   });
 
