@@ -140,6 +140,14 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.143 — unreleased
 
+### Changed
+
+- **Automatic folder groups now have the ⊕ and accept a dropped session.**
+  The ⊕ starts a new session in that folder without asking you to pick one.
+  Dropping a session from another folder onto an automatic group turns it into
+  a group of your own, named after the folder, with its sessions kept in order.
+  The strip across the top does the same.
+
 ### Fixed
 
 - **Cost estimates for the newest Claude models are right.** Claude Fable 5.2

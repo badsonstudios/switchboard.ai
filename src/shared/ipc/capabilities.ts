@@ -364,6 +364,7 @@ export const CHANNEL_CAPABILITIES = {
   'health:setPrefs': 'settings.write',
   'git:status': 'git.read',
   'groups:create': 'groups.write',
+  'groups:createWithSessions': 'groups.write',
   'groups:delete': 'groups.write',
   'groups:list': 'groups.read',
   'groups:move': 'groups.write',

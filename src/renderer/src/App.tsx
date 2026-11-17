@@ -10,6 +10,7 @@ import {
 } from './theme/theme';
 import { listThemes } from './extensibility/themes';
 import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
+import i18next from 'i18next';
 import { TitleBar, StatusBar } from './components/chrome';
 import { SessionsRail, RailGroup, RailSession } from './components/SessionsRail';
 import { SessionsStrip } from './components/SessionsStrip';
@@ -73,7 +74,7 @@ import {
 // `LiveRegion` is the words a screen reader reads.
 import { LiveRegion } from './components/LiveRegion';
 import { PopoutSurfaces } from './components/PopoutSurfaces';
-import { holdAnnouncements } from './lib/live-region';
+import { announce, holdAnnouncements } from './lib/live-region';
 import {
   sayPinToggled,
   sayReordered,
@@ -141,6 +142,7 @@ import { installSeenWatch, noteBroughtForward } from './lib/seen';
 import { installFrontCardReport } from './lib/front-card';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
+import { groupBucket } from './lib/rail-order';
 import { interpretPushAnswer } from './lib/push-answer';
 import {
   attentionResponse,
@@ -469,6 +471,8 @@ export function App(): React.JSX.Element {
   // holds, which are loose, and the order `Ctrl+1..9` counts in — one object,
   // so the strip draws from exactly what the keyboard jumps by.
   const railOrderNow = useSyncExternalStore(subscribeStore, () => sessionStore.getRailOrder());
+  // automatic groups being promoted right now (#1603), so a second drop waits
+  const promoting = React.useRef(new Set<string>());
   const urgency = useSyncExternalStore(subscribeStore, () => sessionStore.getState().urgency);
   const expireUrgency = React.useCallback(() => sessionStore.expireUrgency(), []);
   // #320: the marks that have just been PAINTED — that is where their 1.5s
@@ -2554,6 +2558,34 @@ export function App(): React.JSX.Element {
       void refreshSessions();
     });
   };
+  // An AUTOMATIC folder group's two gestures (#1603). The ⊕ opens a session in
+  // its folder, with no picker: the new session is ungrouped and in that
+  // folder, so the folder rule puts it in the group by itself.
+  const openInFolder = (folder: string): void => {
+    void grid.current?.newSessionInFolder(folder);
+  };
+  // A session dropped on one turns it into a group you own (Dan, 2026-11-17):
+  // the folder's name, its members in their order, the dropped one last. One
+  // call to main, so a refusal leaves everything as it was.
+  const promoteAutoGroup = (name: string, memberIds: string[], cardId: string): void => {
+    // a second drop while the first is still on its way would make a second
+    // group of the same name; the members say which auto group this is
+    const key = [...memberIds].sort().join('|');
+    if (promoting.current.has(key)) return;
+    promoting.current.add(key);
+    const ids = [...memberIds.filter((id) => id !== cardId), cardId];
+    void bridge.groups?.createWithSessions?.({ name, cardIds: ids }).then((made) => {
+      const group = answered(made);
+      if (groupChangeLanded('promote', group) && group) {
+        // the order on screen survives: the new group's list is seeded with it
+        sessionStore.setBucketOrder(groupBucket(group.id), ids);
+        for (const id of ids) grid.current?.moveCardToGroup(id, group.id);
+        announce(String(i18next.t('rail.autoPromoted', { name: group.name })));
+      }
+      void refreshGroups();
+      void refreshSessions();
+    }).finally(() => promoting.current.delete(key));
+  };
   const moveGroup = (id: string, beforeId: string | null): void => {
     // #1144. The order lives in main; the list redraws from what main
     // answers, so a refused move simply leaves it as it was.
@@ -2997,6 +3029,8 @@ export function App(): React.JSX.Element {
         onCreateGroup={createGroup}
         onNewSession={() => void grid.current?.newSessionHere()}
         onOpenInGroup={openInGroup}
+        onOpenInFolder={openInFolder}
+        onPromoteAutoGroup={promoteAutoGroup}
         onFocus={(cardId) => focusSession(cardId, { via: 'tabs' })}
         onClose={(cardId) => grid.current?.closeCard(cardId)}
         onDiff={openChanges}
@@ -3089,6 +3123,8 @@ export function App(): React.JSX.Element {
             onReorder={reorderBucket}
             onMoveToGroup={moveToGroup}
             onOpenInGroup={openInGroup}
+            onOpenInFolder={openInFolder}
+            onPromoteAutoGroup={promoteAutoGroup}
             onMoveGroup={moveGroup}
             onDeleteGroup={deleteGroup}
           />

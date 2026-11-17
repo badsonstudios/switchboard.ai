@@ -127,6 +127,28 @@ export function registerGroupIpc(store: WorkspaceStore, broker: IpcBroker, log: 
     return group;
   });
 
+  // An automatic folder group turned into one you own (#1603): a session was
+  // dropped on it. ONE call, so the list never draws the new group empty
+  // between a create and the moves, and a refusal changes nothing at all.
+  broker.handle('groups:createWithSessions', (_e, opts: { name: string; cardIds: unknown }) => {
+    const name = cleanName(opts?.name);
+    if (!name) return refuse('groups:createWithSessions', 'a group needs a non-empty name');
+    const ids = opts?.cardIds;
+    if (!Array.isArray(ids) || ids.length === 0 || !ids.every((id) => typeof id === 'string'))
+      return refuse('groups:createWithSessions', 'cardIds must be a non-empty list of strings');
+    // only sessions main knows, checked BEFORE anything is written, so a
+    // refusal leaves no empty group behind
+    const known = new Set(store.listSessions().map((s) => s.id));
+    const members = ids.filter((id) => known.has(id));
+    if (members.length === 0) return refuse('groups:createWithSessions', 'none of those sessions exists');
+    const color = GROUP_PALETTE[store.listGroups().length % GROUP_PALETTE.length];
+    const group: PersistedGroup = { id: randomUUID(), name, color };
+    store.upsertGroup(group);
+    for (const id of members) store.setSessionGroup(id, group.id);
+    log.info('automatic group made a group', { groupId: group.id, sessions: members.length });
+    return group;
+  });
+
   broker.handle('groups:update',
     (_e, id: string, patch: { name?: string; color?: string; notifyScope?: string }) => {
       if (typeof id !== 'string') return refuse('groups:update', 'id must be a string');

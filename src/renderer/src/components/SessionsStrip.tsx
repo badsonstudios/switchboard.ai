@@ -37,7 +37,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
-import { autoGroupName, RailOrderResult } from '../lib/groups';
+import { autoGroupDrop, autoGroupName, RailOrderResult } from '../lib/groups';
 import { dropGroup, stepGroup } from '../lib/group-order';
 import { LOOSE_BUCKET, planReorder } from '../lib/rail-order';
 import { LineageMap, NO_LINEAGE } from '../lib/dispatch-lineage';
@@ -121,6 +121,10 @@ export interface SessionsStripProps {
   onNewSession: () => void;
   /** open a NEW session inside this group */
   onOpenInGroup: (groupId: string) => void;
+  /** an AUTOMATIC group's ⊕ (#1603): a new session in its folder, no picker */
+  onOpenInFolder?: (folder: string) => void;
+  /** a session dropped on an AUTOMATIC group (#1603): the rail's same handler */
+  onPromoteAutoGroup?: (name: string, memberIds: string[], cardId: string) => void;
   onFocus: (cardId: string) => void;
   /** end a session (the app confirms first — it forgets the record) */
   onClose: (cardId: string) => void;
@@ -263,6 +267,8 @@ interface Entry {
   members: RailSession[];
   /** a made group's id — what a new session is opened into */
   groupId?: string;
+  /** an automatic group's folder key (#1603) */
+  autoKey?: string;
 }
 
 function Strip(props: SessionsStripProps): React.JSX.Element {
@@ -392,6 +398,7 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         name: autoGroupName(ag.key),
         color: 'var(--auto-ink)',
         members: ag.members,
+        autoKey: ag.key,
       })
     ),
   ];
@@ -662,6 +669,15 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   };
   /** the session being dragged: one of our pills if THIS drag carries our
    *  type, otherwise whatever the workspace says it is dragging */
+  /** what a drop of this session on an AUTOMATIC entry would do (#1603);
+   *  'none' when there is no way to make a group, or nothing in flight */
+  const autoDrop = (e: Entry, cardId: string | null): 'none' | 'ungroup' | 'promote' => {
+    if (!cardId || e.autoKey === undefined || !props.onPromoteAutoGroup) return 'none';
+    return autoGroupDrop(
+      order.flat.find((x) => x.id === cardId),
+      { key: e.autoKey, memberIds: e.members.map((m) => m.id) }
+    );
+  };
   const cardInFlight = (types: readonly string[]): string | null =>
     (types.includes(DND_TYPE) && dragging.current?.kind === 'card' ? dragging.current.id : null) ??
     getDraggedCard();
@@ -719,8 +735,11 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         }
         // a session (a pill, or a card's tab dragged up from the workspace)
         if (!ev.dataTransfer.types.includes(DND_TYPE) && !getDraggedCard()) return;
-        // an automatic group cannot be joined: its membership is the folder's
-        if (groupId === undefined || !canJoin(cardInFlight(ev.dataTransfer.types), groupId)) return;
+        // an automatic group is joined by being made yours, or by leaving a
+        // group for the folder it belongs to (#1603); `autoDrop` says which
+        if (groupId === undefined) {
+          if (autoDrop(e, cardInFlight(ev.dataTransfer.types)) === 'none') return;
+        } else if (!canJoin(cardInFlight(ev.dataTransfer.types), groupId)) return;
         ev.preventDefault();
         setDropAt(null);
         setDropInto(e.key);
@@ -752,6 +771,15 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
         const ours = dragging.current !== null && ev.dataTransfer.types.includes(DND_TYPE);
         const cardId = ev.dataTransfer.getData(DND_TYPE) || cardInFlight(ev.dataTransfer.types);
         endDrag();
+        if (cardId && groupId === undefined) {
+          const what = autoDrop(e, cardId);
+          if (what === 'none') return;
+          ev.preventDefault();
+          setDraggedCard(null);
+          if (what === 'ungroup') props.onMoveToGroup(cardId, null);
+          else props.onPromoteAutoGroup?.(e.name, e.members.map((m) => m.id), cardId);
+          return;
+        }
         if (!cardId || groupId === undefined || !canJoin(cardId, groupId)) return;
         ev.preventDefault(); // claim it from the workspace's own drop targets
         setDraggedCard(null);
@@ -1034,9 +1062,28 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
       };
       const groupId = e.groupId;
       // AN AUTOMATIC GROUP is a folder the app noticed, not a thing you made:
-      // it has no name to change, no colour, nothing to delete, and a session
-      // cannot be opened "into" it. Opening what it holds is all there is.
-      if (groupId === undefined) return { label: t('rail.groupMenuLabel', { name: e.name }), items: [openAll] };
+      // it has no name to change, no colour and nothing to delete. A new
+      // session in its folder (#1603) and opening what it holds is all there is.
+      if (groupId === undefined) {
+        // a member's REAL folder, not the key (lower-cased repo root)
+        const folder = e.autoKey !== undefined ? e.members.find((m) => m.folder)?.folder : undefined;
+        const items: RailGroupMenuItem[] =
+          folder !== undefined && props.onOpenInFolder
+            ? [
+                {
+                  id: 'new',
+                  label: t('rail.openInFolder'),
+                  can: true,
+                  run: () => {
+                    close(false);
+                    props.onOpenInFolder?.(folder);
+                  },
+                },
+                openAll,
+              ]
+            : [openAll];
+        return { label: t('rail.groupMenuLabel', { name: e.name }), items };
+      }
       const items: RailGroupMenuItem[] = [
         {
           id: 'new',
@@ -1465,7 +1512,17 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
                         props.onOpenInGroup(groupId);
                       },
                     }
-                  : {})}
+                  : e.autoKey !== undefined && props.onOpenInFolder
+                    ? {
+                        // an automatic group's ⊕ (#1603): its folder, no picker
+                        onOpenInGroup: () => {
+                          close(false);
+                          const folder = e.members.find((m) => m.folder)?.folder;
+                          if (folder) props.onOpenInFolder?.(folder);
+                        },
+                        openInLabel: t('rail.openInFolder'),
+                      }
+                    : {})}
               />
             );
           })}

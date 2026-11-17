@@ -256,3 +256,63 @@ test.describe('persistent groups (E12)', () => {
     await expect(w2.locator('[data-group-drop-line]')).toHaveCount(0);
   });
 });
+
+// #1603 (Dan, 2026-11-17): an AUTOMATIC folder group gets the ⊕ (a new session
+// in its folder, no picker) and takes a dropped session by becoming yours.
+test.describe('an automatic folder group: ⊕ and drop (#1603)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  test('⊕ opens in its folder with no picker; a drop from another folder makes it a group you own', async () => {
+    const folder = tempProjectFolder();
+    const other = tempProjectFolder();
+    const name = folder.split(/[\\/]/).pop()!;
+    const otherName = other.split(/[\\/]/).pop()!;
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(name).first()).toBeVisible();
+
+    // a second session in the same folder: the automatic group appears
+    await a.app.evaluate(({ dialog }, dir) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
+    }, folder);
+    await w.getByRole('button', { name: '+ session' }).click();
+    const auto = w.locator('[data-group-kind="auto"]');
+    await expect(auto).toBeVisible();
+    const rows = auto.locator('[data-rail-body] [draggable="true"]');
+    await expect(rows).toHaveCount(2);
+
+    // ⊕: the picker must NOT be asked; the new session joins by the folder rule
+    await a.app.evaluate(({ dialog }) => {
+      (globalThis as { __pickerAsked?: number }).__pickerAsked = 0;
+      dialog.showOpenDialog = () => {
+        (globalThis as { __pickerAsked?: number }).__pickerAsked! += 1;
+        return Promise.resolve({ canceled: true, filePaths: [] });
+      };
+    });
+    await auto.locator('[data-rail-open-in-folder]').click();
+    await expect(rows).toHaveCount(3, { timeout: 20_000 });
+    expect(await a.app.evaluate(() => (globalThis as { __pickerAsked?: number }).__pickerAsked)).toBe(0);
+
+    // a loose session from ANOTHER folder
+    await a.app.evaluate(({ dialog }, dir) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
+    }, other);
+    await w.getByRole('button', { name: '+ session' }).click();
+    const loose = w.locator('nav [draggable="true"]', { hasText: otherName }).first();
+    await expect(loose).toBeVisible();
+
+    // dropped on the automatic group: it becomes yours, named for the folder,
+    // with all four sessions in it
+    const dt = await w.evaluateHandle(() => new DataTransfer());
+    await loose.dispatchEvent('dragstart', { dataTransfer: dt });
+    await auto.dispatchEvent('dragover', { dataTransfer: dt });
+    await auto.dispatchEvent('drop', { dataTransfer: dt });
+    await expect(auto).toHaveCount(0);
+    const mine = w.locator('[data-group-kind="group"]', { hasText: name });
+    await expect(mine).toBeVisible();
+    await expect(mine.locator('[data-rail-body] [draggable="true"]')).toHaveCount(4);
+    await expect(mine.locator('[data-rail-group-auto]')).toHaveCount(0);
+    await expect(mine.locator('[data-rail-body]')).toContainText(otherName);
+  });
+});

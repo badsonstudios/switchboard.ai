@@ -84,6 +84,8 @@ function harness(prior: PersistedGroup[] = []): Harness {
       return true;
     },
     setSessionGroup: (cardId: string, groupId: string | null) => moved.push({ cardId, groupId }),
+    // the sessions main knows, for groups:createWithSessions (#1603)
+    listSessions: () => ['a', 'b', 'c'].map((id) => ({ id })),
   } as unknown as WorkspaceStore;
   const record =
     (level: LogLine['level']) =>
@@ -319,5 +321,41 @@ describe('groups:move reorders, and says whether it did (#1144)', () => {
     expect(h.call('groups:move', 'a', undefined)).toBeNull();
     expect(h.warnings).toHaveLength(3);
     expect(h.groups.map((g) => g.id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('groups:createWithSessions (#1603: an automatic folder group made yours)', () => {
+  it('makes the group and moves every session into it, in the order given', () => {
+    const h = harness([EXISTING]);
+    const made = h.call('groups:createWithSessions', { name: ' app ', cardIds: ['a', 'b', 'c'] }) as PersistedGroup;
+    expect(made.name).toBe('app');
+    expect(GROUP_PALETTE).toContain(made.color);
+    expect(h.written).toEqual([made]);
+    expect(h.moved).toEqual([
+      { cardId: 'a', groupId: made.id },
+      { cardId: 'b', groupId: made.id },
+      { cardId: 'c', groupId: made.id },
+    ]);
+  });
+  it('leaves out a session main does not know, and keeps the rest in order', () => {
+    const h = harness([EXISTING]);
+    const made = h.call('groups:createWithSessions', { name: 'app', cardIds: ['b', 'ghost', 'a'] }) as PersistedGroup;
+    expect(h.moved).toEqual([
+      { cardId: 'b', groupId: made.id },
+      { cardId: 'a', groupId: made.id },
+    ]);
+  });
+  it.each([
+    ['a blank name', { name: '  ', cardIds: ['a'] }],
+    ['no sessions', { name: 'app', cardIds: [] }],
+    ['a session id that is not a string', { name: 'app', cardIds: ['a', 7] }],
+    ['no list at all', { name: 'app' }],
+    ['only sessions main has never heard of', { name: 'app', cardIds: ['ghost', 'gone'] }],
+  ])('refuses %s, changing nothing', (_why, opts) => {
+    const h = harness([EXISTING]);
+    expect(h.call('groups:createWithSessions', opts)).toBeNull();
+    expect(h.written).toEqual([]);
+    expect(h.moved).toEqual([]);
+    expect(h.warnings).toHaveLength(1);
   });
 });

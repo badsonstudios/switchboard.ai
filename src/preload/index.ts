@@ -922,6 +922,15 @@ const api = {
       color?: string;
     }): Promise<{ id: string; name: string; color: string } | null> =>
       ipcRenderer.invoke('groups:create', opts),
+    /**
+     * Make a group holding these sessions, in one step (#1603: an automatic
+     * folder group a session was dropped on). Resolves NULL when refused.
+     */
+    createWithSessions: (opts: {
+      name: string;
+      cardIds: string[];
+    }): Promise<{ id: string; name: string; color: string } | null> =>
+      ipcRenderer.invoke('groups:createWithSessions', opts),
     /** resolves NULL for an unknown group or a patch main refuses */
     update: (
       id: string,

@@ -471,12 +471,13 @@ test.describe('sessions rail', () => {
     await expect(card.locator('[draggable="true"]')).toHaveCount(2, { timeout: 15_000 });
   });
 
-  test('an auto-group REFUSES a drop instead of silently swallowing it', async () => {
-    // Dan 2026-07-26: two of his four cards wouldn't accept a drag and it took
-    // a while to work out they were the automatic ones. The old code called
-    // preventDefault on their dragover — so the browser advertised them as
-    // valid targets — and then resolved the drop to "no group", which for an
-    // already-ungrouped session is a no-op. Looked droppable, wasn't.
+  test('an auto-group lights up only for a drop that will DO something (#1603)', async () => {
+    // Dan 2026-07-26: an automatic group advertised itself as a target and
+    // then did nothing with the drop. Since #1603 (Dan, 2026-11-17) a drop
+    // from another folder turns it into a group you own, so it IS a target for
+    // that session; for one of its own members a drop would change nothing,
+    // and it must still refuse. The rule that survives: a target that lights
+    // up must do something.
     const shared = tempProjectFolder();
     const other = tempProjectFolder();
     a = await launchApp({ seedFolder: shared });
@@ -501,20 +502,26 @@ test.describe('sessions rail', () => {
     const otherName = path.basename(other);
     await expect(w.getByText(otherName).first()).toBeVisible({ timeout: 25_000 });
 
-    // dragover must NOT be accepted — an unprevented dragover is exactly what
-    // makes the browser draw a no-drop cursor
-    const dt = await w.evaluateHandle(() => new DataTransfer());
-    await row(w, otherName).dispatchEvent('dragstart', { dataTransfer: dt });
-    const accepted = await auto.evaluate((el, type) => {
-      const ev = new DragEvent('dragover', { bubbles: true, cancelable: true });
-      Object.defineProperty(ev, 'dataTransfer', { value: new DataTransfer() });
-      (ev.dataTransfer as DataTransfer).setData(type, 'x');
-      el.dispatchEvent(ev);
-      return ev.defaultPrevented;
-    }, 'application/x-switchboard-card');
-    expect(accepted, 'auto-group advertised itself as a drop target').toBe(false);
+    // an unprevented dragover is what makes the browser draw a no-drop cursor
+    const acceptsWhileDragging = async (name: string): Promise<boolean> => {
+      const dt = await w.evaluateHandle(() => new DataTransfer());
+      await row(w, name).dispatchEvent('dragstart', { dataTransfer: dt });
+      const accepted = await auto.evaluate((el, type) => {
+        const ev = new DragEvent('dragover', { bubbles: true, cancelable: true });
+        Object.defineProperty(ev, 'dataTransfer', { value: new DataTransfer() });
+        (ev.dataTransfer as DataTransfer).setData(type, 'x');
+        el.dispatchEvent(ev);
+        return ev.defaultPrevented;
+      }, 'application/x-switchboard-card');
+      await row(w, name).dispatchEvent('dragend');
+      return accepted;
+    };
+    // one of its own members: nothing a drop could change
+    expect(await acceptsWhileDragging(sharedName), 'auto-group lit up for its own member').toBe(false);
+    // a session from another folder: the drop would make it a group you own
+    expect(await acceptsWhileDragging(otherName), 'auto-group refused a drop that promotes it').toBe(true);
 
-    // and the auto-group is unchanged: still exactly its two same-folder members
+    // and nothing was dropped: still exactly its two same-folder members
     await expect(auto.locator('[draggable="true"]')).toHaveCount(2);
   });
 

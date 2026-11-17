@@ -100,9 +100,11 @@ export function StripGroupEntry(props: {
   listId: string;
   /** asked to open or close; the element is what the list is placed against */
   onToggle: (anchor: HTMLElement) => void;
-  /** open a NEW session in this group. Absent for an automatic group, whose
-   *  membership is derived from a folder and cannot be given */
+  /** open a NEW session in this group; for an automatic group, in its
+   *  folder (#1603), which puts it in the group by the folder rule */
   onOpenInGroup?: () => void;
+  /** the ⊕'s words when they are not "in this group" (an automatic one's) */
+  openInLabel?: string;
   /** a right-click anywhere on the entry: the menu, since there is no menu icon */
   onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
 }): React.JSX.Element {
@@ -425,8 +427,12 @@ export function StripGroupEntry(props: {
           type="button"
           className="rail-x"
           data-strip-group-add={props.groupKey}
-          title={t('rail.openInGroup')}
-          aria-label={t('strip.openInGroupLabel', { name: props.name })}
+          title={props.openInLabel ?? t('rail.openInGroup')}
+          aria-label={
+            props.openInLabel
+              ? t('strip.openInFolderLabel', { name: props.name })
+              : t('strip.openInGroupLabel', { name: props.name })
+          }
           onClick={props.onOpenInGroup}
           style={{ fontSize: 13, paddingInline: 6, alignSelf: 'center' }}
         >

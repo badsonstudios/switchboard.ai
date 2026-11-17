@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { computeAutoGroups, groupChangeLanded, railOrder } from './groups';
+import { autoGroupDrop, computeAutoGroups, groupChangeLanded, railOrder } from './groups';
 
 describe('computeAutoGroups (E12-05 emergent repo/folder groups)', () => {
   it('two ungrouped sessions sharing a key auto-group; singletons do not', () => {
@@ -398,5 +398,22 @@ describe('railOrder — #951 dispatch nesting (§5.15 "↳ Review of X")', () =>
     const after = railOrder(sessions, [], undefined, undefined, new Map());
     expect(after.flat.map((s) => s.id)).toEqual(before.flat.map((s) => s.id));
     expect(after.depthOf.size).toBe(0);
+  });
+});
+
+describe('autoGroupDrop (#1603): what a drop on an automatic folder group does', () => {
+  const ag = { key: 'C:/p/app', memberIds: ['a', 'b'] };
+  it('a member, a not-started card or nothing at all: no change', () => {
+    expect(autoGroupDrop({ id: 'a', folder: 'C:/p/app' }, ag)).toBe('none');
+    expect(autoGroupDrop({ id: 'x', folder: 'C:/p/other', status: 'not-started' }, ag)).toBe('none');
+    expect(autoGroupDrop(undefined, ag)).toBe('none');
+  });
+  it("same folder but in a group you made: just leave that group (it rejoins by the folder rule)", () => {
+    expect(autoGroupDrop({ id: 'c', folder: 'C:/p/app', groupId: 'g1' }, ag)).toBe('ungroup');
+    expect(autoGroupDrop({ id: 'c', autoKey: 'C:/p/app', folder: 'C:/p/app/sub', groupId: 'g1' }, ag)).toBe('ungroup');
+  });
+  it('another folder (grouped or not): the automatic group becomes yours', () => {
+    expect(autoGroupDrop({ id: 'c', folder: 'C:/p/other' }, ag)).toBe('promote');
+    expect(autoGroupDrop({ id: 'c', folder: 'C:/p/other', groupId: 'g1' }, ag)).toBe('promote');
   });
 });
