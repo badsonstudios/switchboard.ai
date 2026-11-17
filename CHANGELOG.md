@@ -160,6 +160,10 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   number, so you can see it with switchboard minimised. It goes away when
   nothing needs you. Turn it off in **Settings ▸ Attention ▸ Count on the app
   icon**. On a Mac it is the Dock badge.
+- **Open a session's folder in your editor:** **Open folder in editor** is in a
+  session's right-click menu, its **⋯** menu and the command list. It uses VS
+  Code, Cursor, Zed or VSCodium, whichever is installed, or the editor you pick
+  in **Settings ▸ General ▸ Editor**.
 
 ### Changed
 
