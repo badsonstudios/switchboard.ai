@@ -199,6 +199,9 @@ export const CHANNEL_CAPABILITIES = {
   // click; main gates it (master switch, quiet hours, reachability).
   'app:attentionRaise': 'app.window',
   'app:setAttentionBadge': 'app.window',
+  'editor:get': 'sessions.read',
+  'editor:set': 'shell.openPath',
+  'editor:openFolder': 'shell.openPath',
   'app:workAreas': 'app.window',
   // The Help ▸ Report a problem dialog (#815). `reportStatus` answers BOOLEANS
   // only — whether a credential can be resolved at all — and never a value;

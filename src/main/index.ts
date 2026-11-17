@@ -3,6 +3,7 @@ import { resolveCliPath } from './providers/claude-cli-path';
 import { runCapture } from './transport/run-capture';
 import { errorText } from '../shared/error-text';
 import { applyBadge, parseBadgeRequest } from './app-badge';
+import { detectEditors, editorPrefOf, launchEditor, realEditorEnv, resolveEditor } from './editor/editor-launch';
 import {
   app,
   BrowserWindow,
@@ -2954,6 +2955,36 @@ app
         badgeLog.warn('attention badge failed', { error: errorText(err) });
         return false;
       }
+    });
+    // "Open folder in editor" (#1608): the choice lives here, the folder is
+    // the card's own, and the editor is spawned with no shell.
+    const editorLog = createLogger(sink, 'editor');
+    broker.handle('editor:get', () => {
+      const env = realEditorEnv();
+      const pref = workspace.getEditor();
+      return { ...pref, installed: detectEditors(env), resolved: resolveEditor(pref, env) };
+    });
+    broker.handle('editor:set', (_e, raw: unknown): boolean => {
+      const pref = editorPrefOf(raw);
+      workspace.setEditor(pref);
+      editorLog.info('editor chosen', { choice: pref.choice });
+      return true;
+    });
+    broker.handle('editor:openFolder', (_e, cardId: unknown): 'opened' | 'no-editor' | 'no-folder' => {
+      const card = typeof cardId === 'string' ? workspace.listSessions().find((s) => s.id === cardId) : undefined;
+      const folder = card?.identity.folder;
+      if (!folder || !fs.existsSync(folder)) {
+        editorLog.warn('editor:openFolder refused: no folder', { cardId: String(cardId).slice(0, 80) });
+        return 'no-folder';
+      }
+      const program = resolveEditor(workspace.getEditor(), realEditorEnv());
+      if (!program) {
+        editorLog.warn('editor:openFolder: no editor found', { choice: workspace.getEditor().choice });
+        return 'no-editor';
+      }
+      launchEditor(program, folder, (err) => editorLog.warn('editor failed to start', { program, error: errorText(err) }));
+      editorLog.info('folder opened in editor', { program: path.basename(program) });
+      return 'opened';
     });
     broker.handle('app:attentionRaise', async (_e, req: unknown) => {
       const r = (req && typeof req === 'object' ? req : {}) as { groupId?: unknown; cardId?: unknown };

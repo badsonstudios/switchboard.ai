@@ -239,10 +239,11 @@ afterEach(async () => {
 });
 
 describe('right-clicking a session, in the left list and on the strip (issue 1168)', () => {
-  it('is the short menu: four actions, then the groups it could move to', async () => {
+  it('is the short menu: five actions, then the groups it could move to', async () => {
     const { left } = await both([BACK, DOCS], 'scratch');
     expect(left.map((e) => e.label)).toEqual([
       i18next.t('rail.menuDiff'),
+      i18next.t('editor.openFolder'),
       i18next.t('rail.menuRename'),
       i18next.t('rail.menuPin'),
       i18next.t('rail.menuClose'),
@@ -286,13 +287,13 @@ describe('right-clicking a session, in the left list and on the strip (issue 116
   it('is the same with no groups at all: nothing about moving, in either', async () => {
     const { left, top } = await both([], 'scratch');
     expect(left).toEqual(top);
-    expect(left).toHaveLength(4);
+    expect(left).toHaveLength(5);
   });
 
   it('is the same for a session that never started: Rename dimmed, nothing about moving', async () => {
     const { left, top } = await both([BACK, DOCS], 'dud');
     expect(left).toEqual(top);
-    expect(left).toHaveLength(4);
+    expect(left).toHaveLength(5);
     expect(left.find((e) => e.label === i18next.t('rail.menuRename'))!.dimmed).toBe(true);
   });
 
