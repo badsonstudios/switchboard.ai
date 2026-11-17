@@ -38,6 +38,29 @@ describe('claudeRateForModel', () => {
   });
 });
 
+describe('version rows (#1606), from the pricing page on 2026-11-17', () => {
+  const rate = (m: string) => claudeRateForModel(m);
+  it('prices each version at its own list rate', () => {
+    expect(rate('claude-fable-5-2')).toEqual({ input: 8, output: 40, cacheRead: 0.2, cacheCreate: 10 });
+    expect(rate('claude-mythos-5-2')).toEqual({ input: 8, output: 40, cacheRead: 0.2, cacheCreate: 10 });
+    expect(rate('claude-fable-5-2[1m]')?.input).toBe(8);
+    expect(rate('claude-fable-5-1')).toEqual({ input: 10, output: 50, cacheRead: 0.25, cacheCreate: 12.5 });
+    expect(rate('claude-fable-5')).toEqual({ input: 10, output: 50, cacheRead: 1, cacheCreate: 12.5 });
+    expect(rate('claude-opus-5-5')).toEqual({ input: 4, output: 20, cacheRead: 0.2, cacheCreate: 5 });
+    expect(rate('claude-opus-5')).toEqual({ input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 });
+    expect(rate('claude-sonnet-5-5')).toEqual({ input: 2, output: 10, cacheRead: 0.1, cacheCreate: 2.5 });
+    expect(rate('claude-sonnet-5')).toEqual({ input: 2, output: 10, cacheRead: 0.2, cacheCreate: 2.5 });
+    expect(rate('claude-sonnet-4-6')).toEqual({ input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 });
+    expect(rate('claude-haiku-5-5')).toEqual({ input: 0.1, output: 0.5, cacheRead: 0.01, cacheCreate: 0.125 });
+    expect(rate('claude-haiku-4-5')).toEqual({ input: 1, output: 5, cacheRead: 0.1, cacheCreate: 1.25 });
+  });
+  it('a version row does not catch a longer number that merely starts the same', () => {
+    // a hypothetical 5.25 or 5.50 must fall to the family row, not borrow 5.2's price
+    expect(rate('claude-fable-5-25')?.input).toBe(10);
+    expect(rate('claude-opus-5-50')?.input).toBe(5);
+  });
+});
+
 describe('claudeEstimateCostUsd', () => {
   const u = { input: 1e6, output: 1e6, cacheRead: 0, cacheCreate: 0 };
 
@@ -185,6 +208,48 @@ describe('the rate table against the CLI’s own accounting', () => {
         HAIKU
       );
       expect(row.costUSD - withoutSearches).toBeCloseTo(row.webSearchRequests * 0.01, 6);
+    }
+  });
+
+  it('reconciles EXACTLY on the 5.5 / 5.2 versions, where the CLI splits cache writes by TTL (#1606)', () => {
+    // Real `modelUsage` rows from one CLI session (2026-11), copied as written.
+    // Newer CLIs split cache writes into 5m and 1h, so these rows can be
+    // priced exactly: a 1h write is 2x the input rate on every model here.
+    // Haiku 5.5's row also proves its prompts sat in the <=100K tier.
+    const rows: Array<{ model: string; row: CliModelCost & { w5m: number; w1h: number } }> = [
+      {
+        model: 'claude-fable-5-2',
+        row: { inputTokens: 404, outputTokens: 350153, thinkingTokens: 128080, cacheReadInputTokens: 34968393,
+          cacheCreationInputTokens: 3650744, w5m: 2587920, w1h: 1062824, webSearchRequests: 0, costUSD: 63.8874146 },
+      },
+      {
+        model: 'claude-fable-5-2',
+        row: { inputTokens: 20, outputTokens: 5385, thinkingTokens: 1417, cacheReadInputTokens: 661786,
+          cacheCreationInputTokens: 132077, w5m: 0, w1h: 132077, webSearchRequests: 0, costUSD: 2.4611492 },
+      },
+      {
+        model: 'claude-opus-5-5',
+        row: { inputTokens: 456, outputTokens: 238244, thinkingTokens: 99832, cacheReadInputTokens: 22828266,
+          cacheCreationInputTokens: 929698, w5m: 644464, w1h: 285234, webSearchRequests: 0, costUSD: 14.8365492 },
+      },
+      {
+        model: 'claude-sonnet-5-5',
+        row: { inputTokens: 188, outputTokens: 221832, thinkingTokens: 35814, cacheReadInputTokens: 7606916,
+          cacheCreationInputTokens: 1226006, w5m: 1226006, w1h: 0, webSearchRequests: 0, costUSD: 6.0444026 },
+      },
+      {
+        model: 'claude-haiku-5-5',
+        row: { inputTokens: 8394594, outputTokens: 962422, thinkingTokens: 455789, cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0, w5m: 0, w1h: 0, webSearchRequests: 218, costUSD: 3.5006704 },
+      },
+    ];
+    expect(rows).toHaveLength(5);
+    for (const { model, row } of rows) {
+      const r = rateForModel(model);
+      expect(row.w5m + row.w1h).toBe(row.cacheCreationInputTokens);
+      // the 5m price is the table's; a 1h write adds the difference (2x input minus the 5m rate)
+      const exact = priceModelRow(row, model) + (row.w1h * (2 * r.input - r.cacheCreate)) / 1_000_000;
+      expect(exact, model).toBeCloseTo(row.costUSD, 6);
     }
   });
 
