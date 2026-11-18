@@ -1,3 +1,6 @@
+import { parseClaudeVersion } from './providers/claude-detect';
+import { resolveCliPath } from './providers/claude-cli-path';
+import { runCapture } from './transport/run-capture';
 import { errorText } from '../shared/error-text';
 import {
   app,
@@ -1915,6 +1918,13 @@ app
     let clearWaitingForLive: (liveId: string, source: 'prompt-sent' | 'prompt-started') => void = () => {};
     const hooks = new HookListener({
       stateDir,
+      // #1612: exec-form hooks only on a CLI known to understand them
+      cliVersion: async () => {
+        const cli = resolveCliPath();
+        if (!cli) return undefined;
+        const r = await runCapture(cli, ['--version']);
+        return r.code === 0 ? parseClaudeVersion(r.stdout) : undefined;
+      },
       manager,
       log: createLogger(sink, 'hooks'),
       // waiting notes (#1544 part 4): each prompt's hook carries the one line

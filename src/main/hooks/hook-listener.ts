@@ -49,8 +49,56 @@ const STATUS_EVENTS = [
   'Stop',
 ] as const;
 
+/**
+ * The events the agent never waits on (#1612): `async: true`, so the CLI runs
+ * the forwarder in the background and carries on. Each only RECORDS something.
+ *
+ * The other three stay synchronous, each for a reason measured or read:
+ *  - `UserPromptSubmit` ANSWERS: its reply carries the waiting-note line.
+ *  - `SessionStart`: the CLI's `/clear` awaits SessionStart(clear) before it
+ *    returns, which is what orders the "cleared" tag first (see `ingest`).
+ *  - `Stop` is the done authority (S-06).
+ *
+ * A background event can, in principle, land AFTER the next synchronous one
+ * (a slow spawn under antivirus, then a fast `Stop`). `PostToolUse` means
+ * "working", so a late one would turn a finished session back to working with
+ * nothing to correct it. The forwarder stamps when it STARTED, and `ingest`
+ * drops a background event that started before the last synchronous one did.
+ */
+const ASYNC_EVENTS: ReadonlySet<string> = new Set(['PostToolUse', 'SubagentStop']);
+// `Notification` is NOT here, though it only records (review, #1612): it says
+// "blocked on a permission prompt", and two background events are not ordered
+// against EACH OTHER. A late PostToolUse landing after it would show the card
+// working while it waits on you.
+
+/**
+ * The oldest CLI exec form and `async` are used with: the one they were
+ * verified on (#1612). An older or unknown CLI keeps the shell string, which
+ * is what every CLI understands; a CLI without `args` would otherwise start a
+ * bare `node` that reads the hook payload as a script, and every status hook
+ * would fail.
+ */
+export const EXEC_FORM_MIN_CLI = '2.1.322';
+
+/** `a >= b` for dotted version numbers (`2.1.322`); false if either is not one. */
+export function versionAtLeast(a: string, b: string): boolean {
+  const pa = /^(\d+)\.(\d+)\.(\d+)/.exec(a);
+  const pb = /^(\d+)\.(\d+)\.(\d+)/.exec(b);
+  if (!pa || !pb) return false;
+  for (let i = 1; i <= 3; i++) {
+    const d = Number(pa[i]) - Number(pb[i]);
+    if (d !== 0) return d > 0;
+  }
+  return true;
+}
+
 export interface HookListenerOptions {
   stateDir: string;
+  /**
+   * The CLI's version (#1612), asked once at start, in the background. Exec
+   * form is used only once this has answered `EXEC_FORM_MIN_CLI` or later.
+   */
+  cliVersion?: () => Promise<string | undefined>;
   manager: Pick<SessionManager, 'apply' | 'setNativeSessionId'>;
   log: Logger;
   // NO HOLD OPTIONS SINCE #952. `autonomyFor`, `cwdFor`, `holdTimeoutMs`,
@@ -163,6 +211,14 @@ export class HookListener {
   constructor(private readonly opts: HookListenerOptions) {}
 
   private nodeCommand: string | null = null;
+  /** `node` on PATH, raw: the exec-form hook's `command` (#1612), else null */
+  private nodeExec: string | null = null;
+  /** the CLI is new enough for exec form and `async` (#1612); off until known */
+  private execForm = false;
+  /** settles when the version check has answered (tests wait on it) */
+  versionChecked: Promise<void> = Promise.resolve();
+  /** per session, when the last SYNCHRONOUS hook's forwarder started (#1612) */
+  private lastSyncBorn = new Map<string, number>();
 
   async start(): Promise<number> {
     this.forwarderPath = writeForwarder(this.opts.stateDir);
@@ -175,6 +231,18 @@ export class HookListener {
     // Electron binary in run-as-node mode. Hooks run under a POSIX shell on
     // Windows (S-02 finding), so an env-prefix works.
     const nodeOnPath = findNodeOnPath();
+    this.nodeExec = nodeOnPath;
+    if (this.opts.cliVersion) {
+      this.versionChecked = this.opts
+        .cliVersion()
+        .then((v) => {
+          this.execForm = !!v && versionAtLeast(v, EXEC_FORM_MIN_CLI);
+          this.opts.log.info('hook form', { cli: v ?? 'unknown', exec: this.execForm });
+        })
+        .catch(() => {
+          /* fail-open: the shell form every CLI understands */
+        });
+    }
     this.nodeCommand = nodeOnPath
       ? `"${nodeOnPath}"`
       : `ELECTRON_RUN_AS_NODE=1 "${process.execPath}"`;
@@ -246,6 +314,7 @@ export class HookListener {
   }
 
   unregisterSession(sessionId: string): void {
+    this.lastSyncBorn.delete(sessionId);
     for (const [tok, sid] of this.tokens) {
       if (sid === sessionId) this.tokens.delete(tok);
     }
@@ -410,18 +479,31 @@ export class HookListener {
 
   /**
    * Hook config to inject via --settings for one session (S-02 mechanism).
-   * POSIX-sh-free: command is `node <forwarder> <port> <tokenPath>` — node is
-   * guaranteed present (the CLI itself runs on it), paths are absolute.
+   * Exec form, `node` + `[<forwarder>, <port>, <tokenPath>]`, with no shell
+   * (#1612); paths are absolute.
    */
   buildHookSettings(sessionId: string): Record<string, unknown> {
     if (!this.forwarderPath || this.port === 0 || !this.nodeCommand) {
       throw new Error('hook listener not started');
     }
     const { tokenPath } = this.registerSession(sessionId);
-    const command = `${this.nodeCommand} "${this.forwarderPath}" ${this.port} "${tokenPath}"`;
-    const entry = { hooks: [{ type: 'command', timeout: 10, command }] };
+    // EXEC FORM (#1612) when `node` is on PATH: `command` is the executable and
+    // `args` its arguments, which the CLI spawns directly. Without `args` a hook
+    // "runs through a shell", and on Windows with Git Bash that was bash first,
+    // then node, on every tool call (measured on the desktop: 86 ms a hook
+    // through bash, 53 ms direct). Verified on PATH CLI 2.1.322: an argument
+    // `a b "c" $HOME` arrived byte for byte, so no shell touched it.
+    //
+    // The run-as-node fallback stays a shell command: it needs the
+    // ELECTRON_RUN_AS_NODE env prefix, and a hook has no field to set env.
+    const exec = this.nodeExec !== null && this.execForm;
+    const base = exec
+      ? { type: 'command', timeout: 10, command: this.nodeExec!, args: [this.forwarderPath, String(this.port), tokenPath] }
+      : { type: 'command', timeout: 10, command: `${this.nodeCommand} "${this.forwarderPath}" ${this.port} "${tokenPath}"` };
     const hooks: Record<string, unknown> = {};
-    for (const ev of STATUS_EVENTS) hooks[ev] = [entry];
+    for (const ev of STATUS_EVENTS) {
+      hooks[ev] = [{ hooks: [exec && ASYNC_EVENTS.has(ev) ? { ...base, async: true } : base] }];
+    }
     // NO `PreToolUse` ENTRY SINCE #952, and this is the line that makes the
     // deletion real rather than merely unreachable: the CLI is no longer asked to
     // call us before a tool runs, so there is no round trip to ignore. It used to
@@ -470,7 +552,8 @@ export class HookListener {
       // no longer registered, so there is nothing to park and status is all that
       // arrives.
       res.end(this.replyFor(sessionId, body));
-      this.ingest(sessionId, body);
+      const born = Number(req.headers['x-switchboard-born']);
+      this.ingest(sessionId, body, Number.isFinite(born) && born > 0 ? born : undefined);
     });
   }
 
@@ -499,7 +582,7 @@ export class HookListener {
     }
   }
 
-  private ingest(sessionId: string, body: string): void {
+  private ingest(sessionId: string, body: string, born?: number): void {
     let e: Record<string, unknown> = {};
     try {
       e = JSON.parse(body) as Record<string, unknown>;
@@ -508,6 +591,19 @@ export class HookListener {
       return;
     }
     const event = typeof e.hook_event_name === 'string' ? e.hook_event_name : 'unknown';
+    // #1612: a background event that started before the last synchronous one
+    // is stale (see ASYNC_EVENTS). No stamp (an older forwarder): kept.
+    if (born !== undefined) {
+      if (ASYNC_EVENTS.has(event)) {
+        const last = this.lastSyncBorn.get(sessionId);
+        if (last !== undefined && born < last) {
+          this.opts.log.debug('late background hook dropped', { sessionId, event });
+          return;
+        }
+      } else {
+        this.lastSyncBorn.set(sessionId, Math.max(born, this.lastSyncBorn.get(sessionId) ?? 0));
+      }
+    }
     const nativeId = typeof e.session_id === 'string' ? e.session_id : undefined;
     // /clear mints a NEW conversation id (verified vs claude 2.1.218): tag
     // the id change with its cause so the feed can say "cleared", not just
@@ -613,9 +709,12 @@ try { stdin = fs.readFileSync(0, 'utf8'); } catch {}
 let token = '';
 try { token = fs.readFileSync(tokenPath, 'utf8').trim(); } catch {}
 const waitMs = Number(process.argv[4]) || 3000; // held PreToolUse waits longer
+// when THIS process started (#1612): orders a background hook against the
+// synchronous ones by when the CLI spawned them, not when they arrived
+const born = Math.round(Date.now() - process.uptime() * 1000);
 const req = http.request(
   { host: '127.0.0.1', port: Number(port), path: '/hook', method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
+    headers: { 'content-type': 'application/json', 'x-switchboard-token': token, 'x-switchboard-born': String(born) },
     timeout: waitMs },
   (res) => {
     // the response body IS the hook verdict (held PreToolUse) — relay it to
