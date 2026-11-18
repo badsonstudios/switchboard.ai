@@ -274,6 +274,21 @@ const api = {
    */
   setAttentionBadge: (req: { count: number; png?: string; label?: string }): Promise<boolean> =>
     ipcRenderer.invoke('app:setAttentionBadge', req),
+  /**
+   * "Open folder in editor" (#1608). `get` answers the choice and which known
+   * editors this machine has; `set` stores a choice; `openFolder` opens the
+   * CARD's own folder (main reads it) and answers what happened.
+   */
+  editor: {
+    get: (): Promise<{ choice: string; customPath?: string; installed: string[]; resolved: string | null }> =>
+      ipcRenderer.invoke('editor:get'),
+    /** a CHOICE only; a custom program is set by `pickCustom`, never sent */
+    set: (pref: { choice: string }): Promise<boolean> => ipcRenderer.invoke('editor:set', pref),
+    /** main's own file dialog for a custom program; resolves whether one was set */
+    pickCustom: (): Promise<boolean> => ipcRenderer.invoke('editor:pickCustom'),
+    openFolder: (cardId: string): Promise<'opened' | 'no-editor' | 'no-folder'> =>
+      ipcRenderer.invoke('editor:openFolder', cardId),
+  },
   /** a display was (re)connected — new work areas (E8-06 reconnect offer) */
   onDisplaysChanged: (
     cb: (areas: Array<{ x: number; y: number; width: number; height: number }>) => void

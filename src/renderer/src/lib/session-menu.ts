@@ -23,6 +23,7 @@
 //   * Move to group is ABSENT when it could do nothing — no groups, or a
 //     session that never started. One item unavailable right now dims; a
 //     whole set that can do nothing goes.
+import { editorAvailable, openFolderInEditor } from './editor';
 import React from 'react';
 import type { DockviewApi } from 'dockview-react';
 import type { RailGroupMenuItem } from '../components/RailGroupMenu';
@@ -61,6 +62,9 @@ export function sessionMenuItems(
   const started = s.status !== 'not-started';
   return [
     { id: 'diff', label: t('rail.menuDiff'), can: true, run: run.diff },
+    // #1608: needs only the card, so it is the same item in every list and
+    // tab; dimmed when no editor is set up, rather than a click that does nothing
+    { id: 'editor', label: t('editor.openFolder'), can: editorAvailable(), run: () => openFolderInEditor(s.id) },
     { id: 'rename', label: t('rail.menuRename'), can: started, run: run.rename },
     // the label says which way it will go — pinning a not-started card DOES
     // work (the pin set is renderer state), which is why it is not dimmed
@@ -141,7 +145,7 @@ export function sessionTabMenuItems(
       ? [{ id: 'duplicate', label: t('tabMenu.duplicate'), can: true, run: x.duplicate }]
       : []),
     ...(x.fork ? [{ id: 'fork', label: t('tabMenu.fork'), can: true, run: x.fork }] : []),
-    ...section([...take('diff'), ...take('pin'), ...take('seen')]),
+    ...section([...take('diff'), ...take('editor'), ...take('pin'), ...take('seen')]),
     ...moves,
     ...section([
       {

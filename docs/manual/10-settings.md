@@ -89,6 +89,21 @@ notification with nothing to restart. What is *not* translated is anything that
 came from Claude Code or from you — a command, a file path, a session name. See
 [Notifications › Pop-ups follow the language you picked](09-notifications.md#pop-ups-follow-the-language-you-picked).
 
+## Editor
+
+**Settings ▸ General ▸ Editor** picks what **Open folder in editor** opens a
+session's folder in. **Detect**, the default, uses the first of **VS Code**,
+**Cursor**, **Zed** and **VSCodium** it finds on your computer, and says which.
+You can pick one of those yourself (one that isn't installed says so), or
+choose **Another program…**, click **Choose program…** and pick its program
+file (for example `sublime_text.exe`). Under the box, **Opens with** shows the
+program that will actually start.
+
+The editor is started with the folder and nothing else. switchboard never runs
+it through a command prompt, so the program has to be a real program file: on
+Windows, an `.exe`. The program can only be chosen with **Choose program…**,
+never typed in, so nothing but you can point it at something else.
+
 ## Themes
 
 **Settings ▸ Appearance.** Five buttons, and they are the whole picker:

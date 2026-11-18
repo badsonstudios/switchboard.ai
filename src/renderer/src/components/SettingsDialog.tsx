@@ -60,6 +60,7 @@ import { ContextMeterSection } from './settings/ContextMeterSection';
 import type { ContextMeterForm } from '../lib/context-meter';
 import { QuietHoursSection } from './settings/QuietHoursSection';
 import { AppBadgeSection } from './settings/AppBadgeSection';
+import { EditorSection } from './settings/EditorSection';
 import { NeedsYouSoundSection } from './settings/NeedsYouSoundSection';
 import { SpeakVoiceSection } from './settings/SpeakVoiceSection';
 import { PushSection } from './settings/PushSection';
@@ -399,6 +400,7 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
               lang={props.lang}
               onLang={props.onLang}
             />
+            <EditorSection open={props.open} />
             <AdvancedSection
               show="network"
               experimentalFork={props.experimentalFork}

@@ -3,6 +3,7 @@ import { resolveCliPath } from './providers/claude-cli-path';
 import { runCapture } from './transport/run-capture';
 import { errorText } from '../shared/error-text';
 import { applyBadge, parseBadgeRequest } from './app-badge';
+import { customProgramOk, detectEditors, editorPrefOf, launchEditor, realEditorEnv, resolveEditor } from './editor/editor-launch';
 import {
   app,
   BrowserWindow,
@@ -2954,6 +2955,58 @@ app
         badgeLog.warn('attention badge failed', { error: errorText(err) });
         return false;
       }
+    });
+    // "Open folder in editor" (#1608): the choice lives here, the folder is
+    // the card's own, and the editor is spawned with no shell.
+    const editorLog = createLogger(sink, 'editor');
+    broker.handle('editor:get', () => {
+      const env = realEditorEnv();
+      const pref = workspace.getEditor();
+      return { ...pref, installed: detectEditors(env), resolved: resolveEditor(pref, env) };
+    });
+    // The window picks a CHOICE, never a program (review, #1608): a path it
+    // sent would let a compromised window name anything on disk, including a
+    // file the agent just wrote, as the "editor". `custom` keeps the program
+    // already stored, which only `editor:pickCustom` (main's own dialog, the
+    // user's own click) can set.
+    broker.handle('editor:set', (_e, raw: unknown): boolean => {
+      const { choice } = editorPrefOf(raw);
+      const now = workspace.getEditor();
+      workspace.setEditor(choice === 'custom' ? { choice, customPath: now.customPath } : { choice });
+      editorLog.info('editor chosen', { choice });
+      return true;
+    });
+    broker.handle('editor:pickCustom', async (): Promise<boolean> => {
+      const win = currentWindow && !currentWindow.isDestroyed() ? currentWindow : undefined;
+      const opts: Electron.OpenDialogOptions = {
+        properties: ['openFile'],
+        ...(process.platform === 'win32' ? { filters: [{ name: 'Programs', extensions: ['exe'] }] } : {}),
+      };
+      const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+      const picked = r.canceled ? undefined : r.filePaths[0];
+      if (!picked || !customProgramOk(picked, realEditorEnv())) {
+        if (picked) editorLog.warn('editor:pickCustom refused: not a program', { file: path.basename(picked) });
+        return false;
+      }
+      workspace.setEditor({ choice: 'custom', customPath: picked });
+      editorLog.info('editor chosen', { choice: 'custom', program: path.basename(picked) });
+      return true;
+    });
+    broker.handle('editor:openFolder', (_e, cardId: unknown): 'opened' | 'no-editor' | 'no-folder' => {
+      const card = typeof cardId === 'string' ? workspace.listSessions().find((s) => s.id === cardId) : undefined;
+      const folder = card?.identity.folder;
+      if (!folder || !fs.existsSync(folder)) {
+        editorLog.warn('editor:openFolder refused: no folder', { cardId: String(cardId).slice(0, 80) });
+        return 'no-folder';
+      }
+      const program = resolveEditor(workspace.getEditor(), realEditorEnv());
+      if (!program) {
+        editorLog.warn('editor:openFolder: no editor found', { choice: workspace.getEditor().choice });
+        return 'no-editor';
+      }
+      launchEditor(program, folder, (err) => editorLog.warn('editor failed to start', { program, error: errorText(err) }));
+      editorLog.info('folder opened in editor', { program: path.basename(program) });
+      return 'opened';
     });
     broker.handle('app:attentionRaise', async (_e, req: unknown) => {
       const r = (req && typeof req === 'object' ? req : {}) as { groupId?: unknown; cardId?: unknown };

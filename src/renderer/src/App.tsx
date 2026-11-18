@@ -92,6 +92,7 @@ import {
 } from './lib/working-look';
 import { initGroupColours } from './lib/group-colours';
 import { initAppBadge, useAttentionBadge } from './lib/app-badge';
+import { refreshEditor } from './lib/editor';
 import { needCount } from './lib/rail-view';
 import { initGroupStyle } from './lib/group-style';
 import { initNoteColours } from './lib/note-colours';
@@ -745,6 +746,7 @@ export function App(): React.JSX.Element {
       initGroupColours(); // and whether they wear their colours (#1599)
       initNoteColours(); // the notes' picked colours (#1601)
       initAppBadge(); // the count on the app icon (#1605)
+      void refreshEditor(); // is there an editor to open folders in (#1608)
       setContextMeter(contextMeterFormOf(uiGet<unknown>(CONTEXT_METER_KEY, undefined)));
       applyTabRows(loadTabRows()); // multi-row tab strip, default on (#84)
       setUiReady(true);

@@ -790,6 +790,8 @@ describe('a chord pressed in a popped-out session’s window (#1214)', () => {
     expect(cmds.filter((c) => c.actsInPopout).map((c) => c.id).sort()).toEqual([
       'find.open',
       'session.close',
+      // #1608: the folder of the session whose window it was pressed in
+      'session.openInEditor',
       'session.pin',
       'session.reorder.down',
       'session.reorder.up',

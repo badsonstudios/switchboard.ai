@@ -7,6 +7,7 @@
 // Every seed command is scope 'app': none of them fire while the user is typing
 // in the composer, renaming a session, or working in a terminal.
 import { Command, CommandContext } from './commands';
+import { editorAvailable, openFolderInEditor } from './editor';
 import { PanelId } from '../extensibility/contributions';
 import type { Ladder } from './presentation';
 import { FOCUS_POLICY_ORDER, FocusPolicy } from './focus-policy';
@@ -426,6 +427,21 @@ export function buildCommands(deps: CommandDeps): Command[] {
     // the policies use is for choices with three or four values; a boolean has
     // one control, exactly as `view.rail` does — and as `view.terminal` did,
     // until #873 retired it with the tab it selected.
+    // #1608: no default chord. There is no way to choose one yet, so "unbound"
+    // means: in the palette, and nowhere on the keyboard until there is.
+    {
+      id: 'session.openInEditor',
+      titleKey: 'commands.openInEditor',
+      categoryKey: CATEGORY_SESSION,
+      scope: 'app',
+      enabled: (ctx) => hasHere(ctx) && editorAvailable(),
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      actsInPopout: true,
+      run: (ctx) => {
+        const cardId = here(ctx);
+        if (cardId) openFolderInEditor(cardId);
+      },
+    },
     {
       id: 'session.pin',
       titleKey: 'commands.togglePin',

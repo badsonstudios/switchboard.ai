@@ -16,6 +16,7 @@
 // says so on screen rather than only in the log (#207),
 // debounced save-soon for churny callers, and a version dispatch on the way in
 // (§5.26) — a file from a FUTURE version is shown but never written back.
+import { DEFAULT_EDITOR_PREF, editorPrefOf, type EditorPref } from '../editor/editor-launch';
 import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
@@ -394,6 +395,13 @@ export interface WorkspaceState {
    */
   waitingNotes: boolean;
   /**
+   * Which editor "Open folder in editor" uses (#1608): detected (`auto`), a
+   * known one, or a program of the user's own. Kept HERE, in main, because it
+   * names a program to run: the window can only change it through
+   * `editor:set`, which keeps only a known choice.
+   */
+  editor: EditorPref;
+  /**
    * How much task label is shown (#877) — `full` (3 lines), `medium` (2) or
    * `compact` (1, which is exactly the pre-#877 behaviour).
    *
@@ -658,6 +666,8 @@ const EMPTY: WorkspaceState = {
   aiLabels: true,
   // #1544 part 4: off until the owner turns it on
   waitingNotes: false,
+  // #1608: whatever editor is installed
+  editor: { ...DEFAULT_EDITOR_PREF },
   // #877: the owner asked for the space filled by default, with smaller sizes
   // available for anyone who wants the rail dense instead.
   taskLabelSize: DEFAULT_TASK_LABEL_SIZE,
@@ -1158,6 +1168,7 @@ export class WorkspaceStore {
       aiLabels: raw.aiLabels !== false,
       // only a literal true turns it on: it changes what the AI is asked to do
       waitingNotes: raw.waitingNotes === true,
+      editor: editorPrefOf(raw.editor),
       // Tolerant by design: an unreadable size is one nobody chose, so it
       // lands on the default rather than on the smallest. See the helper.
       taskLabelSize: taskLabelSizeOf(raw.taskLabelSize),
@@ -1943,6 +1954,16 @@ export class WorkspaceStore {
 
   setWaitingNotes(on: boolean): void {
     this.state.waitingNotes = on;
+    this.saveSoon();
+  }
+
+  /** "Open folder in editor"'s editor (#1608). */
+  getEditor(): EditorPref {
+    return { ...this.state.editor };
+  }
+
+  setEditor(pref: EditorPref): void {
+    this.state.editor = editorPrefOf(pref);
     this.saveSoon();
   }
 

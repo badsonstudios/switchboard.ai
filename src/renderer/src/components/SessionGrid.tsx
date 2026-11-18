@@ -1,6 +1,7 @@
 // Session grid (P1-E3-01): Dockview-powered card grid. Cards are placeholders
 // until E3-02 wires terminals in. Layout serializes to the workspace store on
 // every change and restores on boot.
+import { editorAvailable, openFolderInEditor } from '../lib/editor';
 import { errorText } from '../../../shared/error-text';
 import React, { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -3542,6 +3543,23 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                             style={menuItemStyle(false)}
                           >
                             {t('dispatch.menu')}
+                          </button>
+                        )}
+                        {cardId && (
+                          // #1608: the session's folder in the user's editor.
+                          // Read when the menu opens, so a choice made in
+                          // Settings since is what it offers.
+                          <button
+                            data-testid="card-open-editor"
+                            disabled={!editorAvailable()}
+                            onClick={() => {
+                              openFolderInEditor(cardId);
+                              setMenuOpen(false);
+                            }}
+                            title={editorAvailable() ? undefined : t('editor.noEditor')}
+                            style={menuItemStyle(!editorAvailable())}
+                          >
+                            {t('editor.openFolder')}
                           </button>
                         )}
                         {soundsApi && cardSound && (
