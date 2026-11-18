@@ -198,6 +198,7 @@ export const CHANNEL_CAPABILITIES = {
   // again, on the renderer's resolved focus-stealing policy rather than a
   // click; main gates it (master switch, quiet hours, reachability).
   'app:attentionRaise': 'app.window',
+  'app:setAttentionBadge': 'app.window',
   'app:workAreas': 'app.window',
   // The Help ▸ Report a problem dialog (#815). `reportStatus` answers BOOLEANS
   // only — whether a credential can be resolved at all — and never a value;

@@ -91,6 +91,8 @@ import {
   type WorkingLook,
 } from './lib/working-look';
 import { initGroupColours } from './lib/group-colours';
+import { initAppBadge, useAttentionBadge } from './lib/app-badge';
+import { needCount } from './lib/rail-view';
 import { initGroupStyle } from './lib/group-style';
 import { initNoteColours } from './lib/note-colours';
 import {
@@ -475,6 +477,8 @@ export function App(): React.JSX.Element {
   const railOrderNow = useSyncExternalStore(subscribeStore, () => sessionStore.getRailOrder());
   // automatic groups being promoted right now (#1603), so a second drop waits
   const promoting = React.useRef(new Set<string>());
+  // #1605: the window's own "N need you", on the app icon too
+  useAttentionBadge(needCount(railFlat, needing), (n) => String(i18next.t('appBadge.label', { count: n })));
   const urgency = useSyncExternalStore(subscribeStore, () => sessionStore.getState().urgency);
   const expireUrgency = React.useCallback(() => sessionStore.expireUrgency(), []);
   // #320: the marks that have just been PAINTED — that is where their 1.5s
@@ -740,6 +744,7 @@ export function App(): React.JSX.Element {
       initGroupStyle(); // how groups look in the sessions list (#1556)
       initGroupColours(); // and whether they wear their colours (#1599)
       initNoteColours(); // the notes' picked colours (#1601)
+      initAppBadge(); // the count on the app icon (#1605)
       setContextMeter(contextMeterFormOf(uiGet<unknown>(CONTEXT_METER_KEY, undefined)));
       applyTabRows(loadTabRows()); // multi-row tab strip, default on (#84)
       setUiReady(true);

@@ -156,6 +156,10 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   file opens in the program your computer uses for it. Programs and scripts
   are never run: clicking one opens the folder it is in, with the file
   selected.
+- **The taskbar icon shows how many sessions need you**, as a small yellow
+  number, so you can see it with switchboard minimised. It goes away when
+  nothing needs you. Turn it off in **Settings ▸ Attention ▸ Count on the app
+  icon**. On a Mac it is the Dock badge.
 
 ### Changed
 

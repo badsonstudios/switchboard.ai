@@ -167,6 +167,8 @@ describe('who paints with the "needs you" colours', () => {
     // its sample of that same waiting note (#1601), which keeps the yellow
     // edge whatever fill is picked, because the edge is what says "needs you"
     'components/settings/NoteColoursSection.tsx',
+    // the count of sessions needing you, on the app's taskbar icon (#1605)
+    'lib/app-badge.ts',
     'components/SessionsRail.tsx',
     'components/SessionsStrip.tsx',
     'extensibility/status-bar-items.tsx',

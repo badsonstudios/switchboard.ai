@@ -268,6 +268,12 @@ const api = {
    */
   attentionRaise: (req: { groupId?: string | null; cardId?: string }): Promise<string> =>
     ipcRenderer.invoke('app:attentionRaise', req),
+  /**
+   * The "N need you" count on the app icon (#1605). `count` 0 clears it; on
+   * Windows `png` is the overlay picture and `label` its spoken words.
+   */
+  setAttentionBadge: (req: { count: number; png?: string; label?: string }): Promise<boolean> =>
+    ipcRenderer.invoke('app:setAttentionBadge', req),
   /** a display was (re)connected — new work areas (E8-06 reconnect offer) */
   onDisplaysChanged: (
     cb: (areas: Array<{ x: number; y: number; width: number; height: number }>) => void

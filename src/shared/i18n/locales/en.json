@@ -2027,6 +2027,12 @@
     "compact": "Compact",
     "compactNote": "One line, trimmed with an ellipsis — exactly how labels looked before this setting existed."
   },
+  "appBadge": {
+    "title": "Count on the app icon",
+    "label": "{count, plural, one {# session needs you} other {# sessions need you}}",
+    "check": "Show how many sessions need you on switchboard's taskbar icon",
+    "note": "The same number as \"N need you\" in the window. It goes away when nothing needs you."
+  },
   "groupColours": {
     "title": "Group colours",
     "label": "Show each group in its own colour",

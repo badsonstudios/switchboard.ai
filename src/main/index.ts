@@ -2,6 +2,7 @@ import { parseClaudeVersion } from './providers/claude-detect';
 import { resolveCliPath } from './providers/claude-cli-path';
 import { runCapture } from './transport/run-capture';
 import { errorText } from '../shared/error-text';
+import { applyBadge, parseBadgeRequest } from './app-badge';
 import {
   app,
   BrowserWindow,
@@ -2925,6 +2926,35 @@ app
         return 'could not be checked';
       }
     };
+    // The "N need you" count on the app icon (#1605): the window counts and
+    // draws, this sets it. Logged only when what was done changes, so a busy
+    // afternoon is not a log line per approval.
+    const badgeLog = createLogger(sink, 'badge');
+    let lastBadge = '';
+    broker.handle('app:setAttentionBadge', (_e, raw: unknown): boolean => {
+      const parsed = parseBadgeRequest(raw);
+      if (!parsed.ok) {
+        badgeLog.warn(`app:setAttentionBadge refused: ${parsed.reason}`);
+        return false;
+      }
+      try {
+        const did = applyBadge(
+          {
+            platform: process.platform,
+            window: () => currentWindow,
+            image: (url) => nativeImage.createFromDataURL(url),
+            setBadgeCount: (n) => app.setBadgeCount(n),
+          },
+          parsed.req
+        );
+        if (did !== lastBadge) badgeLog.info('attention badge', { did, count: parsed.req.count });
+        lastBadge = did;
+        return did !== 'no-window' && did !== 'no-picture';
+      } catch (err) {
+        badgeLog.warn('attention badge failed', { error: errorText(err) });
+        return false;
+      }
+    });
     broker.handle('app:attentionRaise', async (_e, req: unknown) => {
       const r = (req && typeof req === 'object' ? req : {}) as { groupId?: unknown; cardId?: unknown };
       const groupId = typeof r.groupId === 'string' && r.groupId ? r.groupId : null;
