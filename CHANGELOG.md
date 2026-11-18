@@ -150,6 +150,12 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   colour for the waiting note and one for the session note, each with **Reset
   to default**. The words on a note stay readable whatever you pick, and a
   waiting note keeps its yellow edge.
+- **Click a file the AI mentions to open it.** A file or folder named in an
+  answer, in code type, in a sentence or as a link, is now clickable. Markdown
+  opens in the document viewer, a folder opens in File Explorer, and any other
+  file opens in the program your computer uses for it. Programs and scripts
+  are never run: clicking one opens the folder it is in, with the file
+  selected.
 
 ### Changed
 

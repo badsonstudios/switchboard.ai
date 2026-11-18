@@ -283,3 +283,20 @@ export interface DirListRequest {
   /** the directory to list, at or under `root`; the root when omitted */
   readonly path?: string;
 }
+
+/**
+ * What one path a reply named turned out to be (#1611): a file, a folder, or
+ * null for "not there, or not somewhere switchboard may look". The two halves
+ * of null are one answer on purpose: the renderer only needs to know whether
+ * to draw a link, and telling them apart would be an existence check for
+ * places outside the read scope.
+ */
+export type LinkPathKind = 'file' | 'dir' | null;
+
+/**
+ * The most paths one `fs:statForLinks` call will look at (#1611). Main stats
+ * them synchronously, so a reply that is a thousand-line file listing must not
+ * become a thousand lookups on the process every session goes through; the
+ * rest of the list answers null and the renderer asks again in the next batch.
+ */
+export const MAX_LINK_STATS = 64;

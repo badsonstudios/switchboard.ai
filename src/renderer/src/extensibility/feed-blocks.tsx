@@ -44,6 +44,16 @@ import { useFeedSurface } from '../lib/feed-surface';
 import { FEED_THUMB_HEIGHT, FEED_THUMB_WIDTH, feedPictureUrl } from '../../../shared/feed-picture';
 import { Markdown } from '../lib/markdown';
 import { handleMarkdownLinkClick, openExternalBridge } from '../lib/markdown-links';
+import { FEED_PATH_ATTR, FEED_PATH_KIND_ATTR, type FeedPathLabels } from '../lib/feed-paths';
+import {
+  askKinds,
+  knownKind,
+  linkPathsKey,
+  rememberKind,
+  subscribeLinkPaths,
+} from '../lib/link-path-cache';
+import { openDocument } from '../lib/document-open';
+import { isMarkdownFile } from '../../../shared/runnable-file';
 import { briefingRefOf, dividerCopy, earlierTurnsCopy } from '../lib/ai-switch-view';
 import { aiLook, getAisState, subscribeAis, type AiLook } from '../lib/ais-store';
 import { siblingMessageParts } from '../../../shared/sibling-message';
@@ -163,6 +173,44 @@ function useImageLabels(): FeedImageLabels {
     }),
     [t]
   );
+}
+
+/** The words on a path the AI wrote (#1611), memoised so `decorate` stays a stable dep. */
+function usePathLabels(): FeedPathLabels {
+  const { t } = useTranslation();
+  return React.useMemo(
+    () => ({
+      open: (name: string) => t('feedView.pathOpen', { name }),
+      openInViewer: (name: string) => t('feedView.pathOpenInViewer', { name }),
+      openFolder: (name: string) => t('feedView.pathOpenFolder', { name }),
+      showInFolder: (name: string) => t('feedView.pathShowInFolder', { name }),
+    }),
+    [t]
+  );
+}
+
+/**
+ * Open a path the AI wrote (#1611). Markdown goes to switchboard's own
+ * document viewer; everything else goes to MAIN, through the narrow channel
+ * (`fs:openFromReply`), which opens a folder or an ordinary file and only ever
+ * SHOWS a program or a script in its folder. A path main refuses (it went
+ * away since the link was drawn) stops being a link.
+ */
+function openFeedPath(el: Element): void {
+  const abs = el.getAttribute(FEED_PATH_ATTR) ?? '';
+  if (abs === '') return;
+  if (el.getAttribute(FEED_PATH_KIND_ATTR) === 'file' && isMarkdownFile(abs) && openDocument(abs)) return;
+  const files = (
+    window as unknown as {
+      switchboard?: { files?: { openFromReply?: (p: string) => Promise<unknown> } };
+    }
+  ).switchboard?.files;
+  void files
+    ?.openFromReply?.(abs)
+    ?.then((done) => {
+      if (done === false) rememberKind(abs, 'missing', true);
+    })
+    ?.catch?.(() => undefined);
 }
 
 /** Ask main to open a picture or a page in whatever the system uses for it.
@@ -1763,10 +1811,39 @@ function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // the whole conversation
   const named = b.kind === 'assistant' && /[.]htm/i.test(b.text ?? '') ? pages : undefined;
   const at = named ? b.seq : undefined;
+  // PATHS (#1611): only in a finished reply from the AI, and only with a
+  // folder to resolve against. Which of them are files is main's answer, kept
+  // in a cache and asked off the render; `linkKey` is the part of that answer
+  // THIS reply's paths care about, so an answer re-decorates the replies that
+  // named the path and no others (how `pages` re-decorates, above).
+  const pathLabels = usePathLabels();
+  const linkable = b.kind === 'assistant' && !streaming && !!folder;
+  const namedPaths = React.useRef<readonly string[]>([]);
+  const linkKey = React.useSyncExternalStore(subscribeLinkPaths, () =>
+    linkable ? linkPathsKey(namedPaths.current) : ''
+  );
   const decorate = React.useCallback(
-    (html: string) =>
-      decorateFeedMarkdown(html, labels, { streaming, images: { labels: imageLabels, folder, pages: named, at } }),
-    [labels, streaming, imageLabels, folder, named, at]
+    (html: string) => {
+      // the dependency that makes an answer from main re-decorate this reply
+      void linkKey;
+      return decorateFeedMarkdown(html, labels, {
+        streaming,
+        images: { labels: imageLabels, folder, pages: named, at },
+        paths:
+          linkable && folder
+            ? {
+                folder,
+                labels: pathLabels,
+                known: knownKind,
+                named: (list) => {
+                  namedPaths.current = list;
+                  askKinds(list);
+                },
+              }
+            : undefined,
+      });
+    },
+    [labels, streaming, imageLabels, folder, named, at, linkable, pathLabels, linkKey]
   );
   const onClick = React.useCallback(
     (e: React.MouseEvent<HTMLDivElement>): void => {
@@ -1798,6 +1875,15 @@ function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
         openLocalFile(local.getAttribute(FEED_OPEN_PATH_ATTR) ?? '');
         return;
       }
+      // A path the AI wrote (#1611): ours, for the same reason as above. Asked
+      // BEFORE the link route, because a markdown link to a local path is now
+      // one of these, and the link route would only refuse it.
+      const named = (e.target as Element | null)?.closest?.<HTMLElement>(`[${FEED_PATH_ATTR}]`);
+      if (named) {
+        e.preventDefault();
+        openFeedPath(named);
+        return;
+      }
       // A link in a reply goes to the OS browser (#527). `void`, because the
       // answer is a log line either way: this handler has nothing to tell the
       // user that main's own refusal line does not already say.
@@ -1811,6 +1897,16 @@ function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // learned this first; the same two listeners, for the same reason.
   const onAuxClick = React.useCallback((e: React.MouseEvent<HTMLDivElement>): void => {
     void handleMarkdownLinkClick(e, { openExternal: openExternalBridge() });
+  }, []);
+  // Enter on a path the AI wrote (#1611). It is a `role="link"` span, which
+  // the browser does not activate; an `<a href>` it does, and that click is
+  // answered above, so this stands down for one.
+  const onKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== 'Enter') return;
+    const named = (e.target as Element | null)?.closest?.<HTMLElement>(`[${FEED_PATH_ATTR}]`);
+    if (!named || named.nodeName === 'A') return;
+    e.preventDefault();
+    openFeedPath(named);
   }, []);
   // `minInlineSize: 0` so the wrapper shrinks the way `<Markdown>`'s own
   // container did when it was the flex child — without it a wide fence stops
@@ -1832,6 +1928,7 @@ function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
     <div
       onClick={onClick}
       onAuxClick={onAuxClick}
+      onKeyDown={onKeyDown}
       onLoadCapture={onLoad}
       onErrorCapture={onError}
       style={{ minInlineSize: 0 }}

@@ -2505,6 +2505,27 @@ mark[data-feed-match-current] {
 .feed-md a[data-feed-open-path] {
   cursor: pointer;
 }
+/* A path the AI wrote that is really there (#1611): a file or a folder on this
+ * machine, drawn as a link. Underlined, because a code span or a word in a
+ * sentence otherwise gives no sign that it does anything. The working INK, for
+ * the reason `.feed-md a` gives above. */
+.feed-md .feed-path,
+.feed-md a[data-feed-path] {
+  color: var(--status-working-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.feed-md .feed-path code {
+  color: inherit;
+}
+.feed-md .feed-path:focus-visible,
+.feed-md a[data-feed-path]:focus-visible {
+  outline: 2px solid var(--status-working-ink);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
 .feed-md a[data-feed-open-path]::after {
   content: ' \25A3';
   color: var(--muted);

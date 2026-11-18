@@ -68,10 +68,11 @@ export const FEED_COPY_ATTR = 'data-feed-copy';
 // opens a dialog rather than showing anything in place, so it is not a
 // `FeedExpander` (that attribute claims `aria-expanded`), but it is a control
 // in the conversation all the same.
+// And since #1611 so is a path the AI wrote, drawn as a link: Enter opens it.
 export const FEED_STOP_SELECTOR =
   `[${FEED_EXPANDER_ATTR}], [${FEED_COPY_ATTR}], ` +
   'button[data-feed-open-path], button[data-doc-external], button[data-feed-picture], ' +
-  'button[data-ai-switch-see-briefing]';
+  'button[data-ai-switch-see-briefing], [data-feed-path]';
 
 /** What a keystroke inside the conversation region means. */
 export type FeedKeyAction =
