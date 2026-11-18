@@ -123,7 +123,8 @@ test.describe('keyboard paths swept by #197', () => {
     await expect(w.locator('[role="menu"]')).toBeVisible();
     expect((await focused(w)).role).toBe('menuitem');
     await w.keyboard.press('ArrowDown');
-    expect((await focused(w)).label).toBe('Rename…');
+    // the second item since #1608 put "Open folder in editor" after "Open changes"
+    expect((await focused(w)).label).toBe('Open folder in editor');
     await w.keyboard.press('Escape');
     await expect(w.locator('[role="menu"]')).toHaveCount(0);
     expect((await focused(w)).cls).toBe('rail-row-open');
