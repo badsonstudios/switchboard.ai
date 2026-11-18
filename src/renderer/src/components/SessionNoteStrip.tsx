@@ -7,6 +7,7 @@
 // talks to the session: the note is the user's label on the card, never part
 // of the conversation.
 import * as React from 'react';
+import { useNoteVars } from '../lib/note-colours';
 import { useTranslation } from 'react-i18next';
 import { NOTE_QUICK_PICK_KEYS, SESSION_NOTE_MAX, type SessionNote } from '../../../shared/session-note';
 import { switchWhen } from '../lib/ai-switch-view';
@@ -119,6 +120,7 @@ function NotePaper(
 ): React.JSX.Element | null {
   const { t, i18n } = useTranslation();
   const { note, editing } = useSessionNote(props.cardId);
+  const paperVars = useNoteVars('session'); // #1601: the picked colour, if any
   const self = React.useRef<HTMLDivElement>(null);
   if (!note && !editing) return null;
   const ai = note?.by === 'ai';
@@ -145,6 +147,7 @@ function NotePaper(
         }
       }}
       style={{
+        ...paperVars,
         position: 'relative',
         paddingInlineStart: ai ? 12 : 10,
         paddingInlineEnd: 8,
@@ -260,6 +263,7 @@ function NotePaper(
 function WaitingPaper(props: SessionNoteStripProps & { variant: Variant }): React.JSX.Element | null {
   const { t, i18n } = useTranslation();
   const { waiting } = useSessionNote(props.cardId);
+  const paperVars = useNoteVars('waiting'); // #1601: the picked colour, if any
   if (!waiting) return null;
   const oneLine = props.variant === 'line';
   const stacked = props.variant === 'corner' || props.variant === 'popover';
@@ -271,10 +275,11 @@ function WaitingPaper(props: SessionNoteStripProps & { variant: Variant }): Reac
       data-waiting-note={props.cardId}
       data-note-placement={props.variant}
       style={{
+        ...paperVars,
         position: 'relative',
         paddingInline: 10,
-        background: 'color-mix(in srgb, var(--status-needs-input) 42%, white)',
-        color: 'var(--note-ink)',
+        background: 'var(--waiting-paper, color-mix(in srgb, var(--status-needs-input) 42%, white))',
+        color: 'var(--waiting-ink, var(--note-ink))',
         borderBlockEnd: '2px solid var(--status-needs-input)',
         fontFamily: 'var(--font-ui)',
         fontSize: 12.5,
@@ -330,7 +335,7 @@ function WaitingPaper(props: SessionNoteStripProps & { variant: Variant }): Reac
           style={{
             background: 'transparent',
             border: 'none',
-            color: 'var(--note-ink)',
+            color: 'var(--waiting-ink, var(--note-ink))',
             cursor: 'pointer',
             fontSize: 14,
             lineHeight: 1,
@@ -402,6 +407,7 @@ export function SessionWaitingChip(props: SessionNoteStripProps): React.JSX.Elem
   const { t } = useTranslation();
   const placement = useNotePlacement();
   const { waiting } = useSessionNote(props.cardId);
+  const paperVars = useNoteVars('waiting'); // #1601: the picked colour, if any
   const [open, setOpen] = React.useState(false);
   const box = React.useRef<HTMLSpanElement>(null);
   // a waiting note that went away takes its open popover with it, so the next
@@ -430,7 +436,7 @@ export function SessionWaitingChip(props: SessionNoteStripProps): React.JSX.Elem
           setOpen(false);
         }
       }}
-      style={{ position: 'relative', display: 'flex', minInlineSize: 0, flex: '0 1 auto' }}
+      style={{ ...paperVars, position: 'relative', display: 'flex', minInlineSize: 0, flex: '0 1 auto' }}
     >
       <button
         type="button"
@@ -448,8 +454,8 @@ export function SessionWaitingChip(props: SessionNoteStripProps): React.JSX.Elem
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-          background: 'color-mix(in srgb, var(--status-needs-input) 42%, white)',
-          color: 'var(--note-ink)',
+          background: 'var(--waiting-paper, color-mix(in srgb, var(--status-needs-input) 42%, white))',
+          color: 'var(--waiting-ink, var(--note-ink))',
           border: 'none',
           borderRadius: 3,
           padding: '1px 8px',
@@ -474,6 +480,7 @@ export function SessionNoteChip(props: SessionNoteStripProps): React.JSX.Element
   const { t } = useTranslation();
   const placement = useNotePlacement();
   const { note, editing, open } = useSessionNote(props.cardId);
+  const paperVars = useNoteVars('session'); // #1601: the picked colour, if any
   const box = React.useRef<HTMLSpanElement>(null);
   const showPop = editing || (open && !!note);
   // The popover hangs from the chip's right edge, so it may be no wider than
@@ -517,7 +524,7 @@ export function SessionNoteChip(props: SessionNoteStripProps): React.JSX.Element
           setNotePopoverOpen(props.cardId, false);
         }
       }}
-      style={{ position: 'relative', display: 'flex', minInlineSize: 0, flex: '0 1 auto' }}
+      style={{ ...paperVars, position: 'relative', display: 'flex', minInlineSize: 0, flex: '0 1 auto' }}
     >
       {note && (
         <button

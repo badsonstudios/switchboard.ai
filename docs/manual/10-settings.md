@@ -293,6 +293,10 @@ leaves a short yellow note saying what it needs when it stops because it is
 waiting on you. See
 [The session view › Leaving yourself a note](03-session-view.md#leaving-yourself-a-note).
 
+**Note colours**, under that, picks the colour of the waiting note and of the
+session note, with **Reset to default** for each. See
+[The session view › Changing the notes' colours](03-session-view.md#changing-the-notes-colours).
+
 ## Task label size
 
 *This changes one thing: how big each session's task label is. To make

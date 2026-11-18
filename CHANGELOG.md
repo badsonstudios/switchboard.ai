@@ -146,6 +146,10 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   the groups in the Sessions list are drawn in plain grey in every group style,
   and still look like groups. The colour you picked for each one is kept for
   when you turn it back on.
+- **Pick the notes' colours:** **Settings ▸ Appearance ▸ Note colours** has one
+  colour for the waiting note and one for the session note, each with **Reset
+  to default**. The words on a note stay readable whatever you pick, and a
+  waiting note keeps its yellow edge.
 
 ### Changed
 

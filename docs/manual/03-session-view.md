@@ -629,6 +629,19 @@ asks Claude to do a little extra at the end of a turn where it needs you, and
 it is off until you turn it on. Like the sticky note, a waiting note is never
 read back to Claude and never sets off a notification.
 
+### Changing the notes' colours
+
+**Settings ▸ Appearance ▸ Note colours** has a colour for each kind of note:
+**Waiting note** (yellow to start with) and **Session note** (mint green).
+Click a colour and pick another; every note on every session changes at once,
+in the sessions list too, and in a popped-out window. The words on a note are
+always made dark or light to stay easy to read on the colour you picked, and
+**Sample note** beside each one shows how it will look.
+
+A waiting note keeps its yellow line along the bottom whatever colour you give
+it, so it still says a session needs you. **Reset to default** puts a note
+back to its first colour.
+
 ## Talking to the session
 
 ![The prompt box with a request typed in, and the row of chips under it](img/prompt-box.png)

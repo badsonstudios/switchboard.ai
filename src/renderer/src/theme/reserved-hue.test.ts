@@ -164,6 +164,9 @@ describe('who paints with the "needs you" colours', () => {
     // something from the user, which is this list's whole subject
     'components/SessionNoteStrip.tsx',
     'components/SessionRow.tsx',
+    // its sample of that same waiting note (#1601), which keeps the yellow
+    // edge whatever fill is picked, because the edge is what says "needs you"
+    'components/settings/NoteColoursSection.tsx',
     'components/SessionsRail.tsx',
     'components/SessionsStrip.tsx',
     'extensibility/status-bar-items.tsx',
