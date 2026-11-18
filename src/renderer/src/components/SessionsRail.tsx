@@ -66,6 +66,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
+import { drawnGroupColour, useGroupColours } from '../lib/group-colours';
 import { autoGroupDrop, autoGroupName, railOrder } from '../lib/groups';
 import {
   LOOSE_BUCKET,
@@ -311,6 +312,7 @@ export function SessionsRail(props: {
   // only while it is on; every other style is CSS keyed on the <nav>'s
   // `data-group-style` (tokens.css, "group styles in the sessions list").
   const groupStyle = useGroupStyle();
+  const groupColours = useGroupColours();
   const classic = groupStyle === 'classic';
   const [collapsed, setCollapsed] = React.useState<Set<string>>(
     () => new Set(uiGet<string[]>('railCollapsed', []))
@@ -1069,6 +1071,11 @@ export function SessionsRail(props: {
       : false;
     const g = opts.group;
     const isAuto = opts.kind === 'auto';
+    // #1599: with group colours off, a group you made is drawn in the neutral
+    // ink and its "working" look in the plain working colour. Its own colour
+    // is untouched: this is drawing, not data.
+    const color = drawnGroupColour(opts.kind, opts.color, groupColours);
+    const workAccent = opts.kind === 'group' && !groupColours ? 'var(--status-working)' : opts.color;
     // Membership in an auto-group is DERIVED from the session's folder, so a
     // drop there either takes a same-folder session out of its group or turns
     // the auto-group into one you own (#1603). Which, if either, is asked of
@@ -1196,7 +1203,7 @@ export function SessionsRail(props: {
         data-collapsed={isCollapsed ? 'true' : undefined}
         style={{
           // the group's colour, for the group styles' frames and tints (#1556)
-          ['--g' as string]: opts.color,
+          ['--g' as string]: color,
           // the post-jump beat, on a group whose row for that session may not
           // be drawn: the focus accent, as on a row
           ...(flashHere ? { outline: '2px solid var(--status-working-ink)', outlineOffset: -2 } : {}),
@@ -1226,12 +1233,12 @@ export function SessionsRail(props: {
           // outline nothing; the drop ring stays, in every style
           boxShadow: classic
             ? isDropTarget
-              ? `0 0 0 2px ${opts.color}, var(--group-lift)`
+              ? `0 0 0 2px ${color}, var(--group-lift)`
               : 'var(--group-lift)'
             : isDropTarget
               ? // a 1px gap first: against a frame in the same colour, a ring
                 // touching it read as a slightly thicker frame
-                `0 0 0 1px var(--rail-canvas), 0 0 0 3px ${opts.color}`
+                `0 0 0 1px var(--rail-canvas), 0 0 0 3px ${color}`
               : undefined,
         }}
       >
@@ -1321,7 +1328,7 @@ export function SessionsRail(props: {
               ...(classic
                 ? {
                     padding: '8px 9px 8px 10px',
-                    background: isAuto ? 'var(--auto-head)' : tint(opts.color, 7),
+                    background: isAuto ? 'var(--auto-head)' : tint(color, 7),
                     // what the card's `overflow: hidden` used to do for it
                     // (#295). 7px, not 8: the radius of the INSIDE of a 1px
                     // border.
@@ -1339,10 +1346,10 @@ export function SessionsRail(props: {
               // for the waiting edge below, and the looks' layers
               position: 'relative',
               // the group's own colour, for whichever "working" look is in force
-              '--work-accent': opts.color,
+              '--work-accent': workAccent,
               // --g feeds .rail-group-ink, which darkens the color per theme so
               // the name clears AA on the white card (see tokens.css)
-              '--g': opts.color,
+              '--g': color,
             } as React.CSSProperties
           }
         >
@@ -1411,7 +1418,7 @@ export function SessionsRail(props: {
                 padding: 0,
                 border: 'none',
                 borderRadius: '50%',
-                background: opts.color,
+                background: color,
                 flexShrink: 0,
                 cursor: 'pointer',
               }}
@@ -1572,7 +1579,7 @@ export function SessionsRail(props: {
                 fontSize: 11.5,
                 fontWeight: 600,
                 fontFamily: 'var(--font-ui)',
-                color: ink ? undefined : opts.color,
+                color: ink ? undefined : color,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -1610,8 +1617,8 @@ export function SessionsRail(props: {
                   fontFamily: 'var(--font-mono)',
                   fontWeight: 600,
                   fontSize: 9,
-                  color: ink ? undefined : opts.color,
-                  background: tint(opts.color, 12),
+                  color: ink ? undefined : color,
+                  background: tint(color, 12),
                   borderRadius: 4,
                   padding: '1px 5px',
                   flexShrink: 0,
@@ -1872,6 +1879,7 @@ export function SessionsRail(props: {
     <nav
       ref={navRef}
       data-group-style={groupStyle}
+      data-group-colours={groupColours ? 'on' : 'off'}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes(DND_TYPE) && !getDraggedCard()) return;
         // the ungroup target, and therefore the same command as the group

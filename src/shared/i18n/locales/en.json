@@ -2023,6 +2023,12 @@
     "compact": "Compact",
     "compactNote": "One line, trimmed with an ellipsis — exactly how labels looked before this setting existed."
   },
+  "groupColours": {
+    "title": "Group colours",
+    "label": "Show each group in its own colour",
+    "onNote": "Each group in the Sessions list is drawn in the colour picked for it.",
+    "offNote": "Groups are drawn in plain grey. The colour picked for each one is kept, and comes back when you turn this on."
+  },
   "groupStyle": {
     "title": "Group style",
     "blurb": "How groups look in the Sessions list. The list changes the moment you pick. The strip across the top and the session windows keep their own look.",
