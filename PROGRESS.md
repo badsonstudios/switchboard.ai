@@ -3,10 +3,12 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶ IN FLIGHT: E42 Projects (#1636), step 1 = #1637 (started 2026-11-22)
+> # 📋 PLANNED, NOT STARTED: E42 Projects (#1636) — planning and docs only (2026-11-22)
 >
 > **Dan (2026-11-22):** approved the Projects plan and every recommendation on it: *"I like all of this, and I like all of what you recommend, so let's do this."* This is the "create a project instead of a session" ticket held on 2026-11-17; it was never filed until now. Mockup: `mockups/projects.html`. Plan: plan 06 → E42.
-> - **Steps:** **#1637** projects in the rail, nothing created (IN FLIGHT) → **#1506** create a worktree (re-scoped; first task: measure the CLI's `--worktree` flag) → **#1638** finish: update from main, PR, safe removal (first task: the `/orchestrate` history review that replaced #1505) → **#1616**, then **#1507** (shrunk to ports and dev databases).
+> - **Not started — do NOT build any E42 step until Dan says so (Dan, 2026-11-22).** The approval covered the plan and the tickets, not the build; this block wrongly said step 1 was IN FLIGHT.
+> - **Draft PR #1640** (`feature/1637-projects-rail`) holds a step-1 build made without Dan asking. Not merged; last CI run cancelled (unit green, e2e cancelled); its Windows 8.3-short-path fix was never green on CI. **Don't merge it or build on it** — Dan is deciding whether to close it, park it as a draft head start, or close the PR and keep the branch.
+> - **Steps:** **#1637** projects in the rail, nothing created → **#1506** create a worktree (re-scoped; first task: measure the CLI's `--worktree` flag) → **#1638** finish: update from main, PR, safe removal (first task: the `/orchestrate` history review that replaced #1505) → **#1616**, then **#1507** (shrunk to ports and dev databases).
 > - **Decisions:** a PR is the merge (local merge only without a remote) · worktrees in one app-managed folder outside the repo · our own `git worktree` calls, CLI flag measured first · shared `node_modules` opt-in per project, unlink-before-delete tested · never make a worktree silently.
 > - **Ticket housekeeping done:** `needs-discussion` removed from #1506, #1507, #1616 with outcome comments; #1505 closed as replaced; #1542 stays `needs-discussion`.
 
