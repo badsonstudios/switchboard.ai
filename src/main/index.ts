@@ -67,6 +67,7 @@ import { TranscriptWatcher } from './transcripts/watcher';
 import { HistoryRepairLog } from './sessions/history-repair-log';
 import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
 import { registerGroupIpc } from './workspace/group-ipc';
+import { registerProjectIpc } from './workspace/project-ipc';
 import { registerMcpIpc } from './mcp/ipc';
 import { samePath } from './project-key';
 import { registerFsIpc } from './fs/ipc';
@@ -3113,6 +3114,12 @@ app
     const knownFolder = (folder: string): boolean =>
       manager.list().some((s) => path.resolve(s.identity.folder) === path.resolve(folder));
     const gitService = new GitService();
+    // projects (E42, #1637): a repo's worktrees and their sessions. NOT scoped
+    // to known session folders like the git handlers above: the Open project
+    // dialog asks about a folder no session has yet. What it can learn is
+    // limited to `rev-parse` and `worktree list` (paths and branch names), never
+    // file contents, and the folder is one the user just picked.
+    registerProjectIpc(workspace, gitService, broker, createLogger(sink, 'workspace'));
     // the branch a mentioned session's folder is on, for its brief (#1092)
     const mentionGit = createMentionGitLookup((folder) => gitService.status(folder));
     const mentionTree = createMentionTreeLookup((folder) => gitService.root(folder, MENTION_GIT_BUDGET_MS));
@@ -3831,6 +3838,9 @@ app
       })(),
       defaultProviderId,
       repoRoot: (folder) => gitService.root(folder),
+      // bounded (#1637 review): this sits under `sessions:cards`, and a git
+      // hung on a network drive must not stall every card
+      repoCommonDir: (folder) => gitService.commonDir(folder, 5_000),
       // The user's own command FILES are the provider's to find (#1288,
       // `commandFiles`; Claude's read `.claude/`). Without the capability the
       // composer lists the builtins alone.

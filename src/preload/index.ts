@@ -1,3 +1,4 @@
+import type { ProjectInspection, ProjectRecord, ProjectWorktrees } from '../shared/projects';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ContextMenuLabels } from '../shared/context-menu';
 import type { SessionNote, SessionNoteChange } from '../shared/session-note';
@@ -967,6 +968,27 @@ const api = {
       ipcRenderer.invoke('groups:move', id, beforeId),
     setSessionGroup: (cardId: string, groupId: string | null): Promise<void> =>
       ipcRenderer.invoke('groups:setSessionGroup', cardId, groupId),
+  },
+  /**
+   * Projects (E42, #1637): a repo opened once, holding its worktrees and the
+   * sessions in them. Refusals resolve NULL (or false), never reject.
+   */
+  projects: {
+    list: (): Promise<ProjectRecord[]> => ipcRenderer.invoke('projects:list'),
+    /** what a folder is as a project; NULL when it is not in a git repo */
+    inspect: (folder: string): Promise<ProjectInspection | null> =>
+      ipcRenderer.invoke('projects:inspect', folder),
+    /** open a repo as a project (or answer the one it already is) */
+    open: (opts: { folder: string; name?: string }): Promise<ProjectRecord | null> =>
+      ipcRenderer.invoke('projects:open', opts),
+    update: (
+      id: string,
+      patch: { name?: string; color?: string; hiddenWorktrees?: string[] }
+    ): Promise<ProjectRecord | null> => ipcRenderer.invoke('projects:update', id, patch),
+    /** take it off the sessions list; its sessions keep running */
+    remove: (id: string): Promise<boolean> => ipcRenderer.invoke('projects:remove', id),
+    worktrees: (id: string): Promise<ProjectWorktrees | null> =>
+      ipcRenderer.invoke('projects:worktrees', id),
   },
   /**
    * The MCP Manager's read half (§5.17, #632).

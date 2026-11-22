@@ -1,6 +1,6 @@
 // The tab menu's own rules (#1281) that need no component to state.
 import { describe, it, expect } from 'vitest';
-import { revealLabelKey, sessionTabMenuItems } from './session-menu';
+import { revealLabelKey, sessionMenuItems, sessionTabMenuItems } from './session-menu';
 
 const t = (key: string): string => key;
 const noop = (): void => {};
@@ -41,5 +41,18 @@ describe('the tab menu (issue 1281)', () => {
     expect(ids).not.toContain('copy-path');
     expect(ids).not.toContain('reveal');
     expect(ids.at(-1)).toBe('close');
+  });
+});
+
+describe('group moves for a session in a project (#1637 review)', () => {
+  const groups = [{ id: 'g1', name: 'Group', color: 'var(--muted)' }] as never;
+  it('offers the moves to a session that is not in a project', () => {
+    const ids = sessionMenuItems({ ...FACTS, groups }, RUNS, t).map((i) => i.id);
+    expect(ids).toContain('move:g1');
+    expect(ids).toContain('move:none');
+  });
+  it('offers none to a session its project places', () => {
+    const ids = sessionMenuItems({ ...FACTS, groups, inProject: true }, RUNS, t).map((i) => i.id);
+    expect(ids.some((id) => id.startsWith('move:'))).toBe(false);
   });
 });

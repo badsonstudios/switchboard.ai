@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ClaudeFedCommands, ClaudeFedModel, ClaudeFedPermissions } from './fixtures/claude-fed-stores';
 import fs from 'fs';
 import path from 'path';
+import { pathKey } from '../../shared/projects';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { registerSessionIpc, SessionIpcDeps } from './ipc';
 import { MAX_PROMPT_CHARS } from '../../shared/prompt-attachments';
@@ -210,6 +211,8 @@ function harness(
     /** #1295: "see what it was told", and a closed card's briefings */
     briefingText?: SessionIpcDeps['briefingText'];
     forgetBriefings?: SessionIpcDeps['forgetBriefings'];
+    /** #1637: a card's project key (the folder's git common dir) */
+    repoCommonDir?: SessionIpcDeps['repoCommonDir'];
   } = {}
 ) {
   const created: Array<{
@@ -744,6 +747,7 @@ function harness(
     aiSwitchBriefing: opts.aiSwitchBriefing,
     briefingText: opts.briefingText,
     forgetBriefings: opts.forgetBriefings,
+    repoCommonDir: opts.repoCommonDir,
   } as unknown as SessionIpcDeps;
 
   const ipc = registerSessionIpc(deps);
@@ -6968,5 +6972,47 @@ describe("an exited session's card says 'ended', not the leftover 'done' (#1362)
   it('a card restored from the workspace with no live process is `suspended` — never "waiting"', async () => {
     const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'], status: 'done' });
     expect(await statusOf(h)).toBe('suspended');
+  });
+});
+
+// A card's project key is the folder's git common dir (#1637). A FOUND key is
+// kept; "no key" must be asked again, or one failed git spawn (or a `git init`
+// after the card started) keeps the session out of its project until restart.
+describe('a card’s project key is not stuck on a failed lookup (#1637 review)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-repokey-', (d) => (dir = d));
+  const { card } = cardHelpers(() => dir, CARD);
+
+  it('retries a miss after the miss window, and keeps a hit without asking again', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      let answer: string | null = null;
+      let asked = 0;
+      const h = harness(undefined, dir, {
+        prior: card(),
+        repoCommonDir: async () => {
+          asked++;
+          return answer;
+        },
+      });
+      const keyOf = async (): Promise<string | undefined> => {
+        const cards = (await h.call('sessions:cards')) as Array<{ cardId: string; repoKey?: string }>;
+        return cards.find((c) => c.cardId === CARD)!.repoKey;
+      };
+
+      expect(await keyOf()).toBeUndefined();
+      expect(await keyOf()).toBeUndefined();
+      expect(asked).toBe(1); // a miss is remembered for a while, not re-spawned per read
+
+      answer = path.join(dir, '.git');
+      vi.setSystemTime(Date.now() + 31_000);
+      expect(await keyOf()).toBe(pathKey(answer));
+      const after = asked;
+      expect(await keyOf()).toBe(pathKey(answer));
+      expect(asked).toBe(after); // a hit is kept
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

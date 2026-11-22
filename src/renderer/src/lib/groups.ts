@@ -1,5 +1,6 @@
 import { LineageMap, NO_LINEAGE } from './dispatch-lineage';
 import { NO_PINS, PinSet, sortPinnedFirst } from './pinning';
+import { pathKey, worktreeFor, type WorktreeInfo } from '../../../shared/projects';
 import {
   applyManualOrder,
   autoBucket,
@@ -19,7 +20,42 @@ export interface AutoGroupable {
   groupId?: string;
   autoKey?: string;
   folder?: string;
+  /** git common dir, `pathKey` form (E42, #1637): how a session finds its project */
+  repoKey?: string;
 }
+
+/** What `railOrder` needs to know about a project (E42, #1637). */
+export interface ProjectForOrder {
+  id: string;
+  commonDir: string;
+  hiddenWorktrees: readonly string[];
+  /** null when git could not be read: members still land, in `unplaced` */
+  worktrees: readonly WorktreeInfo[] | null;
+}
+
+/** One worktree section of a project card, in render order. */
+export interface ProjectWorktreeRows<T> {
+  /** as git printed it; '' for the "could not tell which worktree" section */
+  path: string;
+  info: WorktreeInfo | null;
+  /** the manual-order bucket these rows reorder within */
+  bucket: string;
+  members: T[];
+}
+
+/**
+ * Is a session with this `repoKey` drawn in a project (E42, #1637)? Then the
+ * project, not its group, decides where it sits, so a group move would change
+ * a `groupId` nobody can see. Every surface that offers one asks this first.
+ */
+export const isProjectMember = (
+  repoKey: string | undefined,
+  projects: ReadonlyArray<{ commonDir: string }>
+): boolean => !!repoKey && projects.some((p) => pathKey(p.commonDir) === repoKey);
+
+/** A project's manual-order bucket for one worktree (`path` '' = unplaced). */
+export const projectBucket = (projectId: string, path: string): string =>
+  `project:${projectId}:${path === '' ? '' : pathKey(path)}`;
 
 export interface AutoGroup {
   key: string;
@@ -56,6 +92,12 @@ export function autoGroupName(key: string): string {
 // against exactly this list, so the rail renders FROM it — one function, no
 // chance of the keyboard and the eye disagreeing.
 export interface RailOrderResult<T> {
+  /**
+   * Projects (E42, #1637), in their stored order, each with its worktree
+   * sections. Drawn FIRST, and counted first by Ctrl+1..9. A worktree the user
+   * hid is left out unless a session is in it: a session is never hidden.
+   */
+  projects: Array<{ id: string; worktrees: Array<ProjectWorktreeRows<T>> }>;
   /** persistent groups paired with their members, in render order */
   groups: Array<{ id: string; members: T[] }>;
   /** emergent auto-groups paired with their members, in render order */
@@ -105,7 +147,14 @@ export function railOrder<T extends AutoGroupable>(
    * derivation, and `Ctrl+1..9` counts against this call. A parallel nesting pass
    * is how the rail and the keyboard end up disagreeing about what is third.
    */
-  lineage: LineageMap = NO_LINEAGE
+  lineage: LineageMap = NO_LINEAGE,
+  /**
+   * Projects (E42, #1637), the FIFTH input. A session whose `repoKey` is a
+   * project's common dir is drawn in that project and nowhere else: the project
+   * wins over a group the session is filed in (its `groupId` is kept, and used
+   * again if the project is removed) and over the automatic folder group.
+   */
+  projects: readonly ProjectForOrder[] = []
 ): RailOrderResult<T> {
   // §5.8's "a pinned session sorts first" is applied PER BUCKET, and applied
   // LAST — after membership and after bucket order are both settled.
@@ -128,11 +177,35 @@ export function railOrder<T extends AutoGroupable>(
   // exception nobody wrote down is how "sorts first" ends up meaning three
   // different things. Membership and bucket order are computed from the
   // sessions exactly as they arrived; the pin only reorders WITHIN a bucket.
+  const projectOf = new Map<string, ProjectForOrder>();
+  for (const p of projects) {
+    const k = pathKey(p.commonDir);
+    if (!projectOf.has(k)) projectOf.set(k, p);
+  }
+  // project id -> worktree path ('' = could not place) -> members, arrival order
+  const inProject = new Map<string, Map<string, T[]>>();
   const grouped = new Map<string, T[]>();
   for (const g of groups) grouped.set(g.id, []);
   const ungrouped: T[] = [];
   for (const s of sessions) {
-    if (s.groupId && grouped.has(s.groupId)) grouped.get(s.groupId)!.push(s);
+    const p = s.repoKey ? projectOf.get(s.repoKey) : undefined;
+    if (p) {
+      // GIT'S answer first: `autoKey` is the folder's toplevel as git printed
+      // it, which is the worktree's own path in git's spelling. Comparing the
+      // session's folder string instead misses whenever the two spellings of
+      // one folder differ, which on Windows they do: a temp folder under an
+      // 8.3 short name (`RUNNER~1`) against git's long one (CI, #1637). The
+      // folder comparison stays as the fallback for a card with no key yet.
+      const top = s.autoKey ? pathKey(s.autoKey) : null;
+      const byTop = top && p.worktrees?.find((w) => pathKey(w.path) === top)?.path;
+      const wt =
+        byTop || (s.folder && p.worktrees && worktreeFor(s.folder, p.worktrees)) || '';
+      const byWt = inProject.get(p.id) ?? new Map<string, T[]>();
+      const list = byWt.get(wt) ?? [];
+      list.push(s);
+      byWt.set(wt, list);
+      inProject.set(p.id, byWt);
+    } else if (s.groupId && grouped.has(s.groupId)) grouped.get(s.groupId)!.push(s);
     else ungrouped.push(s);
   }
   const auto = computeAutoGroups(ungrouped);
@@ -183,6 +256,28 @@ export function railOrder<T extends AutoGroupable>(
     for (const s of out) bucketOf.set(s.id, key);
     return out;
   };
+  const orderedProjects = projects
+    .filter((p) => projectOf.get(pathKey(p.commonDir)) === p)
+    .map((p) => {
+      const byWt = inProject.get(p.id) ?? new Map<string, T[]>();
+      const hidden = new Set(p.hiddenWorktrees.map(pathKey));
+      const sections: Array<ProjectWorktreeRows<T>> = [];
+      for (const info of p.worktrees ?? []) {
+        // a bare repo's entry is its git dir, not a checkout: no section, or
+        // its ⊕ would start a session inside .git (#1637 review)
+        if (info.bare) continue;
+        const members = byWt.get(info.path) ?? [];
+        if (hidden.has(pathKey(info.path)) && members.length === 0) continue;
+        const bucket = projectBucket(p.id, info.path);
+        sections.push({ path: info.path, info, bucket, members: settle(bucket, members) });
+      }
+      const unplaced = byWt.get('') ?? [];
+      if (unplaced.length > 0) {
+        const bucket = projectBucket(p.id, '');
+        sections.push({ path: '', info: null, bucket, members: settle(bucket, unplaced) });
+      }
+      return { id: p.id, worktrees: sections };
+    });
   const orderedGroups = groups.map((g) => ({
     id: g.id,
     members: settle(groupBucket(g.id), grouped.get(g.id) ?? []),
@@ -199,10 +294,12 @@ export function railOrder<T extends AutoGroupable>(
     ungrouped.filter((s) => !autoMemberIds.has(s.id))
   );
   return {
+    projects: orderedProjects,
     groups: orderedGroups,
     autoGroups: orderedAuto,
     loose,
     flat: [
+      ...orderedProjects.flatMap((p) => p.worktrees.flatMap((w) => w.members)),
       ...orderedGroups.flatMap((g) => g.members),
       ...orderedAuto.flatMap((g) => g.members),
       ...loose,

@@ -212,7 +212,7 @@ export function sayWaitDismissed(cardId: string): void {
   announce(
     waitDismissedSaid(t, {
       title,
-      group: bucketLabel(bucket, state.groups, t('rail.ungrouped')),
+      group: bucketLabel(bucket, state.groups, t('rail.ungrouped'), t('projects.unplaced')),
       summary: rollupParts(rollup)
         .map((p) => (p.count === undefined ? t(p.key) : t(p.key, { count: p.count })))
         .join(t('rail.rollupJoin')),
@@ -235,7 +235,7 @@ export function sayReordered(cardId: string, moved: boolean): void {
   announce(
     reorderSaid(t, {
       title,
-      group: bucketLabel(bucket, sessionStore.getState().groups, t('rail.ungrouped')),
+      group: bucketLabel(bucket, sessionStore.getState().groups, t('rail.ungrouped'), t('projects.unplaced')),
       position,
       count: ids.length,
       moved,

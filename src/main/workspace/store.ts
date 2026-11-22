@@ -72,6 +72,7 @@ import type { AutonomyMode } from '../../shared/sessions';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../shared/transport';
 import type { NotificationPrefs } from '../../shared/notifications';
 import { sanitizeNote, type SessionNote } from '../../shared/session-note';
+import { pathKey, type ProjectRecord } from '../../shared/projects';
 
 /**
  * The settings an engine asked the host to keep with one conversation (#1317):
@@ -500,6 +501,17 @@ export interface WorkspaceState {
    * wholesale.
    */
   historyRepairs: HistoryRepairNotice[];
+  /**
+   * Projects (E42, #1637): one record per repo the user opened as a project.
+   * The ORDER of this list is the order the rail draws them in.
+   *
+   * Additive and optional on disk, so no schema bump: a file written before
+   * this has no key and loads as no projects, and an older build reading a
+   * newer file simply ignores the key (it rewrites the file without it, which
+   * loses the projects but nothing else; P6). Session membership is derived
+   * from folders, never stored here, so losing this list costs only the cards.
+   */
+  projects: ProjectRecord[];
 }
 
 /** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
@@ -681,6 +693,7 @@ const EMPTY: WorkspaceState = {
   push: { ...DEFAULT_PUSH_PREFS },
   suppressed: [],
   historyRepairs: [],
+  projects: [],
 };
 
 /** Stable identity for a display arrangement (§7). */
@@ -706,6 +719,7 @@ function emptyState(): WorkspaceState {
     dispatchTemplates: [],
     suppressed: [],
     historyRepairs: [],
+    projects: [],
     notifications: { ...EMPTY.notifications },
     updates: { ...EMPTY.updates },
     health: { ...EMPTY.health },
@@ -1197,6 +1211,7 @@ export class WorkspaceStore {
         'history repair notice',
         note
       ).slice(0, MAX_HISTORY_REPAIR_NOTICES),
+      projects: dedupeProjects(keepSane(raw.projects, isSaneProject, 'project', note)),
     };
   }
 
@@ -1596,6 +1611,34 @@ export class WorkspaceStore {
     this.state.groups = this.state.groups.filter((g) => g.id !== id);
     for (const s of this.state.sessions) if (s.groupId === id) s.groupId = undefined;
     this.saveSoon();
+  }
+
+  listProjects(): ProjectRecord[] {
+    return this.state.projects.map((p) => ({ ...p, hiddenWorktrees: [...p.hiddenWorktrees] }));
+  }
+
+  /**
+   * Add or replace a project (#1637). Refuses (false, nothing written) a NEW
+   * record for a repo that is already a project: one card per repo.
+   */
+  upsertProject(p: ProjectRecord): boolean {
+    const copy = { ...p, hiddenWorktrees: [...p.hiddenWorktrees] };
+    const i = this.state.projects.findIndex((x) => x.id === p.id);
+    if (i < 0 && this.state.projects.some((x) => pathKey(x.commonDir) === pathKey(p.commonDir)))
+      return false;
+    if (i >= 0) this.state.projects[i] = copy;
+    else this.state.projects.push(copy);
+    this.saveSoon();
+    return true;
+  }
+
+  /** Remove a project from the rail. Its sessions are untouched (membership is derived). */
+  removeProject(id: string): boolean {
+    const before = this.state.projects.length;
+    this.state.projects = this.state.projects.filter((p) => p.id !== id);
+    if (this.state.projects.length === before) return false;
+    this.saveSoon();
+    return true;
   }
 
   /** Set (or clear, with null) a session card's group membership. */
@@ -2431,7 +2474,8 @@ type SaneList =
   | 'rule'
   | 'dispatch template'
   | 'held notification'
-  | 'history repair notice';
+  | 'history repair notice'
+  | 'project';
 
 const LOST: Record<SaneList, string> = {
   session: 'those cards do not come back',
@@ -2444,6 +2488,7 @@ const LOST: Record<SaneList, string> = {
   'held notification': 'they will not appear in the missed-events digest',
   'history repair notice':
     'you will not be told which card had its conversation changed — the change itself stands',
+  project: 'those projects leave the sessions list; their sessions stay, as plain sessions',
 };
 
 /**
@@ -2472,6 +2517,53 @@ function keepSane<T>(
       { dropped: raw.length - kept.length, kept: kept.length }
     );
   return kept;
+}
+
+/** A project record this build can draw (#1637). */
+export function isSaneProject(p: unknown): p is ProjectRecord {
+  const x = p as Partial<ProjectRecord>;
+  return (
+    typeof x?.id === 'string' &&
+    x.id.length > 0 &&
+    typeof x.name === 'string' &&
+    x.name.trim().length > 0 &&
+    typeof x.color === 'string' &&
+    typeof x.commonDir === 'string' &&
+    x.commonDir.length > 0 &&
+    typeof x.primaryPath === 'string' &&
+    Array.isArray(x.hiddenWorktrees) &&
+    x.hiddenWorktrees.every((h) => typeof h === 'string') &&
+    (x.baseRef === undefined || typeof x.baseRef === 'string') &&
+    (x.worktreeRoot === undefined || typeof x.worktreeRoot === 'string')
+  );
+}
+
+/**
+ * One card per repo: a hand-edited file (or a race between two Open project
+ * dialogs) could carry two records for one common dir, and two cards would
+ * each claim the same sessions. The first one in the list wins.
+ */
+function dedupeProjects(list: ProjectRecord[]): ProjectRecord[] {
+  const seen = new Set<string>();
+  const ids = new Set<string>();
+  const palette = GROUP_PALETTE as readonly string[];
+  return list
+    .filter((p) => {
+      const k = pathKey(p.commonDir);
+      // one record per repo, and one per id: two cards sharing an id would
+      // share a React key and each edit would land on whichever came first
+      if (seen.has(k) || ids.has(p.id)) return false;
+      seen.add(k);
+      ids.add(p.id);
+      return true;
+    })
+    .map((p, i) =>
+      // a hand-edited colour reaches CSS otherwise (#1637 review): off the
+      // palette, the record takes a palette colour instead of being dropped
+      palette.includes(p.color.toLowerCase())
+        ? p
+        : { ...p, color: palette[i % palette.length] }
+    );
 }
 
 function isSaneSession(s: unknown): s is PersistedSession {

@@ -359,6 +359,13 @@ export interface SessionCardWire {
    *  a key. Always present in practice; optional because the renderer's
    *  grouping falls back to `folder`. */
   autoKey?: string;
+  /**
+   * The folder's git COMMON dir in `pathKey` form (E42, #1637): every worktree
+   * of one repo shares it, which is how a card finds its project. Absent when
+   * the folder is not a repo or git could not answer; the card then renders
+   * exactly as it did before projects.
+   */
+  repoKey?: string;
   taskLabel?: string;
   /**
    * The transport this card's NEXT session will be asked for (#397): the card's

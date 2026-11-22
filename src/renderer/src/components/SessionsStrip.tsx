@@ -36,8 +36,8 @@
 // which are the rail's.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { RailGroup, RailSession } from '../model/types';
-import { autoGroupDrop, autoGroupName, RailOrderResult } from '../lib/groups';
+import { RailGroup, RailProject, RailSession } from '../model/types';
+import { autoGroupDrop, autoGroupName, isProjectMember, RailOrderResult } from '../lib/groups';
 import { dropGroup, stepGroup } from '../lib/group-order';
 import { LOOSE_BUCKET, planReorder } from '../lib/rail-order';
 import { LineageMap, NO_LINEAGE } from '../lib/dispatch-lineage';
@@ -97,6 +97,13 @@ export interface SessionsStripProps {
   shown: boolean;
   /** the groups the user made, in their stored order — name and colour */
   groups: readonly RailGroup[];
+  /**
+   * Projects (E42, #1637): name and colour, as `groups` is for groups. Each
+   * project is one box on the strip holding every session in it, drawn like an
+   * automatic group (it is derived from folders too, and has nothing to drop
+   * onto). Its worktrees are the full list's business, not the strip's.
+   */
+  projects?: readonly RailProject[];
   /**
    * The store's ONE derivation of who is where (`getRailOrder()`), the same
    * object the rail's order and `Ctrl+1..9` come from. Handed in rather than
@@ -380,7 +387,17 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   // names instead would let a group the order knows and the names do not drop
   // its sessions off the strip while the total above still counted them.
   const named = new Map(props.groups.map((g) => [g.id, g]));
+  const namedProjects = new Map((props.projects ?? []).map((p) => [p.id, p]));
   const entries: Entry[] = [
+    ...order.projects.map(
+      (p): Entry => ({
+        key: `project:${p.id}`,
+        kind: 'auto',
+        name: namedProjects.get(p.id)?.name ?? '',
+        color: namedProjects.get(p.id)?.color ?? 'var(--auto-ink)',
+        members: p.worktrees.flatMap((w) => w.members),
+      })
+    ),
     ...order.groups.map(
       (g): Entry => ({
         key: g.id,
@@ -665,7 +682,13 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   const canJoin = (cardId: string | null, groupId: string): boolean => {
     if (!cardId) return true; // dragged in from somewhere that did not say
     const s = order.flat.find((x) => x.id === cardId);
-    return !!s && s.groupId !== groupId && s.status !== 'not-started';
+    return (
+      !!s &&
+      s.groupId !== groupId &&
+      s.status !== 'not-started' &&
+      // its project places it (#1637 review): the move would change nothing seen
+      !isProjectMember(s.repoKey, props.projects ?? [])
+    );
   };
   /** the session being dragged: one of our pills if THIS drag carries our
    *  type, otherwise whatever the workspace says it is dragging */
@@ -699,8 +722,12 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
     if ((target as Element | null)?.closest?.('[data-strip-group], [data-strip-list]')) return null;
     const s = order.flat.find((x) => x.id === d.id);
     // an automatic group's membership is its folder's: there is no `groupId`
-    // to clear, and nothing a drop could change (#687 for the not-started half)
-    return s?.groupId && s.status !== 'not-started' ? s.id : null;
+    // to clear, and nothing a drop could change (#687 for the not-started half).
+    // A project member's `groupId` is out of sight and kept for when the
+    // project is removed (#1637 review): never cleared from here.
+    return s?.groupId && s.status !== 'not-started' && !isProjectMember(s.repoKey, props.projects ?? [])
+      ? s.id
+      : null;
   };
 
   const groupDrag = (
@@ -1007,6 +1034,7 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
           session: s,
           groups: props.groups,
           pinned: props.pinned.has(s.id),
+          inProject: isProjectMember(s.repoKey, props.projects ?? []),
           // ...or a "waiting" to dismiss: the same action since #1413
           finished: (props.finished?.has(s.id) ?? false) || sessionStore.canDismissWait(s.id),
         },

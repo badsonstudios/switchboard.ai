@@ -143,6 +143,8 @@ describe('the IPC capability map (the done-when: no channel is untagged)', () =>
       // Settings → Advanced → Testing's three invoke channels (#1331, #1335);
       // `testDisplay:changed` is pushed from `index.ts`
       'src/main/test-display.ts',
+      // projects (E42, #1637): the record edits and the two git reads
+      'src/main/workspace/project-ipc.ts',
     ]
       .map((f) => fs.readFileSync(path.join(process.cwd(), f), 'utf8'))
       .join(' ');
