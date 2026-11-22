@@ -887,7 +887,9 @@
   },
   "git": {
     "branch": "⎇ {branch}",
-    "ahead": "↑{n}"
+    "ahead": "↑{n}",
+    "worktree": "in {name}",
+    "worktreeTitle": "The AI moved this session into the worktree at {path}"
   },
   "scm": {
     "branch": "⑂ {branch}",
@@ -1511,6 +1513,11 @@
     "normalHint": "Prose + tool activity",
     "firehoseHint": "Everything, including thinking and subagent chatter",
     "clearedMarker": "Conversation cleared — context starts fresh",
+    "moved": {
+      "worktree": "Moved to worktree {name} ({path})",
+      "folder": "Back in {name} ({path})",
+      "hint": "The AI moved this session itself. Its Changes, History and diffs now show this folder."
+    },
     "compaction": {
       "manual": "Conversation compacted (you asked)",
       "manualTokens": "Conversation compacted — {pre} → {post} tokens (you asked)",

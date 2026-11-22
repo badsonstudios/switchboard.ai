@@ -7,8 +7,11 @@ import type { CompactionMark } from '../../../shared/compaction';
 export interface FeedBlockDto {
   seq: number;
   /** `ai-switch`: the divider an AI switch draws (#1294) — see `aiSwitch`.
-   *  `compaction`: where the conversation was compacted (#1259) */
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch' | 'compaction';
+   *  `compaction`: where the conversation was compacted (#1259)
+   *  `moved`: the agent moved into or out of a worktree (#1616) */
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch' | 'compaction' | 'moved';
+  /** `moved`: where the agent went (#1616). Main's twin is `main/feed/blocks.ts`. */
+  moved?: { to: 'worktree' | 'folder'; folder: string };
   text?: string;
   /** `ai-switch`: the card's persisted mark (#1294). Main's twin is `main/feed/blocks.ts`. */
   aiSwitch?: AiSwitchMark;

@@ -366,6 +366,14 @@ export interface SessionCardWire {
    * exactly as it did before projects.
    */
   repoKey?: string;
+  /**
+   * Where the card's agent is working NOW, when that is not `folder` (#1616):
+   * Claude's own `EnterWorktree` moved it into a worktree. `folder` stays the
+   * folder the card starts in; the Changes, history and diff views, the
+   * card's worktree line and its project section read this one. Absent: it
+   * works where it started. `autoKey` and `repoKey` are already this folder's.
+   */
+  workFolder?: string;
   taskLabel?: string;
   /**
    * The transport this card's NEXT session will be asked for (#397): the card's

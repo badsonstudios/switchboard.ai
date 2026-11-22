@@ -275,6 +275,21 @@ const STUCK_CATCHUP_MS = 500;
 interface WatchedSession {
   sessionId: string;
   cwd: string;
+  /**
+   * Every folder this session's conversation may be filed under, `cwd` FIRST
+   * (#1616, #1643). Claude files a transcript under a slug of the folder it
+   * runs in and MOVES it when the agent enters or leaves a worktree; a
+   * conversation resumed from another folder stays where it was filed. So
+   * discovery looks under each of these, and a transcript whose first lines
+   * name any of them is this session's folder evidence. Bounded
+   * (`MAX_WATCHED_FOLDERS`).
+   */
+  folders: string[];
+  /** When a missing bound file was last looked for elsewhere (#1616), and how
+   *  long to wait before the next look — doubled per miss, so a transcript
+   *  that was DELETED rather than moved stops costing a directory listing. */
+  relocateTriedAt?: number;
+  relocateGapMs?: number;
   nativeSessionId?: string;
   /** where THIS session's provider writes transcripts (P2-E15-01). Defaults to
    *  the watcher's own root; a provider that writes somewhere else says so via
@@ -639,6 +654,33 @@ interface SweepPlan {
 }
 
 /** Path equality that tolerates case + separator differences on win32. */
+/** How many folders one watch looks under (#1616): start, work, filed-under. */
+const MAX_WATCHED_FOLDERS = 4;
+/** How often a missing bound transcript is looked for elsewhere (#1616). */
+const RELOCATE_RETRY_MS = 1_000;
+/** ...and the longest it ever waits between looks. */
+const RELOCATE_RETRY_MAX_MS = 60_000;
+
+/** `base` plus each of `more` it does not already name, the first kept first. */
+function withFolders(base: readonly string[], more: readonly string[]): string[] {
+  const out = [...base];
+  for (const f of more) {
+    if (typeof f !== 'string' || !f || out.some((o) => sameFolder(o, f))) continue;
+    out.push(f);
+  }
+  // the session's own cwd always stays; the oldest extra goes first
+  while (out.length > MAX_WATCHED_FOLDERS) out.splice(1, 1);
+  return out;
+}
+
+function isFile(p: string): boolean {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
 export function sameFolder(a: string, b: string): boolean {
   const norm = (p: string) => {
     const r = path.resolve(p);
@@ -794,6 +836,12 @@ export class TranscriptWatcher {
        *  it has no reader, and its subagent lines are not handed to the stream
        *  Feed. See `WatchedSession.readEntry`. */
       readEntry?: HistoryEntryReader;
+      /**
+       * Other folders whose transcript directories may hold this session's
+       * conversation (#1616, #1643): where its agent last worked, or where a
+       * conversation reopened elsewhere is filed. See `WatchedSession.folders`.
+       */
+      alsoFolders?: readonly string[];
     }
   ): boolean {
     const root = session.projectsRoot ?? this.opts.projectsRoot ?? '';
@@ -847,6 +895,7 @@ export class TranscriptWatcher {
     this.sessions.set(sessionId, {
       sessionId,
       cwd: session.cwd,
+      folders: withFolders([session.cwd], session.alsoFolders ?? []),
       nativeSessionId: session.nativeSessionId,
       projectsRoot: root,
       boundFile: null,
@@ -1306,9 +1355,29 @@ export class TranscriptWatcher {
   /** Another watched session shares this cwd — binding is ambiguous. */
   private hasCwdSibling(w: WatchedSession): boolean {
     for (const other of this.sessions.values()) {
-      if (other !== w && sameFolder(other.cwd, w.cwd)) return true;
+      if (other === w) continue;
+      // any folder either is known by (#1616): a card started IN a worktree
+      // and a card whose conversation is filed there are siblings too
+      if (other.folders.some((o) => w.folders.some((f) => sameFolder(o, f)))) return true;
     }
     return false;
+  }
+
+  /**
+   * The session's agent now works in `folder` (#1616): Claude's own
+   * `EnterWorktree` / `ExitWorktree` moved it, and the CLI moved the
+   * transcript to that folder's directory with it. Add the folder to the ones
+   * this watch looks under, and follow the bound file if it has already gone.
+   * The move can lag the tool result or fail outright (the CLI then keeps the
+   * old file), so a file still in place is left alone and looked for again
+   * only once it is gone (`followMovedFile`, from the poll).
+   */
+  follow(sessionId: string, folder: string): void {
+    const w = this.sessions.get(sessionId);
+    if (!w || w.quiesced || !folder) return;
+    w.folders = withFolders(w.folders, [folder]);
+    this.discovery.markDirty(w.projectsRoot);
+    if (w.boundFile) this.followMovedFile(w, 0);
   }
 
   unwatch(sessionId: string): void {
@@ -1802,12 +1871,67 @@ export class TranscriptWatcher {
     }
   }
 
+  /**
+   * The bound transcript is not where it was: find it under one of the
+   * session's folders and carry the tails over, offsets and all (#1616).
+   *
+   * A MOVE, not a new file — the CLI's `relocateSessionTranscript` renames the
+   * transcript (and its subagent folder) into the new folder's directory — so
+   * every byte already read stays read: nothing is re-emitted and the usage
+   * ledger is not rebuilt. Only the bound file's own name is looked for, in
+   * the few slug directories of the session's folders (bounded), and at most
+   * once per `minGapMs`.
+   */
+  private followMovedFile(w: WatchedSession, minGapMs: number): void {
+    const old = w.boundFile;
+    if (!old) return;
+    const now = Date.now();
+    if (minGapMs > 0 && w.relocateTriedAt !== undefined && now - w.relocateTriedAt < minGapMs) return;
+    w.relocateTriedAt = now;
+    if (isFile(old)) return;
+    // the next look waits twice as long, unless this one finds it (below)
+    w.relocateGapMs = Math.min((w.relocateGapMs ?? RELOCATE_RETRY_MS) * 2, RELOCATE_RETRY_MAX_MS);
+    const name = path.basename(old);
+    const want = new Set(w.folders.flatMap((f) => slugsForCwd(f)));
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(w.projectsRoot, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (!e.isDirectory() || !want.has(e.name.toLowerCase())) continue;
+      const moved = path.join(w.projectsRoot, e.name, name);
+      if (moved === old || !isFile(moved)) continue;
+      // carry every tail over: the main one, and the subagent ones under
+      // `<dir>/<id>/subagents/`, which moved with it
+      const oldBase = old.slice(0, -'.jsonl'.length);
+      const newBase = moved.slice(0, -'.jsonl'.length);
+      const tails = new Map<string, Tail>();
+      for (const [full, tail] of w.tails) {
+        if (full === old) tails.set(moved, tail);
+        else if (full.startsWith(oldBase + path.sep)) tails.set(newBase + full.slice(oldBase.length), tail);
+        else tails.set(full, tail);
+      }
+      w.tails = tails;
+      w.boundFile = moved;
+      w.relocateGapMs = undefined;
+      this.discovery.markDirty(w.projectsRoot);
+      this.opts.log.info('transcript followed its conversation to another folder', {
+        sessionId: w.sessionId,
+        file: name,
+        dir: e.name,
+      });
+      return;
+    }
+  }
+
   // Discovery runs against the SESSION's root, not the watcher's: two providers
   // writing to different places must not have their conversations offered to
   // each other's sessions (P2-E15-01).
   private discoveryCandidates(w: WatchedSession, widen: boolean): string[] {
     if (widen) return this.scan(w.projectsRoot);
-    const want = new Set(slugsForCwd(w.cwd));
+    const want = new Set(w.folders.flatMap((f) => slugsForCwd(f)));
     const acc: string[] = [];
     let entries: fs.Dirent[];
     try {
@@ -1859,7 +1983,10 @@ export class TranscriptWatcher {
     }
     const head = this.readHead(full);
     if (!head) return false;
-    const cwdOk = typeof head.cwd === 'string' && sameFolder(head.cwd, w.cwd);
+    // any folder the conversation is known by (#1616, #1643): a transcript
+    // that followed its agent into a worktree still opens with the start folder
+    const headCwd = head.cwd;
+    const cwdOk = typeof headCwd === 'string' && w.folders.some((f) => sameFolder(headCwd, f));
     // a known-wrong id or wrong cwd is always disqualifying
     if (w.nativeSessionId && head.sessionId && head.sessionId !== w.nativeSessionId) return false;
     if (typeof head.cwd === 'string' && !cwdOk) return false;
@@ -1987,7 +2114,13 @@ export class TranscriptWatcher {
     let st: fs.Stats;
     try {
       st = fs.statSync(full);
-    } catch {
+    } catch (err) {
+      // The bound transcript is GONE (#1616): the CLI moves it when the agent
+      // enters or leaves a worktree. Look for it under the session's other
+      // folders, throttled; until it is found the tail simply has nothing new.
+      if (full === w.boundFile && (err as NodeJS.ErrnoException)?.code === 'ENOENT') {
+        this.followMovedFile(w, w.relocateGapMs ?? RELOCATE_RETRY_MS);
+      }
       return;
     }
     if (st.size < tail.offset) {

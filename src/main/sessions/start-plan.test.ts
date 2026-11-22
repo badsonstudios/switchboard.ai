@@ -894,3 +894,78 @@ describe('the AI-switch briefing (openingContext, #1294)', () => {
     expect(plan().openingContext).toBeUndefined();
   });
 });
+
+// #1616 / #1643: a conversation is filed under the folder it RAN in, and the
+// CLI moves the file when its agent enters or leaves a worktree.
+describe('a conversation filed under another folder (conversationFolders)', () => {
+  const filedIn = (where: string, id = 'mine') =>
+    fullCaps({ resume: { canResume: (q) => q.folder === where && q.nativeSessionId === id } });
+
+  it('finds it there, and says where, so the replay reads that folder', () => {
+    const p = plan({
+      capabilitiesOf: () => filedIn('/work/app/.claude/worktrees/x'),
+      prior: { nativeSessionId: 'mine' },
+      conversationFolders: ['/work/app/.claude/worktrees/x'],
+    });
+    expect(p.resumeSessionId).toBe('mine');
+    expect(p.resumedVia).toBe('stored');
+    expect(p.resumeFolder).toBe('/work/app/.claude/worktrees/x');
+  });
+
+  it('asks about the run folder FIRST, and stops at the first yes', () => {
+    const asked: string[] = [];
+    const p = plan({
+      capabilitiesOf: () =>
+        fullCaps({
+          resume: {
+            canResume: (q) => {
+              asked.push(q.folder);
+              return true;
+            },
+          },
+        }),
+      prior: { nativeSessionId: 'mine' },
+      conversationFolders: ['/elsewhere'],
+    });
+    expect(asked).toEqual(['/work/app']);
+    expect(p.resumeFolder).toBe('/work/app');
+  });
+
+  it('a picked conversation is found the same way', () => {
+    const p = plan({
+      capabilitiesOf: () => filedIn('/gone', 'picked-1'),
+      requestedConversationId: 'picked-1',
+      conversationFolders: ['/gone'],
+    });
+    expect(p.resumedVia).toBe('picked');
+    expect(p.resumeFolder).toBe('/gone');
+    expect(p.requestedUnavailable).toBe(false);
+  });
+
+  it('nowhere is still nowhere: a fresh start, no folder', () => {
+    const p = plan({
+      capabilitiesOf: () => filedIn('/nope'),
+      prior: { nativeSessionId: 'mine' },
+      conversationFolders: ['/elsewhere'],
+    });
+    expect(p.resumeSessionId).toBeUndefined();
+    expect(p.resumeFolder).toBeUndefined();
+  });
+
+  it('a check that throws is reported once, not once per folder', () => {
+    const { plan: p, reported } = planWithSink({
+      capabilitiesOf: () =>
+        fullCaps({
+          resume: {
+            canResume: () => {
+              throw new Error('boom');
+            },
+          },
+        }),
+      prior: { nativeSessionId: 'b', nativeSessionLineage: ['a'] },
+      conversationFolders: ['/x', '/y'],
+    });
+    expect(p.resumeSessionId).toBeUndefined();
+    expect(reported.filter((r) => r.includes('resume.canResume'))).toHaveLength(1);
+  });
+});

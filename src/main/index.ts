@@ -3114,8 +3114,13 @@ app
 
     // git handlers are scoped to KNOWN session folders (§5.29): a compromised
     // renderer must not turn these into an arbitrary-file-read primitive
-    const knownFolder = (folder: string): boolean =>
-      manager.list().some((s) => path.resolve(s.identity.folder) === path.resolve(folder));
+    // A live session's folder — or the worktree its agent moved itself into
+    // (#1616), which its Changes, history and diff views now read.
+    const knownFolder = (folder: string): boolean => {
+      const want = path.resolve(folder);
+      if (manager.list().some((s) => path.resolve(s.identity.folder) === want)) return true;
+      return workspace.listSessions().some((c) => !!c.workFolder && path.resolve(c.workFolder) === want);
+    };
     const gitService = new GitService();
     // projects (E42, #1637): a repo's worktrees and their sessions. NOT scoped
     // to known session folders like the git handlers above: the Open project
@@ -3539,7 +3544,7 @@ app
     const readScope = new ReadScope({
       sessionFolders: () => [
         ...manager.list().map((s) => s.identity.folder),
-        ...workspace.listSessions().map((s) => s.identity.folder),
+        ...workspace.listSessions().flatMap((s) => (s.workFolder ? [s.identity.folder, s.workFolder] : [s.identity.folder])),
       ],
       log: fsLog,
     });

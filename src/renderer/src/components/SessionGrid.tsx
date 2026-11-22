@@ -1790,6 +1790,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const slashLocked = controlsLocked || noSlashCommands !== null;
   const spawning = React.useRef(false);
   const folder = props.params?.folder;
+  // Where the agent WORKS (#1616): the worktree its own `EnterWorktree` moved
+  // it into, else the folder the card starts in. The card's git line and its
+  // Changes, history and diff panels read this; spawning still uses `folder`
+  // (the CLI puts a resumed session back in its worktree itself).
+  const movedTo = React.useSyncExternalStore(subscribeStore, () => sessionStore.getCardWorkFolder(cardId));
+  const workFolder = movedTo ?? folder;
   // What the card CALLS itself, on screen (#250). The store's copy first, so a
   // rename from the rail reaches the header — `props.api.title` alone is the
   // name the card was born with. Chain and its empty-is-absent rule live in
@@ -2210,10 +2216,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // turn ends (Stop -> done), since that's when files have changed
   const [git, setGit] = React.useState<GitStatusDto | null>(null);
   React.useEffect(() => {
-    if (!live || !visible || !folder) return;
+    if (!live || !visible || !workFolder) return;
     let cancelled = false;
     const refresh = () => {
-      void window.switchboard.git.status(folder).then((s) => {
+      void window.switchboard.git.status(workFolder).then((s) => {
         // `answered` BEFORE the cast (#650): `git:status` is declared
         // `Promise<unknown>`, and the brand cast into `GitStatusDto` is read
         // for `.files.length` by `GitContext` on the next render. Keeping the
@@ -2234,7 +2240,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       cancelled = true;
       off();
     };
-  }, [live, visible, folder]);
+  }, [live, visible, workFolder]);
 
   // live status for the header pill (E8-05). Backend emits a `StatusChange`.
   // Spawn starts at the RECORD's status — never assume "working" (Dan
@@ -2719,7 +2725,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     title: cardTitle ?? props.api.title,
     visible,
     dockEpoch,
-    folder,
+    // where the agent works (#1616), so every panel follows it into a worktree
+    folder: workFolder,
     ...docTheme(),
     status,
     // Why the session controls are locked, or null (#903). NOT derivable from
@@ -3753,7 +3760,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   {t('grid.plan', { done: plan.completed, total: plan.total })}
                 </span>
               )}
-              <GitContext status={git} />
+              <GitContext status={git} worktree={movedTo} />
               {/* NO USAGE STRIP HERE, SINCE #1145 — retired from the header by
                   owner directive (2026-10-07), "for now": the tokens, the
                   thinking share and the spend are to come back somewhere else.

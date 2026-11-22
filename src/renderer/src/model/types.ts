@@ -51,6 +51,12 @@ export interface RailSession {
   autoKey?: string;
   /** git common dir, `pathKey` form (E42, #1637): which project the card is in */
   repoKey?: string;
+  /**
+   * Where the card's agent works NOW, when its own `EnterWorktree` moved it
+   * (#1616). `folder` stays where the card starts. Read through
+   * `workFolderOf` (`lib/groups.ts`), never directly.
+   */
+  workFolder?: string;
   /** the live session under this card, when running (events map by this) */
   liveId?: string;
   /** freeform task label (shown under the title in the Events panel) */

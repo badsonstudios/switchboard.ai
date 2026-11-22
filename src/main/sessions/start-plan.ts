@@ -43,6 +43,16 @@ export interface StartPlanInput {
    *  names a registered provider never even asks */
   defaultProviderId: () => string;
   folder: string;
+  /**
+   * Other folders whose transcript directories may hold this card's
+   * conversation (#1616, #1643), asked about AFTER `folder`. Claude files a
+   * conversation under the folder it runs in and moves the file when its
+   * agent enters or leaves a worktree, so a card whose agent last worked in
+   * one has its conversation filed there; one reopened from History after its
+   * own folder was removed has it filed under the removed folder.
+   * `sessions/work-folder.ts` builds the list (at most three).
+   */
+  conversationFolders?: readonly string[];
   prior?: PriorCard;
   /**
    * A conversation the USER picked out of the history list (P2-E20-01, §5.33).
@@ -142,6 +152,13 @@ export interface StartPlan {
    * `resumeSessionId` is.
    */
   resumedVia?: 'stored' | 'lineage' | 'adopted' | 'picked' | 'forked';
+  /**
+   * The folder whose transcript directory `canResume` found the conversation
+   * under (#1616, #1643): `folder`, or one of `conversationFolders`. What the
+   * history replay reads from. Undefined exactly when `resumedVia` is
+   * `adopted` or `forked` or there is no resume (those read their own folder).
+   */
+  resumeFolder?: string;
   /**
    * This start FORKS `resumeSessionId` instead of continuing it (§5.5 Level 3).
    *
@@ -364,6 +381,29 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
   const candidates = resumeCandidates(input.prior);
   let resumeSessionId: string | undefined;
   let resumedVia: StartPlan['resumedVia'];
+  let resumeFolder: string | undefined;
+  // Where to look for a conversation (#1616, #1643): the run folder first,
+  // then the folders it may be filed under instead. Bounded by the caller.
+  const lookIn = [input.folder, ...(input.conversationFolders ?? []).filter((f) => f && f !== input.folder)];
+  // `canResume` across those folders: the first that says yes, or `false`
+  // (nowhere), or `undefined` when the capability threw (degraded once).
+  const resumableIn = (nativeSessionId: string): string | false | undefined => {
+    for (const folder of lookIn) {
+      const before = warnings.length;
+      const yes = safely('resume.canResume', () =>
+        caps?.resume?.canResume({
+          // exactly what this plan exposes, not a second reading of the
+          // capability — "" for a provider that declares no transcripts at all
+          projectsRoot: transcriptsRoot ?? '',
+          folder,
+          nativeSessionId,
+        })
+      );
+      if (yes === undefined && warnings.length > before) return undefined;
+      if (yes) return folder;
+    }
+    return false;
+  };
   let requestedUnavailable = false;
   // A capability that throws is degraded ONCE and then not asked again, the
   // same ruling `titles` gets below: `safely` reports on every call, and a
@@ -443,18 +483,12 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
       // folder, which is the one outcome that looks like data loss.
       requestedUnavailable = true;
     } else {
-      const before = warnings.length;
-      const yes = safely('resume.canResume', () =>
-        caps.resume!.canResume({
-          projectsRoot: transcriptsRoot ?? '',
-          folder: input.folder,
-          nativeSessionId: picked,
-        })
-      );
-      if (yes === undefined && warnings.length > before) resumeBroken = true;
-      if (yes) {
+      const found = resumableIn(picked);
+      if (found === undefined) resumeBroken = true;
+      if (found) {
         resumeSessionId = picked;
         resumedVia = 'picked';
+        resumeFolder = found;
       } else {
         requestedUnavailable = true;
       }
@@ -467,20 +501,12 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
   // for.
   for (const nativeSessionId of caps?.resume ? candidates : []) {
     if (resumeBroken) break;
-    const before = warnings.length;
-    const yes = safely('resume.canResume', () =>
-      caps?.resume?.canResume({
-        // exactly what this plan exposes, not a second reading of the
-        // capability — "" for a provider that declares no transcripts at all
-        projectsRoot: transcriptsRoot ?? '',
-        folder: input.folder,
-        nativeSessionId,
-      })
-    );
-    if (yes === undefined && warnings.length > before) resumeBroken = true;
-    if (yes) {
+    const found = resumableIn(nativeSessionId);
+    if (found === undefined) resumeBroken = true;
+    if (found) {
       resumeSessionId = nativeSessionId;
       resumedVia = nativeSessionId === input.prior?.nativeSessionId ? 'stored' : 'lineage';
+      resumeFolder = found;
       break;
     }
   }
@@ -605,6 +631,7 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
     providerId,
     resumeSessionId,
     resumedVia,
+    ...(resumeFolder !== undefined ? { resumeFolder } : {}),
     openingContext,
     requestedUnavailable,
     // §5.5 Level 3. All three are absent on every ordinary start, so nothing

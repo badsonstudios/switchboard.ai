@@ -118,6 +118,12 @@ export interface FakeToolCall {
    * come back.
    */
   pictures?: Array<{ mediaType: string; data: string }>;
+  /**
+   * The tool's STRUCTURED output, sent beside the result as the frame's
+   * `tool_use_result` — what the real CLI does for every tool (#1616 measured
+   * it for the worktree tools, `spike/probes/1616/`).
+   */
+  toolUseResult?: Record<string, unknown>;
 }
 
 /**
@@ -347,6 +353,13 @@ export class FakeStreamProtocol {
    */
   private model = 'claude-fake-1';
   /**
+   * Where the agent moved itself with `!worktree` (#1616), or undefined. The
+   * real CLI then reports that folder as its `cwd` on every later turn's
+   * `system:init`, and so does the fake.
+   */
+  private workdir: string | undefined;
+  private worktreeCalls = 0;
+  /**
    * The effort level the flag settings ask for, or `null` for "none set"
    * (#1115). Kept apart from the model on purpose: the real CLI keeps it
    * across a model switch (set `max`, go to Haiku, come back, still `max`).
@@ -486,7 +499,8 @@ export class FakeStreamProtocol {
     const text = extractText(msg.message);
     const images = extractImages(msg.message);
     const documents = extractDocuments(msg.message);
-    const cwd = this.host.cwd();
+    // where the agent is working: moved by `!worktree` (#1616), else where it started
+    const cwd = this.workdir ?? this.host.cwd();
 
     // `/clear` IS NOT A TURN, and that is why it is intercepted up here rather
     // than alongside the `!` handlers below (#752).
@@ -1126,6 +1140,51 @@ export class FakeStreamProtocol {
       return;
     }
 
+    // The agent moving ITSELF into a worktree, and back (#1616): Claude's own
+    // `EnterWorktree` / `ExitWorktree`, with the result shapes measured against
+    // CLI 2.1.322 (`spike/probes/1616/`). `!worktree <path>` enters an existing
+    // folder (the real tool's `path` form); `!worktree-exit` goes back. Later
+    // turns report the new folder on `system:init`, as the real CLI does. The
+    // fake does not move its transcript (the real CLI does; the watcher's half
+    // is unit-tested).
+    if (text.startsWith('!worktree ')) {
+      const target = this.host.resolve(cwd, text.slice('!worktree '.length).trim());
+      this.workdir = target;
+      const message = `Switched to worktree at ${target}.`;
+      this.emitToolTurn(
+        [
+          {
+            id: `toolu_fake_wt_${++this.worktreeCalls}`,
+            name: 'EnterWorktree',
+            input: { path: target },
+            result: message,
+            toolUseResult: { worktreePath: target, worktreeBranch: 'worktree-fake', message },
+          },
+        ],
+        'WORKTREE_ENTERED'
+      );
+      return;
+    }
+    if (text === '!worktree-exit') {
+      const home = this.host.cwd();
+      const left = this.workdir ?? home;
+      this.workdir = undefined;
+      const message = `Exited worktree. Session is now back in ${home}.`;
+      this.emitToolTurn(
+        [
+          {
+            id: `toolu_fake_wt_${++this.worktreeCalls}`,
+            name: 'ExitWorktree',
+            input: { action: 'keep' },
+            result: message,
+            toolUseResult: { action: 'keep', originalCwd: home, worktreePath: left, restoredCwd: home, message },
+          },
+        ],
+        'WORKTREE_LEFT'
+      );
+      return;
+    }
+
     // A question that has been ASKED AND ANSWERED, as it sits in a conversation
     // afterwards (#1201): the `tool_use` and its `tool_result`. `!ask` above is
     // the live half, a request with no block; this is what you scroll back to.
@@ -1317,7 +1376,13 @@ export class FakeStreamProtocol {
           },
         ],
       };
-      this.emit({ type: 'user', message: resultMessage, session_id: this.sessionId, parent_tool_use_id: null });
+      this.emit({
+        type: 'user',
+        message: resultMessage,
+        session_id: this.sessionId,
+        parent_tool_use_id: null,
+        ...(call.toolUseResult ? { tool_use_result: call.toolUseResult } : {}),
+      });
       this.transcribe('user', resultMessage);
     }
     if (finish) this.emitResult();

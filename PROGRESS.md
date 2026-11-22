@@ -3,6 +3,12 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ E42 Projects (#1636): step 4 (#1616) DONE via PR #PR_NUM (2026-11-22, unreleased). NEXT: #1643
+>
+> **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* Run order: **#1616 → #1643 → #1507 → release** (#1643, reopening a removed worktree's conversation from History, was added after #1638 found it; the release is cut by the orchestrator after the last step, not by a step).
+> - **Measured first** (`spike/findings/1616-enter-worktree.md`, CLI 2.1.322): `EnterWorktree` / `ExitWorktree` results carry `tool_use_result` `{worktreePath, worktreeBranch}` / `{originalCwd, restoredCwd, …}`; the CLI MOVES the transcript into the worktree's `~/.claude/projects` slug (and back), and a resume from the start folder lands back in the worktree by itself (`system:init.cwd`).
+> - **#1616 shipped:** the Claude translator remembers worktree tool-call ids and emits a neutral `workdir` event (init's `cwd` is a `reported` restatement that only corrects an already-moved card). The card stores `workFolder` beside `identity.folder` (additive, sanitised); a real move draws one quiet `moved` Feed line, re-points the card's git line / Changes / History / diff / Files (`knownFolder` and the read scope admit it) and the project section (`autoKey`/`repoKey` from the work folder); the transcript watcher follows the moved file with offsets intact. The shared "filed under" concept is `sessions/work-folder.ts` (`otherConversationFolders`, plus a `filedUnder` field for #1643): the start plan's `canResume` looks in those folders too and reports `resumeFolder` for the history replay. A fresh start drops `workFolder`. Fake CLI `!worktree <path>` / `!worktree-exit` for e2e.
+
 > # ▶ E42 Projects (#1636): step 3 (#1638) DONE via PR #1644 (2026-11-22, unreleased). NEXT: #1616
 >
 > **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* Run order unchanged: **#1506 → #1638 → #1616 → #1507 → release** (the release is cut by the orchestrator after the last step, not by a step).

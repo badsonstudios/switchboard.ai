@@ -72,6 +72,7 @@ import type { AutonomyMode } from '../../shared/sessions';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../shared/transport';
 import type { NotificationPrefs } from '../../shared/notifications';
 import { sanitizeNote, type SessionNote } from '../../shared/session-note';
+import { sanitizeWorkPlace } from '../sessions/work-folder';
 import {
   cleanRelative,
   isInsideRelative,
@@ -145,6 +146,21 @@ export interface PersistedSession {
    * the way back, overwritten by the next switch. Narrowed where it is read.
    */
   leftNativeId?: string;
+  /**
+   * Where the card's agent is working NOW, when that is not `identity.folder`
+   * (#1616): Claude's own `EnterWorktree` moved it into a worktree. The
+   * Changes, history and diff views and the card's project section follow
+   * this; the session still STARTS in `identity.folder` (the CLI puts a
+   * resumed session back in its worktree itself, measured). Absent = never
+   * moved, or came back. Additive, no version bump; `sessions/work-folder.ts`
+   * owns the rules and the sanitizer.
+   */
+  workFolder?: string;
+  /**
+   * The folder whose transcript directory holds this card's conversation, when
+   * it is not one the card runs in (#1643). See `sessions/work-folder.ts`.
+   */
+  filedUnder?: string;
   suspendedAt: string;
   /** last-known token totals + model, so usage survives a resume/restart */
   // `thinking` is optional: every workspace.json written before #789 lacks it
@@ -1066,9 +1082,13 @@ export class WorkspaceStore {
         withSticky.waitingNote === undefined
           ? withSticky
           : { ...withSticky, waitingNote: sanitizeNote(withSticky.waitingNote) };
-      if (!withNote.groupId || groupIds.has(withNote.groupId)) return withNote;
-      orphaned.push(withNote.id);
-      return { ...withNote, groupId: undefined };
+      // Where the agent works, and where its conversation is filed (#1616,
+      // #1643): a ragged or start-folder value is dropped, silently — absence
+      // is the normal state of every card.
+      const withPlace = sanitizeWorkPlace(withNote);
+      if (!withPlace.groupId || groupIds.has(withPlace.groupId)) return withPlace;
+      orphaned.push(withPlace.id);
+      return { ...withPlace, groupId: undefined };
     });
     // TWO CARDS, ONE CONVERSATION — untied here, once, at the only moment the
     // whole card list is in one place (#539). The policy and every reason for

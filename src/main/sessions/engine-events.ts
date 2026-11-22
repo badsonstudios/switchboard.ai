@@ -316,6 +316,31 @@ export interface UsageEvent {
   limits?: PlanLimitWindow[];
 }
 
+/**
+ * The agent's working folder MOVED, or the engine restated where it is (#1616).
+ *
+ * For Claude: the agent's own `EnterWorktree` / `ExitWorktree` tool calls,
+ * read off their structured results (`spike/findings/1616-enter-worktree.md`),
+ * and the `cwd` every turn's `system:init` carries. The host only WATCHES this
+ * (P7): it re-points its own views at `cwd` and never moves the agent itself.
+ *
+ * - `entered`: the agent went into a worktree at `cwd`.
+ * - `left`: the agent left one; `cwd` is where it is now.
+ * - `reported`: the engine said where it is without moving (a turn starting).
+ *   Not a move, and drawn as nothing: the host uses it only to correct a
+ *   folder it already believed had moved.
+ *
+ * `cwd` is the engine's word, unvalidated: the consumer checks it is an
+ * absolute folder that exists before it believes it (P6).
+ */
+export interface WorkdirEvent {
+  type: 'workdir';
+  move: 'entered' | 'left' | 'reported';
+  cwd: string;
+  /** the worktree's branch, when the engine named one on entering */
+  branch?: string;
+}
+
 export type EngineEvent =
   | ActivityEvent
   | ConversationEvent
@@ -336,7 +361,8 @@ export type EngineEvent =
   | ModeEvent
   | SettingsEvent
   | CompactionEvent
-  | UsageEvent;
+  | UsageEvent
+  | WorkdirEvent;
 
 /**
  * One session's translator: one wire frame in, the neutral events it means out

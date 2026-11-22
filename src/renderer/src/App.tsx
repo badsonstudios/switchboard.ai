@@ -157,7 +157,7 @@ import { useUrgencyBeat } from './lib/use-urgency-beat';
 import { installSeenWatch, noteBroughtForward } from './lib/seen';
 import { installFrontCardReport } from './lib/front-card';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
-import { groupChangeLanded } from './lib/groups';
+import { groupChangeLanded, workFolderOf } from './lib/groups';
 import { groupBucket } from './lib/rail-order';
 import { interpretPushAnswer } from './lib/push-answer';
 import {
@@ -1524,6 +1524,7 @@ export function App(): React.JSX.Element {
             groupId: c.groupId,
             autoKey: c.autoKey,
             repoKey: c.repoKey,
+            ...(c.workFolder ? { workFolder: c.workFolder } : {}),
             liveId: c.liveId,
             taskLabel: c.taskLabel,
             transport: c.transport,
@@ -1576,7 +1577,8 @@ export function App(): React.JSX.Element {
       if (!p?.worktrees) return false;
       const top = s.autoKey ? pathKey(s.autoKey) : null;
       if (top && p.worktrees.some((w) => pathKey(w.path) === top)) return false;
-      return !(s.folder && worktreeFor(s.folder, p.worktrees));
+      const at = workFolderOf(s);
+      return !(at && worktreeFor(at, p.worktrees));
     })
     .map((s) => s.id)
     .sort()
@@ -2290,7 +2292,8 @@ export function App(): React.JSX.Element {
   // focus. `null` when nothing is active is a real state the dialog draws its
   // own line for, not an empty list pretending to be "no servers".
   const activeSession = sessions.find((s) => s.id === activeCard) ?? null;
-  const activeSessionFolder = activeSession?.folder ?? null;
+  // where it WORKS (#1616): the worktree its agent moved into, else its folder
+  const activeSessionFolder = (activeSession && workFolderOf(activeSession)) ?? null;
   const activeSessionTitle = activeSession?.title;
   /**
    * The title of the session the MODEL PICKER is acting on (#721).
@@ -2694,7 +2697,8 @@ export function App(): React.JSX.Element {
   // reason `createGroup` is: the strip's menus (#1143) are the rail's gestures
   // made somewhere else, so they are the rail's functions.
   const openChanges = (s: RailSession): void => {
-    if (s.folder) grid.current?.openDiff(s.id, s.folder, s.title);
+    const at = workFolderOf(s);
+    if (at) grid.current?.openDiff(s.id, at, s.title);
   };
   const renameGroup = (id: string, name: string): void => {
     void bridge.groups?.update?.(id, { name }).then((next) => {
