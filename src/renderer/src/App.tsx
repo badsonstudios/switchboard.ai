@@ -14,6 +14,12 @@ import i18next from 'i18next';
 import { TitleBar, StatusBar } from './components/chrome';
 import { SessionsRail, RailGroup, RailSession } from './components/SessionsRail';
 import { OpenProjectDialog } from './components/OpenProjectDialog';
+import { NewWorktreeDialog } from './components/NewWorktreeDialog';
+import { ProjectSettingsDialog } from './components/ProjectSettingsDialog';
+import { BusyFolderDialog } from './components/BusyFolderDialog';
+import { applyJob, setJobs } from './lib/worktree-jobs';
+import { getBusyFolder, initBusyFolder, liveInCheckout, recommendWorktree, setBusyFolder } from './lib/busy-folder';
+import { setBusyFolderGate } from './components/SessionGrid';
 import { SessionsStrip } from './components/SessionsStrip';
 import {
   DEFAULT_SESSIONS_PLACEMENT,
@@ -93,7 +99,7 @@ import {
 } from './lib/working-look';
 import { initGroupColours } from './lib/group-colours';
 import { initAppBadge, useAttentionBadge } from './lib/app-badge';
-import { refreshEditor } from './lib/editor';
+import { refreshEditor, useEditorState } from './lib/editor';
 import { needCount } from './lib/rail-view';
 import { initGroupStyle } from './lib/group-style';
 import { initNoteColours } from './lib/note-colours';
@@ -172,7 +178,7 @@ import { setFileHistoryOpener } from './lib/file-history';
 import { openFileStartFolder, rememberOpenedFile } from './lib/open-file-start';
 import { isDocumentPanelId } from './lib/document-panels';
 import { isDiffPanelId } from './lib/diff-panels';
-import { pathKey, worktreeFor } from '../../shared/projects';
+import { pathKey, worktreeFor, type CheckoutInfo, type WorktreeJob } from '../../shared/projects';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -267,6 +273,21 @@ export function App(): React.JSX.Element {
   const projects = useSyncExternalStore(subscribeStore, () => sessionStore.getState().projects);
   // the Open project dialog (E42, #1637)
   const [openingProject, setOpeningProject] = useState(false);
+  // step 2 (#1506): the new-worktree dialog, project settings, the busy-folder prompt
+  const [newWorktreeFor, setNewWorktreeFor] = useState<string | null>(null);
+  const [settingsFor, setSettingsFor] = useState<string | null>(null);
+  const [projectRoot, setProjectRoot] = useState<string | null>(null);
+  const [busyAsk, setBusyAsk] = useState<{
+    info: CheckoutInfo;
+    others: RailSession[];
+    resolve: (choice: 'worktree' | 'share' | null) => void;
+  } | null>(null);
+  const editorState = useEditorState();
+  // the busy-folder question, read through a ref by the drop handler and the grid
+  const busyGateRef = React.useRef<(folder: string) => Promise<boolean>>(() => Promise.resolve(true));
+  // worktree jobs being claimed now, and the claim itself (set further down)
+  const claiming = React.useRef(new Set<string>());
+  const startJobRef = React.useRef<(jobId: string) => void>(() => undefined);
   // dismissed "waiting" (#1413): only the layout effect reads it (#1427). A new
   // map identity on every dismissal and every prune, never on a no-op set.
   const waitDismissed = useSyncExternalStore(subscribeStore, () => sessionStore.getState().waitDismissed);
@@ -749,6 +770,7 @@ export function App(): React.JSX.Element {
       initNotePlacement(); // where every card draws its sticky note (#1544)
       initGroupStyle(); // how groups look in the sessions list (#1556)
       initGroupColours(); // and whether they wear their colours (#1599)
+      initBusyFolder(); // what a plain session in a busy checkout does (#1506)
       initNoteColours(); // the notes' picked colours (#1601)
       initAppBadge(); // the count on the app icon (#1605)
       void refreshEditor(); // is there an editor to open folders in (#1608)
@@ -1425,7 +1447,14 @@ export function App(): React.JSX.Element {
       // open a session card on a path that is not a folder.
       void window.switchboard.sessions.isDirectory(p).then((isDir) => {
         // a person starting a session: it asks for the name (#1282)
-        if (took(isDir)) void grid.current?.newSessionInFolder(p);
+        if (!took(isDir)) return;
+        // another live session in this checkout? (#1506)
+        void busyGateRef
+          .current(p)
+          .catch(() => true)
+          .then((go) => {
+            if (go) void grid.current?.newSessionInFolder(p);
+          });
       });
     };
     window.addEventListener('dragover', onDragOver);
@@ -2014,6 +2043,7 @@ export function App(): React.JSX.Element {
             void grid.current?.newSession();
           },
           openProject: () => setOpeningProject(true),
+          newWorktree: () => newWorktreeFromHere(),
           closeCard: (cardId, fromItsOwnWindow) => grid.current?.closeCard(cardId, fromItsOwnWindow),
           closeAllCards: () => grid.current?.closeAllCards(),
           // #581 — the three families that were silent to a screen reader.
@@ -2566,6 +2596,33 @@ export function App(): React.JSX.Element {
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, [commands, commandContext]);
 
+  // worktree builds (#1506) and the busy-folder question: hooks, so above the gate
+  useEffect(() => {
+    const api = bridge.projects;
+    if (!api?.jobs || !api.onJobChanged) return;
+    const take = (j: WorktreeJob): void => {
+      applyJob(j);
+      // the worktree exists from here on: draw it
+      if (j.phase === 'copying' || j.phase === 'failed' || j.phase === 'setup-failed') void refreshProjects();
+      if (j.phase === 'ready') startJobRef.current(j.id);
+    };
+    const off = api.onJobChanged(take);
+    void api
+      .jobs()
+      .then((list) => {
+        const l = answered(list);
+        if (!l) return;
+        setJobs(l);
+        // a build that finished while this window was loading
+        for (const j of l) if (j.phase === 'ready') startJobRef.current(j.id);
+      })
+      .catch(() => undefined);
+    return off;
+  }, [refreshProjects]);
+  useEffect(() => {
+    setBusyFolderGate((folder) => busyGateRef.current(folder));
+    return () => setBusyFolderGate(null);
+  }, []);
   if (!uiReady) return <div style={{ blockSize: '100vh' }} />; // one-frame gate while UI state loads
 
   // Shared by the rail and the strip (#1143): "+ group" is one gesture wherever
@@ -2627,11 +2684,114 @@ export function App(): React.JSX.Element {
   const openInFolder = (folder: string): void => {
     void grid.current?.newSessionInFolder(folder);
   };
+  // ── step 2 (#1506): make a worktree ──
+  // Ctrl+Shift+N: the project of the session in front of you, else the first
+  // project, else nothing to make one in yet, so the Open project dialog.
+  const newWorktreeFromHere = (): void => {
+    const st = sessionStore.getState();
+    const here = st.sessions.find((x) => x.id === st.activeCard);
+    const mine = here?.repoKey ? st.projects.find((p) => pathKey(p.commonDir) === here.repoKey) : undefined;
+    const target = mine ?? st.projects[0];
+    if (target) setNewWorktreeFor(target.id);
+    else setOpeningProject(true);
+  };
+  const createWorktree = (req: Parameters<NonNullable<typeof bridge.projects>['createWorktree']>[0]): void => {
+    setNewWorktreeFor(null);
+    void bridge.projects
+      ?.createWorktree?.(req)
+      .then((job) => {
+        const j = answered(job);
+        if (j) applyJob(j);
+        else announce(String(i18next.t('worktrees.job.refused')));
+      })
+      .catch(() => announce(String(i18next.t('worktrees.job.refused'))));
+  };
+  // A job main says is ready: claim it (once, main decides) and start its
+  // session. Also the "Start session anyway" of a failed setup.
+  const startJob = (jobId: string): void => {
+    if (claiming.current.has(jobId)) return;
+    claiming.current.add(jobId);
+    void bridge.projects
+      ?.claimJob?.(jobId)
+      .then(async (claimed) => {
+        const j = answered(claimed);
+        if (!j) return;
+        applyJob({ ...j, phase: 'done' });
+        await refreshProjects();
+        await grid.current?.addNamedSessionCard(j.path, j.title);
+      })
+      .catch(() => undefined)
+      .finally(() => claiming.current.delete(jobId));
+  };
+  startJobRef.current = startJob;
+  const openProjectSettings = (id: string): void => {
+    setNewWorktreeFor(null);
+    setSettingsFor(id);
+    void bridge.projects
+      ?.defaults?.()
+      .then((d) => {
+        const v = answered(d);
+        setProjectRoot(v ? v.worktreeRoot ?? v.defaultRoot ?? null : null);
+      })
+      .catch(() => undefined);
+  };
+  // The busy-folder question (decision 6; `lib/busy-folder`). Never makes a
+  // worktree itself: "new worktree" opens the dialog, prefilled.
+  const busyGate = async (folder: string): Promise<boolean> => {
+    const pref = getBusyFolder();
+    if (pref === 'share' || !bridge.projects?.checkout) return true;
+    const info = answered(await bridge.projects.checkout(folder).catch(() => null));
+    if (!info) return true;
+    const others = liveInCheckout(sessionStore.getState().sessions, info.toplevel);
+    if (others.length === 0) return true;
+    const pick =
+      pref === 'worktree'
+        ? 'worktree'
+        : await new Promise<'worktree' | 'share' | null>((resolve) =>
+            // a second question (two quick drops) answers the first "cancel",
+            // so no caller is left waiting for ever (#1506 review)
+            setBusyAsk((prev) => {
+              prev?.resolve(null);
+              return { info, others, resolve };
+            })
+          );
+    if (pick === null) return false;
+    if (pick === 'share') return true;
+    let project = sessionStore.getState().projects.find((p) => pathKey(p.commonDir) === pathKey(info.commonDir));
+    if (!project) {
+      // a worktree needs a project: open the repo as one (nothing is created by that)
+      const opened = answered(await bridge.projects.open?.({ folder: info.toplevel }).catch(() => null));
+      await refreshProjects();
+      project = opened ? sessionStore.getState().projects.find((p) => p.id === opened.id) : undefined;
+    }
+    if (project) setNewWorktreeFor(project.id);
+    return false;
+  };
+  busyGateRef.current = busyGate;
+  const answerBusy = (choice: 'worktree' | 'share' | null, remember = false): void => {
+    if (choice && remember) setBusyFolder(choice);
+    busyAsk?.resolve(choice);
+    setBusyAsk(null);
+  };
   // Projects (E42, #1637). Every edit re-reads the list either way, so a
   // refused one simply shows what is really there (the groups idiom, #650).
   const projectActions = {
     open: () => setOpeningProject(true),
     newSessionIn: openInFolder,
+    newWorktree: (id: string) => setNewWorktreeFor(id),
+    settings: openProjectSettings,
+    ...(editorState?.resolved
+      ? {
+          openInEditor: (id: string, folder: string) =>
+            void bridge.projects?.openInEditor?.(id, folder).then((r) => {
+              if (answered(r) === 'no-editor') announce(String(i18next.t('editor.noEditor')));
+            }),
+        }
+      : {}),
+    startJob,
+    dismissJob: (jobId: string) => void bridge.projects?.dismissJob?.(jobId),
+    discardJob: (jobId: string) =>
+      void bridge.projects?.discardJob?.(jobId).then(() => refreshProjects()),
     rename: (id: string, name: string) =>
       void bridge.projects?.update?.(id, { name }).then(() => refreshProjects()),
     recolor: (id: string, color: string) =>
@@ -3226,6 +3386,48 @@ export function App(): React.JSX.Element {
             projectNames={new Map(projects.map((p) => [p.id, p.name]))}
             onConfirm={confirmOpenProject}
             onCancel={() => setOpeningProject(false)}
+          />
+        )}
+        {(() => {
+          const p = newWorktreeFor ? projects.find((x) => x.id === newWorktreeFor) : undefined;
+          return p ? (
+            <NewWorktreeDialog
+              key={p.id}
+              project={p}
+              loadBranches={async () => answered(await bridge.projects?.branches?.(p.id)) ?? null}
+              onCreate={createWorktree}
+              onCancel={() => setNewWorktreeFor(null)}
+              onOpenSettings={() => openProjectSettings(p.id)}
+            />
+          ) : null;
+        })()}
+        {(() => {
+          const p = settingsFor ? projects.find((x) => x.id === settingsFor) : undefined;
+          return p ? (
+            <ProjectSettingsDialog
+              key={p.id}
+              project={p}
+              appRoot={projectRoot}
+              loadBranches={async () => answered(await bridge.projects?.branches?.(p.id)) ?? null}
+              pickFolder={async () => answered(await window.switchboard.sessions.pickFolder()) ?? null}
+              onSave={async (patch) => {
+                const r = answered(await bridge.projects?.configure?.(p.id, patch));
+                await refreshProjects();
+                return r ? r.problems : null;
+              }}
+              onClose={() => setSettingsFor(null)}
+            />
+          ) : null;
+        })()}
+        {busyAsk && (
+          <BusyFolderDialog
+            others={busyAsk.others.map((o) => o.title)}
+            working={busyAsk.others.some((o) => o.status === 'working')}
+            branch={busyAsk.info.branch}
+            dirty={busyAsk.info.dirty}
+            recommendWorktree={recommendWorktree(busyAsk.others, busyAsk.info.dirty)}
+            onChoose={(c, remember) => answerBusy(c, remember)}
+            onCancel={() => answerBusy(null)}
           />
         )}
         <SessionGrid

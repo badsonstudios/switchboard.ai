@@ -43,10 +43,188 @@ export interface ProjectRecord {
   primaryPath: string;
   /** worktree paths (pathKey form) the user chose to hide from the card */
   hiddenWorktrees: string[];
-  /** step 2 (#1506): where new worktrees start from; unset until then */
+  /** where new worktrees start from (#1506); unset = the detected default */
   baseRef?: string;
-  /** step 2 (#1506): where new worktrees are created; unset until then */
+  /** the folder new worktrees go in (#1506); unset = the app-wide default */
   worktreeRoot?: string;
+  /**
+   * Worktrees this app made (#1506), in `pathKey` form. They are drawn without
+   * the FOUND tag; every other linked worktree was made outside the app.
+   */
+  made?: string[];
+  /** project settings (#1506): files copied from the primary checkout */
+  copyFiles?: string[];
+  /**
+   * Git-ignored folders shared by LINK (a junction on Windows) instead of
+   * copied. Opt-in, empty by default: a branch that changes dependencies would
+   * disturb every worktree sharing them. Main refuses an entry git does not
+   * ignore.
+   */
+  sharedDirs?: string[];
+  /** run in a new worktree after copy and share, before the session starts */
+  setupCommand?: string;
+}
+
+/** The longest list a project setting keeps, and the longest entry in it. */
+export const PROJECT_LIST_MAX = 32;
+export const PROJECT_ENTRY_MAX = 260;
+export const SETUP_COMMAND_MAX = 1000;
+
+/**
+ * Is `rel` a path INSIDE a checkout, written relative to its root? Copy and
+ * share entries are joined onto two folders (the primary checkout and the new
+ * worktree), so an absolute path, a drive letter or a `..` segment would reach
+ * outside both.
+ */
+export function isInsideRelative(rel: unknown): rel is string {
+  if (typeof rel !== 'string') return false;
+  const r = rel.trim();
+  if (r === '' || r.length > PROJECT_ENTRY_MAX) return false;
+  if (/^[\\/]/.test(r) || /^[A-Za-z]:/.test(r)) return false;
+  const parts = r.split(/[\\/]+/).filter((s) => s !== '');
+  if (parts.length === 0) return false;
+  return parts.every((s) => s !== '..' && s !== '.' && s !== '.git');
+}
+
+/** The one spelling of a relative entry: forward slashes, no trailing slash. */
+export function cleanRelative(rel: string): string {
+  return rel.trim().replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
+}
+
+/**
+ * A branch name as a folder name: every run of other characters becomes one
+ * dash. `feat/1629-mcp-keys` → `feat-1629-mcp-keys`.
+ */
+export function branchSlug(branch: string): string {
+  const s = branch
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '')
+    .slice(0, 60);
+  return s || 'worktree';
+}
+
+/**
+ * A branch name offered for what the work is for: lower-case words joined by
+ * dashes, short enough to read in the card. The user can change it.
+ */
+export function suggestBranch(purpose: string): string {
+  return purpose
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40)
+    .replace(/-+$/, '');
+}
+
+/** What the new-worktree dialog sends (`projects:createWorktree`). */
+export interface NewWorktreeRequest {
+  projectId: string;
+  /** the branch the worktree checks out */
+  branch: string;
+  /** true: make `branch` from `base`; false: check out an existing branch */
+  newBranch: boolean;
+  /** the ref a new branch starts from; ignored for an existing branch */
+  base?: string;
+  /** the session's name once the worktree is ready */
+  title?: string;
+  /** run the project's setup command (copy and share always run) */
+  runSetup: boolean;
+}
+
+/**
+ * A worktree being built in the background (#1506). Main owns these and pushes
+ * every change on `projects:jobChanged`; the card draws them under the project.
+ *
+ * - `creating` → `copying` → `linking` → `setup` → `ready`: the session starts
+ *   (the window claims the job and starts it).
+ * - `failed`: git could not make the worktree; nothing was left behind.
+ * - `setup-failed`: the worktree exists but the setup command failed; the card
+ *   offers to start the session anyway, keep the worktree, or discard it.
+ */
+export type WorktreeJobPhase =
+  | 'creating'
+  | 'copying'
+  | 'linking'
+  | 'setup'
+  | 'ready'
+  | 'failed'
+  | 'setup-failed'
+  | 'discarding'
+  | 'done';
+
+export interface WorktreeJob {
+  id: string;
+  projectId: string;
+  branch: string;
+  /** the worktree's folder (native separators) */
+  path: string;
+  /** the session's name when it starts */
+  title: string;
+  phase: WorktreeJobPhase;
+  /** git's words on failure, or the setup command's last line (not translated: quoted) */
+  detail?: string;
+  /** copy / share steps that were skipped (fail-open); the window words them */
+  warnings: WorktreeWarning[];
+}
+
+export type WorktreeWarningCode =
+  | 'copy-missing'
+  | 'copy-failed'
+  | 'share-missing'
+  | 'share-not-ignored'
+  | 'share-exists'
+  | 'share-failed';
+
+export interface WorktreeWarning {
+  code: WorktreeWarningCode;
+  /** the copy or share entry it is about */
+  entry: string;
+  /** the system's own words, when there are any */
+  detail?: string;
+}
+
+/** Why `projects:configure` left an entry out; the window words it. */
+export type ProjectSettingProblemCode =
+  | 'base-invalid'
+  | 'folder-not-local'
+  | 'folder-inside-repo'
+  | 'entry-outside'
+  | 'share-not-ignored'
+  | 'share-unknown'
+  | 'setup-too-long'
+  | 'not-a-list';
+
+export interface ProjectSettingProblem {
+  code: ProjectSettingProblemCode;
+  field: 'base' | 'folder' | 'copy' | 'share' | 'setup';
+  entry?: string;
+}
+
+/** The branches the dialog offers (`projects:branches`). */
+export interface ProjectBranches {
+  local: string[];
+  remote: string[];
+  /** what a new worktree starts from when nobody says: origin's default, else main/master, else HEAD's branch */
+  defaultBase: string | null;
+}
+
+/** What `projects:checkout` says about a folder (the busy-folder prompt). */
+export interface CheckoutInfo {
+  /** the checkout's own folder (git's toplevel) */
+  toplevel: string;
+  commonDir: string;
+  branch: string | null;
+  /** files changed and not committed; null when status could not be read */
+  dirty: number | null;
+}
+
+/** The app-wide project settings (Settings ▸ General ▸ Projects). */
+export interface ProjectDefaults {
+  /** unset = `defaultRoot` */
+  worktreeRoot?: string;
+  /** what main uses when nothing is set (read-only, for the settings page) */
+  defaultRoot?: string;
 }
 
 /** What `projects:inspect` tells the Open project dialog about a folder. */

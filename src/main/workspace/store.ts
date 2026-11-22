@@ -72,7 +72,14 @@ import type { AutonomyMode } from '../../shared/sessions';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../shared/transport';
 import type { NotificationPrefs } from '../../shared/notifications';
 import { sanitizeNote, type SessionNote } from '../../shared/session-note';
-import { pathKey, type ProjectRecord } from '../../shared/projects';
+import {
+  cleanRelative,
+  isInsideRelative,
+  pathKey,
+  PROJECT_LIST_MAX,
+  SETUP_COMMAND_MAX,
+  type ProjectRecord,
+} from '../../shared/projects';
 
 /**
  * The settings an engine asked the host to keep with one conversation (#1317):
@@ -512,6 +519,11 @@ export interface WorkspaceState {
    * from folders, never stored here, so losing this list costs only the cards.
    */
   projects: ProjectRecord[];
+  /**
+   * The app-wide project settings (#1506): where new worktrees go when a
+   * project does not say. Unset = `~/switchboard-worktrees`. Additive.
+   */
+  projectDefaults: { worktreeRoot?: string };
 }
 
 /** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
@@ -694,6 +706,7 @@ const EMPTY: WorkspaceState = {
   suppressed: [],
   historyRepairs: [],
   projects: [],
+  projectDefaults: {},
 };
 
 /** Stable identity for a display arrangement (§7). */
@@ -720,6 +733,7 @@ function emptyState(): WorkspaceState {
     suppressed: [],
     historyRepairs: [],
     projects: [],
+    projectDefaults: {},
     notifications: { ...EMPTY.notifications },
     updates: { ...EMPTY.updates },
     health: { ...EMPTY.health },
@@ -1212,6 +1226,7 @@ export class WorkspaceStore {
         note
       ).slice(0, MAX_HISTORY_REPAIR_NOTICES),
       projects: dedupeProjects(keepSane(raw.projects, isSaneProject, 'project', note)),
+      projectDefaults: projectDefaultsOf(raw.projectDefaults),
     };
   }
 
@@ -1614,7 +1629,7 @@ export class WorkspaceStore {
   }
 
   listProjects(): ProjectRecord[] {
-    return this.state.projects.map((p) => ({ ...p, hiddenWorktrees: [...p.hiddenWorktrees] }));
+    return this.state.projects.map(copyProject);
   }
 
   /**
@@ -1622,7 +1637,7 @@ export class WorkspaceStore {
    * record for a repo that is already a project: one card per repo.
    */
   upsertProject(p: ProjectRecord): boolean {
-    const copy = { ...p, hiddenWorktrees: [...p.hiddenWorktrees] };
+    const copy = copyProject(p);
     const i = this.state.projects.findIndex((x) => x.id === p.id);
     if (i < 0 && this.state.projects.some((x) => pathKey(x.commonDir) === pathKey(p.commonDir)))
       return false;
@@ -1630,6 +1645,16 @@ export class WorkspaceStore {
     else this.state.projects.push(copy);
     this.saveSoon();
     return true;
+  }
+
+  /** The app-wide project settings (#1506). */
+  getProjectDefaults(): { worktreeRoot?: string } {
+    return { ...this.state.projectDefaults };
+  }
+
+  setProjectDefaults(d: { worktreeRoot?: string }): void {
+    this.state.projectDefaults = projectDefaultsOf(d);
+    this.saveSoon();
   }
 
   /** Remove a project from the rail. Its sessions are untouched (membership is derived). */
@@ -2532,9 +2557,8 @@ export function isSaneProject(p: unknown): p is ProjectRecord {
     x.commonDir.length > 0 &&
     typeof x.primaryPath === 'string' &&
     Array.isArray(x.hiddenWorktrees) &&
-    x.hiddenWorktrees.every((h) => typeof h === 'string') &&
-    (x.baseRef === undefined || typeof x.baseRef === 'string') &&
-    (x.worktreeRoot === undefined || typeof x.worktreeRoot === 'string')
+    // the #1506 settings are repaired, not judged here (`saneProjectSettings`)
+    x.hiddenWorktrees.every((h) => typeof h === 'string')
   );
 }
 
@@ -2563,7 +2587,69 @@ function dedupeProjects(list: ProjectRecord[]): ProjectRecord[] {
       palette.includes(p.color.toLowerCase())
         ? p
         : { ...p, color: palette[i % palette.length] }
-    );
+    )
+    .map(saneProjectSettings);
+}
+
+/** A list of short strings, or nothing: what every project list setting is on disk. */
+function stringList(v: unknown, keep: (s: string) => boolean): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out = v.filter((x): x is string => typeof x === 'string' && keep(x)).slice(0, PROJECT_LIST_MAX);
+  return out.length > 0 ? [...new Set(out)] : undefined;
+}
+
+/**
+ * The #1506 settings on a project, repaired rather than dropped: a hand-edited
+ * entry that is not a path inside the checkout (an absolute path, a `..`) is
+ * left out, and the project keeps everything else. The copy and share lists
+ * are joined onto the checkout and the new worktree, so that check is the one
+ * that matters.
+ */
+function saneProjectSettings(p: ProjectRecord): ProjectRecord {
+  const {
+    made: rawMade,
+    copyFiles: rawCopy,
+    sharedDirs: rawShared,
+    setupCommand: rawSetup,
+    baseRef: rawBase,
+    worktreeRoot: rawRoot,
+    ...rest
+  } = p;
+  const made = stringList(rawMade, (s) => s.length > 0 && s.length <= 1024);
+  const copyFiles = stringList(rawCopy, isInsideRelative)?.map(cleanRelative);
+  const sharedDirs = stringList(rawShared, isInsideRelative)?.map(cleanRelative);
+  const setupCommand =
+    typeof rawSetup === 'string' && rawSetup.trim() !== '' ? rawSetup.slice(0, SETUP_COMMAND_MAX) : undefined;
+  const baseRef = typeof rawBase === 'string' && rawBase.trim() !== '' ? rawBase : undefined;
+  const worktreeRoot = typeof rawRoot === 'string' && rawRoot.trim() !== '' ? rawRoot : undefined;
+  return {
+    ...rest,
+    ...(baseRef ? { baseRef } : {}),
+    ...(worktreeRoot ? { worktreeRoot } : {}),
+    ...(made ? { made } : {}),
+    ...(copyFiles ? { copyFiles } : {}),
+    ...(sharedDirs ? { sharedDirs } : {}),
+    ...(setupCommand ? { setupCommand } : {}),
+  };
+}
+
+/** A project record with every list copied, so a caller's edit never reaches the store. */
+function copyProject(p: ProjectRecord): ProjectRecord {
+  return {
+    ...p,
+    hiddenWorktrees: [...p.hiddenWorktrees],
+    ...(p.made ? { made: [...p.made] } : {}),
+    ...(p.copyFiles ? { copyFiles: [...p.copyFiles] } : {}),
+    ...(p.sharedDirs ? { sharedDirs: [...p.sharedDirs] } : {}),
+  };
+}
+
+/** The app-wide project settings as read off disk: only a string folder survives. */
+export function projectDefaultsOf(raw: unknown): { worktreeRoot?: string } {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as { worktreeRoot?: unknown };
+  return typeof r.worktreeRoot === 'string' && r.worktreeRoot.trim() !== ''
+    ? { worktreeRoot: r.worktreeRoot.slice(0, 1024) }
+    : {};
 }
 
 function isSaneSession(s: unknown): s is PersistedSession {

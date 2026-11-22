@@ -150,6 +150,21 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   worktree starts a new session there. Nothing is created or deleted on disk;
   **Remove project from the list** puts every session back where it was and
   stops none of them. Making new worktrees from the app comes next.
+- **New worktrees from a project:** the **＋** on a project's card (or
+  **Ctrl+Shift+N**) asks what the work is for and which branch, then builds a
+  new worktree in the background, in one folder outside the repo
+  (`switchboard-worktrees` in your home folder by default, changeable in
+  Settings and per project), and starts a session in it when it is ready. The
+  card shows each step, and a failure says why without touching other sessions.
+- **Project settings:** files to copy into each new worktree (such as `.env`),
+  git-ignored folders to share by link instead of copying (such as
+  `node_modules`, off unless you add it), and a setup command to run first (such
+  as `npm ci`). Shared folders are unlinked before a worktree is ever removed.
+- **"Already in use" question:** starting a plain session in a folder another
+  running session is using asks whether to make a new worktree or share the
+  folder (Settings ▸ General: Ask, Always share, or Always offer a new
+  worktree). Switchboard never makes a worktree without you confirming it.
+- **Open folder in editor** on any worktree in a project, from its **⋯** menu.
 
 ## 0.8.143 — 2026-11-18
 

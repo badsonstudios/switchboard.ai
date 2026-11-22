@@ -26,6 +26,12 @@ export interface CommandDeps {
    * opening a project is rare enough for the palette.
    */
   openProject?: () => void;
+  /**
+   * A new worktree in a project (E42 step 2, #1506): the new-worktree dialog
+   * for the project of the session in front of you, else the first project,
+   * else the Open project dialog. Mod+Shift+N, the "new" chord with a Shift.
+   */
+  newWorktree?: () => void;
   /** close a card (asks for confirmation — it forgets the record) */
   /**
    * `fromItsOwnWindow`: the chord was pressed IN the popped-out window this
@@ -417,6 +423,18 @@ export function buildCommands(deps: CommandDeps): Command[] {
             categoryKey: CATEGORY_SESSION,
             scope: 'app' as const,
             run: () => deps.openProject?.(),
+          },
+        ]
+      : []),
+    ...(deps.newWorktree
+      ? [
+          {
+            id: 'project.newWorktree',
+            titleKey: 'commands.newWorktree',
+            categoryKey: CATEGORY_SESSION,
+            binding: 'Mod+Shift+N',
+            scope: 'app' as const,
+            run: () => deps.newWorktree?.(),
           },
         ]
       : []),

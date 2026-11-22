@@ -1,6 +1,10 @@
 // Projects IPC (E42 step 1, #1637). CRUD over the store's project records, plus
 // the two git READS the project card and the Open project dialog need.
-// Nothing here creates, removes or repairs a worktree; that is #1506 and #1638.
+//
+// Step 2 (#1506) adds making a worktree (the build itself is
+// `worktree-jobs.ts`), the project settings that feed it, the app-wide
+// worktree folder, and the read the busy-folder prompt needs. Removing a
+// worktree is #1638.
 //
 // Refuses the way `group-ipc.ts` does (#326): resolve `null` (or `false`) and
 // write one log line, never throw. Ids are minted here, never accepted from the
@@ -15,12 +19,24 @@ import path from 'path';
 import { WorkspaceStore } from './store';
 import { GROUP_PALETTE } from '../../shared/group-palette';
 import {
+  cleanRelative,
+  isInsideRelative,
   pathKey,
+  PROJECT_LIST_MAX,
+  SETUP_COMMAND_MAX,
+  type CheckoutInfo,
+  type NewWorktreeRequest,
+  type ProjectBranches,
+  type ProjectDefaults,
   type ProjectInspection,
   type ProjectRecord,
+  type ProjectSettingProblem,
   type ProjectWorktrees,
   type WorktreeInfo,
 } from '../../shared/projects';
+import { isRev } from '../git/git-log';
+import { isAbsoluteLocal } from '../git/worktree-git';
+import { worktreeRootFor, type WorktreeJobs } from './worktree-jobs';
 import { IpcBroker } from '../ipc/broker';
 import { LogFields, Logger } from '../log/logger';
 
@@ -31,6 +47,22 @@ const GIT_BUDGET_MS = 5_000;
 export interface ProjectGit {
   commonDir(folder: string, budgetMs?: number): Promise<string | null>;
   worktreeList(folder: string, budgetMs?: number): Promise<WorktreeInfo[] | null>;
+}
+
+/** What step 2 (#1506) adds; optional so a harness can register step 1 alone. */
+export interface ProjectIpcExtras {
+  jobs: WorktreeJobs;
+  /** the app-wide default folder, for the settings page */
+  defaultRoot: string;
+  git: {
+    root(folder: string, budgetMs?: number): Promise<string | null>;
+    branches(folder: string, budgetMs?: number): Promise<ProjectBranches | null>;
+    isIgnored(folder: string, rel: string, budgetMs?: number): Promise<boolean | null>;
+    /** branch and changed-file count, for the busy-folder prompt */
+    status(folder: string, budgetMs?: number): Promise<{ branch?: string; files: unknown[]; unreadable?: string }>;
+  };
+  /** "Open folder in editor" on a worktree, after main checked it is one */
+  openInEditor?: (folder: string) => 'opened' | 'no-editor';
 }
 
 function cleanName(n: unknown): string | null {
@@ -51,7 +83,7 @@ function isPaletteColor(c: unknown): c is string {
  * credentials and wait out the budget.
  */
 function isLocalAbsolute(p: unknown): p is string {
-  return typeof p === 'string' && path.isAbsolute(p) && !/^[\\/]{2}/.test(p);
+  return isAbsoluteLocal(p);
 }
 
 const HIDDEN_MAX = 200;
@@ -73,7 +105,8 @@ export function registerProjectIpc(
   store: WorkspaceStore,
   git: ProjectGit,
   broker: IpcBroker,
-  log: Logger
+  log: Logger,
+  extras?: ProjectIpcExtras
 ): void {
   const refuse = <T extends null | false>(
     channel: string,
@@ -225,5 +258,200 @@ export function registerProjectIpc(
     const worktrees = await git.worktreeList(from, GIT_BUDGET_MS);
     if (!worktrees) log.debug('could not read a project’s worktrees', { projectId: id });
     return { projectId: id, worktrees };
+  });
+
+  if (extras) registerWorktreeIpc(store, git, broker, extras, refuse);
+}
+
+type Refuse = <T extends null | false>(channel: string, reason: string, value: T, fields?: LogFields) => T;
+
+/** Where a project's git runs from: its primary checkout, else its common dir. */
+async function repoFolder(project: ProjectRecord): Promise<string> {
+  return (await isDirectory(project.primaryPath)) ? project.primaryPath : project.commonDir;
+}
+
+/** The settings patch `projects:configure` accepts; null clears a value. */
+interface ConfigurePatch {
+  baseRef?: unknown;
+  worktreeRoot?: unknown;
+  copyFiles?: unknown;
+  sharedDirs?: unknown;
+  setupCommand?: unknown;
+}
+
+/**
+ * Step 2 (#1506). Capabilities: making a worktree and storing the command its
+ * setup runs are `sessions.spawn` (they start processes); the branch list and
+ * the busy-folder read are `git.read`; discarding a failed build is
+ * `git.write`; the job list and dismissing one organise the rail (`groups.*`).
+ */
+function registerWorktreeIpc(
+  store: WorkspaceStore,
+  git: ProjectGit,
+  broker: IpcBroker,
+  extras: ProjectIpcExtras,
+  refuse: Refuse
+): void {
+  const find = (id: unknown): ProjectRecord | undefined =>
+    typeof id === 'string' ? store.listProjects().find((p) => p.id === id) : undefined;
+
+  broker.handle('projects:branches', async (_e, id: unknown): Promise<ProjectBranches | null> => {
+    const project = find(id);
+    if (!project) return refuse('projects:branches', 'no such project', null);
+    return extras.git.branches(await repoFolder(project), GIT_BUDGET_MS);
+  });
+
+  broker.handle('projects:createWorktree', async (_e, req: NewWorktreeRequest) => {
+    if (!req || typeof req !== 'object') return refuse('projects:createWorktree', 'no request', null);
+    return extras.jobs.start({
+      projectId: String(req.projectId),
+      branch: req.branch,
+      newBranch: req.newBranch === true,
+      ...(typeof req.base === 'string' && req.base !== '' ? { base: req.base } : {}),
+      ...(typeof req.title === 'string' ? { title: req.title } : {}),
+      runSetup: req.runSetup !== false,
+    });
+  });
+
+  broker.handle('projects:jobs', () => extras.jobs.list());
+  broker.handle('projects:claimJob', (_e, id: unknown) =>
+    typeof id === 'string' ? extras.jobs.claim(id) : refuse('projects:claimJob', 'id must be a string', null)
+  );
+  broker.handle('projects:dismissJob', (_e, id: unknown) =>
+    typeof id === 'string' ? extras.jobs.dismiss(id) : refuse('projects:dismissJob', 'id must be a string', false)
+  );
+  broker.handle('projects:discardJob', async (_e, id: unknown) =>
+    typeof id === 'string' ? extras.jobs.discard(id) : refuse('projects:discardJob', 'id must be a string', false)
+  );
+
+  /**
+   * Project settings (screen E). Answers the saved project and the entries it
+   * would not keep, each with why; a bad entry is left out, never the patch.
+   * A shared folder must be ignored by git: a tracked folder linked into a
+   * worktree would put one branch's files under another.
+   */
+  broker.handle('projects:configure', async (_e, id: unknown, patch: ConfigurePatch) => {
+    const project = find(id);
+    if (!project) return refuse('projects:configure', 'no such project', null);
+    if (!patch || typeof patch !== 'object') return refuse('projects:configure', 'no settings', null);
+    // Only the fields this patch names are written, onto the record as it is
+    // AFTER the git checks below (#1506 review): a build finishing meanwhile
+    // records its worktree in `made`, and a copy taken before the awaits would
+    // write that back out.
+    const next: Partial<ProjectRecord> = {};
+    const cleared = new Set<keyof ProjectRecord>();
+    const problems: ProjectSettingProblem[] = [];
+    if (patch.baseRef !== undefined) {
+      if (patch.baseRef === null || patch.baseRef === '') cleared.add('baseRef');
+      else if (isRev(patch.baseRef)) next.baseRef = patch.baseRef;
+      else
+        problems.push({
+          code: 'base-invalid',
+          field: 'base',
+          entry: typeof patch.baseRef === 'string' ? patch.baseRef.slice(0, 80) : '',
+        });
+    }
+    if (patch.worktreeRoot !== undefined) {
+      if (patch.worktreeRoot === null || patch.worktreeRoot === '') cleared.add('worktreeRoot');
+      else if (!isAbsoluteLocal(patch.worktreeRoot)) problems.push({ code: 'folder-not-local', field: 'folder' });
+      // the same rule the build uses, so the two can never disagree
+      else if (!worktreeRootFor({ ...project, worktreeRoot: patch.worktreeRoot }, extras.defaultRoot))
+        problems.push({ code: 'folder-inside-repo', field: 'folder' });
+      else next.worktreeRoot = patch.worktreeRoot;
+    }
+    const list = (raw: unknown, field: 'copy' | 'share'): string[] | null => {
+      if (raw === undefined) return null;
+      if (!Array.isArray(raw)) {
+        problems.push({ code: 'not-a-list', field });
+        return null;
+      }
+      const out: string[] = [];
+      for (const x of raw.slice(0, PROJECT_LIST_MAX)) {
+        if (typeof x === 'string' && x.trim() === '') continue;
+        if (!isInsideRelative(x)) problems.push({ code: 'entry-outside', field, entry: String(x).slice(0, 80) });
+        else out.push(cleanRelative(x));
+      }
+      return [...new Set(out)];
+    };
+    const copies = list(patch.copyFiles, 'copy');
+    if (copies) next.copyFiles = copies;
+    const shared = list(patch.sharedDirs, 'share');
+    if (shared) {
+      const from = await repoFolder(project);
+      const kept: string[] = [];
+      for (const rel of shared) {
+        const ignored = await extras.git.isIgnored(from, rel, GIT_BUDGET_MS);
+        if (ignored === true) kept.push(rel);
+        else problems.push({ code: ignored === false ? 'share-not-ignored' : 'share-unknown', field: 'share', entry: rel });
+      }
+      next.sharedDirs = kept;
+    }
+    if (patch.setupCommand !== undefined) {
+      if (patch.setupCommand === null || (typeof patch.setupCommand === 'string' && patch.setupCommand.trim() === ''))
+        cleared.add('setupCommand');
+      else if (typeof patch.setupCommand === 'string' && patch.setupCommand.length <= SETUP_COMMAND_MAX)
+        next.setupCommand = patch.setupCommand.trim();
+      else problems.push({ code: 'setup-too-long', field: 'setup' });
+    }
+    for (const k of ['copyFiles', 'sharedDirs'] as const)
+      if (next[k]?.length === 0) {
+        delete next[k];
+        cleared.add(k);
+      }
+    // removed while git was asked: nothing to save (and no record to bring back)
+    const fresh = find(id);
+    if (!fresh) return refuse('projects:configure', 'the project was removed', null);
+    const saved: ProjectRecord = { ...fresh, ...next };
+    for (const k of cleared) delete saved[k];
+    store.upsertProject(saved);
+    return { project: saved, problems };
+  });
+
+  broker.handle('projects:defaults', (): ProjectDefaults => ({
+    ...store.getProjectDefaults(),
+    defaultRoot: extras.defaultRoot,
+  }));
+
+  broker.handle('projects:setDefaults', (_e, d: { worktreeRoot?: unknown }): ProjectDefaults | null => {
+    const root = d?.worktreeRoot;
+    if (root === null || root === '' || root === undefined) store.setProjectDefaults({});
+    else if (isAbsoluteLocal(root)) store.setProjectDefaults({ worktreeRoot: root });
+    else return refuse('projects:setDefaults', 'the folder must be a local absolute path', null);
+    return { ...store.getProjectDefaults(), defaultRoot: extras.defaultRoot };
+  });
+
+  /**
+   * What the busy-folder prompt needs about a folder someone is about to start
+   * a plain session in: its checkout (git's toplevel), repo, branch and how
+   * many files are changed. null for a folder that is not in a repo.
+   */
+  broker.handle('projects:checkout', async (_e, folder: unknown): Promise<CheckoutInfo | null> => {
+    if (!isLocalAbsolute(folder)) return refuse('projects:checkout', 'folder must be a local absolute path', null);
+    if (!(await isDirectory(folder))) return null;
+    const toplevel = await extras.git.root(folder, GIT_BUDGET_MS);
+    const commonDir = toplevel ? await git.commonDir(folder, GIT_BUDGET_MS) : null;
+    if (!toplevel || !commonDir) return null;
+    // status bounds only its config guard; the count is a nicety, so a slow
+    // one is given up on rather than holding the new session back
+    const st = await Promise.race([
+      extras.git.status(toplevel, GIT_BUDGET_MS).catch(() => null),
+      new Promise<null>((r) => setTimeout(() => r(null), GIT_BUDGET_MS)),
+    ]);
+    return {
+      toplevel: path.normalize(toplevel),
+      commonDir,
+      branch: st?.branch ?? null,
+      dirty: st && !st.unreadable ? st.files.length : null,
+    };
+  });
+
+  /** "Open folder in editor" on a worktree: only a folder git lists for this project. */
+  broker.handle('projects:openInEditor', async (_e, id: unknown, folder: unknown) => {
+    const project = find(id);
+    if (!project || typeof folder !== 'string') return refuse('projects:openInEditor', 'no such project', false);
+    const worktrees = (await git.worktreeList(await repoFolder(project), GIT_BUDGET_MS)) ?? [];
+    const hit = worktrees.find((w) => !w.bare && pathKey(w.path) === pathKey(folder));
+    if (!hit || !(await isDirectory(hit.path))) return 'no-folder';
+    return extras.openInEditor ? extras.openInEditor(hit.path) : 'no-editor';
   });
 }

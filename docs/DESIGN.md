@@ -1270,10 +1270,18 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
 - **File tree** per session with VCS decorations (modified/added/untracked badges).
 - **Diff viewer**: Monaco diff editor (same component VS Code uses) — side-by-side and
   inline modes, per-file and all-changes views.
-- **Worktree flows**: "New session as worktree of <repo>" creates
-  `git worktree add`, on a new branch, and points the session there. "Merge back" =
-  commit (if dirty) → merge branch into main checkout → optionally remove worktree.
-  One-click, with a diff review step first.
+- **Worktree flows** *(amended 2026-11-22 for E42, #1636)*: a **project** (one repo)
+  makes worktrees with our own `git worktree add --no-track` (new branch from a base
+  ref, or an existing branch), in one app-managed folder **outside** the repo
+  (`~/switchboard-worktrees/<repo>/<branch>` by default, changeable app-wide and per
+  project), built in the background with per-project copy / share-by-link (git-ignored
+  folders only, junctions on Windows, unlinked before any delete) / setup steps, then a
+  session starts in it (#1506). Not the CLI's `--worktree` flag: measured in
+  `spike/findings/1506-cli-worktree-flag.md` (it always lands inside the repo, offers no
+  named base, and exists only once the session has started). A plain session in a
+  checkout another live session uses asks "new worktree or share", never creating one
+  silently. **A PR is the merge**; local merge only for repos with no remote, plus
+  update-from-main and safe removal, are #1638.
 - **Cross-session diff awareness** (via Session Bus): warn when two sessions have
   uncommitted changes touching the same files in the same repo.
 - **Editable diff + commit-from-diff** (table-stakes: Crystal shipped it): edit
