@@ -34,6 +34,9 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): React.JSX.Elem
   const { t } = useTranslation();
   const { project } = props;
   const [branches, setBranches] = React.useState<ProjectBranches | null>(null);
+  // whether a branch exists decides new-or-existing, so wait for the answer
+  // (or for git to say nothing) before Create can be pressed
+  const [loaded, setLoaded] = React.useState(false);
   const [purpose, setPurpose] = React.useState(props.initialPurpose ?? '');
   const [branch, setBranch] = React.useState(props.initialPurpose ? suggestBranch(props.initialPurpose) : '');
   const [branchEdited, setBranchEdited] = React.useState(false);
@@ -47,7 +50,9 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): React.JSX.Elem
       .loadBranches()
       .catch(() => null)
       .then((b) => {
-        if (!live || !b) return;
+        if (!live) return;
+        setLoaded(true);
+        if (!b) return;
         setBranches(b);
         setBase((cur) => cur || project.baseRef || b.defaultBase || '');
       });
@@ -61,7 +66,7 @@ export function NewWorktreeDialog(props: NewWorktreeDialogProps): React.JSX.Elem
   // git will not check one branch out in two folders
   const checkedOut = (project.worktrees ?? []).some((w) => w.branch === branch);
   const problem = branchProblem(branch);
-  const ready = problem === null && !checkedOut;
+  const ready = loaded && problem === null && !checkedOut;
   const hasSetup = !!project.setupCommand;
 
   const accept = (): void => {

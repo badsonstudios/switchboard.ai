@@ -69,7 +69,10 @@ something goes wrong, the card says what, and nothing else is affected:
 New worktrees go in one folder **outside** the repo, so they never show up as
 new files in your main folder. By default that is `switchboard-worktrees` in
 your home folder, with one folder per repo inside it, and one per branch inside
-that (for example `switchboard-worktrees\MyRepo\feat-login`). Change it for
+that (for example `switchboard-worktrees\MyRepo\feat-login`). If you pick the
+folder that holds the repo itself (say `C:\Projects` for `C:\Projects\MyRepo`),
+worktrees go in `C:\Projects\MyRepo.worktrees` so they stay out of the repo.
+Change it for
 every project in **Settings ▸ General ▸ Worktree folder**, or for one project in
 its settings.
 

@@ -2747,7 +2747,14 @@ export function App(): React.JSX.Element {
     const pick =
       pref === 'worktree'
         ? 'worktree'
-        : await new Promise<'worktree' | 'share' | null>((resolve) => setBusyAsk({ info, others, resolve }));
+        : await new Promise<'worktree' | 'share' | null>((resolve) =>
+            // a second question (two quick drops) answers the first "cancel",
+            // so no caller is left waiting for ever (#1506 review)
+            setBusyAsk((prev) => {
+              prev?.resolve(null);
+              return { info, others, resolve };
+            })
+          );
     if (pick === null) return false;
     if (pick === 'share') return true;
     let project = sessionStore.getState().projects.find((p) => pathKey(p.commonDir) === pathKey(info.commonDir));

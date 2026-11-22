@@ -4874,9 +4874,10 @@ async function newSessionIn(
     // can dock the card back and dispose the group under us. A disposed group
     // is not a destination — fall through to the grid's own placement rules
     // rather than handing `addPanel` a corpse.
-    const stillOpen = into && api.groups.includes(into) ? into : null;
     // another live session already in this checkout: new worktree, or share?
     if (!(await passesBusyFolderGate(folder))) return;
+    // asked AFTER both waits: the group can die under either of them
+    const stillOpen = into && api.groups.includes(into) ? into : null;
     await askName(folder, stillOpen);
   } catch (e) {
     // our breakage must be visible, not mute (fail-open)

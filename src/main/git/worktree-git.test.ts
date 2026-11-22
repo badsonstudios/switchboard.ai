@@ -4,6 +4,9 @@ import { describe, it, expect } from 'vitest';
 import { isAbsoluteLocal, parseBranchRefs, pickDefaultBase, worktreeAddArgs } from './worktree-git';
 
 const WIN = 'C:' + String.fromCharCode(92) + 'wt' + String.fromCharCode(92) + 'feat-x';
+const ON_WINDOWS = process.platform === 'win32';
+/** an absolute folder on the platform running the test */
+const ABS = ON_WINDOWS ? WIN : '/wt/feat-x';
 
 describe('worktreeAddArgs', () => {
   it('makes a new branch from a base, without tracking it', () => {
@@ -19,10 +22,10 @@ describe('worktreeAddArgs', () => {
   });
 
   it('checks out an existing branch', () => {
-    expect(worktreeAddArgs({ target: WIN, branch: 'feat/x', newBranch: false })).toEqual([
+    expect(worktreeAddArgs({ target: ABS, branch: 'feat/x', newBranch: false })).toEqual([
       'worktree',
       'add',
-      WIN,
+      ABS,
       'feat/x',
     ]);
   });
@@ -55,9 +58,10 @@ describe('worktreeAddArgs', () => {
 });
 
 describe('isAbsoluteLocal', () => {
-  it('takes either platform spelling, never a UNC path', () => {
-    expect(isAbsoluteLocal(WIN)).toBe(true);
-    expect(isAbsoluteLocal('C:/x')).toBe(true);
+  it("takes this platform's absolute paths, never a UNC path", () => {
+    // a drive path is not absolute on Linux: path.join would put it under the cwd
+    expect(isAbsoluteLocal(WIN)).toBe(ON_WINDOWS);
+    expect(isAbsoluteLocal('C:/x')).toBe(ON_WINDOWS);
     expect(isAbsoluteLocal('/home/x')).toBe(true);
     expect(isAbsoluteLocal('x/y')).toBe(false);
     expect(isAbsoluteLocal('//h/s')).toBe(false);

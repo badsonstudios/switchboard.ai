@@ -150,6 +150,7 @@ export type WorktreeJobPhase =
   | 'ready'
   | 'failed'
   | 'setup-failed'
+  | 'discarding'
   | 'done';
 
 export interface WorktreeJob {

@@ -65,6 +65,9 @@ export async function unlinkShared(dir: string, rels: readonly string[]): Promis
   return left;
 }
 
+/** Deep enough for any real tree; a bound so a pathological one still ends. */
+export const FULL_DEPTH = 64;
+
 /**
  * Every link in the top `depth` levels of `dir`, as paths relative to it. The
  * safety net under `unlinkShared`: a shared folder the settings no longer list
@@ -104,7 +107,9 @@ export async function removeWorktreeFolder(
   deleteFolder: (dir: string) => Promise<void>
 ): Promise<string | null> {
   const named = await unlinkShared(dir, sharedRels);
-  const others = await unlinkShared(dir, await findLinks(dir));
+  // the WHOLE tree, not just the top (#1506 review): a copied folder can carry
+  // a link of its own at any depth, and it must not be walked into either
+  const others = await unlinkShared(dir, await findLinks(dir, FULL_DEPTH));
   const left = [...named, ...others];
   if (left.length > 0) return `a linked folder could not be unlinked (${left.join(', ')})`;
   await deleteFolder(dir);

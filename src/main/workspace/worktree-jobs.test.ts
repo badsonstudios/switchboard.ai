@@ -158,6 +158,29 @@ describe('WorktreeJobs', { timeout: 30_000 }, () => {
     expect(worktreeRootFor(records[0], root)).toBeNull();
   });
 
+  it("a root that is the folder holding the repo takes '<repo>.worktrees', never the repo itself (review)", async () => {
+    records = [{ ...project, worktreeRoot: path.dirname(repo) }];
+    expect(pathKey(worktreeRootFor(records[0], root)!)).toBe(pathKey(path.join(path.dirname(repo), 'myrepo.worktrees')));
+    // and a `..` cannot walk back into the repo
+    expect(worktreeRootFor({ ...project, worktreeRoot: path.join(repo, '..', 'myrepo', 'x') }, root)).toBeNull();
+    const jobs = makeJobs();
+    const j = await jobs.start({ projectId: 'p1', branch: 'feat/up', newBranch: true, runSetup: false });
+    const done = await settle(jobs, j!.id);
+    expect(done.phase).toBe('ready');
+    expect(pathKey(path.dirname(done.path))).toBe(pathKey(path.join(path.dirname(repo), 'myrepo.worktrees')));
+  });
+
+  it('two builds started at once never pick the same folder (review)', async () => {
+    const jobs = makeJobs();
+    const [a, b] = await Promise.all([
+      jobs.start({ projectId: 'p1', branch: 'feat/same', newBranch: true, runSetup: false }),
+      jobs.start({ projectId: 'p1', branch: 'feat-same', newBranch: true, runSetup: false }),
+    ]);
+    expect(pathKey(a!.path)).not.toBe(pathKey(b!.path));
+    expect((await settle(jobs, a!.id)).phase).toBe('ready');
+    expect((await settle(jobs, b!.id)).phase).toBe('ready');
+  });
+
   it('refuses a branch that could become a flag', async () => {
     const jobs = makeJobs();
     expect(await jobs.start({ projectId: 'p1', branch: '-b', newBranch: true, runSetup: false })).toBeNull();
@@ -173,7 +196,11 @@ describe('WorktreeJobs', { timeout: 30_000 }, () => {
     expect(failed.detail).toMatch(/code 3/);
     expect(await isLink(path.join(failed.path, 'node_modules'))).toBe(true);
 
-    expect(await jobs.discard(failed.id)).toBe(true);
+    const discarding = jobs.discard(failed.id);
+    // while it deletes, neither "Start session anyway" nor a second discard can act (review)
+    expect(jobs.claim(failed.id)).toBeNull();
+    expect(await jobs.discard(failed.id)).toBe(false);
+    expect(await discarding).toBe(true);
     expect(fs.existsSync(failed.path)).toBe(false);
     // #916: the real node_modules the worktree linked to is untouched
     expect(fs.readFileSync(path.join(repo, 'node_modules', 'pkg', 'index.js'), 'utf8')).toContain('module.exports');

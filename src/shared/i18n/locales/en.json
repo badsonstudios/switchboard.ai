@@ -159,6 +159,7 @@
       "ready": "Starting the session…",
       "failed": "Couldn't create it: {detail}",
       "setupFailed": "Setup failed: {detail}",
+      "discarding": "Removing the worktree…",
       "startAnyway": "Start session anyway",
       "keep": "Keep, no session",
       "dismiss": "Dismiss",

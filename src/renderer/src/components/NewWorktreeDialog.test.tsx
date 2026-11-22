@@ -10,6 +10,7 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import { NewWorktreeDialog, branchProblem } from './NewWorktreeDialog';
 import type { RailProject } from '../model/types';
 import type { NewWorktreeRequest } from '../../../shared/projects';
+import { GROUP_PALETTE } from '../../../shared/group-palette';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -21,7 +22,7 @@ let host: HTMLElement;
 const project = (over: Partial<RailProject> = {}): RailProject => ({
   id: 'p1',
   name: 'App',
-  color: '#5e9fe6',
+  color: GROUP_PALETTE[0],
   commonDir: '/r/.git',
   primaryPath: '/r',
   hiddenWorktrees: [],
@@ -53,9 +54,8 @@ const q = <T extends Element>(sel: string): T => document.querySelector<T>(sel)!
 
 /** React's own value setter, so its onChange fires */
 async function type(el: HTMLInputElement, value: string): Promise<void> {
-  const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
   await act(async () => {
-    set.call(el, value);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(el, value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }

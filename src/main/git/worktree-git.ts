@@ -7,6 +7,7 @@
 // the worktree inside the repo (`.claude/worktrees`), starts it only from
 // `origin/<default>` or HEAD, and creates it only once the session has started,
 // so the copy / share / setup steps could not run first.
+import path from 'path';
 import { isRev } from './git-log';
 import { isBranchName } from './git-remote';
 
@@ -41,13 +42,15 @@ export function worktreeAddArgs(opts: {
 }
 
 /**
- * Absolute on either platform's spelling, and not a UNC path: a git run (or a
- * folder made) against `\\host\share` would reach a remote host.
+ * Absolute on THIS platform, and not a UNC path: a git run (or a folder made)
+ * against `\\host\share` would reach a remote host. `C:\x` is not absolute
+ * on Linux, where `path.join` would put it under the working folder (#1506
+ * review), so the platform's own answer is required too.
  */
 export function isAbsoluteLocal(p: unknown): p is string {
   if (typeof p !== 'string' || p === '' || p.length > 1024) return false;
   if (/^[\\/]{2}/.test(p)) return false;
-  return /^[A-Za-z]:[\\/]/.test(p) || p.startsWith('/');
+  return path.isAbsolute(p);
 }
 
 /** `for-each-ref --format=%(refname) refs/heads refs/remotes` → names. */

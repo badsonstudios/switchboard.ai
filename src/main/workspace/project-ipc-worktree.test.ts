@@ -136,6 +136,33 @@ describe('projects:configure', () => {
     expect(h.warnings.some((w) => w.includes('projects:configure refused'))).toBe(true);
   });
 
+  it('keeps what a build recorded while the git checks ran (review)', async () => {
+    const h = harness({
+      isIgnored: async () => {
+        // a worktree build finishing mid-save records itself
+        store.upsertProject({ ...store.listProjects()[0], made: ['c:/wt/new'] });
+        return true;
+      },
+    });
+    const p = await openProject(h);
+    const r = (await h.call('projects:configure', p.id, { sharedDirs: ['node_modules'] })) as { project: ProjectRecord };
+    expect(r.project.made).toEqual(['c:/wt/new']);
+    expect(store.listProjects()[0]).toMatchObject({ made: ['c:/wt/new'], sharedDirs: ['node_modules'] });
+  });
+
+  it('does not bring back a project removed while the git checks ran (review)', async () => {
+    let id = '';
+    const h = harness({
+      isIgnored: async () => {
+        store.removeProject(id);
+        return true;
+      },
+    });
+    id = (await openProject(h)).id;
+    expect(await h.call('projects:configure', id, { sharedDirs: ['node_modules'] })).toBeNull();
+    expect(store.listProjects()).toEqual([]);
+  });
+
   it('survives a reload with the settings repaired, not the project dropped', async () => {
     const h = harness();
     const p = await openProject(h);

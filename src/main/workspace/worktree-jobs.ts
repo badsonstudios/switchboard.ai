@@ -55,6 +55,9 @@ export function defaultWorktreeRoot(home = os.homedir()): string {
   return path.join(home, WORKTREE_ROOT_NAME);
 }
 
+/** Builds (and finished-but-unclaimed jobs) held at once. */
+const MAX_JOBS = 16;
+
 /** A setup command gets this long before it is stopped. */
 export const SETUP_TIMEOUT_MS = 30 * 60_000;
 /** How much of the setup command's output is kept to say why it failed. */
@@ -131,18 +134,34 @@ async function isDirectory(p: string): Promise<boolean> {
   }
 }
 
-/** The folder a project's worktrees go in (validated; null when it is unusable). */
+/**
+ * The folder a project's worktrees go in: `<root>/<repo folder name>`, or null
+ * when that is unusable.
+ *
+ * Decision 2: OUTSIDE the repo, so a worktree never shows up as untracked
+ * files in the primary checkout (which the CLI's own flag does). Two ways in
+ * are closed (#1506 review): a root inside the repo, and a root that is the
+ * folder HOLDING the repo (pick `C:\Projects` for `C:\Projects\app` and the
+ * repo-named folder under it would be the repo itself). The second takes
+ * `<repo>.worktrees` instead. Resolved first, so a `..` cannot walk around it.
+ */
 export function worktreeRootFor(project: ProjectRecord, appRoot: string): string | null {
-  const root = project.worktreeRoot ?? appRoot;
-  if (!isAbsoluteLocal(root)) return null;
-  // decision 2: outside the repo, so a worktree never shows up as untracked
-  // files in the primary checkout (which the CLI's own flag does)
-  if (isInside(root, project.primaryPath)) return null;
-  return path.join(root, folderName(project.primaryPath));
+  const raw = project.worktreeRoot ?? appRoot;
+  if (!isAbsoluteLocal(raw)) return null;
+  const root = path.resolve(raw);
+  const primary = path.resolve(project.primaryPath);
+  if (isInside(root, primary)) return null;
+  const name = folderName(primary);
+  let parent = path.join(root, name);
+  if (isInside(parent, primary) || isInside(primary, parent)) parent = path.join(root, `${name}.worktrees`);
+  if (isInside(parent, primary) || isInside(primary, parent)) return null;
+  return parent;
 }
 
 export class WorktreeJobs {
   private readonly jobs = new Map<string, JobState>();
+  /** folders chosen by a start that has not registered its job yet */
+  private readonly reserved = new Set<string>();
   private readonly runSetup: SetupRunner;
 
   constructor(private readonly deps: WorktreeJobDeps) {
@@ -158,6 +177,8 @@ export class WorktreeJobs {
     const { log } = this.deps;
     const project = this.deps.store.listProjects().find((p) => p.id === req?.projectId);
     if (!project) return this.refuse('no such project');
+    // each build may run a setup command: a bound on how many at once
+    if (this.jobs.size >= MAX_JOBS) return this.refuse('too many worktree builds at once');
     if (!isBranchName(req.branch)) return this.refuse('not a usable branch name');
     if (req.newBranch && req.base !== undefined && !isRev(req.base)) return this.refuse('not a usable base');
     const parent = worktreeRootFor(project, this.deps.root());
@@ -165,10 +186,15 @@ export class WorktreeJobs {
     // an existing folder is never reused: the next free name beside it
     const slug = branchSlug(req.branch);
     let target = path.join(parent, slug);
-    for (let n = 2; (await exists(target)) || this.busyPath(target); n++) {
+    for (let n = 2; ; n++) {
+      // checked again AFTER the await and claimed in the same tick, so two
+      // builds started at once can never pick the same folder
+      const free = !this.busyPath(target) && !(await exists(target)) && !this.busyPath(target);
+      if (free) break;
       if (n > 99) return this.refuse('no free folder name for that branch');
       target = path.join(parent, `${slug}-${n}`);
     }
+    this.reserved.add(pathKey(target));
     const title =
       (typeof req.title === 'string' ? req.title.trim().slice(0, MAX_SESSION_TITLE) : '') || req.branch;
     const primary = project.primaryPath;
@@ -191,6 +217,7 @@ export class WorktreeJobs {
       sharedDirs: (project.sharedDirs ?? []).filter(isInsideRelative).map(cleanRelative),
     };
     this.jobs.set(state.job.id, state);
+    this.reserved.delete(pathKey(target));
     this.push(state);
     log.info('worktree build started', { projectId: project.id, jobId: state.job.id, newBranch: req.newBranch });
     void this.build(state, project, req).catch((e) => {
@@ -230,11 +257,15 @@ export class WorktreeJobs {
     const s = this.jobs.get(id);
     if (!s || s.job.phase !== 'setup-failed') return false;
     const { git, log } = this.deps;
+    // set in the same tick as the check: a "Start session anyway" or a second
+    // discard while this one is deleting finds nothing to act on (#1506 review)
+    this.phase(s, 'discarding');
     const why = await removeWorktreeFolder(s.job.path, [...new Set([...s.links, ...s.sharedDirs])], async (dir) => {
       const r = await git.worktreeRemoveForce(s.repo, dir);
       if (!r.ok) throw new Error(r.reason ?? 'git could not remove the worktree');
     }).catch((e: unknown) => errorText(e));
     if (why) {
+      s.job.phase = 'setup-failed';
       s.job.detail = why;
       this.push(s);
       log.warn('worktree discard stopped', { jobId: id, reason: why });
@@ -342,7 +373,8 @@ export class WorktreeJobs {
   // ── bookkeeping ────────────────────────────────────────────────────────────
 
   private busyPath(p: string): boolean {
-    return [...this.jobs.values()].some((s) => pathKey(s.job.path) === pathKey(p));
+    const k = pathKey(p);
+    return this.reserved.has(k) || [...this.jobs.values()].some((s) => pathKey(s.job.path) === k);
   }
 
   private remember(projectId: string, dir: string): void {

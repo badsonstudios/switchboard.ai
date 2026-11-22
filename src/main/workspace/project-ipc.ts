@@ -20,7 +20,6 @@ import { WorkspaceStore } from './store';
 import { GROUP_PALETTE } from '../../shared/group-palette';
 import {
   cleanRelative,
-  isInside,
   isInsideRelative,
   pathKey,
   PROJECT_LIST_MAX,
@@ -37,7 +36,7 @@ import {
 } from '../../shared/projects';
 import { isRev } from '../git/git-log';
 import { isAbsoluteLocal } from '../git/worktree-git';
-import type { WorktreeJobs } from './worktree-jobs';
+import { worktreeRootFor, type WorktreeJobs } from './worktree-jobs';
 import { IpcBroker } from '../ipc/broker';
 import { LogFields, Logger } from '../log/logger';
 
@@ -84,7 +83,7 @@ function isPaletteColor(c: unknown): c is string {
  * credentials and wait out the budget.
  */
 function isLocalAbsolute(p: unknown): p is string {
-  return typeof p === 'string' && path.isAbsolute(p) && !/^[\\/]{2}/.test(p);
+  return isAbsoluteLocal(p);
 }
 
 const HIDDEN_MAX = 200;
@@ -335,10 +334,15 @@ function registerWorktreeIpc(
     const project = find(id);
     if (!project) return refuse('projects:configure', 'no such project', null);
     if (!patch || typeof patch !== 'object') return refuse('projects:configure', 'no settings', null);
-    const next: ProjectRecord = { ...project };
+    // Only the fields this patch names are written, onto the record as it is
+    // AFTER the git checks below (#1506 review): a build finishing meanwhile
+    // records its worktree in `made`, and a copy taken before the awaits would
+    // write that back out.
+    const next: Partial<ProjectRecord> = {};
+    const cleared = new Set<keyof ProjectRecord>();
     const problems: ProjectSettingProblem[] = [];
     if (patch.baseRef !== undefined) {
-      if (patch.baseRef === null || patch.baseRef === '') delete next.baseRef;
+      if (patch.baseRef === null || patch.baseRef === '') cleared.add('baseRef');
       else if (isRev(patch.baseRef)) next.baseRef = patch.baseRef;
       else
         problems.push({
@@ -348,9 +352,10 @@ function registerWorktreeIpc(
         });
     }
     if (patch.worktreeRoot !== undefined) {
-      if (patch.worktreeRoot === null || patch.worktreeRoot === '') delete next.worktreeRoot;
+      if (patch.worktreeRoot === null || patch.worktreeRoot === '') cleared.add('worktreeRoot');
       else if (!isAbsoluteLocal(patch.worktreeRoot)) problems.push({ code: 'folder-not-local', field: 'folder' });
-      else if (isInside(patch.worktreeRoot, project.primaryPath))
+      // the same rule the build uses, so the two can never disagree
+      else if (!worktreeRootFor({ ...project, worktreeRoot: patch.worktreeRoot }, extras.defaultRoot))
         problems.push({ code: 'folder-inside-repo', field: 'folder' });
       else next.worktreeRoot = patch.worktreeRoot;
     }
@@ -383,14 +388,23 @@ function registerWorktreeIpc(
     }
     if (patch.setupCommand !== undefined) {
       if (patch.setupCommand === null || (typeof patch.setupCommand === 'string' && patch.setupCommand.trim() === ''))
-        delete next.setupCommand;
+        cleared.add('setupCommand');
       else if (typeof patch.setupCommand === 'string' && patch.setupCommand.length <= SETUP_COMMAND_MAX)
         next.setupCommand = patch.setupCommand.trim();
       else problems.push({ code: 'setup-too-long', field: 'setup' });
     }
-    for (const k of ['copyFiles', 'sharedDirs'] as const) if (next[k]?.length === 0) delete next[k];
-    store.upsertProject(next);
-    return { project: next, problems };
+    for (const k of ['copyFiles', 'sharedDirs'] as const)
+      if (next[k]?.length === 0) {
+        delete next[k];
+        cleared.add(k);
+      }
+    // removed while git was asked: nothing to save (and no record to bring back)
+    const fresh = find(id);
+    if (!fresh) return refuse('projects:configure', 'the project was removed', null);
+    const saved: ProjectRecord = { ...fresh, ...next };
+    for (const k of cleared) delete saved[k];
+    store.upsertProject(saved);
+    return { project: saved, problems };
   });
 
   broker.handle('projects:defaults', (): ProjectDefaults => ({
