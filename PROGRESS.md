@@ -3,6 +3,13 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ IN FLIGHT: E42 Projects (#1636), step 1 = #1637 (started 2026-11-22)
+>
+> **Dan (2026-11-22):** approved the Projects plan and every recommendation on it: *"I like all of this, and I like all of what you recommend, so let's do this."* This is the "create a project instead of a session" ticket held on 2026-11-17; it was never filed until now. Mockup: `mockups/projects.html`. Plan: plan 06 → E42.
+> - **Steps:** **#1637** projects in the rail, nothing created (IN FLIGHT) → **#1506** create a worktree (re-scoped; first task: measure the CLI's `--worktree` flag) → **#1638** finish: update from main, PR, safe removal (first task: the `/orchestrate` history review that replaced #1505) → **#1616**, then **#1507** (shrunk to ports and dev databases).
+> - **Decisions:** a PR is the merge (local merge only without a remote) · worktrees in one app-managed folder outside the repo · our own `git worktree` calls, CLI flag measured first · shared `node_modules` opt-in per project, unlink-before-delete tested · never make a worktree silently.
+> - **Ticket housekeeping done:** `needs-discussion` removed from #1506, #1507, #1616 with outcome comments; #1505 closed as replaced; #1542 stays `needs-discussion`.
+
 > # ✅ DONE: the batch Dan picked on 2026-11-17: release 0.8.142, then #1600, #1606, #1603, #1599, #1601, #1611, #1612, #1605 and #1608, all merged and RELEASED in 0.8.143 (2026-11-18, PR #1631, tag on `717af669`)
 >
 > **Dan (2026-11-17):** one PR per ticket, merged on green CI, in this order; each item's PROGRESS and dogfood close-out rides in the NEXT item's PR, and the last gets its own close-out PR. **Decisions asked up front (Dan, 2026-11-17):** #1603 a session dropped on an AUTOMATIC folder group **turns it into a normal group he owns**; #1601 the colour picker covers **both** notes (waiting and session). **Approved the same day:** #1606, #1612, #1605, #1608 (`needs-discussion` removed, approval noted on each). **Held, not in this batch:** the "create a project instead of a session" ticket, #1607, #1613, #1610, #1609, #1614, #1615, #1616.

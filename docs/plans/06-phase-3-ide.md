@@ -329,7 +329,29 @@ runs with a precheck · **#1543** hibernate idle sessions, measured first ·
 **#1544** a status note the AI can set · **#1545** GitHub issues and PRs, start a
 session from one *(waits on the trust boundary, #832 and #830)* · **#1546**
 AI-line markers in the diff gutter. **#1542** (fan-out, compare, merge the winner)
-sits in E24 layer 3 and waits on #1505 and #1506.
+sits in E24 layer 3 and waits on #1505 and #1506. *(2026-11-22: #1505 closed,
+#1506 and #1542 moved under E42.)*
+
+### E42 — Projects: open a repo once, run many sessions in their own worktrees *(approved 2026-11-22)*
+
+> **Dan, 2026-11-22:** *"I like all of this, and I like all of what you
+> recommend, so let's do this."* Parent **#1636**; mockup `mockups/projects.html`.
+> E42 absorbs E24 layer 3's worktree items.
+
+A **project** is one repo (keyed by git's common directory). It holds that
+repo's **worktrees**, and each worktree holds one or more **sessions**. Plain
+sessions and groups stay as they are.
+
+1. **#1637** projects in the rail, nothing created or deleted.
+2. **#1506** create a worktree (re-scoped). First: measure the CLI's
+   `--worktree` flag; the plan is our own `git worktree add`, because a project
+   allows several sessions per worktree.
+3. **#1638** finish: update from main, push and PR (**a PR is the merge**),
+   safe removal. First: the `/orchestrate` history review that replaced #1505.
+4. **#1616** session follows its AI into a worktree, then **#1507** shrunk to
+   port and dev-database clashes.
+
+Later and still `needs-discussion`: **#1542** fan-out and compare.
 
 ---
 
@@ -340,6 +362,10 @@ Dispatch among them. Bugs it files re-order everything below.
 
 **E40 runs ahead of the list below** (owner, 2026-10-15, *"let's get going"*).
 Its seam items need nothing from him; its Codex items wait on #1284.
+
+**E42 (Projects) is the current item** (owner, 2026-11-22, *"let's do this"*).
+It replaces step 2's OQ #9 spike: #1505 is closed, and the worktree flows are
+designed from the `/orchestrate` history instead (#1638).
 
 1. **E23** as soon as the capture lands — it is blocked on evidence, not effort,
    and #719 is the worst open issue in the repo.
