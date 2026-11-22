@@ -10,16 +10,19 @@
 // here moves a session in or out of a project: dropping sessions on the card is
 // not offered, and every row keeps its own drag (reorder within its worktree).
 //
-// Step 1 creates and deletes nothing. The ⊕ on a worktree starts a session in
-// that worktree's folder through the ordinary new-session flow; making new
-// worktrees is step 2 (#1506).
+// The ⊕ on a worktree starts a session in that worktree's folder through the
+// ordinary new-session flow. Step 2 (#1506): the header's ＋ opens the
+// new-worktree dialog, and a worktree being built shows here as a row with its
+// progress, until its session starts (or it fails, and says so here, without
+// touching any other session).
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { RailProject, RailSession } from '../model/types';
 import type { ProjectWorktreeRows } from '../lib/groups';
-import { pathKey } from '../../../shared/projects';
+import { pathKey, type WorktreeJob } from '../../../shared/projects';
 import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
 import { drawnGroupColour, useGroupColours } from '../lib/group-colours';
+import { useWorktreeJobs } from '../lib/worktree-jobs';
 
 export interface ProjectCardProps {
   project: RailProject;
@@ -36,7 +39,26 @@ export interface ProjectCardProps {
   onRecolor: (color: string) => void;
   onSetHidden: (hiddenWorktrees: string[]) => void;
   onRemove: () => void;
+  // ── step 2 (#1506) ──
+  /** this project's worktree builds */
+  jobs?: readonly WorktreeJob[];
+  onNewWorktree?: () => void;
+  onSettings?: () => void;
+  /** "Open folder in editor" on a worktree; absent when no editor resolves */
+  onOpenInEditor?: (folder: string) => void;
+  onStartJob?: (jobId: string) => void;
+  onDismissJob?: (jobId: string) => void;
+  onDiscardJob?: (jobId: string) => void;
 }
+
+/** How far along each step is, for the bar under a worktree being built. */
+const STEP_SHARE: Partial<Record<WorktreeJob['phase'], number>> = {
+  creating: 20,
+  copying: 45,
+  linking: 60,
+  setup: 75,
+  ready: 100,
+};
 
 const SURFACE = 'var(--rail-card)';
 
@@ -83,6 +105,9 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
     (w) => project.hiddenWorktrees.includes(pathKey(w.path)) && !shown.has(pathKey(w.path))
   ).length;
   const bodyId = `project-body-${project.id}`;
+  const made = new Set(project.made ?? []);
+  const allJobs = useWorktreeJobs();
+  const jobs = props.jobs ?? allJobs.filter((j) => j.projectId === project.id);
 
   const openMenuAt = (
     e: React.MouseEvent<HTMLElement>,
@@ -98,8 +123,15 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
   };
 
   const projectItems = (): RailGroupMenuItem[] => [
+    ...(props.onNewWorktree
+      ? [{ id: 'new-worktree', label: t('worktrees.menu.new'), can: true, run: props.onNewWorktree }]
+      : []),
+    ...(props.onSettings
+      ? [{ id: 'settings', label: t('worktrees.menu.settings'), can: true, run: props.onSettings }]
+      : []),
     {
       id: 'rename',
+      divider: !!(props.onNewWorktree || props.onSettings),
       label: t('projects.rename'),
       can: true,
       run: () => {
@@ -136,6 +168,12 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
       run: () => props.onNewSessionIn(s.path),
     },
     {
+      id: 'open-editor',
+      label: t('worktrees.menu.openInEditor'),
+      can: !!props.onOpenInEditor && !s.info?.prunable,
+      run: () => props.onOpenInEditor?.(s.path),
+    },
+    {
       id: 'hide',
       label: t('projects.hide'),
       // the primary checkout is the project; a worktree with sessions in it
@@ -170,7 +208,7 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
         onContextMenu={(e) => openMenuAt(e, t('projects.menuLabel', { name: project.name }), projectItems())}
         style={{
           display: 'grid',
-          gridTemplateColumns: 'auto auto minmax(0, 1fr) auto',
+          gridTemplateColumns: 'auto auto minmax(0, 1fr) auto auto',
           alignItems: 'center',
           columnGap: 7,
           rowGap: 2,
@@ -246,6 +284,23 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
             {project.name}
           </span>
         )}
+        {props.onNewWorktree ? (
+          <button
+            className="rail-x"
+            data-project-new-worktree
+            title={t('worktrees.newButtonHint')}
+            aria-label={t('worktrees.newButtonHint')}
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onNewWorktree?.();
+            }}
+            style={{ fontSize: 12 }}
+          >
+            {t('worktrees.newButton')}
+          </button>
+        ) : (
+          <span />
+        )}
         <button
           className="rail-x"
           data-project-menu
@@ -259,7 +314,7 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
         </button>
         <span
           style={{
-            gridColumn: '3 / 5',
+            gridColumn: '3 / 6',
             fontSize: 10.5,
             color: 'var(--muted)',
             display: 'flex',
@@ -331,10 +386,9 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
                     {t('projects.primary')}
                   </span>
                 )}
-                {s.info && !s.info.primary && (
-                  // Every linked worktree today was made outside Switchboard:
-                  // the app makes none until step 2 (#1506), which will
-                  // record the ones it makes and drop this tag from them.
+                {s.info && !s.info.primary && !made.has(pathKey(s.path)) && (
+                  // made outside Switchboard: the ones the app made are
+                  // recorded on the project (#1506) and go without the tag
                   <span data-worktree-found title={t('projects.foundHint')} style={tagStyle(true)}>
                     {t('projects.found')}
                   </span>
@@ -379,6 +433,15 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
             </div>
           );
         })}
+        {jobs.map((j) => (
+          <JobRow
+            key={j.id}
+            job={j}
+            onStart={() => props.onStartJob?.(j.id)}
+            onDismiss={() => props.onDismissJob?.(j.id)}
+            onDiscard={() => props.onDiscardJob?.(j.id)}
+          />
+        ))}
       </div>
 
       {menu && (
@@ -390,6 +453,106 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
           testId="project-menu"
           onClose={() => setMenu(null)}
         />
+      )}
+    </div>
+  );
+}
+
+/** A worktree being built (mockup screen A, the row at the bottom). */
+function JobRow(props: {
+  job: WorktreeJob;
+  onStart: () => void;
+  onDismiss: () => void;
+  onDiscard: () => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const { job } = props;
+  const failed = job.phase === 'failed' || job.phase === 'setup-failed';
+  const share = STEP_SHARE[job.phase];
+  const words =
+    job.phase === 'setup' && job.detail
+      ? t('worktrees.job.setupLine', { line: job.detail })
+      : job.phase === 'failed'
+        ? t('worktrees.job.failed', { detail: job.detail ?? '' })
+        : job.phase === 'setup-failed'
+          ? t('worktrees.job.setupFailed', { detail: job.detail ?? '' })
+          : t(`worktrees.job.${job.phase}`);
+  const warnings = job.warnings.map((w) => t(`worktrees.warning.${w.code}`, { entry: w.entry }));
+  const link: React.CSSProperties = {
+    background: 'transparent',
+    border: '1px solid var(--control-edge)',
+    borderRadius: 4,
+    color: 'var(--text)',
+    fontSize: 10.5,
+    padding: '1px 6px',
+    cursor: 'pointer',
+    fontFamily: 'var(--font-ui)',
+  };
+  return (
+    <div
+      data-worktree-job={job.phase}
+      title={job.path}
+      style={{ borderBlockStart: '1px dashed var(--border)', padding: '4px 5px 5px', fontSize: 11 }}
+    >
+      <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', minWidth: 0 }}>
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            flexShrink: 1,
+            minWidth: 0,
+          }}
+        >
+          {job.branch}
+        </span>
+        <span
+          role="status"
+          data-worktree-job-words
+          style={{
+            color: failed ? 'var(--status-crashed-ink, var(--muted))' : 'var(--muted)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: failed ? 'normal' : 'nowrap',
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          {words}
+        </span>
+      </div>
+      {share !== undefined && (
+        <div
+          aria-hidden
+          style={{ height: 3, background: 'var(--panel2)', borderRadius: 2, margin: '4px 1px 0', overflow: 'hidden' }}
+        >
+          <div style={{ height: '100%', width: `${share}%`, background: 'var(--status-working)' }} />
+        </div>
+      )}
+      {warnings.length > 0 && (
+        <div data-worktree-job-warnings style={{ color: 'var(--muted)', marginBlockStart: 3, display: 'grid', gap: 1 }}>
+          {warnings.map((w) => (
+            <span key={w}>{w}</span>
+          ))}
+        </div>
+      )}
+      {failed && (
+        <div style={{ display: 'flex', gap: 5, marginBlockStart: 4, flexWrap: 'wrap' }}>
+          {job.phase === 'setup-failed' && (
+            <button type="button" data-worktree-job-start onClick={props.onStart} style={link}>
+              {t('worktrees.job.startAnyway')}
+            </button>
+          )}
+          <button type="button" data-worktree-job-dismiss onClick={props.onDismiss} style={link}>
+            {job.phase === 'setup-failed' ? t('worktrees.job.keep') : t('worktrees.job.dismiss')}
+          </button>
+          {job.phase === 'setup-failed' && (
+            <button type="button" data-worktree-job-discard onClick={props.onDiscard} style={link}>
+              {t('worktrees.job.discard')}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

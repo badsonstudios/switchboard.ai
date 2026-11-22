@@ -3,6 +3,12 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ E42 Projects (#1636): step 2 (#1506) IN FLIGHT (2026-11-22)
+>
+> **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* So E42 runs to the end with no stops: **#1506 → #1638 → #1616 → #1507 → release** (the release is cut by the orchestrator after the last step, not by a step).
+> - **#1506 first task done:** the CLI's `--worktree` flag measured (`spike/findings/1506-cli-worktree-flag.md`, CLI 2.1.322). It lands in `<repo>/.claude/worktrees/<name>` on `worktree-<name>` from `origin/<default>`, stays locked to a dead pid after `-p`, resume follows it, and a second session with the same name joins it. Decision 3 stands on measured grounds: the CLI ignores `worktree.location` (cannot go outside the repo), offers no named base or existing branch, and the worktree exists only once the session has started, so copy / share / setup cannot run first.
+> - **Building:** new-worktree dialog (project ＋, Ctrl+Shift+N), background build in main (`git worktree add --no-track`, copy, junction-share of git-ignored folders, setup command) pushed to the card, session started on ready; default folder `~/switchboard-worktrees/<repo>/<branch-slug>`; project settings; made-by-app recorded (no FOUND); busy-folder prompt with Ask / Always share / Always new worktree; Open folder in editor on a worktree. Line counts per worktree deferred to #1638.
+
 > # ▶ E42 Projects (#1636): step 1 (#1637) DONE, merged via PR #1640 (2026-11-22). NEXT: #1506
 >
 > **Dan (2026-11-22):** approved the Projects plan and every recommendation on it: *"I like all of this, and I like all of what you recommend, so let's do this."* This is the "create a project instead of a session" ticket held on 2026-11-17; it was never filed until now. Mockup: `mockups/projects.html`. Plan: plan 06 → E42.

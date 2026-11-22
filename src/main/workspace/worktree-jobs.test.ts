@@ -104,11 +104,11 @@ describe('WorktreeJobs', { timeout: 30_000 }, () => {
     expect(() => git(done.path, 'rev-parse', '--abbrev-ref', '@{u}')).toThrow();
     // copy: the ignored .env arrived; the missing file is a warning, not a failure
     expect(fs.readFileSync(path.join(done.path, '.env'), 'utf8')).toBe('SECRET=1\n');
-    expect(done.warnings.some((w) => w.includes('missing.txt'))).toBe(true);
+    expect(done.warnings).toContainEqual({ code: 'copy-missing', entry: 'missing.txt' });
     // share: node_modules is a link; the TRACKED src folder was refused
     expect(await isLink(path.join(done.path, 'node_modules'))).toBe(true);
     expect(fs.existsSync(path.join(done.path, 'node_modules', 'pkg', 'index.js'))).toBe(true);
-    expect(done.warnings.some((w) => w.includes('"src"') && w.includes('not ignored'))).toBe(true);
+    expect(done.warnings).toContainEqual({ code: 'share-not-ignored', entry: 'src' });
     expect(await isLink(path.join(done.path, 'src'))).toBe(false);
     // recorded as made by the app, so the card drops FOUND
     expect(records[0].made).toEqual([pathKey(done.path)]);

@@ -161,10 +161,43 @@ export interface WorktreeJob {
   /** the session's name when it starts */
   title: string;
   phase: WorktreeJobPhase;
-  /** git's words on failure, or the setup command's last line */
+  /** git's words on failure, or the setup command's last line (not translated: quoted) */
   detail?: string;
-  /** copy / share steps that were skipped, one line each (fail-open) */
-  warnings: string[];
+  /** copy / share steps that were skipped (fail-open); the window words them */
+  warnings: WorktreeWarning[];
+}
+
+export type WorktreeWarningCode =
+  | 'copy-missing'
+  | 'copy-failed'
+  | 'share-missing'
+  | 'share-not-ignored'
+  | 'share-exists'
+  | 'share-failed';
+
+export interface WorktreeWarning {
+  code: WorktreeWarningCode;
+  /** the copy or share entry it is about */
+  entry: string;
+  /** the system's own words, when there are any */
+  detail?: string;
+}
+
+/** Why `projects:configure` left an entry out; the window words it. */
+export type ProjectSettingProblemCode =
+  | 'base-invalid'
+  | 'folder-not-local'
+  | 'folder-inside-repo'
+  | 'entry-outside'
+  | 'share-not-ignored'
+  | 'share-unknown'
+  | 'setup-too-long'
+  | 'not-a-list';
+
+export interface ProjectSettingProblem {
+  code: ProjectSettingProblemCode;
+  field: 'base' | 'folder' | 'copy' | 'share' | 'setup';
+  entry?: string;
 }
 
 /** The branches the dialog offers (`projects:branches`). */

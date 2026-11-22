@@ -30,9 +30,11 @@ import {
   type NewWorktreeRequest,
   type ProjectRecord,
   type WorktreeJob,
+  type WorktreeWarning,
 } from '../../shared/projects';
 import { MAX_SESSION_TITLE } from '../../shared/sessions';
 import type { GitWriteResult } from '../git/git-write';
+import { errorText } from '../../shared/error-text';
 import { isRev } from '../git/git-log';
 import { isBranchName } from '../git/git-remote';
 import { isAbsoluteLocal } from '../git/worktree-git';
@@ -102,8 +104,14 @@ interface JobState {
   sharedDirs: string[];
 }
 
+
 function folderName(p: string): string {
   return p.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'repo';
+}
+
+/** A copy the caller can keep: main goes on changing the job it holds. */
+function snapshot(j: WorktreeJob): WorktreeJob {
+  return { ...j, warnings: j.warnings.map((w) => ({ ...w })) };
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -142,7 +150,7 @@ export class WorktreeJobs {
   }
 
   list(): WorktreeJob[] {
-    return [...this.jobs.values()].map((s) => ({ ...s.job, warnings: [...s.job.warnings] }));
+    return [...this.jobs.values()].map((s) => snapshot(s.job));
   }
 
   /** Start a build. null (with a log line) when the request cannot be honoured. */
@@ -188,7 +196,7 @@ export class WorktreeJobs {
     void this.build(state, project, req).catch((e) => {
       // every step catches its own; this is the backstop that keeps a bug from
       // leaving a card spinning for ever
-      this.fail(state, e instanceof Error ? e.message : String(e));
+      this.fail(state, errorText(e));
     });
     return { ...state.job, warnings: [] };
   }
@@ -200,7 +208,7 @@ export class WorktreeJobs {
     s.job.phase = 'done';
     this.push(s);
     this.jobs.delete(id);
-    return { ...s.job, warnings: [...s.job.warnings] };
+    return snapshot(s.job);
   }
 
   /** Clear a failed job from the card. A failed setup keeps its worktree. */
@@ -225,7 +233,7 @@ export class WorktreeJobs {
     const why = await removeWorktreeFolder(s.job.path, [...new Set([...s.links, ...s.sharedDirs])], async (dir) => {
       const r = await git.worktreeRemoveForce(s.repo, dir);
       if (!r.ok) throw new Error(r.reason ?? 'git could not remove the worktree');
-    }).catch((e: unknown) => (e instanceof Error ? e.message : String(e)));
+    }).catch((e: unknown) => errorText(e));
     if (why) {
       s.job.detail = why;
       this.push(s);
@@ -251,7 +259,7 @@ export class WorktreeJobs {
     try {
       await fs.promises.mkdir(path.dirname(s.job.path), { recursive: true });
     } catch (e) {
-      return this.fail(s, `could not make the folder: ${e instanceof Error ? e.message : String(e)}`);
+      return this.fail(s, errorText(e));
     }
     const added = await git.worktreeAdd(s.repo, {
       target: s.job.path,
@@ -306,13 +314,13 @@ export class WorktreeJobs {
     const from = path.join(s.primary, rel);
     const to = path.join(s.job.path, rel);
     try {
-      if (!(await exists(from))) return this.warn(s, `copy: "${rel}" is not in the main checkout`);
+      if (!(await exists(from))) return this.warn(s, { code: 'copy-missing', entry: rel });
       // tracked files arrived with the checkout; never overwrite them
       if (await exists(to)) return;
       await fs.promises.mkdir(path.dirname(to), { recursive: true });
       await fs.promises.cp(from, to, { recursive: true, errorOnExist: false, force: false, verbatimSymlinks: true });
     } catch (e) {
-      this.warn(s, `copy: "${rel}" failed (${e instanceof Error ? e.message : String(e)})`);
+      this.warn(s, { code: 'copy-failed', entry: rel, detail: errorText(e) });
     }
   }
 
@@ -320,14 +328,14 @@ export class WorktreeJobs {
     const from = path.join(s.primary, rel);
     const to = path.join(s.job.path, rel);
     try {
-      if (!(await isDirectory(from))) return this.warn(s, `share: "${rel}" is not a folder in the main checkout`);
+      if (!(await isDirectory(from))) return this.warn(s, { code: 'share-missing', entry: rel });
       const ignored = await this.deps.git.isIgnored(s.primary, rel);
-      if (ignored !== true) return this.warn(s, `share: "${rel}" is not ignored by git, so it was not linked`);
-      if (await exists(to)) return this.warn(s, `share: "${rel}" already exists in the worktree`);
+      if (ignored !== true) return this.warn(s, { code: 'share-not-ignored', entry: rel });
+      if (await exists(to)) return this.warn(s, { code: 'share-exists', entry: rel });
       await linkDir(from, to);
       s.links.push(rel);
     } catch (e) {
-      this.warn(s, `share: "${rel}" failed (${e instanceof Error ? e.message : String(e)})`);
+      this.warn(s, { code: 'share-failed', entry: rel, detail: errorText(e) });
     }
   }
 
@@ -354,9 +362,9 @@ export class WorktreeJobs {
     this.push(s);
   }
 
-  private warn(s: JobState, line: string): void {
-    s.job.warnings.push(line);
-    this.deps.log.warn('worktree build: step skipped', { jobId: s.job.id, line });
+  private warn(s: JobState, w: WorktreeWarning): void {
+    s.job.warnings.push(w.detail ? { ...w, detail: w.detail.slice(0, 200) } : w);
+    this.deps.log.warn('worktree build: step skipped', { jobId: s.job.id, code: w.code, entry: w.entry });
     this.push(s);
   }
 
@@ -369,7 +377,7 @@ export class WorktreeJobs {
 
   private push(s: JobState): void {
     try {
-      this.deps.emit({ ...s.job, warnings: [...s.job.warnings] });
+      this.deps.emit(snapshot(s.job));
     } catch {
       /* no window to tell: the job list answers on the next read */
     }
@@ -414,7 +422,7 @@ export const runSetupCommand: SetupRunner = (command, cwd, onLine) =>
     try {
       child = spawn(command, { cwd, shell: true, windowsHide: true, env: setupEnv() });
     } catch (e) {
-      resolve({ ok: false, detail: e instanceof Error ? e.message : String(e) });
+      resolve({ ok: false, detail: errorText(e) });
       return;
     }
     const timer = setTimeout(() => {

@@ -31,6 +31,7 @@ import {
   type ProjectDefaults,
   type ProjectInspection,
   type ProjectRecord,
+  type ProjectSettingProblem,
   type ProjectWorktrees,
   type WorktreeInfo,
 } from '../../shared/projects';
@@ -335,30 +336,34 @@ function registerWorktreeIpc(
     if (!project) return refuse('projects:configure', 'no such project', null);
     if (!patch || typeof patch !== 'object') return refuse('projects:configure', 'no settings', null);
     const next: ProjectRecord = { ...project };
-    const problems: string[] = [];
+    const problems: ProjectSettingProblem[] = [];
     if (patch.baseRef !== undefined) {
       if (patch.baseRef === null || patch.baseRef === '') delete next.baseRef;
       else if (isRev(patch.baseRef)) next.baseRef = patch.baseRef;
-      else problems.push(`base: "${String(patch.baseRef).slice(0, 80)}" is not a branch or commit`);
+      else
+        problems.push({
+          code: 'base-invalid',
+          field: 'base',
+          entry: typeof patch.baseRef === 'string' ? patch.baseRef.slice(0, 80) : '',
+        });
     }
     if (patch.worktreeRoot !== undefined) {
       if (patch.worktreeRoot === null || patch.worktreeRoot === '') delete next.worktreeRoot;
-      else if (!isAbsoluteLocal(patch.worktreeRoot))
-        problems.push('folder: worktrees need a full path to a folder on this computer');
+      else if (!isAbsoluteLocal(patch.worktreeRoot)) problems.push({ code: 'folder-not-local', field: 'folder' });
       else if (isInside(patch.worktreeRoot, project.primaryPath))
-        problems.push('folder: worktrees go outside the repo, not inside it');
+        problems.push({ code: 'folder-inside-repo', field: 'folder' });
       else next.worktreeRoot = patch.worktreeRoot;
     }
-    const list = (raw: unknown, what: string): string[] | null => {
+    const list = (raw: unknown, field: 'copy' | 'share'): string[] | null => {
       if (raw === undefined) return null;
       if (!Array.isArray(raw)) {
-        problems.push(`${what}: not a list`);
+        problems.push({ code: 'not-a-list', field });
         return null;
       }
       const out: string[] = [];
       for (const x of raw.slice(0, PROJECT_LIST_MAX)) {
         if (typeof x === 'string' && x.trim() === '') continue;
-        if (!isInsideRelative(x)) problems.push(`${what}: "${String(x).slice(0, 80)}" is not a path inside the repo`);
+        if (!isInsideRelative(x)) problems.push({ code: 'entry-outside', field, entry: String(x).slice(0, 80) });
         else out.push(cleanRelative(x));
       }
       return [...new Set(out)];
@@ -372,12 +377,7 @@ function registerWorktreeIpc(
       for (const rel of shared) {
         const ignored = await extras.git.isIgnored(from, rel, GIT_BUDGET_MS);
         if (ignored === true) kept.push(rel);
-        else
-          problems.push(
-            ignored === false
-              ? `share: "${rel}" is not ignored by git, and only ignored folders can be shared`
-              : `share: git could not say whether "${rel}" is ignored`
-          );
+        else problems.push({ code: ignored === false ? 'share-not-ignored' : 'share-unknown', field: 'share', entry: rel });
       }
       next.sharedDirs = kept;
     }
@@ -386,7 +386,7 @@ function registerWorktreeIpc(
         delete next.setupCommand;
       else if (typeof patch.setupCommand === 'string' && patch.setupCommand.length <= SETUP_COMMAND_MAX)
         next.setupCommand = patch.setupCommand.trim();
-      else problems.push('setup: the command is too long');
+      else problems.push({ code: 'setup-too-long', field: 'setup' });
     }
     for (const k of ['copyFiles', 'sharedDirs'] as const) if (next[k]?.length === 0) delete next[k];
     store.upsertProject(next);

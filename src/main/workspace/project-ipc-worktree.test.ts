@@ -10,7 +10,13 @@ import { WorkspaceStore } from './store';
 import { WorktreeJobs } from './worktree-jobs';
 import { IpcBroker } from '../ipc/broker';
 import type { Logger } from '../log/logger';
-import type { CheckoutInfo, ProjectDefaults, ProjectRecord, WorktreeInfo } from '../../shared/projects';
+import type {
+  CheckoutInfo,
+  ProjectDefaults,
+  ProjectRecord,
+  ProjectSettingProblem,
+  WorktreeInfo,
+} from '../../shared/projects';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
@@ -91,13 +97,14 @@ describe('projects:configure', () => {
       sharedDirs: ['node_modules', 'src'],
       setupCommand: '  npm ci  ',
       baseRef: 'origin/main',
-    })) as { project: ProjectRecord; problems: string[] };
+    })) as { project: ProjectRecord; problems: ProjectSettingProblem[] };
     expect(r.project.copyFiles).toEqual(['.claude/.env']);
     expect(r.project.sharedDirs).toEqual(['node_modules']);
     expect(r.project.setupCommand).toBe('npm ci');
     expect(r.project.baseRef).toBe('origin/main');
     expect(r.problems).toHaveLength(3);
-    expect(r.problems.some((x) => x.includes('"src"') && x.includes('not ignored'))).toBe(true);
+    expect(r.problems).toContainEqual({ code: 'share-not-ignored', field: 'share', entry: 'src' });
+    expect(r.problems).toContainEqual({ code: 'entry-outside', field: 'copy', entry: '../outside' });
     // and it is what the store now holds
     expect(store.listProjects()[0].sharedDirs).toEqual(['node_modules']);
   });
@@ -107,12 +114,12 @@ describe('projects:configure', () => {
     const p = await openProject(h);
     let r = (await h.call('projects:configure', p.id, { worktreeRoot: path.join(repo, 'wts') })) as {
       project: ProjectRecord;
-      problems: string[];
+      problems: ProjectSettingProblem[];
     };
     expect(r.project.worktreeRoot).toBeUndefined();
-    expect(r.problems[0]).toMatch(/outside the repo/);
+    expect(r.problems[0].code).toBe('folder-inside-repo');
     r = (await h.call('projects:configure', p.id, { worktreeRoot: 'relative' })) as typeof r;
-    expect(r.problems[0]).toMatch(/full path/);
+    expect(r.problems[0].code).toBe('folder-not-local');
     const outside = path.join(dir, 'elsewhere');
     r = (await h.call('projects:configure', p.id, { worktreeRoot: outside })) as typeof r;
     expect(r.project.worktreeRoot).toBe(outside);
@@ -123,8 +130,8 @@ describe('projects:configure', () => {
   it('refuses a base that could be a flag, and an unknown project', async () => {
     const h = harness();
     const p = await openProject(h);
-    const r = (await h.call('projects:configure', p.id, { baseRef: '--all' })) as { problems: string[] };
-    expect(r.problems).toHaveLength(1);
+    const r = (await h.call('projects:configure', p.id, { baseRef: '--all' })) as { problems: ProjectSettingProblem[] };
+    expect(r.problems).toEqual([{ code: 'base-invalid', field: 'base', entry: '--all' }]);
     expect(await h.call('projects:configure', 'nope', {})).toBeNull();
     expect(h.warnings.some((w) => w.includes('projects:configure refused'))).toBe(true);
   });

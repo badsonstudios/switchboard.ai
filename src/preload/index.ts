@@ -5,6 +5,7 @@ import type {
   ProjectDefaults,
   ProjectInspection,
   ProjectRecord,
+  ProjectSettingProblem,
   ProjectWorktrees,
   WorktreeJob,
 } from '../shared/projects';
@@ -1025,7 +1026,7 @@ const api = {
         sharedDirs?: string[];
         setupCommand?: string | null;
       }
-    ): Promise<{ project: ProjectRecord; problems: string[] } | null> =>
+    ): Promise<{ project: ProjectRecord; problems: ProjectSettingProblem[] } | null> =>
       ipcRenderer.invoke('projects:configure', id, patch),
     defaults: (): Promise<ProjectDefaults> => ipcRenderer.invoke('projects:defaults'),
     setDefaults: (d: { worktreeRoot: string | null }): Promise<ProjectDefaults | null> =>

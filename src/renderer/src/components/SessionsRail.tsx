@@ -253,6 +253,14 @@ export function SessionsRail(props: {
     recolor: (id: string, color: string) => void;
     setHidden: (id: string, hiddenWorktrees: string[]) => void;
     remove: (id: string) => void;
+    // step 2 (#1506)
+    newWorktree?: (id: string) => void;
+    settings?: (id: string) => void;
+    /** absent when no editor resolves */
+    openInEditor?: (id: string, folder: string) => void;
+    startJob?: (jobId: string) => void;
+    dismissJob?: (jobId: string) => void;
+    discardJob?: (jobId: string) => void;
   };
   /**
    * A session dropped on an AUTOMATIC group (#1603): make it a group you own,
@@ -2072,6 +2080,14 @@ export function SessionsRail(props: {
                 onRecolor={(color) => actions.recolor(op.id, color)}
                 onSetHidden={(h) => actions.setHidden(op.id, h)}
                 onRemove={() => actions.remove(op.id)}
+                {...(actions.newWorktree ? { onNewWorktree: () => actions.newWorktree?.(op.id) } : {})}
+                {...(actions.settings ? { onSettings: () => actions.settings?.(op.id) } : {})}
+                {...(actions.openInEditor
+                  ? { onOpenInEditor: (folder: string) => actions.openInEditor?.(op.id, folder) }
+                  : {})}
+                {...(actions.startJob ? { onStartJob: actions.startJob } : {})}
+                {...(actions.dismissJob ? { onDismissJob: actions.dismissJob } : {})}
+                {...(actions.discardJob ? { onDiscardJob: actions.discardJob } : {})}
               />
             );
           })}

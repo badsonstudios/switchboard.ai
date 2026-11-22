@@ -4875,6 +4875,8 @@ async function newSessionIn(
     // is not a destination — fall through to the grid's own placement rules
     // rather than handing `addPanel` a corpse.
     const stillOpen = into && api.groups.includes(into) ? into : null;
+    // another live session already in this checkout: new worktree, or share?
+    if (!(await passesBusyFolderGate(folder))) return;
     await askName(folder, stillOpen);
   } catch (e) {
     // our breakage must be visible, not mute (fail-open)
@@ -5423,6 +5425,30 @@ const components = {
  * own effect, so a torn-down grid leaves no arm behind.
  */
 let openDispatchDialog: DispatchOpener | null = null;
+
+/**
+ * The busy-folder question (E42 step 2, #1506; `lib/busy-folder.ts`), asked
+ * after the folder picker and before the naming dialog. Answers true to go on
+ * with a plain session in that folder, false when the person chose a new
+ * worktree instead (or cancelled). Installed by App; none installed (a test
+ * harness) means go on, which is today's behaviour. Fail-open: a gate that
+ * throws is a gate that said yes.
+ */
+export type BusyFolderGate = (folder: string) => Promise<boolean>;
+let busyFolderGate: BusyFolderGate | null = null;
+
+export function setBusyFolderGate(gate: BusyFolderGate | null): void {
+  busyFolderGate = gate;
+}
+
+async function passesBusyFolderGate(folder: string): Promise<boolean> {
+  if (!busyFolderGate) return true;
+  try {
+    return await busyFolderGate(folder);
+  } catch {
+    return true;
+  }
+}
 
 type DispatchOpener = (
   from: { id: string; name: string },
@@ -6992,6 +7018,13 @@ export interface GridController {
    */
   newSessionInFolder: (folder: string, groupId?: string) => Promise<void>;
   /**
+   * Start a session with its name already given (#1506): a worktree the
+   * new-worktree dialog asked for has finished building, and the dialog
+   * already said what the session is for. No naming dialog, no busy-folder
+   * question (the worktree is new and empty).
+   */
+  addNamedSessionCard: (folder: string, title: string) => Promise<void>;
+  /**
    * The whole ⊕ gesture — pick a folder, then add the card (E3-02/E3-04).
    *
    * Lands in the popped-out window the user is IN, when there is one, and in
@@ -7251,6 +7284,10 @@ export function SessionGrid(props: {
 
   // Add a NEW card in the main window's grid — the drag-drop / rail path,
   // where the folder is already known. `newSession` is the ⊕ gesture.
+  const startTitledCard = useCallback(async (folder: string, title: string): Promise<void> => {
+    await addSessionCardTo(apiRef.current, folder, { title });
+  }, []);
+
   const addSessionCard = useCallback(
     // The card id `addSessionCardTo` now returns (#951) is dropped here on purpose:
     // `GridController.addSessionCard` is the drag-drop and rail entry point and has
@@ -7674,6 +7711,7 @@ export function SessionGrid(props: {
     if (!props.controller) return;
     props.controller.current = {
       addSessionCard,
+      addNamedSessionCard: startTitledCard,
       newSessionInFolder,
       newSession,
       newSessionHere: newSessionInGrid,
@@ -8046,7 +8084,7 @@ export function SessionGrid(props: {
         openAllChangesPanel(apiRef.current, cardId, folder, props.colorScheme, title),
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
-  }, [props.controller, addSessionCard, newSessionInFolder, newSession, newSessionInGrid, hideCard, revealCard, focusCardPanel, setLadder, stepLadder, props.colorScheme, t]);
+  }, [props.controller, addSessionCard, startTitledCard, newSessionInFolder, newSession, newSessionInGrid, hideCard, revealCard, focusCardPanel, setLadder, stepLadder, props.colorScheme, t]);
 
   // Dockview learns the light/dark verdict in onReady, which runs ONCE — so a
   // theme switch after mount left it on the scheme the app booted with. Every
