@@ -72,7 +72,8 @@ import { searchTranscripts } from '../transcripts/search';
 import { listHistory } from '../transcripts/history';
 import { isConversationId } from '../transcripts/paths';
 import type { TranscriptQuery, TranscriptSearchRequest } from '../../shared/transcripts';
-import type { ConversationHistoryRequest } from '../../shared/session-history';
+import { MAX_GONE_CHECKS, type ConversationHistory, type ConversationHistoryRequest } from '../../shared/session-history';
+import { isAbsoluteLocal } from '../git/worktree-git';
 import { LogFields, Logger } from '../log/logger';
 import { assignAccent } from './identity';
 import { ACCENTS, RETIRED_ACCENTS } from '../../shared/accents';
@@ -134,7 +135,14 @@ import { buildDispatchPrompt } from './dispatch-prompt';
 import { commandsFromCli, MisplacedSkills, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
 import { isPromptTooLong, sanitizePromptAttachments } from '../../shared/prompt-attachments';
-import { nextWorkPlace, otherConversationFolders, placeAfterStart, sanitizeWorkPlace, workFolderOf } from './work-folder';
+import {
+  isPlausibleFolder,
+  nextWorkPlace,
+  otherConversationFolders,
+  placeAfterStart,
+  sanitizeWorkPlace,
+  workFolderOf,
+} from './work-folder';
 
 /** One stat, false for anything that is not a folder we can see (#1616). */
 function isDirectorySync(p: string): boolean {
@@ -328,6 +336,13 @@ export interface SessionIpcDeps {
    * sends cards with no `repoKey`, which draws them exactly as before.
    */
   repoCommonDir?: (folder: string) => Promise<string | null>;
+  /**
+   * Where to offer reopening a conversation whose folder is gone (#1643): the
+   * main folder of the project that folder belonged to (a worktree under the
+   * repo, or under the project's worktree folder), or undefined. Optional: a
+   * host without projects just lets the user pick a folder.
+   */
+  reopenFolderFor?: (goneFolder: string) => string | undefined;
   /**
    * The handoff behind a dropped context chip (P2-E11-10, §5.5).
    *
@@ -1907,6 +1922,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
          */
         resumeConversationId?: string;
         /**
+         * Where a PICKED conversation is filed, when it is not this card's
+         * folder (#1643): a conversation whose own folder is gone, reopened
+         * here. Only read alongside `resumeConversationId`, checked like every
+         * other renderer string, and only ever a place to LOOK — the resume
+         * check still has to find the conversation there.
+         */
+        filedUnder?: string;
+        /**
          * Open this card as a FORK of another session's conversation (§5.5
          * Level 3, P2-E11-12). `sourceFolder` is carried because the source may
          * live in a different project folder — that is the case this exists for.
@@ -1985,6 +2008,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         return refuse('sessions:create', 'resumeConversationId is not a conversation id', {
           cardId: opts.cardId,
         });
+      }
+      // ...and where it is filed, when the renderer says (#1643). Dropped, not
+      // refused, when it is not a plausible folder: the pick is still checked
+      // in the card's own folder, and refused there if it is not found.
+      //
+      // Only for a folder that is GONE — that is the case it exists for, and
+      // anything else would let the window reopen a living folder's
+      // conversation somewhere else. Like `resumeConversationId`, this param is
+      // frozen into the saved layout and re-sent on every remount; that is
+      // harmless, because the plan ignores a pick for a card that already has
+      // a conversation of its own (and its own `filedUnder` by then).
+      const pickedFiledUnder =
+        picked !== undefined && isPlausibleFolder(opts.filedUnder) && !isDirectorySync(opts.filedUnder)
+          ? opts.filedUnder
+          : undefined;
+      if (opts.filedUnder !== undefined && pickedFiledUnder === undefined) {
+        log.warn('sessions:create ignored a filedUnder it could not use', { cardId: opts.cardId });
       }
 
       // ── A PREPARED DISPATCH (P2-E13-03, §5.15 Trigger 1) ─────────────────
@@ -2375,6 +2415,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // the worktree its agent last worked in, which the CLI moved the
           // transcript into
           conversationFolders: otherConversationFolders(prior, opts.folder),
+          // ...and, for a pick, where the History row said it is (#1643)
+          ...(pickedFiledUnder ? { requestedFiledUnder: pickedFiledUnder } : {}),
           // Honoured only for a card with no conversation of its own — the plan
           // enforces that, not this call site, so the rule holds for every
           // caller rather than for this one.
@@ -2768,7 +2810,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // session has no id yet and binds on folder alone, so an old
           // worktree in this list could hand it another session's transcript.
           ...(plan.resumeSessionId && !plan.forkSession
-            ? { alsoFolders: otherConversationFolders(prior, opts.folder) }
+            ? {
+                alsoFolders: otherConversationFolders(
+                  plan.resumeFolder ? { ...(prior ?? { identity: { folder: opts.folder } }), filedUnder: plan.resumeFolder } : prior,
+                  opts.folder
+                ),
+              }
             : {}),
         });
         // the watcher refuses a root it cannot poll safely. Say so against the
@@ -3354,6 +3401,55 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       return undefined;
     }
   };
+  // Rows whose folder is gone (#1643): one stat per distinct folder, bounded,
+  // and fail-open — a folder we could not stat for another reason is treated
+  // as there, so a row is only ever marked when it is really missing.
+  //
+  // OFF THE MAIN THREAD AND ON LOCAL DISKS ONLY: the stats are async, raced
+  // against `GONE_CHECK_MS` together, and a network path (`\\server\share`,
+  // or a mapped drive Node cannot tell apart is still bounded by the race) is
+  // never asked at all — an offline share must not freeze every window, and a
+  // transcript's `cwd` must not make us open an SMB connection to its host.
+  const GONE_CHECK_MS = 1_500;
+  const markGoneFolders = async (answer: ConversationHistory): Promise<ConversationHistory> => {
+    if (answer.status !== 'ok') return answer;
+    const folders = [...new Set(answer.rows.map((r) => r.folder))].filter(isAbsoluteLocal).slice(0, MAX_GONE_CHECKS);
+    if (folders.length === 0) return answer;
+    const missing = (f: string): Promise<boolean> =>
+      fs.promises.stat(f).then(
+        () => false,
+        (err: unknown) => (err as NodeJS.ErrnoException)?.code === 'ENOENT'
+      );
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), GONE_CHECK_MS);
+    });
+    const answers = await Promise.race([Promise.all(folders.map(missing)), timedOut]);
+    clearTimeout(timer);
+    if (answers === null) {
+      log.warn('transcripts:history gave up checking which folders are gone', { folders: folders.length });
+      return answer;
+    }
+    const gone = new Map<string, string | undefined>();
+    folders.forEach((f, i) => {
+      if (!answers[i]) return;
+      let reopenIn: string | undefined;
+      try {
+        reopenIn = deps.reopenFolderFor?.(f);
+      } catch (err) {
+        log.warn('transcripts:history could not suggest a folder for a gone one', { error: errorText(err) });
+      }
+      gone.set(f, reopenIn);
+    });
+    if (gone.size === 0) return answer;
+    const rows = answer.rows.map((row) => {
+      if (!gone.has(row.folder)) return row;
+      const reopenIn = gone.get(row.folder);
+      return { ...row, folderGone: true as const, ...(reopenIn ? { reopenIn } : {}) };
+    });
+    return { ...answer, rows };
+  };
+
   broker.handle('transcripts:history', async (_e, req: unknown) => {
     const r = (req ?? {}) as Partial<ConversationHistoryRequest>;
     // §5.29 — narrow at the boundary. An unknown scope is the folder one, not a
@@ -3381,7 +3477,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     }
     await Promise.resolve();
     try {
-      return listHistory(
+      const answer = listHistory(
         // `isFinite`, not `typeof === 'number'`: `NaN` survives the typeof check,
         // and `Math.min(NaN, …)` is `NaN`, and `slice(0, NaN)` is `[]` — so a
         // malformed limit would render as "no previous conversations" rather
@@ -3402,6 +3498,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           here: hereFor(r.cardId),
         }
       );
+      return await markGoneFolders(answer);
     } catch (err) {
       // P6: a scan that threw must not reject the renderer's promise. The picker
       // shows the reason and the user can still start a new session.

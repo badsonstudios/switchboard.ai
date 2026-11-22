@@ -79,6 +79,21 @@ export interface ConversationRow {
    * of where it just was is.
    */
   here?: 'current' | 'left';
+  /**
+   * The folder this conversation ran in is GONE (#1643) — a worktree removed
+   * since, a deleted folder, an unplugged drive. The conversation itself is
+   * still on disk and the CLI resumes it by id from any folder (measured,
+   * `spike/findings/1638-transcripts-after-removal.md`), so the row stays
+   * pickable: it asks where to reopen it instead of opening a card that
+   * cannot start. Absent for every row whose folder is there.
+   */
+  folderGone?: true;
+  /**
+   * Where to offer reopening a `folderGone` row (#1643): the main folder of
+   * the project the gone folder belonged to, when main can tell. Absent:
+   * the user picks a folder.
+   */
+  reopenIn?: string;
 }
 
 /**
@@ -114,6 +129,13 @@ export interface ConversationHistoryRequest {
   /** the card asking, so its own rows can say `here` (#1550); absent = no marks */
   cardId?: string;
 }
+
+/**
+ * How many distinct folders one history answer checks for `folderGone`
+ * (#1643): one stat each, and the list is capped at `MAX_HISTORY_ROWS` rows
+ * anyway, so this is the same bound said for the stats.
+ */
+export const MAX_GONE_CHECKS = 300;
 
 /**
  * The most rows a single answer carries.

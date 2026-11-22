@@ -68,7 +68,7 @@ import { HistoryRepairLog } from './sessions/history-repair-log';
 import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
 import { registerGroupIpc } from './workspace/group-ipc';
 import { registerProjectIpc } from './workspace/project-ipc';
-import { defaultWorktreeRoot, WorktreeJobs } from './workspace/worktree-jobs';
+import { defaultWorktreeRoot, reopenFolderIn, WorktreeJobs } from './workspace/worktree-jobs';
 import { WorktreeFinisher } from './workspace/worktree-finish';
 import { runGh } from './workspace/gh-cli';
 import { registerMcpIpc } from './mcp/ipc';
@@ -3887,6 +3887,10 @@ app
       // bounded (#1637 review): this sits under `sessions:cards`, and a git
       // hung on a network drive must not stall every card
       repoCommonDir: (folder) => gitService.commonDir(folder, 5_000),
+      // A conversation whose folder is gone (#1643): offer its project's main
+      // folder — `reopenFolderIn` has the rule.
+      reopenFolderFor: (gone) =>
+        reopenFolderIn(gone, workspace.listProjects(), workspace.getProjectDefaults().worktreeRoot ?? worktreeRootDefault),
       // The user's own command FILES are the provider's to find (#1288,
       // `commandFiles`; Claude's read `.claude/`). Without the capability the
       // composer lists the builtins alone.

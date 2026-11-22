@@ -3,6 +3,11 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ E42 Projects (#1636): #1643 DONE via PR #PR_NUM (2026-11-22, unreleased). NEXT: #1507
+>
+> **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* Run order: **#1616 → #1643 → #1507 → release** (the release is cut by the orchestrator after the last step, not by a step).
+> - **#1643 shipped:** History marks a conversation whose folder is gone (**folder removed**; one bounded stat per distinct folder in `transcripts:history`, fail-open). Picking it asks where: **Reopen in** the project's main folder (`reopenFolderIn`: the gone folder sat inside the repo, e.g. the CLI's `.claude/worktrees`, or inside the project's worktree folder) or **Choose a folder…**. The card carries `filedUnder` (renderer param, validated; only a place to LOOK) into the start plan's `conversationFolders`; after the start the card records it (`placeAfterStart`), so a restart resumes from the card alone and the transcript watch binds the file under the gone folder's slug. A pick with no usable location is refused, never started fresh; the claimed-ids guard still stops a second card. Reuses #1616's "filed under" design (`sessions/work-folder.ts`). **Limit:** a conversation whose file the CLI relocated into a worktree (#1616) but whose History row names the start folder is still found by the row's folder only.
+
 > # ▶ E42 Projects (#1636): step 4 (#1616) DONE via PR #1645 (2026-11-22, unreleased). NEXT: #1643
 >
 > **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* Run order: **#1616 → #1643 → #1507 → release** (#1643, reopening a removed worktree's conversation from History, was added after #1638 found it; the release is cut by the orchestrator after the last step, not by a step).

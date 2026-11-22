@@ -45,7 +45,8 @@ import {
   useStandingGrants,
 } from './StandingGrants';
 import { DocumentViewer, documentReopened } from './DocumentViewer';
-import { SessionHistoryDialog } from './SessionHistoryDialog';
+import { SessionHistoryDialog, type HistoryPick } from './SessionHistoryDialog';
+import { goneFolderQuestion } from '../lib/history-gone';
 import { ContextHandoffPicker } from './ContextHandoffPicker';
 import { NameSessionDialog } from './NameSessionDialog';
 import { createPortal } from 'react-dom';
@@ -219,6 +220,13 @@ export interface CardParams {
    * becomes visible enough to spawn.
    */
   resumeConversationId?: string;
+  /**
+   * Where that picked conversation is filed, when its own folder is gone
+   * (#1643): it is being reopened HERE, in another folder. Params for
+   * `resumeConversationId`'s reason; main persists it on the card after the
+   * first start, so later restarts keep finding the conversation.
+   */
+  filedUnder?: string;
   /**
    * Another session's conversation this card ADOPTED by forking it (§5.5
    * Level 3, P2-E11-12) — experimental, and only ever set while the flag is on.
@@ -1239,6 +1247,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // waiting for them the next time they open it.
   const historyOpenNow = React.useRef(false);
   historyOpenNow.current = historyOpen;
+  // A pick whose folder is GONE (#1643): asked where to reopen it, in the
+  // dialog, before any card is made — a card in a missing folder cannot start.
+  const [historyGone, setHistoryGone] = React.useState<HistoryPick | null>(null);
+  // the folder picker for it is open: a second press must not open a second
+  const choosingGone = React.useRef(false);
   // (`openHere`, below the refs it uses, is what a pick and a "yes" both call.)
   // A pick main has not answered yet. A second pick in that gap is dropped:
   // the busy check would pass it (the old session is already gone) and its
@@ -1976,6 +1989,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         // history picker (P2-E20-01). Absent for every ordinary card, which is
         // the byte-identical pre-E20 start.
         resumeConversationId: props.params?.resumeConversationId,
+        // where that conversation is filed, when its own folder is gone (#1643)
+        ...(props.params?.filedUnder ? { filedUnder: props.params.filedUnder } : {}),
         // ⚠️ A PRE-EXISTING BUG, FIXED HERE (found while building #948).
         //
         // `forkFrom` has been written into this card's params since #801 — the ⋯
@@ -3121,10 +3136,47 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 notice={historyNotice}
                 onClose={() => {
                   setHistoryStop(null);
+                  setHistoryGone(null);
                   setHistoryOpen(false);
                 }}
                 confirm={
-                  historyStop
+                  historyGone
+                    ? goneFolderQuestion(historyGone, t, {
+                        reopen: (target) => {
+                          const gone = historyGone;
+                          setHistoryGone(null);
+                          setHistoryOpen(false);
+                          void addSessionCardTo(props.containerApi, target, {
+                            into: poppedOut ? props.api.group : null,
+                            resumeConversationId: gone.nativeId,
+                            filedUnder: gone.folder,
+                          });
+                        },
+                        choose: () => {
+                          const gone = historyGone;
+                          if (choosingGone.current) return;
+                          choosingGone.current = true;
+                          void (async () => {
+                            const picked = answered(
+                              await window.switchboard.sessions
+                                .pickFolder(popoutWindowKey(poppedOut ? props.api.group : null) ?? undefined)
+                                .finally(() => {
+                                  choosingGone.current = false;
+                                })
+                            );
+                            if (typeof picked !== 'string' || !picked) return; // cancelled: still asking
+                            setHistoryGone(null);
+                            setHistoryOpen(false);
+                            void addSessionCardTo(props.containerApi, picked, {
+                              into: poppedOut ? props.api.group : null,
+                              resumeConversationId: gone.nativeId,
+                              filedUnder: gone.folder,
+                            });
+                          })();
+                        },
+                        cancel: () => setHistoryGone(null),
+                      })
+                    : historyStop
                     ? {
                         title: t('sessionHistory.stopTitle'),
                         // NAMED, so the question is about one conversation and
@@ -3157,6 +3209,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   // A conversation from ANOTHER project still gets a card of its
                   // own: a card is bound to its folder, and a session cannot be
                   // moved to a different one.
+                  // ITS FOLDER IS GONE (#1643): ask where to reopen it.
+                  if (pick.folderGone) {
+                    setHistoryStop(null);
+                    setHistoryGone(pick);
+                    return;
+                  }
+                  setHistoryGone(null);
                   if (!cardId || !samePickFolder(pick.folder, folder)) {
                     setHistoryStop(null);
                     setHistoryOpen(false);
@@ -4684,6 +4743,8 @@ async function addSessionCardTo(
     into?: DockviewApi['groups'][number] | null;
     /** open the new card ON a conversation picked from history (P2-E20-01) */
     resumeConversationId?: string;
+    /** ...whose own folder is gone, filed under this one (#1643) */
+    filedUnder?: string;
     /** open the new card as a FORK of another session's conversation (§5.5
      *  Level 3, P2-E11-12) — experimental, and main re-checks the flag */
     forkFrom?: { sourceSessionId: string; sourceFolder: string };
@@ -4704,7 +4765,7 @@ async function addSessionCardTo(
   } = {}
 ): Promise<string | null> {
   if (!api) return null;
-  const { groupId, into, resumeConversationId, forkFrom, dispatchId, dispatchedAs } = opts;
+  const { groupId, into, resumeConversationId, filedUnder, forkFrom, dispatchId, dispatchedAs } = opts;
   const title = opts.title ?? folderTitle(folder);
   const cardId = crypto.randomUUID();
   // A persistent-group member clusters with its siblings (E12-02): reuse the
@@ -4755,6 +4816,7 @@ async function addSessionCardTo(
       title,
       groupId,
       resumeConversationId,
+      ...(filedUnder ? { filedUnder } : {}),
       forkFrom,
       dispatchId,
       dispatchedAs,

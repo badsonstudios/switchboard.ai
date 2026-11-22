@@ -213,6 +213,7 @@ function harness(
     forgetBriefings?: SessionIpcDeps['forgetBriefings'];
     /** #1637: a card's project key (the folder's git common dir) */
     repoCommonDir?: SessionIpcDeps['repoCommonDir'];
+    reopenFolderFor?: SessionIpcDeps['reopenFolderFor'];
   } = {}
 ) {
   const created: Array<{
@@ -757,6 +758,7 @@ function harness(
     briefingText: opts.briefingText,
     forgetBriefings: opts.forgetBriefings,
     repoCommonDir: opts.repoCommonDir,
+    reopenFolderFor: opts.reopenFolderFor,
   } as unknown as SessionIpcDeps;
 
   const ipc = registerSessionIpc(deps);
@@ -7123,5 +7125,117 @@ describe('the session follows its agent into a worktree (#1616)', () => {
     h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
     expect(h.created[0].resumeSessionId).toBe('n-1');
     expect(h.upserted.at(-1)?.workFolder).toBeUndefined();
+  });
+});
+
+// #1643: a conversation whose folder is gone, reopened from History elsewhere.
+describe('reopening a conversation whose folder is gone (#1643)', () => {
+  let main: string;
+  let projects: string;
+  let gone: string;
+  tempDirEach('sb-1643-ipc-', (d) => (main = d));
+  beforeEach(() => {
+    projects = tempDir('sb-1643-root-');
+    gone = path.join(main, 'removed-worktree');
+  });
+
+  /** a transcript filed under `cwd`'s directory, whose lines say it ran there */
+  function seed(nativeId: string, cwd: string): void {
+    const dir = path.join(projects, slugForCwd(cwd).toLowerCase());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, `${nativeId}.jsonl`),
+      [
+        JSON.stringify({ type: 'user', isSidechain: false, cwd, message: { role: 'user', content: 'the opening ask' }, uuid: 'u1' }),
+        JSON.stringify({ type: 'ai-title', aiTitle: 'Work done in the worktree', sessionId: nativeId }),
+      ].join('\n') + '\n'
+    );
+  }
+  const caps = (): ProviderCapabilities => ({
+    transcripts: { projectsRoot: () => projects },
+    titles: { titleFrom: readAiTitle },
+    resume: {
+      canResume: ({ projectsRoot, folder: f, nativeSessionId }) => conversationExists(projectsRoot, f, nativeSessionId),
+    },
+  });
+  const ID = '0b1c2d3e-4f50-4617-8a9b-0c1d2e3f4a5b';
+
+  it('History marks the row, and says where to reopen it', async () => {
+    seed(ID, gone);
+    const h = harness(caps(), main, { reopenFolderFor: (f) => (f === gone ? main : undefined) });
+    const a = (await h.call('transcripts:history', { scope: 'all' })) as {
+      rows: Array<{ nativeId: string; folderGone?: boolean; reopenIn?: string }>;
+    };
+    expect(a.rows.find((r) => r.nativeId === ID)).toMatchObject({ folderGone: true, reopenIn: main });
+  });
+
+  it('a row whose folder is there is not marked', async () => {
+    seed(ID, main);
+    const h = harness(caps(), main, { reopenFolderFor: () => main });
+    const a = (await h.call('transcripts:history', { scope: 'all' })) as {
+      rows: Array<{ nativeId: string; folderGone?: boolean }>;
+    };
+    expect(a.rows.find((r) => r.nativeId === ID)?.folderGone).toBeUndefined();
+  });
+
+  it('the card resumes it in the main folder, and records where it is filed', () => {
+    seed(ID, gone);
+    const h = harness(caps(), main);
+    h.call('sessions:create', { cardId: 'card-1', folder: main, title: 't', resumeConversationId: ID, filedUnder: gone });
+    expect(h.created[0].resumeSessionId).toBe(ID);
+    expect(h.upserted.at(-1)).toMatchObject({ nativeSessionId: ID, filedUnder: gone });
+    expect(h.watched[0].alsoFolders).toEqual([gone]);
+  });
+
+  it('...and keeps resuming it after a restart, from the card alone', () => {
+    seed(ID, gone);
+    const h = harness(caps(), main, { prior: priorCard({ folder: main, nativeSessionId: ID, filedUnder: gone }) });
+    h.call('sessions:create', { cardId: 'card-1', folder: main, title: 't' });
+    expect(h.created[0].resumeSessionId).toBe(ID);
+    expect(h.upserted.at(-1)?.filedUnder).toBe(gone);
+  });
+
+  it('without where it is filed, the pick is refused rather than started fresh', () => {
+    seed(ID, gone);
+    const h = harness(caps(), main);
+    expect(h.call('sessions:create', { cardId: 'card-1', folder: main, title: 't', resumeConversationId: ID })).toBeNull();
+    expect(h.created).toHaveLength(0);
+  });
+
+  it('a filedUnder that is not a folder path is ignored, not trusted', () => {
+    seed(ID, gone);
+    const h = harness(caps(), main);
+    expect(
+      h.call('sessions:create', { cardId: 'card-1', folder: main, title: 't', resumeConversationId: ID, filedUnder: 'relative/x' })
+    ).toBeNull();
+  });
+
+  it('a filedUnder that still exists is not a gone folder, and is ignored', () => {
+    const living = path.join(main, 'living');
+    fs.mkdirSync(living);
+    seed(ID, living);
+    const h = harness(caps(), main);
+    expect(
+      h.call('sessions:create', { cardId: 'card-1', folder: main, title: 't', resumeConversationId: ID, filedUnder: living })
+    ).toBeNull();
+  });
+
+  it('where the row said it is filed wins over a same-id file in the card folder', () => {
+    seed(ID, gone);
+    seed(ID, main);
+    const h = harness(caps(), main);
+    h.call('sessions:create', { cardId: 'card-1', folder: main, title: 't', resumeConversationId: ID, filedUnder: gone });
+    expect(h.upserted.at(-1)?.filedUnder).toBe(gone);
+  });
+
+  it('no second card can be opened into the same conversation', () => {
+    seed(ID, gone);
+    const h = harness(caps(), main, {
+      otherCards: [priorCard({ folder: main, id: 'card-2', nativeSessionId: ID, filedUnder: gone })],
+    });
+    expect(
+      h.call('sessions:create', { cardId: 'card-1', folder: main, title: 't', resumeConversationId: ID, filedUnder: gone })
+    ).toBeNull();
+    expect(h.created).toHaveLength(0);
   });
 });

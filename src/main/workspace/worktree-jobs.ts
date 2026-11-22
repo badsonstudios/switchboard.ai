@@ -139,6 +139,43 @@ async function isDirectory(p: string): Promise<boolean> {
 }
 
 /**
+ * Where to reopen a conversation whose folder is gone (#1643): the main folder
+ * of the project that folder belonged to, or undefined.
+ *
+ * "Belonged to" is a folder test, because the worktree's own records went with
+ * it: the gone folder sat inside the project's main checkout (the CLI's own
+ * `.claude/worktrees/<name>`), or inside the folder this app makes the
+ * project's worktrees in (`worktreeRootFor`). Only a main folder that is still
+ * a directory is offered. The deepest match wins, like `worktreeFor`.
+ */
+export function reopenFolderIn(
+  gone: string,
+  projects: readonly ProjectRecord[],
+  appRoot: string,
+  isDirectory: (p: string) => boolean = (p) => {
+    try {
+      return fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  }
+): string | undefined {
+  let best: { path: string; depth: number; tied: boolean } | undefined;
+  for (const p of projects) {
+    const roots = [p.primaryPath, worktreeRootFor(p, appRoot)].filter((r): r is string => !!r);
+    for (const r of roots) {
+      if (!isInside(gone, r) || pathKey(gone) === pathKey(r)) continue;
+      const depth = pathKey(r).length;
+      if (!best || depth > best.depth) best = { path: p.primaryPath, depth, tied: false };
+      // two projects claiming it equally (repos with the same folder name
+      // share an app worktree root): no guess, the user picks
+      else if (depth === best.depth && pathKey(best.path) !== pathKey(p.primaryPath)) best.tied = true;
+    }
+  }
+  return best && !best.tied && isDirectory(best.path) ? best.path : undefined;
+}
+
+/**
  * The folder a project's worktrees go in: `<root>/<repo folder name>`, or null
  * when that is unusable.
  *

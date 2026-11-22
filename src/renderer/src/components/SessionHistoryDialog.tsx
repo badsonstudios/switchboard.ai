@@ -52,6 +52,33 @@ export interface HistoryPick {
   folder: string;
   /** what the row was called in the list — so a question about this pick can NAME it (#1127) */
   description?: string;
+  /** its folder is gone, so it must be reopened somewhere else (#1643) */
+  folderGone?: boolean;
+  /** where main suggests reopening it: the project's main folder (#1643) */
+  reopenIn?: string;
+}
+
+/**
+ * A question the picker asks in place of the list (#1127; #1643 added the
+ * third button and `immediate`).
+ */
+export interface HistoryConfirm {
+  /** a short name for the question — what a screen reader calls it */
+  title: string;
+  /** what is at stake, naming the conversation */
+  message: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  /** a second way forward, beside the main one: "Choose a folder…" (#1643) */
+  alternateLabel?: string;
+  onAlternate?: () => void;
+  /**
+   * The yes is pressable at once. Only for a question whose answers throw
+   * nothing away: `STOP_ARM_MS` exists for "stop the turn in flight" (#1127).
+   */
+  immediate?: boolean;
 }
 
 /**
@@ -133,16 +160,7 @@ export function SessionHistoryDialog(props: {
    * pressed a moment later out of habit — lands on "no". Throwing away a turn
    * in flight takes a deliberate move to the other button.
    */
-  confirm?: {
-    /** a short name for the question — what a screen reader calls it */
-    title: string;
-    /** what is at stake, naming the conversation */
-    message: string;
-    confirmLabel: string;
-    cancelLabel: string;
-    onConfirm: () => void;
-    onCancel: () => void;
-  };
+  confirm?: HistoryConfirm;
 }): React.JSX.Element | null {
   const { t, i18n } = useTranslation();
   const [query, setQuery] = React.useState('');
@@ -369,7 +387,12 @@ export function SessionHistoryDialog(props: {
     // A claimed row is inert rather than absent — see the header.
     if (!row || row.claimed) return;
     // Nothing is reset here: see the effect on `props.open` above.
-    props.onPick({ nativeId: row.nativeId, folder: row.folder, description: row.description });
+    props.onPick({
+      nativeId: row.nativeId,
+      folder: row.folder,
+      description: row.description,
+      ...(row.folderGone ? { folderGone: true, ...(row.reopenIn ? { reopenIn: row.reopenIn } : {}) } : {}),
+    });
   };
 
   const move = (delta: number): void => {
@@ -629,12 +652,26 @@ export function SessionHistoryDialog(props: {
                 type="button"
                 data-history-confirm-ok
                 // not until it has been up long enough to be read — `STOP_ARM_MS`
-                disabled={!armed}
+                disabled={!armed && !props.confirm.immediate}
                 onClick={props.confirm.onConfirm}
-                style={armed ? CONFIRM_BUTTON : { ...CONFIRM_BUTTON, color: 'var(--faint)', cursor: 'default' }}
+                style={
+                  armed || props.confirm.immediate
+                    ? CONFIRM_BUTTON
+                    : { ...CONFIRM_BUTTON, color: 'var(--faint)', cursor: 'default' }
+                }
               >
                 {props.confirm.confirmLabel}
               </button>
+              {props.confirm.alternateLabel && props.confirm.onAlternate && (
+                <button
+                  type="button"
+                  data-history-confirm-alt
+                  onClick={props.confirm.onAlternate}
+                  style={CONFIRM_BUTTON}
+                >
+                  {props.confirm.alternateLabel}
+                </button>
+              )}
             </span>
           </div>
         )}
@@ -726,6 +763,16 @@ export function SessionHistoryDialog(props: {
                     </span>
                   )}
                 </span>
+                {/* #1643: the folder it ran in is gone; picking it asks where to reopen it */}
+                {row.folderGone && (
+                  <span
+                    data-history-gone
+                    title={t('sessionHistory.gone.markHint', { folder: row.folder })}
+                    style={{ fontSize: 10, color: 'var(--muted)', whiteSpace: 'nowrap' }}
+                  >
+                    {t('sessionHistory.gone.mark')}
+                  </span>
+                )}
                 {/* #1550: the card's own rows say whose they are. "already
                     open" is true of the current one too, but it reads as some
                     OTHER card, and the way back looked like every row near it. */}

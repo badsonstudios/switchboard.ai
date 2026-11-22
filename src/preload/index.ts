@@ -402,6 +402,11 @@ const api = {
        */
       resumeConversationId?: string;
       /**
+       * Where that picked conversation is filed, when its own folder is gone
+       * (#1643). Only a place for main to LOOK; main still checks it is there.
+       */
+      filedUnder?: string;
+      /**
        * A prepared dispatch this card is the target of (P2-E13-03, §5.15).
        *
        * Opaque: the briefing it names never leaves main — the renderer carries a
