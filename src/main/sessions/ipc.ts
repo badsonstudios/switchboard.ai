@@ -3437,11 +3437,22 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // project keys (E42, #1637): the folder's git common dir, in `pathKey` form,
   // so every worktree of one repo shares a key. Cached per folder like the
   // auto key, and fail-open the same way: no answer, no key, no project.
-  const repoKeyCache = new Map<string, string | null>();
+  //
+  // Only a FOUND key is kept for good. "No key" is remembered for
+  // REPO_KEY_MISS_MS and then asked again (#1637 review): a one-off spawn
+  // failure, a folder that did not exist yet, or a later `git init` must not
+  // keep a session out of its project until restart. The miss window keeps a
+  // plain folder from costing one git spawn per `sessions:cards`.
+  const REPO_KEY_MISS_MS = 30_000;
+  const repoKeyCache = new Map<string, string>();
+  const repoKeyMiss = new Map<string, number>();
   const repoKeyFor = async (folder: string): Promise<string | undefined> => {
     if (!deps.repoCommonDir) return undefined;
     const norm = pathKey(folder);
-    if (repoKeyCache.has(norm)) return repoKeyCache.get(norm) ?? undefined;
+    const hit = repoKeyCache.get(norm);
+    if (hit) return hit;
+    const missedAt = repoKeyMiss.get(norm);
+    if (missedAt !== undefined && Date.now() - missedAt < REPO_KEY_MISS_MS) return undefined;
     let key: string | null = null;
     try {
       const dir = await deps.repoCommonDir(folder);
@@ -3449,8 +3460,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     } catch {
       /* not a repo / no git */
     }
-    repoKeyCache.set(norm, key);
-    return key ?? undefined;
+    if (key) {
+      repoKeyCache.set(norm, key);
+      repoKeyMiss.delete(norm);
+      return key;
+    }
+    repoKeyMiss.set(norm, Date.now());
+    return undefined;
   };
 
   // joined view for the rail: every persisted card, with its live status if

@@ -119,7 +119,9 @@ export const autoBucket = (autoKey: string): string => `${AUTO_PREFIX}${autoKey}
 export function bucketLabel(
   bucket: string,
   groups: ReadonlyArray<{ id: string; name: string }>,
-  looseLabel: string
+  looseLabel: string,
+  /** what a project's "somewhere in this repo" section is called (#1637) */
+  unplacedLabel: string = looseLabel
 ): string {
   const g = groups.find((x) => x.id === bucket);
   if (g) return g.name;
@@ -129,7 +131,7 @@ export function bucketLabel(
   if (bucket.startsWith('project:')) {
     const rest = bucket.slice('project:'.length);
     const path = rest.slice(rest.indexOf(':') + 1);
-    return path.split('/').pop() || looseLabel;
+    return path.split('/').pop() || unplacedLabel;
   }
   if (bucket.startsWith(AUTO_PREFIX)) {
     // the same trim the auto-group's own header does, so the words in the

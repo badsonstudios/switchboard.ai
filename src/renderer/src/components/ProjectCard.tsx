@@ -19,6 +19,7 @@ import type { RailProject, RailSession } from '../model/types';
 import type { ProjectWorktreeRows } from '../lib/groups';
 import { pathKey } from '../../../shared/projects';
 import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
+import { drawnGroupColour, useGroupColours } from '../lib/group-colours';
 
 export interface ProjectCardProps {
   project: RailProject;
@@ -60,6 +61,9 @@ const tagStyle = (dashed: boolean): React.CSSProperties => ({
 export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
   const { t } = useTranslation();
   const { project } = props;
+  // a project's colour is the user's choice, like a group's: it follows
+  // Settings > Appearance > Group colours (#1637 review)
+  const color = drawnGroupColour('group', project.color, useGroupColours());
   const [menu, setMenu] = React.useState<{
     x: number;
     y: number;
@@ -72,8 +76,11 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
   const members = props.sections.flatMap((s) => s.members);
   const needHere = members.filter((m) => props.needing.has(m.id)).length;
   const worktreeCount = props.sections.filter((s) => s.info).length;
-  const hiddenCount = (project.worktrees ?? []).filter((w) =>
-    project.hiddenWorktrees.includes(pathKey(w.path))
+  // only the hidden ones actually left out: a hidden worktree with a session
+  // in it is still drawn, so "Show N hidden" must not promise it
+  const shown = new Set(props.sections.map((s) => pathKey(s.path)));
+  const hiddenCount = (project.worktrees ?? []).filter(
+    (w) => project.hiddenWorktrees.includes(pathKey(w.path)) && !shown.has(pathKey(w.path))
   ).length;
   const bodyId = `project-body-${project.id}`;
 
@@ -124,7 +131,8 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
     {
       id: 'new-session',
       label: t('projects.newSessionHere'),
-      can: true,
+      // git says a prunable worktree's folder is gone: nothing to start in
+      can: !s.info?.prunable,
       run: () => props.onNewSessionIn(s.path),
     },
     {
@@ -150,7 +158,7 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
       style={{
         background: SURFACE,
         border: '1px solid var(--group-frame)',
-        borderInlineStart: `3px solid ${project.color}`,
+        borderInlineStart: `3px solid ${color}`,
         borderRadius: 8,
         boxShadow: 'var(--group-lift)',
         marginBlockEnd: 9,
@@ -170,7 +178,7 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
           cursor: 'pointer',
           userSelect: 'none',
           borderBlockEnd: props.collapsed ? undefined : '1px solid var(--border)',
-          background: `color-mix(in srgb, ${project.color} 9%, ${SURFACE})`,
+          background: `color-mix(in srgb, ${color} 9%, ${SURFACE})`,
           borderStartEndRadius: 7,
           borderEndEndRadius: props.collapsed ? 7 : 0,
         }}
@@ -202,7 +210,7 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
           }}
           style={{ width: 12, display: 'grid', placeItems: 'center' }}
         >
-          <span style={{ width: 9, height: 9, borderRadius: '50%', background: project.color }} />
+          <span style={{ width: 9, height: 9, borderRadius: '50%', background: color }} />
         </button>
         {editing ? (
           <input
@@ -338,6 +346,7 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
                       data-worktree-new-session
                       title={t('projects.newSessionHere')}
                       aria-label={t('projects.newSessionHere')}
+                      disabled={!!s.info.prunable}
                       onClick={() => props.onNewSessionIn(s.path)}
                       style={{ fontSize: 10 }}
                     >

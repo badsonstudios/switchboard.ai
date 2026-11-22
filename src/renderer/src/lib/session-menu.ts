@@ -38,6 +38,8 @@ export interface SessionMenuFacts {
   pinned: boolean;
   /** finished, and nobody has looked (#1219) */
   finished: boolean;
+  /** drawn in a project (#1637): its project places it, so no group moves */
+  inProject?: boolean;
 }
 
 /** what running each shared item means in the place the menu was opened */
@@ -74,7 +76,7 @@ export function sessionMenuItems(
     // one choice out of a known set: each of your groups, and none. The
     // current one is checked. Auto-groups are not here — their membership is
     // computed from the folder, so an entry for one would do nothing.
-    ...(f.groups.length > 0 && started
+    ...(f.groups.length > 0 && started && !f.inProject
       ? [
           ...f.groups.map(
             (g, i): RailGroupMenuItem => ({

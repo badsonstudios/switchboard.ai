@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { registerProjectIpc, type ProjectGit } from './project-ipc';
 import { WorkspaceStore } from './store';
+import { GROUP_PALETTE } from '../../shared/group-palette';
 import { IpcBroker } from '../ipc/broker';
 import { Logger } from '../log/logger';
 import type { ProjectInspection, ProjectRecord, WorktreeInfo } from '../../shared/projects';
@@ -90,6 +91,22 @@ describe('projects:inspect', () => {
     expect(await h.call('projects:inspect', path.join(repo, 'nope'))).toBeNull();
     expect(h.warnings).toHaveLength(2);
   });
+
+  it('refuses a UNC path before running git or touching the network (#1637 review)', async () => {
+    let gitRan = false;
+    const h = harness({
+      commonDir: async () => {
+        gitRan = true;
+        return null;
+      },
+    });
+    const unc = String.raw`\\host\share\repo`;
+    expect(await h.call('projects:inspect', unc)).toBeNull();
+    expect(await h.call('projects:inspect', '//host/share/repo')).toBeNull();
+    expect(await h.call('projects:open', { folder: unc })).toBeNull();
+    expect(gitRan).toBe(false);
+    expect(h.warnings.every((w) => w.includes('local absolute path'))).toBe(true);
+  });
 });
 
 describe('projects:open', () => {
@@ -168,5 +185,24 @@ describe('the store keeps projects across a relaunch, and drops what it cannot u
     stores.push(again);
     again.load();
     expect(again.listProjects().map((x) => x.id)).toEqual([p.id]);
+  });
+
+  it('gives an off-palette colour a palette one, and keeps one record per id (#1637 review)', async () => {
+    const h = harness();
+    const p = (await h.call('projects:open', { folder: repo })) as ProjectRecord;
+    store.save();
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, 'workspace.json'), 'utf8')) as {
+      projects: ProjectRecord[];
+    };
+    raw.projects[0].color = 'red; background: url(x)';
+    raw.projects.push({ ...p, commonDir: path.join(repo, 'other', '.git') });
+    fs.writeFileSync(path.join(dir, 'workspace.json'), JSON.stringify(raw));
+
+    const again = new WorkspaceStore(path.join(dir, 'workspace.json'));
+    stores.push(again);
+    again.load();
+    const list = again.listProjects();
+    expect(list.map((x) => x.id)).toEqual([p.id]);
+    expect((GROUP_PALETTE as readonly string[]).includes(list[0].color)).toBe(true);
   });
 });

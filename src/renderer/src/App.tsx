@@ -172,6 +172,7 @@ import { setFileHistoryOpener } from './lib/file-history';
 import { openFileStartFolder, rememberOpenedFile } from './lib/open-file-start';
 import { isDocumentPanelId } from './lib/document-panels';
 import { isDiffPanelId } from './lib/diff-panels';
+import { pathKey, worktreeFor } from '../../shared/projects';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -1510,6 +1511,25 @@ export function App(): React.JSX.Element {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [refreshProjects]);
+  // A session in a project's repo but in no worktree we have read (#1637
+  // review): a worktree made while the window kept focus, or one the AI moved
+  // the session into (#1616). Re-read once per new such session, rather than
+  // leaving it under "somewhere in this repo" until the next focus.
+  const strayKey = sessions
+    .filter((s) => {
+      if (!s.repoKey) return false;
+      const p = projects.find((x) => pathKey(x.commonDir) === s.repoKey);
+      if (!p?.worktrees) return false;
+      const top = s.autoKey ? pathKey(s.autoKey) : null;
+      if (top && p.worktrees.some((w) => pathKey(w.path) === top)) return false;
+      return !(s.folder && worktreeFor(s.folder, p.worktrees));
+    })
+    .map((s) => s.id)
+    .sort()
+    .join('|');
+  useEffect(() => {
+    if (strayKey) void refreshProjects();
+  }, [strayKey, refreshProjects]);
 
   useEffect(() => {
     void refreshGroups();

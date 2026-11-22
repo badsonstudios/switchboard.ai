@@ -5,7 +5,7 @@
 // not in an automatic folder group. Projects come first in `flat`, which is
 // what Ctrl+1..9 counts.
 import { describe, it, expect } from 'vitest';
-import { projectBucket, railOrder, type ProjectForOrder } from './groups';
+import { isProjectMember, projectBucket, railOrder, type ProjectForOrder } from './groups';
 import { bucketLabel } from './rail-order';
 import { NO_PINS } from './pinning';
 import { NO_ORDER } from './rail-order';
@@ -97,6 +97,24 @@ describe('railOrder with projects', () => {
     expect(r.projects[0].worktrees[0].members.map((m) => m.id)).toEqual(['a', 'b']);
   });
 
+  it('draws no section for a bare repo entry, and still places sessions in its worktrees', () => {
+    const BARE = 'C:\\Projects\\bare.git';
+    const r = order(
+      [inRepo('b', WT1), inRepo('x', 'C:\\Projects\\unknown-wt')],
+      [
+        project({
+          worktrees: [
+            { path: BARE, primary: true, bare: true, head: '', detached: false },
+            { path: WT1, primary: false, branch: 'feat/x', head: 'b', detached: false },
+          ],
+        }),
+      ]
+    );
+    expect(r.projects[0].worktrees.map((w) => w.path)).toEqual([WT1, '']);
+    expect(r.projects[0].worktrees[1].members.map((m) => m.id)).toEqual(['x']);
+    expect(r.flat.map((s) => s.id).sort()).toEqual(['b', 'x']);
+  });
+
   it('gives every worktree its own reorder bucket', () => {
     const r = order([inRepo('a', WT1), inRepo('b', WT1)], [project()]);
     const bucket = projectBucket('p1', WT1);
@@ -123,5 +141,19 @@ describe('bucketLabel for a project worktree', () => {
   });
   it('falls back for the unplaced section', () => {
     expect(bucketLabel(projectBucket('p1', ''), [], 'Ungrouped')).toBe('Ungrouped');
+  });
+  it('names the unplaced section with its own words when given them', () => {
+    expect(bucketLabel(projectBucket('p1', ''), [], 'Ungrouped', 'Somewhere in this repo')).toBe(
+      'Somewhere in this repo'
+    );
+  });
+});
+
+describe('isProjectMember (group moves do not apply to a project member)', () => {
+  it('is true only when the repo key is one of the projects', () => {
+    expect(isProjectMember(pathKey(COMMON), [project()])).toBe(true);
+    expect(isProjectMember(pathKey('C:\\other\\.git'), [project()])).toBe(false);
+    expect(isProjectMember(undefined, [project()])).toBe(false);
+    expect(isProjectMember(pathKey(COMMON), [])).toBe(false);
   });
 });

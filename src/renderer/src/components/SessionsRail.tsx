@@ -67,7 +67,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailProject, RailSession } from '../model/types';
 import { drawnGroupColour, useGroupColours } from '../lib/group-colours';
-import { autoGroupDrop, autoGroupName, railOrder } from '../lib/groups';
+import { autoGroupDrop, autoGroupName, isProjectMember, railOrder } from '../lib/groups';
 import {
   LOOSE_BUCKET,
   ManualOrder,
@@ -735,6 +735,9 @@ export function SessionsRail(props: {
     props.projects ?? []
   );
   const grouped = new Map(order.groups.map((g) => [g.id, g.members]));
+  /** drawn in a project (#1637): group moves do not apply to it */
+  const inProject = (cardId: string): boolean =>
+    isProjectMember(props.sessions.find((s) => s.id === cardId)?.repoKey, props.projects ?? []);
 
   /**
    * Messages other sessions have sent, per card, waiting for the user (#774).
@@ -827,7 +830,10 @@ export function SessionsRail(props: {
   const draggedCanRegroup = (): boolean => {
     const dragged = dragCard.current ?? getDraggedCard();
     if (!dragged) return true;
-    return props.sessions.find((s) => s.id === dragged)?.status !== 'not-started';
+    const s = props.sessions.find((x) => x.id === dragged);
+    // a project member is placed by its project (#1637 review): a group drop
+    // would change a `groupId` nobody can see, so it is refused like #687's
+    return s?.status !== 'not-started' && !inProject(dragged);
   };
 
   /** which half of the row the pointer is in — above the middle means "land
@@ -1207,7 +1213,7 @@ export function SessionsRail(props: {
           const cardId = e.dataTransfer.getData(DND_TYPE) || getDraggedCard();
           setDraggedCard(null);
           setDropTarget(null);
-          if (!cardId) return;
+          if (!cardId || inProject(cardId)) return;
           if (isAuto) {
             const what = autoDrop(cardId);
             if (what === 'ungroup') props.onMoveToGroup(cardId, null);
@@ -1920,7 +1926,7 @@ export function SessionsRail(props: {
         e.preventDefault();
         const cardId = e.dataTransfer.getData(DND_TYPE) || getDraggedCard();
         setDraggedCard(null);
-        if (!cardId) return;
+        if (!cardId || inProject(cardId)) return;
         // a session that is already in no group has nowhere to be moved out of
         // (#582): the group card's own drop has always had this guard, and
         // without it this one paid a round trip to main and a reshuffle of
@@ -2338,6 +2344,7 @@ export function SessionsRail(props: {
                 session,
                 groups: props.groups,
                 pinned: props.pinned.has(menu.session.id),
+                inProject: inProject(menu.session.id),
                 // ...or a "waiting" to dismiss: the same action since #1413
                 finished:
                   (props.finished?.has(menu.session.id) ?? false) ||

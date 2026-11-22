@@ -2,6 +2,7 @@
 // until E3-02 wires terminals in. Layout serializes to the workspace store on
 // every change and restores on boot.
 import { editorAvailable, openFolderInEditor } from '../lib/editor';
+import { isProjectMember } from '../lib/groups';
 import { errorText } from '../../../shared/error-text';
 import React, { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -893,6 +894,7 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
         session: { id: cardId, title, status: rec ? rec.status : 'not-started', groupId: rec?.groupId },
         groups: state.groups,
         pinned: sessionStore.isPinned(cardId),
+        inProject: isProjectMember(rec?.repoKey, state.projects),
         // ...or a "waiting" to dismiss: the same action since #1413
         finished: sessionStore.getFinishedCards().has(cardId) || sessionStore.canDismissWait(cardId),
       },

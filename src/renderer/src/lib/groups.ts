@@ -43,6 +43,16 @@ export interface ProjectWorktreeRows<T> {
   members: T[];
 }
 
+/**
+ * Is a session with this `repoKey` drawn in a project (E42, #1637)? Then the
+ * project, not its group, decides where it sits, so a group move would change
+ * a `groupId` nobody can see. Every surface that offers one asks this first.
+ */
+export const isProjectMember = (
+  repoKey: string | undefined,
+  projects: ReadonlyArray<{ commonDir: string }>
+): boolean => !!repoKey && projects.some((p) => pathKey(p.commonDir) === repoKey);
+
 /** A project's manual-order bucket for one worktree (`path` '' = unplaced). */
 export const projectBucket = (projectId: string, path: string): string =>
   `project:${projectId}:${path === '' ? '' : pathKey(path)}`;
@@ -253,6 +263,9 @@ export function railOrder<T extends AutoGroupable>(
       const hidden = new Set(p.hiddenWorktrees.map(pathKey));
       const sections: Array<ProjectWorktreeRows<T>> = [];
       for (const info of p.worktrees ?? []) {
+        // a bare repo's entry is its git dir, not a checkout: no section, or
+        // its ⊕ would start a session inside .git (#1637 review)
+        if (info.bare) continue;
         const members = byWt.get(info.path) ?? [];
         if (hidden.has(pathKey(info.path)) && members.length === 0) continue;
         const bucket = projectBucket(p.id, info.path);

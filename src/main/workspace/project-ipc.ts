@@ -43,6 +43,19 @@ function isPaletteColor(c: unknown): c is string {
   return typeof c === 'string' && (GROUP_PALETTE as readonly string[]).includes(c.toLowerCase());
 }
 
+/**
+ * A folder the renderer may hand us to run git in: absolute and LOCAL (#1637
+ * review). Every other git handler is scoped to known session folders; these
+ * two take a picked folder, so a UNC path (\\host\share, //host/share) is
+ * refused outright: a stat and a git run against a remote host would leak NTLM
+ * credentials and wait out the budget.
+ */
+function isLocalAbsolute(p: unknown): p is string {
+  return typeof p === 'string' && path.isAbsolute(p) && !/^[\\/]{2}/.test(p);
+}
+
+const HIDDEN_MAX = 200;
+
 async function isDirectory(p: string): Promise<boolean> {
   try {
     return (await fs.promises.stat(p)).isDirectory();
@@ -100,8 +113,8 @@ export function registerProjectIpc(
   broker.handle('projects:list', () => store.listProjects());
 
   broker.handle('projects:inspect', async (_e, folder: unknown) => {
-    if (typeof folder !== 'string' || !path.isAbsolute(folder))
-      return refuse('projects:inspect', 'folder must be an absolute path', null);
+    if (!isLocalAbsolute(folder))
+      return refuse('projects:inspect', 'folder must be a local absolute path', null);
     if (!(await isDirectory(folder)))
       return refuse('projects:inspect', 'folder is not a directory', null);
     return inspect(folder);
@@ -109,8 +122,8 @@ export function registerProjectIpc(
 
   broker.handle('projects:open', async (_e, opts: { folder?: unknown; name?: unknown }) => {
     const folder = opts?.folder;
-    if (typeof folder !== 'string' || !path.isAbsolute(folder))
-      return refuse('projects:open', 'folder must be an absolute path', null);
+    if (!isLocalAbsolute(folder))
+      return refuse('projects:open', 'folder must be a local absolute path', null);
     if (!(await isDirectory(folder)))
       return refuse('projects:open', 'folder is not a directory', null);
     const found = await inspect(folder);
@@ -132,8 +145,13 @@ export function registerProjectIpc(
       primaryPath: found.primaryPath,
       hiddenWorktrees: [],
     };
-    if (!store.upsertProject(project))
-      return refuse('projects:open', 'that repo is already a project', null);
+    if (!store.upsertProject(project)) {
+      // two opens raced: answer the one that won, the same as a re-open above
+      const winner = store
+        .listProjects()
+        .find((p) => pathKey(p.commonDir) === pathKey(found.commonDir));
+      return winner ?? refuse('projects:open', 'that repo is already a project', null);
+    }
     log.info('project opened', { projectId: project.id, worktrees: found.worktrees.length });
     return project;
   });
@@ -164,7 +182,11 @@ export function registerProjectIpc(
       }
       if (patch?.hiddenWorktrees !== undefined) {
         const h = patch.hiddenWorktrees;
-        if (!Array.isArray(h) || !h.every((x) => typeof x === 'string'))
+        if (
+          !Array.isArray(h) ||
+          h.length > HIDDEN_MAX ||
+          !h.every((x) => typeof x === 'string' && path.isAbsolute(x))
+        )
           return refuse('projects:update', 'hiddenWorktrees must be a list of paths', null, {
             projectId: id,
           });

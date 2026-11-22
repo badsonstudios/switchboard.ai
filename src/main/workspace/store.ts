@@ -2545,12 +2545,25 @@ export function isSaneProject(p: unknown): p is ProjectRecord {
  */
 function dedupeProjects(list: ProjectRecord[]): ProjectRecord[] {
   const seen = new Set<string>();
-  return list.filter((p) => {
-    const k = pathKey(p.commonDir);
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  const ids = new Set<string>();
+  const palette = GROUP_PALETTE as readonly string[];
+  return list
+    .filter((p) => {
+      const k = pathKey(p.commonDir);
+      // one record per repo, and one per id: two cards sharing an id would
+      // share a React key and each edit would land on whichever came first
+      if (seen.has(k) || ids.has(p.id)) return false;
+      seen.add(k);
+      ids.add(p.id);
+      return true;
+    })
+    .map((p, i) =>
+      // a hand-edited colour reaches CSS otherwise (#1637 review): off the
+      // palette, the record takes a palette colour instead of being dropped
+      palette.includes(p.color.toLowerCase())
+        ? p
+        : { ...p, color: palette[i % palette.length] }
+    );
 }
 
 function isSaneSession(s: unknown): s is PersistedSession {

@@ -3838,7 +3838,9 @@ app
       })(),
       defaultProviderId,
       repoRoot: (folder) => gitService.root(folder),
-      repoCommonDir: (folder) => gitService.commonDir(folder),
+      // bounded (#1637 review): this sits under `sessions:cards`, and a git
+      // hung on a network drive must not stall every card
+      repoCommonDir: (folder) => gitService.commonDir(folder, 5_000),
       // The user's own command FILES are the provider's to find (#1288,
       // `commandFiles`; Claude's read `.claude/`). Without the capability the
       // composer lists the builtins alone.

@@ -48,7 +48,9 @@ under the project in the list; they keep running.
 
 - **A project wins over groups.** A session in a project's repo is shown in the
   project, even if you put it in a group. Remove the project and it goes back
-  to its group.
+  to its group. While it is in a project, **Move to group** is not offered and
+  dragging it onto a group does nothing, because the project decides where it
+  sits.
 - **Worktrees are read fresh** when the app starts and whenever you switch back
   to it, so a worktree you add or remove in a terminal shows up then.
 - **One card per repo.** Opening a repo that is already a project just says so.
