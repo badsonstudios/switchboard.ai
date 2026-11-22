@@ -3,6 +3,12 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ E42 Projects (#1636): step 3 (#1638) IN FLIGHT (2026-11-22), branch `feature/1638-finish-worktree`. NEXT after it: #1616
+>
+> **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* Run order unchanged: **#1506 → #1638 → #1616 → #1507 → release** (the release is cut by the orchestrator after the last step, not by a step).
+> - Plan posted on the issue: update from main by MERGE (conflicts left mid-merge and handed to the session or the user), push & PR via `gh`, local merge only without a remote, safe removal (unlink first, keep unmerged branches, refuse dirty unless insisted), ahead/behind + line counts on the card, worktrees removed outside the app dropped.
+> - Measured: the CLI resumes a conversation by id from ANY folder after its own folder is deleted (it appends to the original transcript), so removal keeps History intact.
+
 > # ▶ E42 Projects (#1636): step 2 (#1506) DONE via PR #1642 (2026-11-22, unreleased). NEXT: #1638
 >
 > **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* So E42 runs to the end with no stops: **#1506 → #1638 → #1616 → #1507 → release** (the release is cut by the orchestrator after the last step, not by a step).

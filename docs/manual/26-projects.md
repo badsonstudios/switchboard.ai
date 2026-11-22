@@ -96,9 +96,9 @@ steps fill in the rest:
 You can also set where new worktrees start from and where they go. Settings are
 saved in the app, not in the repo.
 
-When Switchboard removes a worktree it made (for example **Discard worktree**),
-it unlinks shared folders first, so the real `node_modules` in your main folder
-is never touched.
+Whenever Switchboard removes a worktree (**Discard worktree**, or **Remove
+worktree…** below), it unlinks shared folders first, so the real `node_modules`
+in your main folder is never touched.
 
 ## When a folder is already in use
 
@@ -118,6 +118,79 @@ Tick **Don't ask again** to remember your answer, or set it in **Settings ▸
 General ▸ When a folder is already in use** (Ask / Always share the folder /
 Always offer a new worktree). Starting a session from a worktree's **⊕**, a
 group's **⊕**, or **Duplicate** never asks: those already say "here".
+
+## Finishing a worktree
+
+A worktree's **⋯** menu carries the end of its life. Beside each worktree's
+branch the card shows where it stands against main: **↑2 ↓3** means two commits
+that aren't on main yet and three on main that this worktree doesn't have, and
+**+120 −8** is the lines it changes (counting what isn't committed yet). Hover
+for the same in words. The numbers are refreshed whenever you switch back to the
+app.
+
+### Update from main
+
+**Update from main** (it shows how many commits behind you are) brings main's
+new commits into the worktree's branch. Switchboard fetches first when the repo
+has a remote, then **merges** main in. It merges rather than rebases so a branch
+you have already pushed, or opened a pull request for, never needs a force-push.
+
+- **Changes that aren't committed** stop it before anything happens, and the
+  dialog lists the files. Commit them (or ask the session to), then try again.
+  Nothing is stashed for you.
+- **If both sides changed the same lines,** git stops half-way and Switchboard
+  leaves the folder exactly like that, so nothing is lost. The dialog lists the
+  files and offers three ways on:
+  - **Ask *session* to resolve** sends the worktree's session a message naming
+    the files and asking it to resolve them, run the tests and commit the merge.
+  - **Abort the update** puts the worktree back exactly as it was.
+  - **I'll do it myself** just closes the dialog. The merge stays in progress
+    until you finish it (resolve, then commit) or run `git merge --abort`.
+
+Switchboard never resolves a conflict for you.
+
+### Push & open pull request…
+
+A pull request is how a worktree's work gets into main. **Push & open pull
+request…** pushes the branch and opens a pull request into main with the GitHub
+CLI (`gh`). The title starts as what you said the worktree was for (or its
+session's name), and the description lists the worktree's sessions and what each
+is working on. Edit both, and tick **Open as a draft** if it isn't ready for
+review. GitHub opens in your browser when it's done.
+
+- If a pull request is already open for that branch, the dialog says so and
+  offers **Open it** instead of making a second one.
+- If `gh` isn't installed or isn't signed in, the dialog says which (run
+  `gh auth login` in a terminal), and nothing is pushed.
+
+### Merge into main locally
+
+Only for a repo with **no remote** (nowhere to push a pull request to): **Merge
+into main locally** merges the branch into main in the main folder, after you
+confirm. The main folder has to be on main with nothing uncommitted. If the two
+branches conflict, nothing is merged and the main folder is left as it was;
+update the worktree from main, resolve it there, then try again.
+
+### Remove worktree…
+
+**Remove worktree…** asks once and tells you what you would lose:
+
+- **Files changed but not committed** are listed, and the button becomes
+  **Remove anyway**. Those changes are lost if you go ahead.
+- If the branch has **commits that aren't on main** and no merged pull request,
+  it says so and **Keep the branch** is ticked: the folder goes, the commits
+  stay, and you can check the branch out again later. Untick it to delete the
+  branch too. A branch whose pull request was merged starts unticked.
+- **Open sessions in the worktree are closed first.** Their conversations stay
+  in History (Claude Code keeps them, and Switchboard never deletes them).
+- **Linked folders such as `node_modules` are unlinked before anything is
+  deleted,** so the real folder in your main folder is never touched.
+
+If a different checkout has appeared at that folder since, Switchboard refuses
+and removes nothing. The main folder can't be removed.
+
+A worktree you delete outside the app (in a terminal or Explorer) drops off the
+card the next time it's read.
 
 ## Hiding and removing
 
@@ -140,13 +213,6 @@ group's **⊕**, or **Duplicate** never asks: those already say "here".
   to it, so a worktree you add or remove in a terminal shows up then.
 - **One card per repo.** Opening a repo that is already a project just says so.
 - **Projects are saved with your workspace**, not in the repo.
-
-## Coming next
-
-- **Finishing a worktree:** update it from main, push it and open a pull
-  request, and remove it safely. Until then, remove a finished worktree with
-  `git worktree remove` in a terminal (unlink any shared folder inside it first).
-- **Line counts per worktree** on the card.
 
 ## If something goes wrong
 

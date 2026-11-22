@@ -165,6 +165,21 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   folder (Settings ▸ General: Ask, Always share, or Always offer a new
   worktree). Switchboard never makes a worktree without you confirming it.
 - **Open folder in editor** on any worktree in a project, from its **⋯** menu.
+- **Finishing a worktree,** from its **⋯** menu. **Update from main** merges
+  main in (it fetches first, and shows how many commits behind you are); if
+  both sides changed the same lines it stops, leaves the folder mid-merge, lists
+  the files, and offers to ask the worktree's session to resolve them, abort the
+  update, or leave it to you. **Push & open pull request…** pushes the branch
+  and opens a pull request with the GitHub CLI, title and description filled in
+  from what the worktree is for and its sessions, draft optional. **Merge into
+  main locally** appears only for a repo with no remote. **Remove worktree…**
+  lists uncommitted files before you can remove them, keeps a branch that is not
+  merged unless you untick it, closes the worktree's sessions first (their
+  conversations stay in History) and unlinks shared folders before deleting
+  anything.
+- **Where each worktree stands** on the project card: commits ahead of and
+  behind main, and lines added and removed. A worktree deleted outside the app
+  drops off the card.
 
 ## 0.8.143 — 2026-11-18
 

@@ -49,6 +49,10 @@ export interface RailGroupMenuItem {
    * view toggles, #1384). Same mark, truer role.
    */
   toggle?: boolean;
+  /** quiet words at the end of the row, e.g. "3 behind" (#1638) */
+  hint?: string;
+  /** a destructive command (it still asks before it does anything), drawn in the danger ink */
+  danger?: boolean;
 }
 
 export function RailGroupMenu(props: {
@@ -198,7 +202,7 @@ export function RailGroupMenu(props: {
               borderRadius: 4,
               border: 'none',
               cursor: 'pointer',
-              color: 'var(--text)',
+              color: item.danger ? 'var(--status-crashed-ink, var(--text))' : 'var(--text)',
               whiteSpace: 'nowrap',
               textAlign: 'start',
               fontSize: 11,
@@ -213,6 +217,11 @@ export function RailGroupMenu(props: {
               </span>
             )}
             {item.label}
+            {item.hint && (
+              <span data-group-menu-hint style={{ color: 'var(--muted)', marginInlineStart: 14, float: 'inline-end' }}>
+                {item.hint}
+              </span>
+            )}
           </button>
         </React.Fragment>
       ))}

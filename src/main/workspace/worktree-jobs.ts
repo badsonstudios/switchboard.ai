@@ -311,7 +311,9 @@ export class WorktreeJobs {
     // match (#1506, Windows CI). Our spelling only when git cannot say.
     const top = await git.root(s.job.path);
     s.madeKey = pathKey(top ? path.normalize(top) : s.job.path);
-    this.remember(project.id, s.madeKey);
+    // what it is for (#1638): the dialog's "What's it for?", which prefills the PR title
+    const purpose = typeof req.title === 'string' ? req.title.trim().slice(0, 200) : '';
+    this.remember(project.id, s.madeKey, purpose);
 
     // ── copy ──
     const copies = (project.copyFiles ?? []).filter(isInsideRelative).map(cleanRelative);
@@ -388,16 +390,20 @@ export class WorktreeJobs {
     return this.reserved.has(k) || [...this.jobs.values()].some((s) => pathKey(s.job.path) === k);
   }
 
-  private remember(projectId: string, key: string): void {
+  private remember(projectId: string, key: string, purpose = ''): void {
     const p = this.deps.store.listProjects().find((x) => x.id === projectId);
     if (!p) return;
-    this.deps.store.upsertProject({ ...p, made: [...new Set([...(p.made ?? []), key])] });
+    this.deps.store.upsertProject({
+      ...p,
+      made: [...new Set([...(p.made ?? []), key])],
+      ...(purpose ? { purposes: { ...(p.purposes ?? {}), [key]: purpose } } : {}),
+    });
   }
 
   private forget(projectId: string, key: string): void {
     const p = this.deps.store.listProjects().find((x) => x.id === projectId);
     if (!p) return;
-    this.deps.store.upsertProject({ ...p, made: (p.made ?? []).filter((m) => m !== key) });
+    this.deps.store.upsertProject(forgetWorktree(p, key));
   }
 
   private phase(s: JobState, phase: WorktreeJob['phase']): void {
@@ -430,6 +436,27 @@ export class WorktreeJobs {
     this.deps.log.warn(`projects:createWorktree refused: ${reason}`);
     return null;
   }
+}
+
+/**
+ * A project record with every app record of one worktree dropped: made,
+ * hidden, and what it was for (#1638). Used when a worktree is discarded,
+ * removed, or found gone.
+ */
+export function forgetWorktree(p: ProjectRecord, key: string): ProjectRecord {
+  const k = pathKey(key);
+  const next: ProjectRecord = {
+    ...p,
+    hiddenWorktrees: p.hiddenWorktrees.filter((h) => pathKey(h) !== k),
+    made: (p.made ?? []).filter((m) => pathKey(m) !== k),
+  };
+  if (p.purposes) {
+    const purposes = Object.fromEntries(Object.entries(p.purposes).filter(([pk]) => pathKey(pk) !== k));
+    if (Object.keys(purposes).length > 0) next.purposes = purposes;
+    else delete next.purposes;
+  }
+  if (next.made?.length === 0) delete next.made;
+  return next;
 }
 
 /** The environment a setup command runs in: ours, minus the switch that makes Electron a plain Node. */

@@ -107,6 +107,7 @@ import { MenuPlacement, placeMenu } from '../lib/menu-placement';
 import { dropGroup, stepGroup } from '../lib/group-order';
 import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
 import { ProjectCard } from './ProjectCard';
+import type { ProjectStats } from '../../../shared/projects';
 import { sessionMenuItems } from '../lib/session-menu';
 import { SessionRow } from './SessionRow';
 import { FolderGlyph } from './FolderGlyph';
@@ -261,7 +262,14 @@ export function SessionsRail(props: {
     startJob?: (jobId: string) => void;
     dismissJob?: (jobId: string) => void;
     discardJob?: (jobId: string) => void;
+    // step 3 (#1638): finishing a worktree
+    updateWorktree?: (id: string, folder: string) => void;
+    openPr?: (id: string, folder: string) => void;
+    mergeLocal?: (id: string, folder: string) => void;
+    removeWorktree?: (id: string, folder: string) => void;
   };
+  /** per project: ahead/behind and line counts per worktree, and whether it has a remote (#1638) */
+  projectStats?: ReadonlyMap<string, ProjectStats>;
   /**
    * A session dropped on an AUTOMATIC group (#1603): make it a group you own,
    * holding its members in order and then the dropped one. Without it, an
@@ -2088,6 +2096,17 @@ export function SessionsRail(props: {
                 {...(actions.startJob ? { onStartJob: actions.startJob } : {})}
                 {...(actions.dismissJob ? { onDismissJob: actions.dismissJob } : {})}
                 {...(actions.discardJob ? { onDiscardJob: actions.discardJob } : {})}
+                stats={props.projectStats?.get(op.id) ?? null}
+                {...(actions.updateWorktree
+                  ? { onUpdateWorktree: (folder: string) => actions.updateWorktree?.(op.id, folder) }
+                  : {})}
+                {...(actions.openPr ? { onOpenPr: (folder: string) => actions.openPr?.(op.id, folder) } : {})}
+                {...(actions.mergeLocal
+                  ? { onMergeLocal: (folder: string) => actions.mergeLocal?.(op.id, folder) }
+                  : {})}
+                {...(actions.removeWorktree
+                  ? { onRemoveWorktree: (folder: string) => actions.removeWorktree?.(op.id, folder) }
+                  : {})}
               />
             );
           })}

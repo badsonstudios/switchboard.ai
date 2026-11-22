@@ -347,7 +347,9 @@ sessions and groups stay as they are.
    `--worktree` flag; the plan is our own `git worktree add`, because a project
    allows several sessions per worktree.
 3. **#1638** finish: update from main, push and PR (**a PR is the merge**),
-   safe removal. First: the `/orchestrate` history review that replaced #1505.
+   safe removal. First: the `/orchestrate` history review that replaced #1505
+   (`spike/findings/1638-parallel-branch-conflicts.md`: update is a merge, and
+   conflicts are handed to the session or the user).
 4. **#1616** session follows its AI into a worktree, then **#1507** shrunk to
    port and dev-database clashes.
 

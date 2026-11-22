@@ -409,6 +409,18 @@ export const CHANNEL_CAPABILITIES = {
   'projects:setDefaults': 'settings.write',
   // the same power as `editor:openFolder`: start the user's chosen editor
   'projects:openInEditor': 'shell.openPath',
+  // Step 3 (#1638), finishing a worktree. The numbers on the card and what the
+  // PR dialog starts from only read (`gh pr list` included): `git.read`.
+  // Update, abort, push & open a PR, local merge and removal change the repo
+  // (or the remote, like `git:push`): `git.write`.
+  'projects:worktreeStats': 'git.read',
+  'projects:prContext': 'git.read',
+  'projects:updateWorktree': 'git.write',
+  'projects:abortUpdate': 'git.write',
+  'projects:openPr': 'git.write',
+  'projects:mergeLocal': 'git.write',
+  'projects:removeCheck': 'git.read',
+  'projects:removeWorktree': 'git.write',
   // The MCP Manager's read half (§5.17, #632). Two channels and one capability:
   // both answer "what MCP servers does this folder's session have", one off the
   // config files and one off the CLI. They are split because they have wildly

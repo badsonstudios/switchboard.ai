@@ -63,6 +63,172 @@ export interface ProjectRecord {
   sharedDirs?: string[];
   /** run in a new worktree after copy and share, before the session starts */
   setupCommand?: string;
+  /**
+   * What each worktree this app made is for (#1638), keyed like `made`: the
+   * new-worktree dialog's "What's it for?". It prefills the pull request title.
+   */
+  purposes?: Record<string, string>;
+}
+
+// ── Finishing a worktree (E42 step 3, #1638; mockup screen D) ───────────────
+
+/**
+ * Where a worktree stands against the project's base (`↑ahead ↓behind` and the
+ * lines it changes, committed or not). Every field is null when git could not
+ * say; the card then shows nothing rather than a wrong number.
+ */
+export interface WorktreeStats {
+  path: string;
+  /** the ref it is compared with, e.g. `origin/main` */
+  base: string | null;
+  ahead: number | null;
+  behind: number | null;
+  added: number | null;
+  removed: number | null;
+}
+
+/** A project's worktree numbers, and whether the repo can push anywhere (`projects:worktreeStats`). */
+export interface ProjectStats {
+  projectId: string;
+  /** the repo has a remote; null when git could not say. No remote = "Merge into main locally" */
+  hasRemote: boolean | null;
+  /** the base every worktree is compared with, e.g. `origin/main` */
+  base: string | null;
+  worktrees: WorktreeStats[];
+}
+
+/** What "Update from main" did. The repo is never left half-way without saying so. */
+export type UpdateOutcome =
+  /** nothing to bring in */
+  | { kind: 'up-to-date'; base: string }
+  /** the base was merged in */
+  | { kind: 'merged'; base: string; commits: number }
+  /** git stopped mid-merge: the folder is LEFT that way, these files need resolving */
+  | { kind: 'conflicts'; base: string; files: string[] }
+  /** nothing was changed; `files` when the reason is uncommitted changes */
+  | { kind: 'refused'; code: FinishRefusal; detail?: string; files?: string[] };
+
+export type FinishRefusal =
+  | 'no-worktree'
+  | 'dirty'
+  | 'no-base'
+  | 'merge-in-progress'
+  | 'fetch-failed'
+  | 'git-failed'
+  | 'gh-missing'
+  | 'gh-auth'
+  | 'gh-failed'
+  | 'push-failed'
+  | 'has-remote'
+  | 'primary-not-on-base'
+  | 'primary-dirty'
+  | 'detached'
+  | 'conflicts'
+  | 'other-checkout'
+  | 'link-left'
+  | 'is-primary'
+  | 'no-remote'
+  | 'busy'
+  | 'bad-request';
+
+/** A pull request for a worktree's branch, as `gh` reports it. */
+export interface PullRequestInfo {
+  number: number;
+  url: string;
+  state: 'OPEN' | 'CLOSED' | 'MERGED';
+  draft: boolean;
+}
+
+/** What the Push & open pull request dialog starts from (`projects:prContext`). */
+export interface PullRequestContext {
+  branch: string;
+  /** the branch the PR goes into, e.g. `main` */
+  base: string | null;
+  /** an open PR that already exists for this branch (shown, never a second one) */
+  existing: PullRequestInfo | null;
+  /** the repo has a remote to push to */
+  hasRemote: boolean;
+  /** null when `gh` answered; otherwise why the dialog cannot open one */
+  gh: null | 'gh-missing' | 'gh-auth' | 'gh-failed';
+  /** gh's own words when it failed */
+  detail?: string;
+}
+
+export const PR_TITLE_MAX = 256;
+export const PR_BODY_MAX = 20_000;
+
+/**
+ * The PR title and body the dialog starts with: the worktree's purpose (else
+ * its first session's name, else the branch in words), and a body listing its
+ * sessions and what each is on (their task labels). The user edits both.
+ */
+export function prefillPullRequest(opts: {
+  purpose?: string;
+  branch: string;
+  sessions: ReadonlyArray<{ title: string; taskLabel?: string }>;
+  sessionsHeading: string;
+}): { title: string; body: string } {
+  const first = opts.sessions.find((s) => s.title.trim() !== '')?.title.trim();
+  const words = opts.branch.replace(/^[^/]*\//, '').replace(/[-_]+/g, ' ').trim();
+  const title = (opts.purpose?.trim() || first || words || opts.branch).slice(0, PR_TITLE_MAX);
+  const lines = opts.sessions
+    .filter((s) => s.title.trim() !== '' || s.taskLabel?.trim())
+    .map((s) => {
+      const label = s.taskLabel?.trim();
+      return label && label !== s.title.trim() ? `- ${s.title.trim()}: ${label}` : `- ${s.title.trim() || label}`;
+    });
+  const body = lines.length > 0 ? `${opts.sessionsHeading}\n\n${lines.join('\n')}\n` : '';
+  return { title, body: body.slice(0, PR_BODY_MAX) };
+}
+
+export interface PullRequestRequest {
+  projectId: string;
+  path: string;
+  title: string;
+  body: string;
+  draft: boolean;
+}
+
+export type PullRequestOutcome =
+  | { kind: 'opened'; pr: PullRequestInfo }
+  | { kind: 'refused'; code: FinishRefusal; detail?: string };
+
+export type LocalMergeOutcome =
+  | { kind: 'merged'; base: string }
+  | { kind: 'refused'; code: FinishRefusal; detail?: string; files?: string[] };
+
+/** What the Remove worktree dialog shows before anyone confirms (`projects:removeCheck`). */
+export interface RemoveCheck {
+  path: string;
+  branch: string | null;
+  /** files changed and not committed; null when status could not be read */
+  dirty: string[] | null;
+  /** commits on the branch that are not on the base; null when unknown */
+  unmerged: number | null;
+  /** a merged PR for the branch: true / false, or null when `gh` could not say */
+  mergedPr: boolean | null;
+  /** linked (shared) folders that will be unlinked first */
+  links: string[];
+  base: string | null;
+}
+
+export interface RemoveRequest {
+  projectId: string;
+  path: string;
+  /** remove even with uncommitted changes (the user pressed "Remove anyway") */
+  force: boolean;
+  /** keep the branch (default when it has commits not on the base) */
+  keepBranch: boolean;
+}
+
+export type RemoveOutcome =
+  | { kind: 'removed'; branchDeleted: boolean; branchKept?: string; detail?: string }
+  | { kind: 'refused'; code: FinishRefusal; detail?: string; files?: string[] };
+
+/** `origin/main` → `main`: the branch name a PR targets and the menu says. */
+export function baseBranchName(base: string): string {
+  const slash = base.indexOf('/');
+  return base.startsWith('origin/') && slash > 0 ? base.slice(slash + 1) : base;
 }
 
 /** The longest list a project setting keeps, and the longest entry in it. */
