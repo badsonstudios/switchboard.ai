@@ -3,6 +3,13 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ E42 Projects (#1636): step 3 (#1638) DONE via PR #1644 (2026-11-22, unreleased). NEXT: #1616
+>
+> **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* Run order unchanged: **#1506 → #1638 → #1616 → #1507 → release** (the release is cut by the orchestrator after the last step, not by a step).
+> - **First task (replaces #1505):** `spike/findings/1638-parallel-branch-conflicts.md`. 717 merged PRs replayed: main moved under 160, 30 of those (19%) would have conflicted, mostly CHANGELOG / dogfood tracker / PROGRESS; code conflicts only from stacked batches. So: update is a MERGE (no force-push of a pushed/PR'd branch), never auto-resolved, left mid-merge and handed off.
+> - **Transcripts measured** (`spike/findings/1638-transcripts-after-removal.md`, CLI 2.1.322): `--resume <id>` from another folder after the original is deleted continues the conversation (appends to the original file). Removal never touches `~/.claude/projects`; History always keeps it. Reopening it from History in another folder needs a resume-path change: follow-up **#1643**.
+> - **#1638 shipped (PR #1644):** worktree ⋯ menu: **Update from main** (fetch, merge, "N behind"; refuses uncommitted work; conflicts listed with Ask *session* to resolve / Abort / I'll do it myself), **Push & open pull request…** (`gh` checked before any push, title from the recorded purpose, sessions + task labels in the body, draft option, an open PR gets the new commits instead of a second PR), **Merge into main locally** (no-remote repos only; conflicts aborted, primary held), **Remove worktree…** (dry run in main first, then the worktree's cards closed, unlink-before-delete, other-checkout refusal, dirty needs Remove anyway, unmerged branch kept by default; a merged PR counts only if its head is the branch tip; shares re-linked if git refuses). Card shows `↑a ↓b +x −y` via the #776 guard. A missing folder hides its section (records kept: could be an unplugged drive); an unlisted one loses its records. Review: 0 blockers, 8 should-fixes, all applied. Gate: lint, typecheck, unit 579 files, area e2e 44/44 + new removal e2e.
+
 > # ▶ E42 Projects (#1636): step 2 (#1506) DONE via PR #1642 (2026-11-22, unreleased). NEXT: #1638
 >
 > **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* So E42 runs to the end with no stops: **#1506 → #1638 → #1616 → #1507 → release** (the release is cut by the orchestrator after the last step, not by a step).

@@ -1280,8 +1280,18 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
   `spike/findings/1506-cli-worktree-flag.md` (it always lands inside the repo, offers no
   named base, and exists only once the session has started). A plain session in a
   checkout another live session uses asks "new worktree or share", never creating one
-  silently. **A PR is the merge**; local merge only for repos with no remote, plus
-  update-from-main and safe removal, are #1638.
+  silently. **A PR is the merge** (pushed and opened through `gh`); local merge only
+  for repos with no remote (#1638). **Update from main is a merge, not a rebase**
+  (`spike/findings/1638-parallel-branch-conflicts.md`: the branch is usually pushed
+  with a PR open, and a rebase would force-push it); conflicts leave the folder
+  mid-merge, are listed, and are handed to the worktree's session or the user, never
+  resolved silently. **Removal** refuses uncommitted work unless insisted on, keeps a
+  branch not merged (no merged PR) by default, refuses if a different checkout sits at
+  the path, closes the worktree's sessions first and unlinks shared folders before any
+  delete. Conversations always stay in History (the CLI resumes by id from any folder:
+  `spike/findings/1638-transcripts-after-removal.md`), so the mockup's "keep in
+  History" box became a sentence; reopening one from History in another folder is a
+  follow-up. The card shows ahead/behind and lines changed per worktree.
 - **Cross-session diff awareness** (via Session Bus): warn when two sessions have
   uncommitted changes touching the same files in the same repo.
 - **Editable diff + commit-from-diff** (table-stakes: Crystal shipped it): edit

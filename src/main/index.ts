@@ -69,6 +69,8 @@ import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
 import { registerGroupIpc } from './workspace/group-ipc';
 import { registerProjectIpc } from './workspace/project-ipc';
 import { defaultWorktreeRoot, WorktreeJobs } from './workspace/worktree-jobs';
+import { WorktreeFinisher } from './workspace/worktree-finish';
+import { runGh } from './workspace/gh-cli';
 import { registerMcpIpc } from './mcp/ipc';
 import { samePath } from './project-key';
 import { registerFsIpc } from './fs/ipc';
@@ -3131,8 +3133,17 @@ app
       log: projectLog,
       emit: (job) => pushToRenderer?.(currentWindow, 'projects:jobChanged', job),
     });
+    // Step 3 (#1638): finishing a worktree (update, PR via `gh`, local merge
+    // without a remote, safe removal), every action re-checked against git.
+    const worktreeFinisher = new WorktreeFinisher({
+      git: gitService,
+      gh: runGh,
+      store: workspace,
+      log: projectLog,
+    });
     registerProjectIpc(workspace, gitService, broker, projectLog, {
       jobs: worktreeJobs,
+      finisher: worktreeFinisher,
       defaultRoot: worktreeRootDefault,
       git: {
         root: (folder, ms) => gitService.root(folder, ms),

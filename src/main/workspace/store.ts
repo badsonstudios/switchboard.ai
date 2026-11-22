@@ -2613,6 +2613,7 @@ function saneProjectSettings(p: ProjectRecord): ProjectRecord {
     setupCommand: rawSetup,
     baseRef: rawBase,
     worktreeRoot: rawRoot,
+    purposes: rawPurposes,
     ...rest
   } = p;
   const made = stringList(rawMade, (s) => s.length > 0 && s.length <= 1024);
@@ -2622,6 +2623,7 @@ function saneProjectSettings(p: ProjectRecord): ProjectRecord {
     typeof rawSetup === 'string' && rawSetup.trim() !== '' ? rawSetup.slice(0, SETUP_COMMAND_MAX) : undefined;
   const baseRef = typeof rawBase === 'string' && rawBase.trim() !== '' ? rawBase : undefined;
   const worktreeRoot = typeof rawRoot === 'string' && rawRoot.trim() !== '' ? rawRoot : undefined;
+  const purposes = purposeMap(rawPurposes);
   return {
     ...rest,
     ...(baseRef ? { baseRef } : {}),
@@ -2630,7 +2632,18 @@ function saneProjectSettings(p: ProjectRecord): ProjectRecord {
     ...(copyFiles ? { copyFiles } : {}),
     ...(sharedDirs ? { sharedDirs } : {}),
     ...(setupCommand ? { setupCommand } : {}),
+    ...(purposes ? { purposes } : {}),
   };
+}
+
+/** What each made worktree is for (#1638): short strings keyed by a path key. */
+function purposeMap(v: unknown): Record<string, string> | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, x] of Object.entries(v as Record<string, unknown>).slice(0, PROJECT_LIST_MAX)) {
+    if (k.length > 0 && k.length <= 1024 && typeof x === 'string' && x.trim() !== '') out[k] = x.slice(0, 200);
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /** A project record with every list copied, so a caller's edit never reaches the store. */
@@ -2641,6 +2654,7 @@ function copyProject(p: ProjectRecord): ProjectRecord {
     ...(p.made ? { made: [...p.made] } : {}),
     ...(p.copyFiles ? { copyFiles: [...p.copyFiles] } : {}),
     ...(p.sharedDirs ? { sharedDirs: [...p.sharedDirs] } : {}),
+    ...(p.purposes ? { purposes: { ...p.purposes } } : {}),
   };
 }
 

@@ -17,6 +17,10 @@ import { OpenProjectDialog } from './components/OpenProjectDialog';
 import { NewWorktreeDialog } from './components/NewWorktreeDialog';
 import { ProjectSettingsDialog } from './components/ProjectSettingsDialog';
 import { BusyFolderDialog } from './components/BusyFolderDialog';
+import { PullRequestDialog, RemoveWorktreeDialog, UpdateStoppedDialog, refusalWords } from './components/FinishWorktreeDialogs';
+import { conflictFileLines, handOffSession, sessionsInWorktree } from './lib/worktree-finish';
+import { submitPrompt } from './lib/composer';
+import { nativeAlert, nativeConfirm } from './lib/native-dialog';
 import { applyJob, setJobs } from './lib/worktree-jobs';
 import { getBusyFolder, initBusyFolder, liveInCheckout, recommendWorktree, setBusyFolder } from './lib/busy-folder';
 import { setBusyFolderGate } from './components/SessionGrid';
@@ -178,7 +182,15 @@ import { setFileHistoryOpener } from './lib/file-history';
 import { openFileStartFolder, rememberOpenedFile } from './lib/open-file-start';
 import { isDocumentPanelId } from './lib/document-panels';
 import { isDiffPanelId } from './lib/diff-panels';
-import { pathKey, worktreeFor, type CheckoutInfo, type WorktreeJob } from '../../shared/projects';
+import {
+  pathKey,
+  prefillPullRequest,
+  worktreeFor,
+  type CheckoutInfo,
+  type ProjectStats,
+  type UpdateOutcome,
+  type WorktreeJob,
+} from '../../shared/projects';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -277,6 +289,19 @@ export function App(): React.JSX.Element {
   const [newWorktreeFor, setNewWorktreeFor] = useState<string | null>(null);
   const [settingsFor, setSettingsFor] = useState<string | null>(null);
   const [projectRoot, setProjectRoot] = useState<string | null>(null);
+  // step 3 (#1638): numbers per worktree, and the finish dialog that is open
+  const [projectStats, setProjectStats] = useState<ReadonlyMap<string, ProjectStats>>(() => new Map());
+  const [finishing, setFinishing] = useState<
+    | { kind: 'remove' | 'pr'; projectId: string; folder: string }
+    | {
+        kind: 'stopped';
+        action: 'update' | 'merge';
+        projectId: string;
+        folder: string;
+        outcome: Extract<UpdateOutcome, { kind: 'conflicts' | 'refused' }>;
+      }
+    | null
+  >(null);
   const [busyAsk, setBusyAsk] = useState<{
     info: CheckoutInfo;
     others: RailSession[];
@@ -1559,6 +1584,22 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     if (strayKey) void refreshProjects();
   }, [strayKey, refreshProjects]);
+  // Ahead/behind and line counts per worktree (#1638): read after every
+  // refresh of the list, separately, so a slow repo never holds the card back.
+  // A project whose numbers cannot be read simply shows none (P6).
+  useEffect(() => {
+    if (!bridge.projects?.worktreeStats || projects.length === 0) return;
+    let live = true;
+    void Promise.all(
+      projects.map(async (p) => answered(await bridge.projects?.worktreeStats?.(p.id).catch(() => null)) ?? null)
+    ).then((all) => {
+      if (!live) return;
+      setProjectStats(new Map(all.filter((x): x is ProjectStats => !!x).map((x) => [x.projectId, x])));
+    });
+    return () => {
+      live = false;
+    };
+  }, [projects]);
 
   useEffect(() => {
     void refreshGroups();
@@ -2773,6 +2814,112 @@ export function App(): React.JSX.Element {
     busyAsk?.resolve(choice);
     setBusyAsk(null);
   };
+  // ── finishing a worktree (#1638) ──
+  const branchOf = (projectId: string, folder: string): string => {
+    const wt = projects.find((p) => p.id === projectId)?.worktrees?.find((w) => pathKey(w.path) === pathKey(folder));
+    return wt?.branch ?? folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
+  };
+  const hereSessions = (projectId: string, folder: string): RailSession[] =>
+    sessionsInWorktree(
+      sessionStore.getState().sessions,
+      projects.find((p) => p.id === projectId)?.worktrees ?? null,
+      folder
+    );
+  const afterFinish = (): void => void refreshProjects();
+  const tr = (k: string, o?: Record<string, unknown>): string => String(i18next.t(k, o));
+  const updateWorktree = (projectId: string, folder: string): void => {
+    const branch = branchOf(projectId, folder);
+    announce(tr('worktrees.finish.update.working', { branch, base: projectStats.get(projectId)?.base ?? 'main' }));
+    void bridge.projects
+      ?.updateWorktree?.(projectId, folder)
+      .then((r) => {
+        const o = answered(r);
+        if (!o) announce(tr('worktrees.finish.refusal.git-failed', { detail: '' }));
+        else if (o.kind === 'up-to-date') announce(tr('worktrees.finish.update.upToDate', { branch, base: o.base }));
+        else if (o.kind === 'merged') announce(tr('worktrees.finish.update.merged', { branch, base: o.base }));
+        else setFinishing({ kind: 'stopped', action: 'update', projectId, folder, outcome: o });
+      })
+      .catch(() => announce(tr('worktrees.finish.refusal.git-failed', { detail: '' })))
+      .finally(afterFinish);
+  };
+  const mergeLocal = (projectId: string, folder: string): void => {
+    const branch = branchOf(projectId, folder);
+    const base = projectStats.get(projectId)?.base ?? 'main';
+    if (!nativeConfirm(tr('worktrees.finish.merge.confirm', { branch, base }))) return;
+    void bridge.projects
+      ?.mergeLocal?.(projectId, folder)
+      .then((r) => {
+        const o = answered(r);
+        if (o?.kind === 'merged') announce(tr('worktrees.finish.merge.merged', { branch, base: o.base }));
+        else if (o) setFinishing({ kind: 'stopped', action: 'merge', projectId, folder, outcome: o });
+        else announce(tr('worktrees.finish.refusal.git-failed', { detail: '' }));
+      })
+      .catch(() => announce(tr('worktrees.finish.refusal.git-failed', { detail: '' })))
+      .finally(afterFinish);
+  };
+  const askSessionToResolve = (projectId: string, folder: string, files: readonly string[], base: string): void => {
+    const target = handOffSession(hereSessions(projectId, folder), grid.current?.activeCardId() ?? null);
+    setFinishing(null);
+    const liveId = target?.liveId;
+    if (!target || !liveId) return;
+    const text = tr('worktrees.finish.update.prompt', {
+      base,
+      files: conflictFileLines(files, (n) => tr('worktrees.finish.update.moreFiles', { n })),
+    });
+    void submitPrompt(liveId, text).then((ok) => {
+      announce(tr(ok ? 'worktrees.finish.update.sent' : 'worktrees.finish.update.notSent', { name: target.title }));
+      if (ok) grid.current?.focusSession(liveId, { via: 'worktree-conflicts' });
+    });
+  };
+  const removeWorktreeNow = async (
+    projectId: string,
+    folder: string,
+    opts: { force: boolean; keepBranch: boolean }
+  ): Promise<void> => {
+    setFinishing(null);
+    const branch = branchOf(projectId, folder);
+    // Main re-checks EVERYTHING first (a dry run), so no session is closed for
+    // a removal that would then be refused (#1638 review).
+    const ready = answered(
+      await bridge.projects?.removeWorktree?.({ projectId, path: folder, ...opts, dryRun: true }).catch(() => null)
+    );
+    if (ready?.kind === 'refused') {
+      nativeAlert(refusalWords(tr, ready.code, ready.detail));
+      return;
+    }
+    if (ready?.kind !== 'ready') {
+      announce(tr('worktrees.finish.remove.failed'));
+      return;
+    }
+    // The dialog named them and was the confirm: close the worktree's sessions
+    // first, so no process holds the folder and no card comes back into a
+    // folder that is gone. Their conversations stay in History.
+    const here = hereSessions(projectId, folder);
+    if (here.length > 0) {
+      grid.current?.retireCards(here.map((s) => s.id));
+      const ids = new Set(here.map((s) => s.id));
+      const live = (): boolean => sessionStore.getState().sessions.some((s) => ids.has(s.id) && !!s.liveId);
+      for (let i = 0; i < 80 && live(); i++) await new Promise((r) => setTimeout(r, 125));
+      if (live()) {
+        // a process still holds the folder: on Windows git would half-delete it
+        nativeAlert(tr('worktrees.finish.remove.stillOpen'));
+        afterFinish();
+        return;
+      }
+    }
+    announce(tr('worktrees.finish.remove.working'));
+    const r = answered(await bridge.projects?.removeWorktree?.({ projectId, path: folder, ...opts }).catch(() => null));
+    if (r?.kind === 'removed')
+      announce(
+        r.branchKept
+          ? tr('worktrees.finish.remove.removedKept', { branch: r.branchKept })
+          : tr('worktrees.finish.remove.removed', { branch })
+      );
+    else if (r?.kind === 'refused') nativeAlert(refusalWords(tr, r.code, r.detail));
+    else announce(tr('worktrees.finish.remove.failed'));
+    afterFinish();
+  };
+
   // Projects (E42, #1637). Every edit re-reads the list either way, so a
   // refused one simply shows what is really there (the groups idiom, #650).
   const projectActions = {
@@ -2792,6 +2939,14 @@ export function App(): React.JSX.Element {
     dismissJob: (jobId: string) => void bridge.projects?.dismissJob?.(jobId),
     discardJob: (jobId: string) =>
       void bridge.projects?.discardJob?.(jobId).then(() => refreshProjects()),
+    ...(bridge.projects?.updateWorktree
+      ? {
+          updateWorktree,
+          mergeLocal,
+          openPr: (projectId: string, folder: string) => setFinishing({ kind: 'pr', projectId, folder }),
+          removeWorktree: (projectId: string, folder: string) => setFinishing({ kind: 'remove', projectId, folder }),
+        }
+      : {}),
     rename: (id: string, name: string) =>
       void bridge.projects?.update?.(id, { name }).then(() => refreshProjects()),
     recolor: (id: string, color: string) =>
@@ -3376,6 +3531,7 @@ export function App(): React.JSX.Element {
             onDeleteGroup={deleteGroup}
             projects={projects}
             projectActions={bridge.projects ? projectActions : undefined}
+            projectStats={projectStats}
           />
         )}
         {openingProject && (
@@ -3419,6 +3575,84 @@ export function App(): React.JSX.Element {
             />
           ) : null;
         })()}
+        {finishing?.kind === 'remove' && (
+          <RemoveWorktreeDialog
+            key={`${finishing.projectId}:${finishing.folder}`}
+            branch={branchOf(finishing.projectId, finishing.folder)}
+            load={async () => answered(await bridge.projects?.removeCheck?.(finishing.projectId, finishing.folder)) ?? null}
+            sessions={hereSessions(finishing.projectId, finishing.folder).map((s) => s.title)}
+            onConfirm={(opts) => void removeWorktreeNow(finishing.projectId, finishing.folder, opts)}
+            onCancel={() => setFinishing(null)}
+          />
+        )}
+        {finishing?.kind === 'pr' &&
+          (() => {
+            const { projectId, folder } = finishing;
+            const p = projects.find((x) => x.id === projectId);
+            const fill = prefillPullRequest({
+              purpose: p?.purposes?.[pathKey(folder)],
+              branch: branchOf(projectId, folder),
+              sessions: hereSessions(projectId, folder).map((s) => ({ title: s.title, taskLabel: s.taskLabel })),
+              sessionsHeading: tr('worktrees.finish.pr.sessionsHeading'),
+            });
+            return (
+              <PullRequestDialog
+                key={`${projectId}:${folder}`}
+                load={async () => answered(await bridge.projects?.prContext?.(projectId, folder)) ?? null}
+                initialTitle={fill.title}
+                initialBody={fill.body}
+                onSubmit={async (req) => {
+                  const r = answered(await bridge.projects?.openPr?.({ projectId, path: folder, ...req }).catch(() => null));
+                  if (r?.kind === 'opened') {
+                    announce(tr('worktrees.finish.pr.opened', { number: r.pr.number }));
+                    void bridge.files?.openExternal?.(r.pr.url)?.catch(() => false);
+                    setFinishing(null);
+                    afterFinish();
+                    return null;
+                  }
+                  return r ? refusalWords(tr, r.code, r.detail) : tr('worktrees.finish.refusal.gh-failed', { detail: '' });
+                }}
+                onClose={() => setFinishing(null)}
+              />
+            );
+          })()}
+        {finishing?.kind === 'stopped' &&
+          (() => {
+            const { projectId, folder, outcome, action } = finishing;
+            const target = handOffSession(hereSessions(projectId, folder), grid.current?.activeCardId() ?? null);
+            return (
+              <UpdateStoppedDialog
+                key={`${projectId}:${folder}`}
+                branch={branchOf(projectId, folder)}
+                action={action}
+                outcome={outcome}
+                sessionName={target?.title ?? null}
+                onAskSession={() =>
+                  askSessionToResolve(
+                    projectId,
+                    folder,
+                    outcome.files ?? [],
+                    outcome.kind === 'conflicts' ? outcome.base : (projectStats.get(projectId)?.base ?? 'main')
+                  )
+                }
+                onAbort={() => {
+                  setFinishing(null);
+                  const branch = branchOf(projectId, folder);
+                  void bridge.projects
+                    ?.abortUpdate?.(projectId, folder)
+                    .then((ok) =>
+                      announce(
+                        answered(ok)
+                          ? tr('worktrees.finish.update.aborted', { branch })
+                          : tr('worktrees.finish.update.abortFailed')
+                      )
+                    )
+                    .finally(afterFinish);
+                }}
+                onClose={() => setFinishing(null)}
+              />
+            );
+          })()}
         {busyAsk && (
           <BusyFolderDialog
             others={busyAsk.others.map((o) => o.title)}

@@ -85,3 +85,14 @@ export function pickDefaultBase(
   for (const l of ['main', 'master']) if (refs.local.includes(l)) return l;
   return headBranch;
 }
+
+/**
+ * `git diff --shortstat` → lines added and removed (#1638). An empty answer
+ * is "no changes", which is 0 and 0, not unknown.
+ * ` 3 files changed, 120 insertions(+), 8 deletions(-)`
+ */
+export function parseShortstat(out: string): { added: number; removed: number } {
+  const ins = /(\d+) insertions?\(\+\)/.exec(out);
+  const del = /(\d+) deletions?\(-\)/.exec(out);
+  return { added: ins ? Number(ins[1]) : 0, removed: del ? Number(del[1]) : 0 };
+}

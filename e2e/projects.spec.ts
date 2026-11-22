@@ -216,4 +216,66 @@ test.describe('projects (#1637)', () => {
     await w.getByTestId('new-worktree-dialog').locator('[data-new-worktree-cancel]').click();
     await expect(w.locator('nav .rail-row')).toHaveCount(2);
   });
+
+  // ── step 3 (#1638): where a worktree stands, and removing it safely ──
+  test('a worktree shows ↑ahead; Remove worktree… closes its session, keeps the unmerged branch, and the section goes', async () => {
+    test.setTimeout(180_000);
+    const base = tempProjectFolder();
+    const repo = path.join(base, 'fin-repo');
+    const linked = path.join(base, 'fin-wt');
+    fs.mkdirSync(repo);
+    fs.writeFileSync(path.join(repo, 'README.md'), '# repo\n');
+    git(repo, 'init', '-q', '-b', 'main');
+    git(repo, 'config', 'user.name', 't');
+    git(repo, 'config', 'user.email', 't@t');
+    git(repo, 'add', '.');
+    git(repo, 'commit', '-q', '-m', 'init');
+    git(repo, 'worktree', 'add', '-q', '-b', 'feat/finish', linked);
+    fs.writeFileSync(path.join(linked, 'new.txt'), 'one\ntwo\n');
+    git(linked, 'add', '.');
+    git(linked, 'commit', '-q', '-m', 'not on main');
+
+    a = await launchApp({ seedFolder: linked });
+    const w = a.window;
+    await expect(row(w, 'fin-wt')).toBeVisible({ timeout: 25_000 });
+    await a.app.evaluate(({ dialog }, d) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
+    }, repo);
+    await w.locator('[data-rail-open-project]').click();
+    const open = w.getByTestId('open-project-dialog');
+    await open.locator('[data-open-project-browse]').click();
+    await expect(open.locator('[data-open-project-status]')).toHaveAttribute('data-open-project-status', 'repo', {
+      timeout: 15_000,
+    });
+    await open.locator('[data-open-project-ok]').click();
+
+    const card = w.locator('[data-project-card]');
+    const wt = card.locator('[data-project-worktree]').filter({ has: w.locator('[data-worktree-found]') });
+    await expect(row(wt, 'fin-wt')).toBeVisible({ timeout: 15_000 });
+    // no remote: compared with local main, one commit ahead, two lines added
+    await expect(wt.locator('[data-worktree-ahead-behind]')).toHaveText('↑1 ↓0', { timeout: 15_000 });
+    await expect(wt.locator('[data-worktree-lines]')).toHaveText('+2 −0');
+
+    // the menu: no remote, so Merge into main locally rather than a pull request
+    await wt.locator('[data-worktree-menu]').click();
+    const menu = w.getByTestId('project-menu');
+    await expect(menu.locator('[data-group-menu-item="merge-local"]')).toBeVisible();
+    await expect(menu.locator('[data-group-menu-item="pr"]')).toHaveCount(0);
+    await menu.locator('[data-group-menu-item="remove-worktree"]').click();
+
+    const dlg = w.getByTestId('remove-worktree-dialog');
+    await expect(dlg.locator('[data-remove-worktree-unmerged]')).toContainText('1 commit', { timeout: 15_000 });
+    await expect(dlg.locator('[data-remove-worktree-keep]')).toBeChecked();
+    await expect(dlg.locator('[data-remove-worktree-sessions]')).toContainText('fin-wt');
+    await dlg.locator('[data-remove-worktree-confirm]').click();
+    await expect(dlg).toBeHidden();
+
+    // the session closed first, the folder went, the branch stayed
+    await expect(wt).toHaveCount(0, { timeout: 30_000 });
+    await expect(row(w, 'fin-wt')).toHaveCount(0);
+    expect(fs.existsSync(linked)).toBe(false);
+    expect(execFileSync('git', ['log', '--format=%s', '-1', 'feat/finish'], { cwd: repo, encoding: 'utf8' }).trim()).toBe(
+      'not on main'
+    );
+  });
 });

@@ -15,11 +15,16 @@
 // new-worktree dialog, and a worktree being built shows here as a row with its
 // progress, until its session starts (or it fails, and says so here, without
 // touching any other session).
+//
+// Step 3 (#1638, mockup screen D): each worktree shows where it stands against
+// the base (`↑ahead ↓behind +added −removed`), and its ⋯ menu carries the end
+// of its life: Update from main, Push & open pull request…, Merge into main
+// locally (only when the repo has no remote), and Remove worktree….
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { RailProject, RailSession } from '../model/types';
 import type { ProjectWorktreeRows } from '../lib/groups';
-import { pathKey, type WorktreeJob } from '../../../shared/projects';
+import { baseBranchName, pathKey, type ProjectStats, type WorktreeJob } from '../../../shared/projects';
 import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
 import { drawnGroupColour, useGroupColours } from '../lib/group-colours';
 import { useWorktreeJobs } from '../lib/worktree-jobs';
@@ -49,6 +54,13 @@ export interface ProjectCardProps {
   onStartJob?: (jobId: string) => void;
   onDismissJob?: (jobId: string) => void;
   onDiscardJob?: (jobId: string) => void;
+  // ── step 3 (#1638) ──
+  /** ahead/behind and line counts per worktree, and whether the repo has a remote */
+  stats?: ProjectStats | null;
+  onUpdateWorktree?: (folder: string) => void;
+  onOpenPr?: (folder: string) => void;
+  onMergeLocal?: (folder: string) => void;
+  onRemoveWorktree?: (folder: string) => void;
 }
 
 /** How far along each step is, for the bar under a worktree being built. */
@@ -159,6 +171,62 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
     },
   ];
 
+  const statsFor = (folder: string) => props.stats?.worktrees.find((w) => pathKey(w.path) === pathKey(folder));
+  const baseName = props.stats?.base ? baseBranchName(props.stats.base) : 'main';
+
+  /** Update / PR / local merge / remove (#1638): only for a worktree on a branch git can see. */
+  const finishItems = (s: ProjectWorktreeRows<RailSession>): RailGroupMenuItem[] => {
+    const info = s.info;
+    if (!info || !props.onUpdateWorktree) return [];
+    const onBranch = !!info.branch && !info.prunable;
+    const behind = statsFor(s.path)?.behind;
+    const noRemote = props.stats?.hasRemote === false;
+    return [
+      {
+        id: 'update',
+        divider: true,
+        label: t('worktrees.finish.menu.update', { base: baseName }),
+        ...(behind ? { hint: t('worktrees.finish.menu.behind', { n: behind }) } : {}),
+        // the primary checkout is on main itself: nothing to update it from
+        can: onBranch && !(info.primary && info.branch === baseName),
+        run: () => props.onUpdateWorktree?.(s.path),
+      },
+      ...(props.onOpenPr && !noRemote
+        ? [
+            {
+              id: 'pr',
+              label: t('worktrees.finish.menu.pr'),
+              can: onBranch && !info.primary,
+              run: () => props.onOpenPr?.(s.path),
+            },
+          ]
+        : []),
+      ...(props.onMergeLocal && noRemote
+        ? [
+            {
+              id: 'merge-local',
+              label: t('worktrees.finish.menu.mergeLocal', { base: baseName }),
+              hint: t('worktrees.finish.menu.mergeLocalHint'),
+              can: onBranch && !info.primary,
+              run: () => props.onMergeLocal?.(s.path),
+            },
+          ]
+        : []),
+      ...(props.onRemoveWorktree && !info.primary
+        ? [
+            {
+              id: 'remove-worktree',
+              divider: true,
+              danger: true,
+              label: t('worktrees.finish.menu.remove'),
+              can: true,
+              run: () => props.onRemoveWorktree?.(s.path),
+            },
+          ]
+        : []),
+    ];
+  };
+
   const worktreeItems = (s: ProjectWorktreeRows<RailSession>): RailGroupMenuItem[] => [
     {
       id: 'new-session',
@@ -182,6 +250,7 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
       run: () =>
         props.onSetHidden([...new Set([...project.hiddenWorktrees, pathKey(s.path)])]),
     },
+    ...finishItems(s),
   ];
 
   const commitRename = (): void => {
@@ -381,6 +450,7 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
                     </span>
                   )}
                 </span>
+                {s.info && <WorktreeNumbers stats={statsFor(s.path)} base={props.stats?.base ?? null} />}
                 {s.info?.primary && (
                   <span data-worktree-primary title={t('projects.primaryHint')} style={tagStyle(false)}>
                     {t('projects.primary')}
@@ -455,6 +525,46 @@ export function ProjectCard(props: ProjectCardProps): React.JSX.Element {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * `↑2 ↓3 +120 −8` beside a worktree's branch (#1638). Zeros are left out, and
+ * so is anything git could not say: no number beats a wrong one.
+ */
+function WorktreeNumbers(props: {
+  stats: ProjectStats['worktrees'][number] | undefined;
+  base: string | null;
+}): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const s = props.stats;
+  if (!s || !props.base) return null;
+  const ab = (s.ahead ?? 0) > 0 || (s.behind ?? 0) > 0;
+  const lines = (s.added ?? 0) > 0 || (s.removed ?? 0) > 0;
+  if (!ab && !lines) return null;
+  return (
+    <span
+      data-worktree-numbers
+      title={t('worktrees.finish.stats.hint', {
+        ahead: s.ahead ?? 0,
+        behind: s.behind ?? 0,
+        added: s.added ?? 0,
+        removed: s.removed ?? 0,
+        base: props.base,
+      })}
+      style={{
+        fontFamily: 'var(--font-mono)',
+        fontSize: 10,
+        color: 'var(--muted)',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        display: 'inline-flex',
+        gap: 5,
+      }}
+    >
+      {ab && <span data-worktree-ahead-behind>{t('worktrees.finish.stats.aheadBehind', { ahead: s.ahead ?? 0, behind: s.behind ?? 0 })}</span>}
+      {lines && <span data-worktree-lines>{t('worktrees.finish.stats.lines', { added: s.added ?? 0, removed: s.removed ?? 0 })}</span>}
+    </span>
   );
 }
 

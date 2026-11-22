@@ -1,7 +1,16 @@
 // The pure half of making a worktree (#1506): argv that cannot be turned into
 // a flag or a range, the branch list, and the default base.
 import { describe, it, expect } from 'vitest';
-import { isAbsoluteLocal, parseBranchRefs, pickDefaultBase, worktreeAddArgs } from './worktree-git';
+import { isAbsoluteLocal, parseBranchRefs, parseShortstat, pickDefaultBase, worktreeAddArgs } from './worktree-git';
+
+describe('parseShortstat (#1638)', () => {
+  it('reads insertions and deletions, either missing, and nothing at all', () => {
+    expect(parseShortstat(' 3 files changed, 120 insertions(+), 8 deletions(-)\n')).toEqual({ added: 120, removed: 8 });
+    expect(parseShortstat(' 1 file changed, 1 insertion(+)\n')).toEqual({ added: 1, removed: 0 });
+    expect(parseShortstat(' 1 file changed, 2 deletions(-)\n')).toEqual({ added: 0, removed: 2 });
+    expect(parseShortstat('')).toEqual({ added: 0, removed: 0 });
+  });
+});
 
 const WIN = 'C:' + String.fromCharCode(92) + 'wt' + String.fromCharCode(92) + 'feat-x';
 const ON_WINDOWS = process.platform === 'win32';

@@ -45,7 +45,7 @@ import {
 } from './git-commit';
 import { type Hunk, applyArgs, hunkDiffArgs, parseDiff } from './git-hunks';
 import { parseWorktreeList } from './worktree-list';
-import { isAbsoluteLocal, parseBranchRefs, pickDefaultBase, worktreeAddArgs } from './worktree-git';
+import { isAbsoluteLocal, parseBranchRefs, parseShortstat, pickDefaultBase, worktreeAddArgs } from './worktree-git';
 import type { ProjectBranches, WorktreeInfo } from '../../shared/projects';
 import {
   NETWORK_BUDGET_MS,
@@ -970,6 +970,141 @@ export class GitService {
       head.ok ? head.out.trim() || null : null
     );
     return { ...parsed, defaultBase };
+  }
+
+  // ── FINISHING A WORKTREE (E42 step 3, #1638) ──────────────────────────────
+  //
+  // Reads that touch the working tree (`diff --shortstat`, the unmerged list)
+  // go through the #776 guard env, like `status` and `diff`: these run in a
+  // worktree folder that may hold no session at all, which is the "read a
+  // repository unbidden" case the guard exists for. The writes go through
+  // `network(…)` like `checkout`, so every guard applies and a refusal is git's
+  // own words. Every call is bounded.
+
+  /** A read through the #776 guard, or null when the guard (or git) refused. */
+  private async guardedRead(folder: string, args: string[], budgetMs: number): Promise<GitRun | null> {
+    const deadline = Date.now() + budgetMs;
+    const left = (): number => Math.max(1, deadline - Date.now());
+    const guard = await this.guardEnv(folder, left);
+    if (!guard.env) return null;
+    const r = await this.run(folder, args, left(), guard.env);
+    return r.ok ? r : null;
+  }
+
+  /** Commits HEAD has that `base` lacks (ahead) and the reverse (behind). */
+  async aheadBehind(
+    folder: string,
+    base: unknown,
+    budgetMs = STATS_BUDGET_MS
+  ): Promise<{ ahead: number; behind: number } | null> {
+    if (!isRev(base)) return null;
+    const r = await this.run(folder, ['rev-list', '--left-right', '--count', `${base}...HEAD`], budgetMs);
+    if (!r.ok) return null;
+    const m = /^(\d+)\s+(\d+)/.exec(r.out.trim());
+    return m ? { behind: Number(m[1]), ahead: Number(m[2]) } : null;
+  }
+
+  /**
+   * Lines this worktree changes against where it left `base` (the merge base),
+   * committed or not: what the branch would bring, plus what is not committed
+   * yet. Tracked files only (an untracked file has no "before").
+   */
+  async lineStats(
+    folder: string,
+    base: unknown,
+    budgetMs = STATS_BUDGET_MS
+  ): Promise<{ added: number; removed: number } | null> {
+    if (!isRev(base)) return null;
+    const deadline = Date.now() + budgetMs;
+    const left = (): number => Math.max(1, deadline - Date.now());
+    const mb = await this.run(folder, ['merge-base', base, 'HEAD'], left());
+    const sha = mb.out.trim();
+    if (!mb.ok || !/^[0-9a-f]{40,64}$/.test(sha)) return null;
+    const r = await this.guardedRead(
+      folder,
+      ['diff', '--shortstat', '--no-color', '--no-textconv', '--no-ext-diff', sha],
+      left()
+    );
+    if (!r) return null;
+    return parseShortstat(r.out);
+  }
+
+  /** Is a merge stopped half-way in this checkout? null when git could not say. */
+  async mergeInProgress(folder: string, budgetMs = WRITE_BUDGET_MS): Promise<boolean | null> {
+    const r = await this.run(folder, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'], budgetMs);
+    if (r.failure === 'timeout' || r.failure === 'no-exec') return null;
+    return r.ok && r.out.trim() !== '';
+  }
+
+  /** Files git left in conflict, or null when it could not say. */
+  async unmergedFiles(folder: string, budgetMs = WRITE_BUDGET_MS): Promise<string[] | null> {
+    const r = await this.guardedRead(folder, ['diff', '--name-only', '--diff-filter=U', '-z'], budgetMs);
+    if (!r) return null;
+    return [...new Set(r.out.split('\0').filter((l) => l !== ''))];
+  }
+
+  /** Merge `ref` into this checkout's branch. Stops (and stays stopped) on conflicts. */
+  async mergeRef(
+    folder: string,
+    ref: unknown,
+    opts: { noFf?: boolean } = {},
+    budgetMs = WRITE_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    if (!isRev(ref)) return refusedBranch();
+    return this.network(folder, ['merge', '--no-edit', ...(opts.noFf ? ['--no-ff'] : []), ref], budgetMs, {
+      network: false,
+    });
+  }
+
+  /** Put a stopped merge back the way it was before it started. */
+  async mergeAbort(folder: string, budgetMs = WRITE_BUDGET_MS): Promise<GitWriteResult> {
+    return this.network(folder, ['merge', '--abort'], budgetMs, { network: false });
+  }
+
+  /** The repo's remotes (`origin`, …), or null when git could not say. */
+  async remoteNames(folder: string, budgetMs = WRITE_BUDGET_MS): Promise<string[] | null> {
+    const r = await this.run(folder, ['remote'], budgetMs);
+    if (!r.ok) return null;
+    return r.out
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l !== '');
+  }
+
+  /** How many commits `rev` has that `base` does not; null when unknown. */
+  async countNotOn(folder: string, rev: unknown, base: unknown, budgetMs = WRITE_BUDGET_MS): Promise<number | null> {
+    if (!isRev(rev) || !isRev(base)) return null;
+    const r = await this.run(folder, ['rev-list', '--count', `${base}..${rev}`], budgetMs);
+    const n = Number(r.out.trim());
+    return r.ok && Number.isInteger(n) ? n : null;
+  }
+
+  /**
+   * `git worktree remove` (with `--force` only when the user insisted on
+   * removing uncommitted work). ⚠️ **UNLINK SHARED FOLDERS FIRST** (#916): the
+   * caller goes through `worktree-links.removeWorktreeFolder`, never straight here.
+   */
+  async worktreeRemove(
+    repo: string,
+    target: string,
+    force: boolean,
+    budgetMs = WORKTREE_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    if (!isAbsoluteLocal(target)) return refused('switchboard will not remove that folder');
+    return this.network(repo, ['worktree', 'remove', ...(force ? ['--force'] : []), target], budgetMs, {
+      network: false,
+    });
+  }
+
+  /** Drop git's records of worktrees whose folders are gone. Deletes no folder. */
+  async worktreePrune(repo: string, budgetMs = WRITE_BUDGET_MS): Promise<GitWriteResult> {
+    return this.network(repo, ['worktree', 'prune'], budgetMs, { network: false });
+  }
+
+  /** `branch -d`: git deletes it only when it agrees the branch is merged. */
+  async deleteMergedBranch(repo: string, branch: unknown, budgetMs = WRITE_BUDGET_MS): Promise<GitWriteResult> {
+    if (!isBranchName(branch)) return refusedBranch();
+    return this.network(repo, ['branch', '-d', branch], budgetMs, { network: false });
   }
 
   /**

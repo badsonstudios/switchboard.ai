@@ -3,8 +3,10 @@
 //
 // Step 2 (#1506) adds making a worktree (the build itself is
 // `worktree-jobs.ts`), the project settings that feed it, the app-wide
-// worktree folder, and the read the busy-folder prompt needs. Removing a
-// worktree is #1638.
+// worktree folder, and the read the busy-folder prompt needs. Step 3 (#1638)
+// adds finishing one (`worktree-finish.ts`): ahead/behind and line counts,
+// update from main, push & open a PR, local merge without a remote, removal,
+// and dropping a worktree removed outside the app.
 //
 // Refuses the way `group-ipc.ts` does (#326): resolve `null` (or `false`) and
 // write one log line, never throw. Ids are minted here, never accepted from the
@@ -37,7 +39,9 @@ import {
 import { isRev } from '../git/git-log';
 import { isAbsoluteLocal } from '../git/worktree-git';
 import { worktreeRootFor, type WorktreeJobs } from './worktree-jobs';
+import type { WorktreeFinisher } from './worktree-finish';
 import { IpcBroker } from '../ipc/broker';
+import { errorText } from '../../shared/error-text';
 import { LogFields, Logger } from '../log/logger';
 
 const NAME_MAX = 60;
@@ -63,6 +67,8 @@ export interface ProjectIpcExtras {
   };
   /** "Open folder in editor" on a worktree, after main checked it is one */
   openInEditor?: (folder: string) => 'opened' | 'no-editor';
+  /** step 3 (#1638): finishing a worktree */
+  finisher?: WorktreeFinisher;
 }
 
 function cleanName(n: unknown): string | null {
@@ -255,8 +261,11 @@ export function registerProjectIpc(
     const from = (await isDirectory(project.primaryPath))
       ? project.primaryPath
       : project.commonDir;
-    const worktrees = await git.worktreeList(from, GIT_BUDGET_MS);
-    if (!worktrees) log.debug('could not read a project’s worktrees', { projectId: id });
+    const before = store.listProjects().find((p) => p.id === id);
+    const listed = await git.worktreeList(from, GIT_BUDGET_MS);
+    if (!listed) log.debug('could not read a project’s worktrees', { projectId: id });
+    // one removed outside the app drops out, with its app records (#1638)
+    const worktrees = listed && extras?.finisher ? extras.finisher.noticeGone(id, listed, before) : listed;
     return { projectId: id, worktrees };
   });
 
@@ -444,6 +453,36 @@ function registerWorktreeIpc(
       dirty: st && !st.unreadable ? st.files.length : null,
     };
   });
+
+  // ── step 3 (#1638): finishing a worktree ──
+  // Capabilities: the stats and the PR context are `git.read`; update, abort,
+  // push & PR, local merge and removal are `git.write`. Every one re-checks in
+  // `WorktreeFinisher` that the folder is a worktree git lists for the project.
+  const fin = extras.finisher;
+  if (fin) {
+    // a throw is a refusal (null / false) with a log line, never a rejected promise
+    const safe =
+      <T>(channel: string, fail: T, fn: () => Promise<T>) =>
+      async (): Promise<T> => {
+        try {
+          return await fn();
+        } catch (e) {
+          return refuse(channel, errorText(e), fail as never);
+        }
+      };
+    broker.handle('projects:worktreeStats', (_e, id: unknown) => safe('projects:worktreeStats', null, () => fin.stats(id))());
+    broker.handle('projects:updateWorktree', (_e, id: unknown, folder: unknown) => fin.update(id, folder));
+    broker.handle('projects:abortUpdate', (_e, id: unknown, folder: unknown) => fin.abortUpdate(id, folder));
+    broker.handle('projects:prContext', (_e, id: unknown, folder: unknown) =>
+      safe('projects:prContext', null, () => fin.prContext(id, folder))()
+    );
+    broker.handle('projects:openPr', (_e, req: unknown) => fin.openPr(req as never));
+    broker.handle('projects:mergeLocal', (_e, id: unknown, folder: unknown) => fin.mergeLocal(id, folder));
+    broker.handle('projects:removeCheck', (_e, id: unknown, folder: unknown) =>
+      safe('projects:removeCheck', null, () => fin.removeCheck(id, folder))()
+    );
+    broker.handle('projects:removeWorktree', (_e, req: unknown) => fin.remove(req as never));
+  }
 
   /** "Open folder in editor" on a worktree: only a folder git lists for this project. */
   broker.handle('projects:openInEditor', async (_e, id: unknown, folder: unknown) => {

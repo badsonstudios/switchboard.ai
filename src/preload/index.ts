@@ -8,6 +8,15 @@ import type {
   ProjectSettingProblem,
   ProjectWorktrees,
   WorktreeJob,
+  LocalMergeOutcome,
+  PullRequestContext,
+  PullRequestOutcome,
+  PullRequestRequest,
+  RemoveCheck,
+  RemoveOutcome,
+  RemoveRequest,
+  UpdateOutcome,
+  ProjectStats,
 } from '../shared/projects';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ContextMenuLabels } from '../shared/context-menu';
@@ -1035,6 +1044,24 @@ const api = {
     checkout: (folder: string): Promise<CheckoutInfo | null> => ipcRenderer.invoke('projects:checkout', folder),
     openInEditor: (id: string, folder: string): Promise<'opened' | 'no-editor' | 'no-folder' | false> =>
       ipcRenderer.invoke('projects:openInEditor', id, folder),
+    // ── step 3 (#1638): finish a worktree ──
+    /** ahead/behind the base and lines changed, per worktree; NULL when git could not be read */
+    worktreeStats: (id: string): Promise<ProjectStats | null> => ipcRenderer.invoke('projects:worktreeStats', id),
+    /** merge the base in; on conflicts the folder is LEFT mid-merge and the files are listed */
+    updateWorktree: (id: string, folder: string): Promise<UpdateOutcome> =>
+      ipcRenderer.invoke('projects:updateWorktree', id, folder),
+    abortUpdate: (id: string, folder: string): Promise<boolean> =>
+      ipcRenderer.invoke('projects:abortUpdate', id, folder),
+    prContext: (id: string, folder: string): Promise<PullRequestContext | null> =>
+      ipcRenderer.invoke('projects:prContext', id, folder),
+    openPr: (req: PullRequestRequest): Promise<PullRequestOutcome> => ipcRenderer.invoke('projects:openPr', req),
+    /** only for a repo with no remote */
+    mergeLocal: (id: string, folder: string): Promise<LocalMergeOutcome> =>
+      ipcRenderer.invoke('projects:mergeLocal', id, folder),
+    removeCheck: (id: string, folder: string): Promise<RemoveCheck | null> =>
+      ipcRenderer.invoke('projects:removeCheck', id, folder),
+    removeWorktree: (req: RemoveRequest): Promise<RemoveOutcome> =>
+      ipcRenderer.invoke('projects:removeWorktree', req),
   },
   /**
    * The MCP Manager's read half (§5.17, #632).

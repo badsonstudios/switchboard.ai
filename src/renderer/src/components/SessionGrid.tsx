@@ -7167,6 +7167,13 @@ export interface GridController {
    * here, in the main window, where the gesture was made.
    */
   closeCard: (cardId: string, fromItsOwnWindow?: boolean) => void;
+  /**
+   * Close these cards WITHOUT a confirm of their own (#1638): the caller has
+   * already asked, in one dialog that named them (Remove worktree…). Ends each
+   * session and forgets the card, exactly as the tab ✕ does after its confirm;
+   * the conversation stays in History.
+   */
+  retireCards: (cardIds: readonly string[]) => void;
   /** close EVERY session at once, sparing the pinned ones (§5.8's pinning
    *  contract, E9-09). One confirm for the lot, not one per card. */
   closeAllCards: () => void;
@@ -7929,6 +7936,9 @@ export function SessionGrid(props: {
         // the confirm belongs to the gesture; retireCard (E9-09) does what
         // main's inline removePanel/by-hand branch did, for both call sites
         retireCard(cardId);
+      },
+      retireCards: (cardIds) => {
+        for (const cardId of cardIds) retireCard(cardId);
       },
       closeAllCards: () => {
         // RAIL ORDER, and the DECISION through lib/pinning's `bulkClose` rather

@@ -1,6 +1,37 @@
 // Path comparison and worktree membership for projects (E42 step 1, #1637).
 import { describe, it, expect } from 'vitest';
-import { isInside, pathKey, worktreeFor } from './projects';
+import { baseBranchName, isInside, pathKey, prefillPullRequest, worktreeFor } from './projects';
+
+describe('baseBranchName (#1638)', () => {
+  it('names the branch a PR targets', () => {
+    expect(baseBranchName('origin/main')).toBe('main');
+    expect(baseBranchName('origin/release/2')).toBe('release/2');
+    expect(baseBranchName('main')).toBe('main');
+    expect(baseBranchName('upstream/main')).toBe('upstream/main');
+  });
+});
+
+describe('prefillPullRequest (#1638)', () => {
+  it('takes the purpose for the title and lists the sessions with their task labels', () => {
+    const r = prefillPullRequest({
+      purpose: 'Fix the closed-session queue',
+      branch: 'fix/1634-closed-session',
+      sessions: [
+        { title: 'Queue fix', taskLabel: 'writing the test' },
+        { title: 'Reviewer', taskLabel: 'Reviewer' },
+      ],
+      sessionsHeading: 'Sessions:',
+    });
+    expect(r.title).toBe('Fix the closed-session queue');
+    expect(r.body).toBe('Sessions:\n\n- Queue fix: writing the test\n- Reviewer\n');
+  });
+
+  it('falls back to the first session name, then the branch in words', () => {
+    expect(prefillPullRequest({ branch: 'b', sessions: [{ title: 'Alpha' }], sessionsHeading: 'S' }).title).toBe('Alpha');
+    const r = prefillPullRequest({ branch: 'feat/new-thing_here', sessions: [], sessionsHeading: 'S' });
+    expect(r).toEqual({ title: 'new thing here', body: '' });
+  });
+});
 
 describe('pathKey', () => {
   it('makes native and git spellings of one folder compare equal', () => {
