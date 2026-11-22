@@ -19,7 +19,9 @@
 //
 // PURE AND STATELESS for Claude: every piece of state the old readers kept
 // (the Feed's assembly map, the `/clear` latch) belongs to the consumer and
-// stayed there. The translator only says what each frame MEANS.
+// stayed there. The translator only says what each frame MEANS. The one
+// exception is `worktreeMoves` (#1616), which remembers which tool-call ids
+// were the agent's worktree tools, because a tool result does not say.
 //
 // ---------------------------------------------------------------------------
 // STATUS, MEASURED (moved from `sessions/stream-status.ts`), from S-11's own
@@ -370,6 +372,11 @@ export function translateClaudeFrame(
         else skipped?.('stream command list ignored: not an array', { subtype: 'init', got: kind(m.slash_commands) });
         if (typeof m.model === 'string' && m.model.trim()) out.push({ type: 'model', id: m.model });
         else skipped?.('stream init model ignored', { got: kind(m.model) });
+        // Where the CLI is working this turn (#1616): measured, a session
+        // resumed from its starting folder reports the WORKTREE it was last in
+        // here, because the CLI restores that itself. Only a restatement — the
+        // consumer uses it to correct a folder it already believed had moved.
+        if (typeof m.cwd === 'string' && m.cwd.trim()) out.push({ type: 'workdir', move: 'reported', cwd: m.cwd });
         return out;
       }
       // A plugin or skill change mid-session re-advertises the WHOLE list
@@ -539,13 +546,93 @@ function parseCommand(entry: unknown): CliCommand | null {
   return null;
 }
 
+/** The agent's own worktree tools (#1616), by the names the CLI gives them. */
+const WORKTREE_TOOLS = new Set(['EnterWorktree', 'ExitWorktree']);
+/** How many worktree calls may wait for their results at once. A turn makes one. */
+const MAX_PENDING_WORKTREE_CALLS = 16;
+
+/**
+ * The agent moving between worktrees (#1616), read off its OWN tool calls.
+ *
+ * The one piece of state this translator keeps, and why it needs any: a tool
+ * RESULT names its call only by `tool_use_id`, never by tool, and the shape of
+ * `EnterWorktree`'s result (`worktreePath`, `worktreeBranch`) is also part of
+ * the Agent tool's. So the call's id is remembered when the `assistant` frame
+ * names the tool, and only a result for one of those ids is read.
+ *
+ * Shapes read off the PATH binary's schemas and MEASURED against CLI 2.1.322
+ * (`spike/findings/1616-enter-worktree.md`): the `user` frame carrying the
+ * result has the structured output at top level as `tool_use_result` —
+ *   EnterWorktree: {worktreePath, worktreeBranch?, message}
+ *   ExitWorktree:  {action, originalCwd, worktreePath, restoredCwd?, ...}
+ * A failed call (`is_error`), or a result in any other shape, moves nothing
+ * (P6): the panes stay where they were and the skip is logged.
+ */
+export function worktreeMoves(skipped?: TranslatorHooks['onSkipped']): EngineTranslator {
+  const pending = new Map<string, string>();
+  return (m) => {
+    // a subagent's own worktree is the subagent's, not the session's
+    if (m.parent_tool_use_id != null) return [];
+    const message = (m.message ?? {}) as Record<string, unknown>;
+    const content = Array.isArray(message.content) ? (message.content as unknown[]) : [];
+    if (m.type === 'assistant') {
+      for (const c of content) {
+        const b = (c ?? {}) as Record<string, unknown>;
+        if (b.type !== 'tool_use' || typeof b.id !== 'string' || typeof b.name !== 'string') continue;
+        if (!WORKTREE_TOOLS.has(b.name)) continue;
+        pending.set(b.id, b.name);
+        // bounded: a call whose result never came must not be held for ever
+        if (pending.size > MAX_PENDING_WORKTREE_CALLS) pending.delete(pending.keys().next().value as string);
+      }
+      return [];
+    }
+    if (m.type !== 'user' || pending.size === 0) return [];
+    const out: EngineEvent[] = [];
+    for (const c of content) {
+      const b = (c ?? {}) as Record<string, unknown>;
+      if (b.type !== 'tool_result' || typeof b.tool_use_id !== 'string') continue;
+      const tool = pending.get(b.tool_use_id);
+      if (!tool) continue;
+      pending.delete(b.tool_use_id);
+      if (b.is_error === true) {
+        skipped?.('worktree tool failed; the session stays where it was', { tool });
+        continue;
+      }
+      const ev = worktreeMoveOf(tool, m.tool_use_result);
+      if (ev) out.push(ev);
+      else skipped?.('worktree tool result unreadable; the session stays where it was', { tool });
+    }
+    return out;
+  };
+}
+
+function worktreeMoveOf(tool: string, result: unknown): EngineEvent | null {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return null;
+  const r = result as Record<string, unknown>;
+  const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v : undefined);
+  if (tool === 'EnterWorktree') {
+    const cwd = str(r.worktreePath);
+    if (!cwd) return null;
+    const branch = str(r.worktreeBranch);
+    return { type: 'workdir', move: 'entered', cwd, ...(branch ? { branch } : {}) };
+  }
+  // ExitWorktree: `restoredCwd` is where the session really ended up (the
+  // CLI's fallback when the original folder is gone), else `originalCwd`
+  const cwd = str(r.restoredCwd) ?? str(r.originalCwd);
+  return cwd ? { type: 'workdir', move: 'left', cwd } : null;
+}
+
 /** The `events` capability both Claude adapters declare. */
 export const claudeEvents: EventCapability = {
   createTranslator(hooks: TranslatorHooks): EngineTranslator {
     const reported = new Set<string>();
+    const moves = worktreeMoves(hooks.onSkipped);
     return (frame) => {
       const events = translateClaudeFrame(frame, hooks.onSkipped);
-      if (events !== null) return events;
+      if (events !== null) {
+        const moved = moves(frame);
+        return moved.length > 0 ? [...events, ...moved] : events;
+      }
       const type = typeof frame.type === 'string' ? frame.type : '(no type)';
       if (!reported.has(type)) {
         reported.add(type);

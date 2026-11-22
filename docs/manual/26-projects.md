@@ -192,6 +192,27 @@ and removes nothing. The main folder can't be removed.
 A worktree you delete outside the app (in a terminal or Explorer) drops off the
 card the next time it's read.
 
+## When the AI moves a session into a worktree
+
+Claude Code can decide by itself to move a conversation into a git worktree
+(when you ask it to work in one, or your project instructions say so), and to
+move back out again. Switchboard follows it:
+
+- **The Session view** gets one quiet line: "Moved to worktree *name*
+  (*folder*)", or "Back in *name* (*folder*)" when it leaves.
+- **The card's header** says **in *name*** before the branch, so you can tell at
+  a glance where each session is really working. Hover it for the full folder.
+- **Changes, History and diffs** show the worktree the AI is working in, not the
+  folder the session started in.
+- **On the project card,** the session moves to that worktree's section. A
+  worktree the AI just made appears on the card by itself.
+- **After a restart,** the session reopens in the worktree it was last in.
+
+Switchboard only watches: it never creates, enters or leaves a worktree for the
+AI. If it can't tell where the AI went, the views simply stay where they were.
+The grey line is shown while the session runs; after a restart the AI's own
+**EnterWorktree** step in the conversation still shows where it moved.
+
 ## Hiding and removing
 
 - **Hide a worktree:** its **⋯** ▸ **Hide this worktree**. Only an empty worktree

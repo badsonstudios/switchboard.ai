@@ -22,6 +22,17 @@ export interface AutoGroupable {
   folder?: string;
   /** git common dir, `pathKey` form (E42, #1637): how a session finds its project */
   repoKey?: string;
+  /** where its agent works now, when it moved into a worktree (#1616) */
+  workFolder?: string;
+}
+
+/**
+ * Where a session is WORKING (#1616): the worktree its agent moved into, else
+ * the folder it started in. What the Changes, history and diff views and the
+ * project card's worktree section read; `folder` stays the start folder.
+ */
+export function workFolderOf(s: { folder?: string; workFolder?: string }): string | undefined {
+  return s.workFolder || s.folder;
 }
 
 /** What `railOrder` needs to know about a project (E42, #1637). */
@@ -198,8 +209,8 @@ export function railOrder<T extends AutoGroupable>(
       // folder comparison stays as the fallback for a card with no key yet.
       const top = s.autoKey ? pathKey(s.autoKey) : null;
       const byTop = top && p.worktrees?.find((w) => pathKey(w.path) === top)?.path;
-      const wt =
-        byTop || (s.folder && p.worktrees && worktreeFor(s.folder, p.worktrees)) || '';
+      const at = workFolderOf(s);
+      const wt = byTop || (at && p.worktrees && worktreeFor(at, p.worktrees)) || '';
       const byWt = inProject.get(p.id) ?? new Map<string, T[]>();
       const list = byWt.get(wt) ?? [];
       list.push(s);

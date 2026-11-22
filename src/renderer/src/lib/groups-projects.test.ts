@@ -5,7 +5,7 @@
 // not in an automatic folder group. Projects come first in `flat`, which is
 // what Ctrl+1..9 counts.
 import { describe, it, expect } from 'vitest';
-import { isProjectMember, projectBucket, railOrder, type ProjectForOrder } from './groups';
+import { isProjectMember, projectBucket, railOrder, workFolderOf, type ProjectForOrder } from './groups';
 import { bucketLabel } from './rail-order';
 import { NO_PINS } from './pinning';
 import { NO_ORDER } from './rail-order';
@@ -155,5 +155,21 @@ describe('isProjectMember (group moves do not apply to a project member)', () =>
     expect(isProjectMember(pathKey('C:\\other\\.git'), [project()])).toBe(false);
     expect(isProjectMember(undefined, [project()])).toBe(false);
     expect(isProjectMember(pathKey(COMMON), [])).toBe(false);
+  });
+});
+
+describe('a session whose agent moved into a worktree (#1616)', () => {
+  it('sits under the worktree it works in, not the one it started in', () => {
+    // no toplevel key yet (git not asked), so the folder decides: the WORK folder
+    const r = order([{ id: 'a', folder: REPO, workFolder: WT2, repoKey: pathKey(COMMON) }], [project()]);
+    const byPath = new Map(r.projects[0].worktrees.map((w) => [w.path, w.members.map((m) => m.id)]));
+    expect(byPath.get(WT2)).toEqual(['a']);
+    expect(byPath.get(REPO)).toEqual([]);
+  });
+
+  it('workFolderOf: the work folder, else the start folder', () => {
+    expect(workFolderOf({ folder: REPO, workFolder: WT1 })).toBe(WT1);
+    expect(workFolderOf({ folder: REPO })).toBe(REPO);
+    expect(workFolderOf({})).toBeUndefined();
   });
 });

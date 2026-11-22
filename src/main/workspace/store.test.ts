@@ -3712,3 +3712,20 @@ describe('v3 -> v4: one conversation per AI (#1294)', () => {
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual(newer);
   });
 });
+
+describe('where a card works now (#1616)', () => {
+  it('survives quit -> relaunch, and a ragged or start-folder value is dropped on load', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession({ ...sess('one'), workFolder: 'C:/tmp/one/.claude/worktrees/x' });
+    a.upsertSession({ ...sess('two'), workFolder: 'not/absolute' });
+    a.upsertSession({ ...sess('three', 1), workFolder: 'c:/TMP/three/' });
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    const byId = new Map(b.listSessions().map((s) => [s.id, s]));
+    expect(byId.get('one')?.workFolder).toBe('C:/tmp/one/.claude/worktrees/x');
+    expect('workFolder' in byId.get('two')!).toBe(false);
+    expect('workFolder' in byId.get('three')!).toBe(false);
+  });
+});

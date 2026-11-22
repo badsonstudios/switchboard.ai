@@ -10,8 +10,17 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { GitStatusDto } from '../lib/git-status';
+import { baseName } from '../lib/document-kind';
 
-export function GitContext(props: { status: GitStatusDto | null }): React.JSX.Element | null {
+export function GitContext(props: {
+  status: GitStatusDto | null;
+  /**
+   * The worktree the agent moved into (#1616), whole: drawn as its folder's
+   * name before the branch, so a card says where it is really working. Absent
+   * for a card working where it started.
+   */
+  worktree?: string;
+}): React.JSX.Element | null {
   const { t } = useTranslation();
   const s = props.status;
   // ⚠️ **`unreadable` DRAWS NOTHING, AND SKIPPING THAT CHECK WOULD HAVE MADE
@@ -24,6 +33,15 @@ export function GitContext(props: { status: GitStatusDto | null }): React.JSX.El
   if (!s || !s.isRepo || s.unreadable) return null;
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minInlineSize: 0 }}>
+      {props.worktree && (
+        <span
+          data-testid="card-worktree"
+          style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--muted)' }}
+          title={t('git.worktreeTitle', { path: props.worktree })}
+        >
+          {t('git.worktree', { name: baseName(props.worktree) })}
+        </span>
+      )}
       <span
         style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
         title={s.branch}

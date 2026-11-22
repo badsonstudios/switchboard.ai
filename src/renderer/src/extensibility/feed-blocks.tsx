@@ -60,6 +60,7 @@ import { siblingMessageParts } from '../../../shared/sibling-message';
 import { AiIcon } from '../components/AiIcon';
 import { compactionCopy } from '../lib/compaction-view';
 import { BriefingDialog } from '../components/BriefingDialog';
+import { baseName } from '../lib/document-kind';
 
 /**
  * Marks a subtree that owns its own clicks (#91). `ToolBox` walks up from the
@@ -884,6 +885,39 @@ function AiSwitchDivider({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
  * what the AI now remembers, word for word. Collapsed by default; a plain
  * button, so Tab and Enter reach it in a popout exactly as in the main window.
  */
+/**
+ * The agent moved into or out of a worktree (#1616): ONE quiet line, the
+ * folder's name and its whole path. Main places it when the agent's own tool
+ * result moved the card; it is a step in the session, so it is drawn like a
+ * tool row's caption rather than as a divider across the conversation.
+ */
+function MovedLine({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const m = b.moved;
+  if (!m) return null;
+  const text = t(m.to === 'worktree' ? 'feedView.moved.worktree' : 'feedView.moved.folder', {
+    name: baseName(m.folder),
+    path: m.folder,
+  });
+  return (
+    <div
+      data-moved-line
+      data-moved-to={m.to}
+      title={t('feedView.moved.hint')}
+      style={{
+        marginBlock: 4,
+        marginInline: 10,
+        color: 'var(--muted)',
+        fontSize: 11,
+        fontFamily: 'var(--font-ui)',
+        overflowWrap: 'anywhere',
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
 function CompactionDivider({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
   const copy = compactionCopy(b.compaction);
@@ -1994,6 +2028,12 @@ export const feedBlockRenderers: FeedBlockRendererContribution[] = [
     order: 54,
     matches: (b) => b.kind === 'ai-switch',
     render: (b) => <AiSwitchDivider b={b} />,
+  },
+  {
+    manifest: manifest('feed-block-moved', 'Moved into a worktree line'),
+    order: 57,
+    matches: (b) => b.kind === 'moved',
+    render: (b) => <MovedLine b={b} />,
   },
   {
     manifest: manifest('feed-block-compaction', 'Compaction divider'),

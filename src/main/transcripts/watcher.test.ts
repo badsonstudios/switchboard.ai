@@ -3888,3 +3888,71 @@ describe('continued-in: the conversation moved to another transcript (#790)', ()
     expect(watcher.snapshot('s2')!.binding).toBe('awaiting-prompt');
   });
 });
+
+describe('a conversation that follows its agent into a worktree (#1616)', () => {
+  const wt = 'C:/tmp/tw-project/.claude/worktrees/probe';
+  const wtDir = (): string => {
+    const d = path.join(root, slugForCwd(wt));
+    fs.mkdirSync(d, { recursive: true });
+    return d;
+  };
+
+  it('follows the file the CLI moved, without reading a byte twice', async () => {
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry({ message: { usage: { input_tokens: 5, output_tokens: 10 } } })]);
+    watcher.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => watcher.snapshot('s1')!.usage.output === 10);
+    // the CLI's relocateSessionTranscript: the same file, renamed into the
+    // worktree's directory, then appended to there
+    const moved = path.join(wtDir(), 'native-1.jsonl');
+    fs.renameSync(file, moved);
+    watcher.follow('s1', wt);
+    writeLines(moved, [entry({ message: { usage: { output_tokens: 7 } } })]);
+    await waitFor(() => watcher.snapshot('s1')!.usage.output === 17);
+    expect(watcher.transcriptFile('s1')).toBe(moved);
+    await sleep(100);
+    expect(watcher.snapshot('s1')!.usage).toMatchObject({ input: 5, output: 17 });
+    expect(watcher.snapshot('s1')!.lines).toBe(2);
+  });
+
+  it('finds a file that moves AFTER the result arrived, on its own', async () => {
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry({ message: { usage: { output_tokens: 3 } } })]);
+    watcher.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => watcher.snapshot('s1')!.usage.output === 3);
+    watcher.follow('s1', wt); // the file has not moved yet: left alone
+    expect(watcher.transcriptFile('s1')).toBe(file);
+    const moved = path.join(wtDir(), 'native-1.jsonl');
+    fs.renameSync(file, moved);
+    writeLines(moved, [entry({ message: { usage: { output_tokens: 4 } } })]);
+    await waitFor(() => watcher.snapshot('s1')!.usage.output === 7, 5000);
+    expect(watcher.transcriptFile('s1')).toBe(moved);
+  });
+
+  it('a resume binds the conversation filed under the worktree, whose lines name the start folder', async () => {
+    const moved = path.join(wtDir(), 'native-1.jsonl');
+    writeLines(moved, [entry({ message: { content: [{ type: 'text', text: 'history line' }] } })]);
+    const w2 = makeWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+    });
+    w2.watch('s1', { cwd, nativeSessionId: 'native-1', alsoFolders: [wt] });
+    await waitFor(() => w2.snapshot('s1')!.bound);
+    expect(w2.transcriptFile('s1')).toBe(moved);
+  });
+
+  it('without that folder, the same file is not looked for there', async () => {
+    const moved = path.join(wtDir(), 'native-1.jsonl');
+    writeLines(moved, [entry({ message: { content: [{ type: 'text', text: 'history line' }] } })]);
+    const w2 = makeWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      widenAfterMs: 60_000,
+    });
+    w2.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await sleep(250);
+    expect(w2.snapshot('s1')!.bound).toBe(false);
+  });
+});

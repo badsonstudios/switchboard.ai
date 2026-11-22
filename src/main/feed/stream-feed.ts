@@ -326,8 +326,15 @@ export class StreamFeed {
    * `session/load`, and the answer is the `conversation` event — so this lands
    * below the replayed history, where a switch BACK happened. Not silent: by
    * then the panel is listening. Dropped if the session ends first.
+   *
+   * `live`: at once, and EMITTED — for a running session whose panel is
+   * already listening: the agent moving into a worktree (#1616).
    */
-  placeMarker(sessionId: string, block: DerivedBlock, when: 'now' | 'after-conversation'): void {
+  placeMarker(sessionId: string, block: DerivedBlock, when: 'now' | 'after-conversation' | 'live'): void {
+    if (when === 'live') {
+      this.ensure(sessionId).buffer.push(block, { sidechain: false });
+      return;
+    }
     const s = this.ensure(sessionId);
     if (when === 'after-conversation' && s.conversationId === undefined) {
       s.pendingMarker = block;
@@ -522,6 +529,7 @@ export class StreamFeed {
       case 'mode':
       case 'settings':
       case 'usage':
+      case 'workdir': // the session IPC's (#1616): it decides whether the card moved, and places the line
         return;
       default: {
         // COMPILE-TIME: a new `EngineEvent` type fails `tsc` here until

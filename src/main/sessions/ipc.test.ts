@@ -257,7 +257,10 @@ function harness(
     projectsRoot?: string;
     deriveFeed?: FeedDerivation | boolean;
     readTitle?: (line: Record<string, unknown>) => string | undefined;
+    alsoFolders?: readonly string[];
   }> = [];
+  /** the watches told to follow a moved agent (#1616) */
+  const followed: Array<{ id: string; folder: string }> = [];
   const buildHookSettings = vi.fn(() => ({ hooks: {} }));
   /** the other half of the `HookSettingsHost` slice (#470): what a start that
    *  never produced a session hands back. */
@@ -563,6 +566,7 @@ function harness(
           projectsRoot?: string;
           deriveFeed?: FeedDerivation | boolean;
           readTitle?: (line: Record<string, unknown>) => string | undefined;
+          alsoFolders?: readonly string[];
         }
       ) => {
         watched.push({
@@ -570,6 +574,7 @@ function harness(
           projectsRoot: s.projectsRoot,
           deriveFeed: s.deriveFeed,
           readTitle: s.readTitle,
+          ...(s.alsoFolders?.length ? { alsoFolders: s.alsoFolders } : {}),
         });
         trace.push(`watch:${sessionId}`);
         return watchAccepts;
@@ -592,6 +597,10 @@ function harness(
        */
       noteConversationStarted: (id: string) => {
         trace.push(`conversation-started:${id}`);
+      },
+      // #1616: the agent moved, and the watch was told to follow it
+      follow: (id: string, folder: string) => {
+        followed.push({ id, folder });
       },
       // Which file a session is bound to — how `transcripts:search` turns a
       // session id into something to scan (P2-E17-01). `null` is the ordinary
@@ -794,6 +803,7 @@ function harness(
       for (const l of engineListeners) l(sessionId, ev);
     },
     watched,
+    followed,
     cards,
     /**
      * Play the transcript watcher: push a snapshot for a live session.
@@ -7014,5 +7024,104 @@ describe('a card’s project key is not stuck on a failed lookup (#1637 review)'
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// #1616: the agent's own `EnterWorktree` / `ExitWorktree` moves the card.
+describe('the session follows its agent into a worktree (#1616)', () => {
+  let folder: string;
+  let wt: string;
+  tempDirEach('sb-1616-ipc-', (d) => (folder = d));
+  beforeEach(() => {
+    wt = path.join(folder, '.claude', 'worktrees', 'probe');
+    fs.mkdirSync(wt, { recursive: true });
+  });
+
+  const resumes = { resume: { canResume: () => true } };
+  const moved = (h: ReturnType<typeof harness>, move: 'entered' | 'left' | 'reported', cwd: string) =>
+    h.fireEngineEvent('live-1', { type: 'workdir', move, cwd });
+
+  it('stores where it went, follows the transcript there, draws one line, and tells the rail', async () => {
+    const feed = new ClaudeFedFeed();
+    const h = harness(resumes, folder, { prior: priorCard({ folder, nativeSessionId: 'n-1' }), streamFeed: feed });
+    h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+    const pushes = () => h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
+    const before = pushes();
+    moved(h, 'entered', wt);
+    expect(h.upserted.at(-1)?.workFolder).toBe(wt);
+    expect(h.followed).toEqual([{ id: 'live-1', folder: wt }]);
+    expect(feed.blocks('live-1').filter((b) => b.kind === 'moved').map((b) => b.moved)).toEqual([
+      { to: 'worktree', folder: wt },
+    ]);
+    expect(pushes()).toBe(before + 1);
+    const cards = (await h.call('sessions:cards')) as Array<{ folder: string; workFolder?: string }>;
+    expect(cards[0]).toMatchObject({ folder, workFolder: wt });
+  });
+
+  it('coming back home clears it, and draws the way back', () => {
+    const feed = new ClaudeFedFeed();
+    const h = harness(resumes, folder, {
+      prior: priorCard({ folder, nativeSessionId: 'n-1', workFolder: wt }),
+      streamFeed: feed,
+    });
+    h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+    moved(h, 'left', folder);
+    expect(h.upserted.at(-1)).not.toHaveProperty('workFolder');
+    expect(feed.blocks('live-1').find((b) => b.kind === 'moved')?.moved).toEqual({ to: 'folder', folder });
+  });
+
+  it('a folder that is not there changes nothing (P6)', () => {
+    const h = harness(resumes, folder, { prior: priorCard({ folder, nativeSessionId: 'n-1' }) });
+    h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+    const n = h.upserted.length;
+    moved(h, 'entered', path.join(folder, 'no-such-worktree'));
+    expect(h.upserted).toHaveLength(n);
+    expect(h.followed).toEqual([]);
+  });
+
+  it('a turn restating the start folder of a card that never moved is not a move', () => {
+    const h = harness(resumes, folder, { prior: priorCard({ folder, nativeSessionId: 'n-1' }) });
+    h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+    const n = h.upserted.length;
+    moved(h, 'reported', folder);
+    moved(h, 'reported', wt);
+    expect(h.upserted).toHaveLength(n);
+  });
+
+  it('a resume looks for the conversation in the worktree too, and keeps the card there', () => {
+    const h = harness({ ...resumes, transcripts: { projectsRoot: () => folder } }, folder, {
+      prior: priorCard({ folder, nativeSessionId: 'n-1', workFolder: wt }),
+    });
+    h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+    expect(h.created[0].resumeSessionId).toBe('n-1');
+    expect(h.watched[0].alsoFolders).toEqual([wt]);
+    expect(h.upserted.at(-1)?.workFolder).toBe(wt);
+  });
+
+  it('a FRESH start runs where it starts: the old work folder goes', () => {
+    const h = harness({ resume: { canResume: () => false } }, folder, {
+      prior: priorCard({ folder, nativeSessionId: 'n-1', workFolder: wt }),
+    });
+    h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+    expect(h.created[0].resumeSessionId).toBeUndefined();
+    expect(h.upserted.at(-1)?.workFolder).toBeUndefined();
+    // ...but where its conversation was filed is kept, for the next start (#484)
+    expect(h.upserted.at(-1)?.filedUnder).toBe(wt);
+  });
+
+  it('...and does not watch the old worktree, where it could bind the transcript of another session', () => {
+    const h = harness({ resume: { canResume: () => false }, transcripts: { projectsRoot: () => folder } }, folder, {
+      prior: priorCard({ folder, nativeSessionId: 'n-1', workFolder: wt }),
+    });
+    h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+    expect(h.watched[0].alsoFolders).toBeUndefined();
+  });
+
+  it('a resume whose worktree was removed since comes back home', () => {
+    const gone = path.join(folder, 'removed-worktree');
+    const h = harness(resumes, folder, { prior: priorCard({ folder, nativeSessionId: 'n-1', workFolder: gone }) });
+    h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
+    expect(h.created[0].resumeSessionId).toBe('n-1');
+    expect(h.upserted.at(-1)?.workFolder).toBeUndefined();
   });
 });

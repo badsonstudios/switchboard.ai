@@ -180,6 +180,12 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 - **Where each worktree stands** on the project card: commits ahead of and
   behind main, and lines added and removed. A worktree deleted outside the app
   drops off the card.
+- **A session follows the AI into a worktree.** When Claude moves a
+  conversation into a git worktree by itself (or back out), the Session view
+  says so in one quiet line, the card's header says **in** *worktree* before the
+  branch, Changes, History and diffs show that worktree, the session moves to
+  that worktree on its project card, and after a restart it reopens there.
+  Switchboard only follows; it never moves the AI itself.
 
 ## 0.8.143 — 2026-11-18
 

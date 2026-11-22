@@ -71,6 +71,7 @@ export function streamStatusEvent(e: EngineEvent): SessionEvent | null {
     case 'message':
     case 'compaction':
     case 'usage':
+    case 'workdir':
       return null;
   }
 }

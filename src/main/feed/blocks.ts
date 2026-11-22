@@ -60,11 +60,26 @@ export interface FeedAttachments {
  * line or a stream message, read-only by construction. `detail` is capped — the
  * Feed is a view, not an archive; the transcript stays the source of truth.
  */
+/** Where the agent went, for the Feed's `moved` line (#1616). */
+export interface MovedMark {
+  /** into a worktree, or back out to a folder */
+  to: 'worktree' | 'folder';
+  /** the folder it is in now, whole */
+  folder: string;
+}
+
 export interface FeedBlock {
   seq: number;
   /** `ai-switch`: the divider an AI switch draws (#1294) — see `aiSwitch`.
-   *  `compaction`: the divider where the conversation was compacted (#1259) */
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch' | 'compaction';
+   *  `compaction`: the divider where the conversation was compacted (#1259)
+   *  `moved`: the agent moved into or out of a worktree (#1616) — see `moved` */
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch' | 'compaction' | 'moved';
+  /**
+   * `moved`: where the agent went (#1616). Not from any transcript line — the
+   * host places it when the agent's own `EnterWorktree` / `ExitWorktree`
+   * result moves the card (`sessions/work-folder.ts`). One quiet line.
+   */
+  moved?: MovedMark;
   /** user/assistant/thinking prose */
   text?: string;
   tool?: {

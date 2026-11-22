@@ -426,7 +426,9 @@ export function alignToLoaded(
   trail: readonly BlockAnchor[],
   loaded: readonly FeedBlock[]
 ): { firstLoadedIndex: number; loadedMain: FeedBlock[] } | null {
-  const loadedMain = loaded.filter((b) => !b.sidechain);
+  // a `moved` line (#1616) is the host's, never a transcript line, so the
+  // file's trail has no block for it: counting it would shift every block after
+  const loadedMain = loaded.filter((b) => !b.sidechain && b.kind !== 'moved');
   if (loadedMain.length === 0 || trail.length === 0) return null;
   const found = alignByShape(trail, loadedMain) ?? alignBySrcId(trail, loadedMain);
   return found === null ? null : { firstLoadedIndex: found, loadedMain };
@@ -642,6 +644,8 @@ async function scanOne(
     // ...and a compaction divider has no text of its own to match (#1259); it
     // still takes an ordinal above, so the file and the Feed count alike
     if (anchor.kind === 'compaction') return;
+    // ...and nor is the agent's move into a worktree (#1616): the host's line
+    if (anchor.kind === 'moved') return;
     if (!text) return;
     re.lastIndex = 0;
     let m: RegExpExecArray | null;

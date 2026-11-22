@@ -1024,6 +1024,13 @@ export class SessionStore {
     return this.state.sessions.find((s) => s.id === cardId)?.accent;
   }
 
+  /** Where one card's agent works now, when it moved into a worktree (#1616),
+   *  or undefined. Scalar, for the reason `getCardAccent` documents. */
+  getCardWorkFolder(cardId: string | undefined): string | undefined {
+    if (!cardId) return undefined;
+    return this.state.sessions.find((s) => s.id === cardId)?.workFolder;
+  }
+
   /** Which AI one card is on (#1293; the AI chip's too, #1294), or undefined.
    *  Scalar, for the reason `getCardAccent` documents. */
   getCardProvider(cardId: string | undefined): string | undefined {

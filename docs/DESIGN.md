@@ -1292,6 +1292,14 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
   `spike/findings/1638-transcripts-after-removal.md`), so the mockup's "keep in
   History" box became a sentence; reopening one from History in another folder is a
   follow-up. The card shows ahead/behind and lines changed per worktree.
+  **A worktree the AI enters by itself** (Claude's own `EnterWorktree` /
+  `ExitWorktree`, #1616) is followed, never driven: the tool result moves the card's
+  *work folder* (stored beside, not instead of, the folder it starts in), which the
+  Changes / history / diff views, the header and the project section read; one quiet
+  Feed line marks each move. Measured (`spike/findings/1616-enter-worktree.md`): the CLI
+  moves the transcript into the worktree's project directory and puts a resumed session
+  back in the worktree itself, so the resume check looks under the work folder as well
+  as the start folder, and the transcript watch follows the moved file.
 - **Cross-session diff awareness** (via Session Bus): warn when two sessions have
   uncommitted changes touching the same files in the same repo.
 - **Editable diff + commit-from-diff** (table-stakes: Crystal shipped it): edit

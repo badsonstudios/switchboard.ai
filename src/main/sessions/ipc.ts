@@ -134,6 +134,16 @@ import { buildDispatchPrompt } from './dispatch-prompt';
 import { commandsFromCli, MisplacedSkills, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
 import { isPromptTooLong, sanitizePromptAttachments } from '../../shared/prompt-attachments';
+import { nextWorkPlace, otherConversationFolders, placeAfterStart, sanitizeWorkPlace, workFolderOf } from './work-folder';
+
+/** One stat, false for anything that is not a folder we can see (#1616). */
+function isDirectorySync(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 export interface SessionIpcDeps {
   manager: SessionManager;
@@ -454,6 +464,45 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // being torn down (an AI switch) must not land on the new head
     if (kept.conversation !== existing.nativeSessionId) return;
     deps.persist.upsert({ ...existing, conversationSettings: kept });
+  });
+
+  // The agent MOVED (#1616): its own `EnterWorktree` / `ExitWorktree`, or the
+  // CLI restating where it is at a turn's start. P7: we only watch — the CLI
+  // already moved itself, and this re-points the card's views at where it is
+  // now: the work folder is stored on the card (the Changes, history and diff
+  // views, and the project card's worktree section, follow it), the transcript
+  // watch follows the file the CLI moved, and a real move draws one quiet Feed
+  // line. Anything unreadable changes nothing (`nextWorkPlace`, P6).
+  manager.onEngineEvent((liveId, ev) => {
+    if (ev.type !== 'workdir') return;
+    const cardId = cardOfLive.get(liveId);
+    if (!cardId) return;
+    const existing = deps.persist.list().find((s) => s.id === cardId);
+    if (!existing) return;
+    const change = nextWorkPlace(existing, ev, isDirectorySync);
+    if (!change) return;
+    const next = { ...existing, workFolder: change.workFolder };
+    if (next.workFolder === undefined) delete next.workFolder;
+    deps.persist.upsert(next);
+    transcripts.follow(liveId, ev.cwd);
+    if (change.marker) {
+      deps.streamFeed?.placeMarker(
+        liveId,
+        {
+          kind: 'moved',
+          moved: { to: change.marker === 'entered' ? 'worktree' : 'folder', folder: ev.cwd },
+          ts: new Date().toISOString(),
+        },
+        'live'
+      );
+    }
+    log.info('the session moved', {
+      cardId,
+      move: ev.move,
+      folder: ev.cwd,
+      ...(ev.branch ? { branch: ev.branch } : {}),
+    });
+    cardsChanged();
   });
 
   // outbound goes through the broker too: it checks what the TARGET window
@@ -2322,6 +2371,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           defaultProviderId:
             dispatchedOn !== undefined ? () => dispatchedOn : deps.defaultProviderId,
           folder: opts.folder,
+          // where else this card's conversation may be filed (#1616, #1643):
+          // the worktree its agent last worked in, which the CLI moved the
+          // transcript into
+          conversationFolders: otherConversationFolders(prior, opts.folder),
           // Honoured only for a card with no conversation of its own — the plan
           // enforces that, not this call site, so the rule holds for every
           // caller rather than for this one.
@@ -2710,6 +2763,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // what this session's subagent lines are read through before they
           // reach the stream Feed (#1303); undefined = they are not
           readEntry: plan.readEntry,
+          // where else the conversation may be filed (#1616, #1643) — the
+          // same list the resume check looked in. ONLY for a resume: a fresh
+          // session has no id yet and binds on folder alone, so an old
+          // worktree in this list could hand it another session's transcript.
+          ...(plan.resumeSessionId && !plan.forkSession
+            ? { alsoFolders: otherConversationFolders(prior, opts.folder) }
+            : {}),
         });
         // the watcher refuses a root it cannot poll safely. Say so against the
         // CARD — a warning keyed by a live session id, in the transcripts log,
@@ -2766,7 +2826,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           const replayed = replayResumedHistory(deps.streamFeed, log, {
             sessionId: record.id,
             projectsRoot: plan.transcriptsRoot,
-            folder: from ? from.sourceFolder : opts.folder,
+            // a fork reads its source; a resume reads wherever the check found
+            // the conversation filed (#1616, #1643)
+            folder: from ? from.sourceFolder : (plan.resumeFolder ?? opts.folder),
             nativeSessionId: from ? from.sourceSessionId : plan.resumeSessionId,
             readEntry: plan.readEntry,
             // where the switch into this AI happened, by time (#1294)
@@ -2809,11 +2871,21 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // later reader re-parses wrongly, and getting it wrong here writes
       // somebody else's conversation onto this card (see the note below).
       const ownConversationId = plan.forkSessionId ?? plan.resumeSessionId;
-      deps.persist.upsert({
+      // Through the work-place sanitizer (#1616): a card started IN the folder
+      // its agent had moved to is simply home again.
+      deps.persist.upsert(sanitizeWorkPlace({
         ...prior,
         id: opts.cardId,
         identity,
         layoutSlot: prior?.layoutSlot ?? 0,
+        // Where it will work, and where its conversation is filed (#1616,
+        // #1643) — `placeAfterStart` has the rules.
+        ...placeAfterStart(prior, {
+          runFolder: opts.folder,
+          resumed: !!plan.resumeSessionId && !plan.forkSession,
+          resumeFolder: plan.resumeFolder,
+          isDirectory: isDirectorySync,
+        }),
         // THE LINK IS NEVER DESTROYED HERE (#484).
         //
         // This line used to be `nativeSessionId: plan.resumeSessionId` —
@@ -2875,7 +2947,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
               ),
             }
           : {}),
-      });
+      }));
       // THE CARD HAD A CONVERSATION AND THIS START IS NOT IN IT (#886).
       //
       // The third path that invalidates a conversation, and the one nothing was
@@ -3545,8 +3617,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // restart, and this field is about the NEXT spawn. Keeping that
           // distinction costs nothing and is the thing #445 was a scar about.
           transport: card.transport ?? DEFAULT_SESSION_TRANSPORT,
-          autoKey: await autoKeyFor(card.identity.folder),
-          repoKey: await repoKeyFor(card.identity.folder),
+          // Where the agent works NOW, when it moved (#1616) — and the keys
+          // below are that folder's, so the card sits in the worktree it is
+          // working in rather than the one it started in.
+          ...(card.workFolder ? { workFolder: card.workFolder } : {}),
+          autoKey: await autoKeyFor(workFolderOf(card)),
+          repoKey: await repoKeyFor(workFolderOf(card)),
           // Through the switch (P2-E7-06): a suppressed auto label must not
           // reach the renderer at all, or it renders in the rail for a
           // screen-share to read.
