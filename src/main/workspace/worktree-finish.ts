@@ -173,7 +173,7 @@ export class WorktreeFinisher {
       if (await git.mergeInProgress(wt.path)) {
         return refused('merge-in-progress', undefined, (await git.unmergedFiles(wt.path)) ?? []);
       }
-      const dirty = await this.dirtyFiles(wt.path);
+      const dirty = await this.dirtyFiles(wt.path, project);
       if (dirty === null) return refused('git-failed', 'git could not read what is changed in that folder');
       if (dirty.length > 0) return refused('dirty', undefined, dirty);
       const base = await this.baseOf(project, repo, true);
@@ -305,7 +305,7 @@ export class WorktreeFinisher {
   ): Promise<LocalMergeOutcome> {
     const { git, log } = this.deps;
     if (!wt.branch) return refused('detached');
-    const dirtyHere = await this.dirtyFiles(wt.path);
+    const dirtyHere = await this.dirtyFiles(wt.path, project);
     if (dirtyHere === null || dirtyHere.length > 0) return refused('dirty', undefined, dirtyHere ?? []);
     const dirtyThere = await this.dirtyFiles(primary.path);
     if (dirtyThere === null || dirtyThere.length > 0) return refused('primary-dirty', undefined, dirtyThere ?? []);
@@ -334,7 +334,7 @@ export class WorktreeFinisher {
     const exists = await isDirectory(wt.path);
     const base = await this.baseOf(project, repo);
     const [dirty, merged, links] = await Promise.all([
-      exists ? this.dirtyFiles(wt.path) : Promise.resolve([] as string[]),
+      exists ? this.dirtyFiles(wt.path, project) : Promise.resolve([] as string[]),
       this.mergedState(repo, wt, base),
       exists ? this.linksIn(project, wt.path) : Promise.resolve([] as string[]),
     ]);
@@ -364,11 +364,11 @@ export class WorktreeFinisher {
           !top ||
           !common ||
           pathKey(path.normalize(top)) !== pathKey(wt.path) ||
-          pathKey(common) !== pathKey(project.commonDir)
+          !(await samePlace(common, project.commonDir))
         ) {
           return refused('other-checkout');
         }
-        const dirty = await this.dirtyFiles(wt.path);
+        const dirty = await this.dirtyFiles(wt.path, project);
         if (dirty === null && !req.force) return refused('git-failed', 'git could not read what is changed in that folder');
         if (dirty && dirty.length > 0 && !req.force) return refused('dirty', undefined, dirty);
       }
@@ -500,10 +500,23 @@ export class WorktreeFinisher {
     return base;
   }
 
-  private async dirtyFiles(folder: string): Promise<string[] | null> {
+  /**
+   * Files changed and not committed. With a project, its own shared folders
+   * are left out when they are still links: git ignores `node_modules/` as a
+   * DIRECTORY, so on Linux and macOS the symlink we made shows up untracked,
+   * and that is not anyone's work (#1638, Linux CI).
+   */
+  private async dirtyFiles(folder: string, project?: ProjectRecord): Promise<string[] | null> {
     const st = await this.deps.git.status(folder).catch(() => null);
     if (!st || st.unreadable) return null;
-    return st.files.map((f) => f.path).slice(0, FILES_MAX);
+    const shared = new Set((project?.sharedDirs ?? []).map((r) => r.replace(/\/+$/, '')));
+    const out: string[] = [];
+    for (const f of st.files) {
+      const rel = f.path.replace(/\/+$/, '');
+      if (shared.has(rel) && (await isLink(path.join(folder, rel)))) continue;
+      out.push(f.path);
+    }
+    return out.slice(0, FILES_MAX);
   }
 
   /**
@@ -565,6 +578,19 @@ async function relink(project: ProjectRecord, folder: string): Promise<string | 
     }
   }
   return missed.length > 0 ? `not linked back: ${missed.join(', ')}` : null;
+}
+
+/**
+ * Do two paths name one folder? Through the OS's own resolution first, so a
+ * Windows 8.3 short name (`RUNNER~1`) and git's long spelling still match;
+ * by spelling when either cannot be resolved.
+ */
+async function samePlace(a: string, b: string): Promise<boolean> {
+  if (pathKey(a) === pathKey(b)) return true;
+  const real = (p: string): Promise<string | null> =>
+    new Promise((resolve) => fs.realpath.native(p, (err, r) => resolve(err ? null : r)));
+  const [ra, rb] = await Promise.all([real(a), real(b)]);
+  return !!ra && !!rb && pathKey(ra) === pathKey(rb);
 }
 
 /** Where a project's git runs from: its primary checkout, else its common dir. */

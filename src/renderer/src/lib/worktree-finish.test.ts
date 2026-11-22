@@ -23,6 +23,11 @@ describe('sessionsInWorktree', () => {
     expect(sessionsInWorktree(all, wts, '/r/.claude/worktrees/x').map((x) => x.id)).toEqual(['b']);
     expect(sessionsInWorktree(all, wts, '/wt/feat/').map((x) => x.id)).toEqual(['c']);
   });
+  it('trusts git’s toplevel over the folder string (8.3 short names on Windows)', () => {
+    const short = { ...s('e', 'C:/RUNNER~1/fin-wt'), autoKey: '/wt/feat' };
+    expect(sessionsInWorktree([short], wts, '/wt/feat').map((x) => x.id)).toEqual(['e']);
+    expect(sessionsInWorktree([short], wts, '/r')).toEqual([]);
+  });
   it('without a worktree list, falls back to "inside the folder"', () => {
     expect(sessionsInWorktree(all, null, '/wt/feat').map((x) => x.id)).toEqual(['c']);
   });

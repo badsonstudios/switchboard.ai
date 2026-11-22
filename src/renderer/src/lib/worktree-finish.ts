@@ -17,6 +17,11 @@ export function sessionsInWorktree(
 ): RailSession[] {
   const want = pathKey(folder);
   return sessions.filter((s) => {
+    // GIT'S answer first, as the card places them (`lib/groups`): `autoKey` is
+    // the folder's toplevel in git's spelling, which still matches when the
+    // folder string is an 8.3 short name (`RUNNER~1`, Windows CI)
+    const top = s.autoKey ? pathKey(s.autoKey) : null;
+    if (top && worktrees?.some((w) => pathKey(w.path) === top)) return top === want;
     if (!s.folder) return false;
     if (worktrees) {
       const home = worktreeFor(s.folder, worktrees);
