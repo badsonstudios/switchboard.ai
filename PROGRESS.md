@@ -3,7 +3,7 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ▶ E42 Projects (#1636): step 4 (#1616) DONE via PR #PR_NUM (2026-11-22, unreleased). NEXT: #1643
+> # ▶ E42 Projects (#1636): step 4 (#1616) DONE via PR #1645 (2026-11-22, unreleased). NEXT: #1643
 >
 > **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* Run order: **#1616 → #1643 → #1507 → release** (#1643, reopening a removed worktree's conversation from History, was added after #1638 found it; the release is cut by the orchestrator after the last step, not by a step).
 > - **Measured first** (`spike/findings/1616-enter-worktree.md`, CLI 2.1.322): `EnterWorktree` / `ExitWorktree` results carry `tool_use_result` `{worktreePath, worktreeBranch}` / `{originalCwd, restoredCwd, …}`; the CLI MOVES the transcript into the worktree's `~/.claude/projects` slug (and back), and a resume from the start folder lands back in the worktree by itself (`system:init.cwd`).
