@@ -140,6 +140,17 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ## 0.8.144 — unreleased
 
+### Added
+
+- **Projects in the Sessions list:** **+ project** (or **Open project…** in the
+  command palette) opens a git repo as a project. Its card sits at the top of
+  the list with one section per worktree, named by branch: the main folder is
+  marked PRIMARY and worktrees made outside Switchboard are marked FOUND. Your
+  sessions in that repo sit under the worktree they run in, and **⊕** on a
+  worktree starts a new session there. Nothing is created or deleted on disk;
+  **Remove project from the list** puts every session back where it was and
+  stops none of them. Making new worktrees from the app comes next.
+
 ## 0.8.143 — 2026-11-18
 
 ### Added
