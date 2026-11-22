@@ -104,7 +104,7 @@ describe('railOrder with projects', () => {
       [
         project({
           worktrees: [
-            { path: BARE, primary: true, bare: true, head: '', detached: false },
+            { path: BARE, primary: true, bare: true, branch: null, head: null, detached: false },
             { path: WT1, primary: false, branch: 'feat/x', head: 'b', detached: false },
           ],
         }),
