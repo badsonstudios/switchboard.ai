@@ -44,6 +44,7 @@ page at a time.
 | Page | What it covers |
 |---|---|
 | [Organizing your workspace](07-workspace.md) | The Sessions list (down the left or across the top), groups, pop-out windows, layout, arranging cards with one click, the tab's right-click menu, bringing the window to the front |
+| [Projects](26-projects.md) | Opening a git repo as a project: its worktrees (a branch in its own folder) and the sessions in each, hiding a worktree, removing a project |
 | [Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette |
 | [Notifications & events](09-notifications.md) | Sounds, the Events drawer, who needs you, the announcement voice, when you get told what |
 | [Settings](10-settings.md) | The Settings window (`Ctrl+,`) and what is on each of its seven tabs, the chips that stayed on the title bar, and why |

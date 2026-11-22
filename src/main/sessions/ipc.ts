@@ -86,6 +86,7 @@ import { planSessionStart } from './start-plan';
 import { MAX_SESSION_TITLE, uniqueSessionTitle } from './session-title';
 import type { SessionNotStarted, SuggestedTitle } from '../../shared/sessions';
 import { dispatchFactsOf } from '../../shared/sessions';
+import { pathKey } from '../../shared/projects';
 import { heldNativeIds, recordNativeId, resumeCandidates } from './lineage';
 import { arrivalMark, markArrived, patchMark, pendingArrival, switchCardAi } from './ai-switch';
 import type { FeedBlock } from '../feed/blocks';
@@ -311,6 +312,12 @@ export interface SessionIpcDeps {
   forgetBriefings?: (cardId: string) => void;
   /** git toplevel for a folder (null if not a repo) — auto-group key (E12-05) */
   repoRoot: (folder: string) => Promise<string | null>;
+  /**
+   * git COMMON dir for a folder (null if not a repo): the project key (E42,
+   * #1637). Optional so a host without projects (and the tests' fakes) just
+   * sends cards with no `repoKey`, which draws them exactly as before.
+   */
+  repoCommonDir?: (folder: string) => Promise<string | null>;
   /**
    * The handoff behind a dropped context chip (P2-E11-10, §5.5).
    *
@@ -3427,6 +3434,25 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     return key;
   };
 
+  // project keys (E42, #1637): the folder's git common dir, in `pathKey` form,
+  // so every worktree of one repo shares a key. Cached per folder like the
+  // auto key, and fail-open the same way: no answer, no key, no project.
+  const repoKeyCache = new Map<string, string | null>();
+  const repoKeyFor = async (folder: string): Promise<string | undefined> => {
+    if (!deps.repoCommonDir) return undefined;
+    const norm = pathKey(folder);
+    if (repoKeyCache.has(norm)) return repoKeyCache.get(norm) ?? undefined;
+    let key: string | null = null;
+    try {
+      const dir = await deps.repoCommonDir(folder);
+      if (dir) key = pathKey(dir);
+    } catch {
+      /* not a repo / no git */
+    }
+    repoKeyCache.set(norm, key);
+    return key ?? undefined;
+  };
+
   // joined view for the rail: every persisted card, with its live status if
   // running, 'ended' if its process has exited cleanly (#1362), or 'suspended'
   // if restored-but-not-yet-resumed (E7-05)
@@ -3436,7 +3462,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // guard is only meaningful because "issued later" implies "read later" —
   // which holds only while `manager.list()`, `deps.persist.list()` and every
   // `rec.status` below are read in the tick the invoke arrives. The single
-  // `await` is `autoKeyFor`, and it is evaluated AFTER `status` in the object
+  // `await` is `autoKeyFor` (and `repoKeyFor` beside it, #1637), evaluated AFTER `status` in the object
   // literal. Hoist any resolution above those reads and the renderer's ordering
   // guard silently degrades to a coin flip, with every test still green.
   // The RETURN TYPE is the drift pin (#618). `SessionCardWire` is what the
@@ -3504,6 +3530,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // distinction costs nothing and is the thing #445 was a scar about.
           transport: card.transport ?? DEFAULT_SESSION_TRANSPORT,
           autoKey: await autoKeyFor(card.identity.folder),
+          repoKey: await repoKeyFor(card.identity.folder),
           // Through the switch (P2-E7-06): a suppressed auto label must not
           // reach the renderer at all, or it renders in the rail for a
           // screen-share to read.

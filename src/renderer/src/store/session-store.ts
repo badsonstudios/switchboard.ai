@@ -18,7 +18,7 @@
 //
 // Plain class + useSyncExternalStore. No new dependency: what we need is a
 // synchronous read and a subscription, and that is the whole of it.
-import { EventDto, RailGroup, RailSession } from '../model/types';
+import { EventDto, RailGroup, RailProject, RailSession } from '../model/types';
 import {
   DEFAULT_TASK_LABEL_SIZE,
   taskLabelSizeOf,
@@ -112,6 +112,8 @@ export interface SessionState {
   readonly activeCard: string | null;
   readonly sessions: readonly RailSession[];
   readonly groups: readonly RailGroup[];
+  /** projects (E42, #1637), with their worktrees as last read */
+  readonly projects: readonly RailProject[];
   readonly events: readonly EventDto[];
   /** where the attention walk has been, BY EVENT ID (see lib/queue) */
   readonly visited: ReadonlySet<number>;
@@ -242,6 +244,7 @@ const EMPTY: SessionState = {
   activeCard: null,
   sessions: [],
   groups: [],
+  projects: [],
   events: [],
   visited: new Set(),
   presentation: new Map(),
@@ -536,6 +539,7 @@ export class SessionStore {
     if (
       'sessions' in patch ||
       'groups' in patch ||
+      'projects' in patch ||
       'pinned' in patch ||
       'manualOrder' in patch ||
       'lineage' in patch
@@ -545,7 +549,8 @@ export class SessionStore {
         this.state.groups,
         this.state.pinned,
         this.state.manualOrder,
-        this.state.lineage
+        this.state.lineage,
+        this.state.projects
       );
     }
     // The queue is derived from the SILENCED-FILTERED feed (P2-E9-10), so it
@@ -748,6 +753,10 @@ export class SessionStore {
   }
   setGroups(groups: RailGroup[]): void {
     this.set({ groups });
+  }
+  /** Projects and their worktrees (E42, #1637). */
+  setProjects(projects: RailProject[]): void {
+    this.set({ projects });
   }
 
   // ── cards main has never heard of (#687) ──────────────────────────────────

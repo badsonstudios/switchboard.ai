@@ -383,6 +383,15 @@ export const CHANNEL_CAPABILITIES = {
   'groups:palette': 'groups.read',
   'groups:setSessionGroup': 'groups.write',
   'groups:update': 'groups.write',
+  // Projects (E42, #1637). The list and the record edits organise the rail,
+  // the same power a group has; `inspect` and `worktrees` RUN GIT in the
+  // repo, so they are `git.read` like `git:status`.
+  'projects:list': 'groups.read',
+  'projects:open': 'groups.write',
+  'projects:update': 'groups.write',
+  'projects:remove': 'groups.write',
+  'projects:inspect': 'git.read',
+  'projects:worktrees': 'git.read',
   // The MCP Manager's read half (§5.17, #632). Two channels and one capability:
   // both answer "what MCP servers does this folder's session have", one off the
   // config files and one off the CLI. They are split because they have wildly

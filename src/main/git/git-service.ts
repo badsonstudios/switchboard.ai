@@ -44,6 +44,8 @@ import {
   isCommittableMessage,
 } from './git-commit';
 import { type Hunk, applyArgs, hunkDiffArgs, parseDiff } from './git-hunks';
+import { parseWorktreeList } from './worktree-list';
+import type { WorktreeInfo } from '../../shared/projects';
 import {
   NETWORK_BUDGET_MS,
   checkoutArgs,
@@ -850,6 +852,40 @@ export class GitService {
     const r = await this.run(folder, ['rev-parse', '--show-toplevel'], budgetMs);
     const top = r.out.trim();
     return r.ok && top ? top : null;
+  }
+
+  /**
+   * The repo's COMMON git directory, absolute, or null when not a repo / no
+   * git (E42, #1637). The primary checkout and every linked worktree of one
+   * repo answer the same path, which is what makes it a project's identity;
+   * `root()` answers each checkout's own folder and so splits them.
+   *
+   * `--path-format=absolute` needs git 2.31 (2021). An older git answers a
+   * relative path or an error; a relative answer is resolved against the folder
+   * by the caller's `pathKey` comparison failing safe (no project match), never
+   * by guessing here.
+   */
+  async commonDir(folder: string, budgetMs = 0): Promise<string | null> {
+    const r = await this.run(
+      folder,
+      ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+      budgetMs
+    );
+    const dir = r.out.trim();
+    return r.ok && dir && /^(?:[A-Za-z]:)?[\\/]/.test(dir) ? path.normalize(dir) : null;
+  }
+
+  /**
+   * Every worktree git knows for this folder's repo (E42, #1637), primary
+   * first, or null when git could not be read. Read-only: nothing here creates,
+   * prunes or repairs a worktree.
+   */
+  async worktreeList(folder: string, budgetMs = 0): Promise<WorktreeInfo[] | null> {
+    const r = await this.run(folder, ['worktree', 'list', '--porcelain'], budgetMs);
+    if (!r.ok) return null;
+    // git prints forward slashes on Windows too; a session started in one of
+    // these folders should carry the same native path any picked folder does
+    return parseWorktreeList(r.out).map((w) => ({ ...w, path: path.normalize(w.path) }));
   }
 
   /**

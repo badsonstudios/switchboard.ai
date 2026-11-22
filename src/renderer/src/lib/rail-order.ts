@@ -123,6 +123,14 @@ export function bucketLabel(
 ): string {
   const g = groups.find((x) => x.id === bucket);
   if (g) return g.name;
+  // a project's worktree (E42, #1637): `project:<id>:<path key>`. The worktree
+  // folder's name is what its section shows beside the branch; '' is the
+  // "somewhere in this repo" section, which has no folder to name.
+  if (bucket.startsWith('project:')) {
+    const rest = bucket.slice('project:'.length);
+    const path = rest.slice(rest.indexOf(':') + 1);
+    return path.split('/').pop() || looseLabel;
+  }
   if (bucket.startsWith(AUTO_PREFIX)) {
     // the same trim the auto-group's own header does, so the words in the
     // announcement are the words on the card

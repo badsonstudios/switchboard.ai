@@ -13,6 +13,7 @@ import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import i18next from 'i18next';
 import { TitleBar, StatusBar } from './components/chrome';
 import { SessionsRail, RailGroup, RailSession } from './components/SessionsRail';
+import { OpenProjectDialog } from './components/OpenProjectDialog';
 import { SessionsStrip } from './components/SessionsStrip';
 import {
   DEFAULT_SESSIONS_PLACEMENT,
@@ -262,6 +263,9 @@ export function App(): React.JSX.Element {
   // keyboard numbers from them, and one derivation means they cannot disagree
   const sessions = useSyncExternalStore(subscribeStore, () => sessionStore.getState().sessions);
   const groups = useSyncExternalStore(subscribeStore, () => sessionStore.getState().groups);
+  const projects = useSyncExternalStore(subscribeStore, () => sessionStore.getState().projects);
+  // the Open project dialog (E42, #1637)
+  const [openingProject, setOpeningProject] = useState(false);
   // dismissed "waiting" (#1413): only the layout effect reads it (#1427). A new
   // map identity on every dismissal and every prune, never on a no-op set.
   const waitDismissed = useSyncExternalStore(subscribeStore, () => sessionStore.getState().waitDismissed);
@@ -1464,6 +1468,7 @@ export function App(): React.JSX.Element {
             status: c.status,
             groupId: c.groupId,
             autoKey: c.autoKey,
+            repoKey: c.repoKey,
             liveId: c.liveId,
             taskLabel: c.taskLabel,
             transport: c.transport,
@@ -1479,6 +1484,32 @@ export function App(): React.JSX.Element {
       (list) => sessionStore.setGroups(list as RailGroup[])
     )
   );
+
+  // Projects (E42, #1637): the records, then each one's worktrees read fresh.
+  // A project whose worktrees cannot be read still draws (worktrees: null),
+  // so one broken repo never empties the others (P6).
+  const [refreshProjects] = useState<GuardedRefresh>(() =>
+    latestWins(
+      async () => {
+        const list = answered(await bridge.projects?.list?.());
+        if (!list) return undefined;
+        return Promise.all(
+          list.map(async (p) => {
+            const wt = await bridge.projects?.worktrees?.(p.id).catch(() => null);
+            return { ...p, worktrees: answered(wt)?.worktrees ?? null };
+          })
+        );
+      },
+      (list) => sessionStore.setProjects(list)
+    )
+  );
+  useEffect(() => {
+    void refreshProjects();
+    // a worktree added or removed outside the app shows up when you come back
+    const onFocus = (): void => void refreshProjects();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshProjects]);
 
   useEffect(() => {
     void refreshGroups();
@@ -1962,6 +1993,7 @@ export function App(): React.JSX.Element {
             if (grid.current?.newSessionTargetsPopout()) raisedOtherWindowRef.current = true;
             void grid.current?.newSession();
           },
+          openProject: () => setOpeningProject(true),
           closeCard: (cardId, fromItsOwnWindow) => grid.current?.closeCard(cardId, fromItsOwnWindow),
           closeAllCards: () => grid.current?.closeAllCards(),
           // #581 — the three families that were silent to a screen reader.
@@ -2575,6 +2607,29 @@ export function App(): React.JSX.Element {
   const openInFolder = (folder: string): void => {
     void grid.current?.newSessionInFolder(folder);
   };
+  // Projects (E42, #1637). Every edit re-reads the list either way, so a
+  // refused one simply shows what is really there (the groups idiom, #650).
+  const projectActions = {
+    open: () => setOpeningProject(true),
+    newSessionIn: openInFolder,
+    rename: (id: string, name: string) =>
+      void bridge.projects?.update?.(id, { name }).then(() => refreshProjects()),
+    recolor: (id: string, color: string) =>
+      void bridge.projects?.update?.(id, { color }).then(() => refreshProjects()),
+    setHidden: (id: string, hiddenWorktrees: string[]) =>
+      void bridge.projects?.update?.(id, { hiddenWorktrees }).then(() => refreshProjects()),
+    remove: (id: string) => {
+      const name = projects.find((p) => p.id === id)?.name ?? '';
+      void bridge.projects?.remove?.(id).then((ok) => {
+        if (answered(ok)) announce(String(i18next.t('projects.removed', { name })));
+        return refreshProjects();
+      });
+    },
+  };
+  const confirmOpenProject = (folder: string, name: string): void => {
+    setOpeningProject(false);
+    void bridge.projects?.open?.({ folder, name }).then(() => refreshProjects());
+  };
   // A session dropped on one turns it into a group you own (Dan, 2026-11-17):
   // the folder's name, its members in their order, the dropped one last. One
   // call to main, so a refusal leaves everything as it was.
@@ -3031,6 +3086,7 @@ export function App(): React.JSX.Element {
         folded={foldedCards}
         urgency={urgency}
         groups={groups}
+        projects={projects}
         order={railOrderNow}
         needing={needing}
         finished={finished}
@@ -3138,6 +3194,18 @@ export function App(): React.JSX.Element {
             onPromoteAutoGroup={promoteAutoGroup}
             onMoveGroup={moveGroup}
             onDeleteGroup={deleteGroup}
+            projects={projects}
+            projectActions={bridge.projects ? projectActions : undefined}
+          />
+        )}
+        {openingProject && (
+          <OpenProjectDialog
+            pickFolder={async () => answered(await bridge.sessions?.pickFolder?.()) ?? null}
+            inspect={async (folder) => answered(await bridge.projects?.inspect?.(folder)) ?? null}
+            sessionRepoKeys={sessions.map((s) => s.repoKey)}
+            projectNames={new Map(projects.map((p) => [p.id, p.name]))}
+            onConfirm={confirmOpenProject}
+            onCancel={() => setOpeningProject(false)}
           />
         )}
         <SessionGrid

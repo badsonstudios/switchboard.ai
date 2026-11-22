@@ -36,7 +36,7 @@
 // which are the rail's.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { RailGroup, RailSession } from '../model/types';
+import { RailGroup, RailProject, RailSession } from '../model/types';
 import { autoGroupDrop, autoGroupName, RailOrderResult } from '../lib/groups';
 import { dropGroup, stepGroup } from '../lib/group-order';
 import { LOOSE_BUCKET, planReorder } from '../lib/rail-order';
@@ -97,6 +97,13 @@ export interface SessionsStripProps {
   shown: boolean;
   /** the groups the user made, in their stored order — name and colour */
   groups: readonly RailGroup[];
+  /**
+   * Projects (E42, #1637): name and colour, as `groups` is for groups. Each
+   * project is one box on the strip holding every session in it, drawn like an
+   * automatic group (it is derived from folders too, and has nothing to drop
+   * onto). Its worktrees are the full list's business, not the strip's.
+   */
+  projects?: readonly RailProject[];
   /**
    * The store's ONE derivation of who is where (`getRailOrder()`), the same
    * object the rail's order and `Ctrl+1..9` come from. Handed in rather than
@@ -380,7 +387,17 @@ function Strip(props: SessionsStripProps): React.JSX.Element {
   // names instead would let a group the order knows and the names do not drop
   // its sessions off the strip while the total above still counted them.
   const named = new Map(props.groups.map((g) => [g.id, g]));
+  const namedProjects = new Map((props.projects ?? []).map((p) => [p.id, p]));
   const entries: Entry[] = [
+    ...order.projects.map(
+      (p): Entry => ({
+        key: `project:${p.id}`,
+        kind: 'auto',
+        name: namedProjects.get(p.id)?.name ?? '',
+        color: namedProjects.get(p.id)?.color ?? 'var(--auto-ink)',
+        members: p.worktrees.flatMap((w) => w.members),
+      })
+    ),
     ...order.groups.map(
       (g): Entry => ({
         key: g.id,

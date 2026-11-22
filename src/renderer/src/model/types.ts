@@ -15,6 +15,7 @@
 import type { CardSwitchBack, RailCardStatus } from '../../../shared/sessions';
 import type { TransportKind } from '../../../shared/transport';
 import type { DispatchResultDto } from '../../../shared/dispatch-result';
+import type { ProjectRecord, WorktreeInfo } from '../../../shared/projects';
 
 /** A session as the rail and the grid see it. */
 export interface RailSession {
@@ -48,6 +49,8 @@ export interface RailSession {
   groupId?: string;
   /** repo/folder auto-group key (E12-05); same key = same emergent group */
   autoKey?: string;
+  /** git common dir, `pathKey` form (E42, #1637): which project the card is in */
+  repoKey?: string;
   /** the live session under this card, when running (events map by this) */
   liveId?: string;
   /** freeform task label (shown under the title in the Events panel) */
@@ -64,6 +67,14 @@ export interface RailSession {
   transport?: TransportKind;
   /** the way back after an AI switch (#1294); the AI itself is `providerId` above */
   switchBack?: CardSwitchBack;
+}
+
+/**
+ * A project as the rail draws it (E42, #1637): the stored record plus its
+ * worktrees, read fresh. `worktrees: null` means git could not be read.
+ */
+export interface RailProject extends ProjectRecord {
+  worktrees: WorktreeInfo[] | null;
 }
 
 /** A persistent group (E12). */

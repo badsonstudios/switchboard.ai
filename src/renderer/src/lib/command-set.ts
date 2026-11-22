@@ -20,6 +20,12 @@ export interface CommandDeps {
   focusCard: (cardId: string) => void;
   /** pick a folder and open a new session in it */
   newSession: () => void;
+  /**
+   * Open a git repo as a project (E42, #1637). Optional: a host without
+   * projects simply has no such command. No key: Mod+Shift+O is taken, and
+   * opening a project is rare enough for the palette.
+   */
+  openProject?: () => void;
   /** close a card (asks for confirmation — it forgets the record) */
   /**
    * `fromItsOwnWindow`: the chord was pressed IN the popped-out window this
@@ -403,6 +409,17 @@ export function buildCommands(deps: CommandDeps): Command[] {
       scope: 'app',
       run: () => deps.newSession(),
     },
+    ...(deps.openProject
+      ? [
+          {
+            id: 'project.open',
+            titleKey: 'commands.openProject',
+            categoryKey: CATEGORY_SESSION,
+            scope: 'app' as const,
+            run: () => deps.openProject?.(),
+          },
+        ]
+      : []),
     {
       id: 'session.close',
       titleKey: 'commands.closeSession',

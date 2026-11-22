@@ -65,7 +65,7 @@
 // near the bottom of this file for why it is radios and not a submenu.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { RailGroup, RailSession } from '../model/types';
+import { RailGroup, RailProject, RailSession } from '../model/types';
 import { drawnGroupColour, useGroupColours } from '../lib/group-colours';
 import { autoGroupDrop, autoGroupName, railOrder } from '../lib/groups';
 import {
@@ -106,6 +106,7 @@ import { isLit, UrgencyMarks } from '../lib/urgency';
 import { MenuPlacement, placeMenu } from '../lib/menu-placement';
 import { dropGroup, stepGroup } from '../lib/group-order';
 import { RailGroupMenu, RailGroupMenuItem } from './RailGroupMenu';
+import { ProjectCard } from './ProjectCard';
 import { sessionMenuItems } from '../lib/session-menu';
 import { SessionRow } from './SessionRow';
 import { FolderGlyph } from './FolderGlyph';
@@ -239,6 +240,20 @@ export function SessionsRail(props: {
   onOpenInGroup: (id: string) => void;
   /** an AUTOMATIC group's ⊕ (#1603): a new session in its folder, no picker */
   onOpenInFolder?: (folder: string) => void;
+  /**
+   * Projects (E42, #1637), drawn above the groups. Optional: a caller without
+   * them draws the list exactly as before. The callbacks come as one object so
+   * "has projects" is one question, not six.
+   */
+  projects?: readonly RailProject[];
+  projectActions?: {
+    open: () => void;
+    newSessionIn: (folder: string) => void;
+    rename: (id: string, name: string) => void;
+    recolor: (id: string, color: string) => void;
+    setHidden: (id: string, hiddenWorktrees: string[]) => void;
+    remove: (id: string) => void;
+  };
   /**
    * A session dropped on an AUTOMATIC group (#1603): make it a group you own,
    * holding its members in order and then the dropped one. Without it, an
@@ -711,7 +726,14 @@ export function SessionsRail(props: {
   // lib/dispatch-lineage says why, and why the depth it reports is a fact about
   // the PLACEMENT rather than about the lineage.
   const lineage = props.lineage ?? NO_LINEAGE;
-  const order = railOrder(props.sessions, props.groups, props.pinned, props.manualOrder, lineage);
+  const order = railOrder(
+    props.sessions,
+    props.groups,
+    props.pinned,
+    props.manualOrder,
+    lineage,
+    props.projects ?? []
+  );
   const grouped = new Map(order.groups.map((g) => [g.id, g.members]));
 
   /**
@@ -1848,7 +1870,8 @@ export function SessionsRail(props: {
   const totalFinished = props.finished ? finishedCount(props.sessions, props.finished) : 0;
   // The Ungrouped bucket only earns a header when there is something to
   // distinguish it FROM — on a fresh workspace it would be pure chrome.
-  const hasOtherCards = props.groups.length > 0 || order.autoGroups.length > 0;
+  const hasOtherCards =
+    props.groups.length > 0 || order.autoGroups.length > 0 || order.projects.length > 0;
   /**
    * Is the row this menu was opened on a card main has never heard of (#687)?
    *
@@ -1971,6 +1994,27 @@ export function SessionsRail(props: {
           >
             {t('rail.addGroup')}
           </button>
+          {props.projectActions && (
+            <button
+              className="rail-add-group"
+              data-rail-open-project
+              onClick={props.projectActions.open}
+              title={t('projects.openHint')}
+              style={{
+                fontFamily: 'var(--font-ui)',
+                fontSize: 10.5,
+                color: 'var(--muted)',
+                background: 'transparent',
+                border: '1px solid var(--control-edge)',
+                borderRadius: 5,
+                padding: '2px 8px',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t('projects.open')}
+            </button>
+          )}
           {props.onNewSession && (
             <button
               className="rail-add-group"
@@ -2001,6 +2045,30 @@ export function SessionsRail(props: {
         onFocus={keepClearOfPins}
         style={{ flex: 1, overflowY: 'auto', padding: 10 }}
       >
+        {props.projectActions &&
+          order.projects.map((op) => {
+            const project = props.projects?.find((p) => p.id === op.id);
+            if (!project) return null;
+            const actions = props.projectActions!;
+            const key = `project:${op.id}`;
+            return (
+              <ProjectCard
+                key={key}
+                project={project}
+                sections={op.worktrees}
+                renderRows={bucketRows}
+                collapsed={collapsed.has(key)}
+                onToggle={() => toggleCollapsed(key)}
+                needing={props.needing}
+                palette={props.palette}
+                onNewSessionIn={actions.newSessionIn}
+                onRename={(name) => actions.rename(op.id, name)}
+                onRecolor={(color) => actions.recolor(op.id, color)}
+                onSetHidden={(h) => actions.setHidden(op.id, h)}
+                onRemove={() => actions.remove(op.id)}
+              />
+            );
+          })}
         {props.groups.map((g) =>
           groupCard({
             key: g.id,
@@ -2055,7 +2123,7 @@ export function SessionsRail(props: {
                   {bucketRows(order.loose, LOOSE_BUCKET, 'var(--rail-card)')}
                 </div>
               ))}
-        {props.groups.length === 0 && props.sessions.length === 0 && (
+        {props.groups.length === 0 && props.sessions.length === 0 && order.projects.length === 0 && (
           <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('rail.empty')}</div>
         )}
       </div>
