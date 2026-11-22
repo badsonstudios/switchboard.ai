@@ -68,6 +68,7 @@ import { HistoryRepairLog } from './sessions/history-repair-log';
 import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
 import { registerGroupIpc } from './workspace/group-ipc';
 import { registerProjectIpc } from './workspace/project-ipc';
+import { defaultWorktreeRoot, WorktreeJobs } from './workspace/worktree-jobs';
 import { registerMcpIpc } from './mcp/ipc';
 import { samePath } from './project-key';
 import { registerFsIpc } from './fs/ipc';
@@ -3119,7 +3120,36 @@ app
     // dialog asks about a folder no session has yet. What it can learn is
     // limited to `rev-parse` and `worktree list` (paths and branch names), never
     // file contents, and the folder is one the user just picked.
-    registerProjectIpc(workspace, gitService, broker, createLogger(sink, 'workspace'));
+    // Step 2 (#1506): worktree builds run here in main and report each step to
+    // the window, which starts the session once one is ready.
+    const projectLog = createLogger(sink, 'workspace');
+    const worktreeRootDefault = defaultWorktreeRoot();
+    const worktreeJobs = new WorktreeJobs({
+      git: gitService,
+      store: workspace,
+      root: () => workspace.getProjectDefaults().worktreeRoot ?? worktreeRootDefault,
+      log: projectLog,
+      emit: (job) => pushToRenderer?.(currentWindow, 'projects:jobChanged', job),
+    });
+    registerProjectIpc(workspace, gitService, broker, projectLog, {
+      jobs: worktreeJobs,
+      defaultRoot: worktreeRootDefault,
+      git: {
+        root: (folder, ms) => gitService.root(folder, ms),
+        branches: (folder, ms) => gitService.branches(folder, ms),
+        isIgnored: (folder, rel, ms) => gitService.isIgnored(folder, rel, ms),
+        status: (folder, ms) => gitService.status(folder, ms),
+      },
+      openInEditor: (folder) => {
+        const program = resolveEditor(workspace.getEditor(), realEditorEnv());
+        if (!program) return 'no-editor';
+        launchEditor(program, folder, (err) =>
+          projectLog.warn('editor failed to start', { program, error: errorText(err) })
+        );
+        projectLog.info('worktree opened in editor', { program: path.basename(program) });
+        return 'opened';
+      },
+    });
     // the branch a mentioned session's folder is on, for its brief (#1092)
     const mentionGit = createMentionGitLookup((folder) => gitService.status(folder));
     const mentionTree = createMentionTreeLookup((folder) => gitService.root(folder, MENTION_GIT_BUDGET_MS));

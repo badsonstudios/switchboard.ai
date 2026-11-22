@@ -392,6 +392,23 @@ export const CHANNEL_CAPABILITIES = {
   'projects:remove': 'groups.write',
   'projects:inspect': 'git.read',
   'projects:worktrees': 'git.read',
+  // Step 2 (#1506). Making a worktree runs the project's setup command, and
+  // the settings store that command, so both are `sessions.spawn` (they start
+  // processes). Discarding a failed build deletes a worktree and maybe its
+  // brand-new branch: `git.write`. The busy-folder read and the branch list
+  // run git: `git.read`. The job list and dismissing one organise the rail.
+  'projects:createWorktree': 'sessions.spawn',
+  'projects:configure': 'sessions.spawn',
+  'projects:claimJob': 'sessions.spawn',
+  'projects:discardJob': 'git.write',
+  'projects:branches': 'git.read',
+  'projects:checkout': 'git.read',
+  'projects:jobs': 'groups.read',
+  'projects:dismissJob': 'groups.write',
+  'projects:defaults': 'settings.read',
+  'projects:setDefaults': 'settings.write',
+  // the same power as `editor:openFolder`: start the user's chosen editor
+  'projects:openInEditor': 'shell.openPath',
   // The MCP Manager's read half (§5.17, #632). Two channels and one capability:
   // both answer "what MCP servers does this folder's session have", one off the
   // config files and one off the CLI. They are split because they have wildly
@@ -763,6 +780,8 @@ export const CHANNEL_CAPABILITIES = {
   // how far the download/verify/install has got (E19-04). Same capability as
   // starting one: a window that may not install may not watch one either.
   'update:installStatus': 'update.install',
+  // a worktree build moved a step (#1506) — same capability as the job list
+  'projects:jobChanged': 'groups.read',
   // a check the renderer did not ask for (the daily timer, or the menu item)
   // finished — the renderer decides whether that becomes a dialog
   'update:status': 'update.check',

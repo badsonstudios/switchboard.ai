@@ -45,7 +45,8 @@ import {
 } from './git-commit';
 import { type Hunk, applyArgs, hunkDiffArgs, parseDiff } from './git-hunks';
 import { parseWorktreeList } from './worktree-list';
-import type { WorktreeInfo } from '../../shared/projects';
+import { isAbsoluteLocal, parseBranchRefs, pickDefaultBase, worktreeAddArgs } from './worktree-git';
+import type { ProjectBranches, WorktreeInfo } from '../../shared/projects';
 import {
   NETWORK_BUDGET_MS,
   checkoutArgs,
@@ -311,6 +312,9 @@ const STATS_BUDGET_MS = 10_000;
  * that never finishes must not become a surface that never answers.
  */
 export const WRITE_BUDGET_MS = 30_000;
+
+/** `git worktree add` checks out every file; a big repo takes a while (#1506). */
+export const WORKTREE_BUDGET_MS = 180_000;
 
 /**
  * The answer when a `--numstat` read did not succeed.
@@ -886,6 +890,86 @@ export class GitService {
     // git prints forward slashes on Windows too; a session started in one of
     // these folders should carry the same native path any picked folder does
     return parseWorktreeList(r.out).map((w) => ({ ...w, path: path.normalize(w.path) }));
+  }
+
+  // ── MAKING A WORKTREE (E42 step 2, #1506) ─────────────────────────────────
+  //
+  // Through `network(…, { network: false })` like `checkout`: every #776 guard
+  // applies (so no repo hook runs on the checkout), and a refusal is git's own
+  // words. See `worktree-git.ts` for why this is git and not the CLI's flag.
+
+  /** Make a linked worktree at `target`: a new branch from `base`, or an existing branch. */
+  async worktreeAdd(
+    repo: string,
+    opts: { target: string; branch: unknown; newBranch: boolean; base?: unknown },
+    budgetMs = WORKTREE_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    const args = worktreeAddArgs(opts);
+    if (!args) return refusedBranch();
+    return this.network(repo, args, budgetMs, { network: false });
+  }
+
+  /**
+   * `git worktree remove --force`. ⚠️ **UNLINK SHARED FOLDERS FIRST** (#916):
+   * a junction inside the folder must be gone before anything deletes it, or
+   * the real folder it points at goes with it. `worktree-links.ts` owns that;
+   * this is only ever called after it.
+   */
+  async worktreeRemoveForce(repo: string, target: string, budgetMs = WORKTREE_BUDGET_MS): Promise<GitWriteResult> {
+    if (!isAbsoluteLocal(target)) return refused('switchboard will not remove that folder');
+    return this.network(repo, ['worktree', 'remove', '--force', target], budgetMs, { network: false });
+  }
+
+  /** Delete a branch this app made a moment ago (a discarded build). */
+  async deleteBranch(repo: string, branch: unknown, budgetMs = WRITE_BUDGET_MS): Promise<GitWriteResult> {
+    if (!isBranchName(branch)) return refusedBranch();
+    return this.network(repo, ['branch', '-D', branch], budgetMs, { network: false });
+  }
+
+  /** The commit a rev names, or null when it names none. */
+  async revParse(folder: string, rev: unknown, budgetMs = WRITE_BUDGET_MS): Promise<string | null> {
+    if (!isRev(rev)) return null;
+    const r = await this.run(folder, ['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], budgetMs);
+    const sha = r.out.trim();
+    return r.ok && /^[0-9a-f]{40,64}$/.test(sha) ? sha : null;
+  }
+
+  /**
+   * Does git ignore `rel` in this checkout? true / false, or null when git
+   * could not say. A TRACKED folder is not ignored (git answers from the
+   * index), which is the point: only ignored folders may be shared by link.
+   */
+  async isIgnored(folder: string, rel: string, budgetMs = WRITE_BUDGET_MS): Promise<boolean | null> {
+    // Not `check-ignore`: it refuses the guard's `--literal-pathspecs` outright
+    // ("pathspec magic not supported"). `ls-files --ignored --directory` takes
+    // it, and lists an ignored folder as `rel/` — the WHOLE folder. A folder
+    // that is only partly ignored lists its ignored files instead, which is
+    // not the folder being ignored, so only an exact line counts.
+    const r = await this.run(
+      folder,
+      ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory', '--', rel],
+      budgetMs
+    );
+    if (!r.ok) return null;
+    const want = rel.replace(/\\/g, '/').replace(/\/+$/, '');
+    return r.out.split('\0').some((l) => l.replace(/\/+$/, '') === want);
+  }
+
+  /** The branches a new worktree can use or start from, and the default base. */
+  async branches(folder: string, budgetMs = WRITE_BUDGET_MS): Promise<ProjectBranches | null> {
+    const deadline = Date.now() + budgetMs;
+    const left = (): number => Math.max(1, deadline - Date.now());
+    const refs = await this.run(folder, ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes'], left());
+    if (!refs.ok) return null;
+    const parsed = parseBranchRefs(refs.out);
+    const originHead = await this.run(folder, ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], left());
+    const head = await this.run(folder, ['symbolic-ref', '--quiet', '--short', 'HEAD'], left());
+    const defaultBase = pickDefaultBase(
+      parsed,
+      originHead.ok ? originHead.out.trim() || null : null,
+      head.ok ? head.out.trim() || null : null
+    );
+    return { ...parsed, defaultBase };
   }
 
   /**

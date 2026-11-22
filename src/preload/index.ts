@@ -1,4 +1,13 @@
-import type { ProjectInspection, ProjectRecord, ProjectWorktrees } from '../shared/projects';
+import type {
+  CheckoutInfo,
+  NewWorktreeRequest,
+  ProjectBranches,
+  ProjectDefaults,
+  ProjectInspection,
+  ProjectRecord,
+  ProjectWorktrees,
+  WorktreeJob,
+} from '../shared/projects';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ContextMenuLabels } from '../shared/context-menu';
 import type { SessionNote, SessionNoteChange } from '../shared/session-note';
@@ -989,6 +998,42 @@ const api = {
     remove: (id: string): Promise<boolean> => ipcRenderer.invoke('projects:remove', id),
     worktrees: (id: string): Promise<ProjectWorktrees | null> =>
       ipcRenderer.invoke('projects:worktrees', id),
+    // ── step 2 (#1506): make a worktree ──
+    /** the branches the new-worktree dialog offers, and the default base */
+    branches: (id: string): Promise<ProjectBranches | null> => ipcRenderer.invoke('projects:branches', id),
+    /** start a background build; its steps arrive on `onJobChanged` */
+    createWorktree: (req: NewWorktreeRequest): Promise<WorktreeJob | null> =>
+      ipcRenderer.invoke('projects:createWorktree', req),
+    jobs: (): Promise<WorktreeJob[]> => ipcRenderer.invoke('projects:jobs'),
+    /** the window starts the session: answers the job once, null after */
+    claimJob: (id: string): Promise<WorktreeJob | null> => ipcRenderer.invoke('projects:claimJob', id),
+    dismissJob: (id: string): Promise<boolean> => ipcRenderer.invoke('projects:dismissJob', id),
+    /** throw away a build whose setup failed (shared folders are unlinked first) */
+    discardJob: (id: string): Promise<boolean> => ipcRenderer.invoke('projects:discardJob', id),
+    onJobChanged: (cb: (job: WorktreeJob) => void): (() => void) => {
+      const h = (_e: unknown, job: WorktreeJob): void => cb(job);
+      ipcRenderer.on('projects:jobChanged', h);
+      return () => ipcRenderer.removeListener('projects:jobChanged', h);
+    },
+    /** project settings; answers the saved project and what it would not keep */
+    configure: (
+      id: string,
+      patch: {
+        baseRef?: string | null;
+        worktreeRoot?: string | null;
+        copyFiles?: string[];
+        sharedDirs?: string[];
+        setupCommand?: string | null;
+      }
+    ): Promise<{ project: ProjectRecord; problems: string[] } | null> =>
+      ipcRenderer.invoke('projects:configure', id, patch),
+    defaults: (): Promise<ProjectDefaults> => ipcRenderer.invoke('projects:defaults'),
+    setDefaults: (d: { worktreeRoot: string | null }): Promise<ProjectDefaults | null> =>
+      ipcRenderer.invoke('projects:setDefaults', d),
+    /** a folder's checkout, branch and changed files (the busy-folder prompt) */
+    checkout: (folder: string): Promise<CheckoutInfo | null> => ipcRenderer.invoke('projects:checkout', folder),
+    openInEditor: (id: string, folder: string): Promise<'opened' | 'no-editor' | 'no-folder' | false> =>
+      ipcRenderer.invoke('projects:openInEditor', id, folder),
   },
   /**
    * The MCP Manager's read half (§5.17, #632).
