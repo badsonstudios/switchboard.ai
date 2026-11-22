@@ -54,6 +54,16 @@ describe('railOrder with projects', () => {
     expect(r.loose.map((s) => s.id)).toEqual(['z']);
   });
 
+  it("places by git's toplevel when the folder is spelled differently (8.3 short names)", () => {
+    // the session was started in the short spelling; git answers the long one
+    const r = order(
+      [{ id: 'a', folder: 'C:\\Users\\RUNNER~1\\wt', repoKey: pathKey(COMMON), autoKey: WT1.toLowerCase() }],
+      [project()]
+    );
+    expect(r.projects[0].worktrees.find((w) => w.path === WT1)?.members.map((m) => m.id)).toEqual(['a']);
+    expect(r.projects[0].worktrees.some((w) => w.path === '')).toBe(false);
+  });
+
   it('draws projects first in flat, so Ctrl+1..9 counts them first', () => {
     const r = order([{ id: 'z', folder: 'C:\\elsewhere' }, inRepo('b', WT1), inRepo('a', REPO)], [project()]);
     expect(r.flat.map((s) => s.id)).toEqual(['a', 'b', 'z']);

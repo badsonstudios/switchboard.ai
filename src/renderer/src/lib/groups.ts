@@ -180,7 +180,16 @@ export function railOrder<T extends AutoGroupable>(
   for (const s of sessions) {
     const p = s.repoKey ? projectOf.get(s.repoKey) : undefined;
     if (p) {
-      const wt = (s.folder && p.worktrees && worktreeFor(s.folder, p.worktrees)) || '';
+      // GIT'S answer first: `autoKey` is the folder's toplevel as git printed
+      // it, which is the worktree's own path in git's spelling. Comparing the
+      // session's folder string instead misses whenever the two spellings of
+      // one folder differ, which on Windows they do: a temp folder under an
+      // 8.3 short name (`RUNNER~1`) against git's long one (CI, #1637). The
+      // folder comparison stays as the fallback for a card with no key yet.
+      const top = s.autoKey ? pathKey(s.autoKey) : null;
+      const byTop = top && p.worktrees?.find((w) => pathKey(w.path) === top)?.path;
+      const wt =
+        byTop || (s.folder && p.worktrees && worktreeFor(s.folder, p.worktrees)) || '';
       const byWt = inProject.get(p.id) ?? new Map<string, T[]>();
       const list = byWt.get(wt) ?? [];
       list.push(s);

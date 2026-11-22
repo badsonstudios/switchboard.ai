@@ -45,7 +45,10 @@ describe('GitService worktree reads', () => {
   it('lists both worktrees, primary first, in native path form', async () => {
     const list = await svc.worktreeList(linked);
     expect(list).not.toBeNull();
-    expect(list!.map((w) => pathKey(w.path))).toEqual([pathKey(repo), pathKey(linked)]);
+    // git answers the LONG spelling of a folder; the runner's temp dir is an
+    // 8.3 short name (`RUNNER~1`), so compare against the real path
+    const real = (p: string): string => pathKey(fs.realpathSync.native(p));
+    expect(list!.map((w) => pathKey(w.path))).toEqual([real(repo), real(linked)]);
     expect(list![0]).toMatchObject({ primary: true, branch: 'main' });
     expect(list![1]).toMatchObject({ primary: false, branch: 'feat/x' });
     if (process.platform === 'win32') expect(list![0].path).not.toContain('/');
