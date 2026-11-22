@@ -185,7 +185,11 @@ export function registerProjectIpc(
         if (
           !Array.isArray(h) ||
           h.length > HIDDEN_MAX ||
-          !h.every((x) => typeof x === 'string' && path.isAbsolute(x))
+          // pathKey form, compared and never run: either platform's absolute
+          // spelling is a well-formed key
+          !h.every(
+            (x) => typeof x === 'string' && (path.win32.isAbsolute(x) || path.posix.isAbsolute(x))
+          )
         )
           return refuse('projects:update', 'hiddenWorktrees must be a list of paths', null, {
             projectId: id,
