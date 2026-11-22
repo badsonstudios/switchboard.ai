@@ -177,7 +177,6 @@ export interface PullRequestDialogProps {
   initialTitle: string;
   initialBody: string;
   onSubmit: (req: { title: string; body: string; draft: boolean }) => Promise<string | null>;
-  onOpenUrl: (url: string) => void;
   onClose: () => void;
 }
 
@@ -234,7 +233,18 @@ export function PullRequestDialog(props: PullRequestDialogProps): React.JSX.Elem
               type="button"
               data-pr-open-existing
               data-autofocus
-              onClick={() => props.onOpenUrl(ctx.existing!.url)}
+              disabled={busy}
+              onClick={() => {
+                // pushes any new commits to it first; main never opens a second PR
+                setBusy(true);
+                setError(null);
+                void props
+                  .onSubmit({ title: title.trim() || ctx.branch, body, draft })
+                  .then((err) => {
+                    if (err) setError(err);
+                  })
+                  .finally(() => setBusy(false));
+              }}
               style={primaryButton(true)}
             >
               {t('worktrees.finish.pr.openExisting')}
@@ -255,8 +265,13 @@ export function PullRequestDialog(props: PullRequestDialogProps): React.JSX.Elem
         </div>
       )}
       {ctx?.existing && (
-        <div data-pr-existing style={{ fontSize: 12 }}>
+        <div data-pr-existing style={{ fontSize: 12, display: 'grid', gap: 6 }}>
           {t('worktrees.finish.pr.existing', { branch: ctx.branch, number: ctx.existing.number })}
+          {error && (
+            <div role="alert" data-pr-error style={warnBox}>
+              {error}
+            </div>
+          )}
         </div>
       )}
       {ctx && !blocked && !ctx.existing && (
@@ -302,6 +317,8 @@ export function PullRequestDialog(props: PullRequestDialogProps): React.JSX.Elem
 
 export interface UpdateStoppedDialogProps {
   branch: string;
+  /** what stopped: an update from main, or a local merge into main */
+  action?: 'update' | 'merge';
   outcome: Extract<UpdateOutcome, { kind: 'conflicts' | 'refused' }>;
   /** the worktree's open session, when there is one to hand the conflicts to */
   sessionName: string | null;
@@ -318,7 +335,9 @@ export function UpdateStoppedDialog(props: UpdateStoppedDialogProps): React.JSX.
   const title =
     o.kind === 'conflicts'
       ? t('worktrees.finish.update.conflictsTitle')
-      : t('worktrees.finish.update.refusedTitle', { branch: props.branch });
+      : props.action === 'merge'
+        ? t('worktrees.finish.merge.refusedTitle', { branch: props.branch })
+        : t('worktrees.finish.update.refusedTitle', { branch: props.branch });
   const words =
     o.kind === 'conflicts'
       ? t('worktrees.finish.update.conflictsBody', { base: o.base, branch: props.branch })

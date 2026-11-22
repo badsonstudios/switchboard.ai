@@ -27,7 +27,7 @@ describe('prsForBranch', () => {
       ]),
     }));
     const r = await prsForBranch(gh, '/repo', 'feat/x');
-    expect(calls[0]).toEqual(['pr', 'list', '--head', 'feat/x', '--state', 'all', '--limit', '20', '--json', 'number,url,state,isDraft']);
+    expect(calls[0]).toEqual(['pr', 'list', '--head=feat/x', '--state', 'all', '--limit', '20', '--json', 'number,url,state,isDraft,headRefOid']);
     expect(r).toEqual({
       prs: [
         { number: 5, url: 'https://github.com/o/r/pull/5', state: 'OPEN', draft: true },

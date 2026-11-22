@@ -228,7 +228,7 @@
         "blurb": "Pushes {branch} and opens a pull request into {base} with the GitHub CLI. The pull request is the merge.",
         "loading": "Asking GitHub…",
         "existing": "A pull request is already open for {branch}: #{number}.",
-        "openExisting": "Open it",
+        "openExisting": "Push new commits and open it",
         "titleLabel": "Title",
         "bodyLabel": "Description",
         "draft": "Open as a draft",
@@ -241,7 +241,8 @@
       },
       "merge": {
         "confirm": "Merge {branch} into {base} in the main folder? This repo has no remote, so this is the merge.",
-        "merged": "Merged {branch} into {base}."
+        "merged": "Merged {branch} into {base}.",
+        "refusedTitle": "Couldn't merge {branch}"
       },
       "remove": {
         "title": "Remove worktree {branch}?",
@@ -261,7 +262,8 @@
         "working": "Removing…",
         "removed": "Removed the worktree {branch}.",
         "removedKept": "Removed the worktree. The branch {branch} was kept.",
-        "failed": "Couldn't remove the worktree."
+        "failed": "Couldn't remove the worktree.",
+        "stillOpen": "A session in this worktree didn't close, so nothing was removed. Close it, then try again."
       }
     },
     "warning": {

@@ -51,7 +51,7 @@ import type { Logger } from '../log/logger';
 import { errorText } from '../../shared/error-text';
 import { createPr, prsForBranch, type GhFailure, type GhRunner } from './gh-cli';
 import { forgetWorktree } from './worktree-jobs';
-import { findLinks, isLink, removeWorktreeFolder } from './worktree-links';
+import { findLinks, isLink, linkDir, removeWorktreeFolder } from './worktree-links';
 
 /** A read that feeds the card gets this long; the card shows nothing past it. */
 const STATS_BUDGET_MS = 8_000;
@@ -83,6 +83,7 @@ export interface FinishGit {
   worktreePrune(repo: string): Promise<GitWriteResult>;
   deleteBranch(repo: string, branch: unknown): Promise<GitWriteResult>;
   deleteMergedBranch(repo: string, branch: unknown): Promise<GitWriteResult>;
+  revParse(folder: string, rev: unknown): Promise<string | null>;
 }
 
 export interface FinishStore {
@@ -141,7 +142,7 @@ export class WorktreeFinisher {
     if (!list) return null;
     const base = await this.baseOf(project, repo);
     const remotes = await this.deps.git.remoteNames(repo).catch(() => null);
-    const live = list.filter((w) => !w.bare && !w.prunable);
+    const live = list.filter((w) => !w.bare && !w.prunable && isAbsoluteLocal(w.path));
     const worktrees = await Promise.all(
       live.map(async (w): Promise<WorktreeStats> => {
         if (!base) return { path: w.path, base: null, ahead: null, behind: null, added: null, removed: null };
@@ -248,8 +249,9 @@ export class WorktreeFinisher {
       const found = await prsForBranch(gh, wt.path, wt.branch);
       if ('failure' in found) return refused(ghCode(found.failure), found.detail);
       const open = found.prs.find((p) => p.state === 'OPEN');
-      if (open) return { kind: 'opened', pr: open };
       const pushed = await git.push(wt.path, { setUpstream: true });
+      // an open PR is never doubled: its new commits are pushed to it instead
+      if (open) return pushed.ok ? { kind: 'opened', pr: open } : refused('push-failed', pushed.reason);
       if (!pushed.ok) return refused('push-failed', pushed.reason);
       const made = await createPr(gh, wt.path, {
         branch: wt.branch,
@@ -268,7 +270,7 @@ export class WorktreeFinisher {
 
   async mergeLocal(projectId: unknown, folder: unknown): Promise<LocalMergeOutcome> {
     return this.exclusive(projectId, folder, async (at): Promise<LocalMergeOutcome> => {
-      const { git, log } = this.deps;
+      const { git } = this.deps;
       const { project, repo, wt, all } = at;
       if (wt.primary) return refused('is-primary');
       if (!wt.branch) return refused('detached');
@@ -281,23 +283,46 @@ export class WorktreeFinisher {
       const target = baseBranchName(base);
       const primary = all.find((w) => w.primary && !w.bare);
       if (!primary || primary.branch !== target) return refused('primary-not-on-base', target);
-      const dirtyHere = await this.dirtyFiles(wt.path);
-      if (dirtyHere === null || dirtyHere.length > 0) return refused('dirty', undefined, dirtyHere ?? []);
-      const dirtyThere = await this.dirtyFiles(primary.path);
-      if (dirtyThere === null || dirtyThere.length > 0) return refused('primary-dirty', undefined, dirtyThere ?? []);
-      const m = await git.mergeRef(primary.path, wt.branch, { noFf: true });
-      if (m.ok) {
-        log.info('worktree merged into its base locally', { projectId: project.id });
-        return { kind: 'merged', base: target };
+      // the merge happens in the PRIMARY checkout: hold it too, so a second
+      // local merge (from another worktree) cannot race on its index
+      const primaryKey = pathKey(primary.path);
+      if (this.busy.has(primaryKey)) return refused('busy');
+      this.busy.add(primaryKey);
+      try {
+        return await this.mergeInto(project, wt, primary, target);
+      } finally {
+        this.busy.delete(primaryKey);
       }
-      // the primary checkout is never left mid-merge: abort, and say which files
-      if (await git.mergeInProgress(primary.path)) {
-        const files = (await git.unmergedFiles(primary.path)) ?? [];
-        await git.mergeAbort(primary.path);
-        return refused('conflicts', undefined, files);
-      }
-      return refused('git-failed', m.reason);
     });
+  }
+
+  /** The local merge itself, with the primary checkout held (see `mergeLocal`). */
+  private async mergeInto(
+    project: ProjectRecord,
+    wt: WorktreeInfo,
+    primary: WorktreeInfo,
+    target: string
+  ): Promise<LocalMergeOutcome> {
+    const { git, log } = this.deps;
+    if (!wt.branch) return refused('detached');
+    const dirtyHere = await this.dirtyFiles(wt.path);
+    if (dirtyHere === null || dirtyHere.length > 0) return refused('dirty', undefined, dirtyHere ?? []);
+    const dirtyThere = await this.dirtyFiles(primary.path);
+    if (dirtyThere === null || dirtyThere.length > 0) return refused('primary-dirty', undefined, dirtyThere ?? []);
+    const m = await git.mergeRef(primary.path, wt.branch, { noFf: true });
+    if (m.ok) {
+      log.info('worktree merged into its base locally', { projectId: project.id });
+      return { kind: 'merged', base: target };
+    }
+    // the primary checkout is never left mid-merge: abort, and say which files
+    if (await git.mergeInProgress(primary.path)) {
+      const files = (await git.unmergedFiles(primary.path)) ?? [];
+      const a = await git.mergeAbort(primary.path);
+      if (!a.ok)
+        return refused('git-failed', `the merge stopped on conflicts and could not be aborted: ${a.reason ?? ''}`, files);
+      return refused('conflicts', undefined, files);
+    }
+    return refused('git-failed', m.reason);
   }
 
   // ── remove ─────────────────────────────────────────────────────────────────
@@ -347,6 +372,8 @@ export class WorktreeFinisher {
         if (dirty === null && !req.force) return refused('git-failed', 'git could not read what is changed in that folder');
         if (dirty && dirty.length > 0 && !req.force) return refused('dirty', undefined, dirty);
       }
+      // the window asks this first, before it closes any session (#1638 review)
+      if (req.dryRun === true) return { kind: 'ready' as const };
       const base = await this.baseOf(project, repo);
       const { unmerged } = await this.mergedState(repo, wt, base, false);
       // unlink first, then git, then a plain check that nothing is left
@@ -358,7 +385,10 @@ export class WorktreeFinisher {
         }).catch((e: unknown) => errorText(e));
         if (why) {
           log.warn('worktree removal stopped', { projectId: project.id, reason: why });
-          return refused(why.startsWith('a linked folder') ? 'link-left' : 'git-failed', why);
+          if (why.startsWith('a linked folder')) return refused('link-left', why);
+          // git refused AFTER the links were taken out: put the shared folders back
+          const relinked = await relink(project, wt.path);
+          return refused('git-failed', relinked ? `${why} (${relinked})` : why);
         }
       }
       // re-check git's records: an entry for a folder that is gone is pruned
@@ -388,18 +418,26 @@ export class WorktreeFinisher {
   }
 
   /**
-   * A worktree removed OUTSIDE the app (#1638): git marks it prunable (its
-   * folder is gone), or an app-made one is no longer listed at all. Its app
-   * records go, and the list the card draws leaves it out. git's own record
-   * is left for git (`git worktree prune` is its housekeeping, not ours).
+   * A worktree removed OUTSIDE the app (#1638).
+   *
+   * - git marks it **prunable** (its folder is gone): its section leaves the
+   *   card, but its records are KEPT, because a folder on an unplugged drive is
+   *   prunable too and comes back (#1638 review).
+   * - git **no longer lists it at all** (`git worktree remove` or `prune` in a
+   *   terminal): its app records go as well.
+   *
+   * `before` is the project as it was BEFORE the list was read: a build that
+   * records its worktree while git is being asked is not in it, so it can
+   * never be forgotten by a list that was read a moment too early. git's own
+   * record is left for git (`prune` is its housekeeping, not ours).
    */
-  noticeGone(projectId: string, list: WorktreeInfo[]): WorktreeInfo[] {
+  noticeGone(projectId: string, list: WorktreeInfo[], before?: ProjectRecord): WorktreeInfo[] {
     const project = this.find(projectId);
     if (!project) return list;
-    const listed = new Set(list.filter((w) => !w.prunable).map((w) => pathKey(w.path)));
-    const recorded = [...(project.made ?? []), ...Object.keys(project.purposes ?? {})];
+    const listed = new Set(list.map((w) => pathKey(w.path)));
+    const snap = before ?? project;
+    const recorded = [...(snap.made ?? []), ...Object.keys(snap.purposes ?? {})];
     const gone = [...new Set(recorded.map(pathKey))].filter((k) => !listed.has(k));
-    for (const w of list) if (w.prunable && !w.primary) gone.push(pathKey(w.path));
     if (gone.length > 0) {
       let next = project;
       for (const k of new Set(gone)) next = forgetWorktree(next, k);
@@ -486,7 +524,12 @@ export class WorktreeFinisher {
     if (remotes.length === 0) return { unmerged, mergedPr: false };
     const cwd = (await isDirectory(wt.path)) ? wt.path : repo;
     const found = await prsForBranch(this.deps.gh, cwd, wt.branch);
-    return { unmerged, mergedPr: 'failure' in found ? null : found.prs.some((p) => p.state === 'MERGED') };
+    if ('failure' in found) return { unmerged, mergedPr: null };
+    // Only a merged PR whose head IS the branch's tip (#1638 review): a branch
+    // name reused after its PR merged, or commits added after the squash, are
+    // work no PR carried, and must not default to being deleted.
+    const tip = await this.deps.git.revParse(repo, wt.branch);
+    return { unmerged, mergedPr: !!tip && found.prs.some((p) => p.state === 'MERGED' && p.headSha === tip) };
   }
 
   /** The links that will be unlinked first: the project's shares, and any other near the top. */
@@ -503,6 +546,25 @@ export class WorktreeFinisher {
     for (const k of keys) if (typeof k === 'string') p = forgetWorktree(p, k);
     this.deps.store.upsertProject(p);
   }
+}
+
+/**
+ * Put the project's shared folders back into a worktree whose removal git
+ * refused after they had been unlinked. Says which ones could not be.
+ */
+async function relink(project: ProjectRecord, folder: string): Promise<string | null> {
+  const missed: string[] = [];
+  for (const rel of project.sharedDirs ?? []) {
+    const from = path.join(project.primaryPath, rel);
+    const to = path.join(folder, rel);
+    try {
+      if (!(await isDirectory(from)) || (await isLink(to)) || fs.existsSync(to)) continue;
+      await linkDir(from, to);
+    } catch {
+      missed.push(rel);
+    }
+  }
+  return missed.length > 0 ? `not linked back: ${missed.join(', ')}` : null;
 }
 
 /** Where a project's git runs from: its primary checkout, else its common dir. */

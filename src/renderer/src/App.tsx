@@ -295,6 +295,7 @@ export function App(): React.JSX.Element {
     | { kind: 'remove' | 'pr'; projectId: string; folder: string }
     | {
         kind: 'stopped';
+        action: 'update' | 'merge';
         projectId: string;
         folder: string;
         outcome: Extract<UpdateOutcome, { kind: 'conflicts' | 'refused' }>;
@@ -2836,7 +2837,7 @@ export function App(): React.JSX.Element {
         if (!o) announce(tr('worktrees.finish.refusal.git-failed', { detail: '' }));
         else if (o.kind === 'up-to-date') announce(tr('worktrees.finish.update.upToDate', { branch, base: o.base }));
         else if (o.kind === 'merged') announce(tr('worktrees.finish.update.merged', { branch, base: o.base }));
-        else setFinishing({ kind: 'stopped', projectId, folder, outcome: o });
+        else setFinishing({ kind: 'stopped', action: 'update', projectId, folder, outcome: o });
       })
       .catch(() => announce(tr('worktrees.finish.refusal.git-failed', { detail: '' })))
       .finally(afterFinish);
@@ -2850,9 +2851,10 @@ export function App(): React.JSX.Element {
       .then((r) => {
         const o = answered(r);
         if (o?.kind === 'merged') announce(tr('worktrees.finish.merge.merged', { branch, base: o.base }));
-        else if (o) setFinishing({ kind: 'stopped', projectId, folder, outcome: o });
+        else if (o) setFinishing({ kind: 'stopped', action: 'merge', projectId, folder, outcome: o });
+        else announce(tr('worktrees.finish.refusal.git-failed', { detail: '' }));
       })
-      .catch(() => undefined)
+      .catch(() => announce(tr('worktrees.finish.refusal.git-failed', { detail: '' })))
       .finally(afterFinish);
   };
   const askSessionToResolve = (projectId: string, folder: string, files: readonly string[], base: string): void => {
@@ -2876,6 +2878,19 @@ export function App(): React.JSX.Element {
   ): Promise<void> => {
     setFinishing(null);
     const branch = branchOf(projectId, folder);
+    // Main re-checks EVERYTHING first (a dry run), so no session is closed for
+    // a removal that would then be refused (#1638 review).
+    const ready = answered(
+      await bridge.projects?.removeWorktree?.({ projectId, path: folder, ...opts, dryRun: true }).catch(() => null)
+    );
+    if (ready?.kind === 'refused') {
+      nativeAlert(refusalWords(tr, ready.code, ready.detail));
+      return;
+    }
+    if (ready?.kind !== 'ready') {
+      announce(tr('worktrees.finish.remove.failed'));
+      return;
+    }
     // The dialog named them and was the confirm: close the worktree's sessions
     // first, so no process holds the folder and no card comes back into a
     // folder that is gone. Their conversations stay in History.
@@ -2883,8 +2898,14 @@ export function App(): React.JSX.Element {
     if (here.length > 0) {
       grid.current?.retireCards(here.map((s) => s.id));
       const ids = new Set(here.map((s) => s.id));
-      for (let i = 0; i < 40 && sessionStore.getState().sessions.some((s) => ids.has(s.id) && s.liveId); i++)
-        await new Promise((r) => setTimeout(r, 125));
+      const live = (): boolean => sessionStore.getState().sessions.some((s) => ids.has(s.id) && !!s.liveId);
+      for (let i = 0; i < 80 && live(); i++) await new Promise((r) => setTimeout(r, 125));
+      if (live()) {
+        // a process still holds the folder: on Windows git would half-delete it
+        nativeAlert(tr('worktrees.finish.remove.stillOpen'));
+        afterFinish();
+        return;
+      }
     }
     announce(tr('worktrees.finish.remove.working'));
     const r = answered(await bridge.projects?.removeWorktree?.({ projectId, path: folder, ...opts }).catch(() => null));
@@ -3580,10 +3601,6 @@ export function App(): React.JSX.Element {
                 load={async () => answered(await bridge.projects?.prContext?.(projectId, folder)) ?? null}
                 initialTitle={fill.title}
                 initialBody={fill.body}
-                onOpenUrl={(url) => {
-                  void bridge.files?.openExternal?.(url)?.catch(() => false);
-                  setFinishing(null);
-                }}
                 onSubmit={async (req) => {
                   const r = answered(await bridge.projects?.openPr?.({ projectId, path: folder, ...req }).catch(() => null));
                   if (r?.kind === 'opened') {
@@ -3601,12 +3618,13 @@ export function App(): React.JSX.Element {
           })()}
         {finishing?.kind === 'stopped' &&
           (() => {
-            const { projectId, folder, outcome } = finishing;
+            const { projectId, folder, outcome, action } = finishing;
             const target = handOffSession(hereSessions(projectId, folder), grid.current?.activeCardId() ?? null);
             return (
               <UpdateStoppedDialog
                 key={`${projectId}:${folder}`}
                 branch={branchOf(projectId, folder)}
+                action={action}
                 outcome={outcome}
                 sessionName={target?.title ?? null}
                 onAskSession={() =>

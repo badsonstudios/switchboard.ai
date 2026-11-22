@@ -41,6 +41,7 @@ import { isAbsoluteLocal } from '../git/worktree-git';
 import { worktreeRootFor, type WorktreeJobs } from './worktree-jobs';
 import type { WorktreeFinisher } from './worktree-finish';
 import { IpcBroker } from '../ipc/broker';
+import { errorText } from '../../shared/error-text';
 import { LogFields, Logger } from '../log/logger';
 
 const NAME_MAX = 60;
@@ -260,10 +261,11 @@ export function registerProjectIpc(
     const from = (await isDirectory(project.primaryPath))
       ? project.primaryPath
       : project.commonDir;
+    const before = store.listProjects().find((p) => p.id === id);
     const listed = await git.worktreeList(from, GIT_BUDGET_MS);
     if (!listed) log.debug('could not read a project’s worktrees', { projectId: id });
     // one removed outside the app drops out, with its app records (#1638)
-    const worktrees = listed && extras?.finisher ? extras.finisher.noticeGone(id, listed) : listed;
+    const worktrees = listed && extras?.finisher ? extras.finisher.noticeGone(id, listed, before) : listed;
     return { projectId: id, worktrees };
   });
 
@@ -458,13 +460,27 @@ function registerWorktreeIpc(
   // `WorktreeFinisher` that the folder is a worktree git lists for the project.
   const fin = extras.finisher;
   if (fin) {
-    broker.handle('projects:worktreeStats', (_e, id: unknown) => fin.stats(id));
+    // a throw is a refusal (null / false) with a log line, never a rejected promise
+    const safe =
+      <T>(channel: string, fail: T, fn: () => Promise<T>) =>
+      async (): Promise<T> => {
+        try {
+          return await fn();
+        } catch (e) {
+          return refuse(channel, errorText(e), fail as never);
+        }
+      };
+    broker.handle('projects:worktreeStats', (_e, id: unknown) => safe('projects:worktreeStats', null, () => fin.stats(id))());
     broker.handle('projects:updateWorktree', (_e, id: unknown, folder: unknown) => fin.update(id, folder));
     broker.handle('projects:abortUpdate', (_e, id: unknown, folder: unknown) => fin.abortUpdate(id, folder));
-    broker.handle('projects:prContext', (_e, id: unknown, folder: unknown) => fin.prContext(id, folder));
+    broker.handle('projects:prContext', (_e, id: unknown, folder: unknown) =>
+      safe('projects:prContext', null, () => fin.prContext(id, folder))()
+    );
     broker.handle('projects:openPr', (_e, req: unknown) => fin.openPr(req as never));
     broker.handle('projects:mergeLocal', (_e, id: unknown, folder: unknown) => fin.mergeLocal(id, folder));
-    broker.handle('projects:removeCheck', (_e, id: unknown, folder: unknown) => fin.removeCheck(id, folder));
+    broker.handle('projects:removeCheck', (_e, id: unknown, folder: unknown) =>
+      safe('projects:removeCheck', null, () => fin.removeCheck(id, folder))()
+    );
     broker.handle('projects:removeWorktree', (_e, req: unknown) => fin.remove(req as never));
   }
 

@@ -88,7 +88,8 @@ function toInfo(x: unknown): PullRequestInfo | null {
   const state = o.state === 'OPEN' || o.state === 'CLOSED' || o.state === 'MERGED' ? o.state : null;
   if (typeof o.number !== 'number' || typeof o.url !== 'string' || !state) return null;
   if (!/^https:\/\//.test(o.url)) return null;
-  return { number: o.number, url: o.url, state, draft: o.isDraft === true };
+  const sha = typeof o.headRefOid === 'string' && /^[0-9a-f]{40,64}$/.test(o.headRefOid) ? o.headRefOid : null;
+  return { number: o.number, url: o.url, state, draft: o.isDraft === true, ...(sha ? { headSha: sha } : {}) };
 }
 
 /**
@@ -101,7 +102,7 @@ export async function prsForBranch(
   branch: string
 ): Promise<{ prs: PullRequestInfo[] } | { failure: GhFailure; detail: string }> {
   const r = await gh(
-    ['pr', 'list', '--head', branch, '--state', 'all', '--limit', '20', '--json', 'number,url,state,isDraft'],
+    ['pr', 'list', `--head=${branch}`, '--state', 'all', '--limit', '20', '--json', 'number,url,state,isDraft,headRefOid'],
     cwd
   );
   if (!r.ok) return { failure: r.failure ?? 'failed', detail: ghSaid(r) };
@@ -127,14 +128,11 @@ export async function createPr(
     [
       'pr',
       'create',
-      '--head',
-      req.branch,
-      '--base',
-      req.base,
-      '--title',
-      req.title,
-      '--body-file',
-      '-',
+      // one argument each, so a title starting with a dash is never a flag
+      `--head=${req.branch}`,
+      `--base=${req.base}`,
+      `--title=${req.title}`,
+      '--body-file=-',
       ...(req.draft ? ['--draft'] : []),
     ],
     cwd,

@@ -205,13 +205,14 @@ describe('WorktreeFinisher', { timeout: 60_000 }, () => {
       expect(git(wt, 'rev-parse', '--abbrev-ref', '@{u}')).toBe('origin/feat/pr');
       const create = ghCalls.find((c) => c.args[1] === 'create')!;
       expect(create.args).toEqual([
-        'pr', 'create', '--head', 'feat/pr', '--base', 'main', '--title', 'Fix it', '--body-file', '-', '--draft',
+        'pr', 'create', '--head=feat/pr', '--base=main', '--title=Fix it', '--body-file=-', '--draft',
       ]);
       expect(create.input).toBe(body);
     });
 
-    it('an open PR for the branch is answered as it is, never a second one', async () => {
+    it('an open PR for the branch gets the new commits pushed to it, never a second PR', async () => {
       const wt = addWorktree('feat/has-pr');
+      commit(wt, 'c.txt', 'x\n', 'new work');
       const open = { number: 3, url: 'https://github.com/o/r/pull/3', state: 'OPEN', isDraft: false };
       ghAnswer = () => ({ ok: true, out: JSON.stringify([open]), err: '' });
       const f = finisher();
@@ -219,7 +220,7 @@ describe('WorktreeFinisher', { timeout: 60_000 }, () => {
       const r = await f.openPr({ projectId: 'p1', path: wt, title: 'T', body: '', draft: false });
       expect(r).toMatchObject({ kind: 'opened', pr: { number: 3 } });
       expect(ghCalls.some((c) => c.args[1] === 'create')).toBe(false);
-      expect(() => git(remote, 'rev-parse', '--verify', 'refs/heads/feat/has-pr')).toThrow();
+      expect(git(remote, 'rev-parse', 'refs/heads/feat/has-pr')).toBe(git(wt, 'rev-parse', 'HEAD'));
     });
 
     it('refuses a title with nothing in it', async () => {
@@ -291,15 +292,47 @@ describe('WorktreeFinisher', { timeout: 60_000 }, () => {
       expect((await gitSvc.worktreeList(repo))?.some((w) => pathKey(w.path) === pathKey(wt))).toBe(false);
     });
 
-    it('a merged PR is reported (a squash leaves the commits "not on main" for ever)', async () => {
+    it('a merged PR is reported (a squash leaves the commits "not on main" for ever), but only for the tip it merged', async () => {
       const wt = addWorktree('feat/rm-merged');
       commit(wt, 'c.txt', 'x\n', 'squashed elsewhere');
-      ghAnswer = () => ({
+      const tip = git(wt, 'rev-parse', 'HEAD');
+      const merged = (sha: string) => () => ({
         ok: true,
-        out: JSON.stringify([{ number: 9, url: 'https://github.com/o/r/pull/9', state: 'MERGED', isDraft: false }]),
+        out: JSON.stringify([
+          { number: 9, url: 'https://github.com/o/r/pull/9', state: 'MERGED', isDraft: false, headRefOid: sha },
+        ]),
         err: '',
       });
+      ghAnswer = merged(tip);
       expect(await finisher().removeCheck('p1', wt)).toMatchObject({ unmerged: 1, mergedPr: true });
+      // work added after the merge (or a reused branch name) is NOT covered by that PR
+      commit(wt, 'd.txt', 'later\n', 'after the squash');
+      expect(await finisher().removeCheck('p1', wt)).toMatchObject({ unmerged: 2, mergedPr: false });
+    });
+
+    it('a dry run checks everything and changes nothing', async () => {
+      const wt = addWorktree('feat/rm-dry');
+      fs.writeFileSync(path.join(wt, 'new.txt'), 'unsaved\n');
+      const f = finisher();
+      expect(await f.remove({ projectId: 'p1', path: wt, force: false, keepBranch: true, dryRun: true })).toMatchObject({
+        kind: 'refused',
+        code: 'dirty',
+      });
+      expect(await f.remove({ projectId: 'p1', path: wt, force: true, keepBranch: true, dryRun: true })).toEqual({
+        kind: 'ready',
+      });
+      expect(fs.existsSync(path.join(wt, 'new.txt'))).toBe(true);
+    });
+
+    it('when git refuses after the unlink, the shared folder is linked back', async () => {
+      const wt = addWorktree('feat/rm-locked');
+      await linkDir(path.join(repo, 'node_modules'), path.join(wt, 'node_modules'));
+      git(repo, 'worktree', 'lock', wt); // git will not remove a locked worktree
+      const r = await finisher().remove({ projectId: 'p1', path: wt, force: false, keepBranch: true });
+      expect(r).toMatchObject({ kind: 'refused', code: 'git-failed' });
+      expect(await isLink(path.join(wt, 'node_modules'))).toBe(true);
+      expect(fs.existsSync(path.join(repo, 'node_modules', 'pkg', 'index.js'))).toBe(true);
+      git(repo, 'worktree', 'unlock', wt);
     });
 
     it('deletes the branch only when the user unticks Keep', async () => {
@@ -347,7 +380,7 @@ describe('WorktreeFinisher', { timeout: 60_000 }, () => {
     });
   });
 
-  it('notices a worktree removed outside the app: its section and its records go', async () => {
+  it('notices a worktree removed outside the app: a missing folder hides its section, an unlisted one loses its records', async () => {
     const wt = addWorktree('feat/gone');
     const k = pathKey(wt);
     const ghost = pathKey(path.join(base, 'wts', 'never-listed'));
@@ -355,10 +388,24 @@ describe('WorktreeFinisher', { timeout: 60_000 }, () => {
     fs.rmSync(wt, { recursive: true, force: true }); // deleted by hand: git now calls it prunable
     const list = (await gitSvc.worktreeList(repo)) as WorktreeInfo[];
     expect(list.find((w) => pathKey(w.path) === k)?.prunable).toBe(true);
-    const shown = finisher().noticeGone('p1', list);
+    const shown = finisher().noticeGone('p1', list, records[0]);
     expect(shown.some((w) => pathKey(w.path) === k)).toBe(false);
     expect(shown.some((w) => w.primary)).toBe(true);
+    // prunable could be an unplugged drive: kept; never listed at all: dropped
+    expect(records[0].made).toEqual([k]);
+    expect(records[0].purposes).toEqual({ [k]: 'Gone' });
+    git(repo, 'worktree', 'prune');
+    finisher().noticeGone('p1', (await gitSvc.worktreeList(repo)) as WorktreeInfo[], records[0]);
     expect(records[0].made).toBeUndefined();
     expect(records[0].purposes).toBeUndefined();
+  });
+
+  it('never forgets a worktree recorded while the list was being read', async () => {
+    const before = { ...records[0] };
+    const list = (await gitSvc.worktreeList(repo)) as WorktreeInfo[];
+    const fresh = pathKey(path.join(base, 'wts', 'just-made'));
+    records[0] = { ...records[0], made: [fresh] }; // a build recorded it after the read
+    finisher().noticeGone('p1', list, before);
+    expect(records[0].made).toEqual([fresh]);
   });
 });

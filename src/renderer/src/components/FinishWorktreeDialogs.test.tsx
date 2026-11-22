@@ -123,7 +123,6 @@ describe('PullRequestDialog', () => {
           sent.push(r);
           return Promise.resolve(null);
         }}
-        onOpenUrl={() => {}}
         onClose={() => {}}
       />
     );
@@ -133,22 +132,24 @@ describe('PullRequestDialog', () => {
     expect(sent).toEqual([{ title: 'Fix it', body: 'Sessions:\n\n- A', draft: true }]);
   });
 
-  it('an open PR is offered to open, never a second one', async () => {
-    const opened: string[] = [];
+  it('an open PR is offered (its new commits pushed to it), never a second one', async () => {
+    const sent: Array<{ title: string }> = [];
     await render(
       <PullRequestDialog
         load={() => Promise.resolve(ctx({ existing: { number: 4, url: 'https://github.com/o/r/pull/4', state: 'OPEN', draft: false } }))}
         initialTitle="T"
         initialBody=""
-        onSubmit={() => Promise.resolve(null)}
-        onOpenUrl={(u) => opened.push(u)}
+        onSubmit={(r) => {
+          sent.push(r);
+          return Promise.resolve(null);
+        }}
         onClose={() => {}}
       />
     );
     expect(q('[data-pr-existing]')?.textContent).toContain('#4');
     expect(q('[data-pr-submit]')).toBeNull();
     await click(q('[data-pr-open-existing]'));
-    expect(opened).toEqual(['https://github.com/o/r/pull/4']);
+    expect(sent).toHaveLength(1);
   });
 
   it('says plainly when gh is not installed, with nothing to press', async () => {
@@ -158,7 +159,6 @@ describe('PullRequestDialog', () => {
         initialTitle="T"
         initialBody=""
         onSubmit={() => Promise.resolve(null)}
-        onOpenUrl={() => {}}
         onClose={() => {}}
       />
     );

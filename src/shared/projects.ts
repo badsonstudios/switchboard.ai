@@ -137,6 +137,8 @@ export interface PullRequestInfo {
   url: string;
   state: 'OPEN' | 'CLOSED' | 'MERGED';
   draft: boolean;
+  /** the commit the PR's branch pointed at (gh's `headRefOid`), when gh said */
+  headSha?: string;
 }
 
 /** What the Push & open pull request dialog starts from (`projects:prContext`). */
@@ -219,9 +221,13 @@ export interface RemoveRequest {
   force: boolean;
   /** keep the branch (default when it has commits not on the base) */
   keepBranch: boolean;
+  /** run every check and stop: the window asks this before closing any session */
+  dryRun?: boolean;
 }
 
 export type RemoveOutcome =
+  /** a dry run found nothing in the way */
+  | { kind: 'ready' }
   | { kind: 'removed'; branchDeleted: boolean; branchKept?: string; detail?: string }
   | { kind: 'refused'; code: FinishRefusal; detail?: string; files?: string[] };
 

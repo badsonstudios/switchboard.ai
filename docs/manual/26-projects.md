@@ -159,7 +159,7 @@ is working on. Edit both, and tick **Open as a draft** if it isn't ready for
 review. GitHub opens in your browser when it's done.
 
 - If a pull request is already open for that branch, the dialog says so and
-  offers **Open it** instead of making a second one.
+  offers **Push new commits and open it** instead of making a second one.
 - If `gh` isn't installed or isn't signed in, the dialog says which (run
   `gh auth login` in a terminal), and nothing is pushed.
 
