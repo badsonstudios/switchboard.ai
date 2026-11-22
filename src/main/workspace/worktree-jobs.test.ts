@@ -110,8 +110,9 @@ describe('WorktreeJobs', { timeout: 30_000 }, () => {
     expect(fs.existsSync(path.join(done.path, 'node_modules', 'pkg', 'index.js'))).toBe(true);
     expect(done.warnings).toContainEqual({ code: 'share-not-ignored', entry: 'src' });
     expect(await isLink(path.join(done.path, 'src'))).toBe(false);
-    // recorded as made by the app, so the card drops FOUND
-    expect(records[0].made).toEqual([pathKey(done.path)]);
+    // recorded as made by the app, in git's own spelling (what `worktree list`
+    // answers, so the card drops FOUND even where the temp dir is an 8.3 name)
+    expect(records[0].made).toEqual([pathKey(git(done.path, 'rev-parse', '--show-toplevel'))]);
     // the window starts the session exactly once
     expect(jobs.claim(done.id)?.title).toBe('One');
     expect(jobs.claim(done.id)).toBeNull();
@@ -120,6 +121,28 @@ describe('WorktreeJobs', { timeout: 30_000 }, () => {
       expect.arrayContaining(['creating', 'copying', 'linking', 'ready', 'done'])
     );
   });
+
+  it.runIf(process.platform === 'win32')(
+    'records the worktree in git’s spelling when the folder was named by its 8.3 short name (Windows CI)',
+    async (ctx) => {
+      const long = path.join(tempDir('sb-wtshort-'), 'a-rather-long-folder-name');
+      fs.mkdirSync(long);
+      const short = execFileSync(
+        'powershell',
+        ['-NoProfile', '-Command', `(New-Object -ComObject Scripting.FileSystemObject).GetFolder('${long}').ShortPath`],
+        { encoding: 'utf8' }
+      ).trim();
+      if (!short || pathKey(short) === pathKey(long)) ctx.skip(); // 8.3 names are off on this drive
+      root = short;
+      const jobs = makeJobs();
+      const j = await jobs.start({ projectId: 'p1', branch: 'feat/short', newBranch: true, runSetup: false });
+      const done = await settle(jobs, j!.id);
+      expect(done.phase).toBe('ready');
+      const listed = (await gitSvc.worktreeList(repo))!.find((w) => !w.primary)!;
+      // the card draws FOUND unless `made` holds exactly what git lists
+      expect(records[0].made).toEqual([pathKey(listed.path)]);
+    }
+  );
 
   it('checks out an existing branch', async () => {
     git(repo, 'branch', 'old-work');

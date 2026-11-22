@@ -72,6 +72,8 @@ export interface WorktreeJobGit {
   deleteBranch(repo: string, branch: unknown): Promise<GitWriteResult>;
   revParse(folder: string, rev: unknown): Promise<string | null>;
   isIgnored(folder: string, rel: string): Promise<boolean | null>;
+  /** git's own spelling of a checkout's folder */
+  root(folder: string): Promise<string | null>;
 }
 
 export interface WorktreeJobStore {
@@ -103,6 +105,8 @@ interface JobState {
   newBranch: boolean;
   /** the commit a new branch was made at: it is deleted on discard only if still there */
   madeAt: string | null;
+  /** the `made` key recorded for it (git's spelling of the folder) */
+  madeKey: string | null;
   links: string[];
   sharedDirs: string[];
 }
@@ -213,6 +217,7 @@ export class WorktreeJobs {
       primary,
       newBranch: req.newBranch,
       madeAt: null,
+      madeKey: null,
       links: [],
       sharedDirs: (project.sharedDirs ?? []).filter(isInsideRelative).map(cleanRelative),
     };
@@ -275,7 +280,7 @@ export class WorktreeJobs {
       const tip = await git.revParse(s.repo, s.job.branch);
       if (tip === s.madeAt) await git.deleteBranch(s.repo, s.job.branch);
     }
-    this.forget(s.job.projectId, s.job.path);
+    if (s.madeKey) this.forget(s.job.projectId, s.madeKey);
     s.job.phase = 'done';
     this.push(s);
     this.jobs.delete(id);
@@ -300,7 +305,13 @@ export class WorktreeJobs {
     });
     if (!added.ok) return this.fail(s, added.reason ?? 'git could not make the worktree');
     s.madeAt = await git.revParse(s.job.path, 'HEAD');
-    this.remember(project.id, s.job.path);
+    // Recorded in GIT's spelling, because the card matches it against `git
+    // worktree list`: on Windows our own path can be an 8.3 short name
+    // (`RUNNER~1`) where git answers the long one, and the two would never
+    // match (#1506, Windows CI). Our spelling only when git cannot say.
+    const top = await git.root(s.job.path);
+    s.madeKey = pathKey(top ? path.normalize(top) : s.job.path);
+    this.remember(project.id, s.madeKey);
 
     // ── copy ──
     const copies = (project.copyFiles ?? []).filter(isInsideRelative).map(cleanRelative);
@@ -377,16 +388,16 @@ export class WorktreeJobs {
     return this.reserved.has(k) || [...this.jobs.values()].some((s) => pathKey(s.job.path) === k);
   }
 
-  private remember(projectId: string, dir: string): void {
+  private remember(projectId: string, key: string): void {
     const p = this.deps.store.listProjects().find((x) => x.id === projectId);
     if (!p) return;
-    this.deps.store.upsertProject({ ...p, made: [...new Set([...(p.made ?? []), pathKey(dir)])] });
+    this.deps.store.upsertProject({ ...p, made: [...new Set([...(p.made ?? []), key])] });
   }
 
-  private forget(projectId: string, dir: string): void {
+  private forget(projectId: string, key: string): void {
     const p = this.deps.store.listProjects().find((x) => x.id === projectId);
     if (!p) return;
-    this.deps.store.upsertProject({ ...p, made: (p.made ?? []).filter((m) => m !== pathKey(dir)) });
+    this.deps.store.upsertProject({ ...p, made: (p.made ?? []).filter((m) => m !== key) });
   }
 
   private phase(s: JobState, phase: WorktreeJob['phase']): void {
