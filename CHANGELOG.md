@@ -138,7 +138,9 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
 
 ---
 
-## 0.8.144 — unreleased
+## 0.8.145 — unreleased
+
+## 0.8.144 — 2026-11-22
 
 ### Added
 
@@ -149,7 +151,7 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   sessions in that repo sit under the worktree they run in, and **⊕** on a
   worktree starts a new session there. Nothing is created or deleted on disk;
   **Remove project from the list** puts every session back where it was and
-  stops none of them. Making new worktrees from the app comes next.
+  stops none of them.
 - **New worktrees from a project:** the **＋** on a project's card (or
   **Ctrl+Shift+N**) asks what the work is for and which branch, then builds a
   new worktree in the background, in one folder outside the repo
@@ -191,7 +193,8 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   carry on: **Reopen in** the project's main folder (when the folder was one of
   its worktrees) or **Choose a folder…**. The new card resumes the conversation
   there and keeps resuming it after a restart; it still can't be open in two
-  cards at once.
+  cards at once. This includes a conversation Claude had moved into a worktree
+  by itself before that worktree was removed.
 - **Port and database clash warnings.** When two running sessions would fight
   over the same local port or the same local database, the Session view of the
   one that ran into it gets one marked line saying which other session it
@@ -200,14 +203,6 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   one port, and two worktrees whose `.env` files name the same port or the same
   local database (which is what copying `.env` into a new worktree does).
   Switchboard only warns: it never stops a process or changes a file.
-
-### Fixed
-
-- **History finds a conversation the AI moved into a worktree.** When Claude
-  moved a session into a worktree by itself and that worktree was later
-  removed, History listed the conversation under the folder it started in, so
-  it was not marked **folder removed** and could not be reopened. It is now
-  listed under the worktree it was last in, marked, and reopens like any other.
 
 ## 0.8.143 — 2026-11-18
 
