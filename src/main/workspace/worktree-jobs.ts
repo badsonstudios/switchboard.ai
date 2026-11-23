@@ -158,13 +158,21 @@ export function reopenFolderIn(
     } catch {
       return false;
     }
-  }
+  },
+  spell: (p: string) => string = longSpelling
 ): string | undefined {
+  // ONE SPELLING FOR BOTH SIDES: the gone folder comes from a transcript's
+  // `cwd` (whatever the process was started with, an 8.3 `RUNNER~1` on
+  // Windows CI) and the project's paths from git (the long name), so the two
+  // are compared through the filesystem's own answer, not as strings.
+  const at = spell(gone);
   let best: { path: string; depth: number; tied: boolean } | undefined;
   for (const p of projects) {
-    const roots = [p.primaryPath, worktreeRootFor(p, appRoot)].filter((r): r is string => !!r);
+    const roots = [p.primaryPath, worktreeRootFor(p, appRoot)]
+      .filter((r): r is string => !!r)
+      .map((r) => spell(r));
     for (const r of roots) {
-      if (!isInside(gone, r) || pathKey(gone) === pathKey(r)) continue;
+      if (!isInside(at, r) || pathKey(at) === pathKey(r)) continue;
       const depth = pathKey(r).length;
       if (!best || depth > best.depth) best = { path: p.primaryPath, depth, tied: false };
       // two projects claiming it equally (repos with the same folder name
@@ -173,6 +181,30 @@ export function reopenFolderIn(
     }
   }
   return best && !best.tied && isDirectory(best.path) ? best.path : undefined;
+}
+
+/** How far up `longSpelling` walks looking for a folder that still exists. */
+const MAX_SPELLING_WALK = 64;
+
+/**
+ * `p` as the filesystem spells it: its deepest EXISTING ancestor through
+ * `realpath` (which expands Windows 8.3 short names), with the missing rest
+ * appended. Fail-open: `p` unchanged when nothing can be resolved.
+ */
+export function longSpelling(p: string): string {
+  let head = path.resolve(p);
+  const rest: string[] = [];
+  for (let i = 0; i < MAX_SPELLING_WALK; i++) {
+    try {
+      return path.join(fs.realpathSync.native(head), ...rest.reverse());
+    } catch {
+      const up = path.dirname(head);
+      if (up === head) break;
+      rest.push(path.basename(head));
+      head = up;
+    }
+  }
+  return p;
 }
 
 /**
