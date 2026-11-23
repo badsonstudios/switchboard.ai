@@ -22,8 +22,8 @@ import { PR_BODY_MAX, PR_TITLE_MAX } from '../../../shared/projects';
 import { ProjectDialogFrame, dialogButton, dialogField, dialogLabel, primaryButton } from './ProjectDialogFrame';
 
 const warnBox: React.CSSProperties = {
-  border: '1px solid var(--warn)',
-  background: 'color-mix(in srgb, var(--warn) 10%, var(--panel))',
+  border: '1px solid var(--status-crashed-ink)',
+  background: 'color-mix(in srgb, var(--status-crashed-ink) 10%, var(--panel))',
   borderRadius: 6,
   padding: '7px 9px',
   fontSize: 12,
