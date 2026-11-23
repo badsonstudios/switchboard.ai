@@ -186,7 +186,8 @@ export function finalReport(blocks: readonly FeedBlock[]): {
     // because the author would act on it. Skipped rather than treated as a break:
     // it is not the model addressing the author either way.
     if (b.sidechain === true) continue;
-    if (b.kind === 'thinking' || b.kind === 'compaction') continue;
+    // ...nor are the host's own lines (#1616, #1507), which can land after the reply
+    if (b.kind === 'thinking' || b.kind === 'compaction' || b.kind === 'moved' || b.kind === 'clash') continue;
     if (b.kind !== 'assistant') break;
     const text = (b.text ?? '').trim();
     // An `assistant` block with no text cannot end the run — it is not a

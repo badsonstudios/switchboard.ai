@@ -192,6 +192,14 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   its worktrees) or **Choose a folder…**. The new card resumes the conversation
   there and keeps resuming it after a restart; it still can't be open in two
   cards at once.
+- **Port and database clash warnings.** When two running sessions would fight
+  over the same local port or the same local database, the Session view of the
+  one that ran into it gets one marked line saying which other session it
+  clashes with and how to fix it (for example, give this worktree its own
+  `PORT` in `.env`). It notices a port already in use, two servers started on
+  one port, and two worktrees whose `.env` files name the same port or the same
+  local database (which is what copying `.env` into a new worktree does).
+  Switchboard only warns: it never stops a process or changes a file.
 
 ## 0.8.143 — 2026-11-18
 

@@ -7239,3 +7239,36 @@ describe('reopening a conversation whose folder is gone (#1643)', () => {
     expect(h.created).toHaveLength(0);
   });
 });
+
+// #1507: two live sessions in two folders with one copied `.env`.
+describe('port and database clashes reach the Feed (#1507)', () => {
+  let dir: string;
+  tempDirEach('sb-1507-ipc-', (d) => (dir = d));
+
+  it('one clash line, on the session whose settings were read second, naming the other', async () => {
+    const a = path.join(dir, 'repo');
+    const b = path.join(dir, 'wt');
+    for (const f of [a, b]) {
+      fs.mkdirSync(f, { recursive: true });
+      fs.writeFileSync(path.join(f, '.env'), 'PORT=3000\n');
+    }
+    const feed = new ClaudeFedFeed();
+    const h = harness(undefined, a, { streamFeed: feed, spawnIds: ['live-1', 'live-2'] });
+    h.call('sessions:create', { cardId: 'card-1', folder: a, title: 'first' });
+    h.call('sessions:create', { cardId: 'card-2', folder: b, title: 'second' });
+    // the dotenv reads are real disk reads, off the create path, in either order
+    const lines = (id: string) => feed.blocks(id).filter((x) => x.kind === 'clash');
+    await vi.waitFor(() => expect([...lines('live-1'), ...lines('live-2')]).toHaveLength(1), { timeout: 5000 });
+    const onSecond = lines('live-2').length === 1;
+    const [line] = onSecond ? lines('live-2') : lines('live-1');
+    expect(line.clash).toEqual({
+      resource: 'port',
+      cause: 'config',
+      value: '3000',
+      setting: 'PORT',
+      file: '.env',
+      other: onSecond ? 'first' : 'second',
+      otherFolder: onSecond ? a : b,
+    });
+  });
+});

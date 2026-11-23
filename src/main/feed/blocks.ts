@@ -68,12 +68,46 @@ export interface MovedMark {
   folder: string;
 }
 
+/**
+ * Two live sessions would fight over one port or one local database (#1507),
+ * for the Feed's `clash` line. Placed by `sessions/resource-clash.ts`; never
+ * from a transcript line.
+ */
+export interface ClashMark {
+  resource: 'port' | 'database';
+  /** `in-use`: this session was told the port is taken. `started`: both
+   *  started a server on it. `config`: both folders' settings name it. */
+  cause: 'in-use' | 'started' | 'config';
+  /** the port number, or the database's label ("app_dev on localhost:5432") */
+  value: string;
+  /** the setting that names it (`PORT`, `DATABASE_URL`), when a setting does */
+  setting?: string;
+  /** the dotenv file it was read from, by name */
+  file?: string;
+  /** the other session's name, and the folder it works in */
+  other: string;
+  otherFolder: string;
+}
+
 export interface FeedBlock {
   seq: number;
   /** `ai-switch`: the divider an AI switch draws (#1294) — see `aiSwitch`.
    *  `compaction`: the divider where the conversation was compacted (#1259)
-   *  `moved`: the agent moved into or out of a worktree (#1616) — see `moved` */
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch' | 'compaction' | 'moved';
+   *  `moved`: the agent moved into or out of a worktree (#1616) — see `moved`
+   *  `clash`: another session uses the same port or database (#1507) — see `clash` */
+  kind:
+    | 'user'
+    | 'assistant'
+    | 'thinking'
+    | 'tool'
+    | 'todos'
+    | 'notice'
+    | 'ai-switch'
+    | 'compaction'
+    | 'moved'
+    | 'clash';
+  /** `clash`: what two sessions would fight over (#1507). One quiet line. */
+  clash?: ClashMark;
   /**
    * `moved`: where the agent went (#1616). Not from any transcript line — the
    * host places it when the agent's own `EnterWorktree` / `ExitWorktree`

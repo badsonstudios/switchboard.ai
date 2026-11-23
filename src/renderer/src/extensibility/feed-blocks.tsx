@@ -918,6 +918,57 @@ function MovedLine({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
   );
 }
 
+/**
+ * Another live session uses the same port or local database (#1507): ONE quiet
+ * warning line, with the fix in words. Main places it; nothing was stopped or
+ * changed, which the hover says.
+ */
+function ClashLine({ b }: { b: FeedBlockDto }): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const c = b.clash;
+  if (!c) return null;
+  const vars = {
+    port: c.value,
+    db: c.value,
+    other: c.other,
+    folder: baseName(c.otherFolder) || c.otherFolder,
+    setting: c.setting ?? 'PORT',
+    file: c.file ?? '.env',
+  };
+  const key =
+    c.resource === 'database'
+      ? 'feedView.clash.databaseConfig'
+      : c.cause === 'config'
+        ? 'feedView.clash.portConfig'
+        : c.cause === 'started'
+          ? 'feedView.clash.portStarted'
+          : c.setting
+            ? 'feedView.clash.portInUseSetting'
+            : 'feedView.clash.portInUse';
+  return (
+    <div
+      data-clash-line
+      data-clash-resource={c.resource}
+      data-clash-cause={c.cause}
+      title={t('feedView.clash.hint', { path: c.otherFolder })}
+      style={{
+        marginBlock: 4,
+        marginInline: 10,
+        // not the reserved "needs you" yellow (`reserved-hue.test.ts`): a rule
+        // at the edge in the error ink, the words in ordinary text
+        color: 'var(--text)',
+        borderInlineStart: '2px solid var(--status-crashed-ink)',
+        paddingInlineStart: 6,
+        fontSize: 11,
+        fontFamily: 'var(--font-ui)',
+        overflowWrap: 'anywhere',
+      }}
+    >
+      {t(key, vars)}
+    </div>
+  );
+}
+
 function CompactionDivider({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
   const copy = compactionCopy(b.compaction);
@@ -2028,6 +2079,12 @@ export const feedBlockRenderers: FeedBlockRendererContribution[] = [
     order: 54,
     matches: (b) => b.kind === 'ai-switch',
     render: (b) => <AiSwitchDivider b={b} />,
+  },
+  {
+    manifest: manifest('feed-block-clash', 'Port or database clash warning line'),
+    order: 58,
+    matches: (b) => b.kind === 'clash',
+    render: (b) => <ClashLine b={b} />,
   },
   {
     manifest: manifest('feed-block-moved', 'Moved into a worktree line'),

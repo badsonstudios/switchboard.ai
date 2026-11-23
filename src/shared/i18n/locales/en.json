@@ -1527,6 +1527,14 @@
       "folder": "Back in {name} ({path})",
       "hint": "The AI moved this session itself. Its Changes, History and diffs now show this folder."
     },
+    "clash": {
+      "portInUse": "Port {port} is already in use, and {other} ({folder}) is using it too. Give this worktree its own port (PORT in .env, or --port).",
+      "portInUseSetting": "Port {port} is already in use, and {other} ({folder}) has {setting}={port} in its {file}. Give this worktree its own {setting} in {file}.",
+      "portStarted": "{other} ({folder}) already started a server on port {port}. If both run at once, one of them will fail. Give this worktree its own port (PORT in .env, or --port).",
+      "portConfig": "This folder's {file} sets {setting}={port}, the same as {other} ({folder}). If both run their servers at once, one will fail. Give this worktree its own {setting} in {file}.",
+      "databaseConfig": "This folder's {file} points {setting} at the same local database as {other} ({folder}): {db}. Changes and test data from one will show up in the other. Give this worktree its own database in {file}.",
+      "hint": "The other session works in {path}. Switchboard only warns: nothing was stopped or changed."
+    },
     "compaction": {
       "manual": "Conversation compacted (you asked)",
       "manualTokens": "Conversation compacted — {pre} → {post} tokens (you asked)",

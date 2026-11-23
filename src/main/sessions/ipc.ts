@@ -84,6 +84,7 @@ import type { MentionPrompt } from '../../shared/mention-prompt';
 import { EventFeed } from '../events/feed';
 import { HistoryRepair } from './history-repair-log';
 import { planSessionStart } from './start-plan';
+import { ResourceClashes } from './resource-clash';
 import { MAX_SESSION_TITLE, uniqueSessionTitle } from './session-title';
 import type { SessionNotStarted, SuggestedTitle } from '../../shared/sessions';
 import { dispatchFactsOf } from '../../shared/sessions';
@@ -520,6 +521,60 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     cardsChanged();
   });
 
+  // PORT AND DATABASE CLASHES (#1507, DESIGN §5.7). Worktrees separate folders,
+  // not ports or the local database a copied `.env` names. Reads the live
+  // Feed's shell calls and the folder's dotenv files; a clash draws one quiet
+  // line on the session that made it. Never blocks, kills or edits (P6, P7).
+  const cardFor = (liveId: string): PersistedSession | undefined => {
+    const cardId = cardOfLive.get(liveId);
+    return cardId ? deps.persist.list().find((s) => s.id === cardId) : undefined;
+  };
+  const liveWorkFolder = (liveId: string): string | undefined => {
+    const card = cardFor(liveId);
+    return card ? workFolderOf(card) : manager.get(liveId)?.identity.folder;
+  };
+  const clashes = deps.streamFeed
+    ? new ResourceClashes({
+        describe: (liveId) => {
+          if (!cardOfLive.has(liveId)) return null;
+          const folder = liveWorkFolder(liveId);
+          if (!folder) return null;
+          const title = cardFor(liveId)?.identity.title ?? manager.get(liveId)?.identity.title;
+          return { name: title || folder, folder };
+        },
+        place: (liveId, clash) =>
+          deps.streamFeed?.placeMarker(liveId, { kind: 'clash', clash, ts: new Date().toISOString() }, 'live'),
+        // settings are compared within one repository (`repoKeyFor` is declared
+        // further down; only called once a session is live)
+        ...(deps.repoCommonDir ? { repoKey: (folder: string) => repoKeyFor(folder) } : {}),
+        log,
+      })
+    : undefined;
+  deps.streamFeed?.onBlock((liveId, block) => {
+    if (cardOfLive.has(liveId)) clashes?.noteBlock(liveId, block);
+  });
+  /**
+   * Read the folder's settings once the start has settled, never on the create
+   * path itself. LOAD-BEARING: a resumed card's history is replayed into its
+   * Feed synchronously inside `sessions:create`, and `hydrate` refuses a Feed
+   * that already has a block, so a clash line must not be able to land first.
+   */
+  const noteClashFolder = (liveId: string, folder?: string): void => {
+    if (!clashes) return;
+    setImmediate(() => {
+      const where = folder ?? liveWorkFolder(liveId);
+      if (!where || !cardOfLive.has(liveId)) return;
+      void clashes.noteFolder(liveId, where);
+    });
+  };
+  manager.onEngineEvent((liveId, ev) => {
+    // every turn restates where it is (`reported`): read again only on a real change
+    if (ev.type !== 'workdir' || !cardOfLive.has(liveId)) return;
+    const known = clashes?.folderOf(liveId);
+    if (known !== undefined && pathKey(known) === pathKey(ev.cwd)) return;
+    noteClashFolder(liveId, ev.cwd);
+  });
+
   // outbound goes through the broker too: it checks what the TARGET window
   // holds, which is a no-op for first-party and the enforcement point a
   // Phase-4 plugin needs (P2-E15-04)
@@ -873,6 +928,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // to call `ptys.remove(liveId)` here, which silently tears down nothing for
     // a session hosted on any transport but the PTY.
     tearDownStep(liveId, 'manager.remove', () => manager.remove(liveId));
+    // what it held is free again (#1507)
+    tearDownStep(liveId, 'clashes.forget', () => clashes?.forget(liveId));
     tearDownStep(liveId, 'unbindLive', () => unbindLive(liveId));
   };
 
@@ -2752,6 +2809,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         return null;
       }
       bindLive(record.id, opts.cardId);
+      noteClashFolder(record.id);
       // A provider with no transcripts is never watched at all — the session is
       // a terminal and nothing more, which is what §5.3 promises degrading
       // looks like. Otherwise pass the resumed conversation id, so the watcher

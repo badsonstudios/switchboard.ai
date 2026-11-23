@@ -221,6 +221,46 @@ Pick one and choose **Reopen in** *the project's main folder* (or **Choose a
 folder…**); a new card carries the conversation on there, and keeps doing so
 after a restart.
 
+## When two sessions want the same port or database
+
+Worktrees keep each piece of work in its own folder, but they still share your
+computer's ports and any local database their settings point at. Copying `.env`
+into a new worktree (a common choice in **Project settings**) means the new
+worktree starts out using exactly the same port and database as the first one.
+
+Switchboard watches for this while sessions run, and adds one marked line to
+the Session view of the session that ran into it, naming the other session and
+suggesting a fix. It notices:
+
+- **A port that is already in use** ("address already in use", or a dev server
+  saying "Port 3000 is in use"), when another running session uses that port.
+- **Two servers started on one port**, for example two sessions both running
+  `PORT=3000 npm run dev`.
+- **Two worktrees with the same settings:** their `.env`, `.env.local`,
+  `.env.development` or `.env.development.local` set the same `PORT` (or
+  another `…_PORT` for a web server), or point `DATABASE_URL` (and similar
+  settings) at the same database on your own computer.
+
+The usual fix is to give the new worktree its own `PORT`, or its own database
+name in `DATABASE_URL`, in its `.env`. Each clash is mentioned once; it can be
+mentioned again after one of the two sessions closes.
+
+Good to know:
+
+- **It only warns.** Nothing is stopped, blocked or edited.
+- Two sessions in the **same folder** are not warned about their shared `.env`:
+  sharing that folder was your choice. Settings are only compared between
+  folders of the **same repository** (a project and its worktrees), because
+  unrelated projects often use the same default port.
+- A command that only looks at text (such as `cat`, `grep` or `echo`) doesn't
+  count as starting a server, and a server started more than half an hour ago
+  is no longer assumed to be running.
+- A port used by a program **outside** Switchboard is not reported, and
+  databases on another computer are left alone (sharing one is usually on
+  purpose).
+- Settings are read when a session starts and when the AI moves it to another
+  folder, so an `.env` you edit later is read at the next start.
+
 ## Hiding and removing
 
 - **Hide a worktree:** its **⋯** ▸ **Hide this worktree**. Only an empty worktree
