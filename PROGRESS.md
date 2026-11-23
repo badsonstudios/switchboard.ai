@@ -3,6 +3,11 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ E42 Projects (#1636): #1507 DONE via PR #PRNUM (2026-11-22, unreleased). NEXT: #1647
+>
+> **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* Run order: **#1616 → #1643 → #1507 → #1647 → release** (#1647, History finding a conversation the AI moved into a since-removed worktree, was found while building #1643; the release is cut by the orchestrator after the last step, not by a step).
+> - **#1507 shipped (scope per Dan's 2026-11-22 discussion outcome: port and dev-database clashes only; the same-tree warning stays the @Name brief check, #1098):** one `clash` line in the Session view's Feed of the session that made the clash, once per pair of live sessions per resource, forgotten on teardown (`sessions/resource-clash.ts`, wired in the session IPC). Signals: a shell result saying a port is in use (only when ANOTHER live session claims it), two servers started on one port (`PORT=` / `--port` commands, "listening on" / Vite / Next output), and the same `PORT`/`*_PORT` (database-server ports excluded) or the same LOCAL database URL (credentials stripped, remote hosts and relative sqlite ignored) in two DIFFERENT folders' `.env` / `.env.local` / `.env.development[.local]` (64 KB cap, async, read at start and on a move). Wording suggests the fix; nothing is blocked, killed or edited. **Limits:** `.env` edited mid-session is read at the next start; ports held outside any tool output are not seen.
+
 > # ▶ E42 Projects (#1636): #1643 DONE via PR #1646 (2026-11-22, unreleased). NEXT: #1507
 >
 > **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* Run order: **#1616 → #1643 → #1507 → release** (the release is cut by the orchestrator after the last step, not by a step).

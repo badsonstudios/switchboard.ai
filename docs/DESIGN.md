@@ -1318,6 +1318,17 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
 - **Worktree isolation caveat**: worktrees separate directories, not resources —
   no protection for shared ports, dev databases, or .env collisions. Surface
   port/resource conflicts between sessions as Feed warnings.
+  **As built (#1507, 2026-11-22):** a `clash` line in the Session view's Feed
+  of the session that made the clash, once per pair of live sessions per
+  resource (`main/sessions/resource-clash.ts`). Signals: a shell result saying
+  a port is in use (reported only when another live session claims it), two
+  servers started on one port (`PORT=` / `--port` commands, "listening on"
+  output), and the same `PORT`/`*_PORT` or the same LOCAL database URL in two
+  DIFFERENT folders of ONE repository's dotenv files (read at start and on a
+  move, 64 KB cap). A run claim is believed for 30 minutes; commands that only
+  look at text (`cat`, `grep`, `echo`, …) claim nothing.
+  Warn only: nothing blocked, killed or edited. The same-tree warning stays the
+  @Name brief check (#1098); sessions sharing a folder chose to.
 
 > **As built (audited 2026-09-25), and THREE OF THESE BULLETS ARE IN NO PHASE AT
 > ALL.** That is the finding worth recording: they are not late, they were never

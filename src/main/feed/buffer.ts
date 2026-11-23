@@ -178,7 +178,10 @@ export class FeedBuffer {
     const block = stamp(b, ++this.seq, origin);
     if (pictures && pictures.length > 0) block.pictures = this.pictures.keep(this, pictures);
     this.items.push(block);
-    this.awaitingSummary = block.kind === 'compaction' ? block : undefined;
+    // A host line (#1616, #1507) landing between a compaction and its summary
+    // must not break the pair: it is not a transcript line.
+    if (block.kind === 'compaction') this.awaitingSummary = block;
+    else if (block.kind !== 'moved' && block.kind !== 'clash') this.awaitingSummary = undefined;
     if (this.items.length > this.cap) {
       // A block past the cap takes its pictures with it (#1240). Nothing can
       // show them again, and left in the store they would be NEWER than

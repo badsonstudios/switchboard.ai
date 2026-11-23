@@ -8,8 +8,29 @@ export interface FeedBlockDto {
   seq: number;
   /** `ai-switch`: the divider an AI switch draws (#1294) — see `aiSwitch`.
    *  `compaction`: where the conversation was compacted (#1259)
-   *  `moved`: the agent moved into or out of a worktree (#1616) */
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice' | 'ai-switch' | 'compaction' | 'moved';
+   *  `moved`: the agent moved into or out of a worktree (#1616)
+   *  `clash`: another session uses the same port or database (#1507) */
+  kind:
+    | 'user'
+    | 'assistant'
+    | 'thinking'
+    | 'tool'
+    | 'todos'
+    | 'notice'
+    | 'ai-switch'
+    | 'compaction'
+    | 'moved'
+    | 'clash';
+  /** `clash`: what two sessions would fight over (#1507). Main's twin is `main/feed/blocks.ts`. */
+  clash?: {
+    resource: 'port' | 'database';
+    cause: 'in-use' | 'started' | 'config';
+    value: string;
+    setting?: string;
+    file?: string;
+    other: string;
+    otherFolder: string;
+  };
   /** `moved`: where the agent went (#1616). Main's twin is `main/feed/blocks.ts`. */
   moved?: { to: 'worktree' | 'folder'; folder: string };
   text?: string;
@@ -155,6 +176,8 @@ export function blockVisible(b: FeedBlockDto, v: Verbosity): boolean {
   // Shown at EVERY setting (#1294): which AI the conversation below it is with
   // is part of the conversation, not an event about it.
   if (b.kind === 'ai-switch') return true;
+  // ...and a port or database clash warning (#1507): rare, and worth seeing
+  if (b.kind === 'clash') return true;
   // ...and so is where it was compacted (#1259), for the reason the cleared
   // marker is: what the model still remembers is part of the conversation.
   // The MAIN conversation's, that is: a subagent compacting its own context
