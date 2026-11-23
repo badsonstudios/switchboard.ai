@@ -213,6 +213,14 @@ AI. If it can't tell where the AI went, the views simply stay where they were.
 The grey line is shown while the session runs; after a restart the AI's own
 **EnterWorktree** step in the conversation still shows where it moved.
 
+## Picking up a removed worktree's conversation
+
+Removing a worktree never deletes its conversations. Open a session's History
+(**All projects**): the worktree's conversations are marked **folder removed**.
+Pick one and choose **Reopen in** *the project's main folder* (or **Choose a
+folder…**); a new card carries the conversation on there, and keeps doing so
+after a restart.
+
 ## Hiding and removing
 
 - **Hide a worktree:** its **⋯** ▸ **Hide this worktree**. Only an empty worktree

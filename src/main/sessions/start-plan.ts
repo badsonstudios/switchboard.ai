@@ -53,6 +53,12 @@ export interface StartPlanInput {
    * `sessions/work-folder.ts` builds the list (at most three).
    */
   conversationFolders?: readonly string[];
+  /**
+   * Where a PICKED conversation is filed, as the History row said (#1643):
+   * asked about FIRST for the pick, ahead of `folder` — the transcript the CLI
+   * will append to is that one, so a same-id file elsewhere must not win.
+   */
+  requestedFiledUnder?: string;
   prior?: PriorCard;
   /**
    * A conversation the USER picked out of the history list (P2-E20-01, §5.33).
@@ -387,8 +393,8 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
   const lookIn = [input.folder, ...(input.conversationFolders ?? []).filter((f) => f && f !== input.folder)];
   // `canResume` across those folders: the first that says yes, or `false`
   // (nowhere), or `undefined` when the capability threw (degraded once).
-  const resumableIn = (nativeSessionId: string): string | false | undefined => {
-    for (const folder of lookIn) {
+  const resumableIn = (nativeSessionId: string, first?: string): string | false | undefined => {
+    for (const folder of first ? [first, ...lookIn.filter((f) => f !== first)] : lookIn) {
       const before = warnings.length;
       const yes = safely('resume.canResume', () =>
         caps?.resume?.canResume({
@@ -483,7 +489,7 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
       // folder, which is the one outcome that looks like data loss.
       requestedUnavailable = true;
     } else {
-      const found = resumableIn(picked);
+      const found = resumableIn(picked, input.requestedFiledUnder);
       if (found === undefined) resumeBroken = true;
       if (found) {
         resumeSessionId = picked;

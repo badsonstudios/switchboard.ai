@@ -186,6 +186,12 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   branch, Changes, History and diffs show that worktree, the session moves to
   that worktree on its project card, and after a restart it reopens there.
   Switchboard only follows; it never moves the AI itself.
+- **Pick up a removed worktree's conversation.** History marks a conversation
+  whose folder is gone **folder removed**. Picking it asks where it should
+  carry on: **Reopen in** the project's main folder (when the folder was one of
+  its worktrees) or **Choose a folder…**. The new card resumes the conversation
+  there and keeps resuming it after a restart; it still can't be open in two
+  cards at once.
 
 ## 0.8.143 — 2026-11-18
 

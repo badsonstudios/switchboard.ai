@@ -1290,8 +1290,13 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
   the path, closes the worktree's sessions first and unlinks shared folders before any
   delete. Conversations always stay in History (the CLI resumes by id from any folder:
   `spike/findings/1638-transcripts-after-removal.md`), so the mockup's "keep in
-  History" box became a sentence; reopening one from History in another folder is a
-  follow-up. The card shows ahead/behind and lines changed per worktree.
+  History" box became a sentence. **Reopening one from History in another folder**
+  (#1643): a row whose folder is gone is marked, and picking it asks where — the
+  project's main folder when the gone folder sat in the repo or in the project's
+  worktree folder, else a folder the user picks. The card records the folder its
+  conversation is **filed under** (`filedUnder`, beside the start and work folders of
+  #1616), so the resume check and the transcript watch keep looking there; the CLI
+  appends to the original file (`spike/findings/1638-transcripts-after-removal.md`). The card shows ahead/behind and lines changed per worktree.
   **A worktree the AI enters by itself** (Claude's own `EnterWorktree` /
   `ExitWorktree`, #1616) is followed, never driven: the tool result moves the card's
   *work folder* (stored beside, not instead of, the folder it starts in), which the

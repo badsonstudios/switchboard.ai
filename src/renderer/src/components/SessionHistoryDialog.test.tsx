@@ -22,6 +22,8 @@ import {
 import { registerPromptPort } from '../lib/prompt-port';
 import type { PromptEntry } from '../lib/prompt-history';
 import { initI18nForTests } from '../i18n/test-i18n';
+import i18next, { type TFunction } from 'i18next';
+import { goneFolderQuestion } from '../lib/history-gone';
 import { ipcRefusal } from '../../../shared/ipc/refusal';
 import type { ConversationHistory, ConversationRow } from '../../../shared/session-history';
 
@@ -861,5 +863,54 @@ describe('two kinds of history behind one button (#1237)', () => {
       },
     });
     expect(tabs().every((b) => b.disabled)).toBe(true);
+  });
+});
+
+describe('a conversation whose folder is gone (#1643)', () => {
+  it('is marked, and its pick carries where to reopen it', async () => {
+    answer = {
+      status: 'ok',
+      rows: [row({ folderGone: true, reopenIn: 'C:/work/app', folder: 'C:/wt/gone' })],
+      truncated: false,
+    } satisfies ConversationHistory;
+    const m = await mount();
+    expect(host.querySelector('[data-history-gone]')?.textContent).toBe('folder removed');
+    await click(rows()[0]);
+    expect(m.picked).toEqual([
+      expect.objectContaining({ nativeId: 'conv-1', folder: 'C:/wt/gone', folderGone: true, reopenIn: 'C:/work/app' }),
+    ]);
+  });
+
+  it('the question offers the main folder and a folder of your choosing, both pressable at once', async () => {
+    const reopened: string[] = [];
+    let chose = 0;
+    const pick = { nativeId: 'conv-1', folder: 'C:/wt/gone', description: 'Fix it', folderGone: true, reopenIn: 'C:/work/app' };
+    const t = i18next.t.bind(i18next) as unknown as TFunction;
+    await mount({
+      confirm: goneFolderQuestion(pick, t, { reopen: (f) => reopened.push(f), choose: () => (chose += 1), cancel: () => {} }),
+    });
+    expect(text()).toContain('C:/wt/gone');
+    const ok = host.querySelector<HTMLButtonElement>('[data-history-confirm-ok]')!;
+    expect(ok.textContent).toBe('Reopen in app');
+    expect(ok.disabled).toBe(false);
+    await click(ok);
+    expect(reopened).toEqual(['C:/work/app']);
+    await click(host.querySelector('[data-history-confirm-alt]'));
+    expect(chose).toBe(1);
+  });
+
+  it('with no suggestion, the only way forward is choosing a folder', async () => {
+    let chose = 0;
+    const t = i18next.t.bind(i18next) as unknown as TFunction;
+    await mount({
+      confirm: goneFolderQuestion({ nativeId: 'c', folder: 'C:/wt/gone', folderGone: true }, t, {
+        reopen: () => {},
+        choose: () => (chose += 1),
+        cancel: () => {},
+      }),
+    });
+    expect(host.querySelector('[data-history-confirm-alt]')).toBeNull();
+    await click(host.querySelector('[data-history-confirm-ok]'));
+    expect(chose).toBe(1);
   });
 });
