@@ -3,6 +3,12 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶ E42 Projects (#1636): ALL STEPS DONE. #1647 DONE via PR #PRNUM (2026-11-22, unreleased). NEXT: release 0.8.144 (Dan's instruction)
+>
+> **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* Run order, complete: **#1637 → #1506 → #1638 → #1616 → #1643 → #1507 → #1647 → release**. Every E42 step has merged; the release is cut by the orchestrator, not by a step. The epic #1636 is left open for the orchestrator to close.
+> - **#1647 shipped:** History lists a conversation by where its transcript is FILED (`transcripts/history.ts` `filedFolder`): when the file sits under another folder's slug than its head's `cwd` (the CLI moved it on EnterWorktree), a bounded tail read (256 KB / 2,000 lines) takes the newest `relocatedCwd` / `worktreePath` / `cwd` whose slug is that directory; self-checking, cached with the row, no read for an ordinary conversation. So a conversation left in a removed worktree is marked **folder removed** and reopens through #1643's **Reopen in…** (the pick carries the worktree as `filedUnder`), and keeps resuming after a restart; a living worktree's folder-scoped History now lists a conversation that moved into it. Card-recorded folders were not needed (Remove worktree closes the cards). Tests move the transcript the way the CLI does (unit, ipc chain, e2e beside #1643's).
+> - **#1507 review follow-ups (in PR #1648):** run claims expire after 30 minutes, commands that only look at text (`cat`/`grep`/`echo`…) claim nothing, settings are compared only within one repository (git common dir), no settings re-read per turn.
+
 > # ▶ E42 Projects (#1636): #1507 DONE via PR #1648 (2026-11-22, unreleased). NEXT: #1647
 >
 > **Dan (2026-11-22):** *"keep going till the entire project is done for this feature without me having to do anything, and then cut a release."* Run order: **#1616 → #1643 → #1507 → #1647 → release** (#1647, History finding a conversation the AI moved into a since-removed worktree, was found while building #1643; the release is cut by the orchestrator after the last step, not by a step).
