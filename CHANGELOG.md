@@ -201,6 +201,14 @@ Why not just flip the beta's pre-release flag on GitHub? Its installer reports
   local database (which is what copying `.env` into a new worktree does).
   Switchboard only warns: it never stops a process or changes a file.
 
+### Fixed
+
+- **History finds a conversation the AI moved into a worktree.** When Claude
+  moved a session into a worktree by itself and that worktree was later
+  removed, History listed the conversation under the folder it started in, so
+  it was not marked **folder removed** and could not be reopened. It is now
+  listed under the worktree it was last in, marked, and reopens like any other.
+
 ## 0.8.143 — 2026-11-18
 
 ### Added

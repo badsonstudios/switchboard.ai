@@ -60,8 +60,8 @@ import { PACKAGE_CAPS, promptText } from '../sessions/context-package';
 // and the context package would come to disagree about which conversations have
 // an opening prompt at all.
 import { PACKAGE_HEAD_BYTES } from '../sessions/queries';
-import { readTranscriptHead } from '../feed/history';
-import { isConversationId, listConversations, MAX_LISTED_CONVERSATIONS, samePath } from './paths';
+import { readTranscriptHead, readTranscriptTail } from '../feed/history';
+import { isConversationId, listConversations, MAX_LISTED_CONVERSATIONS, samePath, slugsForCwd } from './paths';
 import { LABEL_PROMPT_OPENING } from '../sessions/ai-label';
 
 /** What this module needs from the rest of the app, injected rather than imported. */
@@ -120,6 +120,7 @@ export const MAX_HISTORY_DIRS = 400;
 interface Described {
   size: number;
   mtimeMs: number;
+  /** where the conversation is FILED now: see `filedFolder` */
   folder: string;
   description: string;
   descriptionFrom: ConversationRow['descriptionFrom'];
@@ -418,6 +419,10 @@ function describe(
       descriptionFrom = 'prompt';
     }
   }
+  // WHERE IT IS FILED, not only where it started (#1647): the CLI moves the
+  // file when the agent enters a worktree, and a worktree removed while the
+  // agent was still in it leaves the conversation filed under that worktree.
+  if (folder) folder = filedFolder(file, folder) ?? folder;
   const described: Described = { ...id, folder, description: trim(description), descriptionFrom };
   if (cache.size >= CACHE_MAX) cache.clear();
   cache.set(file, described);
@@ -426,6 +431,41 @@ function describe(
     description: described.description,
     descriptionFrom: described.descriptionFrom,
   };
+}
+
+/** How much of a moved transcript's END is read to find where it went (#1647). */
+export const FILED_TAIL_BYTES = 256 * 1024;
+const FILED_TAIL_LINES = 2_000;
+
+/**
+ * The folder a transcript is FILED under, when it is not the folder its head
+ * names (#1647). Undefined when the head's folder is where it is filed (nearly
+ * every conversation: one slug comparison, no read) or when no later line
+ * names a folder whose directory this is.
+ *
+ * Claude files a conversation under a slug of the folder it runs in and MOVES
+ * the file when the agent enters or leaves a worktree, stamping a
+ * `{"type":"relocated","relocatedCwd":…}` line; later lines carry the new
+ * `cwd` (measured, `spike/findings/1616-enter-worktree.md`). The head still
+ * says where it STARTED. So when the file's directory is not the head folder's
+ * slug, the newest folder in a bounded tail whose slug IS that directory is
+ * where it is filed now. Self-checking: a candidate counts only if the
+ * directory the file actually sits in is its slug, so a slug collision or an
+ * unreadable tail falls back to the head's answer.
+ */
+function filedFolder(file: string, headFolder: string): string | undefined {
+  const dir = path.basename(path.dirname(file)).toLowerCase();
+  if (slugsForCwd(headFolder).includes(dir)) return undefined;
+  const tail = safely(() => readTranscriptTail(file, FILED_TAIL_BYTES, FILED_TAIL_LINES), []);
+  for (let i = tail.length - 1; i >= 0; i--) {
+    const e = tail[i];
+    // `worktree-state` names the worktree itself: still right when the agent
+    // has since `cd`'d into a subfolder of it (review)
+    for (const candidate of [e.relocatedCwd, e.worktreePath, e.cwd]) {
+      if (typeof candidate === 'string' && candidate && slugsForCwd(candidate).includes(dir)) return candidate;
+    }
+  }
+  return undefined;
 }
 
 /**

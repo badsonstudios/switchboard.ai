@@ -142,7 +142,9 @@ What the list will tell you rather than hide:
   *your project's main folder* (offered when the folder was one of a
   project's worktrees), or **Choose a folder…**. A new card opens there and
   picks the conversation up where it left off, and it keeps doing so after you
-  restart. It still can't be open in two cards at once.
+  restart. It still can't be open in two cards at once. This includes a
+  conversation the AI moved into a worktree by itself: History lists it under
+  the worktree it was last in, not the folder it started in.
 - If a folder's conversations **can't be listed** — the folder has been moved,
   or it holds more conversations than switchboard will scan at once — the list
   says so and why, instead of pretending the folder is empty.

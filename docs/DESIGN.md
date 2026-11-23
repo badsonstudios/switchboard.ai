@@ -1296,7 +1296,12 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
   worktree folder, else a folder the user picks. The card records the folder its
   conversation is **filed under** (`filedUnder`, beside the start and work folders of
   #1616), so the resume check and the transcript watch keep looking there; the CLI
-  appends to the original file (`spike/findings/1638-transcripts-after-removal.md`). The card shows ahead/behind and lines changed per worktree.
+  appends to the original file (`spike/findings/1638-transcripts-after-removal.md`).
+  **A row's folder is where the conversation is FILED** (#1647), not only the
+  transcript head's `cwd`: when the file sits under another folder's slug (the CLI
+  moved it on EnterWorktree), a bounded tail read takes the newest `relocatedCwd` /
+  `worktreePath` / `cwd` whose slug is that directory, so a conversation left in a
+  removed worktree is marked and reopened like any other. The card shows ahead/behind and lines changed per worktree.
   **A worktree the AI enters by itself** (Claude's own `EnterWorktree` /
   `ExitWorktree`, #1616) is followed, never driven: the tool result moves the card's
   *work folder* (stored beside, not instead of, the folder it starts in), which the

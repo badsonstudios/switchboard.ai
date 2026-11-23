@@ -501,3 +501,124 @@ describe('the description cache', () => {
     opened.mockRestore();
   });
 });
+
+// #1647: the CLI MOVES a conversation into the worktree its agent enters
+// (`spike/findings/1616-enter-worktree.md`): the file is renamed into the
+// worktree's slug directory, a `relocated` line is stamped, and later lines
+// carry the worktree's `cwd`. The head still names where it started.
+describe('a conversation the CLI moved into a worktree (#1647)', () => {
+  const repo = path.resolve('/work/moved-repo');
+  const wt = path.join(repo, '.claude', 'worktrees', 'feature');
+
+  /** start in `repo`, then do what EnterWorktree does to the file */
+  function movedConversation(nativeId: string, extra: Record<string, unknown>[] = []): string {
+    const before = seed(repo, nativeId, [...preamble, userLine(repo, 'start the feature'), titleLine('Feature work')]);
+    const dir = path.join(root, slugForCwd(wt).toLowerCase());
+    fs.mkdirSync(dir, { recursive: true });
+    const after = path.join(dir, `${nativeId}.jsonl`);
+    fs.renameSync(before, after);
+    fs.appendFileSync(
+      after,
+      [
+        { type: 'relocated', relocatedCwd: wt },
+        { type: 'worktree-state', originalCwd: repo, worktreePath: wt, worktreeBranch: 'worktree-feature' },
+        userLine(wt, 'now in the worktree', { uuid: 'u-later' }),
+        ...extra,
+      ]
+        .map((l) => JSON.stringify(l))
+        .join('\n') + '\n'
+    );
+    return after;
+  }
+
+  it('every-project History lists it under the worktree it is filed in', () => {
+    movedConversation('moved-1');
+    const row = ok(listHistory({ scope: 'all' }, deps())).rows.find((r) => r.nativeId === 'moved-1');
+    expect(row).toMatchObject({ folder: wt, description: 'Feature work' });
+  });
+
+  it("the worktree's own History lists it; the start folder's does not", () => {
+    movedConversation('moved-2');
+    expect(ok(listHistory({ scope: 'folder', folder: wt }, deps())).rows.map((r) => r.nativeId)).toEqual(['moved-2']);
+    expect(ok(listHistory({ scope: 'folder', folder: repo }, deps())).rows).toEqual([]);
+  });
+
+  it('a relocated line alone is enough (no later turn yet)', () => {
+    const before = seed(repo, 'moved-3', [...preamble, userLine(repo, 'start')]);
+    const dir = path.join(root, slugForCwd(wt).toLowerCase());
+    fs.mkdirSync(dir, { recursive: true });
+    const after = path.join(dir, 'moved-3.jsonl');
+    fs.renameSync(before, after);
+    fs.appendFileSync(after, JSON.stringify({ type: 'relocated', relocatedCwd: wt }) + '\n');
+    expect(ok(listHistory({ scope: 'all' }, deps())).rows[0].folder).toBe(wt);
+  });
+
+  it('moved back out (ExitWorktree): filed under the start folder again, listed there', () => {
+    const file = movedConversation('moved-4', [{ type: 'relocated', relocatedCwd: repo }, userLine(repo, 'back home', { uuid: 'u-home' })]);
+    const home = path.join(root, slugForCwd(repo).toLowerCase(), 'moved-4.jsonl');
+    fs.renameSync(file, home);
+    expect(ok(listHistory({ scope: 'all' }, deps())).rows[0].folder).toBe(repo);
+  });
+
+  it('a file in a directory no line names keeps the head folder (fail-open)', () => {
+    seed(repo, 'odd-1', [...preamble, userLine(repo, 'somewhere')], { sub: 'some-other-dir' });
+    expect(ok(listHistory({ scope: 'all' }, deps())).rows[0].folder).toBe(repo);
+  });
+
+  it('an ordinary conversation reads no tail', () => {
+    seed(repo, 'plain-1', [...preamble, userLine(repo, 'plain')]);
+    const reads = vi.spyOn(fs, 'readSync');
+    listHistory({ scope: 'all' }, deps());
+    // the head read only: one file, one window
+    expect(reads.mock.calls.length).toBe(1);
+  });
+
+  it('the NEWEST folder whose directory this is wins (review)', () => {
+    const wt2 = path.join(repo, '.claude', 'worktrees', 'second');
+    const before = seed(repo, 'order-1', [...preamble, userLine(repo, 'start')]);
+    const dir = path.join(root, slugForCwd(wt2).toLowerCase());
+    fs.mkdirSync(dir, { recursive: true });
+    const after = path.join(dir, 'order-1.jsonl');
+    fs.renameSync(before, after);
+    fs.appendFileSync(
+      after,
+      [
+        { type: 'relocated', relocatedCwd: wt },
+        { type: 'relocated', relocatedCwd: wt2 },
+        userLine(repo, 'a later line naming another folder', { uuid: 'u-x' }),
+      ]
+        .map((l) => JSON.stringify(l))
+        .join('\n') + '\n'
+    );
+    expect(ok(listHistory({ scope: 'all' }, deps())).rows[0].folder).toBe(wt2);
+  });
+
+  it('the CLI spells the directory in mixed case; a subfolder cwd still finds the worktree', () => {
+    const before = seed(repo, 'case-1', [...preamble, userLine(repo, 'start')]);
+    const dir = path.join(root, slugForCwd(wt)); // NOT lower-cased, as the CLI writes it
+    fs.mkdirSync(dir, { recursive: true });
+    const after = path.join(dir, 'case-1.jsonl');
+    fs.renameSync(before, after);
+    fs.appendFileSync(
+      after,
+      [
+        { type: 'worktree-state', originalCwd: repo, worktreePath: wt, worktreeBranch: 'worktree-feature' },
+        userLine(path.join(wt, 'src'), 'working in a subfolder', { uuid: 'u-sub' }),
+      ]
+        .map((l) => JSON.stringify(l))
+        .join('\n') + '\n'
+    );
+    expect(ok(listHistory({ scope: 'all' }, deps())).rows[0].folder).toBe(wt);
+  });
+
+  it('a worktree path long enough for the hashed slug', () => {
+    const deep = path.join(repo, '.claude', 'worktrees', 'x'.repeat(220));
+    const before = seed(repo, 'long-1', [...preamble, userLine(repo, 'start')]);
+    const dir = path.join(root, slugForCwd(deep));
+    fs.mkdirSync(dir, { recursive: true });
+    const after = path.join(dir, 'long-1.jsonl');
+    fs.renameSync(before, after);
+    fs.appendFileSync(after, JSON.stringify({ type: 'relocated', relocatedCwd: deep }) + '\n');
+    expect(ok(listHistory({ scope: 'all' }, deps())).rows[0].folder).toBe(deep);
+  });
+});

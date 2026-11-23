@@ -221,6 +221,11 @@ Pick one and choose **Reopen in** *the project's main folder* (or **Choose a
 folder…**); a new card carries the conversation on there, and keeps doing so
 after a restart.
 
+This also works when the AI had moved the session into the worktree by itself
+and you removed the worktree before it moved back: History lists that
+conversation under the worktree it was last in (marked **folder removed**),
+not under the folder it started in.
+
 ## When two sessions want the same port or database
 
 Worktrees keep each piece of work in its own folder, but they still share your
