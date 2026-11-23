@@ -42,72 +42,84 @@ test.describe('reopening a conversation whose folder is gone (#1643)', () => {
     await teardown(launched);
   });
 
-  test('[direct] History marks it, offers the main folder, and the card keeps resuming it', async () => {
-    test.setTimeout(180_000);
-    const base = tempProjectFolder();
-    const repo = path.join(base, 'gone-repo');
-    fs.mkdirSync(repo);
-    fs.writeFileSync(path.join(repo, 'README.md'), '# repo\n');
-    git(repo, 'init', '-q', '-b', 'main');
-    git(repo, 'add', '.');
-    git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'init');
-    // the worktree it ran in is gone: only its conversation is left
-    const gone = path.join(repo, '.claude', 'worktrees', 'removed');
-    const home = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-gone-')));
-    const conversation = '16431643-aaaa-4bbb-8ccc-dddddddddddd';
-    const dir = path.join(home, '.claude', 'projects', slug(gone));
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, `${conversation}.jsonl`),
-      [
-        JSON.stringify({ type: 'user', isSidechain: false, cwd: gone, message: { role: 'user', content: ASK }, uuid: 'u1' }),
-        JSON.stringify({ type: 'ai-title', aiTitle: TITLE, sessionId: conversation }),
-      ].join('\n') + '\n'
-    );
+  // `ran`: the conversation ran in the worktree from its first line (#1643).
+  // `moved`: it STARTED in the main folder and the agent moved into the
+  // worktree, so the CLI renamed the file under the worktree's slug and stamped
+  // a `relocated` line; the worktree was then removed with it still there (#1647).
+  for (const shape of ['ran', 'moved'] as const) {
+    test(`[direct] History marks it, offers the main folder, and the card keeps resuming it (${shape})`, async () => {
+      test.setTimeout(180_000);
+      const base = tempProjectFolder();
+      const repo = path.join(base, 'gone-repo');
+      fs.mkdirSync(repo);
+      fs.writeFileSync(path.join(repo, 'README.md'), '# repo\n');
+      git(repo, 'init', '-q', '-b', 'main');
+      git(repo, 'add', '.');
+      git(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'init');
+      // the worktree it ran in is gone: only its conversation is left
+      const gone = path.join(repo, '.claude', 'worktrees', 'removed');
+      const home = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-gone-')));
+      const conversation = '16431643-aaaa-4bbb-8ccc-dddddddddddd';
+      const dir = path.join(home, '.claude', 'projects', slug(gone));
+      fs.mkdirSync(dir, { recursive: true });
+      const lines =
+        shape === 'ran'
+          ? [
+              { type: 'user', isSidechain: false, cwd: gone, message: { role: 'user', content: ASK }, uuid: 'u1' },
+              { type: 'ai-title', aiTitle: TITLE, sessionId: conversation },
+            ]
+          : [
+              { type: 'user', isSidechain: false, cwd: repo, message: { role: 'user', content: ASK }, uuid: 'u1' },
+              { type: 'ai-title', aiTitle: TITLE, sessionId: conversation },
+              { type: 'relocated', relocatedCwd: gone },
+              { type: 'worktree-state', originalCwd: repo, worktreePath: gone, worktreeBranch: 'worktree-removed' },
+            ];
+      fs.writeFileSync(path.join(dir, `${conversation}.jsonl`), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
 
-    a = await launchApp({ seedFolder: repo, home, env: DIRECT });
-    const first = a;
-    const w = first.window;
-    await expect(row(w, 'gone-repo')).toBeVisible({ timeout: 25_000 });
+      a = await launchApp({ seedFolder: repo, home, env: DIRECT });
+      const first = a;
+      const w = first.window;
+      await expect(row(w, 'gone-repo')).toBeVisible({ timeout: 25_000 });
 
-    // ── the repo is a project, so main knows the gone folder was its worktree ──
-    await first.app.evaluate(({ dialog }, d) => {
-      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
-    }, repo);
-    await w.locator('[data-rail-open-project]').click();
-    const dlg = w.getByTestId('open-project-dialog');
-    await dlg.locator('[data-open-project-browse]').click();
-    await expect(dlg.locator('[data-open-project-status]')).toHaveAttribute('data-open-project-status', 'repo', {
-      timeout: 15_000,
+      // ── the repo is a project, so main knows the gone folder was its worktree ──
+      await first.app.evaluate(({ dialog }, d) => {
+        dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
+      }, repo);
+      await w.locator('[data-rail-open-project]').click();
+      const dlg = w.getByTestId('open-project-dialog');
+      await dlg.locator('[data-open-project-browse]').click();
+      await expect(dlg.locator('[data-open-project-status]')).toHaveAttribute('data-open-project-status', 'repo', {
+        timeout: 15_000,
+      });
+      await dlg.locator('[data-open-project-ok]').click();
+      await expect(w.locator('[data-project-card]')).toBeVisible({ timeout: 15_000 });
+
+      // ── History, all projects: the row says its folder is gone ──
+      await w.locator('[data-testid="card-history"]').first().click();
+      await w.locator('[data-history-scope]').click();
+      await expect(w.locator('[data-history-scope]')).toHaveAttribute('data-history-scope', 'all');
+      const listed = w.locator('[data-history-row]').filter({ hasText: TITLE });
+      await expect(listed).toBeVisible({ timeout: 15_000 });
+      await expect(listed.locator('[data-history-gone]')).toHaveText('folder removed');
+
+      // ── picking it asks where, and offers the project's main folder ──
+      await listed.click();
+      const ok = w.locator('[data-history-confirm-ok]');
+      await expect(ok).toHaveText('Reopen in gone-repo');
+      await expect(w.locator('[data-history-confirm-alt]')).toHaveText('Choose a folder…');
+      await ok.click();
+      await expect(w.locator('[data-history-dialog]')).toHaveCount(0);
+
+      // ── a second card, in the main folder, carrying the conversation on ──
+      await expect(w.locator('nav .rail-row')).toHaveCount(2, { timeout: 25_000 });
+      await expect(w.getByText(ASK).first()).toBeVisible({ timeout: 25_000 });
+
+      // ── and again after a restart, from the card alone ──
+      await w.waitForTimeout(900); // debounced store save
+      await first.close();
+      a = await launchApp({ home: first.home, env: DIRECT });
+      await expect(a.window.locator('nav .rail-row')).toHaveCount(2, { timeout: 25_000 });
+      await expect(a.window.getByText(ASK).first()).toBeVisible({ timeout: 30_000 });
     });
-    await dlg.locator('[data-open-project-ok]').click();
-    await expect(w.locator('[data-project-card]')).toBeVisible({ timeout: 15_000 });
-
-    // ── History, all projects: the row says its folder is gone ──
-    await w.locator('[data-testid="card-history"]').first().click();
-    await w.locator('[data-history-scope]').click();
-    await expect(w.locator('[data-history-scope]')).toHaveAttribute('data-history-scope', 'all');
-    const listed = w.locator('[data-history-row]').filter({ hasText: TITLE });
-    await expect(listed).toBeVisible({ timeout: 15_000 });
-    await expect(listed.locator('[data-history-gone]')).toHaveText('folder removed');
-
-    // ── picking it asks where, and offers the project's main folder ──
-    await listed.click();
-    const ok = w.locator('[data-history-confirm-ok]');
-    await expect(ok).toHaveText('Reopen in gone-repo');
-    await expect(w.locator('[data-history-confirm-alt]')).toHaveText('Choose a folder…');
-    await ok.click();
-    await expect(w.locator('[data-history-dialog]')).toHaveCount(0);
-
-    // ── a second card, in the main folder, carrying the conversation on ──
-    await expect(w.locator('nav .rail-row')).toHaveCount(2, { timeout: 25_000 });
-    await expect(w.getByText(ASK).first()).toBeVisible({ timeout: 25_000 });
-
-    // ── and again after a restart, from the card alone ──
-    await w.waitForTimeout(900); // debounced store save
-    await first.close();
-    a = await launchApp({ home: first.home, env: DIRECT });
-    await expect(a.window.locator('nav .rail-row')).toHaveCount(2, { timeout: 25_000 });
-    await expect(a.window.getByText(ASK).first()).toBeVisible({ timeout: 30_000 });
-  });
+  }
 });

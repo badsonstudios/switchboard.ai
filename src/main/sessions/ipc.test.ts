@@ -7238,6 +7238,39 @@ describe('reopening a conversation whose folder is gone (#1643)', () => {
     ).toBeNull();
     expect(h.created).toHaveLength(0);
   });
+
+  // #1647: the conversation STARTED in the main folder, the agent moved into
+  // the worktree (the CLI moved the file under the worktree's slug), and the
+  // worktree was removed with the session still in it.
+  it('a conversation the CLI moved into the removed worktree: listed there, marked, and reopened (#1647)', async () => {
+    const dir = path.join(projects, slugForCwd(gone).toLowerCase());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, `${ID}.jsonl`),
+      [
+        { type: 'user', isSidechain: false, cwd: main, message: { role: 'user', content: 'start in main' }, uuid: 'u1' },
+        { type: 'ai-title', aiTitle: 'Moved into the worktree', sessionId: ID },
+        { type: 'relocated', relocatedCwd: gone },
+        { type: 'user', isSidechain: false, cwd: gone, message: { role: 'user', content: 'in the worktree' }, uuid: 'u2' },
+      ]
+        .map((l) => JSON.stringify(l))
+        .join('\n') + '\n'
+    );
+    const h = harness(caps(), main, { reopenFolderFor: (f) => (f === gone ? main : undefined) });
+    const a = (await h.call('transcripts:history', { scope: 'all' })) as {
+      rows: Array<{ nativeId: string; folder: string; folderGone?: boolean; reopenIn?: string }>;
+    };
+    const row = a.rows.find((r) => r.nativeId === ID);
+    expect(row).toMatchObject({ folder: gone, folderGone: true, reopenIn: main });
+    // Reopen in the main folder, carrying the row's folder as where it is filed
+    h.call('sessions:create', { cardId: 'card-1', folder: main, title: 't', resumeConversationId: ID, filedUnder: row!.folder });
+    expect(h.created[0].resumeSessionId).toBe(ID);
+    expect(h.upserted.at(-1)).toMatchObject({ nativeSessionId: ID, filedUnder: gone });
+    // ...and after a restart, from the card alone
+    const again = harness(caps(), main, { prior: priorCard({ folder: main, nativeSessionId: ID, filedUnder: gone }) });
+    again.call('sessions:create', { cardId: 'card-1', folder: main, title: 't' });
+    expect(again.created[0].resumeSessionId).toBe(ID);
+  });
 });
 
 // #1507: two live sessions in two folders with one copied `.env`.
