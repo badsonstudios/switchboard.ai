@@ -19,7 +19,7 @@ Target / question: $ARGUMENTS
    - Start with a one-paragraph plain-language summary.
    - Then how it works step by step / the data or control flow.
    - Call out *why* it's done this way when the project's conventions
-     (`references/architecture.md`, `references/tech-stack.md`) explain it.
+     (`.claude/skills/startup/references/architecture.md`, `.claude/skills/startup/references/tech-stack.md`) explain it.
 4. **Anchor to the code** with `file:line` references so the reader can jump in.
 
 ## Output

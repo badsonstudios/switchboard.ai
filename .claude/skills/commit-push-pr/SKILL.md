@@ -35,11 +35,9 @@ on untracked work) means writing them now, to the same rules.
 
 ## Step 2: Don't ask — check
 
-**This step used to be "get explicit approval". It is not any more (2026-09-08).**
 Invoking this skill *is* the authorization: Dan either typed `/commit-push-pr`
-or `/next-item` reached Step 10, and both mean "ship it". Asking again re-imposes
-the commit gate he removed, one level down, which is exactly how a removed gate
-comes back.
+or `/next-item` reached Step 10, and both mean "ship it". Asking again would put
+a commit gate back one level down.
 
 So state what you are about to do — files, branch, commit message, PR base — in
 one short block, and then do it. No question mark.
@@ -64,7 +62,7 @@ If on `main`, create a branch first: `git checkout -b feature/<item-id-slug>`
 - Stage the intended files (`git add ...`).
 - Clear, present-tense message; prefix with the item: `<item-id>: <what changed>`
   (e.g. `S-01: PTY-host the claude CLI in xterm.js`).
-- Follow `references/git-workflow.md`.
+- Follow `.claude/skills/startup/references/git-workflow.md`.
 
 ## Step 5: Push and open the PR
 
@@ -91,19 +89,13 @@ Report the PR URL, then **merge it yourself once CI is green** —
 `gh pr merge <n> --squash --delete-branch`. After merge: `git checkout main &&
 git pull` before the next item.
 
-**The gate is green CI, not a human click.** This said "Dan reviews and
-squash-merges — never self-merge" until 2026-09-01, which was stale and left
-finished work parked waiting on a human who does not merge. Reviews are
-deliberately not required on `main`; that is a decision, not an oversight.
-**Red CI does not merge**, and `--admin` is never the way past a failing check.
-
-Re-confirmed 2026-09-08: when Dan removed `/next-item`'s two approval gates he
-was asked directly whether the remaining checkpoint should block the merge, and
-chose **merge on green CI, summary is a report**. So the report comes *after*
-the merge, and it does not ask permission for something already done.
+**The gate is green CI, not a human click.** Reviews are deliberately not
+required on `main`; that is a decision, not an oversight. **Red CI does not
+merge**, and `--admin` is never the way past a failing check. The report comes
+*after* the merge and does not ask permission for something already done.
 
 ## Notes
 
 - Never commit `.claude/.env` or other secrets. Verify nothing sensitive is staged.
 - PR bodies end with the standard Claude Code attribution footer.
-- No release/packaging step exists yet (Phase 4 concern).
+- Releases are a separate step: CHANGELOG.md, "To cut a release".

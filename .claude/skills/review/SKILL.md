@@ -19,10 +19,10 @@ Launch the `code-reviewer` agent (read-only) with the list of changed files. Ask
 it to assess:
 
 - **Architecture** — does the change fit the project's structure and patterns
-  (see `references/architecture.md`)?
+  (see `.claude/skills/startup/references/architecture.md`)?
 - **Correctness** — logic errors, edge cases, race conditions, async issues.
 - **Best practices** — idiomatic use of the language/framework in
-  `references/tech-stack.md`.
+  `.claude/skills/startup/references/tech-stack.md`.
 - **Maintainability** — clarity, coupling, testability.
 - **Security smells** — anything that warrants a deeper `/security-review`
   (e.g. unvalidated input, hard-coded secrets).

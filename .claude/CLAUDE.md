@@ -16,20 +16,11 @@ replacing the many-VS-Code-windows workflow with a single orchestrator:
 attention routing, inter-session communication, per-session git/diff panes,
 approvals, and usage tracking.
 
-**Status:** Spike 01 and Phase 1 complete; **Phase 2 (The Switchboard) in
-flight**. Shipping as v0.8.x. `PROGRESS.md` is the authority on where things
+**Status:** Spike 01, Phase 1 and Phase 2 are complete; Phase 3 (The IDE) is
+current. Shipping as v0.8.x. `PROGRESS.md` is the authority on where things
 actually stand.
 
-**As of the 2026-09-25 feature audit:** thirteen Phase 2 epics are closed (E7–E12,
-E14–E20). **E21** (responsiveness) is in flight and blocked on the owner's laptop
-capture. **E13 (Dispatch v1) carries Phase 2's exit criterion 5** — the audit found
-it had never been filed despite that, because an unfiled epic contributes nothing
-to an open-issue count; it was filed the same day (#946–#951) and **#946, the role
-template model, merged 2026-09-25**. Five more §8 Phase 2 items are still unfiled;
-DESIGN §8 carries the table. *(This line said "currently E11, the Session Bus" for
-six days after E11 finished, and then said E13 "has never been filed" for a day
-after it was — hence the audit, and hence the warning: **never read the current
-item off this file. Read `PROGRESS.md`.**)*
+**Never read the current item off this file; read `PROGRESS.md`.**
 
 **Design docs (the source of truth for what to build):**
 
@@ -40,7 +31,8 @@ item off this file. Read `PROGRESS.md`.**)*
 | `docs/extensibility.md` | Internal contributor guide — contribution points, capability manifests, the bootstrap rule (§5.23 seams; NOT a public plugin API) |
 | `docs/reference-implementations.md` | **When a CLI contract is unclear, read this first.** Two sources on this machine: the unpacked Claude Code VS Code extension (a known-correct consumer — the embedded Agent SDK, the stream-json protocol, the full `settings.json` schema) and the PATH `claude` binary itself, greppable, embedding its zod schemas and message loop (§2.1 — shows what the CLI *does*, not just what a client sends). Navigation recipes and the rules for using both |
 | `docs/plans/00-process.md` | How we work: phases → work items → GitHub issues → PRs |
-| `docs/plans/04-phase-2-switchboard.md` | **Current work** — Phase 2 epics & work items |
+| `docs/plans/06-phase-3-ide.md` | **Current work** — Phase 3 epics & work items |
+| `docs/plans/04-phase-2-switchboard.md` | Phase 2 epics & work items — complete |
 | `docs/plans/01-spike-foundations.md` | Spike 01 spec (S-01…S-08) — complete |
 | `docs/plans/02-phase-1-mvp.md` | Phase 1 epics & work items — complete |
 | `docs/plans/dogfood-testing.md` | What Dan has and hasn't hand-tested (standing rule below) |
@@ -90,15 +82,11 @@ which is exactly why S-10 probe A had to be run instead of assumed.
 
 Tracker: **GitHub issues** at `badsonstudios/switchboard.ai`, filed per-milestone
 just-in-time from the plan files (see `docs/plans/00-process.md`). Milestones
-mirror phases. **Ask GitHub which are open rather than reading a name off this
-page** (`gh api repos/badsonstudios/switchboard.ai/milestones --jq '.[].title'`):
-on 2026-10-04 they were **Phase 3 - The IDE** and **Flakes & CI health**, and
-the "Phase 2 - The Switchboard" milestone this line used to name had been
-CLOSED since 2026-09-28. Spike 01 closed at 8/8; Phase 1 is done. **Check
-`PROGRESS.md`, not this line, for where work actually is** — this one has now
-gone stale TWICE, and both times it was found the same way: a `gh issue list`
-against a dead milestone silently returned nothing, and `gh issue create
---milestone` against it refused outright.
+mirror phases. **Ask GitHub which are open rather than naming one from memory**
+(`gh api repos/badsonstudios/switchboard.ai/milestones --jq '.[].title'`): a
+`gh issue list` against a closed milestone silently returns nothing, and
+`gh issue create --milestone` against it refuses. `PROGRESS.md` says where work
+actually is.
 
 1. Dan says **"do the next item"** (or `/next-item`, or `/next-item S-03` /
    `/next-item 3`).
@@ -107,16 +95,14 @@ against a dead milestone silently returned nothing, and `gh issue create
    `/commit-push-pr` (branch + PR referencing the issue) → **merges on green
    CI** → updates `PROGRESS.md` → **reports**. It does not stop in the middle.
 
-   **ONE CHECKPOINT, AND IT IS AT THE END (changed 2026-09-08).** The two
-   blocking gates — plan approval, commit approval — are gone. Dan removed them
-   and was asked directly whether the remaining checkpoint should block the
-   merge; he chose **merge on green CI, the summary is a report**. So the
-   oversight point is the plain-English report *after* the work has landed, and
-   his lever is "change that" or "revert that", not "yes you may proceed".
+   **One checkpoint, and it is at the end.** There is no plan approval and no
+   commit approval: Dan chose **merge on green CI, the summary is a report**.
+   The oversight point is the plain-English report *after* the work has
+   landed, and his lever is "change that" or "revert that", not "yes you may
+   proceed".
 
-   This is deliberate and it is not an invitation to re-add a gate one level
-   down — `/commit-push-pr`, `/commit` and `/pr` were all changed at the same
-   time for exactly that reason. **Blockers still stop the run**: a decision
+   Do not re-add a gate one level down — `/commit-push-pr`, `/commit` and `/pr`
+   follow the same rule. **Blockers still stop the run**: a decision
    only Dan can make, a `[user]` item, red CI. Those are blockers, not gates —
    say so plainly and record them in `PROGRESS.md`.
 3. `/pm` manages planning: keeps `docs/plans/*` healthy and files the next
@@ -200,10 +186,9 @@ All tokens and keys live in **`.claude/.env`** (none are required yet).
 - **Branches:** `main` is always-working; one `feature/s-<nn>-<slug>` (spike) or
   `feature/<issue#>-<slug>` branch per work item; PR references the issue
   (`Closes #<n>`); **Claude squash-merges once CI is green** — the gate is green
-  CI, not a human click (corrected 2026-09-01, re-confirmed 2026-09-08).
+  CI, not a human click.
   Reviews are deliberately NOT required on `main`; red CI does not merge.
-- **EVERY commit goes through a PR — including docs-only ones (Dan,
-  2026-09-11).** `PROGRESS.md` close-outs, the dogfood tracker, plans, skills:
+- **Every commit goes through a PR — including docs-only ones.** `PROGRESS.md` close-outs, the dogfood tracker, plans, skills:
   branch, PR, merge on green CI. **Never push to `main`.** A push that prints
   "Bypassed rule violations for refs/heads/main" went straight to `main` —
   that line is the alarm.
@@ -212,8 +197,8 @@ All tokens and keys live in **`.claude/.env`** (none are required yet).
 ## Working / Temporary Files
 
 - Scratch scripts, downloads, throwaway files → `.claude/work_files/` (git-ignored).
-- Spike harness code lives in `spike/` (committed — it's the current work
-  product) but is throwaway by design; findings are the deliverable.
+- Probe code lives in `spike/probes/<issue#>/` and findings in `spike/findings/`
+  (see Project-Specific Notes).
 
 ---
 
@@ -264,9 +249,8 @@ Configured in `.claude/settings.json`:
 - **block-env-staging (PreToolUse):** blocks `git add` of secrets files;
   `.env.example` allowed. Requires Git Bash.
 - **build-test-gate (Stop) — opt-in:** builds/tests before finishing; off by
-  default (nothing to build until the scaffold exists). Auto-detects
-  `npm run build` once package.json lands; override via `BUILD_CMD`/`TEST_CMD`
-  in `.claude/.env`.
+  default. Runs `npm run build`; override via `BUILD_CMD`/`TEST_CMD` in
+  `.claude/.env`.
 
 ---
 
@@ -276,8 +260,7 @@ Configured in `.claude/settings.json`:
   (Playwright), plus the `check:*` family — local harnesses that drive the real
   CLI or the real compiled binaries. Some are CI jobs, some are deliberately
   local-only (#182); `src/main/check-scripts.test.ts` enforces that every one is
-  accounted for either way. *(This said "no build system yet" until 2026-09-08 —
-  the scaffold landed in P1-E1-01 and Phase 1 is long done.)*
+  accounted for either way.
 - **Stack** (DESIGN.md §6): Electron + TypeScript + React + xterm.js + node-pty
   + Monaco + Dockview; vitest for unit tests.
 - **The spike was findings-driven** and is complete — `spike/` is kept as the

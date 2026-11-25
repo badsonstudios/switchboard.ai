@@ -13,10 +13,8 @@ Read, in order:
 1. `.claude/CLAUDE.md` — high-level project context and index (required).
 2. **`PROGRESS.md`** (repo root) — the live state: current/in-progress item,
    next up, blockers, recent log. **This is how we resume across sessions.**
-3. The current milestone's plan file — **`docs/plans/04-phase-2-switchboard.md`
-   while Phase 2 is active** — skim the epic the next item belongs to. (This
-   said `01-spike-foundations.md` until 2026-09-08; Spike 01 closed at 8/8 long
-   before that.)
+3. The current milestone's plan file in `docs/plans/` (PROGRESS.md and the open
+   milestone name say which) — skim the epic the next item belongs to.
 4. The relevant files in `.claude/skills/startup/references/` —
    `project-info.md`, `tech-stack.md`, `architecture.md`, `git-workflow.md`,
    `code-style.md`, `testing.md`, `security.md`, `api-keys-config.md`.
@@ -37,19 +35,15 @@ Read, in order:
 git status --short
 git branch --show-current
 git log --oneline -5
-# ASK which milestones are open — do not type a name from memory. A wrong (or
-# CLOSED) one returns empty and looks like "no open issues" rather than an
-# error. This block hard-coded "Phase 2 - The Switchboard" for six days after
-# that milestone was closed (found 2026-10-04), and every startup in between
-# printed nothing here and read it as a quiet queue.
+# Ask which milestones are open; a closed one returns empty, which reads like
+# "no open issues" rather than an error.
 gh api repos/badsonstudios/switchboard.ai/milestones --jq '.[] | "\(.title): \(.open_issues) open"'
 gh issue list --state open --limit 5
 node --version 2>/dev/null || echo "Node not found"
 claude --version 2>/dev/null || echo "claude CLI not found (required for spike work)"
 ```
 
-Only flag what's relevant to the current work (e.g. no npm-install checks
-before the Phase 1 scaffold exists).
+Only flag what's relevant to the current work.
 
 ## Step 4: Report
 

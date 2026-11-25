@@ -27,7 +27,7 @@ Read every changed file before evaluating.
 - TODO/HACK/FIXME comments that should be addressed or tracked
 
 ### Naming & conventions
-- Follows the project's conventions (see `references/code-style.md`)
+- Follows the project's conventions (see `.claude/skills/startup/references/code-style.md`)
 - Consistent naming across similar constructs
 - Descriptive names (no single-letter names except loop counters)
 
