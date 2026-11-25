@@ -11,21 +11,16 @@ Run a whole milestone (or item range) unattended.
 milestone in `PROGRESS.md`, from the next open issue to the end of that
 milestone**.
 
-## What this is for, now that `/next-item` has no gates either
+## What this is for
 
-**Read this before reaching for `/autopilot` (rewritten 2026-09-08).** This
-skill used to exist for one reason: `/next-item` had two blocking approval gates
-and sometimes Dan wasn't at the keyboard to answer them. Those gates are gone —
-`/next-item` now runs start to finish and merges on green CI — so "runs without
-interference" is no longer a distinction.
-
-What is left, and the only reason to choose this over `/next-item`:
+`/next-item` runs start to finish and merges on green CI. The only reasons to
+choose this instead:
 
 - **Batching.** Many items in one run, one branch, one PR to read — instead of N
   separate PRs, each merged as it finished.
 - **Nothing lands on `main` until Dan says so.** `/next-item` merges itself;
-  this deliberately does not. That makes `/autopilot` the *more* cautious
-  option now, which is the opposite of what it was built for.
+  this deliberately does not, which makes `/autopilot` the *more* cautious
+  option.
 
 So: **`/next-item` is the default.** Pick `/autopilot` when a milestone's items
 are tightly coupled and reviewing them together is genuinely better than
@@ -125,4 +120,4 @@ When the run ends (complete or stopped), report:
 - This skill is the batching sibling of `/next-item`: same spec, same quality
   bar. The difference is scope and landing — many items on one branch that
   **Dan** merges, versus one item that merges itself on green CI. Neither has
-  approval gates any more (2026-09-08). `/next-item` is the default.
+  approval gates. `/next-item` is the default.

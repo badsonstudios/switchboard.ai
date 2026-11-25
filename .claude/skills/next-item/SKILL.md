@@ -15,19 +15,17 @@ milestone. If the current milestone has no open issues, say so and suggest
 This skill **orchestrates** other skills and agents, and it **runs start to
 finish without stopping for approval**.
 
-## The one checkpoint (changed 2026-09-08 — read this before looking for a gate)
+## The one checkpoint (read this before looking for a gate)
 
 There is **exactly one** place this skill hands back: **Step 11, after the PR is
 open, CI is green, and the work is merged.** That report is the oversight point,
 and it is a *report*, not a request — Dan reads it and tells you if he wants
 something changed or reverted.
 
-This replaced two blocking gates (plan approval before implementing, commit
-approval before pushing). Dan removed them on 2026-09-08 and chose, explicitly,
-that the final checkpoint does **not** block the merge: "merge on green CI; the
-summary is a report." That keeps the 2026-09-01 decision intact — **the gate is
-green CI, not a human click** — and means an item never parks waiting on
-someone.
+There is no plan approval and no commit approval, and the final checkpoint
+does **not** block the merge: Dan chose "merge on green CI; the summary is a
+report." **The gate is green CI, not a human click**, so an item never parks
+waiting on someone.
 
 **So: do not invent a new gate.** Do not ask "shall I proceed?", "does the plan
 look right?", or "ready for me to commit?". Do not route back through
@@ -74,9 +72,9 @@ The plan must be concrete:
 - Files/modules to change (and why) — respect DESIGN.md §5 architecture and the
   extensibility seams (§5.23: new features go through contribution interfaces
   where cheap).
-- The approach and trade-offs (refs: `references/architecture.md`,
-  `references/tech-stack.md`).
-- Tests to add/update (see `references/testing.md`) — spike items produce
+- The approach and trade-offs (refs: `.claude/skills/startup/references/architecture.md`,
+  `.claude/skills/startup/references/tech-stack.md`).
+- Tests to add/update (see `.claude/skills/startup/references/testing.md`) — spike items produce
   findings notes instead.
 - Risks, edge cases, and anything explicitly **out of scope**.
 
@@ -107,18 +105,17 @@ in a follow-up issue comment; do not silently ship something else.
 
 - If on `main`, branch first: `git checkout -b feature/<item-id-slug>` (e.g.
   `feature/s-01-pty-host`).
-- Implement to the plan from Step 2. Follow `references/code-style.md`
-  (incl. the no-raw-colors / no-hardcoded-strings rules once the lint
-  infrastructure exists).
+- Implement to the plan from Step 2. Follow `.claude/skills/startup/references/code-style.md`
+  (incl. the no-raw-colors / no-hardcoded-strings lint rules).
 - **Diverging from the plan is allowed and often right** — the plan was written
   before the code was touched. What is not allowed is diverging silently: note
   it on the issue and in the Step 11 report.
 
 ## Step 5 — Test (iterate until green)
 
-Build and test per `references/testing.md` (per-item commands until the Phase 1
-scaffold lands; then `npm run build` / `npm test`; run the app to see the
-change actually work when there's a runtime surface). On failure: diagnose
+Build and test per `.claude/skills/startup/references/testing.md`
+(`npm run build` / `npm test`; run the app to see the change actually work
+when there's a runtime surface). On failure: diagnose
 (use the **debugger** agent for non-obvious causes) → fix → re-run. Loop until
 green. If genuinely blocked, **record the blocker in `PROGRESS.md`** and stop
 with the failing output — never report half-working code as done.
@@ -167,9 +164,8 @@ not converging, record state in `PROGRESS.md` and report.
 the top of the Step 11 report. They come **before** the technical summary in
 both places, and neither is ever skipped.
 
-This matters more now, not less. It used to be the thing Dan read before
-deciding to merge; since 2026-09-08 the merge has already happened by the time
-he sees it, so this is the *only* description of the change he is offered. If it
+The merge has already happened by the time Dan sees this, so it is the *only*
+description of the change he is offered. If it
 is vague, he has no way to notice something is wrong short of reading the diff.
 Two parts, in this order:
 
@@ -227,12 +223,8 @@ later, and on GitHub Dan can tick the boxes as he goes).
 **Then MERGE IT YOURSELF once CI is green** — `gh pr merge <n> --squash
 --delete-branch`, then `git checkout main && git pull`.
 
-**The gate is green CI, not a human.** This step used to read "Dan reviews and
-squash-merges — never self-merge", which was stale and actively wrong: it left
-PRs sitting for a human click Dan does not make and does not want to make
-(corrected by him 2026-09-01, "you've always been merging it"; re-confirmed
-2026-09-08 when he removed the two approval gates and chose merge-on-green over
-a blocking final gate). Reviews are deliberately NOT required on `main` — that
+**The gate is green CI, not a human.** Dan does not merge PRs by hand and does
+not want them waiting on him. Reviews are deliberately NOT required on `main` — that
 is a decision, not an oversight, so do not re-add one and do not reach for
 `--admin` to get around a check that is genuinely failing. **If CI is red, it
 does not merge** — fix it or report the blocker.
@@ -244,13 +236,12 @@ Close out the tracking before you report (never skip):
 - Update `docs/plans/dogfood-testing.md` if anything user-facing merged — add it
   as UNTESTED with a how-to-test line. Automatic, no asking.
 - The issue closes itself on merge via `Closes #<n>`.
-- **The close-out is a PR too — never a push to `main` (Dan, 2026-09-11).**
+- **The close-out is a PR too — never a push to `main`.**
   Branch `docs/<issue#>-close-out` from the fresh `main`, commit the
   `PROGRESS.md` / tracker edits, open a PR, **merge it on green CI**, then
-  `git checkout main && git pull`. The report waits for that merge. Items
-  through #772 pushed their close-outs straight to `main`; the admin bypass
-  printed "Bypassed rule violations" every time and it was treated as noise.
-  It is the alarm.
+  `git checkout main && git pull`. The report waits for that merge. A push
+  that prints "Bypassed rule violations" went straight to `main`: that line is
+  the alarm.
 
 ## Step 11 — The report (the one checkpoint)
 
